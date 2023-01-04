@@ -2,13 +2,13 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    color,
     gostack::GoStack,
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvArc},
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
 
-use parking_lot::MutexGuard;
+use arbutil::Color;
 use rand::RngCore;
+use wasmer::AsStoreMut;
 
 use std::{collections::BTreeMap, io::Write};
 
@@ -29,7 +29,7 @@ const FS_CONSTANTS_ID: u32 = 200;
 
 const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct JsRuntimeState {
     /// A collection of js objects
     pool: DynamicObjectPool,
@@ -162,7 +162,7 @@ impl GoValue {
     }
 }
 
-fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValue {
+fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
     use DynamicObject::*;
 
     if let Some(source) = env.js_state.pool.get(source) {
@@ -214,8 +214,8 @@ fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValu
     }
 }
 
-pub fn js_finalize_ref(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
     let pool = &mut env.js_state.pool;
 
     let val = JsValue::new(sp.read_u64(0));
@@ -230,14 +230,14 @@ pub fn js_finalize_ref(env: &WasmEnvArc, sp: u32) {
     }
 }
 
-pub fn js_value_get(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn js_value_get(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
     let source = JsValue::new(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
     let field = sp.read_slice(field_ptr, field_len);
     let value = match source {
-        JsValue::Ref(id) => get_field(&mut env, id, &field),
+        JsValue::Ref(id) => get_field(env, id, &field),
         val => {
             let field = String::from_utf8_lossy(&field);
             eprintln!("Go trying to read field {:?} . {field}", val);
@@ -247,8 +247,8 @@ pub fn js_value_get(env: &WasmEnvArc, sp: u32) {
     sp.write_u64(3, value.encode());
 }
 
-pub fn js_value_set(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
     use JsValue::*;
 
     let source = JsValue::new(sp.read_u64(0));
@@ -275,8 +275,8 @@ pub fn js_value_set(env: &WasmEnvArc, sp: u32) {
     );
 }
 
-pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
-    let (sp, env) = GoStack::new(sp, env);
+pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     macro_rules! fail {
         ($text:expr $(,$args:expr)*) => {{
@@ -298,26 +298,23 @@ pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
         Some(DynamicObject::ValueArray(x)) => x.get(index).cloned(),
         _ => fail!("Go attempted to index into unsupported value {:?}", source),
     };
-    let value = match value {
-        Some(value) => value,
-        None => fail!("Go indexing out of bounds into {:?} index {index}", source),
+    let Some(value) = value else {
+        fail!("Go indexing out of bounds into {:?} index {index}", source)
     };
     sp.write_u64(2, value.encode());
 }
 
-pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let resume = match env.resume_ref() {
-        Some(resume) => resume,
-        None => return Escape::failure(format!("wasmer failed to bind {}", color::red("resume"))),
+pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let Some(resume) = env.data().exports.resume.clone() else {
+        return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
     };
-    let get_stack_pointer = match env.get_stack_pointer_ref() {
-        Some(get_stack_pointer) => get_stack_pointer,
-        None => return Escape::failure(format!("wasmer failed to bind {}", color::red("getsp"))),
+    let Some(get_stack_pointer) = env.data().exports.get_stack_pointer.clone() else {
+        return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
     };
-    let (sp, mut env_lock) = GoStack::new(sp, env);
-    let env = &mut *env_lock;
-    let rng = &mut env.go_state.rng;
-    let pool = &mut env.js_state.pool;
+    let sp = GoStack::simple(sp, &env);
+    let data = env.data_mut();
+    let rng = &mut data.go_state.rng;
+    let pool = &mut data.js_state.pool;
     use JsValue::*;
 
     let object = JsValue::new(sp.read_u64(0));
@@ -393,7 +390,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                         eprintln!("Go trying to write to unknown FD {}", fd);
                     }
 
-                    env.js_state.pending_event = Some(PendingEvent {
+                    data.js_state.pending_event = Some(PendingEvent {
                         id: *func_id,
                         this: *this,
                         args: vec![
@@ -403,11 +400,11 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                     });
 
                     // recursively call into wasmer
-                    std::mem::drop(env_lock);
-                    resume.call()?;
+                    let mut store = env.as_store_mut();
+                    resume.call(&mut store)?;
 
                     // the stack pointer has changed, so we'll need to write our return results elsewhere
-                    let pointer = get_stack_pointer.call()? as u32;
+                    let pointer = get_stack_pointer.call(&mut store)? as u32;
                     sp.write_u64_ptr(pointer + sp.relative_offset(6), GoValue::Null.encode());
                     sp.write_u8_ptr(pointer + sp.relative_offset(7), 1);
                     return Ok(());
@@ -450,8 +447,8 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn js_value_new(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
     let pool = &mut env.js_state.pool;
 
     let class = sp.read_u32(0);
@@ -483,8 +480,8 @@ pub fn js_value_new(env: &WasmEnvArc, sp: u32) {
     sp.write_u8(5, 0);
 }
 
-pub fn js_value_length(env: &WasmEnvArc, sp: u32) {
-    let (sp, env) = GoStack::new(sp, env);
+pub fn js_value_length(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     let source = match JsValue::new(sp.read_u64(0)) {
         JsValue::Ref(x) => env.js_state.pool.get(x),
@@ -504,8 +501,8 @@ pub fn js_value_length(env: &WasmEnvArc, sp: u32) {
     sp.write_u64(1, length as u64);
 }
 
-pub fn js_copy_bytes_to_go(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn js_copy_bytes_to_go(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
     let dest_ptr = sp.read_u64(0);
     let dest_len = sp.read_u64(1);
     let src_val = JsValue::new(sp.read_u64(3));
@@ -538,8 +535,8 @@ pub fn js_copy_bytes_to_go(env: &WasmEnvArc, sp: u32) {
     sp.write_u8(5, 0);
 }
 
-pub fn js_copy_bytes_to_js(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     match JsValue::new(sp.read_u64(0)) {
         JsValue::Ref(dest_id) => {
@@ -557,7 +554,8 @@ pub fn js_copy_bytes_to_js(env: &WasmEnvArc, sp: u32) {
                     let len = std::cmp::min(src_len, dest_len) as usize;
 
                     // Slightly inefficient as this allocates a new temporary buffer
-                    buf[..len].copy_from_slice(&sp.read_slice(src_ptr, len as u64));
+                    let data = sp.read_slice(src_ptr, len as u64);
+                    buf[..len].copy_from_slice(&data);
                     sp.write_u64(4, GoValue::Number(len as f64).encode());
                     sp.write_u8(5, 1);
                     return;
@@ -576,7 +574,7 @@ macro_rules! unimpl_js {
     ($($f:ident),* $(,)?) => {
         $(
             #[no_mangle]
-            pub fn $f(_: &WasmEnvArc, _: u32) {
+            pub fn $f(_: WasmEnvMut, _: u32) {
                 unimplemented!("Go JS interface {} not supported", stringify!($f));
             }
         )*

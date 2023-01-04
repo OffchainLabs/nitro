@@ -81,26 +81,6 @@ func (r *RedundantStorageService) Put(ctx context.Context, data []byte, expirati
 	return anyError
 }
 
-func (r *RedundantStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	var wg sync.WaitGroup
-	var errorMutex sync.Mutex
-	var anyError error
-	wg.Add(len(r.innerServices))
-	for _, serv := range r.innerServices {
-		go func(s StorageService) {
-			err := convertStorageServiceToIterationCompatibleStorageService(s).putKeyValue(ctx, key, value)
-			if err != nil {
-				errorMutex.Lock()
-				anyError = err
-				errorMutex.Unlock()
-			}
-			wg.Done()
-		}(serv)
-	}
-	wg.Wait()
-	return anyError
-}
-
 func (r *RedundantStorageService) Sync(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex

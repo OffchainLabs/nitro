@@ -25,8 +25,9 @@ import (
 type ClientConnection struct {
 	stopwaiter.StopWaiter
 
-	ioMutex sync.Mutex
-	conn    net.Conn
+	ioMutex  sync.Mutex
+	conn     net.Conn
+	creation time.Time
 
 	desc            *netpoll.Desc
 	Name            string
@@ -37,16 +38,27 @@ type ClientConnection struct {
 	out           chan []byte
 }
 
-func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *ClientManager, requestedSeqNum arbutil.MessageIndex) *ClientConnection {
+func NewClientConnection(
+	conn net.Conn,
+	desc *netpoll.Desc,
+	clientManager *ClientManager,
+	requestedSeqNum arbutil.MessageIndex,
+	connectingIP string,
+) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
 		desc:            desc,
-		Name:            conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		creation:        time.Now(),
+		Name:            connectingIP + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 	}
+}
+
+func (cc *ClientConnection) Age() time.Duration {
+	return time.Since(cc.creation)
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {

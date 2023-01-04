@@ -77,8 +77,6 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 }
 func (bcs *BroadcastClients) StopAndWait() {
 	for _, client := range bcs.clients {
-		if client.Started() {
-			client.StopAndWait()
-		}
+		client.StopAndWait()
 	}
 }

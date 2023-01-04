@@ -253,7 +253,7 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 	return nil
 }
 
-var ErrFatalNodeOutOfDate error = errors.New("please upgrade to latest version of node software")
+var ErrFatalNodeOutOfDate = errors.New("please upgrade to latest version of node software")
 
 func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, stateDB vm.StateDB) error {
 	for state.arbosVersion < upgradeTo {

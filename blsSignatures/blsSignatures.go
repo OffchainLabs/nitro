@@ -107,7 +107,7 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 	g1 := bls12381.NewG1()
 	result := &bls12381.PointG1{}
 	g1.MulScalar(result, pointOnCurve, priv)
-	return Signature(result), nil
+	return result, nil
 }
 
 func VerifySignature(sig Signature, message []byte, publicKey PublicKey) (bool, error) {

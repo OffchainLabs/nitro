@@ -17,7 +17,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
 )
 
@@ -25,8 +26,11 @@ type InboxTracker struct {
 	db         ethdb.Database
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
-	validator  *validator.BlockValidator
+	validator  *staker.BlockValidator
 	das        arbstate.DataAvailabilityReader
+
+	batchMetaMutex sync.Mutex
+	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
@@ -37,11 +41,12 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 		db:         db,
 		txStreamer: txStreamer,
 		das:        das,
+		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
 }
 
-func (t *InboxTracker) SetBlockValidator(validator *validator.BlockValidator) {
+func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
 	t.validator = validator
 }
 
@@ -82,7 +87,7 @@ func (t *InboxTracker) Initialize() error {
 	return batch.Write()
 }
 
-var AccumulatorNotFoundErr error = errors.New("accumulator not found")
+var AccumulatorNotFoundErr = errors.New("accumulator not found")
 
 func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 	key := dbKey(rlpDelayedMessagePrefix, seqNum)
@@ -133,6 +138,12 @@ type BatchMetadata struct {
 }
 
 func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
+	t.batchMetaMutex.Lock()
+	defer t.batchMetaMutex.Unlock()
+	metadata, exist := t.batchMeta.Get(seqNum)
+	if exist {
+		return metadata, nil
+	}
 	key := dbKey(sequencerBatchMetaPrefix, seqNum)
 	hasKey, err := t.db.Has(key)
 	if err != nil {
@@ -145,9 +156,12 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 	if err != nil {
 		return BatchMetadata{}, err
 	}
-	var metadata BatchMetadata
 	err = rlp.DecodeBytes(data, &metadata)
-	return metadata, err
+	if err != nil {
+		return BatchMetadata{}, err
+	}
+	t.batchMeta.Add(seqNum, metadata)
+	return metadata, nil
 }
 
 func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
@@ -352,6 +366,9 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	// which we'll do because of the defer.
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount != nil {
+		t.batchMetaMutex.Lock()
+		t.batchMeta.Clear()
+		t.batchMetaMutex.Unlock()
 		count := *reorgSeqBatchesToCount
 		if t.validator != nil {
 			t.validator.ReorgToBatchCount(count)
@@ -643,6 +660,10 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	if t.validator != nil {
 		t.validator.ReorgToBatchCount(count)
 	}
+
+	t.batchMetaMutex.Lock()
+	t.batchMeta.Clear()
+	t.batchMetaMutex.Unlock()
 
 	dbBatch := t.db.NewBatch()
 
