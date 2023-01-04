@@ -26,6 +26,8 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {
@@ -125,9 +127,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	locator, err := validator.NewMachineLocator("")
+	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	spawner, err := validator.NewArbitratorSpawner(locator, validator.DefaultArbitratorSpawnerConfigFetcher)
+	spawner, err := server_arb.NewArbitratorSpawner(locator, server_arb.DefaultArbitratorSpawnerConfigFetcher)
 	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		spawner,

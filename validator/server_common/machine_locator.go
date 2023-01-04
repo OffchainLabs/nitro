@@ -28,7 +28,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 		if !ok {
 			panic("failed to find root path")
 		}
-		projectDir := filepath.Dir(filepath.Dir(thisFile))
+		projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
 		places = append(places, projectPath)
 

@@ -30,6 +30,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
@@ -280,7 +282,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
 
-	locator, err := validator.NewMachineLocator("")
+	locator, err := server_common.NewMachineLocator("")
 	if err != nil {
 		Fail(t, err)
 	}
@@ -329,7 +331,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	spawner, err := validator.NewArbitratorSpawner(locator, validator.DefaultArbitratorSpawnerConfigFetcher)
+	spawner, err := server_arb.NewArbitratorSpawner(locator, server_arb.DefaultArbitratorSpawnerConfigFetcher)
 	Require(t, err)
 	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, []validator.ValidationSpawner{}, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {

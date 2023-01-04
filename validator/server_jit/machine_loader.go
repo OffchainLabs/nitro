@@ -29,7 +29,7 @@ func getJitPath() (string, error) {
 	if err == nil {
 		if strings.Contains(filepath.Base(executable), "test") {
 			_, thisfile, _, _ := runtime.Caller(0)
-			projectDir := filepath.Dir(filepath.Dir(thisfile))
+			projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisfile)))
 			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
 		} else {
 			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
