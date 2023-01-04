@@ -245,7 +245,7 @@ func ProduceBlockAdvanced(
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
+				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster, state.ArbOSVersion())
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {

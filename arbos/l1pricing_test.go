@@ -260,7 +260,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 
 	l1p := state.L1PricingState()
 	Require(t, l1p.SetPerUnitReward(0))
-	Require(t, l1p.SetPricePerUnit(initialL1BasefeeEstimate))
+	Require(t, l1p.SetBasePricePerUnit(initialL1BasefeeEstimate))
 
 	bpAddr := common.Address{3, 4, 5, 6}
 	l1PoolAddress := l1pricing.L1PricerFundsPoolAddress
@@ -270,7 +270,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		Require(t, err)
 		err = l1p.SetUnitsSinceUpdate(oldUnits + unitsToAdd)
 		Require(t, err)
-		currentPricePerUnit, err := l1p.PricePerUnit()
+		currentPricePerUnit, err := l1p.BasePricePerUnit()
 		Require(t, err)
 		feesToAdd := arbmath.BigMulByUint(currentPricePerUnit, unitsToAdd)
 		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, "test")
@@ -288,7 +288,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		Require(t, err)
 	}
 	expectedMovement := arbmath.BigSub(equilibriumL1BasefeeEstimate, initialL1BasefeeEstimate)
-	actualPricePerUnit, err := l1p.PricePerUnit()
+	actualPricePerUnit, err := l1p.BasePricePerUnit()
 	Require(t, err)
 	actualMovement := arbmath.BigSub(actualPricePerUnit, initialL1BasefeeEstimate)
 	if expectedMovement.Sign() != actualMovement.Sign() {

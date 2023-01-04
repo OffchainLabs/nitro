@@ -15,7 +15,7 @@ import (
 
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto, common.Address{})
+	err := InitializeL1PricingState(sto, common.Address{}, 11)
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 
@@ -25,8 +25,8 @@ func TestL1PriceUpdate(t *testing.T) {
 		Fail(t)
 	}
 
-	initialPriceEstimate := am.UintToBig(InitialPricePerUnitWei)
-	priceEstimate, err := ps.PricePerUnit()
+	initialPriceEstimate := am.UintToBig(InitialBasePricePerUnitWei)
+	priceEstimate, err := ps.BasePricePerUnit()
 	Require(t, err)
 	if priceEstimate.Cmp(initialPriceEstimate) != 0 {
 		Fail(t)

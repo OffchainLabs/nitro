@@ -366,9 +366,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
-	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster, p.state.ArbOSVersion())
 	if calldataUnits > 0 {
-		p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
+		p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits, p.evm.Context.Time.Uint64()))
 	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {

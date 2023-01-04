@@ -134,7 +134,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 
-	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
+	l1BaseFee := big.NewInt(l1pricing.InitialBasePricePerUnitWei)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)

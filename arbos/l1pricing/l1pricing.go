@@ -40,11 +40,15 @@ type L1PricingState struct {
 	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
 	unitsSinceUpdate     storage.StorageBackedUint64  // calldata units collected for since last update
-	pricePerUnit         storage.StorageBackedBigUint // current price per calldata unit
+	basePricePerUnit     storage.StorageBackedBigUint // current price per calldata unit
 	lastSurplus          storage.StorageBackedBigInt  // introduced in ArbOS version 2
 	perBatchGasCost      storage.StorageBackedInt64   // introduced in ArbOS version 3
 	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
 	l1FeesAvailable      storage.StorageBackedBigUint
+	l1UnitsSpeedLimit    storage.StorageBackedUint64 // introduced in ArbOS version 11
+	l1UnitsBacklog       storage.StorageBackedUint64 // introduced in ArbOS version 11
+	l1LastBacklogUpdate  storage.StorageBackedUint64 // introduced in ArbOS version 11
+	l1BacklogDenom       storage.StorageBackedUint64 // introduced in ArbOS version 11
 }
 
 var (
@@ -64,25 +68,33 @@ const (
 	lastUpdateTimeOffset
 	fundsDueForRewardsOffset
 	unitsSinceOffset
-	pricePerUnitOffset
+	basePricePerUnitOffset
 	lastSurplusOffset
 	perBatchGasCostOffset
 	amortizedCostCapBipsOffset
 	l1FeesAvailableOffset
+	l1UnitsSpeedLimitOffset
+	l1UnitsBacklogOffset
+	l1LastBacklogUpdateOffset
+	l1BacklogDenomOffset
 )
 
 const (
-	InitialInertia           = 10
-	InitialPerUnitReward     = 10
-	InitialPricePerUnitWei   = 50 * params.GWei
-	InitialPerBatchGasCostV6 = 100000
+	InitialInertia             = 10
+	InitialPerUnitReward       = 10
+	InitialBasePricePerUnitWei = 50 * params.GWei
+	InitialPerBatchGasCostV6   = 100000
+	InitialL1GasSpeedLimit     = 500000
+	InitialL1BacklogDenom      = 10000000
 )
 
 // one minute at 100000 bytes / sec
-var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
-var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+var (
+	InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
+	InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+)
 
-func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
+func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, arbosVersion uint64) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
@@ -108,9 +120,27 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	if err := sto.SetUint64ByUint64(perUnitRewardOffset, InitialPerUnitReward); err != nil {
 		return err
 	}
-	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
-	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
+	basePricePerUnit := sto.OpenStorageBackedBigInt(basePricePerUnitOffset)
+	if err := basePricePerUnit.SetByUint(InitialBasePricePerUnitWei); err != nil {
 		return err
+	}
+	if arbosVersion >= 11 {
+		l1UnitsSpeedLimit := sto.OpenStorageBackedUint64(l1UnitsSpeedLimitOffset)
+		if err := l1UnitsSpeedLimit.Set(InitialL1GasSpeedLimit); err != nil {
+			return err
+		}
+		l1UnitsBacklog := sto.OpenStorageBackedUint64(l1UnitsBacklogOffset)
+		if err := l1UnitsBacklog.Set(0); err != nil {
+			return err
+		}
+		l1LastBacklogUpdate := sto.OpenStorageBackedUint64(l1LastBacklogUpdateOffset)
+		if err := l1LastBacklogUpdate.Set(0); err != nil {
+			return err
+		}
+		l1BacklogDenom := sto.OpenStorageBackedUint64(l1BacklogDenomOffset)
+		if err := l1BacklogDenom.Set(InitialL1BacklogDenom); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -126,12 +156,32 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
 		sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
-		sto.OpenStorageBackedBigUint(pricePerUnitOffset),
+		sto.OpenStorageBackedBigUint(basePricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 		sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
+		sto.OpenStorageBackedUint64(l1UnitsSpeedLimitOffset),
+		sto.OpenStorageBackedUint64(l1UnitsBacklogOffset),
+		sto.OpenStorageBackedUint64(l1BacklogDenomOffset),
+		sto.OpenStorageBackedUint64(l1BacklogDenomOffset),
 	}
+}
+
+func (ps *L1PricingState) UpgradeToArbosVersion11() error {
+	if err := ps.SetL1UnitsSpeedLimit(InitialL1GasSpeedLimit); err != nil {
+		return err
+	}
+	if err := ps.SetL1UnitsBacklog(0); err != nil {
+		return err
+	}
+	if err := ps.SetL1LastBacklogUpdate(0); err != nil {
+		return err
+	} // OK to init to zero; first tx will catch this up, then backlog will be zero
+	if err := ps.SetL1BacklogDenom(InitialL1BacklogDenom); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ps *L1PricingState) BatchPosterTable() *BatchPostersTable {
@@ -206,7 +256,31 @@ func (ps *L1PricingState) SetLastSurplus(val *big.Int, arbosVersion uint64) erro
 	return ps.lastSurplus.SetSaturatingWithWarning(val, "L1 pricer last surplus")
 }
 
-func (ps *L1PricingState) AddToUnitsSinceUpdate(units uint64) error {
+func (ps *L1PricingState) AddToUnitsSinceUpdate(units uint64, timestamp uint64) error {
+	// update the L1 backlog mechanism
+	backlog, err := ps.L1UnitsBacklog()
+	if err != nil {
+		return err
+	}
+	backlog = arbmath.SaturatingUAdd(backlog, units)
+	lastUpdate, err := ps.L1LastBacklogUpdate()
+	if err != nil {
+		return err
+	}
+	if timestamp > lastUpdate {
+		speedLimit, err := ps.L1UnitsSpeedLimit()
+		if err != nil {
+			return err
+		}
+		backlog = arbmath.SaturatingUSub(backlog, arbmath.SaturatingUMul(speedLimit, timestamp-lastUpdate))
+		if err := ps.SetL1LastBacklogUpdate(timestamp); err != nil {
+			return err
+		}
+	}
+	if err := ps.SetL1UnitsBacklog(backlog); err != nil {
+		return err
+	}
+
 	oldUnits, err := ps.unitsSinceUpdate.Get()
 	if err != nil {
 		return err
@@ -214,12 +288,12 @@ func (ps *L1PricingState) AddToUnitsSinceUpdate(units uint64) error {
 	return ps.unitsSinceUpdate.Set(oldUnits + units)
 }
 
-func (ps *L1PricingState) PricePerUnit() (*big.Int, error) {
-	return ps.pricePerUnit.Get()
+func (ps *L1PricingState) BasePricePerUnit() (*big.Int, error) {
+	return ps.basePricePerUnit.Get()
 }
 
-func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
-	return ps.pricePerUnit.SetChecked(price)
+func (ps *L1PricingState) SetBasePricePerUnit(price *big.Int) error {
+	return ps.basePricePerUnit.SetChecked(price)
 }
 
 func (ps *L1PricingState) PerBatchGasCost() (int64, error) {
@@ -282,6 +356,62 @@ func (ps *L1PricingState) TransferFromL1FeesAvailable(
 	return updated, nil
 }
 
+func (ps *L1PricingState) L1UnitsSpeedLimit() (uint64, error) {
+	return ps.l1UnitsSpeedLimit.Get()
+}
+
+func (ps L1PricingState) SetL1UnitsSpeedLimit(val uint64) error {
+	return ps.l1UnitsSpeedLimit.Set(val)
+}
+
+func (ps *L1PricingState) L1UnitsBacklog() (uint64, error) {
+	return ps.l1UnitsBacklog.Get()
+}
+
+func (ps *L1PricingState) SetL1UnitsBacklog(val uint64) error {
+	return ps.l1UnitsBacklog.Set(val)
+}
+
+func (ps *L1PricingState) L1LastBacklogUpdate() (uint64, error) {
+	return ps.l1LastBacklogUpdate.Get()
+}
+
+func (ps *L1PricingState) SetL1LastBacklogUpdate(val uint64) error {
+	return ps.l1LastBacklogUpdate.Set(val)
+}
+
+func (ps *L1PricingState) L1BacklogDenom() (uint64, error) {
+	return ps.l1BacklogDenom.Get()
+}
+
+func (ps *L1PricingState) SetL1BacklogDenom(val uint64) error {
+	return ps.l1BacklogDenom.Set(val)
+}
+
+func (ps *L1PricingState) EffectiveL1UnitPrice(arbosVersion uint64) (*big.Int, error) {
+	if arbosVersion < 11 {
+		return ps.BasePricePerUnit()
+	}
+	basePrice, err := ps.BasePricePerUnit()
+	if err != nil {
+		return nil, err
+	}
+	backlog, err := ps.L1UnitsBacklog()
+	if err != nil {
+		return nil, err
+	}
+	denom, err := ps.L1BacklogDenom()
+	if err != nil {
+		return nil, err
+	}
+	exponentBips := arbmath.DivBipsByInt64(
+		arbmath.NaturalToBips(arbmath.SaturatingCast(backlog)),
+		arbmath.SaturatingCast(denom),
+	)
+	factorBips := arbmath.ApproxExpBasisPoints(exponentBips)
+	return arbmath.BigMulByBips(basePrice, factorBips), nil
+}
+
 // UpdateForBatchPosterSpending updates the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	statedb vm.StateDB,
@@ -293,8 +423,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 10 {
-		return ps._preversion10_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, l1Basefee, scenario)
+	if arbosVersion < 11 {
+		return ps._preversion_11_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, l1Basefee, scenario)
 	}
 
 	batchPosterTable := ps.BatchPosterTable()
@@ -451,7 +581,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
-		price, err := ps.PricePerUnit()
+		basePrice, err := ps.BasePricePerUnit()
 		if err != nil {
 			return err
 		}
@@ -470,11 +600,11 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err := ps.SetLastSurplus(surplus, arbosVersion); err != nil {
 			return err
 		}
-		newPrice := am.BigAdd(price, priceChange)
+		newPrice := am.BigAdd(basePrice, priceChange)
 		if newPrice.Sign() < 0 {
 			newPrice = common.Big0
 		}
-		if err := ps.SetPricePerUnit(newPrice); err != nil {
+		if err := ps.SetBasePricePerUnit(newPrice); err != nil {
 			return err
 		}
 	}
@@ -500,7 +630,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 }
 
 // GetPosterInfo returns the poster cost and the calldata units for a transaction
-func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address, arbosVersion uint64) (*big.Int, uint64) {
 	if poster != BatchPosterAddress {
 		return common.Big0, 0
 	}
@@ -511,7 +641,7 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
-	pricePerUnit, _ := ps.PricePerUnit()
+	pricePerUnit, _ := ps.EffectiveL1UnitPrice(arbosVersion)
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
@@ -561,10 +691,10 @@ func makeFakeTxForMessage(message core.Message) *types.Transaction {
 	})
 }
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address, arbosVersion uint64) (*big.Int, uint64) {
 	tx := message.UnderlyingTransaction()
 	if tx != nil {
-		return ps.GetPosterInfo(tx, poster)
+		return ps.GetPosterInfo(tx, poster, arbosVersion)
 	}
 
 	// Otherwise, we don't have an underlying transaction, so we're likely in gas estimation.
@@ -572,7 +702,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Add
 	tx = makeFakeTxForMessage(message)
 	units := ps.getPosterUnitsWithoutCache(tx, poster)
 	units = arbmath.UintMulByBips(units+estimationPaddingUnits, arbmath.OneInBips+estimationPaddingBasisPoints)
-	pricePerUnit, _ := ps.PricePerUnit()
+	pricePerUnit, _ := ps.EffectiveL1UnitPrice(arbosVersion)
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 

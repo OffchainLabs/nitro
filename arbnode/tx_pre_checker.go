@@ -89,7 +89,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
-	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
+	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress, arbos.ArbOSVersion())
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)
 	if tx.Gas() < intrinsic+dataGas.Uint64() {
 		return core.ErrIntrinsicGas

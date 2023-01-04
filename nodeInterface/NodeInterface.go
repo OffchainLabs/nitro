@@ -134,7 +134,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		pRetryTo = &to
 	}
 
-	l1BaseFee, _ := c.State.L1PricingState().PricePerUnit()
+	l1BaseFee, _ := c.State.L1PricingState().BasePricePerUnit()
 	maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
 
 	submitTx := &types.ArbitrumSubmitRetryableTx{
@@ -465,7 +465,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	}
 
 	pricing := c.State.L1PricingState()
-	l1BaseFeeEstimate, err := pricing.PricePerUnit()
+	l1BaseFeeEstimate, err := pricing.BasePricePerUnit()
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -477,7 +477,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	// Compute the fee paid for L1 in L2 terms
 	//   See in GasChargingHook that this does not induce truncation error
 	//
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, c.State.ArbOSVersion())
 	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 	return gasForL1, baseFee, l1BaseFeeEstimate, nil
@@ -514,13 +514,13 @@ func (n NodeInterface) GasEstimateComponents(
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress, c.State.ArbOSVersion())
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	l1BaseFeeEstimate, err := pricing.PricePerUnit()
+	l1BaseFeeEstimate, err := pricing.BasePricePerUnit()
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}

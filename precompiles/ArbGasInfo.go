@@ -32,7 +32,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 		return con._preVersion4_GetPricesInWeiWithAggregator(c, evm, aggregator)
 	}
 
-	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
+	l1GasPrice, err := c.State.L1PricingState().BasePricePerUnit()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -65,7 +65,7 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
+	l1GasPrice, err := c.State.L1PricingState().BasePricePerUnit()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -97,7 +97,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	if c.State.ArbOSVersion() < 4 {
 		return con._preVersion4_GetPricesInArbGasWithAggregator(c, evm, aggregator)
 	}
-	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
+	l1GasPrice, err := c.State.L1PricingState().BasePricePerUnit()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -117,7 +117,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 }
 
 func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
+	l1GasPrice, err := c.State.L1PricingState().BasePricePerUnit()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -154,7 +154,7 @@ func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 
 // GetL1BaseFeeEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
-	return c.State.L1PricingState().PricePerUnit()
+	return c.State.L1PricingState().BasePricePerUnit()
 }
 
 // GetL1BaseFeeEstimateInertia gets how slowly ArbOS updates its estimate of the L1 basefee

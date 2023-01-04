@@ -177,7 +177,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		history.BaseFee[i] = header.BaseFee
 
 		gasBacklog, _ := l2Pricing.GasBacklog()
-		l1BaseFeeEstimate, _ := l1Pricing.PricePerUnit()
+		l1BaseFeeEstimate, _ := l1Pricing.BasePricePerUnit()
 		l1FundsDue, _ := l1Pricing.BatchPosterTable().TotalFundsDue()
 		l1FundsDueForRewards, _ := l1Pricing.FundsDueForRewards()
 		l1UnitsSinceUpdate, _ := l1Pricing.UnitsSinceUpdate()
