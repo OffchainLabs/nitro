@@ -319,7 +319,7 @@ $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
-	clang $^ -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
+	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
