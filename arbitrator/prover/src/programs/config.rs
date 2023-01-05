@@ -2,16 +2,17 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use eyre::Result;
-use parking_lot::Mutex;
-use std::collections::HashMap;
+use fnv::FnvHashMap as HashMap;
 use libc::size_t;
+use parking_lot::Mutex;
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
 #[cfg(feature = "native")]
 use {
     super::{
-        counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover, MiddlewareWrapper,
+        counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover,
+        MiddlewareWrapper,
     },
     std::sync::Arc,
     wasmer::{CompilerConfig, Store},
@@ -31,7 +32,7 @@ pub struct StylusConfig {
     pub wasm_gas_price: u64,
     pub hostio_cost: u64,
     pub max_unique_operator_count: usize,
-    pub opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>
+    pub opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
 }
 
 impl Default for StylusConfig {
@@ -45,7 +46,7 @@ impl Default for StylusConfig {
             wasm_gas_price: 0,
             hostio_cost: 0,
             max_unique_operator_count: 0,
-            opcode_indexes: Arc::new(Mutex::new(HashMap::new()))
+            opcode_indexes: Arc::new(Mutex::new(HashMap::default())),
         }
     }
 }
@@ -69,7 +70,10 @@ impl StylusConfig {
             wasm_gas_price,
             hostio_cost,
             max_unique_operator_count,
-            opcode_indexes: Arc::new(Mutex::new(HashMap::with_capacity(max_unique_operator_count))),
+            opcode_indexes: Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
+                max_unique_operator_count,
+                Default::default(),
+            ))),
         })
     }
 
@@ -92,7 +96,10 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(start));
 
         if self.max_unique_operator_count > 0 {
-            let counter =MiddlewareWrapper::new(Counter::new(self.max_unique_operator_count, self.opcode_indexes.clone()));
+            let counter = MiddlewareWrapper::new(Counter::new(
+                self.max_unique_operator_count,
+                self.opcode_indexes.clone(),
+            ));
             compiler.push_middleware(Arc::new(counter));
         }
 

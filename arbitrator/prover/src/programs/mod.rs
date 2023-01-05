@@ -27,11 +27,11 @@ use {
 };
 
 pub mod config;
+pub mod counter;
 pub mod depth;
 pub mod heap;
 pub mod meter;
 pub mod start;
-pub mod counter;
 
 #[cfg(feature = "native")]
 pub mod native;

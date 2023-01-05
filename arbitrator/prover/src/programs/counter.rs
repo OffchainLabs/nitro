@@ -7,20 +7,16 @@ use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
 use std::{clone::Clone, fmt::Debug, sync::Arc};
-use wasmer::{
-    wasmparser::Operator,
-    GlobalInit, Instance, Store, Type,
-};
+use wasmer::{wasmparser::Operator, GlobalInit, Type};
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
 #[cfg(feature = "native")]
 use super::native::{GlobalMod, NativeInstance};
 
-
 macro_rules! opcode_count_name {
     ($val:expr) => {
         &format!("polyglot_opcode{}_count", $val)
-    }
+    };
 }
 
 #[derive(Debug)]
@@ -31,11 +27,14 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new(max_unique_opcodes: usize, opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>) -> Self {
+    pub fn new(
+        max_unique_opcodes: usize,
+        opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+    ) -> Self {
         Self {
             max_unique_opcodes,
             index_counts_global: Arc::new(Mutex::new(Vec::with_capacity(max_unique_opcodes))),
-            opcode_indexes
+            opcode_indexes,
         }
     }
 }
@@ -50,17 +49,24 @@ where
         let zero_count = GlobalInit::I64Const(0);
         let mut index_counts_global = self.index_counts_global.lock();
         for index in 0..self.max_unique_opcodes {
-            let count_global = module.add_global(opcode_count_name!(index), Type::I64, zero_count)?;
+            let count_global =
+                module.add_global(opcode_count_name!(index), Type::I64, zero_count)?;
             index_counts_global.push(count_global);
         }
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
-        Ok(FuncCounter::new(self.max_unique_opcodes, self.index_counts_global.clone(), self.opcode_indexes.clone()))
+        Ok(FuncCounter::new(
+            self.max_unique_opcodes,
+            self.index_counts_global.clone(),
+            self.opcode_indexes.clone(),
+        ))
     }
 
-    fn name(&self) -> &'static str { "opcode counter" }
+    fn name(&self) -> &'static str {
+        "opcode counter"
+    }
 }
 
 #[derive(Debug)]
@@ -78,7 +84,11 @@ pub struct FuncCounter<'a> {
 }
 
 impl<'a> FuncCounter<'a> {
-    fn new(max_unique_opcodes: usize, index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>, opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>) -> Self {
+    fn new(
+        max_unique_opcodes: usize,
+        index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
+        opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+    ) -> Self {
         Self {
             max_unique_opcodes,
             index_counts_global,
@@ -95,20 +105,29 @@ macro_rules! opcode_count_add {
         let mut opcode_indexes = $self.opcode_indexes.lock();
         let next = opcode_indexes.len();
         let index = opcode_indexes.entry(code).or_insert(next);
-        assert!(*index < $self.max_unique_opcodes, "too many unique opcodes {next}");
+        assert!(
+            *index < $self.max_unique_opcodes,
+            "too many unique opcodes {next}"
+        );
         $self.block_index_counts[*index] += $count;
-    }}
+    }};
 }
 
 macro_rules! get_wasm_opcode_count_add {
     ($global_index:expr, $count:expr) => {
         vec![
-            GlobalGet { global_index: $global_index },
-            I64Const { value: $count as i64 },
+            GlobalGet {
+                global_index: $global_index,
+            },
+            I64Const {
+                value: $count as i64,
+            },
             I64Add,
-            GlobalSet { global_index: $global_index },
+            GlobalSet {
+                global_index: $global_index,
+            },
         ]
-    }
+    };
 }
 
 impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
@@ -140,7 +159,8 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
             }
 
             // Get list of all opcodes with nonzero counts
-            let mut nonzero_opcodes: Vec<(u32, usize)> = Vec::with_capacity(self.max_unique_opcodes);
+            let mut nonzero_opcodes: Vec<(u32, usize)> =
+                Vec::with_capacity(self.max_unique_opcodes);
             for (index, global_index) in self.index_counts_global.lock().iter().enumerate() {
                 if self.block_index_counts[index] > 0 {
                     nonzero_opcodes.push((global_index.as_u32(), index));
@@ -155,7 +175,10 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
 
             // Inject wasm instructions for adding counts
             for (global_index, index) in nonzero_opcodes {
-                out.extend(get_wasm_opcode_count_add!(global_index, self.block_index_counts[index]));
+                out.extend(get_wasm_opcode_count_add!(
+                    global_index,
+                    self.block_index_counts[index]
+                ));
             }
 
             out.extend(self.block.clone());
@@ -165,13 +188,15 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
         Ok(())
     }
 
-    fn name(&self) -> &'static str { "opcode counter" }
+    fn name(&self) -> &'static str {
+        "opcode counter"
+    }
 }
 
 /// Note: implementers may panic if uninstrumented
 pub trait CountedMachine {
     fn opcode_counts(&mut self, opcode_count: usize) -> Vec<u64>;
-    fn set_opcode_counts(&mut self, index_counts: Vec<u64>, store: &mut Store);
+    fn set_opcode_counts(&mut self, index_counts: Vec<u64>);
 }
 
 #[cfg(feature = "native")]
@@ -185,7 +210,7 @@ impl CountedMachine for NativeInstance {
         counts
     }
 
-    fn set_opcode_counts(&mut self, index_counts: Vec<u64>, store: &mut Store) {
+    fn set_opcode_counts(&mut self, index_counts: Vec<u64>) {
         for (index, count) in index_counts.iter().enumerate() {
             self.set_global(opcode_count_name!(index), *count).unwrap();
         }
