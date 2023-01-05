@@ -30,20 +30,24 @@ var (
 )
 
 type DASRPCServer struct {
-	localDAS DataAvailabilityService
+	dasReader DataAvailabilityServiceReader
+	dasWriter DataAvailabilityServiceWriter
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, dasReader DataAvailabilityServiceReader, dasWriter DataAvailabilityServiceWriter) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, localDAS)
+	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, dasReader, dasWriter)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, dasReader DataAvailabilityServiceReader, dasWriter DataAvailabilityServiceWriter) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
-	err := rpcServer.RegisterName("das", &DASRPCServer{localDAS: localDAS})
+	err := rpcServer.RegisterName("das", &DASRPCServer{
+		dasReader: dasReader,
+		dasWriter: dasWriter,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +96,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	cert, err := serv.localDAS.Store(ctx, message, uint64(timeout), sig)
+	cert, err := serv.dasWriter.Store(ctx, message, uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
@@ -109,11 +113,11 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
-	return serv.localDAS.HealthCheck(ctx)
+	return serv.dasReader.HealthCheck(ctx)
 }
 
 func (serv *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
-	expirationPolicy, err := serv.localDAS.ExpirationPolicy(ctx)
+	expirationPolicy, err := serv.dasReader.ExpirationPolicy(ctx)
 	if err != nil {
 		return "", err
 	}
