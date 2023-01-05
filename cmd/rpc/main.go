@@ -23,7 +23,7 @@ func (t *TempResponder) Lo() bool {
 	return false
 }
 
-func (t *TempResponder) GetAnswerLater(ctx context.Context, secs int, number int) (*rpc.Subscription, error) {
+func (t *TempResponder) GetAnswerLaterSubs(ctx context.Context, secs int, number int) (*rpc.Subscription, error) {
 
 	notifier, supported := rpc.NotifierFromContext(ctx)
 	if !supported {
@@ -44,12 +44,22 @@ func (t *TempResponder) GetAnswerLater(ctx context.Context, secs int, number int
 	return rpcSub, nil
 }
 
+func (t *TempResponder) ReplyLater(ctx context.Context, secs int, number int) int {
+
+	select {
+	case <-time.After(time.Second * time.Duration(secs)):
+		return number
+	case <-ctx.Done():
+		return 0
+	}
+}
+
 /////////////////////////////////// Client side //////////////////////////////////////
 
-func AskAnswerLater(ctx context.Context, client *rpc.Client, wg *sync.WaitGroup, secs int, number int) {
+func AskAnswerLaterSubs(ctx context.Context, client *rpc.Client, wg *sync.WaitGroup, secs int, number int) {
 	wg.Add(1)
 	resChan := make(chan int)
-	subs, err := client.Subscribe(ctx, "test", resChan, "getAnswerLater", secs, number)
+	subs, err := client.Subscribe(ctx, "test", resChan, "getAnswerLaterSubs", secs, number)
 	if err != nil {
 		log.Crit("failed to subscribe to result", "err", err)
 	}
@@ -64,6 +74,21 @@ func AskAnswerLater(ctx context.Context, client *rpc.Client, wg *sync.WaitGroup,
 			return
 		case res = <-resChan:
 		}
+		if res != number {
+			log.Crit("got bad result", "expected", number, "got", res)
+		} else {
+			log.Info("got expected result", "res", res)
+		}
+	}()
+}
+
+func AskAnswerLater(ctx context.Context, client *rpc.Client, wg *sync.WaitGroup, secs int, number int) {
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		var res int
+		client.CallContext(ctx, &res, "test_replyLater", secs, number)
 		if res != number {
 			log.Crit("got bad result", "expected", number, "got", res)
 		} else {
@@ -119,9 +144,10 @@ func main() {
 	log.Info("lo result", "result", result)
 
 	var wg sync.WaitGroup
-	AskAnswerLater(ctx, client, &wg, 1, 70)
+	AskAnswerLater(ctx, client, &wg, 0, 36)
+	AskAnswerLater(ctx, client, &wg, 3, 70)
 	AskAnswerLater(ctx, client, &wg, 2, 170)
-	AskAnswerLater(ctx, client, &wg, 3, 5000)
+	AskAnswerLater(ctx, client, &wg, 1, 5000)
 	wg.Wait()
 
 	stack.Close()
