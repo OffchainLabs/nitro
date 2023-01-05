@@ -5,7 +5,7 @@ interface Data {
   contents: string;
 }
 
-export const EventsComponent = () => {
+export const EventsList = () => {
   const [data, setData] = useState<Data[]>([]);
 
   useEffect(() => {
@@ -13,8 +13,11 @@ export const EventsComponent = () => {
     socket.onmessage = (event: any) => {
       const item = JSON.parse(event.data);
       const items = [...data, item];
-      console.log(items.length);
+      console.log(items);
       setData(items);
+    };
+    socket.onclose = () => {
+      setData([]);
     };
     return () => socket.close();
   }, data);
@@ -26,13 +29,11 @@ export const EventsComponent = () => {
     ));
   }
   return (
-    <section className="p-4 flex flex-col max-w-md mx-auto">
-        <div className="p-6 bg-sky-100 rounded-sm">
-            <div className="flex items-left font-black mb-2">
-                <span className="tracking-wide text-lg text-gray-900">Events</span>
-            </div>
-            {items}
+    <section className="p-4 mt-4 mb-12 border-2 border-gray-500 flex flex-col max-w-md mx-auto">
+        <div className="flex items-left font-black mb-2">
+            <span className="tracking-wide text-lg text-gray-900">Events</span>
         </div>
+        {items}
     </section>
   )
 };
