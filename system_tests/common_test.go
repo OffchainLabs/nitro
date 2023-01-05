@@ -605,18 +605,19 @@ func setupConfigWithDAS(
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
+	var daReader das.DataAvailabilityServiceReader
+	var daWriter das.DataAvailabilityServiceWriter
 	if dasModeString != "onchain" {
-		var dasServerStack das.DataAvailabilityService
-		dasServerStack, lifecycleManager, err = arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+		daReader, daWriter, lifecycleManager, err = arbnode.CreateDAReaderWriterForStorage(ctx, dasConfig, nil, nil) // TODO usage
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack, dasServerStack)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daWriter)
 		Require(t, err)
-		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader)
 		Require(t, err)
 
 		beConfigA := das.BackendConfig{

@@ -264,16 +264,16 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
-	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1Reader, addresses)
+	daReader, daWriter, lifecycleManager, err := arbnode.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, addresses) // TODO usage
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack, dasServerStack)
+	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daWriter)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader)
 
 	pubkeyA := pubkey
 	authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)

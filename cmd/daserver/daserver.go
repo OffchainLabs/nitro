@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 type DAServerConfig struct {
@@ -121,6 +122,19 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	return &serverConfig, nil
 }
 
+type L1ReaderCloser struct {
+	l1Reader *headerreader.HeaderReader
+}
+
+func (c *L1ReaderCloser) Close(_ context.Context) error {
+	c.l1Reader.StopOnly()
+	return nil
+}
+
+func (c *L1ReaderCloser) String() string {
+	return "l1 reader closer"
+}
+
 func startup() error {
 	// Some different defaults to DAS config in a node.
 	das.DefaultDataAvailabilityConfig.Enable = true
@@ -155,9 +169,23 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dasImpl, dasLifecycleManager, err := arbnode.SetUpDataAvailabilityWithoutNode(ctx, &serverConfig.DAConf)
+	var l1Reader *headerreader.HeaderReader
+	if serverConfig.DAConf.L1NodeURL != "" && serverConfig.DAConf.L1NodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, serverConfig.DAConf.L1ConnectionAttempts, serverConfig.DAConf.L1NodeURL)
+		if err != nil {
+			return err
+		}
+		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+	}
+
+	daReader, daWriter, dasLifecycleManager, err := arbnode.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, nil) // TODO usage
 	if err != nil {
 		return err
+	}
+
+	if l1Reader != nil {
+		l1Reader.Start(ctx)
+		dasLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
 	vcsRevision, vcsTime := confighelpers.GetVersion()
@@ -165,7 +193,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, dasImpl, dasImpl)
+		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, daReader, daWriter)
 		if err != nil {
 			return err
 		}
@@ -175,7 +203,7 @@ func startup() error {
 	if serverConfig.EnableREST {
 		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, dasImpl)
+		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader)
 		if err != nil {
 			return err
 		}

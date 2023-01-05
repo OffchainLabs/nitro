@@ -1117,54 +1117,14 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	return nil
 }
 
-type L1ReaderCloser struct {
-	l1Reader *headerreader.HeaderReader
-}
-
-func (c *L1ReaderCloser) Close(_ context.Context) error {
-	c.l1Reader.StopOnly()
-	return nil
-}
-
-func (c *L1ReaderCloser) String() string {
-	return "l1 reader closer"
-}
-
-// SetUpDataAvailabilityWithoutNode sets up a das.DataAvailabilityService stack
-// without relying on any objects already created for setting up the Node.
-func SetUpDataAvailabilityWithoutNode(
-	ctx context.Context,
-	config *das.DataAvailabilityConfig,
-) (das.DataAvailabilityService, *das.LifecycleManager, error) {
-	var l1Reader *headerreader.HeaderReader
-	if config.L1NodeURL != "" && config.L1NodeURL != "none" {
-		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
-		if err != nil {
-			return nil, nil, err
-		}
-		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
-	}
-	newDas, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	if l1Reader != nil {
-		l1Reader.Start(ctx)
-		lifeCycle.Register(&L1ReaderCloser{l1Reader})
-	}
-	return newDas, lifeCycle, err
-}
-
-// SetUpDataAvailability sets up a das.DataAvailabilityService stack allowing
-// some dependencies that were created for the Node to be injected.
-func SetUpDataAvailability(
+func CreateDAReaderWriterForStorage(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	deployInfo *RollupAddresses,
-) (das.DataAvailabilityService, *das.LifecycleManager, error) {
+) (das.DataAvailabilityServiceReader, das.DataAvailabilityServiceWriter, *das.LifecycleManager, error) {
 	if !config.Enable {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	var syncFromStorageServices []*das.IterableStorageService
 	var syncToStorageServices []das.StorageService
@@ -1177,7 +1137,7 @@ func SetUpDataAvailability(
 		seqInboxAddress = &deployInfo.SequencerInbox
 		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
 	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
@@ -1186,18 +1146,18 @@ func SetUpDataAvailability(
 	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
 		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if seqInboxAddress == nil {
-			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+			return nil, nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
 		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
 	} else {
-		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
+		return nil, nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
 	}
 
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
@@ -1215,7 +1175,7 @@ func SetUpDataAvailability(
 	*/
 	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	hasPersistentStorage := topLevelStorageService != nil
 
@@ -1224,7 +1184,7 @@ func SetUpDataAvailability(
 	if config.RestfulClientAggregatorConfig.Enable {
 		restAgg, err := das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		restAgg.Start(ctx)
 		dasLifecycleManager.Register(restAgg)
@@ -1240,7 +1200,7 @@ func SetUpDataAvailability(
 			}
 			if syncConf.Eager {
 				if l1Reader == nil || seqInboxAddress == nil {
-					return nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
+					return nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 				}
 				topLevelStorageService, err = das.NewSyncingFallbackStorageService(
 					ctx,
@@ -1250,7 +1210,7 @@ func SetUpDataAvailability(
 					*seqInboxAddress,
 					syncConf)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
 			} else {
 				topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
@@ -1274,7 +1234,7 @@ func SetUpDataAvailability(
 
 		privKey, err := config.KeyConfig.BLSPrivKey()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		// TODO rename StorageServiceDASAdapter
@@ -1285,7 +1245,7 @@ func SetUpDataAvailability(
 			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	} else {
 		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
@@ -1296,7 +1256,7 @@ func SetUpDataAvailability(
 		cache, err := das.NewRedisStorageService(config.RedisCacheConfig, das.NewEmptyStorageService())
 		dasLifecycleManager.Register(cache)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if config.RedisCacheConfig.SyncFromStorageServices {
 			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
@@ -1312,7 +1272,7 @@ func SetUpDataAvailability(
 		cache, err := das.NewBigCacheStorageService(config.LocalCacheConfig, das.NewEmptyStorageService())
 		dasLifecycleManager.Register(cache)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
@@ -1325,15 +1285,15 @@ func SetUpDataAvailability(
 	if topLevelDas != nil && seqInbox != nil {
 		topLevelDas, err = das.NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	if topLevelDas == nil {
-		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
+		return nil, nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
 	}
 
-	return topLevelDas, dasLifecycleManager, nil
+	return topLevelDas, topLevelDas, dasLifecycleManager, nil
 }
 
 func CreateDAReaderForNode(
