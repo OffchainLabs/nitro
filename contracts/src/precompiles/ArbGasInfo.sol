@@ -121,4 +121,16 @@ interface ArbGasInfo {
 
     /// @notice Returns the available funds from L1 fees
     function getL1FeesAvailable() external view returns (uint256);
+
+    /// @notice Returns state of the L1 gas congestion monitor
+    /// @return (l1UnitsSpeedLimit, l1UnitsBacklog, l1UnitsBacklogUpdateTime, l1BacklogDenominator)
+    function getL1CongestionState()
+        external
+        view
+        returns (
+            uint64,
+            uint64,
+            uint64,
+            uint64
+        );
 }

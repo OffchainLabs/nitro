@@ -531,6 +531,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
 	ArbGasInfo := insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
+	ArbGasInfo.methodsByName["GetL1CongestionState"].arbosVersion = 11
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
@@ -575,6 +576,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
+	ArbOwner.methodsByName["SetL1CongestionParams"].arbosVersion = 11
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))

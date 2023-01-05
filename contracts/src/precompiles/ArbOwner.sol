@@ -84,6 +84,9 @@ interface ArbOwner {
     /// @notice Releases surplus funds from L1PricerFundsPoolAddress for use
     function releaseL1PricerSurplusFunds(uint256 maxWeiToRelease) external returns (uint256);
 
+    /// @notice Sets L1 congestion pricing speed limit and denominator parameters
+    function setL1CongestionParams(uint64 speedLimit, uint64 denominator) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

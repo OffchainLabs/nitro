@@ -84,8 +84,8 @@ const (
 	InitialPerUnitReward       = 10
 	InitialBasePricePerUnitWei = 50 * params.GWei
 	InitialPerBatchGasCostV6   = 100000
-	InitialL1GasSpeedLimit     = 500000
-	InitialL1BacklogDenom      = 10000000
+	InitialL1GasSpeedLimit     = 625000 // half of the calldata capacity of L1 Ethereum
+	InitialL1BacklogDenom      = 15 * InitialL1GasSpeedLimit
 )
 
 // one minute at 100000 bytes / sec
@@ -163,7 +163,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
 		sto.OpenStorageBackedUint64(l1UnitsSpeedLimitOffset),
 		sto.OpenStorageBackedUint64(l1UnitsBacklogOffset),
-		sto.OpenStorageBackedUint64(l1BacklogDenomOffset),
+		sto.OpenStorageBackedUint64(l1LastBacklogUpdateOffset),
 		sto.OpenStorageBackedUint64(l1BacklogDenomOffset),
 	}
 }
@@ -601,8 +601,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		newPrice := am.BigAdd(basePrice, priceChange)
-		if newPrice.Sign() < 0 {
-			newPrice = common.Big0
+		if newPrice.Sign() <= 0 {
+			newPrice = common.Big1 // price must be non-zero so price * congestionEscalator will actually escalate
 		}
 		if err := ps.SetBasePricePerUnit(newPrice); err != nil {
 			return err

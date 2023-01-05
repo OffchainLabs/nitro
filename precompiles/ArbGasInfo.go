@@ -234,3 +234,24 @@ func (con ArbGasInfo) GetAmortizedCostCapBips(c ctx, evm mech) (uint64, error) {
 func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().L1FeesAvailable()
 }
+
+func (con ArbGasInfo) GetL1CongestionState(c ctx, evm mech) (uint64, uint64, uint64, uint64, error) {
+	l1p := c.State.L1PricingState()
+	speedLimit, err := l1p.L1UnitsSpeedLimit()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	backlog, err := l1p.L1UnitsBacklog()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	updateTime, err := l1p.L1LastBacklogUpdate()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	denom, err := l1p.L1BacklogDenom()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return speedLimit, backlog, updateTime, denom, nil
+}

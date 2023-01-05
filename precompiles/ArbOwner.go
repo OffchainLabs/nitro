@@ -156,3 +156,18 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 	}
 	return weiToTransfer, nil
 }
+
+func (con ArbOwner) SetL1CongestionParams(c ctx, evm mech, speedLimit uint64, denom uint64) error {
+	l1p := c.State.L1PricingState()
+	if speedLimit != 0 {
+		if err := l1p.SetL1UnitsSpeedLimit(speedLimit); err != nil {
+			return err
+		}
+	}
+	if denom != 0 {
+		if err := l1p.SetL1BacklogDenom(denom); err != nil {
+			return err
+		}
+	}
+	return nil
+}

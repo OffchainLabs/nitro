@@ -32,3 +32,45 @@ func TestL1PriceUpdate(t *testing.T) {
 		Fail(t)
 	}
 }
+
+func TestL1PriceVelocityControl(t *testing.T) {
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	err := InitializeL1PricingState(sto, common.Address{}, 11)
+	Require(t, err)
+	ps := OpenL1PricingState(sto)
+
+	initialPrice, err := ps.EffectiveL1UnitPrice(11)
+	Require(t, err)
+	Require(t, ps.AddToUnitsSinceUpdate(100000, 0))
+	backlog, err := ps.L1UnitsBacklog()
+	Require(t, err)
+	if backlog != 100000 {
+		Fail(t, backlog)
+	}
+	lastUpdate, err := ps.L1LastBacklogUpdate()
+	Require(t, err)
+	if lastUpdate != 0 {
+		Fail(t, lastUpdate)
+	}
+	newPrice, err := ps.EffectiveL1UnitPrice(11)
+	Require(t, err)
+	if newPrice.Cmp(initialPrice) <= 0 {
+		Fail(t)
+	}
+	Require(t, ps.AddToUnitsSinceUpdate(0, 1))
+	backlog, err = ps.L1UnitsBacklog()
+	Require(t, err)
+	if backlog != 0 {
+		Fail(t, backlog)
+	}
+	lastUpdate, err = ps.L1LastBacklogUpdate()
+	Require(t, err)
+	if lastUpdate != 1 {
+		Fail(t, lastUpdate)
+	}
+	newPrice, err = ps.EffectiveL1UnitPrice(11)
+	Require(t, err)
+	if newPrice.Cmp(initialPrice) != 0 {
+		Fail(t, newPrice, initialPrice)
+	}
+}
