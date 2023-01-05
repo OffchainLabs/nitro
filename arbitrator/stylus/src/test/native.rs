@@ -234,10 +234,14 @@ fn test_heap() -> Result<()> {
         config.heap_bound = Pages(bound).into();
 
         let instance = new_test_instance(file, config.clone())?;
+        let machine = super::wavm::new_test_machine(file, config.clone())?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;
         assert_eq!(ty, memory.ty(&instance.store));
+
+        let memory = machine.main_module_memory();
+        assert_eq!(expected as u64, memory.max_size);
         Ok(())
     };
 

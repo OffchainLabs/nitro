@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::StylusConfig, ModuleMod},
+    programs::ModuleMod,
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -28,7 +28,7 @@ use sha3::Keccak256;
 use smallvec::SmallVec;
 use std::{
     borrow::Cow,
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     fmt::{self, Display},
     fs::File,
     io::{BufReader, BufWriter, Write},
@@ -325,8 +325,8 @@ impl Module {
             } else {
                 bail!(
                     "No such import {} in {}",
-                    import.module.red(),
-                    import_name.red()
+                    import_name.red(),
+                    import.module.red()
                 )
             };
             ensure!(
@@ -901,22 +901,6 @@ impl Machine {
         )
     }
 
-    /// Produces a machine representing a user program from an untrusted wasm
-    /// TODO: apply instrumentation
-    pub fn from_user_wasm(wasm: &[u8], _config: &StylusConfig) -> Result<Machine> {
-        let bin = parse(wasm, Path::new("user"))?;
-        Self::from_binaries(
-            &[],
-            bin,
-            false,
-            false,
-            false,
-            GlobalState::default(),
-            HashMap::default(),
-            Arc::new(|_, _| panic!("user program read preimage")),
-        )
-    }
-
     pub fn from_binaries(
         libraries: &[WasmBinary<'_>],
         bin: WasmBinary<'_>,
@@ -967,14 +951,6 @@ impl Machine {
             let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
             for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
-                available_imports.insert(
-                    name.clone(),
-                    AvailableImport {
-                        module: modules.len() as u32,
-                        func,
-                        ty: ty.clone(),
-                    },
-                );
                 if let Ok(op) = name.parse::<FloatInstruction>() {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
@@ -1352,6 +1328,10 @@ impl Machine {
 
     pub fn main_module_name(&self) -> String {
         self.modules.last().expect("no module").name().to_owned()
+    }
+
+    pub fn main_module_memory(&self) -> &Memory {
+        &self.modules.last().expect("no module").memory
     }
 
     fn find_module(&self, name: &str) -> Result<u32> {
