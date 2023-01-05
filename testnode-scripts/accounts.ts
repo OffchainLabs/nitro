@@ -74,6 +74,19 @@ export function namedAddress(
   return namedAccount(name, threadId).address;
 }
 
+export function namedPrivateKey(
+  name: string,
+  threadId?: number | undefined
+): string {
+  if (name.startsWith("address_")) {
+    return name.substring(8);
+  }
+  if (name == "random") {
+    return "0x" + crypto.randomBytes(20).toString("hex");
+  }
+  return namedAccount(name, threadId).privateKey;
+}
+
 export const namedAccountHelpString =
   "Valid account names:\n" +
   "funnel | sequencer | validator - known keys\n" +
@@ -87,6 +100,10 @@ export const namedAccountHelpString =
 
 async function handlePrintAddress(argv: any, threadId: number) {
   console.log(namedAddress(argv.account, threadId));
+}
+
+async function handlePrintPrivateKey(argv: any, threadId: number) {
+  console.log(namedPrivateKey(argv.account, threadId));
 }
 
 export const printAddressCommand = {
@@ -109,5 +126,20 @@ export const writeAccountsCommand = {
   describe: "writes wallet files",
   handler: async (argv: any) => {
     await writeAccounts();
+  },
+};
+
+export const printPrivateKeyCommand = {
+  command: "print-private-key",
+  describe: "prints the requested private key",
+  builder: {
+    account: {
+      string: true,
+      describe: "address (see general help)",
+      default: "funnel",
+    },
+  },
+  handler: async (argv: any) => {
+    await runStress(argv, handlePrintPrivateKey);
   },
 };

@@ -5,6 +5,7 @@ import { redisReadCommand, redisInitCommand } from "./redis";
 import { writeConfigCommand, writeGethGenesisCommand, writePrysmCommand } from "./config";
 import {
   printAddressCommand,
+  printPrivateKeyCommand,
   namedAccountHelpString,
   writeAccountsCommand,
 } from "./accounts";
@@ -32,6 +33,7 @@ async function main() {
     .command(writePrysmCommand)
     .command(writeAccountsCommand)
     .command(printAddressCommand)
+    .command(printPrivateKeyCommand)
     .command(redisReadCommand)
     .command(redisInitCommand)
     .strict()
