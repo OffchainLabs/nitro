@@ -802,7 +802,8 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	newVertex.challenge.Unwrap().rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeBisectEvent{
 		FromSequenceNum: v.SequenceNum,
 		SequenceNum:     newVertex.SequenceNum,
-		History:         newVertex.Commitment,
+		ToHistory:       newVertex.Commitment,
+		FromHistory:     v.Commitment,
 		BecomesPS:       newVertex.Prev.Unwrap().PresumptiveSuccessor.Unwrap() == newVertex,
 		Validator:       validator,
 	})
@@ -838,7 +839,8 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof 
 		DeeperSequenceNum:    v.SequenceNum,
 		ShallowerSequenceNum: mergingTo.SequenceNum,
 		BecomesPS:            mergingTo.PresumptiveSuccessor.Unwrap() == v,
-		History:              mergingTo.Commitment,
+		ToHistory:            mergingTo.Commitment,
+		FromHistory:          v.Commitment,
 		Validator:            validator,
 	})
 	return nil

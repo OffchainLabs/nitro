@@ -185,9 +185,12 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 }
 
 type event struct {
-	Typ      string                  `json:"typ"`
-	Contents string                  `json:"contents"`
-	Vis      *protocol.Visualization `json:"vis"`
+	Typ       string                  `json:"typ"`
+	To        string                  `json:"to"`
+	From      string                  `json:"from"`
+	BecomesPS bool                    `json:"becomes_ps"`
+	Validator string                  `json:"validator"`
+	Vis       *protocol.Visualization `json:"vis"`
 }
 
 func (s *server) sendChainEventsToClients(
@@ -202,10 +205,26 @@ func (s *server) sendChainEventsToClients(
 			vis := s.chain.Visualize()
 			s.lock.RLock()
 			eventToSend := &event{
-				Typ:      fmt.Sprintf("%+T", ev),
-				Contents: fmt.Sprintf("%+v", ev),
-				Vis:      vis,
+				Typ: fmt.Sprintf("%+T", ev),
+				Vis: vis,
 			}
+
+			switch specificEv := ev.(type) {
+			case *protocol.ChallengeLeafEvent:
+				eventToSend.BecomesPS = specificEv.BecomesPS
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			case *protocol.ChallengeMergeEvent:
+				eventToSend.From = fmt.Sprintf("%d", specificEv.FromHistory.Height)
+				eventToSend.To = fmt.Sprintf("%d", specificEv.ToHistory.Height)
+				eventToSend.BecomesPS = specificEv.BecomesPS
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			case *protocol.ChallengeBisectEvent:
+				eventToSend.From = fmt.Sprintf("%d", specificEv.FromHistory.Height)
+				eventToSend.To = fmt.Sprintf("%d", specificEv.ToHistory.Height)
+				eventToSend.BecomesPS = specificEv.BecomesPS
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			}
+
 			enc, err := json.Marshal(eventToSend)
 			if err != nil {
 				log.Error(err)
@@ -226,9 +245,15 @@ func (s *server) sendChainEventsToClients(
 			vis := s.chain.Visualize()
 			s.lock.RLock()
 			eventToSend := &event{
-				Typ:      fmt.Sprintf("%+T", ev),
-				Contents: fmt.Sprintf("%+v", ev),
-				Vis:      vis,
+				Typ: fmt.Sprintf("%+T", ev),
+				Vis: vis,
+			}
+			switch specificEv := ev.(type) {
+			case *protocol.CreateLeafEvent:
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			case *protocol.StartChallengeEvent:
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			default:
 			}
 			enc, err := json.Marshal(eventToSend)
 			if err != nil {
