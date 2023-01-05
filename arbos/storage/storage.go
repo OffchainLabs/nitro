@@ -505,14 +505,14 @@ func (sbbi *StorageBackedBigUint) Get() (*big.Int, error) {
 
 // Warning: this will panic if it underflows or overflows with a system burner
 // SetSaturatingWithWarning is likely better
-func (sbbi *StorageBackedBigUint) SetChecked(val *big.Int) error {
-	sto := sbbi.storage
+func (sbbu *StorageBackedBigUint) SetChecked(val *big.Int) error {
+	sto := sbbu.storage
 	if val.Sign() < 0 {
 		return sto.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
 	} else if val.BitLen() > 256 {
 		return sto.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
 	}
-	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 func (sbbu *StorageBackedBigUint) SetSaturatingWithWarning(val *big.Int, name string) error {
