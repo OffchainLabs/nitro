@@ -20,11 +20,15 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
@@ -658,4 +662,53 @@ func deploySimple(
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return addr, simple
+}
+
+func deployContract(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) common.Address {
+
+	// a small prelude to return the given contract code
+	deploy := []byte{byte(vm.PUSH32)}
+	deploy = append(deploy, math.U256Bytes(big.NewInt(int64(len(code))))...)
+	deploy = append(deploy, byte(vm.DUP1))
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 42) // the prelude length
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 0)
+	deploy = append(deploy, byte(vm.CODECOPY))
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 0)
+	deploy = append(deploy, byte(vm.RETURN))
+	deploy = append(deploy, code...)
+
+	basefee := GetBaseFee(t, client, ctx)
+	nonce, err := client.NonceAt(ctx, auth.From, nil)
+	Require(t, err)
+	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
+		From:      auth.From,
+		GasPrice:  basefee,
+		GasTipCap: auth.GasTipCap,
+		Value:     big.NewInt(0),
+		Data:      deploy,
+	})
+	Require(t, err)
+	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
+	tx, err = auth.Signer(auth.From, tx)
+	Require(t, err)
+	Require(t, client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return crypto.CreateAddress(auth.From, nonce)
+}
+
+func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
+	t.Helper()
+	for i := 0; i < max; i++ {
+		if lambda() {
+			return
+		}
+		time.Sleep(delay)
+	}
+	Fail(t, "failed to complete")
 }

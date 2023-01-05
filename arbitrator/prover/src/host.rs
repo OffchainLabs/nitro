@@ -194,7 +194,7 @@ pub fn add_internal_funcs(
     ));
 
     if let Some(globals) = globals {
-        let (gas, status) = globals.offsets();
+        let (gas, status, _depth) = globals.offsets();
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, gas)],
             host(UserGasLeft),

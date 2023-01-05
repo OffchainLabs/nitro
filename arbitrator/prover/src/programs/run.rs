@@ -69,7 +69,7 @@ impl RunProgram for Machine {
             if self.stack_left() == 0 {
                 return Ok(UserOutcome::OutOfStack);
             }
-            return Err(error);
+            Err(error)
         });
 
         let outs_len = call!("user_host", "get_output_len", vec![]);

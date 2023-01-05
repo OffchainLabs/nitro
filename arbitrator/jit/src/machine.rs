@@ -54,7 +54,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         }
     };
 
-    let module = match Module::new(&store, &wasm) {
+    let module = match Module::new(&store, wasm) {
         Ok(module) => module,
         Err(err) => panic!("{}", err),
     };

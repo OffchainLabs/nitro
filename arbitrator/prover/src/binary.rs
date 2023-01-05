@@ -554,9 +554,11 @@ impl<'a> WasmBinary<'a> {
         }
 
         let (gas_left, gas_status) = meter.globals();
+        let depth_left = depth.globals();
         Ok(StylusGlobals {
             gas_left,
             gas_status,
+            depth_left,
         })
     }
 }

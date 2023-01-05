@@ -8,5 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
-hashbrown = "0.12.3"
 hex = "0.4.3"

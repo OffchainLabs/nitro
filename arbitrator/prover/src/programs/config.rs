@@ -48,6 +48,18 @@ impl Default for StylusConfig {
     }
 }
 
+impl StylusConfig {
+    pub fn version(version: u32) -> Self {
+        let mut config = Self::default();
+        match version {
+            0 => {}
+            1 => config.costs = |_| 1,
+            _ => panic!("no config exists for Stylus version {version}"),
+        }
+        config
+    }
+}
+
 impl PricingParams {
     pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
         Self {

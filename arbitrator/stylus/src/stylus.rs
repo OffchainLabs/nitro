@@ -5,9 +5,24 @@ use crate::env::{MaybeEscape, SystemStateData, WasmEnv, WasmEnvMut};
 use eyre::Result;
 use prover::programs::{
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
-    native::NativeInstance,
+    native::NativeInstance, config::StylusConfig,
 };
 use wasmer::{imports, Function, FunctionEnv, Global, Instance, Module};
+
+pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
+    let mut store = config.store();
+    let module = Module::new(&store, wasm)?;
+    let imports = imports! {
+        "forward" => {
+            "read_args" => Function::new_typed(&mut store, |_: u32| {}),
+            "return_data" => Function::new_typed(&mut store, |_: u32, _: u32| {}),
+        },
+    };
+    Instance::new(&mut store, &module, &imports)?;
+
+    let module = module.serialize()?;
+    Ok(module.to_vec())
+}
 
 pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv<WasmEnv>)> {
     let mut store = env.config.store();

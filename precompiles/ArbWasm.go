@@ -11,13 +11,14 @@ type ArbWasm struct {
 
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error) {
-	return 0, errors.New("unimplemented")
+	// TODO: pay for gas by some compilation pricing formula
+	return c.State.Programs().CompileProgram(evm.StateDB, program)
 }
 
 // Calls a wasm program
 // TODO: move into geth
 func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, data []byte) (uint32, []byte, error) {
-	return 0, nil, errors.New("unimplemented")
+	return 0, nil, errors.New("unimplemented 2")
 }
 
 // Gets the latest stylus version

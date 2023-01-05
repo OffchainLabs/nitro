@@ -46,6 +46,10 @@ impl DepthChecker {
             sigs: Mutex::new(Arc::new(HashMap::default())),
         }
     }
+
+    pub fn globals(&self) -> GlobalIndex {
+        self.global.lock().unwrap()
+    }
 }
 
 impl<M: ModuleMod> Middleware<M> for DepthChecker {
