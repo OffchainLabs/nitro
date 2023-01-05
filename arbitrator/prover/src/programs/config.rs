@@ -2,13 +2,16 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use eyre::Result;
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use libc::size_t;
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
 #[cfg(feature = "native")]
 use {
     super::{
-        depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover, MiddlewareWrapper,
+        counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
     wasmer::{CompilerConfig, Store},
@@ -27,6 +30,8 @@ pub struct StylusConfig {
     /// The price of wasm gas, measured in bips of an evm gas
     pub wasm_gas_price: u64,
     pub hostio_cost: u64,
+    pub max_unique_operator_count: usize,
+    pub opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>
 }
 
 impl Default for StylusConfig {
@@ -39,6 +44,8 @@ impl Default for StylusConfig {
             heap_bound: Bytes(u32::MAX as usize),
             wasm_gas_price: 0,
             hostio_cost: 0,
+            max_unique_operator_count: 0,
+            opcode_indexes: Arc::new(Mutex::new(HashMap::new()))
         }
     }
 }
@@ -51,6 +58,7 @@ impl StylusConfig {
         heap_bound: Bytes,
         wasm_gas_price: u64,
         hostio_cost: u64,
+        max_unique_operator_count: size_t,
     ) -> Result<Self> {
         Pages::try_from(heap_bound)?; // ensure the limit represents a number of pages
         Ok(Self {
@@ -60,6 +68,8 @@ impl StylusConfig {
             heap_bound,
             wasm_gas_price,
             hostio_cost,
+            max_unique_operator_count,
+            opcode_indexes: Arc::new(Mutex::new(HashMap::with_capacity(max_unique_operator_count))),
         })
     }
 
@@ -80,6 +90,11 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(depth));
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
+
+        if self.max_unique_operator_count > 0 {
+            let counter =MiddlewareWrapper::new(Counter::new(self.max_unique_operator_count, self.opcode_indexes.clone()));
+            compiler.push_middleware(Arc::new(counter));
+        }
 
         Store::new(compiler)
     }

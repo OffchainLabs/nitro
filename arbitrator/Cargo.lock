@@ -70,6 +70,7 @@ version = "0.1.0"
 dependencies = [
  "sha3 0.10.6",
  "siphasher",
+ "wasmparser",
 ]
 
 [[package]]
