@@ -641,6 +641,16 @@ func (c *Challenge) AssertionSeqNumber() AssertionSequenceNumber {
 	return c.rootAssertion.Unwrap().SequenceNum
 }
 
+// RootAssertion returns the root assertion of challenge
+func (c *Challenge) RootAssertion() *Assertion {
+	return c.rootAssertion.Unwrap()
+}
+
+// RootVertex returns the root vertex of challenge
+func (c *Challenge) RootVertex() *ChallengeVertex {
+	return c.rootVertex.Unwrap()
+}
+
 // AddLeaf adds a new leaf to the challenge.
 func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
@@ -654,14 +664,14 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	if c.Completed(tx) {
 		return nil, ErrWrongState
 	}
-	chain := assertion.chain
-	if !c.rootVertex.Unwrap().eligibleForNewSuccessor() {
+	if !c.rootVertex.Unwrap().EligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
 	if c.includedHistories[history.Hash()] {
 		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
 	}
 
+	chain := assertion.chain
 	timer := util.NewCountUpTimer(chain.timeReference)
 	if assertion.isFirstChild {
 		delta := prev.secondChildCreationTime.Unwrap().Sub(prev.firstChildCreationTime.Unwrap())
@@ -743,8 +753,8 @@ type ChallengeVertex struct {
 	winnerIfConfirmed    util.Option[*Assertion]
 }
 
-// eligibleForNewSuccessor returns true if the vertex is eligible to have a new successor.
-func (v *ChallengeVertex) eligibleForNewSuccessor() bool {
+// EligibleForNewSuccessor returns true if the vertex is eligible to have a new successor.
+func (v *ChallengeVertex) EligibleForNewSuccessor() bool {
 	return v.PresumptiveSuccessor.IsNone() ||
 		v.PresumptiveSuccessor.Unwrap().psTimer.Get() <= v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod
 }
@@ -779,7 +789,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	if v.IsPresumptiveSuccessor() {
 		return nil, ErrWrongState
 	}
-	if !v.Prev.Unwrap().eligibleForNewSuccessor() {
+	if !v.Prev.Unwrap().EligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
 	if v.challenge.Unwrap().includedHistories[history.Hash()] {
@@ -830,7 +840,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 // Merge merges the vertex with its presumptive successor.
 func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof []common.Hash, validator common.Address) error {
 	tx.verifyReadWrite()
-	if !mergingTo.eligibleForNewSuccessor() {
+	if !mergingTo.EligibleForNewSuccessor() {
 		return ErrPastDeadline
 	}
 	// The vertex we are merging to should be the mandatory bisection point
@@ -882,6 +892,9 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 	if v.Status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
+	if !v.Prev.Unwrap().subChallenge.IsNone() {
+		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
+	}
 	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
 	}
@@ -904,8 +917,14 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	if v.Status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
+	if !v.Prev.Unwrap().subChallenge.IsNone() {
+		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
+	}
 	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
+	}
+	if v != v.Prev.Unwrap().PresumptiveSuccessor.Unwrap() {
+		return errors.Wrap(ErrInvalidOp, "Vertex is not the presumptive successor")
 	}
 	chain := v.challenge.Unwrap().rootAssertion.Unwrap().chain
 	chalPeriod := chain.challengePeriod

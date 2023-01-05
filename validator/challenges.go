@@ -112,6 +112,27 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	return nil
 }
 
+func (v *Validator) verifyAddLeafConditions(a *protocol.Assertion, c *protocol.Challenge) error {
+	if a.Prev.IsNone() {
+		return errors.Wrap(protocol.ErrInvalidOp, "Can not add leaf on root assertion")
+	}
+	if a.Prev.Unwrap() != c.RootAssertion() {
+		return errors.Wrap(protocol.ErrInvalidOp, "Challenge and assertion parent mismatch")
+	}
+	if err := v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		if c.Completed(tx) {
+			return errors.New("Challenge has been completed")
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(protocol.ErrInvalidOp, err.Error())
+	}
+	if !c.RootVertex().EligibleForNewSuccessor() {
+		return errors.Wrap(protocol.ErrInvalidOp, "Root vertex is not eligible for new successor")
+	}
+	return nil
+}
+
 func (v *Validator) addChallengeVertex(
 	ctx context.Context,
 	challenge *protocol.Challenge,
