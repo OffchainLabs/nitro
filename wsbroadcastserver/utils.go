@@ -126,11 +126,7 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 		var data []byte
 		if msg.IsCompressed() {
 			if !compression {
-				log.Warn("Received compressed frame even though compression is disabled, discarding the frame")
-				if err := reader.Discard(); err != nil {
-					return nil, 0, nil, err
-				}
-				continue
+				return nil, 0, flateReader, errors.New("Received compressed frame even though compression is disabled")
 			}
 			if flateReader == nil {
 				flateReader = wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
