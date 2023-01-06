@@ -17,8 +17,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -26,7 +26,7 @@ type InboxTracker struct {
 	db         ethdb.Database
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
-	validator  *validator.BlockValidator
+	validator  *staker.BlockValidator
 	das        arbstate.DataAvailabilityReader
 
 	batchMetaMutex sync.Mutex
@@ -46,7 +46,7 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 	return tracker, nil
 }
 
-func (t *InboxTracker) SetBlockValidator(validator *validator.BlockValidator) {
+func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
 	t.validator = validator
 }
 

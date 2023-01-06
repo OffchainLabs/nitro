@@ -687,7 +687,7 @@ func (c *SeqCoordinator) waitForHandoff(ctx context.Context) string {
 	}
 }
 
-func (c *SeqCoordinator) StopAndWait() {
+func (c *SeqCoordinator) PrepareForShutdown() {
 	wasChosen := c.CurrentlyChosen()
 	c.StopWaiter.StopAndWait()
 	// normal context now closed, use parent context
@@ -698,7 +698,7 @@ func (c *SeqCoordinator) StopAndWait() {
 	if c.reportedAlive {
 		err := c.livelinessRelease(ctx)
 		if err != nil {
-			log.Warn("lieveliness release failed", "err", err)
+			log.Warn("liveliness release failed", "err", err)
 		}
 	}
 	if wasChosen {
@@ -721,6 +721,12 @@ func (c *SeqCoordinator) StopAndWait() {
 				}
 			}
 		}
+	}
+}
+
+func (c *SeqCoordinator) StopAndWait() {
+	if !c.StopWaiter.Stopped() {
+		c.PrepareForShutdown()
 	}
 	_ = c.Client.Close()
 }
