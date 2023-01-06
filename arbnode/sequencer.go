@@ -53,6 +53,8 @@ type SequencerConfig struct {
 	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
 	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
 	MaxTxDataSize               int                      `koanf:"max-tx-data-size" reload:"hot"`
+	NonceFailureCacheSize       int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
+	NonceFailureCacheExpiry     time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -82,7 +84,9 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 	// 95% of the default batch poster limit, leaving 5KB for headers and such
-	MaxTxDataSize: 95000,
+	MaxTxDataSize:           95000,
+	NonceFailureCacheSize:   1024,
+	NonceFailureCacheExpiry: time.Second,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -97,6 +101,8 @@ var TestSequencerConfig = SequencerConfig{
 	NonceCacheSize:              4,
 	Dangerous:                   TestDangerousSequencerConfig,
 	MaxTxDataSize:               95000,
+	NonceFailureCacheSize:       1024,
+	NonceFailureCacheExpiry:     time.Second,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -110,6 +116,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
+	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
+	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -202,12 +210,30 @@ func (c *nonceCache) Finalize(block *types.Block) {
 	}
 }
 
-func (c *nonceCache) GetSize() int {
-	return c.cache.GetSize()
+func (c *nonceCache) Caching() bool {
+	return c.cache != nil
 }
 
 func (c *nonceCache) Resize(newSize int) {
 	c.cache.Resize(newSize)
+}
+
+type addressAndNonce struct {
+	address common.Address
+	nonce   uint64
+}
+
+type nonceFailure struct {
+	queueItem txQueueItem
+	nonceErr  error
+	expiry    time.Time
+	revived   bool
+}
+
+func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
+	if !failure.revived {
+		failure.queueItem.returnResult(failure.nonceErr)
+	}
 }
 
 type Sequencer struct {
@@ -220,6 +246,7 @@ type Sequencer struct {
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
 	nonceCache      *nonceCache
+	nonceFailures   *containers.LruCache[addressAndNonce, *nonceFailure]
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -253,6 +280,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
+		nonceFailures:   containers.NewLruCacheWithOnEvict(config.NonceCacheSize, onNonceFailureEvict),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
 		pauseChan:       nil,
@@ -324,7 +352,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 }
 
 func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
-	if s.nonceCache.GetSize() > 0 {
+	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
 		if err != nil {
@@ -339,7 +367,22 @@ func (s *Sequencer) postTxFilter(header *types.Header, _ *arbosState.ArbosState,
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
-	s.nonceCache.Update(header, sender, tx.Nonce()+1)
+	newNonce := tx.Nonce() + 1
+	s.nonceCache.Update(header, sender, newNonce)
+	newAddrAndNonce := addressAndNonce{sender, newNonce}
+	nonceFailure, haveNonceFailure := s.nonceFailures.Get(newAddrAndNonce)
+	if haveNonceFailure {
+		nonceFailure.revived = true // prevent the expiry hook from taking effect
+		s.nonceFailures.Remove(newAddrAndNonce)
+		// Immediately check if the transaction submission has been canceled
+		err := nonceFailure.queueItem.ctx.Err()
+		if err != nil {
+			nonceFailure.queueItem.returnResult(err)
+		} else {
+			// Add this transaction (whose nonce is now correct) back into the queue
+			s.txRetryQueue.Push(nonceFailure.queueItem)
+		}
+	}
 	return nil
 }
 
@@ -464,6 +507,20 @@ func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
 	}
 }
 
+func (s *Sequencer) expireNonceFailures() *time.Timer {
+	for {
+		_, failure, ok := s.nonceFailures.GetOldest()
+		if !ok {
+			return nil
+		}
+		untilExpiry := time.Until(failure.expiry)
+		if untilExpiry > 0 {
+			return time.NewTimer(untilExpiry)
+		}
+		s.nonceFailures.RemoveOldest()
+	}
+}
+
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var txes types.Transactions
 	var queueItems []txQueueItem
@@ -485,13 +542,31 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}()
 
 	config := s.config()
+
+	// Clear out old nonceFailures
+	s.nonceFailures.Resize(config.NonceFailureCacheSize)
+	nextNonceExpiryTimer := s.expireNonceFailures()
+	defer func() {
+		// We wrap this in a closure as to not cache the current value of nextNonceExpiryTimer
+		if nextNonceExpiryTimer != nil {
+			nextNonceExpiryTimer.Stop()
+		}
+	}()
+
 	for {
 		var queueItem txQueueItem
 		if s.txRetryQueue.Len() > 0 {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(txes) == 0 {
+			var nextNonceExpiryChan <-chan time.Time
+			if nextNonceExpiryTimer != nil {
+				nextNonceExpiryChan = nextNonceExpiryTimer.C
+			}
 			select {
 			case queueItem = <-s.txQueue:
+			case <-nextNonceExpiryChan:
+				// No need to stop the previous timer since it already elapsed
+				nextNonceExpiryTimer = s.expireNonceFailures()
 			case <-ctx.Done():
 				return false
 			}
@@ -619,6 +694,22 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if errors.Is(err, core.ErrIntrinsicGas) {
 			// Strip additional information, as it's incorrect due to L1 data gas.
 			err = core.ErrIntrinsicGas
+		}
+		var nonceError NonceError
+		if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
+			// Retry this transaction if we see its predecessor
+			key := addressAndNonce{
+				address: nonceError.sender,
+				nonce:   nonceError.txNonce,
+			}
+			value := &nonceFailure{
+				queueItem: queueItem,
+				nonceErr:  err,
+				expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
+				revived:   false,
+			}
+			s.nonceFailures.Add(key, value)
+			continue
 		}
 		queueItem.returnResult(err)
 	}
