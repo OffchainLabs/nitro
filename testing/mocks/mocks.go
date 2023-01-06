@@ -64,8 +64,8 @@ func (m *MockProtocol) Tx(clo func(tx *protocol.ActiveTx, pro protocol.OnChainPr
 	return ch.Tx(clo)
 }
 
-func (m *MockProtocol) Call(clo func(*protocol.ActiveTx, protocol.OnChainProtocol) error) error {
-	return clo(&protocol.ActiveTx{}, m)
+func (m *MockProtocol) Call(clo func(tx *protocol.ActiveTx, pro protocol.OnChainProtocol) error) error {
+	return clo(&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, m)
 }
 
 func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- protocol.AssertionChainEvent) {
@@ -82,6 +82,16 @@ func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum prot
 func (m *MockProtocol) ChallengeVertexByCommitHash(tx *protocol.ActiveTx, challengeHash protocol.ChallengeCommitHash, vertexHash protocol.VertexCommitHash) (*protocol.ChallengeVertex, error) {
 	args := m.Called(tx, challengeHash, vertexHash)
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
+}
+
+func (m *MockProtocol) Completed(tx *protocol.ActiveTx) bool {
+	args := m.Called(tx)
+	return args.Get(0).(bool)
+}
+
+func (m *MockProtocol) HasConfirmedAboveSeqNumber(tx *protocol.ActiveTx, seqNum protocol.VertexSequenceNumber) (bool, error) {
+	args := m.Called(tx, seqNum)
+	return args.Get(0).(bool), args.Error(1)
 }
 
 func (m *MockProtocol) IsAtOneStepFork(

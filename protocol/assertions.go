@@ -113,26 +113,26 @@ type AssertionChain struct {
 }
 
 const (
-	deadTxStatus = iota
-	readOnlyTxStatus
-	readWriteTxStatus
+	DeadTxStatus = iota
+	ReadOnlyTxStatus
+	ReadWriteTxStatus
 )
 
 // ActiveTx is a transaction that is currently being processed.
 type ActiveTx struct {
-	txStatus int
+	TxStatus int
 }
 
 // verifyRead is a helper function to verify that the transaction is read-only.
 func (tx *ActiveTx) verifyRead() {
-	if tx.txStatus == deadTxStatus {
+	if tx.TxStatus == DeadTxStatus {
 		panic("tried to read chain after call ended")
 	}
 }
 
 // verifyReadWrite is a helper function to verify that the transaction is read-write.
 func (tx *ActiveTx) verifyReadWrite() {
-	if tx.txStatus != readWriteTxStatus {
+	if tx.TxStatus != ReadWriteTxStatus {
 		panic("tried to modify chain in read-only call")
 	}
 }
@@ -141,9 +141,9 @@ func (tx *ActiveTx) verifyReadWrite() {
 func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	err := clo(tx, chain)
-	tx.txStatus = deadTxStatus
+	tx.TxStatus = DeadTxStatus
 	return err
 }
 
@@ -151,9 +151,9 @@ func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error)
 func (chain *AssertionChain) Call(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
-	tx := &ActiveTx{txStatus: readOnlyTxStatus}
+	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
 	err := clo(tx, chain)
-	tx.txStatus = deadTxStatus
+	tx.TxStatus = DeadTxStatus
 	return err
 }
 
