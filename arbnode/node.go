@@ -939,7 +939,12 @@ func createNodeImpl(
 				return nil, err
 			}
 		} else {
-			daReader, dasLifecycleManager, err = CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, deployInfo)
+			seqInbox, seqInboxAddress, err := SetupDAL1Dependencies(&l1Reader, deployInfo, &config.DataAvailability)
+			if err != nil {
+				return nil, err
+			}
+
+			daReader, dasLifecycleManager, err = CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, seqInbox, seqInboxAddress)
 			if err != nil {
 				return nil, err
 			}
@@ -1144,7 +1149,7 @@ func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, deployInfo *Rol
 			return nil, nil, err
 		}
 	} else {
-		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
+		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none' (if running daserver executable)")
 	}
 	return seqInbox, seqInboxAddress, nil
 }
@@ -1153,34 +1158,11 @@ func CreateDAReaderForNode(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
-	deployInfo *RollupAddresses,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddress *common.Address,
 ) (das.DataAvailabilityServiceReader, *das.LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil
-	}
-
-	var seqInbox *bridgegen.SequencerInbox
-	var err error
-
-	if l1Reader != nil && deployInfo != nil {
-		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
-		if err != nil {
-			return nil, nil, err
-		}
-	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err := das.OptionalAddressFromString(config.SequencerInboxAddress)
-		if err != nil {
-			return nil, nil, err
-		}
-		if seqInboxAddress == nil {
-			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address")
 	}
 
 	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, nil, nil)
