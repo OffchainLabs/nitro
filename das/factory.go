@@ -6,10 +6,13 @@ package das
 import (
 	"context"
 	"errors"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -147,4 +150,156 @@ func CreateBatchPosterDAS(
 	}
 
 	return daWriter, daReader, &lifecycleManager, nil
+}
+
+func CreateDAReaderWriterForStorage(
+	ctx context.Context,
+	config *DataAvailabilityConfig,
+	l1Reader *headerreader.HeaderReader,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddress *common.Address,
+) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, *LifecycleManager, error) {
+	if !config.Enable {
+		return nil, nil, nil, nil
+	}
+	var syncFromStorageServices []*IterableStorageService
+	var syncToStorageServices []StorageService
+
+	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
+	/*
+			      ChainFetchDAS → Bigcache → Redis →
+				       SignAfterStoreDAS →
+				              FallbackDAS (if the REST client aggregator was specified)
+				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
+				                            → S3
+				                            → DiskStorage
+				                            → Database
+				         (fallback only)→ RESTful client aggregator
+
+		          → : X--delegates to-->Y
+	*/
+	topLevelStorageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	hasPersistentStorage := topLevelStorageService != nil
+
+	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
+	// the REST aggregator is used as the fallback to them.
+	if config.RestfulClientAggregatorConfig.Enable {
+		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		restAgg.Start(ctx)
+		dasLifecycleManager.Register(restAgg)
+
+		// Wrap the primary storage service with the fallback to the restful aggregator
+		if hasPersistentStorage {
+			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
+			var retentionPeriodSeconds uint64
+			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
+				retentionPeriodSeconds = math.MaxUint64
+			} else {
+				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
+			}
+			if syncConf.Eager {
+				if l1Reader == nil || seqInboxAddress == nil {
+					return nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
+				}
+				topLevelStorageService, err = NewSyncingFallbackStorageService(
+					ctx,
+					topLevelStorageService,
+					restAgg,
+					l1Reader,
+					*seqInboxAddress,
+					syncConf)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+			} else {
+				topLevelStorageService = NewFallbackStorageService(topLevelStorageService, restAgg,
+					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
+			}
+		} else {
+			topLevelStorageService = NewReadLimitedStorageService(restAgg)
+		}
+		dasLifecycleManager.Register(topLevelStorageService)
+	}
+
+	var topLevelDas DataAvailabilityService
+	if config.AggregatorConfig.Enable {
+		panic("Tried to make an aggregator using wrong factory method")
+	}
+	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		var seqInboxCaller *bridgegen.SequencerInboxCaller
+		if seqInbox != nil {
+			seqInboxCaller = &seqInbox.SequencerInboxCaller
+		}
+		if config.DisableSignatureChecking {
+			seqInboxCaller = nil
+		}
+
+		privKey, err := config.KeyConfig.BLSPrivKey()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		// TODO rename StorageServiceDASAdapter
+		topLevelDas, err = NewSignAfterStoreDASWithSeqInboxCaller(
+			privKey,
+			seqInboxCaller,
+			topLevelStorageService,
+			config.ExtraSignatureCheckingPublicKey,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	} else {
+		topLevelDas = NewReadLimitedDataAvailabilityService(topLevelStorageService)
+	}
+
+	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
+	if config.RedisCacheConfig.Enable {
+		cache, err := NewRedisStorageService(config.RedisCacheConfig, NewEmptyStorageService())
+		dasLifecycleManager.Register(cache)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if config.RedisCacheConfig.SyncFromStorageServices {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(cache))
+			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
+			cache = iterableStorageService
+		}
+		if config.RedisCacheConfig.SyncToStorageServices {
+			syncToStorageServices = append(syncToStorageServices, cache)
+		}
+		topLevelDas = NewCacheStorageToDASAdapter(topLevelDas, cache)
+	}
+	if config.LocalCacheConfig.Enable {
+		cache, err := NewBigCacheStorageService(config.LocalCacheConfig, NewEmptyStorageService())
+		dasLifecycleManager.Register(cache)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		topLevelDas = NewCacheStorageToDASAdapter(topLevelDas, cache)
+	}
+
+	if config.RegularSyncStorageConfig.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
+		regularlySyncStorage := NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorageConfig)
+		regularlySyncStorage.Start(ctx)
+	}
+
+	if topLevelDas != nil && seqInbox != nil {
+		topLevelDas, err = NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	if topLevelDas == nil {
+		return nil, nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
+	}
+
+	return topLevelDas, topLevelDas, dasLifecycleManager, nil
 }

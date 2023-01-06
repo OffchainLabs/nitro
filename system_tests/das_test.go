@@ -267,7 +267,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	seqInbox, seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, addresses, &serverConfig)
 	Require(t, err)
 
-	daReader, daWriter, lifecycleManager, err := arbnode.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, seqInbox, seqInboxAddress) // TODO usage
+	daReader, daWriter, lifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, seqInbox, seqInboxAddress) // TODO usage
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")

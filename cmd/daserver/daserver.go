@@ -183,7 +183,7 @@ func startup() error {
 		return err
 	}
 
-	daReader, daWriter, dasLifecycleManager, err := arbnode.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, seqInbox, seqInboxAddress) // TODO usage
+	daReader, daWriter, dasLifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, seqInbox, seqInboxAddress) // TODO usage
 	if err != nil {
 		return err
 	}

@@ -608,7 +608,7 @@ func setupConfigWithDAS(
 	var daReader das.DataAvailabilityServiceReader
 	var daWriter das.DataAvailabilityServiceWriter
 	if dasModeString != "onchain" {
-		daReader, daWriter, lifecycleManager, err = arbnode.CreateDAReaderWriterForStorage(ctx, dasConfig, nil, nil, nil) // TODO usage
+		daReader, daWriter, lifecycleManager, err = das.CreateDAReaderWriterForStorage(ctx, dasConfig, nil, nil, nil) // TODO usage
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
