@@ -36,6 +36,9 @@ pub mod start;
 #[cfg(feature = "native")]
 pub mod native;
 
+pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";
+pub const USER_HOST: &str = "user_host";
+
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType>;

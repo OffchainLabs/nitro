@@ -7,6 +7,7 @@ use eyre::{bail, Result};
 use prover::{
     binary,
     programs::{
+        STYLUS_ENTRY_POINT,
         config::StylusConfig,
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
@@ -285,7 +286,7 @@ fn test_rust() -> Result<()> {
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
-    let main = exports.get_typed_function::<u32, i32>(store, "arbitrum_main")?;
+    let main = exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT)?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
@@ -328,7 +329,7 @@ fn test_c() -> Result<()> {
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
-    let main = exports.get_typed_function::<i32, i32>(store, "arbitrum_main")?;
+    let main = exports.get_typed_function::<i32, i32>(store, STYLUS_ENTRY_POINT)?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 

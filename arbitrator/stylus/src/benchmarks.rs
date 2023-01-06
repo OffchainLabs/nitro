@@ -4,7 +4,7 @@
 use crate::{env::WasmEnv, stylus};
 use arbutil::{crypto, format};
 use eyre::Result;
-use prover::programs::config::StylusConfig;
+use prover::programs::{STYLUS_ENTRY_POINT, config::StylusConfig};
 use std::time::{Duration, Instant};
 use wasmer::{CompilerConfig, Imports, Instance, Module, Store};
 use wasmer_compiler_cranelift::{Cranelift, CraneliftOptLevel};
@@ -62,7 +62,7 @@ fn benchmark_wasmer() -> Result<()> {
         let file = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
         let (mut instance, _) = stylus::instance(file, env)?;
         let exports = &instance.exports;
-        let main = exports.get_typed_function::<i32, i32>(&instance.store, "arbitrum_main")?;
+        let main = exports.get_typed_function::<i32, i32>(&instance.store, STYLUS_ENTRY_POINT)?;
 
         let time = Instant::now();
         main.call(&mut instance.store, 1)?;

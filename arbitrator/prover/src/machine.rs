@@ -19,7 +19,7 @@ use crate::{
 };
 use arbutil::Color;
 use digest::Digest;
-use eyre::{bail, ensure, eyre, ErrReport, Result, WrapErr};
+use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
@@ -283,6 +283,8 @@ struct Module {
 }
 
 impl Module {
+    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
+
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
@@ -301,7 +303,7 @@ impl Module {
             let Some(import_name) = import.name else {
                 bail!("Missing name for import in {}", module.red());
             };
-            let (forward, import_name) = match import_name.strip_prefix("arbitrator_forward__") {
+            let (forward, import_name) = match import_name.strip_prefix(Module::FORWARDING_PREFIX) {
                 Some(name) => (true, name),
                 None => (false, import_name),
             };
@@ -1390,8 +1392,12 @@ impl Machine {
     }
 
     pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) -> Result<()> {
-        let source_module = &self.modules[module as usize];
-        let source_func = &source_module.funcs[func as usize];
+        let Some(source_module) = self.modules.get(module as usize) else {
+            bail!("no module at offest {}", module.red())
+        };
+        let Some(source_func) = source_module.funcs.get(func as usize) else {
+            bail!("no func at offset {} in module {}", func.red(), source_module.name().red())
+        };
         let ty = &source_func.ty;
         if ty.inputs.len() != args.len() {
             let name = source_module.names.functions.get(&func).unwrap();
@@ -1466,23 +1472,25 @@ impl Machine {
     }
 
     pub fn read_memory(&mut self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
-        let module = &mut self.modules[module as usize];
+        let Some(module) = &mut self.modules.get(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
         let memory = module.memory.get_range(ptr as usize, len as usize);
         let error = || format!("failed memory read of {} bytes @ {}", len.red(), ptr.red());
-        memory.ok_or_else(|| ErrReport::msg(error()))
+        memory.ok_or_else(|| eyre!(error()))
     }
 
     pub fn write_memory(&mut self, module: u32, ptr: u32, data: &[u8]) -> Result<()> {
-        let module = &mut self.modules[module as usize];
+        let Some(module) = &mut self.modules.get_mut(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
         if let Err(err) = module.memory.set_range(ptr as usize, data) {
-            let msg = || {
-                format!(
-                    "failed to write {} bytes to memory @ {}",
-                    data.len().red(),
-                    ptr.red()
-                )
-            };
-            bail!(err.wrap_err(msg()));
+            let msg = eyre!(
+                "failed to write {} bytes to memory @ {}",
+                data.len().red(),
+                ptr.red()
+            );
+            bail!(err.wrap_err(msg));
         }
         Ok(())
     }

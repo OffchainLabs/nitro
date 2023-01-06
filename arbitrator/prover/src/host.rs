@@ -115,14 +115,17 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(HaltAndSetFinished);
         }
         ("hostio", "user_gas_left") => {
+            // user_gas_left() -> gas_left
             ty = FunctionType::new(vec![], vec![I64]);
             opcode!(CallerModuleInternalCall, UserGasLeft);
         }
         ("hostio", "user_gas_status") => {
+            // user_gas_status() -> gas_status
             ty = FunctionType::new(vec![], vec![I32]);
             opcode!(CallerModuleInternalCall, UserGasStatus);
         }
         ("hostio", "user_set_gas") => {
+            // user_set_gas(gas_left, gas_status)
             ty = FunctionType::new(vec![I64, I32], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
