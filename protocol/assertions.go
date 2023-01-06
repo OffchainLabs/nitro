@@ -185,7 +185,7 @@ type Assertion struct {
 // StateCommitment is a type used to represent the state commitment of an assertion.
 type StateCommitment struct {
 	Height    uint64      `json:"height"`
-	StateRoot common.Hash `json"state_root"`
+	StateRoot common.Hash `json:"state_root"`
 }
 
 // Hash returns the hash of the state commitment.
