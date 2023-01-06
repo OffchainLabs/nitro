@@ -178,7 +178,12 @@ func startup() error {
 		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
 	}
 
-	daReader, daWriter, dasLifecycleManager, err := arbnode.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, nil) // TODO usage
+	seqInbox, seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, nil, &serverConfig.DAConf)
+	if err != nil {
+		return err
+	}
+
+	daReader, daWriter, dasLifecycleManager, err := arbnode.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, seqInbox, seqInboxAddress) // TODO usage
 	if err != nil {
 		return err
 	}

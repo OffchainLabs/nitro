@@ -1121,44 +1121,14 @@ func CreateDAReaderWriterForStorage(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
-	deployInfo *RollupAddresses,
+	seqInbox *bridgegen.SequencerInbox,
+	seqInboxAddress *common.Address,
 ) (das.DataAvailabilityServiceReader, das.DataAvailabilityServiceWriter, *das.LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil, nil
 	}
 	var syncFromStorageServices []*das.IterableStorageService
 	var syncToStorageServices []das.StorageService
-	var seqInbox *bridgegen.SequencerInbox
-	var err error
-	var seqInboxCaller *bridgegen.SequencerInboxCaller
-	var seqInboxAddress *common.Address
-
-	if l1Reader != nil && deployInfo != nil {
-		seqInboxAddress = &deployInfo.SequencerInbox
-		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		l1Reader = nil
-		seqInboxAddress = nil
-	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if seqInboxAddress == nil {
-			return nil, nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else {
-		return nil, nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
-	}
 
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
 	/*
@@ -1227,9 +1197,12 @@ func CreateDAReaderWriterForStorage(
 		panic("Tried to make an aggregator using wrong factory method")
 	}
 	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
-		_seqInboxCaller := seqInboxCaller
+		var seqInboxCaller *bridgegen.SequencerInboxCaller
+		if seqInbox != nil {
+			seqInboxCaller = &seqInbox.SequencerInboxCaller
+		}
 		if config.DisableSignatureChecking {
-			_seqInboxCaller = nil
+			seqInboxCaller = nil
 		}
 
 		privKey, err := config.KeyConfig.BLSPrivKey()
@@ -1240,7 +1213,7 @@ func CreateDAReaderWriterForStorage(
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			privKey,
-			_seqInboxCaller,
+			seqInboxCaller,
 			topLevelStorageService,
 			config.ExtraSignatureCheckingPublicKey,
 		)
@@ -1294,6 +1267,38 @@ func CreateDAReaderWriterForStorage(
 	}
 
 	return topLevelDas, topLevelDas, dasLifecycleManager, nil
+}
+
+func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, deployInfo *RollupAddresses, config *das.DataAvailabilityConfig) (*bridgegen.SequencerInbox, *common.Address, error) {
+	var seqInbox *bridgegen.SequencerInbox
+	var err error
+	var seqInboxAddress *common.Address
+
+	if *l1Reader != nil && deployInfo != nil {
+		seqInboxAddress = &deployInfo.SequencerInbox
+		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, (*l1Reader).Client())
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
+		*l1Reader = nil
+		seqInboxAddress = nil
+	} else if *l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
+		if err != nil {
+			return nil, nil, err
+		}
+		if seqInboxAddress == nil {
+			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+		}
+		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
+	}
+	return seqInbox, seqInboxAddress, nil
 }
 
 func CreateDAReaderForNode(
