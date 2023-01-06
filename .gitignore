@@ -20,3 +20,6 @@
 
 # bazel stuff
 bazel-*
+
+contracts/cache
+contracts/out
