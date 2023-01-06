@@ -3,8 +3,6 @@
 
 package precompiles
 
-import "errors"
-
 type ArbWasm struct {
 	Address addr // 0x71
 }
@@ -17,8 +15,12 @@ func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error)
 
 // Calls a wasm program
 // TODO: move into geth
-func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, data []byte) (uint32, []byte, error) {
-	return 0, nil, errors.New("unimplemented 2")
+func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) (uint32, []byte, error) {
+	// TODO: require some intrinsic amount of gas
+	programs := c.State.Programs()
+
+	// give all gas to the program
+	return programs.CallProgram(evm.StateDB, program, calldata, &c.gasLeft)
 }
 
 // Gets the latest stylus version

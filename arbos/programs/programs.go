@@ -125,6 +125,26 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 	return version, p.machineVersions.SetUint32(program.Hash(), version)
 }
 
+func (p Programs) CallProgram(
+	statedb vm.StateDB,
+	program common.Address,
+	calldata []byte,
+	gas *uint64,
+) (uint32, []byte, error) {
+	version, err := p.StylusVersion()
+	if err != nil {
+		return 0, nil, err
+	}
+	if version == 0 {
+		return 0, nil, errors.New("wasm not compiled")
+	}
+	params, err := p.goParams(version)
+	if err != nil {
+		return 0, nil, err
+	}
+	return callUserWasm(statedb, program, calldata, gas, params)
+}
+
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	wasm := statedb.GetCode(program)
 	if wasm == nil {

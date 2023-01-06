@@ -14,10 +14,7 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
 
-#[cfg(feature = "native")]
-use super::native::{GlobalMod, NativeInstance};
-
-const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
+pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
 /// This middleware ensures stack overflows are deterministic across different compilers and targets.
 /// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
@@ -481,17 +478,6 @@ impl<'a> FuncDepthChecker<'a> {
 pub trait DepthCheckedMachine {
     fn stack_left(&mut self) -> u32;
     fn set_stack(&mut self, size: u32);
-}
-
-#[cfg(feature = "native")]
-impl DepthCheckedMachine for NativeInstance {
-    fn stack_left(&mut self) -> u32 {
-        self.get_global(STYLUS_STACK_LEFT).unwrap()
-    }
-
-    fn set_stack(&mut self, size: u32) {
-        self.set_global(STYLUS_STACK_LEFT, size).unwrap()
-    }
 }
 
 impl DepthCheckedMachine for Machine {

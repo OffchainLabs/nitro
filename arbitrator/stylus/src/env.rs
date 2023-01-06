@@ -144,10 +144,11 @@ impl<'a> SystemState<'a> {
         Ok(())
     }
 
-    #[allow(clippy::inconsistent_digit_grouping)]
     pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let wasm_gas = evm.saturating_mul(self.pricing.wasm_gas_price) / 100_00;
-        self.buy_gas(wasm_gas)
+        if let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) {
+            self.buy_gas(wasm_gas)?;
+        }
+        Ok(())
     }
 }
 

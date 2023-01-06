@@ -30,7 +30,7 @@ package programs
 // } RustVec;
 //
 // extern uint8_t stylus_compile(GoSlice wasm, GoParams params, RustVec output);
-// extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * gas);
+// extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * evm_gas);
 // extern void    stylus_free(RustVec vec);
 //
 import "C"
@@ -49,6 +49,12 @@ type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
 
+const (
+	Success u8 = iota
+	Failure
+	OutOfGas
+)
+
 func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params *goParams) error {
 	output := rustVec()
 	status := C.stylus_compile(
@@ -58,14 +64,16 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params 
 	)
 	result := output.read()
 
-	if status != 0 {
+	if status != Success {
 		return errors.New(string(result))
 	}
 	db.AddUserModule(params.version, program, result)
 	return nil
 }
 
-func callUserWasm(db vm.StateDB, program common.Address, data []byte, gas *uint64, params *goParams) (uint32, []byte) {
+func callUserWasm(
+	db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams,
+) (uint32, []byte, error) {
 
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program)
@@ -79,12 +87,18 @@ func callUserWasm(db vm.StateDB, program common.Address, data []byte, gas *uint6
 	output := rustVec()
 	status := C.stylus_call(
 		goSlice(module),
-		goSlice(data),
+		goSlice(calldata),
 		params.encode(),
 		output,
 		(*u64)(gas),
 	)
-	return uint32(status), output.read()
+	if status == Failure {
+		return 0, nil, errors.New(string(output.read()))
+	}
+	if status == OutOfGas {
+		return 0, nil, vm.ErrOutOfGas
+	}
+	return uint32(status), output.read(), nil
 }
 
 func rustVec() C.RustVec {

@@ -1,16 +1,12 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::{ensure, Result};
 use std::fmt::Display;
 
-use crate::Machine;
-
-use super::{
-    config::StylusConfig,
-    depth::DepthCheckedMachine,
-    meter::{MachineMeter, MeteredMachine},
-};
+use crate::{env::Escape, stylus::NativeInstance};
+use eyre::{ensure, ErrReport, Result};
+use prover::machine::Machine;
+use prover::programs::prelude::*;
 
 pub enum UserOutcome {
     Success(Vec<u8>),
@@ -19,12 +15,19 @@ pub enum UserOutcome {
     OutOfStack,
 }
 
+impl UserOutcome {
+    fn revert(error: ErrReport) -> Self {
+        let data = format!("{:?}", error);
+        Self::Revert(data.into_bytes())
+    }
+}
+
 impl Display for UserOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use UserOutcome::*;
         match self {
-            Success(output) => write!(f, "success {}", hex::encode(output)),
-            Revert(output) => write!(f, "revert {}", hex::encode(output)),
+            Success(data) => write!(f, "success {}", hex::encode(data)),
+            Revert(data) => write!(f, "revert {}", hex::encode(data)),
             OutOfGas => write!(f, "out of gas"),
             OutOfStack => write!(f, "out of stack"),
         }
@@ -32,11 +35,11 @@ impl Display for UserOutcome {
 }
 
 pub trait RunProgram {
-    fn run_main(&mut self, args: Vec<u8>, config: &StylusConfig) -> Result<UserOutcome>;
+    fn run_main(&mut self, args: &[u8], config: &StylusConfig) -> Result<UserOutcome>;
 }
 
 impl RunProgram for Machine {
-    fn run_main(&mut self, args: Vec<u8>, config: &StylusConfig) -> Result<UserOutcome> {
+    fn run_main(&mut self, args: &[u8], config: &StylusConfig) -> Result<UserOutcome> {
         let pricing = &config.pricing;
 
         macro_rules! call {
@@ -60,7 +63,7 @@ impl RunProgram for Machine {
         ];
         let args_ptr = call!("user_host", "push_program", push_vec);
         let user_host = self.find_module("user_host")?;
-        self.write_memory(user_host, args_ptr, &args)?;
+        self.write_memory(user_host, args_ptr, args)?;
 
         let status: u32 = call!("user", "arbitrum_main", vec![args_len], |error| {
             if self.gas_left() == MachineMeter::Exhausted {
@@ -79,6 +82,39 @@ impl RunProgram for Machine {
         let num_progs: u32 = call!("user_host", "pop_program", vec![]);
         ensure!(num_progs == 0, "dirty user_host");
 
+        Ok(match status {
+            0 => UserOutcome::Success(outs),
+            _ => UserOutcome::Revert(outs),
+        })
+    }
+}
+
+impl RunProgram for NativeInstance {
+    fn run_main(&mut self, args: &[u8], _config: &StylusConfig) -> Result<UserOutcome> {
+        let store = &mut self.store;
+        let exports = &self.instance.exports;
+        let main = exports.get_typed_function::<u32, u32>(store, "arbitrum_main")?;
+        let status = match main.call(store, args.len() as u32) {
+            Ok(status) => status,
+            Err(outcome) => {
+                let escape = outcome.downcast()?;
+
+                if self.stack_left() == 0 {
+                    return Ok(UserOutcome::OutOfStack);
+                }
+                if self.gas_left() == MachineMeter::Exhausted {
+                    return Ok(UserOutcome::OutOfGas);
+                }
+
+                return Ok(match escape {
+                    Escape::OutOfGas => UserOutcome::OutOfGas,
+                    Escape::Memory(error) => UserOutcome::revert(error.into()),
+                    Escape::Internal(error) => UserOutcome::revert(error),
+                });
+            }
+        };
+
+        let outs = self.env().outs.clone();
         Ok(match status {
             0 => UserOutcome::Success(outs),
             _ => UserOutcome::Revert(outs),

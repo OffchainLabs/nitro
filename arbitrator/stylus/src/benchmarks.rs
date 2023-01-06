@@ -60,7 +60,7 @@ fn benchmark_wasmer() -> Result<()> {
         let env = WasmEnv::new(config, args);
 
         let file = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-        let (mut instance, _) = stylus::instance(file, env)?;
+        let mut instance = stylus::instance(file, env)?;
         let exports = &instance.exports;
         let main = exports.get_typed_function::<i32, i32>(&instance.store, "arbitrum_main")?;
 

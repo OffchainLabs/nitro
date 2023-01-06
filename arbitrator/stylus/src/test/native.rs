@@ -1,20 +1,16 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{env::WasmEnv, stylus};
+use crate::{
+    env::WasmEnv,
+    run::{RunProgram, UserOutcome},
+    stylus::{self, NativeInstance},
+};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
     binary,
-    programs::{
-        config::StylusConfig,
-        depth::DepthCheckedMachine,
-        meter::{MachineMeter, MeteredMachine},
-        native::{GlobalMod, NativeInstance},
-        run::{RunProgram, UserOutcome},
-        start::StartlessMachine,
-        ModuleMod,
-    },
+    programs::{prelude::*, ModuleMod},
     Machine,
 };
 use std::path::Path;
@@ -34,7 +30,7 @@ fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance>
         },
     };
     let instance = Instance::new(&mut store, &module, &imports)?;
-    Ok(NativeInstance::new(instance, store))
+    Ok(NativeInstance::new_sans_env(instance, store))
 }
 
 fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
@@ -46,7 +42,7 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     let wat = std::fs::read(path)?;
     let module = Module::new(&mut store, &wat)?;
     let instance = Instance::new(&mut store, &module, &Imports::new())?;
-    Ok(NativeInstance::new(instance, store))
+    Ok(NativeInstance::new_sans_env(instance, store))
 }
 
 fn uniform_cost_config() -> StylusConfig {
@@ -281,7 +277,7 @@ fn test_rust() -> Result<()> {
 
     let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let (mut native, env) = stylus::instance(filename, env)?;
+    let mut native = stylus::instance(filename, env)?;
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
@@ -289,11 +285,11 @@ fn test_rust() -> Result<()> {
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
-    let env = env.as_ref(&store);
+    let env = native.env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(args, &config)? {
+    let output = match machine.run_main(&args, &config)? {
         UserOutcome::Success(output) => hex::encode(output),
         err => bail!("user program failure: {}", err.red()),
     };
@@ -324,7 +320,7 @@ fn test_c() -> Result<()> {
 
     let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let (mut native, env) = stylus::instance(filename, env)?;
+    let mut native = stylus::instance(filename, env)?;
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
@@ -332,11 +328,11 @@ fn test_c() -> Result<()> {
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
-    let env = env.as_ref(&store);
+    let env = native.env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(args, &config)? {
+    let output = match machine.run_main(&args, &config)? {
         UserOutcome::Success(output) => hex::encode(output),
         err => bail!("user program failure: {}", err.red()),
     };

@@ -30,11 +30,8 @@ pub mod config;
 pub mod depth;
 pub mod heap;
 pub mod meter;
-pub mod run;
+pub mod prelude;
 pub mod start;
-
-#[cfg(feature = "native")]
-pub mod native;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;

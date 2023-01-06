@@ -42,7 +42,9 @@ impl PricingParams {
 
     #[allow(clippy::inconsistent_digit_grouping)]
     pub fn buy_evm_gas(&self, evm: u64) {
-        let wasm_gas = evm.saturating_mul(self.wasm_gas_price) / 100_00;
-        self.buy_gas(wasm_gas)
+        if self.wasm_gas_price != 0 {
+            let wasm_gas = evm.saturating_mul(100_00) / self.wasm_gas_price;
+            self.buy_gas(wasm_gas)
+        }
     }
 }

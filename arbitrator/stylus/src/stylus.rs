@@ -1,13 +1,114 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::env::{MaybeEscape, SystemStateData, WasmEnv, WasmEnvMut};
-use eyre::Result;
-use prover::programs::{
-    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
-    native::NativeInstance, config::StylusConfig,
+use crate::{
+    env::{SystemStateData, WasmEnv},
+    host,
 };
-use wasmer::{imports, Function, FunctionEnv, Global, Instance, Module};
+use arbutil::Color;
+use eyre::{bail, ErrReport, Result};
+use prover::programs::{
+    depth::STYLUS_STACK_LEFT,
+    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
+    prelude::*,
+};
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
+use wasmer::{imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Module, Store, Value};
+
+pub struct NativeInstance {
+    pub instance: Instance,
+    pub store: Store,
+    pub env: FunctionEnv<WasmEnv>,
+}
+
+impl NativeInstance {
+    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv>) -> Self {
+        Self {
+            instance,
+            store,
+            env,
+        }
+    }
+
+    pub fn new_sans_env(instance: Instance, mut store: Store) -> Self {
+        let env = FunctionEnv::new(&mut store, WasmEnv::default());
+        Self::new(instance, store, env)
+    }
+
+    pub fn env(&self) -> &WasmEnv {
+        self.env.as_ref(&self.store)
+    }
+
+    pub fn get_global<T>(&mut self, name: &str) -> Result<T>
+    where
+        T: TryFrom<Value>,
+        T::Error: Debug,
+    {
+        let store = &mut self.store.as_store_mut();
+        let Ok(global) = self.instance.exports.get_global(name) else {
+            bail!("global {} does not exist", name.red())
+        };
+        let ty = global.get(store);
+
+        let error = || format!("global {} has the wrong type", name.red());
+        ty.try_into().map_err(|_| ErrReport::msg(error()))
+    }
+
+    pub fn set_global<T>(&mut self, name: &str, value: T) -> Result<()>
+    where
+        T: Into<Value>,
+    {
+        let store = &mut self.store.as_store_mut();
+        let Ok(global) = self.instance.exports.get_global(name) else {
+            bail!("global {} does not exist", name.red())
+        };
+        global.set(store, value.into()).map_err(ErrReport::msg)
+    }
+}
+
+impl Deref for NativeInstance {
+    type Target = Instance;
+
+    fn deref(&self) -> &Self::Target {
+        &self.instance
+    }
+}
+
+impl DerefMut for NativeInstance {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.instance
+    }
+}
+
+impl MeteredMachine for NativeInstance {
+    fn gas_left(&mut self) -> MachineMeter {
+        let status = self.get_global(STYLUS_GAS_STATUS).unwrap();
+        let mut gas = || self.get_global(STYLUS_GAS_LEFT).unwrap();
+
+        match status {
+            0 => MachineMeter::Ready(gas()),
+            _ => MachineMeter::Exhausted,
+        }
+    }
+
+    fn set_gas(&mut self, gas: u64) {
+        self.set_global(STYLUS_GAS_LEFT, gas).unwrap();
+        self.set_global(STYLUS_GAS_STATUS, 0).unwrap();
+    }
+}
+
+impl DepthCheckedMachine for NativeInstance {
+    fn stack_left(&mut self) -> u32 {
+        self.get_global(STYLUS_STACK_LEFT).unwrap()
+    }
+
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(STYLUS_STACK_LEFT, size).unwrap()
+    }
+}
 
 pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
@@ -24,16 +125,16 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     Ok(module.to_vec())
 }
 
-pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv<WasmEnv>)> {
-    let mut store = env.config.store();
-    let wat_or_wasm = std::fs::read(path)?;
-    let module = Module::new(&store, wat_or_wasm)?;
-
+pub fn instance_from_module(
+    module: Module,
+    mut store: Store,
+    env: WasmEnv,
+) -> Result<NativeInstance> {
     let func_env = FunctionEnv::new(&mut store, env);
     let imports = imports! {
         "forward" => {
-            "read_args" => Function::new_typed_with_env(&mut store, &func_env, read_args),
-            "return_data" => Function::new_typed_with_env(&mut store, &func_env, return_data),
+            "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
+            "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
         },
     };
     let instance = Instance::new(&mut store, &module, &imports)?;
@@ -53,26 +154,12 @@ pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv
         pricing: env.config.pricing,
     });
 
-    let native = NativeInstance::new(instance, store);
-    Ok((native, func_env))
+    Ok(NativeInstance::new(instance, store, func_env))
 }
 
-fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
-    WasmEnv::begin(&mut env)?;
-
-    let (env, memory) = WasmEnv::data(&mut env);
-    memory.write_slice(ptr, &env.args)?;
-    Ok(())
-}
-
-fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
-    let mut state = WasmEnv::begin(&mut env)?;
-
-    let evm_words = |count: u64| count.saturating_mul(31) / 32;
-    let evm_gas = evm_words(len.into()).saturating_mul(3); // 3 evm gas per word
-    state.buy_evm_gas(evm_gas)?;
-
-    let (env, memory) = WasmEnv::data(&mut env);
-    env.outs = memory.read_slice(ptr, len)?;
-    Ok(())
+pub fn instance(path: &str, env: WasmEnv) -> Result<NativeInstance> {
+    let store = env.config.store();
+    let wat_or_wasm = std::fs::read(path)?;
+    let module = Module::new(&store, wat_or_wasm)?;
+    instance_from_module(module, store, env)
 }
