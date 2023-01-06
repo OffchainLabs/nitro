@@ -240,7 +240,6 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			if config.EnableCompression {
 				data = compressed.Bytes()
 			} else {
-				// TODO revise
 				log.Warn("disconnecting because client has enabled compression, but compression support is disabled", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
 				continue
@@ -249,8 +248,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			if !config.RequireCompression {
 				data = notCompressed.Bytes()
 			} else {
-				// TODO revise
-				log.Warn("disconnecting because client has not enabled compression, but compression support is required", "client", client.Name)
+				log.Warn("disconnecting because client has disabled compression, but compression support is required", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
 				continue
 			}
