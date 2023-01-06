@@ -418,8 +418,8 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			fmt.Printf(
 				"validator=%s to=%d commit=%#x\n",
 				cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-				e.History.Height,
-				e.History.Merkle,
+				e.ToHistory.Height,
+				e.ToHistory.Merkle,
 			)
 			fmt.Println("")
 		case *protocol.ChallengeBisectEvent:
@@ -427,8 +427,8 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			fmt.Printf(
 				"validator=%s to=%d commit=%#x\n",
 				cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-				e.History.Height,
-				e.History.Merkle,
+				e.ToHistory.Height,
+				e.ToHistory.Merkle,
 			)
 			fmt.Println("")
 		default:
