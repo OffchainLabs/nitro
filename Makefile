@@ -302,7 +302,7 @@ $(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_dep
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
 
 $(output_root)/machines/latest/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wat .make/machines
-	wat2wasm $< -o $@
+	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
 
 $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
