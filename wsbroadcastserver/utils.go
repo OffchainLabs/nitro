@@ -64,13 +64,6 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 	return cr
 }
 
-const DeflateCompressionLevel = flate.BestCompression
-
-func GetStaticCompressorDictionary() []byte {
-	// TODO
-	return []byte("whatever{}")
-}
-
 func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, *wsflate.Reader, error) {
 	if compression {
 		state |= ws.StateExtended
