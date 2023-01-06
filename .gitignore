@@ -23,4 +23,4 @@ bazel-*
 
 node_modules/*
 web/node_nodules/*
-tmp
+tmp/*

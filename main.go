@@ -33,26 +33,21 @@ var (
 )
 
 type config struct {
-	NumValidators                    uint8            `json:"num_validators"`
-	NumStates                        uint64           `json:"num_states"`
-	DefaultBalance                   *big.Int         `json:"initial_balance"`
-	ChallengePeriod                  time.Duration    `json:"challenge_period"`
-	ChallengeVertexWakeInterval      time.Duration    `json:"challenge_vertex_wake_interval"`
-	DivergenceHeightByValidatorIndex map[uint8]uint64 `json:"diverge_height_by_validator_index"`
+	NumValidators          uint8    `json:"num_validators"`
+	NumStates              uint64   `json:"num_states"`
+	DefaultBalance         *big.Int `json:"initial_balance"`
+	ChallengePeriodSeconds uint64   `json:"challenge_period_seconds"`
+	DivergeHeight          uint64   `json:"disagree_at_height"`
 }
 
 func defaultConfig() *config {
 	defaultBalance := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
 	return &config{
-		NumValidators:               2,
-		NumStates:                   10,
-		DefaultBalance:              defaultBalance,
-		ChallengePeriod:             time.Minute,
-		ChallengeVertexWakeInterval: time.Second,
-		DivergenceHeightByValidatorIndex: map[uint8]uint64{
-			0: 3,
-			1: 3,
-		},
+		NumValidators:          2,
+		NumStates:              10,
+		DefaultBalance:         defaultBalance,
+		ChallengePeriodSeconds: 60,
+		DivergeHeight:          3,
 	}
 }
 
@@ -65,6 +60,7 @@ type server struct {
 	chain      *protocol.AssertionChain
 	manager    statemanager.Manager
 	validators []*validator.Validator
+	timeRef    *util.ArtificialTimeReference
 	wsClients  map[*websocket.Conn]bool
 }
 
@@ -158,13 +154,18 @@ func (s *server) registerWebsocketConnection(c echo.Context) error {
 	s.lock.Lock()
 	s.wsClients[ws] = true
 	s.lock.Unlock()
-	log.Info("Registered new websocket client")
+	return nil
+}
+
+func (s *server) stepTimeReference(c echo.Context) error {
+	s.timeRef.Add(time.Second)
+	c.JSON(http.StatusOK, nil)
 	return nil
 }
 
 func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
-	timeRef := util.NewRealTimeReference()
-	validators, chain, err := initializeSystem(ctx, timeRef, cfg)
+	s.timeRef = util.NewArtificialTimeReference()
+	validators, chain, err := initializeSystem(ctx, s.timeRef, cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -184,9 +185,12 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 }
 
 type event struct {
-	Typ      string `json:"typ"`
-	Contents string `json:"contents"`
-	Vis      string `json:"vis"`
+	Typ       string                  `json:"typ"`
+	To        string                  `json:"to"`
+	From      string                  `json:"from"`
+	BecomesPS bool                    `json:"becomes_ps"`
+	Validator string                  `json:"validator"`
+	Vis       *protocol.Visualization `json:"vis"`
 }
 
 func (s *server) sendChainEventsToClients(
@@ -201,10 +205,26 @@ func (s *server) sendChainEventsToClients(
 			vis := s.chain.Visualize()
 			s.lock.RLock()
 			eventToSend := &event{
-				Typ:      fmt.Sprintf("%+T", ev),
-				Contents: fmt.Sprintf("%+v", ev),
-				Vis:      vis,
+				Typ: fmt.Sprintf("%+T", ev),
+				Vis: vis,
 			}
+
+			switch specificEv := ev.(type) {
+			case *protocol.ChallengeLeafEvent:
+				eventToSend.BecomesPS = specificEv.BecomesPS
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			case *protocol.ChallengeMergeEvent:
+				eventToSend.From = fmt.Sprintf("%d", specificEv.FromHistory.Height)
+				eventToSend.To = fmt.Sprintf("%d", specificEv.ToHistory.Height)
+				eventToSend.BecomesPS = specificEv.BecomesPS
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			case *protocol.ChallengeBisectEvent:
+				eventToSend.From = fmt.Sprintf("%d", specificEv.FromHistory.Height)
+				eventToSend.To = fmt.Sprintf("%d", specificEv.ToHistory.Height)
+				eventToSend.BecomesPS = specificEv.BecomesPS
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			}
+
 			enc, err := json.Marshal(eventToSend)
 			if err != nil {
 				log.Error(err)
@@ -215,7 +235,6 @@ func (s *server) sendChainEventsToClients(
 			for client := range s.wsClients {
 				err := client.WriteMessage(websocket.TextMessage, enc)
 				if err != nil {
-					log.Errorf("Websocket error: %s", err)
 					client.Close()
 					delete(s.wsClients, client)
 				}
@@ -226,9 +245,15 @@ func (s *server) sendChainEventsToClients(
 			vis := s.chain.Visualize()
 			s.lock.RLock()
 			eventToSend := &event{
-				Typ:      fmt.Sprintf("%+T", ev),
-				Contents: fmt.Sprintf("%+v", ev),
-				Vis:      vis,
+				Typ: fmt.Sprintf("%+T", ev),
+				Vis: vis,
+			}
+			switch specificEv := ev.(type) {
+			case *protocol.CreateLeafEvent:
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			case *protocol.StartChallengeEvent:
+				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
+			default:
 			}
 			enc, err := json.Marshal(eventToSend)
 			if err != nil {
@@ -240,7 +265,6 @@ func (s *server) sendChainEventsToClients(
 			for client := range s.wsClients {
 				err := client.WriteMessage(websocket.TextMessage, enc)
 				if err != nil {
-					log.Errorf("Websocket error: %s", err)
 					client.Close()
 					delete(s.wsClients, client)
 				}
@@ -269,6 +293,7 @@ func (s *server) registerRoutes(e *echo.Echo) {
 	// API triggers of validator actions, such as leaf creation at a validator's
 	// latest height via the web app.
 	e.POST("/api/assertions", s.triggerAssertionCreation)
+	e.POST("/api/step", s.stepTimeReference)
 }
 
 func initializeSystem(
@@ -276,7 +301,7 @@ func initializeSystem(
 	timeRef util.TimeReference,
 	cfg *config,
 ) ([]*validator.Validator, *protocol.AssertionChain, error) {
-	chain := protocol.NewAssertionChain(ctx, timeRef, cfg.ChallengePeriod)
+	chain := protocol.NewAssertionChain(ctx, timeRef, time.Duration(cfg.ChallengePeriodSeconds)*time.Second)
 
 	validatorAddrs := make([]common.Address, cfg.NumValidators)
 	for i := uint8(0); i < cfg.NumValidators; i++ {
@@ -300,7 +325,7 @@ func initializeSystem(
 	// at specified points in the test config.
 	validatorStateRoots := make([][]common.Hash, cfg.NumValidators)
 	for i := uint8(0); i < cfg.NumValidators; i++ {
-		divergenceHeight := cfg.DivergenceHeightByValidatorIndex[i]
+		divergenceHeight := cfg.DivergeHeight
 		stateRoots := make([]common.Hash, cfg.NumStates)
 		for i := uint64(0); i < cfg.NumStates; i++ {
 			if divergenceHeight == 0 || i < divergenceHeight {
@@ -330,7 +355,7 @@ func initializeSystem(
 			validator.WithAddress(addr),
 			validator.WithDisableLeafCreation(),
 			validator.WithTimeReference(timeRef),
-			validator.WithChallengeVertexWakeInterval(cfg.ChallengeVertexWakeInterval),
+			validator.WithChallengeVertexWakeInterval(time.Second),
 		)
 		if valErr != nil {
 			return nil, nil, valErr

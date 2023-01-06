@@ -75,14 +75,16 @@ type ChallengeBisectEvent struct {
 	FromSequenceNum   VertexSequenceNumber // previously existing vertex
 	SequenceNum       VertexSequenceNumber // newly created vertex
 	ParentStateCommit StateCommitment
-	History           util.HistoryCommitment
+	ToHistory         util.HistoryCommitment
+	FromHistory       util.HistoryCommitment
 	BecomesPS         bool
 	Validator         common.Address
 }
 
 type ChallengeMergeEvent struct {
 	genericChallengeEvent
-	History              util.HistoryCommitment
+	ToHistory            util.HistoryCommitment
+	FromHistory          util.HistoryCommitment
 	ParentStateCommit    StateCommitment
 	DeeperSequenceNum    VertexSequenceNumber
 	ShallowerSequenceNum VertexSequenceNumber

@@ -13,11 +13,34 @@ gazelle(
     command = "update-repos",
 )
 
-load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
+load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "go_binary", "go_library", "nogo")
 
 nogo(
     name = "nogo",
     config = ":nogo.json",
     visibility = ["//visibility:public"],
     deps = TOOLS_NOGO,
+)
+
+go_library(
+    name = "new-rollup-exploration_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/OffchainLabs/new-rollup-exploration",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//protocol",
+        "//state-manager",
+        "//util",
+        "//validator",
+        "//web",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_gorilla_websocket//:websocket",
+        "@com_github_sirupsen_logrus//:logrus",
+    ],
+)
+
+go_binary(
+    name = "new-rollup-exploration",
+    embed = [":new-rollup-exploration_lib"],
+    visibility = ["//visibility:public"],
 )
