@@ -4,7 +4,7 @@
 use crate::{env::WasmEnv, stylus};
 use arbutil::{crypto, format};
 use eyre::Result;
-use prover::programs::{STYLUS_ENTRY_POINT, config::StylusConfig};
+use prover::programs::{config::StylusConfig, STYLUS_ENTRY_POINT};
 use std::time::{Duration, Instant};
 use wasmer::{CompilerConfig, Imports, Instance, Module, Store};
 use wasmer_compiler_cranelift::{Cranelift, CraneliftOptLevel};

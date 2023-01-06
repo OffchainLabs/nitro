@@ -7,14 +7,13 @@ use eyre::{bail, Result};
 use prover::{
     binary,
     programs::{
-        STYLUS_ENTRY_POINT,
         config::StylusConfig,
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         native::{GlobalMod, NativeInstance},
         run::{RunProgram, UserOutcome},
         start::StartlessMachine,
-        ModuleMod,
+        ModuleMod, STYLUS_ENTRY_POINT,
     },
     Machine,
 };

@@ -7,10 +7,10 @@ use std::fmt::Display;
 use crate::Machine;
 
 use super::{
-    STYLUS_ENTRY_POINT, USER_HOST,
     config::StylusConfig,
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
+    STYLUS_ENTRY_POINT, USER_HOST,
 };
 
 pub enum UserOutcome {
