@@ -331,6 +331,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 	spawner, err := validator.NewArbitratorSpawner(locator, validator.DefaultArbitratorSpawnerConfigFetcher)
 	Require(t, err)
+	spawner.Start(ctx)
+	defer spawner.Stop()
 	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, []validator.ValidationSpawner{}, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
