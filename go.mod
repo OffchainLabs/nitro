@@ -3,7 +3,10 @@ module github.com/OffchainLabs/new-rollup-exploration
 go 1.19
 
 require (
+	github.com/emicklei/dot v1.2.0
 	github.com/ethereum/go-ethereum v1.10.21
+	github.com/gorilla/websocket v1.5.0
+	github.com/labstack/echo/v5 v5.0.0-20220717203827-74022662be4a
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.1
@@ -13,10 +16,6 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
-	github.com/emicklei/dot v1.2.0 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/labstack/echo/v5 v5.0.0-20220717203827-74022662be4a // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
