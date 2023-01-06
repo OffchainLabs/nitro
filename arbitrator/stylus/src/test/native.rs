@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{env::WasmEnv, stylus};
@@ -8,6 +8,7 @@ use prover::{
     binary,
     programs::{
         config::StylusConfig,
+        counter::CountedMachine,
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         native::{GlobalMod, NativeInstance},
@@ -49,8 +50,10 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
 #[test]
 fn test_gas() -> Result<()> {
-    let mut config = StylusConfig::default();
-    config.costs = super::expensive_add;
+    let config = StylusConfig {
+        costs: super::expensive_add,
+        ..Default::default()
+    };
 
     let mut instance = new_test_instance("tests/add.wat", config)?;
     let exports = &instance.exports;
@@ -91,8 +94,10 @@ fn test_depth() -> Result<()> {
     //    the `recurse` function has 1 parameter and 2 locals
     //    comments show that the max depth is 3 words
 
-    let mut config = StylusConfig::default();
-    config.max_depth = 64;
+    let config = StylusConfig {
+        max_depth: 64,
+        ..Default::default()
+    };
 
     let mut instance = new_test_instance("tests/depth.wat", config)?;
     let exports = &instance.exports;
@@ -224,14 +229,18 @@ fn test_heap() -> Result<()> {
     //     memory.wat   there's a 2-page memory with an upper limit of 4
     //     memory2.wat  there's a 2-page memory with no upper limit
 
-    let mut config = StylusConfig::default();
-    config.heap_bound = Pages(1).into();
+    let config = StylusConfig {
+        heap_bound: Pages(1).into(),
+        ..Default::default()
+    };
     assert!(new_test_instance("tests/memory.wat", config.clone()).is_err());
     assert!(new_test_instance("tests/memory2.wat", config.clone()).is_err());
 
     let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
-        let mut config = StylusConfig::default();
-        config.heap_bound = Pages(bound).into();
+        let config = StylusConfig {
+            heap_bound: Pages(bound).into(),
+            ..Default::default()
+        };
 
         let instance = new_test_instance(file, config.clone())?;
         let machine = super::wavm::new_test_machine(file, config.clone())?;
@@ -311,5 +320,47 @@ fn test_c() -> Result<()> {
 
     let env = env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
+    Ok(())
+}
+
+#[test]
+fn test_counter_rust_keccak() -> Result<()> {
+    let max_unique_operator_count = 255;
+    let config = StylusConfig {
+        max_unique_operator_count,
+        ..Default::default()
+    };
+    let opcode_indexes = config.opcode_indexes.clone();
+
+    // in keccak.rs
+    //     the input is the # of hashings followed by a preimage
+    //     the output is the iterated hash of the preimage
+
+    let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
+    let preimage = preimage.as_bytes().to_vec();
+    let hash = hex::encode(crypto::keccak(&preimage));
+
+    let mut args = vec![0x01];
+    args.extend(preimage);
+    let args_len = args.len() as i32;
+
+    let env = WasmEnv::new(config, args);
+    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
+    let (mut native, env) = stylus::instance(filename, env)?;
+
+    let main = native
+        .exports
+        .get_typed_function::<i32, i32>(&native.store, "arbitrum_main")?;
+    let status = main.call(&mut native.store, args_len)?;
+    assert_eq!(status, 0);
+
+    let counts = native.opcode_counts(max_unique_operator_count);
+    for (opcode, index) in opcode_indexes.lock().iter() {
+        if *index < counts.len() && counts[*index] > 0 {
+            eprintln!("{} executed {} times", opcode, counts[*index]);
+        }
+    }
+    let env = env.as_ref(&native.store);
+    assert_eq!(hex::encode(&env.outs), hash);
     Ok(())
 }

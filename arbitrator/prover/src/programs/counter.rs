@@ -1,8 +1,9 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
 
+use arbutil::operator::OperatorCode;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
@@ -23,13 +24,13 @@ macro_rules! opcode_count_name {
 pub struct Counter {
     pub max_unique_opcodes: usize,
     pub index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
-    pub opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+    pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
 }
 
 impl Counter {
     pub fn new(
         max_unique_opcodes: usize,
-        opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Self {
         Self {
             max_unique_opcodes,
@@ -76,7 +77,7 @@ pub struct FuncCounter<'a> {
     /// WASM global variables to keep track of opcode counts
     index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
     ///  Mapping of operator code to index for opcode_counts_global and block_opcode_counts
-    opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+    opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     /// Instructions of the current basic block
     block: Vec<Operator<'a>>,
     /// Number of times each opcode was used in current basic block
@@ -87,7 +88,7 @@ impl<'a> FuncCounter<'a> {
     fn new(
         max_unique_opcodes: usize,
         index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
-        opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Self {
         Self {
             max_unique_opcodes,
@@ -101,15 +102,14 @@ impl<'a> FuncCounter<'a> {
 
 macro_rules! opcode_count_add {
     ($self:expr, $op:expr, $count:expr) => {{
-        let code = operator_lookup_code($op);
         let mut opcode_indexes = $self.opcode_indexes.lock();
         let next = opcode_indexes.len();
-        let index = opcode_indexes.entry(code).or_insert(next);
+        let index = opcode_indexes.entry($op.into()).or_insert(next);
         assert!(
             *index < $self.max_unique_opcodes,
             "too many unique opcodes {next}"
         );
-        $self.block_index_counts[*index] += $count;
+        $self.block_index_counts[*index] += $count * operator_factor($op);
     }};
 }
 
@@ -135,7 +135,7 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     where
         O: Extend<Operator<'a>>,
     {
-        use arbutil::operator::operator_lookup_code;
+        use arbutil::operator::operator_factor;
         use Operator::*;
 
         macro_rules! dot {

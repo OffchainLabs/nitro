@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use eyre::Result;
@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
+use arbutil::operator::OperatorCode;
 #[cfg(feature = "native")]
 use {
     super::{
@@ -32,7 +33,7 @@ pub struct StylusConfig {
     pub wasm_gas_price: u64,
     pub hostio_cost: u64,
     pub max_unique_operator_count: usize,
-    pub opcode_indexes: Arc<Mutex<HashMap<usize, usize>>>,
+    pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
 }
 
 impl Default for StylusConfig {
