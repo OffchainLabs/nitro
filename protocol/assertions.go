@@ -723,20 +723,22 @@ func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 }
 
 // HasConfirmedAboveSeqNumber returns true if another vertex with higher sequence number has confirmed.
-func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequenceNumber) (bool, error) {
+func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequenceNumber) bool {
+	tx.verifyRead()
+
 	if c.rootAssertion.IsNone() {
-		return false, nil
+		return false
 	}
 	vertices, ok := c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[ChallengeCommitHash(c.ParentStateCommitment().Hash())]
 	if !ok {
-		return false, errors.New("Challenge does not exist")
+		return false
 	}
 	for _, vertex := range vertices {
 		if vertex.SequenceNum > seqNum && vertex.Status == ConfirmedAssertionState {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 type ChallengeVertex struct {

@@ -821,3 +821,24 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalidOp)
 	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrInvalidOp)
 }
+
+func TestAssertion_HasConfirmedAboveSeqNumber(t *testing.T) {
+	c := &Challenge{}
+	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 0))
+	a := util.Some(&Assertion{
+		chain: &AssertionChain{
+			challengeVerticesByCommitHash: make(map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex),
+		}})
+	c.rootAssertion = a
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 0))
+
+	h := c.ParentStateCommitment().Hash()
+	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[ChallengeCommitHash(h)] = map[VertexCommitHash]*ChallengeVertex{
+		VertexCommitHash(h): {SequenceNum: 100, Status: ConfirmedAssertionState},
+	}
+
+	require.True(t, c.HasConfirmedAboveSeqNumber(tx, 99))
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 100))
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 101))
+}

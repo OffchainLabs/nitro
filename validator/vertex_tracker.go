@@ -98,10 +98,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	var siblingConfirmed bool
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		challengeCompleted = v.challenge.Completed(tx)
-		siblingConfirmed, err = v.challenge.HasConfirmedAboveSeqNumber(tx, v.vertex.SequenceNum)
-		if err != nil {
-			return err
-		}
+		siblingConfirmed = v.challenge.HasConfirmedAboveSeqNumber(tx, v.vertex.SequenceNum)
 		return nil
 	}); err != nil {
 		return err
