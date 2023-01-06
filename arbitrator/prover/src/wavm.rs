@@ -142,6 +142,8 @@ pub enum Opcode {
     Dup,
     /// Call a function in a different module
     CrossModuleCall,
+    /// Call a function in a different module, acting as the caller's module
+    CrossModuleForward,
     /// Call a caller module's internal method with a given function offset
     CallerModuleInternalCall,
     /// Gets bytes32 from global state
@@ -260,6 +262,7 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
+            Opcode::CrossModuleForward => 0x800B,
             Opcode::CallerModuleInternalCall => 0x800A,
             Opcode::GetGlobalStateBytes32 => 0x8010,
             Opcode::SetGlobalStateBytes32 => 0x8011,

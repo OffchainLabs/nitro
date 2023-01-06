@@ -5,4 +5,5 @@ members = [
 	"go-stub",
 	"go-abi",
 	"host-io",
+        "user-host",
 ]

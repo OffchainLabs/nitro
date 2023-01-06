@@ -35,6 +35,12 @@ impl<F: OpcodePricer> Meter<F> {
             start_gas,
         }
     }
+
+    pub fn globals(&self) -> (GlobalIndex, GlobalIndex) {
+        let gas_left = self.gas_global.lock().unwrap();
+        let status = self.status_global.lock().unwrap();
+        (gas_left, status)
+    }
 }
 
 impl<M, F> Middleware<M> for Meter<F>

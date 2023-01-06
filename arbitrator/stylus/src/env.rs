@@ -4,7 +4,7 @@
 use eyre::ErrReport;
 use ouroboros::self_referencing;
 use prover::programs::{
-    config::StylusConfig,
+    config::{PricingParams, StylusConfig},
     meter::{MachineMeter, MeteredMachine},
 };
 use std::ops::{Deref, DerefMut};
@@ -78,10 +78,8 @@ pub struct SystemStateData {
     pub gas_left: Global,
     /// Whether the instance has run out of gas
     pub gas_status: Global,
-    /// The price of wasm gas, measured in bips of an evm gas
-    pub wasm_gas_price: u64,
-    /// The amount of wasm gas one pays to do a user_host call
-    pub hostio_cost: u64,
+    /// The pricing parameters associated with this program's environment
+    pub pricing: PricingParams,
 }
 
 impl WasmEnv {
@@ -106,7 +104,7 @@ impl WasmEnv {
         let state = env.data().state.clone().unwrap();
         let store = env.as_store_mut();
         let mut state = SystemState::new(state, store);
-        state.buy_gas(state.hostio_cost)?;
+        state.buy_gas(state.pricing.hostio_cost)?;
         Ok(state)
     }
 }
@@ -148,7 +146,7 @@ impl<'a> SystemState<'a> {
 
     #[allow(clippy::inconsistent_digit_grouping)]
     pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let wasm_gas = evm.saturating_mul(self.wasm_gas_price) / 100_00;
+        let wasm_gas = evm.saturating_mul(self.pricing.wasm_gas_price) / 100_00;
         self.buy_gas(wasm_gas)
     }
 }

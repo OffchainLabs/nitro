@@ -5,4 +5,7 @@ pub mod color;
 pub mod crypto;
 pub mod format;
 
+#[cfg(feature = "wavm")]
+pub mod wavm;
+
 pub use color::Color;

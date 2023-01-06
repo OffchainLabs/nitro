@@ -30,10 +30,14 @@ pub mod config;
 pub mod depth;
 pub mod heap;
 pub mod meter;
+pub mod run;
 pub mod start;
 
 #[cfg(feature = "native")]
 pub mod native;
+
+pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";
+pub const USER_HOST: &str = "user_host";
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
@@ -333,5 +337,19 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             }
         }
         Ok(())
+    }
+}
+
+pub struct StylusGlobals {
+    pub gas_left: GlobalIndex,
+    pub gas_status: GlobalIndex,
+}
+
+impl StylusGlobals {
+    pub fn offsets(&self) -> (u64, u64) {
+        (
+            self.gas_left.as_u32() as u64,
+            self.gas_status.as_u32() as u64,
+        )
     }
 }

@@ -16,7 +16,7 @@ pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv
 
     let func_env = FunctionEnv::new(&mut store, env);
     let imports = imports! {
-        "user_host" => {
+        "forward" => {
             "read_args" => Function::new_typed_with_env(&mut store, &func_env, read_args),
             "return_data" => Function::new_typed_with_env(&mut store, &func_env, return_data),
         },
@@ -35,8 +35,7 @@ pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv
     env.state = Some(SystemStateData {
         gas_left,
         gas_status,
-        wasm_gas_price: env.config.wasm_gas_price,
-        hostio_cost: env.config.hostio_cost,
+        pricing: env.config.pricing,
     });
 
     let native = NativeInstance::new(instance, store);
