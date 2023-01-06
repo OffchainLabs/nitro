@@ -24,7 +24,7 @@ import (
 )
 
 type StatelessBlockValidator struct {
-	execSpawner        *validator.ArbitratorSpawner
+	execSpawner        validator.ExecutionSpawner
 	validationSpawners []validator.ValidationSpawner
 
 	inboxReader       InboxReaderInterface
@@ -262,7 +262,7 @@ func newRecordedValidationEntry(
 }
 
 func NewStatelessBlockValidator(
-	execSpawner *validator.ArbitratorSpawner,
+	execSpawner validator.ExecutionSpawner,
 	validationSpawners []validator.ValidationSpawner,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,

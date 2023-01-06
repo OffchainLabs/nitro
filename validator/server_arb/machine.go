@@ -1,10 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package server_arb
 
 /*
-#cgo CFLAGS: -g -Wall -I../target/include/
+#cgo CFLAGS: -g -Wall -I../../target/include/
 #include "arbitrator.h"
 
 ResolvedPreimage preimageResolverC(size_t context, const uint8_t* hash);
@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -30,7 +31,7 @@ type MachineInterface interface {
 	Status() uint8
 	Step(context.Context, uint64) error
 	Hash() common.Hash
-	GetGlobalState() GoGlobalState
+	GetGlobalState() validator.GoGlobalState
 	ProveNextStep() []byte
 	Freeze()
 	Destroy()
@@ -95,7 +96,7 @@ func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
 	return m.Clone()
 }
 
-func (m *ArbitratorMachine) SetGlobalState(globalState GoGlobalState) error {
+func (m *ArbitratorMachine) SetGlobalState(globalState validator.GoGlobalState) error {
 	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -105,7 +106,7 @@ func (m *ArbitratorMachine) SetGlobalState(globalState GoGlobalState) error {
 	return nil
 }
 
-func (m *ArbitratorMachine) GetGlobalState() GoGlobalState {
+func (m *ArbitratorMachine) GetGlobalState() validator.GoGlobalState {
 	defer runtime.KeepAlive(m)
 	cGlobalState := C.arbitrator_global_state(m.ptr)
 	return GlobalStateFromC(cGlobalState)

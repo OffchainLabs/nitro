@@ -49,6 +49,9 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/server_jit"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -404,7 +407,7 @@ type Config struct {
 	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
 	Staker                 staker.L1ValidatorConfig    `koanf:"staker"`
-	Validation             validator.ValidationConfig  `koanf:"validation" reload:"hot"`
+	Validation             ValidationConfig            `koanf:"validation" reload:"hot"`
 	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
 	Wasm                   WasmConfig                  `koanf:"wasm"`
@@ -414,6 +417,22 @@ type Config struct {
 	Archive                bool                        `koanf:"archive"`
 	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
 	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
+}
+
+// joint for comfort only - the two configs are entirely separate.
+type ValidationConfig struct {
+	Arbitrator server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
+	Jit        server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
+}
+
+var DefaultValidationConfig = ValidationConfig{
+	Jit:        server_jit.DefaultJitSpawnerConfig,
+	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
+}
+
+func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
+	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
+	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 }
 
 func (c *Config) Validate() error {
@@ -468,7 +487,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
-	validator.ValidationConfigAddOptions(prefix+".validation", f)
+	ValidationConfigAddOptions(prefix+".validation", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
@@ -494,7 +513,7 @@ var ConfigDefault = Config{
 	BlockValidator:         staker.DefaultBlockValidatorConfig,
 	Feed:                   broadcastclient.FeedConfigDefault,
 	Staker:                 staker.DefaultL1ValidatorConfig,
-	Validation:             validator.DefaultValidationConfig,
+	Validation:             DefaultValidationConfig,
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
 	Wasm:                   DefaultWasmConfig,
@@ -928,12 +947,12 @@ func createNodeImpl(
 	var blockValidator *staker.BlockValidator
 	var statelessBlockValidator *staker.StatelessBlockValidator
 
-	locator, err := validator.NewMachineLocator(config.Wasm.RootPath)
+	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
 	if err == nil {
-		arbConfigFetcher := func() *validator.ArbitratorSpawnerConfig {
+		arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
 			return &configFetcher.Get().Validation.Arbitrator
 		}
-		execSpawner, err := validator.NewArbitratorSpawner(locator, arbConfigFetcher)
+		execSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 		if err != nil {
 			return nil, err
 		}
@@ -942,8 +961,8 @@ func createNodeImpl(
 			valSpawners = append(valSpawners, execSpawner)
 		}
 		if config.BlockValidator.JitValidator {
-			jitConfigFetcher := func() *validator.JitSpawnerConfig { return &configFetcher.Get().Validation.Jit }
-			jitSpawner, err := validator.NewJitSpawner(locator, jitConfigFetcher, fatalErrChan)
+			jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher.Get().Validation.Jit }
+			jitSpawner, err := server_jit.NewJitSpawner(locator, jitConfigFetcher, fatalErrChan)
 			if err != nil {
 				return nil, err
 			}

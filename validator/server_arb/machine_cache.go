@@ -1,12 +1,13 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package server_arb
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/offchainlabs/nitro/util/readymarker"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
@@ -14,7 +15,7 @@ import (
 // MachineCache manages a list of machines at various step counts.
 // Aims to speed the retrieval of a machine at a given step count.
 type MachineCache struct {
-	readyMarker
+	readymarker.ReadyMarker
 	zeroStepMachine     MachineInterface
 	finalMachine        MachineInterface
 	machines            []MachineInterface
@@ -41,7 +42,7 @@ func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
 // `initialMachine` won't be mutated by this function.
 func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Context) (MachineInterface, error), config *MachineCacheConfig) *MachineCache {
 	cache := &MachineCache{
-		readyMarker: newReadyMarker(),
+		ReadyMarker: readymarker.NewReadyMarker(),
 		config:      config,
 	}
 	go func() {
@@ -51,7 +52,7 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 			err = errors.New("initialMachine not at step count 0")
 		}
 		if err != nil {
-			cache.signalReady(err)
+			cache.SignalReady(err)
 			return
 		}
 		zeroStepMachine.Freeze()
@@ -61,12 +62,12 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 		cache.machineStepInterval = config.InitialSteps
 		err = cache.populateInitialCache(ctx, ^uint64(0))
 		if err != nil {
-			cache.signalReady(err)
+			cache.SignalReady(err)
 			return
 		}
 		cache.finalMachine = cache.machines[len(cache.machines)-1]
 		cache.finalMachine.Freeze()
-		cache.signalReady(nil)
+		cache.SignalReady(nil)
 	}()
 	return cache
 }
@@ -77,32 +78,32 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 		return c
 	}
 	newCache := &MachineCache{
-		readyMarker: newReadyMarker(),
+		ReadyMarker: readymarker.NewReadyMarker(),
 		config:      c.config,
 	}
 	go func() {
 		err := c.WaitReady(ctx)
 		if err != nil {
-			newCache.signalReady(err)
+			newCache.SignalReady(err)
 			return
 		}
 		newCache.zeroStepMachine = c.zeroStepMachine
 		newCache.finalMachine = c.finalMachine
 		closest, err := c.getClosestMachine(start)
 		if err != nil {
-			newCache.signalReady(err)
+			newCache.SignalReady(err)
 			return
 		}
 		initial := closest.CloneMachineInterface()
 		initialStep := initial.GetStepCount()
 		if initialStep > start {
-			newCache.signalReady(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
+			newCache.SignalReady(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
 			return
 		}
 		if initialStep < start {
 			err := initial.Step(ctx, start-initialStep)
 			if err != nil {
-				newCache.signalReady(err)
+				newCache.SignalReady(err)
 				return
 			}
 		}
@@ -110,7 +111,7 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 		newCache.firstMachineStep = start
 		newCache.machineStepInterval = newInterval
 		err = newCache.populateInitialCache(ctx, newInterval*uint64(c.config.TargetMachineCount))
-		newCache.signalReady(err)
+		newCache.SignalReady(err)
 	}()
 	return newCache
 }

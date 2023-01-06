@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package server_jit
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -58,12 +59,14 @@ func (machine *JitMachine) close() {
 	}
 }
 
+type GoPreimageResolver = func(common.Hash) ([]byte, error)
+
 func (machine *JitMachine) prove(
-	ctxIn context.Context, entry *ValidationInput, resolver GoPreimageResolver,
-) (GoGlobalState, error) {
+	ctxIn context.Context, entry *validator.ValidationInput, resolver GoPreimageResolver,
+) (validator.GoGlobalState, error) {
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
-	state := GoGlobalState{}
+	state := validator.GoGlobalState{}
 
 	timeout := time.Now().Add(60 * time.Second)
 	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{

@@ -1,4 +1,4 @@
-package validator
+package server_arb
 
 import (
 	"context"
@@ -11,33 +11,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/readymarker"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
-
-type ReadyMarker interface {
-	Ready() bool
-	ReadyChan() chan struct{}
-	WaitReady(ctx context.Context) error
-}
-
-type ValidationSpawner interface {
-	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
-	Start(context.Context)
-	Stop()
-	Name() string
-	Room() int
-}
-
-type ValidationRun interface {
-	ReadyMarker
-	WasmModuleRoot() common.Hash
-	Result() (GoGlobalState, error)
-	Close()
-}
 
 type ArbitratorSpawnerConfig struct {
 	ConcurrentRuns int                `koanf:"concurrent-runs-limit" reload:"hot"`
@@ -63,96 +45,25 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 	return &DefaultArbitratorSpawnerConfig
 }
 
-type JitSpawnerConfig struct {
-	ConcurrentRuns int  `koanf:"concurrent-runs-limit" reload:"hot"`
-	Cranelift      bool `koanf:"cranelift"`
-}
-
-type JitSpawnerConfigFecher func() *JitSpawnerConfig
-
-var DefaultJitSpawnerConfig = JitSpawnerConfig{
-	ConcurrentRuns: 0,
-	Cranelift:      true,
-}
-
-func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".concurrent-runs-limit", DefaultJitSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
-	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
-}
-
-// joint for comfort only - the two configs are entirely separate.
-type ValidationConfig struct {
-	Arbitrator ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	Jit        JitSpawnerConfig        `koanf:"jit" reload:"hot"`
-}
-
-var DefaultValidationConfig = ValidationConfig{
-	Jit:        DefaultJitSpawnerConfig,
-	Arbitrator: DefaultArbitratorSpawnerConfig,
-}
-
-func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
-	ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
-	JitSpawnerConfigAddOptions(prefix+".jit", f)
-}
-
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
 	count         int32
-	locator       *MachineLocator
+	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
 	config        ArbitratorSpawnerConfigFecher
 }
 
-type readyMarker struct {
-	chanReady chan struct{}
-	boolReady int32
-	err       error
-}
-
 type valRun struct {
-	readyMarker
+	readymarker.ReadyMarker
 	root   common.Hash
-	result GoGlobalState
+	result validator.GoGlobalState
 }
 
-var ErrNotReady error = errors.New("not ready")
-
-func (d *readyMarker) Ready() bool {
-	return atomic.LoadInt32(&d.boolReady) != 0
-}
-
-func (d *readyMarker) ReadyChan() chan struct{} {
-	return d.chanReady
-}
-
-func (d *readyMarker) WaitReady(ctx context.Context) error {
-	select {
-	case <-d.chanReady:
-		return d.err
-	case <-ctx.Done():
-		return ctx.Err()
+func (r *valRun) Result() (validator.GoGlobalState, error) {
+	if err := r.TestReady(); err != nil {
+		return validator.GoGlobalState{}, err
 	}
-}
-
-func (d *readyMarker) signalReady(err error) {
-	d.err = err
-	atomic.StoreInt32(&d.boolReady, 1)
-	close(d.chanReady)
-}
-
-func newReadyMarker() readyMarker {
-	return readyMarker{
-		boolReady: 0,
-		chanReady: make(chan struct{}),
-	}
-}
-
-func (r *valRun) Result() (GoGlobalState, error) {
-	if !r.Ready() {
-		return GoGlobalState{}, ErrNotReady
-	}
-	return r.result, r.err
+	return r.result, nil
 }
 
 func (r *valRun) WasmModuleRoot() common.Hash {
@@ -163,17 +74,17 @@ func (r *valRun) Close() {}
 
 func NewvalRun(root common.Hash) *valRun {
 	return &valRun{
-		readyMarker: newReadyMarker(),
+		ReadyMarker: readymarker.NewReadyMarker(),
 		root:        root,
 	}
 }
 
-func (r *valRun) consumeResult(res GoGlobalState, err error) {
+func (r *valRun) consumeResult(res validator.GoGlobalState, err error) {
 	r.result = res
-	r.signalReady(err)
+	r.SignalReady(err)
 }
 
-func NewArbitratorSpawner(locator *MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	spawner := &ArbitratorSpawner{
 		locator:       locator,
@@ -198,7 +109,7 @@ func (s *ArbitratorSpawner) Name() string {
 	return "arbitrator"
 }
 
-func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *ValidationInput, mach *ArbitratorMachine) error {
+func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *validator.ValidationInput, mach *ArbitratorMachine) error {
 	resolver := func(hash common.Hash) ([]byte, error) {
 		// Check if it's a known preimage
 		if preimage, ok := entry.Preimages[hash]; ok {
@@ -238,18 +149,18 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *Valid
 }
 
 func (v *ArbitratorSpawner) execute(
-	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
-) (GoGlobalState, error) {
+	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
+) (validator.GoGlobalState, error) {
 	basemachine, err := v.machineLoader.GetHostIoMachine(ctx, moduleRoot)
 	if err != nil {
-		return GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
+		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
 	mach := basemachine.Clone()
 	defer mach.Destroy()
 	err = v.loadEntryToMachine(ctx, entry, mach)
 	if err != nil {
-		return GoGlobalState{}, err
+		return validator.GoGlobalState{}, err
 	}
 	var steps uint64
 	for mach.IsRunning() {
@@ -259,18 +170,18 @@ func (v *ArbitratorSpawner) execute(
 			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.Id, "steps", steps)
 		}
 		if err != nil {
-			return GoGlobalState{}, fmt.Errorf("machine execution failed with error: %w", err)
+			return validator.GoGlobalState{}, fmt.Errorf("machine execution failed with error: %w", err)
 		}
 		steps += count
 	}
 	if mach.IsErrored() {
 		log.Error("machine entered errored state during attempted validation", "block", entry.Id)
-		return GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
+		return validator.GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
 	}
 	return mach.GetGlobalState(), nil
 }
 
-func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun {
+func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	v.LaunchThread(func(ctx context.Context) {
@@ -291,8 +202,8 @@ func (v *ArbitratorSpawner) Room() int {
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *ArbitratorSpawner) WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) error {
-	outDirPath := filepath.Join(v.locator.rootPath, v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", input.Id))
+func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+	outDirPath := filepath.Join(v.locator.RootPath(), v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", input.Id))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
 		return err
@@ -309,7 +220,7 @@ func (v *ArbitratorSpawner) WriteToFile(input *ValidationInput, expOut GoGlobalS
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", expOut.Batch, expOut.PosInBatch, expOut.BlockHash) +
-		"MACHPATH=\"" + v.locator.getMachinePath(moduleRoot) + "\"\n" +
+		"MACHPATH=\"" + v.locator.GetMachinePath(moduleRoot) + "\"\n" +
 		rootPathAssign +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-m\" ]]; then\n" +
@@ -393,7 +304,7 @@ func (v *ArbitratorSpawner) WriteToFile(input *ValidationInput, expOut GoGlobalS
 	return nil
 }
 
-func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) (ExecutionRun, error) {
+func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
 	getMachine := func(ctx context.Context) (MachineInterface, error) {
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
@@ -413,83 +324,4 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 
 func (v *ArbitratorSpawner) Stop() {
 	v.StopOnly()
-}
-
-type JitSpawner struct {
-	stopwaiter.StopWaiter
-	count         int32
-	locator       *MachineLocator
-	machineLoader *JitMachineLoader
-	config        JitSpawnerConfigFecher
-}
-
-func NewJitSpawner(locator *MachineLocator, config JitSpawnerConfigFecher, fatalErrChan chan error) (*JitSpawner, error) {
-	// TODO - preload machines
-	machineConfig := DefaultJitMachineConfig
-	machineConfig.JitCranelift = config().Cranelift
-	loader, err := NewJitMachineLoader(&machineConfig, locator, fatalErrChan)
-	if err != nil {
-		return nil, err
-	}
-	spawner := &JitSpawner{
-		locator:       locator,
-		machineLoader: loader,
-		config:        config,
-	}
-	return spawner, nil
-}
-
-func (v *JitSpawner) Start(ctx_in context.Context) {
-	v.StopWaiter.Start(ctx_in, v)
-}
-
-func (v *JitSpawner) execute(
-	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
-) (GoGlobalState, error) {
-	empty := GoGlobalState{}
-
-	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
-	if err != nil {
-		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
-	}
-
-	resolver := func(hash common.Hash) ([]byte, error) {
-		// Check if it's a known preimage
-		if preimage, ok := entry.Preimages[hash]; ok {
-			return preimage, nil
-		}
-		return nil, errors.New("preimage not found")
-	}
-	state, err := machine.prove(ctx, entry, resolver)
-	return state, err
-}
-
-func (s *JitSpawner) Name() string {
-	if s.config().Cranelift {
-		return "jit-cranelift"
-	}
-	return "jit"
-}
-
-func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun {
-	atomic.AddInt32(&v.count, 1)
-	run := NewvalRun(moduleRoot)
-	go func() {
-		run.consumeResult(v.execute(v.GetContext(), entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
-	}()
-	return run
-}
-
-func (v *JitSpawner) Room() int {
-	avail := v.config().ConcurrentRuns
-	if avail == 0 {
-		avail = runtime.NumCPU()
-	}
-	return avail - int(atomic.LoadInt32(&v.count))
-}
-
-func (v *JitSpawner) Stop() {
-	v.StopOnly()
-	v.machineLoader.Stop()
 }

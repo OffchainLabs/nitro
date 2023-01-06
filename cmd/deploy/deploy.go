@@ -13,7 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -97,7 +97,7 @@ func main() {
 
 	var moduleRoot common.Hash
 	if *wasmmoduleroot == "" {
-		locator, err := validator.NewMachineLocator(*wasmrootpath)
+		locator, err := server_common.NewMachineLocator(*wasmrootpath)
 		if err != nil {
 			panic(err)
 		}
