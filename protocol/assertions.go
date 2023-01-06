@@ -27,7 +27,7 @@ var (
 	ErrWrongState             = errors.New("vertex state does not allow this operation")
 	ErrWrongPredecessorState  = errors.New("predecessor state does not allow this operation")
 	ErrNotYet                 = errors.New("deadline has not yet passed")
-	ErrNoWinnerYet            = errors.New("challenges does not yet have a winnerAssertion")
+	ErrNoWinnerYet            = errors.New("challenges does not yet have a WinnerAssertion")
 	ErrPastDeadline           = errors.New("deadline has passed")
 	ErrInsufficientBalance    = errors.New("insufficient balance")
 	ErrNotImplemented         = errors.New("not yet implemented")
@@ -528,7 +528,7 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	return nil
 }
 
-// ConfirmForWin confirms that the assertion is the winnerAssertion of the challenge and moves the assertion to `ConfirmedAssertionState` state.
+// ConfirmForWin confirms that the assertion is the WinnerAssertion of the challenge and moves the assertion to `ConfirmedAssertionState` state.
 func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
@@ -562,7 +562,7 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 // Challenge created by an assertion.
 type Challenge struct {
 	rootAssertion         util.Option[*Assertion]
-	winnerAssertion       util.Option[*Assertion]
+	WinnerAssertion       util.Option[*Assertion]
 	rootVertex            util.Option[*ChallengeVertex]
 	latestConfirmedVertex util.Option[*ChallengeVertex]
 	creationTime          time.Time
@@ -600,7 +600,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 
 	chal := &Challenge{
 		rootAssertion:         util.Some[*Assertion](a),
-		winnerAssertion:       util.None[*Assertion](),
+		WinnerAssertion:       util.None[*Assertion](),
 		rootVertex:            util.Some[*ChallengeVertex](rootVertex),
 		latestConfirmedVertex: util.Some[*ChallengeVertex](rootVertex),
 		creationTime:          a.chain.timeReference.Get(),
@@ -710,16 +710,16 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 // Completed returns true if the challenge is completed.
 func (c *Challenge) Completed(tx *ActiveTx) bool {
 	tx.verifyRead()
-	return !c.winnerAssertion.IsNone()
+	return !c.WinnerAssertion.IsNone()
 }
 
 // Winner returns the winning assertion if the challenge is completed.
 func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 	tx.verifyRead()
-	if c.winnerAssertion.IsNone() {
+	if c.WinnerAssertion.IsNone() {
 		return nil, ErrNoWinnerYet
 	}
-	return c.winnerAssertion.Unwrap(), nil
+	return c.WinnerAssertion.Unwrap(), nil
 }
 
 // HasConfirmedAboveSeqNumber returns true if another vertex with higher sequence number has confirmed.
@@ -946,7 +946,7 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 func (v *ChallengeVertex) _confirm() {
 	v.Status = ConfirmedAssertionState
 	if v.isLeaf {
-		v.challenge.Unwrap().winnerAssertion = v.winnerIfConfirmed
+		v.challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
 	}
 }
 

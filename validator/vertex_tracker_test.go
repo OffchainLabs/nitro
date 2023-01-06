@@ -158,6 +158,91 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
 	})
+	t.Run("vertex's prev is nil and returns", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev:       util.None[*protocol.ChallengeVertex](),
+		}
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+			vertex,
+			nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrNilPrev)
+	})
+	t.Run("vertex confirmed and returns", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev: util.Some(&protocol.ChallengeVertex{
+				Commitment: parentHistory,
+			}),
+			Status: protocol.ConfirmedAssertionState,
+		}
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+			vertex,
+			nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrConfirmed)
+	})
+	t.Run("challenge completed and returns", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev: util.Some(&protocol.ChallengeVertex{
+				Commitment: parentHistory,
+			}),
+		}
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+			vertex,
+			nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{
+				WinnerAssertion: util.Some(&protocol.Assertion{}),
+			},
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrChallengeCompleted)
+	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
 		history := util.HistoryCommitment{
 			Height: 2,
