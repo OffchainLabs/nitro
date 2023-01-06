@@ -567,6 +567,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			case <-nextNonceExpiryChan:
 				// No need to stop the previous timer since it already elapsed
 				nextNonceExpiryTimer = s.expireNonceFailures()
+				continue
 			case <-ctx.Done():
 				return false
 			}
