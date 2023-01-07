@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
 )
@@ -57,7 +58,7 @@ func TestKeccakProgram(t *testing.T) {
 		return receipt
 	}
 
-	time := func(message string, lambda func()) {
+	timed := func(message string, lambda func()) {
 		t.Helper()
 		now := time.Now()
 		lambda()
@@ -68,16 +69,17 @@ func TestKeccakProgram(t *testing.T) {
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
-	time("compile", func() {
+	timed("compile", func() {
 		ensure(arbWasm.CompileProgram(&auth, programAddress))
 	})
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
 
-	time("execute", func() {
-		args := []byte{0x01} // keccak the preimage once
-		args = append(args, preimage...)
+	args := []byte{0x01} // keccak the preimage once
+	args = append(args, preimage...)
+
+	timed("execute", func() {
 		result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
 		Require(t, err)
 
@@ -90,5 +92,20 @@ func TestKeccakProgram(t *testing.T) {
 			Fail(t, "computed hash mismatch", hash, correct)
 		}
 		colors.PrintGrey("keccak(x) = ", hash)
+	})
+
+	// do a mutating call for proving's sake
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+	ensure(mock.CallKeccak(&auth, programAddress, args))
+
+	doUntil(t, 10*time.Millisecond, 10, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
+		Require(t, err)
+		return meta.MessageCount == messageCount
 	})
 }

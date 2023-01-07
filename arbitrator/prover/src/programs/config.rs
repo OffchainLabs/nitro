@@ -48,7 +48,6 @@ impl Default for StylusConfig {
     }
 }
 
-#[allow(clippy::inconsistent_digit_grouping)]
 impl StylusConfig {
     pub fn version(version: u32) -> Self {
         let mut config = Self::default();
@@ -61,6 +60,7 @@ impl StylusConfig {
     }
 }
 
+#[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
     pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
         Self {

@@ -116,6 +116,7 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 
 test-go-deps: \
 	build-replay-env \
+	$(stylus_test_keccak_wasm) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 build-prover-header: $(arbitrator_generated_header)
@@ -179,6 +180,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
+	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
