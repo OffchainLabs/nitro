@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,13 @@ func TestSequencerParallelNonces(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
-				TransferBalance(t, "Owner", "Destination", common.Big1, l2info, client, ctx)
+				tx := l2info.PrepareTx("Owner", "Destination", l2info.TransferGas, common.Big1, nil)
+				// Sleep a random amount of time up to 20 milliseconds
+				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
+				t.Log("Submitting transaction with nonce", tx.Nonce())
+				err := client.SendTransaction(ctx, tx)
+				Require(t, err)
+				t.Log("Got response for transaction with nonce", tx.Nonce())
 			}
 		}()
 	}

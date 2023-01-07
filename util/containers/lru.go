@@ -67,6 +67,13 @@ func (c *LruCache[K, V]) Get(key K) (V, bool) {
 	return casted, true
 }
 
+func (c *LruCache[K, V]) Contains(key K) bool {
+	if c.inner == nil {
+		return false
+	}
+	return c.inner.Contains(key)
+}
+
 func (c *LruCache[K, V]) Remove(key K) {
 	if c.inner == nil {
 		return
@@ -118,6 +125,9 @@ func (c *LruCache[K, V]) Clear() {
 
 func (c *LruCache[K, V]) Resize(newSize int) {
 	if newSize <= 0 {
+		if c.inner != nil && c.onEvicted != nil {
+			c.inner.Purge() // run the evict functions
+		}
 		c.inner = nil
 	} else if c.inner == nil {
 		// Can't fail because newSize > 0
