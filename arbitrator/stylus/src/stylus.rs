@@ -11,12 +11,16 @@ use prover::programs::{
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     prelude::*,
+    start::STYLUS_START,
 };
 use std::{
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
-use wasmer::{imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Module, Store, Value};
+use wasmer::{
+    imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Module, Store, TypedFunction,
+    Value,
+};
 
 pub struct NativeInstance {
     pub instance: Instance,
@@ -107,6 +111,16 @@ impl DepthCheckedMachine for NativeInstance {
 
     fn set_stack(&mut self, size: u32) {
         self.set_global(STYLUS_STACK_LEFT, size).unwrap()
+    }
+}
+
+impl StartlessMachine for NativeInstance {
+    fn get_start(&self) -> Result<TypedFunction<(), ()>> {
+        let store = &self.store;
+        let exports = &self.instance.exports;
+        exports
+            .get_typed_function(store, STYLUS_START)
+            .map_err(ErrReport::new)
     }
 }
 

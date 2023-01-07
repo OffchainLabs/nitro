@@ -5,5 +5,7 @@ pub use super::{
     config::StylusConfig,
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
-    start::StartlessMachine,
 };
+
+#[cfg(feature = "native")]
+pub use super::start::StartlessMachine;

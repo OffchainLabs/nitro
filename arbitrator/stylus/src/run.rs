@@ -1,12 +1,11 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::fmt::Display;
-
 use crate::{env::Escape, stylus::NativeInstance};
 use eyre::{ensure, ErrReport, Result};
 use prover::machine::Machine;
-use prover::programs::prelude::*;
+use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};
+use std::fmt::Display;
 
 pub enum UserOutcome {
     Success(Vec<u8>),
@@ -62,10 +61,10 @@ impl RunProgram for Machine {
             pricing.hostio_cost.into(),
         ];
         let args_ptr = call!("user_host", "push_program", push_vec);
-        let user_host = self.find_module("user_host")?;
+        let user_host = self.find_module(USER_HOST)?;
         self.write_memory(user_host, args_ptr, args)?;
 
-        let status: u32 = call!("user", "arbitrum_main", vec![args_len], |error| {
+        let status: u32 = call!("user", STYLUS_ENTRY_POINT, vec![args_len], |error| {
             if self.gas_left() == MachineMeter::Exhausted {
                 return Ok(UserOutcome::OutOfGas);
             }
@@ -75,11 +74,11 @@ impl RunProgram for Machine {
             Err(error)
         });
 
-        let outs_len = call!("user_host", "get_output_len", vec![]);
-        let outs_ptr = call!("user_host", "get_output_ptr", vec![]);
+        let outs_len = call!(USER_HOST, "get_output_len", vec![]);
+        let outs_ptr = call!(USER_HOST, "get_output_ptr", vec![]);
         let outs = self.read_memory(user_host, outs_len, outs_ptr)?.to_vec();
 
-        let num_progs: u32 = call!("user_host", "pop_program", vec![]);
+        let num_progs: u32 = call!(USER_HOST, "pop_program", vec![]);
         ensure!(num_progs == 0, "dirty user_host");
 
         Ok(match status {

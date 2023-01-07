@@ -10,7 +10,7 @@ use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
     binary,
-    programs::{prelude::*, ModuleMod},
+    programs::{prelude::*, ModuleMod, STYLUS_ENTRY_POINT},
     Machine,
 };
 use std::path::Path;
@@ -158,7 +158,7 @@ fn test_start() -> Result<()> {
 
     let exports = &instance.exports;
     let move_me = exports.get_typed_function::<(), ()>(&instance.store, "move_me")?;
-    let starter = instance.get_start(&instance.store)?;
+    let starter = instance.get_start()?;
 
     move_me.call(&mut instance.store)?;
     starter.call(&mut instance.store)?;
@@ -281,7 +281,7 @@ fn test_rust() -> Result<()> {
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
-    let main = exports.get_typed_function::<u32, i32>(store, "arbitrum_main")?;
+    let main = exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT)?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
@@ -324,7 +324,7 @@ fn test_c() -> Result<()> {
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
-    let main = exports.get_typed_function::<i32, i32>(store, "arbitrum_main")?;
+    let main = exports.get_typed_function::<i32, i32>(store, STYLUS_ENTRY_POINT)?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
