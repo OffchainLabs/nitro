@@ -938,12 +938,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		} else {
-			seqInboxAddress, err := SetupDAL1Dependencies(&l1Reader, deployInfo, &config.DataAvailability)
-			if err != nil {
-				return nil, err
-			}
-
-			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, seqInboxAddress)
+			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -1121,13 +1116,11 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	return nil
 }
 
-func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, deployInfo *RollupAddresses, config *das.DataAvailabilityConfig) (*common.Address, error) {
+func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, config *das.DataAvailabilityConfig) (*common.Address, error) {
 	var err error
 	var seqInboxAddress *common.Address
 
-	if *l1Reader != nil && deployInfo != nil {
-		seqInboxAddress = &deployInfo.SequencerInbox
-	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
+	if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
 		*l1Reader = nil
 		seqInboxAddress = nil
 	} else if *l1Reader != nil && len(config.SequencerInboxAddress) > 0 {

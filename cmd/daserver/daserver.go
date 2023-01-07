@@ -178,7 +178,7 @@ func startup() error {
 		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
 	}
 
-	seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, nil, &serverConfig.DAConf)
+	seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, &serverConfig.DAConf)
 	if err != nil {
 		return err
 	}
