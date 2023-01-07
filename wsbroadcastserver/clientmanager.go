@@ -139,7 +139,7 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 	if cm.config().LogDisconnect {
 		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
 	}
-	clientsDurationHistogram.Update(clientConnection.Age().Nanoseconds())
+	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
 	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
