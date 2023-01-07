@@ -95,6 +95,9 @@ interface ArbOwner {
     // @notice sets the maximum size (in bytes) a wasm memory may be
     function setWasmHeapBound(uint32 bound) external;
 
+    // @notice sets the cost (in wasm gas) of starting a stylus hostio call
+    function setWasmHostioCost(uint64 cost) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

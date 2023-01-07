@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::StylusConfig, ModuleMod, StylusGlobals},
+    programs::{config::StylusConfig, ModuleMod, StylusGlobals, USER_HOST},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -920,7 +920,7 @@ impl Machine {
         let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
         let forward = parse(&forward, Path::new("forward"))?;
         let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
-        let user_host = parse(&user_host, Path::new("user_host"))?;
+        let user_host = parse(&user_host, Path::new(USER_HOST))?;
 
         Self::from_binaries(
             &[forward, user_host],

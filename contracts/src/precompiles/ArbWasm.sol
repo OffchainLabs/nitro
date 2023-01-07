@@ -39,4 +39,8 @@ interface ArbWasm {
     // @notice gets the wasm memory limit
     // @return bound the maximum size (in bytes) a wasm memory may be
     function wasmHeapBound() external view returns (uint32 bound);
+
+    // @notice gets the fixed-cost overhead needed to initiate a hostio call
+    // @return cost the cost (in wasm gas) of starting a stylus hostio call
+    function wasmHostioCost() external view returns (uint64 price);
 }

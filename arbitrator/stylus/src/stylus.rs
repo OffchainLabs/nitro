@@ -6,7 +6,7 @@ use crate::{
     host,
 };
 use arbutil::Color;
-use eyre::{bail, ErrReport, Result};
+use eyre::{bail, eyre, ErrReport, Result};
 use prover::programs::{
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
@@ -57,8 +57,8 @@ impl NativeInstance {
         };
         let ty = global.get(store);
 
-        let error = || format!("global {} has the wrong type", name.red());
-        ty.try_into().map_err(|_| ErrReport::msg(error()))
+        ty.try_into()
+            .map_err(|_| eyre!("global {} has the wrong type", name.red()))
     }
 
     pub fn set_global<T>(&mut self, name: &str, value: T) -> Result<()>

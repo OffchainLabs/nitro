@@ -92,7 +92,7 @@ impl RunProgram for NativeInstance {
     fn run_main(&mut self, args: &[u8], _config: &StylusConfig) -> Result<UserOutcome> {
         let store = &mut self.store;
         let exports = &self.instance.exports;
-        let main = exports.get_typed_function::<u32, u32>(store, "arbitrum_main")?;
+        let main = exports.get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)?;
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {

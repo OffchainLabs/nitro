@@ -43,3 +43,8 @@ func (con ArbWasm) WasmMaxDepth(c ctx, evm mech) (uint32, error) {
 func (con ArbWasm) WasmHeapBound(c ctx, evm mech) (uint32, error) {
 	return c.State.Programs().WasmHeapBound()
 }
+
+// Gets the cost (in wasm gas) of starting a stylus hostio call
+func (con ArbWasm) WasmHostioCost(c ctx, evm mech) (uint64, error) {
+	return c.State.Programs().WasmHostioCost()
+}
