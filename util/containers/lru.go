@@ -4,14 +4,14 @@
 package containers
 
 import (
-	"github.com/hashicorp/golang-lru/simplelru"
+	"github.com/hashicorp/golang-lru/v2/simplelru"
 )
 
 // Not thread safe!
-// A zero or negative size means it has no capacity instead of unlimited.
+// Unlike simplelru, a zero or negative size means it has no capacity and is always empty.
 type LruCache[K comparable, V any] struct {
-	inner     *simplelru.LRU
-	onEvicted func(key, value interface{})
+	inner   *simplelru.LRU[K, V]
+	onEvict func(key K, value V)
 }
 
 func NewLruCache[K comparable, V any](size int) *LruCache[K, V] {
@@ -19,28 +19,14 @@ func NewLruCache[K comparable, V any](size int) *LruCache[K, V] {
 }
 
 func NewLruCacheWithOnEvict[K comparable, V any](size int, onEvict func(K, V)) *LruCache[K, V] {
-	var untypedOnEvict func(key, value interface{})
-	if onEvict != nil {
-		untypedOnEvict = func(key, value interface{}) {
-			castedKey, ok := key.(K)
-			if !ok {
-				panic("LRU cache has key of wrong type")
-			}
-			castedValue, ok := value.(V)
-			if !ok {
-				panic("LRU cache has value of wrong type")
-			}
-			onEvict(castedKey, castedValue)
-		}
-	}
-	var inner *simplelru.LRU
+	var inner *simplelru.LRU[K, V]
 	if size > 0 {
 		// Can't fail because newSize > 0
-		inner, _ = simplelru.NewLRU(size, untypedOnEvict)
+		inner, _ = simplelru.NewLRU(size, onEvict)
 	}
 	return &LruCache[K, V]{
-		inner:     inner,
-		onEvicted: untypedOnEvict,
+		inner:   inner,
+		onEvict: onEvict,
 	}
 }
 
@@ -56,15 +42,7 @@ func (c *LruCache[K, V]) Get(key K) (V, bool) {
 	if c.inner == nil {
 		return empty, false
 	}
-	value, ok := c.inner.Get(key)
-	if !ok {
-		return empty, false
-	}
-	casted, ok := value.(V)
-	if !ok {
-		panic("LRU cache has value of wrong type")
-	}
-	return casted, true
+	return c.inner.Get(key)
 }
 
 func (c *LruCache[K, V]) Contains(key K) bool {
@@ -87,19 +65,7 @@ func (c *LruCache[K, V]) GetOldest() (K, V, bool) {
 	if c.inner == nil {
 		return emptyKey, emptyValue, false
 	}
-	key, value, ok := c.inner.GetOldest()
-	if !ok {
-		return emptyKey, emptyValue, false
-	}
-	castedKey, ok := key.(K)
-	if !ok {
-		panic("LRU cache has key of wrong type")
-	}
-	castedValue, ok := value.(V)
-	if !ok {
-		panic("LRU cache has value of wrong type")
-	}
-	return castedKey, castedValue, true
+	return c.inner.GetOldest()
 }
 
 func (c *LruCache[K, V]) RemoveOldest() {
@@ -125,13 +91,13 @@ func (c *LruCache[K, V]) Clear() {
 
 func (c *LruCache[K, V]) Resize(newSize int) {
 	if newSize <= 0 {
-		if c.inner != nil && c.onEvicted != nil {
+		if c.inner != nil && c.onEvict != nil {
 			c.inner.Purge() // run the evict functions
 		}
 		c.inner = nil
 	} else if c.inner == nil {
 		// Can't fail because newSize > 0
-		c.inner, _ = simplelru.NewLRU(newSize, c.onEvicted)
+		c.inner, _ = simplelru.NewLRU(newSize, c.onEvict)
 	} else {
 		c.inner.Resize(newSize)
 	}
