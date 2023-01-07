@@ -157,7 +157,6 @@ func CreateDAReaderWriterForStorage(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
-	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddress *common.Address,
 ) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, *LifecycleManager, error) {
 	if !config.Enable {
@@ -234,7 +233,12 @@ func CreateDAReaderWriterForStorage(
 	}
 	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
 		var seqInboxCaller *bridgegen.SequencerInboxCaller
-		if seqInbox != nil {
+		if seqInboxAddress != nil {
+			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
+			if err != nil {
+				return nil, nil, nil, err
+			}
+
 			seqInboxCaller = &seqInbox.SequencerInboxCaller
 		}
 		if config.DisableSignatureChecking {
@@ -291,8 +295,8 @@ func CreateDAReaderWriterForStorage(
 		regularlySyncStorage.Start(ctx)
 	}
 
-	if topLevelDas != nil && seqInbox != nil {
-		topLevelDas, err = NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
+	if topLevelDas != nil && seqInboxAddress != nil {
+		topLevelDas, err = NewChainFetchDAS(topLevelDas, (*l1Reader).Client(), *seqInboxAddress)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -309,7 +313,6 @@ func CreateDAReaderForNode(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
-	seqInbox *bridgegen.SequencerInbox,
 	seqInboxAddress *common.Address,
 ) (DataAvailabilityServiceReader, *LifecycleManager, error) {
 	if !config.Enable {
@@ -380,7 +383,11 @@ func CreateDAReaderForNode(
 		// TODO only doing this because of fallback being a storage iface
 		daReader = topLevelStorageService
 	}
-	if seqInbox != nil {
+	if seqInboxAddress != nil {
+		seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
+		if err != nil {
+			return nil, nil, err
+		}
 		daReader, err = NewChainFetchReaderWithSeqInbox(daReader, seqInbox)
 		if err != nil {
 			return nil, nil, err

@@ -264,10 +264,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
-	seqInbox, seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, addresses, &serverConfig)
+	seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, addresses, &serverConfig)
 	Require(t, err)
 
-	daReader, daWriter, lifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, seqInbox, seqInboxAddress) // TODO usage
+	daReader, daWriter, lifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, seqInboxAddress) // TODO usage
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")

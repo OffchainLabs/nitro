@@ -938,12 +938,12 @@ func createNodeImpl(
 				return nil, err
 			}
 		} else {
-			seqInbox, seqInboxAddress, err := SetupDAL1Dependencies(&l1Reader, deployInfo, &config.DataAvailability)
+			seqInboxAddress, err := SetupDAL1Dependencies(&l1Reader, deployInfo, &config.DataAvailability)
 			if err != nil {
 				return nil, err
 			}
 
-			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, seqInbox, seqInboxAddress)
+			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, seqInboxAddress)
 			if err != nil {
 				return nil, err
 			}
@@ -1121,36 +1121,27 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	return nil
 }
 
-func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, deployInfo *RollupAddresses, config *das.DataAvailabilityConfig) (*bridgegen.SequencerInbox, *common.Address, error) {
-	var seqInbox *bridgegen.SequencerInbox
+func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, deployInfo *RollupAddresses, config *das.DataAvailabilityConfig) (*common.Address, error) {
 	var err error
 	var seqInboxAddress *common.Address
 
 	if *l1Reader != nil && deployInfo != nil {
 		seqInboxAddress = &deployInfo.SequencerInbox
-		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, (*l1Reader).Client())
-		if err != nil {
-			return nil, nil, err
-		}
 	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
 		*l1Reader = nil
 		seqInboxAddress = nil
 	} else if *l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
 		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if seqInboxAddress == nil {
-			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
-		if err != nil {
-			return nil, nil, err
+			return nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
 	} else {
-		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none' (if running daserver executable)")
+		return nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none' (if running daserver executable)")
 	}
-	return seqInbox, seqInboxAddress, nil
+	return seqInboxAddress, nil
 }
 
 func CreateNode(
