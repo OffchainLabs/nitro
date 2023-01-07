@@ -563,7 +563,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		err = MakeNonceError(sender, txNonce, stateNonce)
 		if err == nil {
 			pendingNonces[sender] = txNonce + 1
-			nextKey := addressAndNonce{sender, txNonce}
+			nextKey := addressAndNonce{sender, txNonce + 1}
 			revivingFailure, exists := s.nonceFailures.Get(nextKey)
 			if exists {
 				// This tx was the predecessor to one that had failed its nonce check
