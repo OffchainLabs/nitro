@@ -20,6 +20,7 @@ require (
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/ethereum/go-ethereum v1.10.13-0.20211112145008-abc74a5ffeb7
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
+	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-ipfs-files v0.1.1
 	github.com/ipfs/go-path v0.3.0
 	github.com/ipfs/interface-go-ipfs-core v0.7.0
@@ -27,6 +28,7 @@ require (
 	github.com/knadh/koanf v1.4.0
 	github.com/libp2p/go-libp2p v0.23.2
 	github.com/multiformats/go-multiaddr v0.7.0
+	github.com/multiformats/go-multihash v0.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
@@ -98,7 +100,6 @@ require (
 	github.com/ipfs/go-bitswap v0.10.2 // indirect
 	github.com/ipfs/go-block-format v0.0.3 // indirect
 	github.com/ipfs/go-blockservice v0.4.0 // indirect
-	github.com/ipfs/go-cid v0.3.2 // indirect
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
 	github.com/ipfs/go-delegated-routing v0.6.0 // indirect
@@ -192,7 +193,6 @@ require (
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.1.1 // indirect
 	github.com/multiformats/go-multicodec v0.6.0 // indirect
-	github.com/multiformats/go-multihash v0.2.1 // indirect
 	github.com/multiformats/go-multistream v0.3.3 // indirect
 	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
