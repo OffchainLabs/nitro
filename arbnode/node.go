@@ -1116,27 +1116,6 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	return nil
 }
 
-func SetupDAL1Dependencies(l1Reader **headerreader.HeaderReader, config *das.DataAvailabilityConfig) (*common.Address, error) {
-	var err error
-	var seqInboxAddress *common.Address
-
-	if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		*l1Reader = nil
-		seqInboxAddress = nil
-	} else if *l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
-		if err != nil {
-			return nil, err
-		}
-		if seqInboxAddress == nil {
-			return nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-		}
-	} else {
-		return nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none' (if running daserver executable)")
-	}
-	return seqInboxAddress, nil
-}
-
 func CreateNode(
 	ctx context.Context,
 	stack *node.Node,

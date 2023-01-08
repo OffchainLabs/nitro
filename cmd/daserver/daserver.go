@@ -16,11 +16,11 @@ import (
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
@@ -178,12 +178,22 @@ func startup() error {
 		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
 	}
 
-	seqInboxAddress, err := arbnode.SetupDAL1Dependencies(&l1Reader, &serverConfig.DAConf)
-	if err != nil {
-		return err
+	var seqInboxAddress *common.Address
+	if serverConfig.DAConf.SequencerInboxAddress == "none" {
+		seqInboxAddress = nil
+	} else if len(serverConfig.DAConf.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err = das.OptionalAddressFromString(serverConfig.DAConf.SequencerInboxAddress)
+		if err != nil {
+			return err
+		}
+		if seqInboxAddress == nil {
+			return errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+		}
+	} else {
+		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
 	}
 
-	daReader, daWriter, dasLifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress) // TODO usage
+	daReader, daWriter, dasLifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}
