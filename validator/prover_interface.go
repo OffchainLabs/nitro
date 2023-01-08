@@ -5,6 +5,7 @@ package validator
 
 /*
 #cgo CFLAGS: -g -Wall -I../target/include/
+#cgo LDFLAGS: ${SRCDIR}/../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 #include <stdlib.h>
 
