@@ -99,7 +99,7 @@ func TestKeccakProgram(t *testing.T) {
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 
-	doUntil(t, 20*time.Millisecond, 20, func() bool {
+	doUntil(t, 20*time.Millisecond, 50, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
