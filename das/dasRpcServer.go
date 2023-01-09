@@ -22,14 +22,11 @@ import (
 )
 
 var (
-	rpcStoreRequestGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
-	rpcStoreSuccessGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
-	rpcStoreFailureGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
-	rpcStoreStoredBytesGauge = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
-
-	// Lower reservoir size for stores since they typically will be every 30 minutes,
-	// and at most several times per minute.
-	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewExpDecaySample(32, 0.015))
+	rpcStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
+	rpcStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
+	rpcStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
+	rpcStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
+	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 type DASRPCServer struct {
