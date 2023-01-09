@@ -22,7 +22,7 @@ interface ArbWasm {
     function callProgram(address program, bytes calldata data)
         external
         view
-        returns (uint32 status, bytes memory result);
+        returns (bytes memory result);
 
     // @notice gets the latest stylus version
     // @return version the stylus version

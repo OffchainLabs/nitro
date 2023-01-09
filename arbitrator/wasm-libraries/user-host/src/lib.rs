@@ -1,9 +1,10 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use gas::PricingParams;
 
 mod gas;
+mod link;
 mod user;
 
 static mut PROGRAMS: Vec<Program> = vec![];
@@ -36,15 +37,15 @@ pub unsafe extern "C" fn user_host__push_program(len: usize, price: u64, hostio:
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__pop_program() -> u32 {
+pub unsafe extern "C" fn user_host__pop_program() -> usize {
     PROGRAMS.pop();
-    PROGRAMS.len() as u32
+    PROGRAMS.len()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__get_output_len() -> u32 {
+pub unsafe extern "C" fn user_host__get_output_len() -> usize {
     let program = PROGRAMS.last().expect("no program");
-    program.outs.len() as u32
+    program.outs.len()
 }
 
 #[no_mangle]

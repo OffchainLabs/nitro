@@ -35,7 +35,7 @@ precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
 output_root=target
 
-repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
+repo_dirs = arbos arbnode arbutil arbstate cmd das precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
 color_pink = "\e[38;5;161;1m"
@@ -210,11 +210,9 @@ $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
-# recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
-	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
-	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
+	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 $(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_bin)`
@@ -295,10 +293,10 @@ $(output_root)/machines/latest/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_de
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
 
-$(output_root)/machines/latest/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host)
+$(output_root)/machines/latest/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host) $(rust_prover_files)
 	mkdir -p $(output_root)/machines/latest
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package user-host
-	install arbitrator/wasm-libraries/$(wasm32_unknown)/user_host.wasm $@
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-host
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
 
 $(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) .make/cbrotli-wasm
 	mkdir -p $(output_root)/machines/latest
@@ -309,7 +307,8 @@ $(output_root)/machines/latest/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-h
 	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
 
 $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
+	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest \
+	$(patsubst %,-l $(output_root)/machines/latest/%.wasm, forward soft-float wasi_stub go_stub host_io user_host brotli)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@

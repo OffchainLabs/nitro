@@ -602,8 +602,8 @@ func (v *StatelessBlockValidator) executeBlock(
 		steps += count
 	}
 	if mach.IsErrored() {
-		log.Error("machine entered errored state during attempted validation", "block", entry.BlockNumber)
-		return GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
+		log.Error("machine entered the error state during attempted validation", "block", entry.BlockNumber)
+		return GoGlobalState{}, errors.New("machine entered the error state during attempted validation")
 	}
 	return mach.GetGlobalState(), nil
 }

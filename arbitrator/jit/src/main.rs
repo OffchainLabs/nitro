@@ -16,6 +16,7 @@ mod runtime;
 mod socket;
 mod syscall;
 mod test;
+mod user;
 mod wavmio;
 
 #[derive(StructOpt)]

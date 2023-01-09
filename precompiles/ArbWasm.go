@@ -15,7 +15,7 @@ func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error)
 
 // Calls a wasm program
 // TODO: move into geth
-func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) (uint32, []byte, error) {
+func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) ([]byte, error) {
 	// TODO: require some intrinsic amount of gas
 	programs := c.State.Programs()
 

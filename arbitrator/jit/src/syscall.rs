@@ -570,7 +570,7 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
     sp.write_u8(5, 0);
 }
 
-macro_rules! unimpl_js {
+macro_rules! reject {
     ($($f:ident),* $(,)?) => {
         $(
             #[no_mangle]
@@ -581,7 +581,7 @@ macro_rules! unimpl_js {
     }
 }
 
-unimpl_js!(
+reject!(
     js_string_val,
     js_value_set_index,
     js_value_prepare_string,

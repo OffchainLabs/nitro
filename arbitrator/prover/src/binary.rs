@@ -9,7 +9,7 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
 use arbutil::Color;
-use eyre::{bail, ensure, Result, WrapErr};
+use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -312,7 +312,9 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
     };
     let mut validator = Validator::new();
     validator.wasm_features(features);
-    validator.validate_all(input)?;
+    validator
+        .validate_all(input)
+        .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
     let sections: Vec<_> = Parser::new(0)
         .parse_all(input)

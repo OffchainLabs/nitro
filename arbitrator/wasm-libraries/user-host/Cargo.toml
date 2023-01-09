@@ -8,4 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
+prover = { path = "../../prover/", default-features = false }
+go-abi = { path = "../go-abi" }
 hex = "0.4.3"

@@ -130,17 +130,17 @@ func (p Programs) CallProgram(
 	program common.Address,
 	calldata []byte,
 	gas *uint64,
-) (uint32, []byte, error) {
+) ([]byte, error) {
 	version, err := p.StylusVersion()
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 	if version == 0 {
-		return 0, nil, errors.New("wasm not compiled")
+		return nil, errors.New("wasm not compiled")
 	}
 	params, err := p.goParams(version)
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 	return callUserWasm(statedb, program, calldata, gas, params)
 }
@@ -154,36 +154,60 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 }
 
 type goParams struct {
-	version        uint32
-	max_depth      uint32
-	heap_bound     uint32
-	wasm_gas_price uint64
-	hostio_cost    uint64
+	version      uint32
+	maxDepth     uint32
+	heapBound    uint32
+	wasmGasPrice uint64
+	hostioCost   uint64
 }
 
 func (p Programs) goParams(version uint32) (*goParams, error) {
-	max_depth, err := p.WasmMaxDepth()
+	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
 	}
-	heap_bound, err := p.WasmHeapBound()
+	heapBound, err := p.WasmHeapBound()
 	if err != nil {
 		return nil, err
 	}
-	wasm_gas_price, err := p.WasmGasPrice()
+	wasmGasPrice, err := p.WasmGasPrice()
 	if err != nil {
 		return nil, err
 	}
-	hostio_cost, err := p.WasmHostioCost()
+	hostioCost, err := p.WasmHostioCost()
 	if err != nil {
 		return nil, err
 	}
 	config := &goParams{
-		version:        version,
-		max_depth:      max_depth,
-		heap_bound:     heap_bound,
-		wasm_gas_price: wasm_gas_price.Uint64(),
-		hostio_cost:    hostio_cost,
+		version:      version,
+		maxDepth:     maxDepth,
+		heapBound:    heapBound,
+		wasmGasPrice: wasmGasPrice.Uint64(),
+		hostioCost:   hostioCost,
 	}
 	return config, nil
+}
+
+type userStatus uint8
+
+const (
+	userSuccess userStatus = iota
+	userFailure
+	userOutOfGas
+	userOutOfStack
+)
+
+func (status userStatus) output(data []byte) ([]byte, error) {
+	switch status {
+	case userSuccess:
+		return data, nil
+	case userFailure:
+		return nil, errors.New(string(data))
+	case userOutOfGas:
+		return nil, vm.ErrOutOfGas
+	case userOutOfStack:
+		return nil, vm.ErrDepth
+	default:
+		return nil, errors.New("unknown status kind")
+	}
 }

@@ -6,5 +6,4 @@ members = [
 	"go-abi",
 	"host-io",
         "user-host",
-        "user-link",
 ]

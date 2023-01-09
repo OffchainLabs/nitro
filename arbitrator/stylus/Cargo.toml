@@ -20,4 +20,4 @@ hex = "0.4.3"
 benchmark = []
 
 [lib]
-crate-type = ["staticlib", "lib"]
+crate-type = ["staticlib"]

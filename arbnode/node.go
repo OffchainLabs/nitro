@@ -582,7 +582,7 @@ type WasmConfig struct {
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, forward.wasm, soft-float.wasm, wasi_stub.wasm, go_stub.wasm, host_io.wasm, user_host.wasm, brotli.wasm")
 }
 
 var DefaultWasmConfig = WasmConfig{

@@ -921,9 +921,11 @@ impl Machine {
         let forward = parse(&forward, Path::new("forward"))?;
         let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
         let user_host = parse(&user_host, Path::new(USER_HOST))?;
+        let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
+        let wasi_stub = parse(&wasi_stub, Path::new("wasi_stub"))?;
 
         Self::from_binaries(
-            &[forward, user_host],
+            &[forward, user_host, wasi_stub],
             bin,
             false,
             false,

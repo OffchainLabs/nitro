@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
@@ -83,11 +84,11 @@ func TestKeccakProgram(t *testing.T) {
 		result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
 		Require(t, err)
 
-		if result.Status != 0 || len(result.Result) != 32 {
-			Fail(t, "unexpected return result: Status", result.Status, "Result:", result.Result)
+		if len(result) != 32 {
+			Fail(t, "unexpected return result: ", "result", result)
 		}
 
-		hash := common.BytesToHash(result.Result)
+		hash := common.BytesToHash(result)
 		if hash != correct {
 			Fail(t, "computed hash mismatch", hash, correct)
 		}
@@ -108,4 +109,25 @@ func TestKeccakProgram(t *testing.T) {
 		Require(t, err)
 		return meta.MessageCount == messageCount
 	})
+
+	blockHeight, err := l2client.BlockNumber(ctx)
+	Require(t, err)
+
+	success := true
+	for block := uint64(1); block <= blockHeight; block++ {
+		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
+		Require(t, err)
+
+		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, true, common.Hash{})
+		Require(t, err, "block", block)
+		if correct {
+			colors.PrintMint("yay!! we validated block ", block)
+		} else {
+			colors.PrintRed("failed to validate block ", block)
+		}
+		success = success && correct
+	}
+	if !success {
+		Fail(t)
+	}
 }
