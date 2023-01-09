@@ -53,6 +53,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     IOwnable public rollup;
     mapping(address => bool) public isBatchPoster;
+    mapping(address => bool) public isSequencer;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
     mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
@@ -448,6 +449,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
+    }
+
+    /// @inheritdoc ISequencerInbox
+    function setIsSequencer(address addr, bool isSequencer_) external onlyRollupOwner {
+        isSequencer[addr] = isSequencer_;
+        emit OwnerFunctionCalled(4);
     }
 
     function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {
