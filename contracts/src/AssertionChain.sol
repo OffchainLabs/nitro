@@ -60,16 +60,6 @@ interface IAssertionChain {
 }
 
 contract AssertionChain is IAssertionChain {
-    uint256 public number;
-
-    function setNumber(uint256 newNumber) public {
-        number = newNumber;
-    }
-
-    function increment() public {
-        number++;
-    }
-
     // Read-only calls.
     function numAssertions() external view returns (uint256) {
         return 0;
