@@ -51,7 +51,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config, &syncFromStorageServicesFirst, &syncToStorageServicesFirst)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	daWriter, err := NewSignAfterStoreDAS(firstCtx, config, storageService)
+	daWriter, err := NewSignAfterStoreDASWriter(firstCtx, config, storageService)
 	Require(t, err, "no das")
 	var daReader DataAvailabilityServiceReader = storageService
 
@@ -143,7 +143,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	daWriter, err := NewSignAfterStoreDAS(ctx, config, storageService)
+	daWriter, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err, "no das")
 	var daReader DataAvailabilityServiceReader = storageService
 

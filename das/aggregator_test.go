@@ -41,7 +41,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		}
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
-		das, err := NewSignAfterStoreDAS(ctx, config, storageServices[i])
+		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(das, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
@@ -194,7 +194,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		}
 
 		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
-		das, err := NewSignAfterStoreDAS(ctx, config, storageServices[i])
+		das, err := NewSignAfterStoreDASWriter(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask, "service"+strconv.Itoa(i))

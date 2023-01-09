@@ -150,17 +150,19 @@ func CreateBatchPosterDAS(
 		return nil, nil, nil, nil
 	}
 
+	// Check config requirements
 	if !config.AggregatorConfig.Enable || !config.RestfulClientAggregatorConfig.Enable {
 		return nil, nil, nil, errors.New("--node.data-availabilty.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
 	}
 
-	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable {
-		return nil, nil, nil, errors.New("--node.data-availability.local-db-storage.enable, local-file-storage.enable, s3-storage.enable may not be set when running a Batch Poster in AnyTrust mode")
+	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable || config.IpfsStorageServiceConfig.Enable {
+		return nil, nil, nil, errors.New("None of --node.data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage).enable may not be set when running a Batch Poster in AnyTrust mode")
 	}
 
 	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
 		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key may not be set when running a Batch Poster in AnyTrust mode")
 	}
+	// Done checking config requirements
 
 	var daWriter DataAvailabilityServiceWriter
 	daWriter, err := NewRPCAggregator(ctx, *config)
@@ -201,9 +203,9 @@ func CreateDAReaderWriterForStorage(
 		return nil, nil, nil, nil
 	}
 
-	// TODO move invariant checks to another fn
+	// Check config requirements
 	if config.AggregatorConfig.Enable {
-		panic("Tried to make an aggregator using wrong factory method")
+		return nil, nil, nil, errors.New("--data-availability.rpc-aggregator")
 	}
 	if !config.LocalDBStorageConfig.Enable &&
 		!config.LocalFileStorageConfig.Enable &&
@@ -211,26 +213,10 @@ func CreateDAReaderWriterForStorage(
 		!config.IpfsStorageServiceConfig.Enable {
 		return nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
 	}
-	// TODO more invariants
+	// Done checking config requirements
 
 	var syncFromStorageServices []*IterableStorageService
 	var syncToStorageServices []StorageService
-
-	// TODO rewrite
-	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
-	/*
-			      ChainFetchDAS → Bigcache → Redis →
-				       SignAfterStoreDAS →
-				              FallbackStorageService (if the REST client aggregator was specified)
-				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
-				                            → S3
-				                            → DiskStorage
-				                            → Database
-				         (fallback only)→ RESTful client aggregator
-
-		          → : X--delegates to-->Y
-	*/
-
 	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
 		return nil, nil, nil, err
@@ -241,8 +227,8 @@ func CreateDAReaderWriterForStorage(
 		return nil, nil, nil, err
 	}
 
-	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
-	// the REST aggregator is used as the fallback to them.
+	// The REST aggregator is used as the fallback if requested data is not present
+	// in the storage service.
 	if config.RestfulClientAggregatorConfig.Enable {
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
 		if err != nil {
@@ -251,7 +237,6 @@ func CreateDAReaderWriterForStorage(
 		restAgg.Start(ctx)
 		dasLifecycleManager.Register(restAgg)
 
-		// Wrap the primary storage service with the fallback to the restful aggregator
 		syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
 		var retentionPeriodSeconds uint64
 		if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
@@ -259,6 +244,7 @@ func CreateDAReaderWriterForStorage(
 		} else {
 			retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
 		}
+
 		if syncConf.Eager {
 			if l1Reader == nil || seqInboxAddress == nil {
 				return nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
@@ -304,8 +290,7 @@ func CreateDAReaderWriterForStorage(
 			return nil, nil, nil, err
 		}
 
-		// TODO rename
-		daWriter, err = NewSignAfterStoreDASWithSeqInboxCaller(
+		daWriter, err = NewSignAfterStoreDASWriterWithSeqInboxCaller(
 			privKey,
 			seqInboxCaller,
 			storageService,

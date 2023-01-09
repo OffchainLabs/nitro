@@ -65,7 +65,7 @@ func startLocalDASServer(
 	Require(t, err)
 	privKey, err := config.KeyConfig.BLSPrivKey()
 	Require(t, err)
-	daWriter, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
+	daWriter, err := das.NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
