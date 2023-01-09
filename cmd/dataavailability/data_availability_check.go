@@ -70,6 +70,41 @@ type DataAvailabilityCheck struct {
 	checkInterval  time.Duration
 }
 
+type emptyStorageService struct {
+}
+
+func NewEmptyStorageService() *emptyStorageService {
+	return &emptyStorageService{}
+}
+
+func (s *emptyStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return nil, das.ErrNotFound
+}
+
+func (s *emptyStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
+	return nil
+}
+
+func (s *emptyStorageService) Sync(ctx context.Context) error {
+	return nil
+}
+
+func (s *emptyStorageService) Close(ctx context.Context) error {
+	return nil
+}
+
+func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.DiscardImmediately, nil
+}
+
+func (s *emptyStorageService) String() string {
+	return "emptyStorageService"
+}
+
+func (s *emptyStorageService) HealthCheck(ctx context.Context) error {
+	return nil
+}
+
 func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *DataAvailabilityCheckConfig) (*DataAvailabilityCheck, error) {
 	l1Client, err := das.GetL1Client(ctx, dataAvailabilityCheckConfig.L1ConnectionAttempts, dataAvailabilityCheckConfig.L1NodeURL)
 	if err != nil {
@@ -83,7 +118,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 	if err != nil {
 		return nil, err
 	}
-	dataSource, err := das.NewChainFetchReader(das.NewEmptyStorageService(), l1Client, *seqInboxAddress)
+	dataSource, err := das.NewChainFetchReader(NewEmptyStorageService(), l1Client, *seqInboxAddress)
 	if err != nil {
 		return nil, err
 	}

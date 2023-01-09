@@ -31,12 +31,6 @@ type DataAvailabilityServiceReader interface {
 	fmt.Stringer
 }
 
-type DataAvailabilityService interface {
-	arbstate.DataAvailabilityReader
-	DataAvailabilityServiceWriter
-	fmt.Stringer
-}
-
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 

@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -230,18 +229,6 @@ func (d *SignAfterStoreDAS) Store(
 	return c, nil
 }
 
-func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return d.storageService.GetByHash(ctx, hash)
-}
-
 func (d *SignAfterStoreDAS) String() string {
 	return fmt.Sprintf("SignAfterStoreDAS{%v}", hexutil.Encode(blsSignatures.PublicKeyToBytes(*d.pubKey)))
-}
-
-func (d *SignAfterStoreDAS) HealthCheck(ctx context.Context) error {
-	return d.storageService.HealthCheck(ctx)
-}
-
-func (d *SignAfterStoreDAS) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return d.storageService.ExpirationPolicy(ctx)
 }

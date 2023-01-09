@@ -101,6 +101,44 @@ func CreatePersistentStorageService(
 	return nil, &lifecycleManager, nil
 }
 
+func WrapStorageWithCache(
+	ctx context.Context,
+	config *DataAvailabilityConfig,
+	storageService StorageService,
+	syncFromStorageServices *[]*IterableStorageService,
+	syncToStorageServices *[]StorageService,
+	lifecycleManager *LifecycleManager) (StorageService, error) {
+	if storageService == nil {
+		return nil, nil
+	}
+
+	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
+	var err error
+	if config.RedisCacheConfig.Enable {
+		storageService, err = NewRedisStorageService(config.RedisCacheConfig, storageService)
+		lifecycleManager.Register(storageService)
+		if err != nil {
+			return nil, err
+		}
+		if config.RedisCacheConfig.SyncFromStorageServices {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(storageService))
+			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
+			storageService = iterableStorageService
+		}
+		if config.RedisCacheConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, storageService)
+		}
+	}
+	if config.LocalCacheConfig.Enable {
+		storageService, err = NewBigCacheStorageService(config.LocalCacheConfig, storageService)
+		lifecycleManager.Register(storageService)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return storageService, nil
+}
+
 func CreateBatchPosterDAS(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
@@ -162,14 +200,28 @@ func CreateDAReaderWriterForStorage(
 	if !config.Enable {
 		return nil, nil, nil, nil
 	}
+
+	// TODO move invariant checks to another fn
+	if config.AggregatorConfig.Enable {
+		panic("Tried to make an aggregator using wrong factory method")
+	}
+	if !config.LocalDBStorageConfig.Enable &&
+		!config.LocalFileStorageConfig.Enable &&
+		!config.S3StorageServiceConfig.Enable &&
+		!config.IpfsStorageServiceConfig.Enable {
+		return nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
+	}
+	// TODO more invariants
+
 	var syncFromStorageServices []*IterableStorageService
 	var syncToStorageServices []StorageService
 
+	// TODO rewrite
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
 	/*
 			      ChainFetchDAS → Bigcache → Redis →
 				       SignAfterStoreDAS →
-				              FallbackDAS (if the REST client aggregator was specified)
+				              FallbackStorageService (if the REST client aggregator was specified)
 				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
 				                            → S3
 				                            → DiskStorage
@@ -178,11 +230,16 @@ func CreateDAReaderWriterForStorage(
 
 		          → : X--delegates to-->Y
 	*/
-	topLevelStorageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
+
+	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	hasPersistentStorage := topLevelStorageService != nil
+
+	storageService, err = WrapStorageWithCache(ctx, config, storageService, &syncFromStorageServices, &syncToStorageServices, dasLifecycleManager)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
 	// the REST aggregator is used as the fallback to them.
@@ -195,43 +252,40 @@ func CreateDAReaderWriterForStorage(
 		dasLifecycleManager.Register(restAgg)
 
 		// Wrap the primary storage service with the fallback to the restful aggregator
-		if hasPersistentStorage {
-			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
-			var retentionPeriodSeconds uint64
-			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
-				retentionPeriodSeconds = math.MaxUint64
-			} else {
-				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
+		syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
+		var retentionPeriodSeconds uint64
+		if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
+			retentionPeriodSeconds = math.MaxUint64
+		} else {
+			retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
+		}
+		if syncConf.Eager {
+			if l1Reader == nil || seqInboxAddress == nil {
+				return nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 			}
-			if syncConf.Eager {
-				if l1Reader == nil || seqInboxAddress == nil {
-					return nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
-				}
-				topLevelStorageService, err = NewSyncingFallbackStorageService(
-					ctx,
-					topLevelStorageService,
-					restAgg,
-					l1Reader,
-					*seqInboxAddress,
-					syncConf)
-				if err != nil {
-					return nil, nil, nil, err
-				}
-			} else {
-				topLevelStorageService = NewFallbackStorageService(topLevelStorageService, restAgg,
-					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
+			storageService, err = NewSyncingFallbackStorageService(
+				ctx,
+				storageService,
+				restAgg,
+				l1Reader,
+				*seqInboxAddress,
+				syncConf)
+			dasLifecycleManager.Register(storageService)
+			if err != nil {
+				return nil, nil, nil, err
 			}
 		} else {
-			topLevelStorageService = NewReadLimitedStorageService(restAgg)
+			storageService = NewFallbackStorageService(storageService, restAgg,
+				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
+			dasLifecycleManager.Register(storageService)
 		}
-		dasLifecycleManager.Register(topLevelStorageService)
+
 	}
 
-	var topLevelDas DataAvailabilityService
-	if config.AggregatorConfig.Enable {
-		panic("Tried to make an aggregator using wrong factory method")
-	}
-	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+	var daWriter DataAvailabilityServiceWriter
+	var daReader DataAvailabilityServiceReader = storageService
+
+	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
 		var seqInboxCaller *bridgegen.SequencerInboxCaller
 		if seqInboxAddress != nil {
 			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
@@ -250,44 +304,16 @@ func CreateDAReaderWriterForStorage(
 			return nil, nil, nil, err
 		}
 
-		// TODO rename StorageServiceDASAdapter
-		topLevelDas, err = NewSignAfterStoreDASWithSeqInboxCaller(
+		// TODO rename
+		daWriter, err = NewSignAfterStoreDASWithSeqInboxCaller(
 			privKey,
 			seqInboxCaller,
-			topLevelStorageService,
+			storageService,
 			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-	} else {
-		topLevelDas = NewReadLimitedDataAvailabilityService(topLevelStorageService)
-	}
-
-	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
-	if config.RedisCacheConfig.Enable {
-		cache, err := NewRedisStorageService(config.RedisCacheConfig, NewEmptyStorageService())
-		dasLifecycleManager.Register(cache)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if config.RedisCacheConfig.SyncFromStorageServices {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(cache))
-			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
-			cache = iterableStorageService
-		}
-		if config.RedisCacheConfig.SyncToStorageServices {
-			syncToStorageServices = append(syncToStorageServices, cache)
-		}
-		topLevelDas = NewCacheStorageToDASAdapter(topLevelDas, cache)
-	}
-	if config.LocalCacheConfig.Enable {
-		cache, err := NewBigCacheStorageService(config.LocalCacheConfig, NewEmptyStorageService())
-		dasLifecycleManager.Register(cache)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		topLevelDas = NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
 
 	if config.RegularSyncStorageConfig.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
@@ -295,18 +321,14 @@ func CreateDAReaderWriterForStorage(
 		regularlySyncStorage.Start(ctx)
 	}
 
-	if topLevelDas != nil && seqInboxAddress != nil {
-		topLevelDas, err = NewChainFetchDAS(topLevelDas, (*l1Reader).Client(), *seqInboxAddress)
+	if seqInboxAddress != nil {
+		daReader, err = NewChainFetchReader(daReader, (*l1Reader).Client(), *seqInboxAddress)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 	}
 
-	if topLevelDas == nil {
-		return nil, nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
-	}
-
-	return topLevelDas, topLevelDas, dasLifecycleManager, nil
+	return daReader, daWriter, dasLifecycleManager, nil
 }
 
 func CreateDAReaderForNode(

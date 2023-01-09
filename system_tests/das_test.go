@@ -65,15 +65,15 @@ func startLocalDASServer(
 	Require(t, err)
 	privKey, err := config.KeyConfig.BLSPrivKey()
 	Require(t, err)
-	currentDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
+	daWriter, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, currentDas, currentDas)
+	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, daWriter)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, currentDas)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService)
 	Require(t, err)
 	beConfig := das.BackendConfig{
 		URL:                 "http://" + rpcLis.Addr().String(),
@@ -264,7 +264,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
-	daReader, daWriter, lifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, &addresses.SequencerInbox) // TODO usage
+	daReader, daWriter, lifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig, l1Reader, &addresses.SequencerInbox)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")

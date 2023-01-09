@@ -119,20 +119,20 @@ func (b *randomBagOfFailures) shouldFail() failureType {
 type WrapStore struct {
 	t        *testing.T
 	injector failureInjector
-	DataAvailabilityService
+	DataAvailabilityServiceWriter
 }
 
 func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityService.Store(ctx, message, timeout, sig)
+		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
 	case immediateError:
 		return nil, errors.New("expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, ctx.Err()
 	case dataCorruption:
-		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout, sig)
+		cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
