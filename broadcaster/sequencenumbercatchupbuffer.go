@@ -4,7 +4,6 @@
 package broadcaster
 
 import (
-	"context"
 	"errors"
 	"sync/atomic"
 	"time"
@@ -23,6 +22,7 @@ const (
 
 var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
+	cachedMessagesSentHistogram  = metrics.NewRegisteredHistogram("arb/feed/clients/cache/sent", nil, metrics.NewBoundedHistogramSample())
 )
 
 type SequenceNumberCatchupBuffer struct {
@@ -42,7 +42,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	// Ignore messages older than requested sequence number
 	firstCachedSeqNum := b.messages[0].SequenceNumber
 	if firstCachedSeqNum < requestedSeqNum {
-		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages))
+		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages)-1)
 		if lastCachedSeqNum < requestedSeqNum {
 			// Past end, nothing to return
 			return nil
@@ -74,7 +74,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	return nil
 }
 
-func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
+func (b *SequenceNumberCatchupBuffer) OnRegisterClient(clientConnection *wsbroadcastserver.ClientConnection) (error, int, time.Duration) {
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
 	var bmCount int
@@ -86,13 +86,13 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 		err := clientConnection.Write(bm)
 		if err != nil {
 			log.Error("error sending client cached messages", "error", err, "client", clientConnection.Name, "elapsed", time.Since(start))
-			return err
+			return err, 0, 0
 		}
 	}
 
-	log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", bmCount, "elapsed", time.Since(start))
+	cachedMessagesSentHistogram.Update(int64(bmCount))
 
-	return nil
+	return nil, bmCount, time.Since(start)
 }
 
 func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber arbutil.MessageIndex) {
