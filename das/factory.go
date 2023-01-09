@@ -156,11 +156,19 @@ func CreateBatchPosterDAS(
 	}
 
 	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable || config.IpfsStorageServiceConfig.Enable {
-		return nil, nil, nil, errors.New("None of --node.data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage).enable may not be set when running a Batch Poster in AnyTrust mode")
+		return nil, nil, nil, errors.New("None of --node.data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage).enable may be set when running a Nitro AnyTrust node in Batch Poster mode")
+	}
+
+	if config.RedisCacheConfig.Enable || config.LocalCacheConfig.Enable {
+		return nil, nil, nil, errors.New("--node.data-availbility.*-cache options are only for daserver")
+	}
+
+	if config.RegularSyncStorageConfig.Enable {
+		return nil, nil, nil, errors.New("--node.data-availability.regular-sync-store options are only for daserver")
 	}
 
 	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
-		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key may not be set when running a Batch Poster in AnyTrust mode")
+		return nil, nil, nil, errors.New("--node.data-availability.key.(key-dir|priv-key) options are only for daserver")
 	}
 	// Done checking config requirements
 
@@ -326,46 +334,7 @@ func CreateDAReaderForNode(
 		return nil, nil, nil
 	}
 
-	topLevelStorageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, nil, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	hasPersistentStorage := topLevelStorageService != nil
-
-	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
-	// the REST aggregator is used as the fallback to them.
-	var restAgg *SimpleDASReaderAggregator
-	if config.RestfulClientAggregatorConfig.Enable {
-		restAgg, err = NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
-		if err != nil {
-			return nil, nil, err
-		}
-		restAgg.Start(ctx)
-		dasLifecycleManager.Register(restAgg)
-
-		// Wrap the primary storage service with the fallback to the restful aggregator
-		if hasPersistentStorage {
-			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
-			var retentionPeriodSeconds uint64
-			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
-				retentionPeriodSeconds = math.MaxUint64
-			} else {
-				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
-			}
-			if syncConf.Eager {
-				return nil, nil, errors.New("sync-to-storage.eager can't be used with a Nitro node")
-			} else {
-				// TODO fallback doesn't make sense for nodes
-				topLevelStorageService = NewFallbackStorageService(topLevelStorageService, restAgg,
-					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
-			}
-		}
-		// TODO cleanup
-		if topLevelStorageService != nil {
-			dasLifecycleManager.Register(topLevelStorageService)
-		}
-	}
-
+	// Check config requirements
 	if config.AggregatorConfig.Enable {
 		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
 	}
@@ -373,23 +342,66 @@ func CreateDAReaderForNode(
 		return nil, nil, errors.New("node.data-availability.key options are only for daserver committee members")
 	}
 
+	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable {
+		return nil, nil, errors.New("None of --node.data-availability.(local-db-storage|local-file-storage|s3-storage).enable may be set when running a Nitro AnyTrust node in non-Batch Poster mode.")
+	}
+
 	if config.RedisCacheConfig.Enable || config.LocalCacheConfig.Enable {
-		return nil, nil, errors.New("node.data-availbility.*-cache options are only for daserver")
+		return nil, nil, errors.New("--node.data-availbility.*-cache options are only for daserver")
 	}
 
 	if config.RegularSyncStorageConfig.Enable {
-		return nil, nil, errors.New("node.data-availability.regular-sync-store options are only for daserver")
+		return nil, nil, errors.New("--node.data-availability.regular-sync-store options are only for daserver")
 	}
 
-	if topLevelStorageService == nil && restAgg == nil {
-		return nil, nil, fmt.Errorf("data-availability.enable was specified but no Data Availability server types were enabled, %+v", config)
+	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
+		return nil, nil, errors.New("--node.data-availability.key.(key-dir|priv-key) options are only for daserver")
 	}
 
-	var daReader DataAvailabilityServiceReader = restAgg
-	if topLevelStorageService != nil {
-		// TODO only doing this because of fallback being a storage iface
-		daReader = topLevelStorageService
+	if !config.RestfulClientAggregatorConfig.Enable && !config.IpfsStorageServiceConfig.Enable {
+		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but neither of --node.data-availability.(rest-aggregator|ipfs-storage) were enabled. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
 	}
+
+	if config.RestfulClientAggregatorConfig.SyncToStorageConfig.Eager {
+		return nil, nil, errors.New("--node.data-availability.rest-aggregator.sync-to-storage.eager can't be used with a Nitro node, only lazy syncing can be used.")
+	}
+	// Done checking config requirements
+
+	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, nil, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var daReader DataAvailabilityServiceReader
+	if config.RestfulClientAggregatorConfig.Enable {
+		var restAgg *SimpleDASReaderAggregator
+		restAgg, err = NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
+		if err != nil {
+			return nil, nil, err
+		}
+		restAgg.Start(ctx)
+		dasLifecycleManager.Register(restAgg)
+
+		if storageService != nil {
+			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
+			var retentionPeriodSeconds uint64
+			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
+				retentionPeriodSeconds = math.MaxUint64
+			} else {
+				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
+			}
+
+			// This falls back to REST and updates the local IPFS repo if the data is found.
+			storageService = NewFallbackStorageService(storageService, restAgg,
+				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
+			dasLifecycleManager.Register(storageService)
+
+			daReader = storageService
+		} else {
+			daReader = restAgg
+		}
+	}
+
 	if seqInboxAddress != nil {
 		seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
 		if err != nil {
@@ -399,10 +411,6 @@ func CreateDAReaderForNode(
 		if err != nil {
 			return nil, nil, err
 		}
-	}
-
-	if dasLifecycleManager == nil {
-		return nil, nil, errors.New("missing dasLifecycleManager")
 	}
 
 	return daReader, dasLifecycleManager, nil
