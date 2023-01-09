@@ -53,7 +53,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     IOwnable public rollup;
     mapping(address => bool) public isBatchPoster;
-    mapping(address => bool) public isSequencer;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
     mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
@@ -64,6 +63,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     uint256 internal immutable deployTimeChainId = block.chainid;
+
+    mapping(address => bool) public isSequencer;
 
     function _chainIdChanged() internal view returns (bool) {
         return deployTimeChainId != block.chainid;
