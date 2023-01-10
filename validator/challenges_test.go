@@ -459,3 +459,42 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		)
 	}
 }
+
+func TestValidator_verifyAddLeafConditions(t *testing.T) {
+	badAssertion := &protocol.Assertion{}
+	ctx := context.Background()
+	timeRef := util.NewArtificialTimeReference()
+	v := &Validator{chain: protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)}
+	// Can not add leaf on root assertion
+	require.ErrorIs(t, v.verifyAddLeafConditions(badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
+
+	chain := protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)
+	var chal *protocol.Challenge
+	var rootAssertion *protocol.Assertion
+	var err error
+	err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		require.Equal(t, uint64(1), chain.NumAssertions(tx))
+		rootAssertion, err = chain.AssertionBySequenceNum(tx, 0)
+		require.NoError(t, err)
+		chain.SetBalance(tx, common.Address{}, new(big.Int).Mul(protocol.AssertionStakeWei, big.NewInt(1000)))
+		_, err = chain.CreateLeaf(tx, rootAssertion, protocol.StateCommitment{
+			Height:    1,
+			StateRoot: common.Hash{'a'},
+		}, common.Address{})
+		require.NoError(t, err)
+		_, err = chain.CreateLeaf(tx, rootAssertion, protocol.StateCommitment{
+			Height:    2,
+			StateRoot: common.Hash{'b'},
+		}, common.Address{})
+		require.NoError(t, err)
+		chal, err = rootAssertion.CreateChallenge(tx, ctx, common.Address{})
+		require.NoError(t, err)
+		// Parent missmatch between challenge and assertion's parent
+		require.ErrorIs(t, v.verifyAddLeafConditions(&protocol.Assertion{Prev: util.Some[*protocol.Assertion](badAssertion)}, chal), protocol.ErrInvalidOp)
+
+		// Happy case
+		require.NoError(t, v.verifyAddLeafConditions(&protocol.Assertion{Prev: util.Some[*protocol.Assertion](rootAssertion)}, chal), protocol.ErrInvalidOp)
+		return nil
+	})
+	require.NoError(t, err)
+}
