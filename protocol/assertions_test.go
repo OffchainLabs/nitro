@@ -112,6 +112,49 @@ func TestAssertionChain(t *testing.T) {
 	}
 }
 
+func TestAssertionChain_CreateLeaf_MustHaveValidParent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timeRef := util.NewArtificialTimeReference()
+	staker := common.BytesToAddress([]byte{1})
+
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	require.Equal(t, 1, len(assertionsChain.assertions))
+	require.Equal(t, AssertionSequenceNumber(0), assertionsChain.latestConfirmed)
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+		genesis := p.LatestConfirmed(tx)
+		require.Equal(t, StateCommitment{
+			Height:    0,
+			StateRoot: common.Hash{},
+		}, genesis.StateCommitment)
+
+		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+		chain.SetBalance(tx, staker, bigBalance)
+
+		foo := common.BytesToHash([]byte("foo"))
+		bar := common.BytesToHash([]byte("bar"))
+		_ = bar
+		comm := StateCommitment{Height: 1, StateRoot: foo}
+		leaf, err := chain.CreateLeaf(tx, genesis, comm, staker)
+		require.NoError(t, err)
+
+		// Trying to create a new leaf with the same commitment as before should fail.
+		leaf.StateCommitment = StateCommitment{Height: 0, StateRoot: bar} // Mutate leaf.
+		_, err = chain.CreateLeaf(tx, leaf, comm, staker)
+		require.ErrorIs(t, err, ErrVertexAlreadyExists)
+
+		// Trying to create a new leaf on top of a non-existent parent should fail.
+		leaf.StateCommitment = StateCommitment{Height: 0, StateRoot: bar} // Mutate leaf.
+		comm = StateCommitment{Height: 2, StateRoot: foo}
+		_, err = chain.CreateLeaf(tx, leaf, comm, staker)
+		require.ErrorIs(t, err, ErrParentDoesNotExist)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 	ctx := context.Background()
 	assertionsChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)

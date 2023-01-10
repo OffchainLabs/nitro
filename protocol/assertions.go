@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ var (
 	AssertionStakeWei = Gwei
 
 	ErrWrongChain             = errors.New("wrong chain")
+	ErrParentDoesNotExist     = errors.New("assertion's parent does not exist on-chain")
 	ErrInvalidOp              = errors.New("invalid operation")
 	ErrChallengeAlreadyExists = errors.New("challenge already exists on leaf")
 	ErrCannotChallengeOwnLeaf = errors.New("cannot challenge own leaf")
@@ -103,7 +105,7 @@ type AssertionChain struct {
 	challengePeriod               time.Duration
 	latestConfirmed               AssertionSequenceNumber
 	assertions                    []*Assertion
-	hasSeenAssertions             map[common.Hash]bool
+	assertionsSeen                map[common.Hash]AssertionSequenceNumber
 	challengeVerticesByCommitHash map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex
 	challengesByCommitHash        map[ChallengeCommitHash]*Challenge
 	balances                      *util.MapWithDefault[common.Address, *big.Int]
@@ -208,6 +210,16 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		challenge:               util.None[*Challenge](),
 		Staker:                  util.None[common.Address](),
 	}
+
+	genesisKey := crypto.Keccak256Hash(
+		binary.BigEndian.AppendUint64(
+			genesis.StateCommitment.Hash().Bytes(),
+			math.MaxUint64,
+		),
+	)
+	assertionsSeen := map[common.Hash]AssertionSequenceNumber{
+		genesisKey: 0,
+	}
 	chain := &AssertionChain{
 		mutex:                         sync.RWMutex{},
 		timeReference:                 timeRef,
@@ -220,7 +232,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:                          NewEventFeed[AssertionChainEvent](ctx),
 		challengesFeed:                NewEventFeed[ChallengeEvent](ctx),
 		inbox:                         NewInbox(ctx),
-		hasSeenAssertions:             make(map[common.Hash]bool),
+		assertionsSeen:                assertionsSeen,
 	}
 	genesis.chain = chain
 	return chain
@@ -396,9 +408,22 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	if prev.StateCommitment.Height >= commitment.Height {
 		return nil, ErrInvalidOp
 	}
-	seenKey := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), uint64(prev.SequenceNum)))
-	if chain.hasSeenAssertions[seenKey] {
+
+	// Ensure the assertion being created is not a duplicate.
+	if _, ok := chain.assertionsSeen[commitment.Hash()]; ok {
 		return nil, ErrVertexAlreadyExists
+	}
+
+	if !prev.Prev.IsNone() {
+		// The parent must exist on-chain.
+		prevSeqNum, ok := chain.assertionsSeen[prev.StateCommitment.Hash()]
+		if !ok {
+			return nil, ErrParentDoesNotExist
+		}
+		// Parent sequence number must be < the new assertion's assigned sequence number.
+		if prevSeqNum >= AssertionSequenceNumber(uint64(len(chain.assertions))) {
+			return nil, ErrParentDoesNotExist
+		}
 	}
 
 	if err := prev.Staker.IfLet(
@@ -427,20 +452,20 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 		status:                  PendingAssertionState,
 		SequenceNum:             AssertionSequenceNumber(len(chain.assertions)),
 		StateCommitment:         commitment,
-		Prev:                    util.Some[*Assertion](prev),
+		Prev:                    util.Some(prev),
 		isFirstChild:            prev.firstChildCreationTime.IsNone(),
 		firstChildCreationTime:  util.None[time.Time](),
 		secondChildCreationTime: util.None[time.Time](),
 		challenge:               util.None[*Challenge](),
-		Staker:                  util.Some[common.Address](staker),
+		Staker:                  util.Some(staker),
 	}
 	if prev.firstChildCreationTime.IsNone() {
-		prev.firstChildCreationTime = util.Some[time.Time](chain.timeReference.Get())
+		prev.firstChildCreationTime = util.Some(chain.timeReference.Get())
 	} else if prev.secondChildCreationTime.IsNone() {
-		prev.secondChildCreationTime = util.Some[time.Time](chain.timeReference.Get())
+		prev.secondChildCreationTime = util.Some(chain.timeReference.Get())
 	}
 	chain.assertions = append(chain.assertions, leaf)
-	chain.hasSeenAssertions[seenKey] = true
+	chain.assertionsSeen[commitment.Hash()] = leaf.SequenceNum
 	chain.feed.Append(&CreateLeafEvent{
 		PrevStateCommitment: prev.StateCommitment,
 		PrevSeqNum:          prev.SequenceNum,
@@ -599,17 +624,17 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 	}
 
 	chal := &Challenge{
-		rootAssertion:         util.Some[*Assertion](a),
+		rootAssertion:         util.Some(a),
 		winnerAssertion:       util.None[*Assertion](),
-		rootVertex:            util.Some[*ChallengeVertex](rootVertex),
-		latestConfirmedVertex: util.Some[*ChallengeVertex](rootVertex),
+		rootVertex:            util.Some(rootVertex),
+		latestConfirmedVertex: util.Some(rootVertex),
 		creationTime:          a.chain.timeReference.Get(),
 		includedHistories:     make(map[common.Hash]bool),
 		nextSequenceNum:       currSeqNumber + 1,
 	}
-	rootVertex.challenge = util.Some[*Challenge](chal)
+	rootVertex.challenge = util.Some(chal)
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
-	a.challenge = util.Some[*Challenge](chal)
+	a.challenge = util.Some(chal)
 	parentStaker := common.Address{}
 	if !a.Staker.IsNone() {
 		parentStaker = a.Staker.Unwrap()
