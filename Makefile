@@ -340,6 +340,10 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	test -f target/lib-wasm/libbrotlidec-static.a
 	@touch $@
 
+.make/machines: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	mkdir -p $(output_latest)
+	touch $@
+
 .make:
 	mkdir .make
 
