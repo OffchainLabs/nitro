@@ -157,6 +157,29 @@ contract OneStepProver0 is IOneStepProver {
         mach.functionPc = 0;
     }
 
+    function executeCrossModuleForward(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata
+    ) internal pure {
+        // Push the return pc to the stack
+        mach.valueStack.push(createReturnValue(mach));
+
+        // Push caller's caller module info to the stack
+        StackFrame memory frame = mach.frameStack.peek();
+        mach.valueStack.push(ValueLib.newI32(frame.callerModule));
+        mach.valueStack.push(ValueLib.newI32(frame.callerModuleInternals));
+
+        // Jump to the target
+        uint32 func = uint32(inst.argumentData);
+        uint32 module = uint32(inst.argumentData >> 32);
+        require(inst.argumentData >> 64 == 0, "BAD_CROSS_MODULE_CALL_DATA");
+        mach.moduleIdx = module;
+        mach.functionIdx = func;
+        mach.functionPc = 0;
+    }
+
     function executeCallerModuleInternalCall(
         Machine memory mach,
         Module memory mod,
@@ -454,6 +477,8 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeCall;
         } else if (opcode == Instructions.CROSS_MODULE_CALL) {
             impl = executeCrossModuleCall;
+        } else if (opcode == Instructions.CROSS_MODULE_FORWARD) {
+            impl = executeCrossModuleForward;
         } else if (opcode == Instructions.CALLER_MODULE_INTERNAL_CALL) {
             impl = executeCallerModuleInternalCall;
         } else if (opcode == Instructions.CALL_INDIRECT) {

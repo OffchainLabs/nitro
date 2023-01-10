@@ -4,6 +4,7 @@
 mod value;
 
 use crate::value::*;
+use arbutil::wavm;
 use fnv::FnvHashSet as HashSet;
 use go_abi::*;
 use rand::RngCore;
@@ -29,7 +30,7 @@ unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<InterpValue> {
     let mut values = Vec::new();
     for _ in 0..len {
         let p = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-        values.push(interpret_value(wavm_caller_load64(p)));
+        values.push(interpret_value(wavm::caller_load64(p)));
         ptr += 8;
     }
     values
@@ -53,7 +54,7 @@ pub unsafe extern "C" fn go__runtime_wasmWrite(sp: GoStack) {
     let fd = sp.read_u64(0);
     let ptr = sp.read_u64(1);
     let len = sp.read_u32(2);
-    let buf = read_slice(ptr, len.into());
+    let buf = wavm::read_slice(ptr, len.into());
     if fd == 2 {
         let stderr = std::io::stderr();
         let mut stderr = stderr.lock();
@@ -103,14 +104,14 @@ pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
         usize::try_from(sp.read_u64(0)).expect("Go getRandomData pointer didn't fit in usize");
     let mut len = sp.read_u64(1);
     while len >= 4 {
-        wavm_caller_store32(ptr, rng.next_u32());
+        wavm::caller_store32(ptr, rng.next_u32());
         ptr += 4;
         len -= 4;
     }
     if len > 0 {
         let mut rem = rng.next_u32();
         for _ in 0..len {
-            wavm_caller_store8(ptr, rem as u8);
+            wavm::caller_store8(ptr, rem as u8);
             ptr += 1;
             rem >>= 8;
         }
@@ -199,7 +200,7 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
     let source = interpret_value(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
-    let field = read_slice(field_ptr, field_len);
+    let field = wavm::read_slice(field_ptr, field_len);
     let value = match source {
         InterpValue::Ref(id) => get_field(id, &field),
         val => {
@@ -265,7 +266,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
             }
             let len = std::cmp::min(src_len, buf.len() as u64) as usize;
             // Slightly inefficient as this allocates a new temporary buffer
-            buf[..len].copy_from_slice(&read_slice(src_ptr, len as u64));
+            buf[..len].copy_from_slice(&wavm::read_slice(src_ptr, len as u64));
             sp.write_u64(4, GoValue::Number(len as f64).encode());
             sp.write_u8(5, 1);
             return;
@@ -298,7 +299,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: GoStack) {
                 );
             }
             let len = std::cmp::min(buf.len() as u64, dest_len) as usize;
-            write_slice(&buf[..len], dest_ptr);
+            wavm::write_slice(&buf[..len], dest_ptr);
 
             sp.write_u64(4, GoValue::Number(len as f64).encode());
             sp.write_u8(5, 1);
@@ -319,7 +320,7 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let object = interpret_value(sp.read_u64(0));
     let method_name_ptr = sp.read_u64(1);
     let method_name_len = sp.read_u64(2);
-    let method_name = read_slice(method_name_ptr, method_name_len);
+    let method_name = wavm::read_slice(method_name_ptr, method_name_len);
     let args_ptr = sp.read_u64(3);
     let args_len = sp.read_u64(4);
     let args = read_value_slice(args_ptr, args_len);
@@ -483,7 +484,7 @@ pub unsafe extern "C" fn go__syscall_js_valueSet(sp: GoStack) {
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
     let new_value = interpret_value(sp.read_u64(3));
-    let field = read_slice(field_ptr, field_len);
+    let field = wavm::read_slice(field_ptr, field_len);
     if source == InterpValue::Ref(GO_ID)
         && &field == b"_pendingEvent"
         && new_value == InterpValue::Ref(NULL_ID)

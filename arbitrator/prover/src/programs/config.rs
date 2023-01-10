@@ -20,17 +20,23 @@ use {
     wasmer_compiler_singlepass::Singlepass,
 };
 
-pub type Pricing = fn(&Operator) -> u64;
+pub type OpCosts = fn(&Operator) -> u64;
 
 #[repr(C)]
 #[derive(Clone)]
 pub struct StylusConfig {
-    pub costs: Pricing,
+    pub costs: OpCosts,
     pub start_gas: u64,
     pub max_depth: u32,
     pub heap_bound: Bytes,
+    pub pricing: PricingParams,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PricingParams {
     /// The price of wasm gas, measured in bips of an evm gas
     pub wasm_gas_price: u64,
+    /// The amount of wasm gas one pays to do a user_host call
     pub hostio_cost: u64,
     pub max_unique_operator_count: usize,
     pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
@@ -44,17 +50,25 @@ impl Default for StylusConfig {
             start_gas: 0,
             max_depth: u32::MAX,
             heap_bound: Bytes(u32::MAX as usize),
-            wasm_gas_price: 0,
-            hostio_cost: 0,
+            pricing: PricingParams::default(),
             max_unique_operator_count: 0,
             opcode_indexes: Arc::new(Mutex::new(HashMap::default())),
         }
     }
 }
 
+impl PricingParams {
+    pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
+        Self {
+            wasm_gas_price,
+            hostio_cost,
+        }
+    }
+}
+
 impl StylusConfig {
     pub fn new(
-        costs: Pricing,
+        costs: OpCosts,
         start_gas: u64,
         max_depth: u32,
         heap_bound: Bytes,
@@ -62,14 +76,14 @@ impl StylusConfig {
         hostio_cost: u64,
         max_unique_operator_count: size_t,
     ) -> Result<Self> {
+        let pricing = PricingParams::new(wasm_gas_price, hostio_cost);
         Pages::try_from(heap_bound)?; // ensure the limit represents a number of pages
         Ok(Self {
             costs,
             start_gas,
             max_depth,
             heap_bound,
-            wasm_gas_price,
-            hostio_cost,
+            pricing,
             max_unique_operator_count,
             opcode_indexes: Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
                 max_unique_operator_count,

@@ -7,3 +7,6 @@ edition = "2021"
 sha3 = "0.10.5"
 siphasher = "0.3.10"
 wasmparser = "0.83"
+
+[features]
+wavm = []

@@ -3,12 +3,12 @@
 
 use crate::{
     binary::{
-        parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+        self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::ModuleMod,
+    programs::{config::StylusConfig, ModuleMod, StylusGlobals},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -283,11 +283,14 @@ struct Module {
 }
 
 impl Module {
+    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
+
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        stylus_data: Option<StylusGlobals>,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
@@ -300,12 +303,19 @@ impl Module {
             let Some(import_name) = import.name else {
                 bail!("Missing name for import in {}", module.red());
             };
+            let (forward, import_name) = match import_name.strip_prefix(Module::FORWARDING_PREFIX) {
+                Some(name) => (true, name),
+                None => (false, import_name),
+            };
 
             let mut qualified_name = format!("{module}__{import_name}");
             qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
-                let call = Opcode::CrossModuleCall;
+                let call = match forward {
+                    true => Opcode::CrossModuleForward,
+                    false => Opcode::CrossModuleCall,
+                };
                 let wavm = vec![
                     Instruction::simple(Opcode::InitFrame),
                     Instruction::with_data(
@@ -416,7 +426,7 @@ impl Module {
                     data.data.len(),
                 );
             }
-            memory.set_range(offset, data.data);
+            memory.set_range(offset, data.data)?;
         }
 
         for table in &bin.tables {
@@ -481,7 +491,7 @@ impl Module {
         ensure!(!code.is_empty(), "Module has no code");
 
         let internals_offset = code.len() as u32;
-        host::add_internal_funcs(&mut code, &mut func_types);
+        host::add_internal_funcs(&mut code, &mut func_types, stylus_data);
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
         let func_exports = bin
@@ -898,6 +908,30 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
+            None,
+        )
+    }
+
+    pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
+        let wasm = std::fs::read(path)?;
+        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        let stylus_data = bin.instrument(config)?;
+
+        let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
+        let forward = parse(&forward, Path::new("forward"))?;
+        let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
+        let user_host = parse(&user_host, Path::new("user_host"))?;
+
+        Self::from_binaries(
+            &[forward, user_host],
+            bin,
+            false,
+            false,
+            false,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("tried to read preimage")),
+            Some(stylus_data),
         )
     }
 
@@ -910,6 +944,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        stylus_data: Option<StylusGlobals>,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
@@ -948,7 +983,8 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
+            let module =
+                Module::from_binary(lib, &available_imports, &floating_point_impls, true, None)?;
             for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
                 if let Ok(op) = name.parse::<FloatInstruction>() {
@@ -981,6 +1017,7 @@ impl Machine {
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
+            stylus_data,
         )?);
 
         // Build the entrypoint module
@@ -1334,7 +1371,8 @@ impl Machine {
         &self.modules.last().expect("no module").memory
     }
 
-    fn find_module(&self, name: &str) -> Result<u32> {
+    /// finds the first module with the given name
+    pub fn find_module(&self, name: &str) -> Result<u32> {
         let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
             let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
             let names = names.join(", ");
@@ -1353,7 +1391,24 @@ impl Machine {
         Ok((offset, func))
     }
 
-    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) {
+    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) -> Result<()> {
+        let Some(source_module) = self.modules.get(module as usize) else {
+            bail!("no module at offest {}", module.red())
+        };
+        let Some(source_func) = source_module.funcs.get(func as usize) else {
+            bail!("no func at offset {} in module {}", func.red(), source_module.name().red())
+        };
+        let ty = &source_func.ty;
+        if ty.inputs.len() != args.len() {
+            let name = source_module.names.functions.get(&func).unwrap();
+            bail!(
+                "func {} has type {} but received args {:?}",
+                name.red(),
+                ty.red(),
+                args
+            )
+        }
+
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
         self.value_stack = args;
@@ -1368,6 +1423,7 @@ impl Machine {
         };
         self.status = MachineStatus::Running;
         self.steps = 0;
+        Ok(())
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
@@ -1387,7 +1443,7 @@ impl Machine {
         args: Vec<Value>,
     ) -> Result<Vec<Value>> {
         let (module, func) = self.find_module_func(module, func)?;
-        self.jump_into_func(module, func, args);
+        self.jump_into_func(module, func, args)?;
         self.step_n(Machine::MAX_STEPS)?;
         self.get_final_result()
     }
@@ -1413,6 +1469,30 @@ impl Machine {
             }
         }
         bail!("global {} not found", name.red())
+    }
+
+    pub fn read_memory(&mut self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
+        let Some(module) = &mut self.modules.get(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        let memory = module.memory.get_range(ptr as usize, len as usize);
+        let error = || format!("failed memory read of {} bytes @ {}", len.red(), ptr.red());
+        memory.ok_or_else(|| eyre!(error()))
+    }
+
+    pub fn write_memory(&mut self, module: u32, ptr: u32, data: &[u8]) -> Result<()> {
+        let Some(module) = &mut self.modules.get_mut(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        if let Err(err) = module.memory.set_range(ptr as usize, data) {
+            let msg = eyre!(
+                "failed to write {} bytes to memory @ {}",
+                data.len().red(),
+                ptr.red()
+            );
+            bail!(err.wrap_err(msg));
+        }
+        Ok(())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -1462,6 +1542,7 @@ impl Machine {
         }
         macro_rules! error {
             () => {{
+                println!("error on line {}", line!());
                 self.status = MachineStatus::Errored;
                 break;
             }};
@@ -1554,6 +1635,19 @@ impl Machine {
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
+                    let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
+                    self.pc.module = call_module;
+                    self.pc.func = call_func;
+                    self.pc.inst = 0;
+                    module = &mut self.modules[self.pc.module()];
+                    func = &module.funcs[self.pc.func()];
+                }
+                Opcode::CrossModuleForward => {
+                    flush_module!();
+                    let frame = self.frame_stack.last().unwrap();
+                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(frame.caller_module.into());
+                    self.value_stack.push(frame.caller_module_internals.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
