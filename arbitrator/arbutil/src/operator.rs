@@ -2169,3 +2169,18 @@ pub fn operator_factor(op: &Operator) -> u64 {
 pub fn operator_full_cost(op: &Operator) -> u64 {
     operator_base_cost(op) * operator_factor(op)
 }
+
+pub fn simple_block_end_operator(op: &Operator) -> bool {
+    use Operator::*;
+
+    macro_rules! dot {
+            ($first:ident $(,$opcode:ident)*) => {
+                $first { .. } $(| $opcode { .. })*
+            };
+        }
+
+    matches!(
+        op,
+        End | Else | Return | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
+    )
+}

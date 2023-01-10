@@ -20,11 +20,11 @@ use prover::{
     Machine,
 };
 use std::path::Path;
+use wasmer::wasmparser::Operator;
 use wasmer::{
     imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
     Store,
 };
-use wasmer::wasmparser::Operator;
 use wasmer_compiler_singlepass::Singlepass;
 
 fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
@@ -52,6 +52,8 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     Ok(NativeInstance::new(instance, store))
 }
 
+#[allow(clippy::field_reassign_with_default)]
+#[allow(clippy::inconsistent_digit_grouping)]
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
     config.start_gas = 1_000_000;
@@ -189,9 +191,9 @@ fn test_count_clz() -> Result<()> {
     starter.call(&mut instance.store)?;
 
     let counts = instance.get_opcode_counts(opcode_indexes)?;
-    let count = counts.get(&(Operator::I32Clz).into());
-    assert!(count.is_some());
-    assert_eq!(*count.unwrap(), 1);
+    assert_eq!(counts.get(&(Operator::Unreachable).into()), Some(&0));
+    assert_eq!(counts.get(&(Operator::Drop).into()), Some(&1));
+    assert_eq!(counts.get(&(Operator::I32Clz).into()), Some(&1));
     Ok(())
 }
 
@@ -405,9 +407,7 @@ fn test_counter_rust_keccak() -> Result<()> {
     assert_eq!(status, 0);
 
     let counts = native.get_opcode_counts(opcode_indexes)?;
-    for (opcode, count) in counts {
-        println!("{} executed {} times", opcode, count);
-    }
+    assert_eq!(counts.get(&(Operator::Unreachable).into()), Some(&0));
     let env = env.as_ref(&native.store);
     assert_eq!(hex::encode(&env.outs), hash);
     Ok(())

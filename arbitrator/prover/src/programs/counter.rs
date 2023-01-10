@@ -3,7 +3,7 @@
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
 
-use arbutil::operator::OperatorCode;
+use arbutil::operator::{operator_factor, simple_block_end_operator, OperatorCode};
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
@@ -136,19 +136,9 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     where
         O: Extend<Operator<'a>>,
     {
-        use arbutil::operator::operator_factor;
         use Operator::*;
 
-        macro_rules! dot {
-            ($first:ident $(,$opcode:ident)*) => {
-                $first { .. } $(| $opcode { .. })*
-            };
-        }
-
-        let end = matches!(
-            op,
-            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, Call, CallIndirect)
-        );
+        let end = simple_block_end_operator(&op);
 
         opcode_count_add!(self, &op, 1);
         self.block.push(op);
