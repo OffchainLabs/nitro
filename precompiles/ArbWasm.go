@@ -1,9 +1,7 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
-
-import "errors"
 
 type ArbWasm struct {
 	Address addr // 0x71
@@ -11,13 +9,18 @@ type ArbWasm struct {
 
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error) {
-	return 0, errors.New("unimplemented")
+	// TODO: pay for gas by some compilation pricing formula
+	return c.State.Programs().CompileProgram(evm.StateDB, program)
 }
 
 // Calls a wasm program
 // TODO: move into geth
-func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, data []byte) (uint32, []byte, error) {
-	return 0, nil, errors.New("unimplemented")
+func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) (uint32, []byte, error) {
+	// TODO: require some intrinsic amount of gas
+	programs := c.State.Programs()
+
+	// give all gas to the program
+	return programs.CallProgram(evm.StateDB, program, calldata, &c.gasLeft)
 }
 
 // Gets the latest stylus version
@@ -39,4 +42,9 @@ func (con ArbWasm) WasmMaxDepth(c ctx, evm mech) (uint32, error) {
 // Gets the wasm memory limit
 func (con ArbWasm) WasmHeapBound(c ctx, evm mech) (uint32, error) {
 	return c.State.Programs().WasmHeapBound()
+}
+
+// Gets the cost (in wasm gas) of starting a stylus hostio call
+func (con ArbWasm) WasmHostioCost(c ctx, evm mech) (uint64, error) {
+	return c.State.Programs().WasmHostioCost()
 }

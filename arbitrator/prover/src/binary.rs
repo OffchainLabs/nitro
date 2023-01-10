@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
@@ -554,9 +554,11 @@ impl<'a> WasmBinary<'a> {
         }
 
         let (gas_left, gas_status) = meter.globals();
+        let depth_left = depth.globals();
         Ok(StylusGlobals {
             gas_left,
             gas_status,
+            depth_left,
         })
     }
 }

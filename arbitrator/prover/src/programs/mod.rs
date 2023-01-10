@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
@@ -30,11 +30,8 @@ pub mod config;
 pub mod depth;
 pub mod heap;
 pub mod meter;
-pub mod run;
+pub mod prelude;
 pub mod start;
-
-#[cfg(feature = "native")]
-pub mod native;
 
 pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";
 pub const USER_HOST: &str = "user_host";
@@ -343,13 +340,15 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 pub struct StylusGlobals {
     pub gas_left: GlobalIndex,
     pub gas_status: GlobalIndex,
+    pub depth_left: GlobalIndex,
 }
 
 impl StylusGlobals {
-    pub fn offsets(&self) -> (u64, u64) {
+    pub fn offsets(&self) -> (u64, u64, u64) {
         (
             self.gas_left.as_u32() as u64,
             self.gas_status.as_u32() as u64,
+            self.depth_left.as_u32() as u64,
         )
     }
 }

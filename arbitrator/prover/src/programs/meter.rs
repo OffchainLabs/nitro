@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
@@ -8,9 +8,6 @@ use parking_lot::Mutex;
 use std::fmt::Debug;
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
-
-#[cfg(feature = "native")]
-use super::native::{GlobalMod, NativeInstance};
 
 pub const STYLUS_GAS_LEFT: &str = "stylus_gas_left";
 pub const STYLUS_GAS_STATUS: &str = "stylus_gas_status";
@@ -206,24 +203,6 @@ impl Into<u64> for MachineMeter {
 pub trait MeteredMachine {
     fn gas_left(&mut self) -> MachineMeter;
     fn set_gas(&mut self, gas: u64);
-}
-
-#[cfg(feature = "native")]
-impl MeteredMachine for NativeInstance {
-    fn gas_left(&mut self) -> MachineMeter {
-        let status = self.get_global(STYLUS_GAS_STATUS).unwrap();
-        let mut gas = || self.get_global(STYLUS_GAS_LEFT).unwrap();
-
-        match status {
-            0 => MachineMeter::Ready(gas()),
-            _ => MachineMeter::Exhausted,
-        }
-    }
-
-    fn set_gas(&mut self, gas: u64) {
-        self.set_global(STYLUS_GAS_LEFT, gas).unwrap();
-        self.set_global(STYLUS_GAS_STATUS, 0).unwrap();
-    }
 }
 
 impl MeteredMachine for Machine {

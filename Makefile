@@ -1,4 +1,4 @@
-# Copyright 2021-2022, Offchain Labs, Inc.
+# Copyright 2021-2023, Offchain Labs, Inc.
 # For license information, see https://github.com/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
@@ -50,7 +50,7 @@ replay_wasm=$(output_root)/machines/latest/replay.wasm
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float user_host forward)
 arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli)
-arbitrator_prover_lib=$(output_root)/lib/libprover.a
+arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
 
@@ -98,6 +98,7 @@ stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 
 stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_siphash_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
+stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
 # user targets
 
@@ -115,11 +116,13 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 
 test-go-deps: \
 	build-replay-env \
+	$(stylus_test_keccak_wasm) \
+	$(stylus_test_siphash_wasm) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 build-prover-header: $(arbitrator_generated_header)
 
-build-prover-lib: $(arbitrator_prover_lib)
+build-prover-lib: $(arbitrator_stylus_lib)
 
 build-prover-bin: $(arbitrator_prover_bin)
 
@@ -178,6 +181,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
+	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
@@ -217,10 +221,10 @@ $(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): $(DEP_PREDICATE) $(rust_prover_files)
-	mkdir -p `dirname $(arbitrator_prover_lib)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
-	install arbitrator/target/release/libprover.a $@
+$(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
+	mkdir -p `dirname $(arbitrator_stylus_lib)`
+	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
+	install arbitrator/target/release/libstylus.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`

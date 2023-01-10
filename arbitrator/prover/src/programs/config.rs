@@ -1,7 +1,7 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::Result;
+use eyre::{bail, Result};
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
@@ -48,12 +48,36 @@ impl Default for StylusConfig {
     }
 }
 
+impl StylusConfig {
+    pub fn version(version: u32) -> Self {
+        let mut config = Self::default();
+        match version {
+            0 => {}
+            1 => config.costs = |_| 1,
+            _ => panic!("no config exists for Stylus version {version}"),
+        }
+        config
+    }
+}
+
+#[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
     pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
         Self {
             wasm_gas_price,
             hostio_cost,
         }
+    }
+
+    pub fn evm_to_wasm(&self, evm_gas: u64) -> Result<u64> {
+        if self.wasm_gas_price == 0 {
+            bail!("gas price is zero");
+        }
+        Ok(evm_gas.saturating_mul(100_00) / self.wasm_gas_price)
+    }
+
+    pub fn wasm_to_evm(&self, wasm_gas: u64) -> u64 {
+        wasm_gas.saturating_mul(self.wasm_gas_price) / 100_00
     }
 }
 

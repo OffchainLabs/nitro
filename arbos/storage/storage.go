@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package storage
@@ -132,6 +132,11 @@ func (store *Storage) GetUint64ByUint64(key uint64) (uint64, error) {
 	return store.GetUint64(util.UintToHash(key))
 }
 
+func (store *Storage) GetUint32(key common.Hash) (uint32, error) {
+	value, err := store.Get(key)
+	return uint32(value.Big().Uint64()), err
+}
+
 func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	if store.burner.ReadOnly() {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
@@ -158,6 +163,14 @@ func (store *Storage) SetByUint64(key uint64, value common.Hash) error {
 
 func (store *Storage) SetUint64ByUint64(key uint64, value uint64) error {
 	return store.Set(util.UintToHash(key), util.UintToHash(value))
+}
+
+func (store *Storage) SetUint32(key common.Hash, value uint32) error {
+	return store.Set(key, util.UintToHash(uint64(value)))
+}
+
+func (store *Storage) SetByUint32(key uint32, value common.Hash) error {
+	return store.Set(util.UintToHash(uint64(key)), value)
 }
 
 func (store *Storage) Clear(key common.Hash) error {

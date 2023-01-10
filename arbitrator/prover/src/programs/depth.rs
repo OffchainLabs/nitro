@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
@@ -14,10 +14,7 @@ use wasmer_types::{
 };
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
 
-#[cfg(feature = "native")]
-use super::native::{GlobalMod, NativeInstance};
-
-const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
+pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
 /// This middleware ensures stack overflows are deterministic across different compilers and targets.
 /// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
@@ -45,6 +42,10 @@ impl DepthChecker {
             funcs: Mutex::new(Arc::new(HashMap::default())),
             sigs: Mutex::new(Arc::new(HashMap::default())),
         }
+    }
+
+    pub fn globals(&self) -> GlobalIndex {
+        self.global.lock().unwrap()
     }
 }
 
@@ -477,17 +478,6 @@ impl<'a> FuncDepthChecker<'a> {
 pub trait DepthCheckedMachine {
     fn stack_left(&mut self) -> u32;
     fn set_stack(&mut self, size: u32);
-}
-
-#[cfg(feature = "native")]
-impl DepthCheckedMachine for NativeInstance {
-    fn stack_left(&mut self) -> u32 {
-        self.get_global(STYLUS_STACK_LEFT).unwrap()
-    }
-
-    fn set_stack(&mut self, size: u32) {
-        self.set_global(STYLUS_STACK_LEFT, size).unwrap()
-    }
 }
 
 impl DepthCheckedMachine for Machine {

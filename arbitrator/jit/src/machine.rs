@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
@@ -54,7 +54,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         }
     };
 
-    let module = match Module::new(&store, &wasm) {
+    let module = match Module::new(&store, wasm) {
         Ok(module) => module,
         Err(err) => panic!("{}", err),
     };
