@@ -3,7 +3,7 @@
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
-use arbutil::operator::simple_block_end_operator;
+use arbutil::operator::operator_at_end_of_basic_block;
 use eyre::Result;
 use parking_lot::Mutex;
 use std::fmt::Debug;
@@ -101,7 +101,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
     {
         use Operator::*;
 
-        let end = simple_block_end_operator(&op);
+        let end = operator_at_end_of_basic_block(&op);
 
         let mut cost = self.block_cost.saturating_add((self.costs)(&op));
         self.block_cost = cost;

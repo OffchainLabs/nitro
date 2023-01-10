@@ -10,7 +10,7 @@ use eyre::{bail, eyre, ErrReport, Result};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
 use prover::programs::{
-    counter::{opcode_count_name, CountedMachine}
+    counter::{opcode_count_name, CountedMachine},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     prelude::*,
@@ -116,8 +116,10 @@ impl CountedMachine for NativeInstance {
     ) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();
         for (opcode, index) in opcode_indexes.lock().clone().iter() {
-            let value: u64 = self.get_global(&opcode_count_name(index))?;
-            counts.insert(*opcode, value);
+            let count: u64 = self.get_global(&opcode_count_name(index))?;
+            if count > 0 {
+                counts.insert(*opcode, count);
+            }
         }
 
         Ok(counts)

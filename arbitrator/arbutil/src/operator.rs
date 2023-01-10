@@ -2170,7 +2170,7 @@ pub fn operator_full_cost(op: &Operator) -> u64 {
     operator_base_cost(op) * operator_factor(op)
 }
 
-pub fn simple_block_end_operator(op: &Operator) -> bool {
+pub fn operator_at_end_of_basic_block(op: &Operator) -> bool {
     use Operator::*;
 
     macro_rules! dot {

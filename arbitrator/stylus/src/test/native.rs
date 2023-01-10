@@ -187,7 +187,7 @@ fn test_count_clz() -> Result<()> {
     starter.call(&mut instance.store)?;
 
     let counts = instance.get_opcode_counts(opcode_indexes)?;
-    assert_eq!(counts.get(&(Operator::Unreachable).into()), Some(&0));
+    assert_eq!(counts.get(&(Operator::Unreachable).into()), None);
     assert_eq!(counts.get(&(Operator::Drop).into()), Some(&1));
     assert_eq!(counts.get(&(Operator::I32Clz).into()), Some(&1));
     Ok(())
@@ -402,6 +402,6 @@ fn test_counter_rust() -> Result<()> {
     assert_eq!(status, 0);
 
     let counts = native.get_opcode_counts(opcode_indexes)?;
-    assert_eq!(counts.get(&(Operator::Unreachable).into()), Some(&0));
+    assert_eq!(counts.get(&(Operator::Unreachable).into()), None);
     Ok(())
 }

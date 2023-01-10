@@ -4,7 +4,7 @@
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
 
-use arbutil::operator::{operator_factor, simple_block_end_operator, OperatorCode};
+use arbutil::operator::{operator_factor, operator_at_end_of_basic_block, OperatorCode};
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
@@ -134,7 +134,7 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     {
         use Operator::*;
 
-        let end = simple_block_end_operator(&op);
+        let end = operator_at_end_of_basic_block(&op);
 
         opcode_count_add!(self, &op, 1);
         self.block.push(op);
@@ -194,8 +194,11 @@ impl CountedMachine for Machine {
     ) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();
         for (opcode, index) in opcode_indexes.lock().clone().iter() {
-            let value = self.get_global(&opcode_count_name(&index))?;
-            counts.insert(*opcode, value.try_into().expect("type mismatch"));
+            let value = self.get_global(&opcode_count_name(index))?;
+            let count = value.try_into().expect("type mismatch");
+            if count > 0 {
+                counts.insert(*opcode, count);
+            }
         }
 
         Ok(counts)
