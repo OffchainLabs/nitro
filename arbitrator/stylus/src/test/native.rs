@@ -1,22 +1,18 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{env::WasmEnv, stylus};
+use crate::{
+    env::WasmEnv,
+    run::{RunProgram, UserOutcome},
+    stylus::{self, NativeInstance},
+};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::programs::config::StylusDebugConfig;
+use prover::programs::counter::CountedMachine;
 use prover::{
     binary,
-    programs::{
-        config::StylusConfig,
-        counter::CountedMachine,
-        depth::DepthCheckedMachine,
-        meter::{MachineMeter, MeteredMachine},
-        native::{GlobalMod, NativeInstance},
-        run::{RunProgram, UserOutcome},
-        start::StartlessMachine,
-        ModuleMod, STYLUS_ENTRY_POINT,
-    },
+    programs::{prelude::*, ModuleMod, STYLUS_ENTRY_POINT},
     Machine,
 };
 use std::path::Path;
@@ -37,7 +33,7 @@ fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance>
         },
     };
     let instance = Instance::new(&mut store, &module, &imports)?;
-    Ok(NativeInstance::new(instance, store))
+    Ok(NativeInstance::new_sans_env(instance, store))
 }
 
 fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
@@ -49,7 +45,7 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     let wat = std::fs::read(path)?;
     let module = Module::new(&store, wat)?;
     let instance = Instance::new(&mut store, &module, &Imports::new())?;
-    Ok(NativeInstance::new(instance, store))
+    Ok(NativeInstance::new_sans_env(instance, store))
 }
 
 #[allow(clippy::field_reassign_with_default)]
@@ -169,7 +165,7 @@ fn test_start() -> Result<()> {
 
     let exports = &instance.exports;
     let move_me = exports.get_typed_function::<(), ()>(&instance.store, "move_me")?;
-    let starter = instance.get_start(&instance.store)?;
+    let starter = instance.get_start()?;
 
     move_me.call(&mut instance.store)?;
     starter.call(&mut instance.store)?;
@@ -187,7 +183,7 @@ fn test_count_clz() -> Result<()> {
     config.debug = Some(debug);
     let mut instance = new_test_instance("tests/clz.wat", config)?;
 
-    let starter = instance.get_start(&instance.store)?;
+    let starter = instance.get_start()?;
     starter.call(&mut instance.store)?;
 
     let counts = instance.get_opcode_counts(opcode_indexes)?;
@@ -309,7 +305,7 @@ fn test_rust() -> Result<()> {
 
     let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let (mut native, env) = stylus::instance(filename, env)?;
+    let mut native = stylus::instance(filename, env)?;
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
@@ -317,11 +313,11 @@ fn test_rust() -> Result<()> {
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
-    let env = env.as_ref(&store);
+    let env = native.env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(args, &config)? {
+    let output = match machine.run_main(&args, &config)? {
         UserOutcome::Success(output) => hex::encode(output),
         err => bail!("user program failure: {}", err.red()),
     };
@@ -352,7 +348,7 @@ fn test_c() -> Result<()> {
 
     let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let (mut native, env) = stylus::instance(filename, env)?;
+    let mut native = stylus::instance(filename, env)?;
     let exports = &native.instance.exports;
     let store = &mut native.store;
 
@@ -360,11 +356,11 @@ fn test_c() -> Result<()> {
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
-    let env = env.as_ref(&store);
+    let env = native.env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(args, &config)? {
+    let output = match machine.run_main(&args, &config)? {
         UserOutcome::Success(output) => hex::encode(output),
         err => bail!("user program failure: {}", err.red()),
     };
@@ -377,7 +373,7 @@ fn test_c() -> Result<()> {
 
 #[test]
 #[allow(clippy::field_reassign_with_default)]
-fn test_counter_rust_keccak() -> Result<()> {
+fn test_counter_rust() -> Result<()> {
     let debug = StylusDebugConfig::new(true, 255)?;
     let opcode_indexes = debug.opcode_indexes.clone();
 
@@ -388,17 +384,16 @@ fn test_counter_rust_keccak() -> Result<()> {
     //     the input is the # of hashings followed by a preimage
     //     the output is the iterated hash of the preimage
 
+    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
     let preimage = preimage.as_bytes().to_vec();
-    let hash = hex::encode(crypto::keccak(&preimage));
 
     let mut args = vec![0x01];
     args.extend(preimage);
     let args_len = args.len() as i32;
 
     let env = WasmEnv::new(config, args);
-    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-    let (mut native, env) = stylus::instance(filename, env)?;
+    let mut native = stylus::instance(filename, env)?;
 
     let main = native
         .exports
@@ -408,7 +403,5 @@ fn test_counter_rust_keccak() -> Result<()> {
 
     let counts = native.get_opcode_counts(opcode_indexes)?;
     assert_eq!(counts.get(&(Operator::Unreachable).into()), Some(&0));
-    let env = env.as_ref(&native.store);
-    assert_eq!(hex::encode(&env.outs), hash);
     Ok(())
 }

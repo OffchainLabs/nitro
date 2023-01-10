@@ -1691,8 +1691,10 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "eyre",
+ "fnv",
  "hex",
  "ouroboros",
+ "parking_lot 0.12.1",
  "prover",
  "sha3 0.10.6",
  "thiserror",

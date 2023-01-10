@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
@@ -172,4 +172,9 @@ func (con ArbOwner) SetWasmMaxDepth(c ctx, evm mech, depth uint32) error {
 // Sets the maximum size (in bytes) a wasm memory may be
 func (con ArbOwner) SetWasmHeapBound(c ctx, evm mech, bound uint32) error {
 	return c.State.Programs().SetWasmHeapBound(bound)
+}
+
+// Sets the cost (in wasm gas) of starting a stylus hostio call
+func (con ArbOwner) SetWasmHostioCost(c ctx, evm mech, cost uint64) error {
+	return c.State.Programs().SetWasmHostioCost(cost)
 }

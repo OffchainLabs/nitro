@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
@@ -197,7 +197,7 @@ pub fn add_internal_funcs(
     ));
 
     if let Some(globals) = globals {
-        let (gas, status) = globals.offsets();
+        let (gas, status, _depth) = globals.offsets();
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, gas)],
             host(UserGasLeft),

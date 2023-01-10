@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
+use crate::Machine;
 
 use arbutil::operator::{operator_factor, simple_block_end_operator, OperatorCode};
 use eyre::Result;
@@ -12,20 +13,15 @@ use std::{clone::Clone, fmt::Debug, sync::Arc};
 use wasmer::{wasmparser::Operator, GlobalInit, Type};
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
-#[cfg(feature = "native")]
-use super::native::{GlobalMod, NativeInstance};
-
-macro_rules! opcode_count_name {
-    ($val:expr) => {
-        &format!("polyglot_opcode{}_count", $val)
-    };
-}
-
 #[derive(Debug)]
 pub struct Counter {
     pub max_unique_opcodes: usize,
     pub index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
     pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
+}
+
+pub fn opcode_count_name(index: &usize) -> String {
+    format!("stylus_opcode{}_count", index)
 }
 
 impl Counter {
@@ -52,7 +48,7 @@ where
         let mut index_counts_global = self.index_counts_global.lock();
         for index in 0..self.max_unique_opcodes {
             let count_global =
-                module.add_global(opcode_count_name!(index), Type::I64, zero_count)?;
+                module.add_global(&opcode_count_name(&index), Type::I64, zero_count)?;
             index_counts_global.push(count_global);
         }
         Ok(())
@@ -189,28 +185,19 @@ pub trait CountedMachine {
         &mut self,
         opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Result<BTreeMap<OperatorCode, u64>>;
-    fn set_opcode_counts(&mut self, index_counts: Vec<u64>) -> Result<()>;
 }
 
-#[cfg(feature = "native")]
-impl CountedMachine for NativeInstance {
+impl CountedMachine for Machine {
     fn get_opcode_counts(
         &mut self,
         opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();
         for (opcode, index) in opcode_indexes.lock().clone().iter() {
-            counts.insert(*opcode, self.get_global(opcode_count_name!(index))?);
+            let value = self.get_global(&opcode_count_name(&index))?;
+            counts.insert(*opcode, value.try_into().expect("type mismatch"));
         }
 
         Ok(counts)
-    }
-
-    fn set_opcode_counts(&mut self, index_counts: Vec<u64>) -> Result<()> {
-        for (index, count) in index_counts.iter().enumerate() {
-            self.set_global(opcode_count_name!(index), *count)?;
-        }
-
-        Ok(())
     }
 }
