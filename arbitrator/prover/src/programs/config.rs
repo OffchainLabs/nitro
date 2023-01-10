@@ -1,14 +1,13 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use arbutil::operator::OperatorCode;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
-use libc::size_t;
 use parking_lot::Mutex;
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
-use arbutil::operator::OperatorCode;
 #[cfg(feature = "native")]
 use {
     super::{
@@ -24,12 +23,43 @@ pub type OpCosts = fn(&Operator) -> u64;
 
 #[repr(C)]
 #[derive(Clone)]
+pub struct StylusDebugConfig {
+    pub enable_operator_count: bool,
+    pub max_unique_operator_count: usize,
+    pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
+}
+
+impl Default for StylusDebugConfig {
+    fn default() -> Self {
+        Self {
+            enable_operator_count: false,
+            max_unique_operator_count: 0,
+            opcode_indexes: Arc::new(Mutex::new(HashMap::default())),
+        }
+    }
+}
+
+impl StylusDebugConfig {
+    pub fn new(enable_operator_count: bool, max_unique_operator_count: usize) -> Result<Self> {
+        let opcode_indexes =
+            HashMap::with_capacity_and_hasher(max_unique_operator_count, Default::default());
+        Ok(Self {
+            enable_operator_count,
+            max_unique_operator_count,
+            opcode_indexes: Arc::new(Mutex::new(opcode_indexes)),
+        })
+    }
+}
+
+#[repr(C)]
+#[derive(Clone)]
 pub struct StylusConfig {
     pub costs: OpCosts,
     pub start_gas: u64,
     pub max_depth: u32,
     pub heap_bound: Bytes,
     pub pricing: PricingParams,
+    pub debug: Option<StylusDebugConfig>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -38,8 +68,6 @@ pub struct PricingParams {
     pub wasm_gas_price: u64,
     /// The amount of wasm gas one pays to do a user_host call
     pub hostio_cost: u64,
-    pub max_unique_operator_count: usize,
-    pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
 }
 
 impl Default for StylusConfig {
@@ -51,8 +79,7 @@ impl Default for StylusConfig {
             max_depth: u32::MAX,
             heap_bound: Bytes(u32::MAX as usize),
             pricing: PricingParams::default(),
-            max_unique_operator_count: 0,
-            opcode_indexes: Arc::new(Mutex::new(HashMap::default())),
+            debug: None,
         }
     }
 }
@@ -74,7 +101,7 @@ impl StylusConfig {
         heap_bound: Bytes,
         wasm_gas_price: u64,
         hostio_cost: u64,
-        max_unique_operator_count: size_t,
+        debug: Option<StylusDebugConfig>,
     ) -> Result<Self> {
         let pricing = PricingParams::new(wasm_gas_price, hostio_cost);
         Pages::try_from(heap_bound)?; // ensure the limit represents a number of pages
@@ -84,11 +111,7 @@ impl StylusConfig {
             max_depth,
             heap_bound,
             pricing,
-            max_unique_operator_count,
-            opcode_indexes: Arc::new(Mutex::new(HashMap::with_capacity_and_hasher(
-                max_unique_operator_count,
-                Default::default(),
-            ))),
+            debug,
         })
     }
 
@@ -110,12 +133,16 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
 
-        if self.max_unique_operator_count > 0 {
-            let counter = MiddlewareWrapper::new(Counter::new(
-                self.max_unique_operator_count,
-                self.opcode_indexes.clone(),
-            ));
-            compiler.push_middleware(Arc::new(counter));
+        if self.debug.is_some() {
+            let debug = self.debug.as_ref();
+
+            if debug.unwrap().enable_operator_count {
+                let counter = Counter::new(
+                    debug.unwrap().max_unique_operator_count,
+                    debug.unwrap().opcode_indexes.clone(),
+                );
+                compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
+            }
         }
 
         Store::new(compiler)

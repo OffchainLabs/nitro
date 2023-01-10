@@ -6,7 +6,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use wasmparser::Operator;
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OperatorCode(usize);
 
 impl Display for OperatorCode {

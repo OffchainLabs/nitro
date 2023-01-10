@@ -4,6 +4,7 @@
 use crate::{env::WasmEnv, stylus};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
+use prover::programs::config::StylusDebugConfig;
 use prover::{
     binary,
     programs::{
@@ -28,7 +29,7 @@ use wasmer_compiler_singlepass::Singlepass;
 fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
     let mut store = config.store();
     let wat = std::fs::read(path)?;
-    let module = Module::new(&store, &wat)?;
+    let module = Module::new(&store, wat)?;
     let imports = imports! {
         "test" => {
             "noop" => Function::new_typed(&mut store, || {}),
@@ -45,7 +46,7 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
     let mut store = Store::new(compiler);
     let wat = std::fs::read(path)?;
-    let module = Module::new(&mut store, &wat)?;
+    let module = Module::new(&store, wat)?;
     let instance = Instance::new(&mut store, &module, &Imports::new())?;
     Ok(NativeInstance::new(instance, store))
 }
@@ -60,11 +61,10 @@ fn uniform_cost_config() -> StylusConfig {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn test_gas() -> Result<()> {
-    let config = StylusConfig {
-        costs: super::expensive_add,
-        ..Default::default()
-    };
+    let mut config = StylusConfig::default();
+    config.costs = super::expensive_add;
 
     let mut instance = new_test_instance("tests/add.wat", config)?;
     let exports = &instance.exports;
@@ -98,6 +98,7 @@ fn test_gas() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn test_depth() -> Result<()> {
     // in depth.wat
     //    the `depth` global equals the number of times `recurse` is called
@@ -105,10 +106,8 @@ fn test_depth() -> Result<()> {
     //    the `recurse` function has 1 parameter and 2 locals
     //    comments show that the max depth is 3 words
 
-    let config = StylusConfig {
-        max_depth: 64,
-        ..Default::default()
-    };
+    let mut config = StylusConfig::default();
+    config.max_depth = 64;
 
     let mut instance = new_test_instance("tests/depth.wat", config)?;
     let exports = &instance.exports;
@@ -176,6 +175,42 @@ fn test_start() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
+fn test_count_start() -> Result<()> {
+    // in start.wat
+    //     the `status` global equals 10 at initialization
+    //     the `start` function increments `status`
+    //     by the spec, `start` must run at initialization
+
+    fn check(instance: &mut NativeInstance, value: i32) -> Result<()> {
+        let status: i32 = instance.get_global("status")?;
+        assert_eq!(status, value);
+        Ok(())
+    }
+
+    let mut instance = new_vanilla_instance("tests/start.wat")?;
+    check(&mut instance, 11)?;
+
+    let max_unique_operator_count = 255;
+
+    let debug = StylusDebugConfig::new(true, max_unique_operator_count)?;
+    let opcode_indexes = debug.opcode_indexes.clone();
+
+    let mut config = StylusConfig::default();
+    config.debug = Some(debug);
+    let mut instance = new_test_instance("tests/start.wat", config)?;
+
+    let starter = instance.get_start(&instance.store)?;
+    starter.call(&mut instance.store)?;
+
+    let counts = instance.get_opcode_counts(opcode_indexes)?;
+    for (opcode, count) in counts {
+        eprintln!("{} executed {} times", opcode, count);
+    }
+    Ok(())
+}
+
+#[test]
 fn test_import_export_safety() -> Result<()> {
     // test wasms
     //     bad-export.wat   there's a global named `stylus_gas_left`
@@ -210,7 +245,7 @@ fn test_module_mod() -> Result<()> {
     let file = "tests/module-mod.wat";
     let wat = std::fs::read(file)?;
     let wasm = wasmer::wat2wasm(&wat)?;
-    let binary = binary::parse(&wasm, &Path::new(file))?;
+    let binary = binary::parse(&wasm, Path::new(file))?;
 
     let config = StylusConfig::default();
     let instance = new_test_instance(file, config)?;
@@ -235,26 +270,23 @@ fn test_module_mod() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn test_heap() -> Result<()> {
     // test wasms
     //     memory.wat   there's a 2-page memory with an upper limit of 4
     //     memory2.wat  there's a 2-page memory with no upper limit
 
-    let config = StylusConfig {
-        heap_bound: Pages(1).into(),
-        ..Default::default()
-    };
+    let mut config = StylusConfig::default();
+    config.heap_bound = Pages(1).into();
     assert!(new_test_instance("tests/memory.wat", config.clone()).is_err());
-    assert!(new_test_instance("tests/memory2.wat", config.clone()).is_err());
+    assert!(new_test_instance("tests/memory2.wat", config).is_err());
 
     let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
-        let config = StylusConfig {
-            heap_bound: Pages(bound).into(),
-            ..Default::default()
-        };
+        let mut config = StylusConfig::default();
+        config.heap_bound = Pages(bound).into();
 
         let instance = new_test_instance(file, config.clone())?;
-        let machine = super::wavm::new_test_machine(file, config.clone())?;
+        let machine = super::wavm::new_test_machine(file, config)?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;
@@ -357,13 +389,13 @@ fn test_c() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn test_counter_rust_keccak() -> Result<()> {
-    let max_unique_operator_count = 255;
-    let config = StylusConfig {
-        max_unique_operator_count,
-        ..Default::default()
-    };
-    let opcode_indexes = config.opcode_indexes.clone();
+    let debug = StylusDebugConfig::new(true, 255)?;
+    let opcode_indexes = debug.opcode_indexes.clone();
+
+    let mut config = StylusConfig::default();
+    config.debug = Some(debug);
 
     // in keccak.rs
     //     the input is the # of hashings followed by a preimage
@@ -387,11 +419,9 @@ fn test_counter_rust_keccak() -> Result<()> {
     let status = main.call(&mut native.store, args_len)?;
     assert_eq!(status, 0);
 
-    let counts = native.opcode_counts(max_unique_operator_count);
-    for (opcode, index) in opcode_indexes.lock().iter() {
-        if *index < counts.len() && counts[*index] > 0 {
-            eprintln!("{} executed {} times", opcode, counts[*index]);
-        }
+    let counts = native.get_opcode_counts(opcode_indexes)?;
+    for (opcode, count) in counts {
+        println!("{} executed {} times", opcode, count);
     }
     let env = env.as_ref(&native.store);
     assert_eq!(hex::encode(&env.outs), hash);

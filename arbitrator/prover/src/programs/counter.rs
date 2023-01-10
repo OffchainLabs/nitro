@@ -7,6 +7,7 @@ use arbutil::operator::OperatorCode;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
+use std::collections::BTreeMap;
 use std::{clone::Clone, fmt::Debug, sync::Arc};
 use wasmer::{wasmparser::Operator, GlobalInit, Type};
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
@@ -193,26 +194,33 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     }
 }
 
-/// Note: implementers may panic if uninstrumented
 pub trait CountedMachine {
-    fn opcode_counts(&mut self, opcode_count: usize) -> Vec<u64>;
-    fn set_opcode_counts(&mut self, index_counts: Vec<u64>);
+    fn get_opcode_counts(
+        &mut self,
+        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
+    ) -> Result<BTreeMap<OperatorCode, u64>>;
+    fn set_opcode_counts(&mut self, index_counts: Vec<u64>) -> Result<()>;
 }
 
 #[cfg(feature = "native")]
 impl CountedMachine for NativeInstance {
-    fn opcode_counts(&mut self, opcode_count: usize) -> Vec<u64> {
-        let mut counts = Vec::with_capacity(opcode_count);
-        for i in 0..opcode_count {
-            counts.push(self.get_global(opcode_count_name!(i)).unwrap());
+    fn get_opcode_counts(
+        &mut self,
+        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
+    ) -> Result<BTreeMap<OperatorCode, u64>> {
+        let mut counts = BTreeMap::new();
+        for (opcode, index) in opcode_indexes.lock().clone().iter() {
+            counts.insert(*opcode, self.get_global(opcode_count_name!(index))?);
         }
 
-        counts
+        Ok(counts)
     }
 
-    fn set_opcode_counts(&mut self, index_counts: Vec<u64>) {
+    fn set_opcode_counts(&mut self, index_counts: Vec<u64>) -> Result<()> {
         for (index, count) in index_counts.iter().enumerate() {
-            self.set_global(opcode_count_name!(index), *count).unwrap();
+            self.set_global(opcode_count_name!(index), *count)?;
         }
+
+        Ok(())
     }
 }
