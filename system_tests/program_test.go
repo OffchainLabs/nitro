@@ -30,7 +30,7 @@ func TestKeccakProgram(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2config := arbnode.ConfigDefaultL1Test()
 	l2config.BlockValidator.ArbitratorValidator = true
-	l2config.BlockValidator.JitValidator = true
+	l2config.BlockValidator.JitValidator = false
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 

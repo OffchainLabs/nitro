@@ -108,7 +108,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
 
         let end = matches!(
             op,
-            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, Call, CallIndirect)
+            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
         );
 
         let mut cost = self.block_cost.saturating_add((self.costs)(&op));

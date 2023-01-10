@@ -19,5 +19,5 @@ reject!(
     call_user_wasm,
     read_rust_vec,
     free_rust_vec,
-    rust_params_impl,
+    rust_config_impl,
 );

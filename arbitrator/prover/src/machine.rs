@@ -1546,6 +1546,10 @@ impl Machine {
             () => {{
                 println!("error on line {}", line!());
                 self.status = MachineStatus::Errored;
+                println!("Backtrace:");
+                self.print_backtrace(true);
+                module = &mut self.modules[self.pc.module()];
+                //func = &module.funcs[self.pc.func()];
                 break;
             }};
         }

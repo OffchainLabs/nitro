@@ -22,6 +22,6 @@ TEXT ·freeRustVecImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·rustParamsImpl(SB), NOSPLIT, $0
+TEXT ·rustConfigImpl(SB), NOSPLIT, $0
   CallImport
   RET

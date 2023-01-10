@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const MaxWASMSize = 64 * 1024
+const MaxWasmSize = 64 * 1024
 
 type Programs struct {
 	backingStorage  *storage.Storage
@@ -150,7 +150,7 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	if wasm == nil {
 		return nil, fmt.Errorf("missing wasm at address %v", program)
 	}
-	return arbcompress.Decompress(wasm, MaxWASMSize)
+	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
 type goParams struct {
