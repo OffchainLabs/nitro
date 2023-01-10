@@ -65,6 +65,11 @@ func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
 }
 
+// FloatToBig casts a float to a huge
+func FloatToBig(value float64) *big.Int {
+	return new(big.Int).SetInt64(int64(value))
+}
+
 // UintToBigFloat casts a uint to a big float
 func UintToBigFloat(value uint64) *big.Float {
 	return new(big.Float).SetPrec(53).SetUint64(value)
@@ -162,11 +167,6 @@ func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
-// BigAddByFloat add a float to a huge
-func BigAddByFloat(augend *big.Int, addend float64) *big.Int {
-	return new(big.Int).Add(augend, UintToBig(uint64(addend)))
-}
-
 // BigMulByFrac multiply a huge by a rational
 func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	value = new(big.Int).Set(value)
@@ -186,11 +186,6 @@ func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
 // BigMulByInt multiply a huge by an integer
 func BigMulByInt(multiplicand *big.Int, multiplier int64) *big.Int {
 	return new(big.Int).Mul(multiplicand, big.NewInt(multiplier))
-}
-
-// BigMulByFloat multiply a huge by a float
-func BigMulByFloat(multiplicand *big.Int, multiplier float64) *big.Int {
-	return new(big.Int).Mul(multiplicand, big.NewInt(int64(multiplier)))
 }
 
 // BigMulByUint multiply a huge by a unsigned integer
