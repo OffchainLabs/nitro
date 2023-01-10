@@ -1,3 +1,7 @@
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+use arbutil::wavm;
 use go_abi::*;
 
 extern "C" {
@@ -33,7 +37,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDec
     let out_buf_len = sp.read_u64(4);
     const OUTPUT_ARG: usize = 6;
 
-    let in_slice = read_slice(in_buf_ptr, in_buf_len);
+    let in_slice = wavm::read_slice(in_buf_ptr, in_buf_len);
     let mut output = vec![0u8; out_buf_len as usize];
     let mut output_len = out_buf_len as usize;
     let res = BrotliDecoderDecompress(
@@ -46,7 +50,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDec
         sp.write_u64(OUTPUT_ARG, u64::MAX);
         return;
     }
-    write_slice(&output[..output_len], out_buf_ptr);
+    wavm::write_slice(&output[..output_len], out_buf_ptr);
     sp.write_u64(OUTPUT_ARG, output_len as u64);
     return;
 }
@@ -62,7 +66,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCom
     let windowsize = sp.read_u64(7) as u32;
     const OUTPUT_ARG: usize = 8;
 
-    let in_slice = read_slice(in_buf_ptr, in_buf_len);
+    let in_slice = wavm::read_slice(in_buf_ptr, in_buf_len);
     let mut output = vec![0u8; out_buf_len as usize];
     let mut output_len = out_buf_len as usize;
     let res = BrotliEncoderCompress(
@@ -78,7 +82,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCom
         sp.write_u64(OUTPUT_ARG, u64::MAX);
         return;
     }
-    write_slice(&output[..output_len], out_buf_ptr);
+    wavm::write_slice(&output[..output_len], out_buf_ptr);
     sp.write_u64(OUTPUT_ARG, output_len as u64);
     return;
 }
