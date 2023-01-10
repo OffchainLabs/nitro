@@ -247,10 +247,7 @@ func (v *vertexTracker) canConfirm() bool {
 	// Can confirm if vertex's parent has a sub-challenge, and the sub-challenge has reported vertex as its winner.
 	subChallenge := v.vertex.Prev.Unwrap().SubChallenge
 	if !subChallenge.IsNone() {
-		if subChallenge.Unwrap().Winner == v.vertex {
-			return true
-		}
-		return false
+		return subChallenge.Unwrap().Winner == v.vertex
 	}
 
 	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
