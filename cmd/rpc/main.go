@@ -3,9 +3,13 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -102,16 +106,31 @@ func main() {
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
 
+	_, thisFile, _, _ := runtime.Caller(0)
+	rpcTestDir := filepath.Dir(thisFile)
+	jwtPath := filepath.Join(rpcTestDir, "jwt.hex")
+	var jwtSecret []byte
+	data, err := os.ReadFile(jwtPath)
+	if err == nil {
+		jwtSecret = common.FromHex(strings.TrimSpace(string(data)))
+	}
+	if err != nil || len(jwtSecret) != 32 {
+		log.Crit("failed to read jwt", "err", err, "path", jwtPath, "secret", jwtSecret)
+	}
+
 	////////////////////  server
 
 	stackConf := node.DefaultConfig
 
-	stackConf.WSHost = "127.0.0.1"
-	stackConf.WSPort = 1505
+	stackConf.AuthAddr = "127.0.0.1"
+	stackConf.AuthPort = 1505
+	stackConf.JWTSecret = jwtPath
 	stackConf.WSModules = []string{"test"}
 	stackConf.WSPathPrefix = ""
 	stackConf.WSOrigins = []string{"*"}
 	stackConf.WSExposeAll = false
+
+	node.DefaultAuthModules = []string{"test"}
 
 	stack, err := node.New(&stackConf)
 	if err != nil {
@@ -119,10 +138,11 @@ func main() {
 	}
 
 	tempAPIs := []rpc.API{{
-		Namespace: "test",
-		Version:   "1.0",
-		Service:   &TempResponder{},
-		Public:    true,
+		Namespace:     "test",
+		Version:       "1.0",
+		Service:       &TempResponder{},
+		Public:        false,
+		Authenticated: true,
 	}}
 
 	stack.RegisterAPIs(tempAPIs)
@@ -132,7 +152,7 @@ func main() {
 
 	ctx := context.Background()
 
-	client, err := rpc.DialContext(ctx, "ws://127.0.0.1:1505")
+	client, err := rpc.DialWebsocketJWT(ctx, "ws://127.0.0.1:1505", "", jwtSecret)
 	if err != nil {
 		log.Crit("failed to initialize client", "err", err)
 	}
@@ -149,6 +169,8 @@ func main() {
 	AskAnswerLater(ctx, client, &wg, 2, 170)
 	AskAnswerLater(ctx, client, &wg, 1, 5000)
 	wg.Wait()
+
+	client.Close()
 
 	stack.Close()
 }
