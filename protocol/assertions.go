@@ -105,7 +105,7 @@ type AssertionChain struct {
 	challengePeriod               time.Duration
 	latestConfirmed               AssertionSequenceNumber
 	assertions                    []*Assertion
-	hasSeenAssertions             map[common.Hash]bool
+	assertionsSeen                map[common.Hash]AssertionSequenceNumber
 	challengeVerticesByCommitHash map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex
 	challengesByCommitHash        map[ChallengeCommitHash]*Challenge
 	balances                      *util.MapWithDefault[common.Address, *big.Int]
@@ -217,8 +217,8 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 			math.MaxUint64,
 		),
 	)
-	hasSeenAssertions := map[common.Hash]bool{
-		genesisKey: true,
+	assertionsSeen := map[common.Hash]AssertionSequenceNumber{
+		genesisKey: 0,
 	}
 	chain := &AssertionChain{
 		mutex:                         sync.RWMutex{},
@@ -232,7 +232,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:                          NewEventFeed[AssertionChainEvent](ctx),
 		challengesFeed:                NewEventFeed[ChallengeEvent](ctx),
 		inbox:                         NewInbox(ctx),
-		hasSeenAssertions:             hasSeenAssertions,
+		assertionsSeen:                assertionsSeen,
 	}
 	genesis.chain = chain
 	return chain
@@ -410,25 +410,18 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	}
 
 	// Ensure the assertion being created is not a duplicate.
-	uniqueAssertionKey := crypto.Keccak256Hash(
-		binary.BigEndian.AppendUint64(
-			commitment.Hash().Bytes(),
-			uint64(prev.SequenceNum),
-		),
-	)
-	if chain.hasSeenAssertions[uniqueAssertionKey] {
+	if _, ok := chain.assertionsSeen[commitment.Hash()]; ok {
 		return nil, ErrVertexAlreadyExists
 	}
 
-	// Ensure the assertion being created has a parent we have seen before.
 	if !prev.Prev.IsNone() {
-		parentUniqueAssertionKey := crypto.Keccak256Hash(
-			binary.BigEndian.AppendUint64(
-				prev.StateCommitment.Hash().Bytes(),
-				uint64(prev.Prev.Unwrap().SequenceNum),
-			),
-		)
-		if !chain.hasSeenAssertions[parentUniqueAssertionKey] {
+		// The parent must exist on-chain.
+		prevSeqNum, ok := chain.assertionsSeen[prev.StateCommitment.Hash()]
+		if !ok {
+			return nil, ErrParentDoesNotExist
+		}
+		// Parent sequence number must be < the new assertion's assigned sequence number.
+		if prevSeqNum >= AssertionSequenceNumber(uint64(len(chain.assertions))) {
 			return nil, ErrParentDoesNotExist
 		}
 	}
@@ -472,7 +465,7 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 		prev.secondChildCreationTime = util.Some(chain.timeReference.Get())
 	}
 	chain.assertions = append(chain.assertions, leaf)
-	chain.hasSeenAssertions[uniqueAssertionKey] = true
+	chain.assertionsSeen[commitment.Hash()] = leaf.SequenceNum
 	chain.feed.Append(&CreateLeafEvent{
 		PrevStateCommitment: prev.StateCommitment,
 		PrevSeqNum:          prev.SequenceNum,

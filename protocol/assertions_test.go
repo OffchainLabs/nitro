@@ -135,12 +135,19 @@ func TestAssertionChain_CreateLeaf_MustHaveValidParent(t *testing.T) {
 
 		foo := common.BytesToHash([]byte("foo"))
 		bar := common.BytesToHash([]byte("bar"))
+		_ = bar
 		comm := StateCommitment{Height: 1, StateRoot: foo}
 		leaf, err := chain.CreateLeaf(tx, genesis, comm, staker)
 		require.NoError(t, err)
 
+		// Trying to create a new leaf with the same commitment as before should fail.
+		leaf.StateCommitment = StateCommitment{Height: 0, StateRoot: bar} // Mutate leaf.
+		_, err = chain.CreateLeaf(tx, leaf, comm, staker)
+		require.ErrorIs(t, err, ErrVertexAlreadyExists)
+
 		// Trying to create a new leaf on top of a non-existent parent should fail.
 		leaf.StateCommitment = StateCommitment{Height: 0, StateRoot: bar} // Mutate leaf.
+		comm = StateCommitment{Height: 2, StateRoot: foo}
 		_, err = chain.CreateLeaf(tx, leaf, comm, staker)
 		require.ErrorIs(t, err, ErrParentDoesNotExist)
 		return nil
