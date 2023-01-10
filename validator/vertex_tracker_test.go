@@ -56,7 +56,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
@@ -88,13 +88,19 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				Commitment: parentHistory,
 			}),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
+		p.On("Completed", &protocol.ActiveTx{}).Return(
+			false,
+		)
+		p.On("HasConfirmedAboveSeqNumber", &protocol.ActiveTx{}, vertex.SequenceNum).Return(
+			false, nil,
+		)
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{},
+			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
 			challengeCommitHash,
 			history,
 			parentHistory,
@@ -127,13 +133,13 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				Commitment: parentHistory,
 			}),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{},
+			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
 			challengeCommitHash,
 			history,
 			parentHistory,
@@ -152,6 +158,91 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
 	})
+	t.Run("vertex's prev is nil and returns", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev:       util.None[*protocol.ChallengeVertex](),
+		}
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+			vertex,
+			nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrPrevNone)
+	})
+	t.Run("vertex confirmed and returns", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev: util.Some(&protocol.ChallengeVertex{
+				Commitment: parentHistory,
+			}),
+			Status: protocol.ConfirmedAssertionState,
+		}
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+			vertex,
+			nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrConfirmed)
+	})
+	t.Run("challenge completed and returns", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev: util.Some(&protocol.ChallengeVertex{
+				Commitment: parentHistory,
+			}),
+		}
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+			vertex,
+			nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{
+				WinnerAssertion: util.Some(&protocol.Assertion{}),
+			},
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrChallengeCompleted)
+	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
 		history := util.HistoryCommitment{
 			Height: 2,
@@ -168,13 +259,13 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			PresumptiveSuccessor: util.Some(vertex),
 		}
 		vertex.Prev = util.Some(prev)
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{},
+			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
 			challengeCommitHash,
 			history,
 			parentHistory,
@@ -252,7 +343,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{},
+			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
 			challengeCommitHash,
 			commitA,
 			commitB,
@@ -274,7 +365,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{},
+			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
 			challengeCommitHash,
 			commitA,
 			commitB,
@@ -308,7 +399,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex, nil,
 		)
 		v := &Validator{
@@ -327,7 +418,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
@@ -349,7 +440,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		want := &protocol.ChallengeVertex{
 			Commitment: history,
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(want, nil)
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(want, nil)
 		v := &Validator{
 			chain: p,
 		}

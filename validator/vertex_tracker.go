@@ -11,6 +11,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	ErrConfirmed          = errors.New("Vertex has been confirmed")
+	ErrSiblingConfirmed   = errors.New("Vertex sibling has been confirmed")
+	ErrPrevNone           = errors.New("Vertex parent is none")
+	ErrChallengeCompleted = errors.New("Challenge has been completed")
+)
+
 type vertexTracker struct {
 	actEveryNSeconds    time.Duration
 	timeRef             util.TimeReference
@@ -43,7 +50,18 @@ func (v *vertexTracker) track(ctx context.Context) {
 		select {
 		case <-t.C():
 			if err := v.actOnBlockChallenge(ctx); err != nil {
-				log.Error(err)
+				switch {
+				case errors.Is(err, ErrConfirmed):
+					return
+				case errors.Is(err, ErrSiblingConfirmed):
+					return
+				case errors.Is(err, ErrChallengeCompleted):
+					return
+				case errors.Is(err, ErrPrevNone):
+					return
+				default:
+					log.Error(err)
+				}
 			}
 		case <-ctx.Done():
 			log.WithFields(logrus.Fields{
@@ -71,7 +89,25 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	}
 	v.vertex = vertex
 	if v.vertex.Prev.IsNone() {
+		return ErrPrevNone
+	}
+	if v.vertex.Status == protocol.ConfirmedAssertionState {
+		return ErrConfirmed
+	}
+	var challengeCompleted bool
+	var siblingConfirmed bool
+	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challengeCompleted = v.challenge.Completed(tx)
+		siblingConfirmed = v.challenge.HasConfirmedAboveSeqNumber(tx, v.vertex.SequenceNum)
 		return nil
+	}); err != nil {
+		return err
+	}
+	if challengeCompleted {
+		return ErrChallengeCompleted
+	}
+	if siblingConfirmed {
+		return ErrSiblingConfirmed
 	}
 
 	// We check if we are one-step away from the parent, in which case we then
