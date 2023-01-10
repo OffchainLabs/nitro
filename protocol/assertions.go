@@ -27,7 +27,7 @@ var (
 	ErrWrongState             = errors.New("vertex state does not allow this operation")
 	ErrWrongPredecessorState  = errors.New("predecessor state does not allow this operation")
 	ErrNotYet                 = errors.New("deadline has not yet passed")
-	ErrNoWinnerYet            = errors.New("challenges does not yet have a WinnerAssertion")
+	ErrNoWinnerYet            = errors.New("challenges does not yet have a winner assertion")
 	ErrPastDeadline           = errors.New("deadline has passed")
 	ErrInsufficientBalance    = errors.New("insufficient balance")
 	ErrNotImplemented         = errors.New("not yet implemented")
