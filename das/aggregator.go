@@ -201,7 +201,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := a.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		isBatchPoster, err := a.bpVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}

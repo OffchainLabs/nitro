@@ -14,13 +14,13 @@ import (
 )
 
 type AddressVerifier struct {
-	seqInboxCaller         *bridgegen.SequencerInboxCaller
-	batchPosterCache       map[common.Address]bool
-	batchPosterCacheExpiry time.Time
-	mutex                  sync.Mutex
+	seqInboxCaller *bridgegen.SequencerInboxCaller
+	cache          map[common.Address]bool
+	cacheExpiry    time.Time
+	mutex          sync.Mutex
 }
 
-// Note that we only batchPosterCache positive instances, not negative ones. That's because we're willing to accept the
+// Note that we only cache positive instances, not negative ones. That's because we're willing to accept the
 // consequences of a false positive (accepting a Store from a recently retired batch poster), but we don't want
 // to accept the consequences of a false negative (rejecting a Store from a recently added batch poster).
 
@@ -28,36 +28,44 @@ var addressVerifierLifetime = time.Hour
 
 func NewAddressVerifier(seqInboxCaller *bridgegen.SequencerInboxCaller) *AddressVerifier {
 	return &AddressVerifier{
-		seqInboxCaller:         seqInboxCaller,
-		batchPosterCache:       make(map[common.Address]bool),
-		batchPosterCacheExpiry: time.Now().Add(addressVerifierLifetime),
+		seqInboxCaller: seqInboxCaller,
+		cache:          make(map[common.Address]bool),
+		cacheExpiry:    time.Now().Add(addressVerifierLifetime),
 	}
 }
 
-func (bpv *AddressVerifier) IsBatchPoster(ctx context.Context, addr common.Address) (bool, error) {
+func (bpv *AddressVerifier) IsBatchPosterOrSequencer(ctx context.Context, addr common.Address) (bool, error) {
 	bpv.mutex.Lock()
-	if time.Now().After(bpv.batchPosterCacheExpiry) {
+	if time.Now().After(bpv.cacheExpiry) {
 		if err := bpv.flushCache_locked(ctx); err != nil {
 			bpv.mutex.Unlock()
 			return false, err
 		}
 	}
-	if bpv.batchPosterCache[addr] {
+	if bpv.cache[addr] {
 		bpv.mutex.Unlock()
 		return true, nil
 	}
 	bpv.mutex.Unlock()
 
-	isBatchPoster, err := bpv.seqInboxCaller.IsBatchPoster(&bind.CallOpts{Context: ctx}, addr)
+	result, err := bpv.seqInboxCaller.IsBatchPoster(&bind.CallOpts{Context: ctx}, addr)
 	if err != nil {
 		return false, err
 	}
-	if isBatchPoster {
-		bpv.mutex.Lock()
-		bpv.batchPosterCache[addr] = true
-		bpv.mutex.Unlock()
+	if !result {
+		var err error
+		result, err = bpv.seqInboxCaller.IsSequencer(&bind.CallOpts{Context: ctx}, addr)
+		if err != nil {
+			return false, err
+		}
 	}
-	return isBatchPoster, nil
+	if result {
+		bpv.mutex.Lock()
+		bpv.cache[addr] = true
+		bpv.mutex.Unlock()
+		return true, nil
+	}
+	return result, nil
 }
 
 func (bpv *AddressVerifier) FlushCache(ctx context.Context) error {
@@ -67,8 +75,8 @@ func (bpv *AddressVerifier) FlushCache(ctx context.Context) error {
 }
 
 func (bpv *AddressVerifier) flushCache_locked(ctx context.Context) error {
-	bpv.batchPosterCache = make(map[common.Address]bool)
-	bpv.batchPosterCacheExpiry = time.Now().Add(addressVerifierLifetime)
+	bpv.cache = make(map[common.Address]bool)
+	bpv.cacheExpiry = time.Now().Add(addressVerifierLifetime)
 	return nil
 }
 
@@ -82,10 +90,10 @@ type MockAddressVerifier struct {
 	validAddr common.Address
 }
 
-func (bpv *MockAddressVerifier) IsBatchPoster(_ context.Context, addr common.Address) (bool, error) {
+func (bpv *MockAddressVerifier) IsBatchPosterOrSequencer(_ context.Context, addr common.Address) (bool, error) {
 	return addr == bpv.validAddr, nil
 }
 
 type AddressVerifierInterface interface {
-	IsBatchPoster(ctx context.Context, addr common.Address) (bool, error)
+	IsBatchPosterOrSequencer(ctx context.Context, addr common.Address) (bool, error)
 }

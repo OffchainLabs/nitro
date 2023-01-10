@@ -194,7 +194,7 @@ func (d *SignAfterStoreDAS) Store(
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := d.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		isBatchPoster, err := d.bpVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}

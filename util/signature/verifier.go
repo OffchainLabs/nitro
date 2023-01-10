@@ -115,12 +115,12 @@ func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Ha
 		return ErrSignerNotApproved
 	}
 
-	batchPoster, err := v.bpValidator.IsBatchPoster(ctx, addr)
+	batchPosterOrSequencer, err := v.bpValidator.IsBatchPosterOrSequencer(ctx, addr)
 	if err != nil {
 		return err
 	}
 
-	if !batchPoster {
+	if !batchPosterOrSequencer {
 		return ErrSignerNotApproved
 	}
 
