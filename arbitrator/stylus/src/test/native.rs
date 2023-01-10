@@ -24,6 +24,7 @@ use wasmer::{
     imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
     Store,
 };
+use wasmer::wasmparser::Operator;
 use wasmer_compiler_singlepass::Singlepass;
 
 fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
@@ -176,37 +177,21 @@ fn test_start() -> Result<()> {
 
 #[test]
 #[allow(clippy::field_reassign_with_default)]
-fn test_count_start() -> Result<()> {
-    // in start.wat
-    //     the `status` global equals 10 at initialization
-    //     the `start` function increments `status`
-    //     by the spec, `start` must run at initialization
-
-    fn check(instance: &mut NativeInstance, value: i32) -> Result<()> {
-        let status: i32 = instance.get_global("status")?;
-        assert_eq!(status, value);
-        Ok(())
-    }
-
-    let mut instance = new_vanilla_instance("tests/start.wat")?;
-    check(&mut instance, 11)?;
-
-    let max_unique_operator_count = 255;
-
-    let debug = StylusDebugConfig::new(true, max_unique_operator_count)?;
+fn test_count_clz() -> Result<()> {
+    let debug = StylusDebugConfig::new(true, 255)?;
     let opcode_indexes = debug.opcode_indexes.clone();
 
     let mut config = StylusConfig::default();
     config.debug = Some(debug);
-    let mut instance = new_test_instance("tests/start.wat", config)?;
+    let mut instance = new_test_instance("tests/clz.wat", config)?;
 
     let starter = instance.get_start(&instance.store)?;
     starter.call(&mut instance.store)?;
 
     let counts = instance.get_opcode_counts(opcode_indexes)?;
-    for (opcode, count) in counts {
-        eprintln!("{} executed {} times", opcode, count);
-    }
+    let count = counts.get(&(Operator::I32Clz).into());
+    assert!(count.is_some());
+    assert_eq!(*count.unwrap(), 1);
     Ok(())
 }
 

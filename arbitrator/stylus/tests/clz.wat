@@ -1,0 +1,10 @@
+;; Copyright 2022, Offchain Labs, Inc.
+;; For license information, see https://github.com/nitro/blob/master/LICENSE
+
+(module
+    (func $start
+        i32.const 1
+        i32.clz
+        drop
+        )
+    (start $start))

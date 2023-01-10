@@ -547,6 +547,12 @@ impl Display for OperatorCode {
     }
 }
 
+impl<'a> From<Operator<'a>> for OperatorCode {
+    fn from(op: Operator) -> Self {
+        OperatorCode::from(&op)
+    }
+}
+
 impl<'a> From<&Operator<'a>> for OperatorCode {
     fn from(op: &Operator) -> Self {
         use Operator::*;
