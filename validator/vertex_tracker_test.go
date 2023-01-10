@@ -506,3 +506,50 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 
 	return newVertexTracker(util.NewArtificialTimeReference(), time.Second, challenge, vertex, validator)
 }
+
+func Test_vertexTracker_canConfirm(t *testing.T) {
+	tracker := setupNonPSTracker(t, context.Background())
+
+	// Can't confirm is vertex is confirmed or rejected
+	tracker.vertex.Status = protocol.ConfirmedAssertionState
+	require.False(t, tracker.canConfirm())
+	tracker.vertex.Status = protocol.RejectedAssertionState
+	require.False(t, tracker.canConfirm())
+
+	tracker.vertex.Status = protocol.PendingAssertionState
+	// Can't confirm is parent isn't confirmed
+	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
+		Status: protocol.PendingAssertionState,
+	})
+	require.False(t, tracker.canConfirm())
+
+	// Can confirm if vertex has won subchallenge
+	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
+		Status: protocol.ConfirmedAssertionState,
+		SubChallenge: util.Some(&protocol.SubChallenge{
+			Winner: tracker.vertex,
+		}),
+	})
+	require.True(t, tracker.canConfirm())
+
+	// Can't confirm if vertex is in the middle of subchallenge
+	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
+		Status: protocol.ConfirmedAssertionState,
+		SubChallenge: util.Some(&protocol.SubChallenge{
+			Winner: &protocol.ChallengeVertex{},
+		}),
+	})
+	require.False(t, tracker.canConfirm())
+
+	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
+	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
+		Status:       protocol.ConfirmedAssertionState,
+		SubChallenge: util.None[*protocol.SubChallenge](),
+	})
+	tracker.vertex.PsTimer.Add(1)
+	require.True(t, tracker.canConfirm())
+
+	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
+	tracker.challengePeriodLenth = tracker.vertex.PsTimer.Get()
+	require.True(t, tracker.canConfirm())
+}

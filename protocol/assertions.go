@@ -79,26 +79,27 @@ type EventProvider interface {
 	SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent)
 	SubscribeChallengeEvents(ctx context.Context, ch chan<- ChallengeEvent)
 }
-
-// AssertionManager allows the creation of new leaves for a Staker with a State Commitment
-// and a previous assertion.
-type AssertionManager interface {
-	Inbox() *Inbox
-	NumAssertions(tx *ActiveTx) uint64
-	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
-	ChallengeByCommitHash(tx *ActiveTx, commitHash ChallengeCommitHash) (*Challenge, error)
-	ChallengeVertexByCommitHash(tx *ActiveTx, challenge ChallengeCommitHash, vertex VertexCommitHash) (*ChallengeVertex, error)
-	IsAtOneStepFork(
-		tx *ActiveTx,
-		challengeCommitHash ChallengeCommitHash,
-		vertexCommit util.HistoryCommitment,
-		vertexParentCommit util.HistoryCommitment,
-	) (bool, error)
-	ChallengePeriodLength(tx *ActiveTx) time.Duration
-	LatestConfirmed(*ActiveTx) *Assertion
-	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
-	TimeReference() util.TimeReference
-}
+type (
+	// AssertionManager allows the creation of new leaves for a Staker with a State Commitment
+	// and a previous assertion.
+	AssertionManager interface {
+		Inbox() *Inbox
+		NumAssertions(tx *ActiveTx) uint64
+		AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
+		ChallengeByCommitHash(tx *ActiveTx, commitHash ChallengeCommitHash) (*Challenge, error)
+		ChallengeVertexByCommitHash(tx *ActiveTx, challenge ChallengeCommitHash, vertex VertexCommitHash) (*ChallengeVertex, error)
+		IsAtOneStepFork(
+			tx *ActiveTx,
+			challengeCommitHash ChallengeCommitHash,
+			vertexCommit util.HistoryCommitment,
+			vertexParentCommit util.HistoryCommitment,
+		) (bool, error)
+		ChallengePeriodLength(tx *ActiveTx) time.Duration
+		LatestConfirmed(*ActiveTx) *Assertion
+		CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
+		TimeReference() util.TimeReference
+	}
+)
 
 type AssertionChain struct {
 	mutex                         sync.RWMutex
