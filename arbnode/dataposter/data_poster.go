@@ -194,13 +194,13 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 	config := p.config()
 	// MaxFeeCap = (BacklogOfBatches^2 * UrgencyGWei^2 + TargetPriceGWei) * GWei
 	maxFeeCap :=
-		new(big.Int).Mul(
-			new(big.Int).Add(
-				new(big.Int).Mul(
-					new(big.Int).SetUint64(backlogOfBatches*backlogOfBatches),
-					new(big.Int).SetUint64(uint64(config.UrgencyGwei*config.UrgencyGwei))),
-				new(big.Int).SetUint64(uint64(config.TargetPriceGwei))),
-			new(big.Int).SetUint64(uint64(params.GWei)))
+		arbmath.BigMulByFloat(
+			arbmath.BigAddByFloat(
+				arbmath.BigMulByFloat(
+					arbmath.UintToBig(arbmath.SquareUint(backlogOfBatches)),
+					arbmath.SquareFloat(config.UrgencyGwei)),
+				config.TargetPriceGwei),
+			params.GWei)
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
 		log.Error(
 			"reducing proposed fee cap to current maximum",

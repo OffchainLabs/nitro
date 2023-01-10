@@ -162,6 +162,11 @@ func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
+// BigAddByFloat add a float to a huge
+func BigAddByFloat(augend *big.Int, addend float64) *big.Int {
+	return new(big.Int).Add(augend, UintToBig(uint64(addend)))
+}
+
 // BigMulByFrac multiply a huge by a rational
 func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	value = new(big.Int).Set(value)
@@ -181,6 +186,11 @@ func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
 // BigMulByInt multiply a huge by an integer
 func BigMulByInt(multiplicand *big.Int, multiplier int64) *big.Int {
 	return new(big.Int).Mul(multiplicand, big.NewInt(multiplier))
+}
+
+// BigMulByFloat multiply a huge by a float
+func BigMulByFloat(multiplicand *big.Int, multiplier float64) *big.Int {
+	return new(big.Int).Mul(multiplicand, big.NewInt(int64(multiplier)))
 }
 
 // BigMulByUint multiply a huge by a unsigned integer
@@ -341,4 +351,14 @@ func ApproxSquareRoot(value uint64) uint64 {
 		}
 	}
 	return approx
+}
+
+// SquareUint returns square of uint
+func SquareUint(value uint64) uint64 {
+	return value * value
+}
+
+// SquareFloat returns square of float
+func SquareFloat(value float64) float64 {
+	return value * value
 }
