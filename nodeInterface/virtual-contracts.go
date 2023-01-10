@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -63,6 +64,7 @@ func init() {
 
 			switch *to {
 			case types.NodeInterfaceAddress:
+				address = types.NodeInterfaceAddress
 				duplicate := *nodeInterfaceImpl
 				duplicate.backend = backend
 				duplicate.context = ctx
@@ -70,9 +72,9 @@ func init() {
 				duplicate.sourceMessage = msg
 				duplicate.returnMessage.message = returnMessage
 				duplicate.returnMessage.changed = &swapMessages
-				precompile = nodeInterface.SwapImpl(&duplicate)
-				address = types.NodeInterfaceAddress
+				precompile = nodeInterface.CloneWithImpl(&duplicate)
 			case types.NodeInterfaceDebugAddress:
+				address = types.NodeInterfaceDebugAddress
 				duplicate := *nodeInterfaceDebugImpl
 				duplicate.backend = backend
 				duplicate.context = ctx
@@ -80,8 +82,7 @@ func init() {
 				duplicate.sourceMessage = msg
 				duplicate.returnMessage.message = returnMessage
 				duplicate.returnMessage.changed = &swapMessages
-				precompile = nodeInterfaceDebug.SwapImpl(&duplicate)
-				address = types.NodeInterfaceDebugAddress
+				precompile = nodeInterfaceDebug.CloneWithImpl(&duplicate)
 			default:
 				return msg, nil, nil
 			}
@@ -136,7 +137,7 @@ func init() {
 			return
 		}
 
-		posterCost, _ := state.L1PricingState().PosterDataCost(msg, header.Coinbase)
+		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress)
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}

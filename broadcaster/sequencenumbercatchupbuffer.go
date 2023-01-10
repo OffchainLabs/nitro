@@ -4,7 +4,6 @@
 package broadcaster
 
 import (
-	"context"
 	"errors"
 	"sync/atomic"
 	"time"
@@ -16,8 +15,14 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+const (
+	// Do not send cache if requested seqnum is older than last cached minus maxRequestedSeqNumOffset
+	maxRequestedSeqNumOffset = arbutil.MessageIndex(10_000)
+)
+
 var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
+	cachedMessagesSentHistogram  = metrics.NewRegisteredHistogram("arb/feed/clients/cache/sent", nil, metrics.NewBoundedHistogramSample())
 )
 
 type SequenceNumberCatchupBuffer struct {
@@ -30,23 +35,30 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
-	if b.messageCount == 0 {
+	if len(b.messages) == 0 {
 		return nil
 	}
 	var startingIndex int32
 	// Ignore messages older than requested sequence number
 	firstCachedSeqNum := b.messages[0].SequenceNumber
 	if firstCachedSeqNum < requestedSeqNum {
-		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages))
+		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages)-1)
 		if lastCachedSeqNum < requestedSeqNum {
 			// Past end, nothing to return
 			return nil
 		}
 		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
-		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
-			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+		if startingIndex >= int32(len(b.messages)) {
+			log.Error("unexpected startingIndex", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "lastCachedSeqNum", lastCachedSeqNum, "cacheLength", len(b.messages))
 			return nil
 		}
+		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
+			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+			return nil
+		}
+	} else if firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
+		// Requested seqnum is too old, don't send any cache
+		return nil
 	}
 
 	messagesToSend := b.messages[startingIndex:]
@@ -62,21 +74,25 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	return nil
 }
 
-func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
+func (b *SequenceNumberCatchupBuffer) OnRegisterClient(clientConnection *wsbroadcastserver.ClientConnection) (error, int, time.Duration) {
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
+	var bmCount int
+	if bm != nil {
+		bmCount = len(bm.Messages)
+	}
 	if bm != nil {
 		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
 		if err != nil {
 			log.Error("error sending client cached messages", "error", err, "client", clientConnection.Name, "elapsed", time.Since(start))
-			return err
+			return err, 0, 0
 		}
 	}
 
-	log.Info("client registered", "client", clientConnection.Name, "elapsed", time.Since(start))
+	cachedMessagesSentHistogram.Update(int64(bmCount))
 
-	return nil
+	return nil, bmCount, time.Since(start)
 }
 
 func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber arbutil.MessageIndex) {

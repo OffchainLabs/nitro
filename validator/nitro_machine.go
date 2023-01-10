@@ -42,7 +42,7 @@ var DefaultNitroMachineConfig = NitroMachineConfig{
 	WavmBinaryPath:       "machine.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
 
-	JitCranelift:  DefaultBlockValidatorConfig.JitValidatorCranelift,
+	JitCranelift:  false,
 	ProverBinPath: "replay.wasm",
 	LibraryPaths:  []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 }
@@ -156,9 +156,10 @@ type NitroMachineLoader struct {
 	machinesLock sync.Mutex
 	machines     map[nitroMachineRequest]*loaderMachineStatus
 	fatalErrChan chan error
+	stopped      bool
 }
 
-func NewNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
+func newNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
 	return &NitroMachineLoader{
 		config:       config,
 		machines:     make(map[nitroMachineRequest]*loaderMachineStatus),
@@ -285,14 +286,14 @@ func (l *NitroMachineLoader) createMachineImpl(
 	return machine, nil
 }
 
-// Starts work on creating the machine in a separate goroutine
+// CreateMachine starts work on creating the machine in a separate goroutine
 // Returns immediately. Can be called multiple times.
 func (l *NitroMachineLoader) CreateMachine(moduleRoot common.Hash, untilHostIo, jit bool) error {
 	_, err := l.createMachineImpl(moduleRoot, untilHostIo, jit)
 	return err
 }
 
-// Gets machine when one is ready
+// GetMachine gets machine when one is ready
 // Returns with proper error if context aborts
 func (l *NitroMachineLoader) GetMachine(
 	ctx context.Context, moduleRoot common.Hash, untilHostIo bool,
@@ -319,4 +320,16 @@ func (l *NitroMachineLoader) GetJitMachine(
 
 func (l *NitroMachineLoader) GetConfig() NitroMachineConfig {
 	return l.config
+}
+
+func (l *NitroMachineLoader) Stop() {
+	if l.stopped {
+		return
+	}
+	for _, stat := range l.machines {
+		if stat.jitMachine != nil {
+			stat.jitMachine.close()
+		}
+	}
+	l.stopped = true
 }

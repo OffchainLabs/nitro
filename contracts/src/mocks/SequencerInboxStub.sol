@@ -5,6 +5,7 @@
 pragma solidity ^0.8.0;
 
 import "../bridge/SequencerInbox.sol";
+import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 
 contract SequencerInboxStub is SequencerInbox {
     constructor(
@@ -18,14 +19,23 @@ contract SequencerInboxStub is SequencerInbox {
         isBatchPoster[sequencer_] = true;
     }
 
-    function addInitMessage() external {
-        (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(0);
+    function addInitMessage(uint256 chainId) external {
+        bytes memory initMsg = abi.encodePacked(chainId);
+        uint256 num = bridge.enqueueDelayedMessage(
+            INITIALIZATION_MSG_TYPE,
+            address(0),
+            keccak256(initMsg)
+        );
+        require(num == 0, "ALREADY_DELAYED_INIT");
+        emit InboxMessageDelivered(num, initMsg);
+        (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(1);
         (
             uint256 sequencerMessageCount,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, 0, 0, 0, 1);
+        ) = addSequencerL2BatchImpl(dataHash, 1, 0, 0, 1);
+        require(sequencerMessageCount == 0, "ALREADY_SEQ_INIT");
         emit SequencerBatchDelivered(
             sequencerMessageCount,
             beforeAcc,

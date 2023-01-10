@@ -17,7 +17,8 @@ import {
     RetryableData,
     NotRollupOrOwner,
     L1Forked,
-    NotForked
+    NotForked,
+    GasLimitTooLarge
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
@@ -34,7 +35,7 @@ import {
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
-import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
+import {MAX_DATA_SIZE, UNISWAP_L1_TIMELOCK, UNISWAP_L2_FACTORY} from "../libraries/Constants.sol";
 import "../precompiles/ArbSys.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -160,6 +161,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -182,6 +187,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -205,6 +214,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 value,
         bytes calldata data
     ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -228,6 +241,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 value,
         bytes calldata data
     ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -254,6 +271,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (!_chainIdChanged()) revert NotForked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -283,6 +304,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (!_chainIdChanged()) revert NotForked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -311,6 +336,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (!_chainIdChanged()) revert NotForked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -385,6 +414,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -428,6 +458,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
 
+        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -468,6 +499,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 data
             );
 
+        // arbos will discard retryable with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
+
         uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
         if (maxSubmissionCost < submissionFee)
             revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
@@ -476,6 +512,84 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             _deliverMessage(
                 L1MessageType_submitRetryableTx,
                 msg.sender,
+                abi.encodePacked(
+                    uint256(uint160(to)),
+                    l2CallValue,
+                    msg.value,
+                    maxSubmissionCost,
+                    uint256(uint160(excessFeeRefundAddress)),
+                    uint256(uint160(callValueRefundAddress)),
+                    gasLimit,
+                    maxFeePerGas,
+                    data.length,
+                    data
+                )
+            );
+    }
+
+    /// @notice This is an one-time-exception to resolve a misconfiguration of Uniswap Arbitrum deployment
+    ///         Only the Uniswap L1 Timelock may call this function and it is allowed to create a crosschain
+    ///         retryable ticket without address aliasing. More info here:
+    ///         https://gov.uniswap.org/t/consensus-check-fix-the-cross-chain-messaging-bridge-on-arbitrum/18547
+    /// @dev    This function will be removed in future releases
+    function uniswapCreateRetryableTicket(
+        address to,
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        bytes calldata data
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // this can only be called by UNISWAP_L1_TIMELOCK
+        require(msg.sender == UNISWAP_L1_TIMELOCK, "NOT_UNISWAP_L1_TIMELOCK");
+        // the retryable can only call UNISWAP_L2_FACTORY
+        require(to == UNISWAP_L2_FACTORY, "NOT_TO_UNISWAP_L2_FACTORY");
+
+        // ensure the user's deposit alone will make submission succeed
+        if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
+            revert InsufficientValue(
+                maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
+                msg.value
+            );
+        }
+
+        // if a refund address is a contract, we apply the alias to it
+        // so that it can access its funds on the L2
+        // since the beneficiary and other refund addresses don't get rewritten by arb-os
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
+            excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
+        }
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
+            // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
+            callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
+        }
+
+        // gas price and limit of 1 should never be a valid input, so instead they are used as
+        // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
+        if (gasLimit == 1 || maxFeePerGas == 1)
+            revert RetryableData(
+                msg.sender,
+                to,
+                l2CallValue,
+                msg.value,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                data
+            );
+
+        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
+        if (maxSubmissionCost < submissionFee)
+            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
+
+        return
+            _deliverMessage(
+                L1MessageType_submitRetryableTx,
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
                 abi.encodePacked(
                     uint256(uint160(to)),
                     l2CallValue,

@@ -206,7 +206,7 @@ func (retryable *Retryable) Calldata() ([]byte, error) {
 	return retryable.calldata.Get()
 }
 
-// efficiently gets size of calldata without loading all of it
+// CalldataSize efficiently gets size of calldata without loading all of it
 func (retryable *Retryable) CalldataSize() (uint64, error) {
 	return retryable.calldata.Size()
 }

@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-8
 
     # Creates a redis container for redis tests
     services:
@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race]
+        test-mode: [defaults, race, challenge]
 
     steps:
       - name: Checkout
@@ -48,8 +48,8 @@ jobs:
 
       - name: Install wasm-ld
         run: |
-          sudo apt-get update && sudo apt-get install -y lld-10
-          sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
+          sudo apt-get update && sudo apt-get install -y lld-14
+          sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install rust wasm32-unknown-unknown
         uses: actions-rs/toolchain@v1
@@ -150,21 +150,25 @@ jobs:
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum --format short-verbose -- ./... -race -parallel=1
+        run: gotestsum --format short-verbose -- ./... -race -parallel=8
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
         run: gotestsum --format short-verbose -- -p 1 -run TestRedis -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
+      - name: run challenge tests
+        if: matrix.test-mode == 'challenge'
+        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         if: matrix.test-mode == 'defaults'
         with:
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}

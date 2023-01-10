@@ -20,7 +20,7 @@ Nitro is the latest iteration of the Arbitrum technology. It is a fully integrat
 layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges, 
 advanced calldata compression, and more.
 
-See the live docs-site [here](https://developer.arbitrum.io/) (or [here](./docs) for markdown docs source.)
+See the live docs-site [here](https://developer.arbitrum.io/) (or [here](https://github.com/OffchainLabs/arbitrum-docs) for markdown docs source.)
 
 The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic 
 interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using 

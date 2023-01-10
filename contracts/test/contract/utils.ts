@@ -2,20 +2,22 @@ import { ethers } from 'hardhat'
 import { Signer } from '@ethersproject/abstract-signer'
 import { getAddress } from '@ethersproject/address'
 
-const ADDRESS_ALIAS_OFFSET = BigInt("0x1111000000000000000000000000000000001111");
-const ADDRESS_BIT_LENGTH = 160;
-const ADDRESS_NIBBLE_LENGTH = ADDRESS_BIT_LENGTH / 4;
+const ADDRESS_ALIAS_OFFSET = BigInt(
+  '0x1111000000000000000000000000000000001111'
+)
+const ADDRESS_BIT_LENGTH = 160
+const ADDRESS_NIBBLE_LENGTH = ADDRESS_BIT_LENGTH / 4
 
 export const applyAlias = (addr: string) => {
   // we use BigInts in here to allow for proper overflow behaviour
   // BigInt.asUintN calculates the correct positive modulus
   return getAddress(
-    "0x" +
+    '0x' +
       BigInt.asUintN(ADDRESS_BIT_LENGTH, BigInt(addr) + ADDRESS_ALIAS_OFFSET)
         .toString(16)
-        .padStart(ADDRESS_NIBBLE_LENGTH, "0")
-  );
-};
+        .padStart(ADDRESS_NIBBLE_LENGTH, '0')
+  )
+}
 
 export async function initializeAccounts(): Promise<Signer[]> {
   const [account0] = await ethers.getSigners()

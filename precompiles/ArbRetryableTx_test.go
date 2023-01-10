@@ -4,9 +4,10 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/nitro/arbos/storage"
 	"math/big"
 	"testing"
+
+	"github.com/offchainlabs/nitro/arbos/storage"
 
 	"github.com/ethereum/go-ethereum/common"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"

@@ -38,11 +38,12 @@ type SeqCoordinator struct {
 
 	redisutil.RedisCoordinator
 
-	sync      *SyncMonitor
-	streamer  *TransactionStreamer
-	sequencer *Sequencer
-	signer    *signature.SignVerify
-	config    SeqCoordinatorConfig
+	sync             *SyncMonitor
+	streamer         *TransactionStreamer
+	sequencer        *Sequencer
+	delayedSequencer *DelayedSequencer
+	signer           *signature.SignVerify
+	config           SeqCoordinatorConfig
 
 	prevChosenSequencer string
 	reportedAlive       bool
@@ -86,7 +87,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
-	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
+	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
@@ -137,8 +138,21 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		config:           config,
 		signer:           signer,
 	}
+	if sequencer != nil {
+		sequencer.Pause()
+	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
+}
+
+func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) {
+	if c.Started() {
+		panic("trying to set delayed sequencer after start")
+	}
+	if c.delayedSequencer != nil {
+		panic("trying to set delayed sequencer when already set")
+	}
+	c.delayedSequencer = delayedSequencer
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
@@ -559,6 +573,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
+		// we're here because we don't currently hold the lock
+		// sequencer is already either paused or forwarding
+		c.sequencer.Pause()
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -567,10 +584,17 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			if err := c.livelinessUpdate(ctx); err != nil {
 				log.Warn("failed to update liveliness", "err", err)
 			}
+			c.prevChosenSequencer = ""
 			return c.retryAfterRedisError()
 		}
 		log.Info("caught chosen-coordinator lock")
-		c.sequencer.DontForward()
+		if c.delayedSequencer != nil {
+			err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+			if err != nil {
+				log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+			}
+		}
+		c.sequencer.Activate()
 		c.prevChosenSequencer = c.config.MyUrl()
 		return c.noRedisError()
 	}
@@ -663,7 +687,7 @@ func (c *SeqCoordinator) waitForHandoff(ctx context.Context) string {
 	}
 }
 
-func (c *SeqCoordinator) StopAndWait() {
+func (c *SeqCoordinator) PrepareForShutdown() {
 	wasChosen := c.CurrentlyChosen()
 	c.StopWaiter.StopAndWait()
 	// normal context now closed, use parent context
@@ -674,7 +698,7 @@ func (c *SeqCoordinator) StopAndWait() {
 	if c.reportedAlive {
 		err := c.livelinessRelease(ctx)
 		if err != nil {
-			log.Warn("lieveliness release failed", "err", err)
+			log.Warn("liveliness release failed", "err", err)
 		}
 	}
 	if wasChosen {
@@ -697,6 +721,12 @@ func (c *SeqCoordinator) StopAndWait() {
 				}
 			}
 		}
+	}
+}
+
+func (c *SeqCoordinator) StopAndWait() {
+	if !c.StopWaiter.Stopped() {
+		c.PrepareForShutdown()
 	}
 	_ = c.Client.Close()
 }
