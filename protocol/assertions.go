@@ -29,7 +29,7 @@ var (
 	ErrWrongState             = errors.New("vertex state does not allow this operation")
 	ErrWrongPredecessorState  = errors.New("predecessor state does not allow this operation")
 	ErrNotYet                 = errors.New("deadline has not yet passed")
-	ErrNoWinnerYet            = errors.New("challenges does not yet have a winnerAssertion")
+	ErrNoWinnerYet            = errors.New("challenges does not yet have a winner assertion")
 	ErrPastDeadline           = errors.New("deadline has passed")
 	ErrInsufficientBalance    = errors.New("insufficient balance")
 	ErrNotImplemented         = errors.New("not yet implemented")
@@ -115,26 +115,26 @@ type AssertionChain struct {
 }
 
 const (
-	deadTxStatus = iota
-	readOnlyTxStatus
-	readWriteTxStatus
+	DeadTxStatus = iota
+	ReadOnlyTxStatus
+	ReadWriteTxStatus
 )
 
 // ActiveTx is a transaction that is currently being processed.
 type ActiveTx struct {
-	txStatus int
+	TxStatus int
 }
 
 // verifyRead is a helper function to verify that the transaction is read-only.
 func (tx *ActiveTx) verifyRead() {
-	if tx.txStatus == deadTxStatus {
+	if tx.TxStatus == DeadTxStatus {
 		panic("tried to read chain after call ended")
 	}
 }
 
 // verifyReadWrite is a helper function to verify that the transaction is read-write.
 func (tx *ActiveTx) verifyReadWrite() {
-	if tx.txStatus != readWriteTxStatus {
+	if tx.TxStatus != ReadWriteTxStatus {
 		panic("tried to modify chain in read-only call")
 	}
 }
@@ -143,9 +143,9 @@ func (tx *ActiveTx) verifyReadWrite() {
 func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	err := clo(tx, chain)
-	tx.txStatus = deadTxStatus
+	tx.TxStatus = DeadTxStatus
 	return err
 }
 
@@ -153,9 +153,9 @@ func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error)
 func (chain *AssertionChain) Call(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
-	tx := &ActiveTx{txStatus: readOnlyTxStatus}
+	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
 	err := clo(tx, chain)
-	tx.txStatus = deadTxStatus
+	tx.TxStatus = DeadTxStatus
 	return err
 }
 
@@ -553,7 +553,7 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	return nil
 }
 
-// ConfirmForWin confirms that the assertion is the winnerAssertion of the challenge and moves the assertion to `ConfirmedAssertionState` state.
+// ConfirmForWin confirms that the assertion is the WinnerAssertion of the challenge and moves the assertion to `ConfirmedAssertionState` state.
 func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
@@ -587,7 +587,7 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 // Challenge created by an assertion.
 type Challenge struct {
 	rootAssertion         util.Option[*Assertion]
-	winnerAssertion       util.Option[*Assertion]
+	WinnerAssertion       util.Option[*Assertion]
 	rootVertex            util.Option[*ChallengeVertex]
 	latestConfirmedVertex util.Option[*ChallengeVertex]
 	creationTime          time.Time
@@ -612,7 +612,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 		challenge:   util.None[*Challenge](),
 		SequenceNum: currSeqNumber,
 		isLeaf:      false,
-		status:      ConfirmedAssertionState,
+		Status:      ConfirmedAssertionState,
 		Commitment: util.HistoryCommitment{
 			Height: 0,
 			Merkle: common.Hash{},
@@ -625,7 +625,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 
 	chal := &Challenge{
 		rootAssertion:         util.Some(a),
-		winnerAssertion:       util.None[*Assertion](),
+		WinnerAssertion:       util.None[*Assertion](),
 		rootVertex:            util.Some(rootVertex),
 		latestConfirmedVertex: util.Some(rootVertex),
 		creationTime:          a.chain.timeReference.Get(),
@@ -707,7 +707,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		SequenceNum:          c.nextSequenceNum,
 		Validator:            validator,
 		isLeaf:               true,
-		status:               PendingAssertionState,
+		Status:               PendingAssertionState,
 		Commitment:           history,
 		Prev:                 c.rootVertex,
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
@@ -735,16 +735,35 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 // Completed returns true if the challenge is completed.
 func (c *Challenge) Completed(tx *ActiveTx) bool {
 	tx.verifyRead()
-	return !c.winnerAssertion.IsNone()
+	return !c.WinnerAssertion.IsNone()
 }
 
 // Winner returns the winning assertion if the challenge is completed.
 func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 	tx.verifyRead()
-	if c.winnerAssertion.IsNone() {
+	if c.WinnerAssertion.IsNone() {
 		return nil, ErrNoWinnerYet
 	}
-	return c.winnerAssertion.Unwrap(), nil
+	return c.WinnerAssertion.Unwrap(), nil
+}
+
+// HasConfirmedAboveSeqNumber returns true if another vertex with higher sequence number has confirmed.
+func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequenceNumber) bool {
+	tx.verifyRead()
+
+	if c.rootAssertion.IsNone() {
+		return false
+	}
+	vertices, ok := c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[ChallengeCommitHash(c.ParentStateCommitment().Hash())]
+	if !ok {
+		return false
+	}
+	for _, vertex := range vertices {
+		if vertex.SequenceNum > seqNum && vertex.Status == ConfirmedAssertionState {
+			return true
+		}
+	}
+	return false
 }
 
 type ChallengeVertex struct {
@@ -753,7 +772,7 @@ type ChallengeVertex struct {
 	SequenceNum          VertexSequenceNumber // unique within the challenge
 	Validator            common.Address
 	isLeaf               bool
-	status               AssertionState
+	Status               AssertionState
 	Prev                 util.Option[*ChallengeVertex]
 	PresumptiveSuccessor util.Option[*ChallengeVertex]
 	psTimer              *util.CountUpTimer
@@ -880,11 +899,11 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof 
 // ConfirmForSubChallengeWin confirms the vertex as the winner of a sub-challenge.
 func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if v.status != PendingAssertionState {
-		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
+	if v.Status != PendingAssertionState {
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
-	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
+	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
 	}
 	subChal := v.Prev.Unwrap().subChallenge
 	if subChal.IsNone() || subChal.Unwrap().winner != v {
@@ -897,14 +916,14 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 // ConfirmForPsTimer confirms the vertex as the winner of a psTimer.
 func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if v.status != PendingAssertionState {
-		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
+	if v.Status != PendingAssertionState {
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
 	if !v.Prev.Unwrap().subChallenge.IsNone() {
 		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
 	}
-	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
+	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
 	}
 	if v.psTimer.Get() <= v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod {
 		return errors.Wrapf(
@@ -922,14 +941,14 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 // ConfirmForChallengeDeadline confirms the vertex as the winner of a challenge deadline.
 func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if v.status != PendingAssertionState {
-		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
+	if v.Status != PendingAssertionState {
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
 	if !v.Prev.Unwrap().subChallenge.IsNone() {
 		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
 	}
-	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
+	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
 	}
 	if v != v.Prev.Unwrap().PresumptiveSuccessor.Unwrap() {
 		return errors.Wrap(ErrInvalidOp, "Vertex is not the presumptive successor")
@@ -950,9 +969,9 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 }
 
 func (v *ChallengeVertex) _confirm() {
-	v.status = ConfirmedAssertionState
+	v.Status = ConfirmedAssertionState
 	if v.isLeaf {
-		v.challenge.Unwrap().winnerAssertion = v.winnerIfConfirmed
+		v.challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
 	}
 }
 
@@ -962,8 +981,8 @@ func (v *ChallengeVertex) CreateSubChallenge(tx *ActiveTx) error {
 	if !v.subChallenge.IsNone() {
 		return ErrVertexAlreadyExists
 	}
-	if v.status == ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
+	if v.Status == ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
 	v.subChallenge = util.Some[*SubChallenge](&SubChallenge{
 		parent: v,
