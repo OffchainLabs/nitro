@@ -13,36 +13,36 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
-type BatchPosterVerifier struct {
-	seqInboxCaller *bridgegen.SequencerInboxCaller
-	cache          map[common.Address]bool
-	cacheExpiry    time.Time
-	mutex          sync.Mutex
+type AddressVerifier struct {
+	seqInboxCaller         *bridgegen.SequencerInboxCaller
+	batchPosterCache       map[common.Address]bool
+	batchPosterCacheExpiry time.Time
+	mutex                  sync.Mutex
 }
 
-// Note that we only cache positive instances, not negative ones. That's because we're willing to accept the
+// Note that we only batchPosterCache positive instances, not negative ones. That's because we're willing to accept the
 // consequences of a false positive (accepting a Store from a recently retired batch poster), but we don't want
 // to accept the consequences of a false negative (rejecting a Store from a recently added batch poster).
 
-var batchPosterVerifierLifetime = time.Hour
+var addressVerifierLifetime = time.Hour
 
-func NewBatchPosterVerifier(seqInboxCaller *bridgegen.SequencerInboxCaller) *BatchPosterVerifier {
-	return &BatchPosterVerifier{
-		seqInboxCaller: seqInboxCaller,
-		cache:          make(map[common.Address]bool),
-		cacheExpiry:    time.Now().Add(batchPosterVerifierLifetime),
+func NewAddressVerifier(seqInboxCaller *bridgegen.SequencerInboxCaller) *AddressVerifier {
+	return &AddressVerifier{
+		seqInboxCaller:         seqInboxCaller,
+		batchPosterCache:       make(map[common.Address]bool),
+		batchPosterCacheExpiry: time.Now().Add(addressVerifierLifetime),
 	}
 }
 
-func (bpv *BatchPosterVerifier) IsBatchPoster(ctx context.Context, addr common.Address) (bool, error) {
+func (bpv *AddressVerifier) IsBatchPoster(ctx context.Context, addr common.Address) (bool, error) {
 	bpv.mutex.Lock()
-	if time.Now().After(bpv.cacheExpiry) {
+	if time.Now().After(bpv.batchPosterCacheExpiry) {
 		if err := bpv.flushCache_locked(ctx); err != nil {
 			bpv.mutex.Unlock()
 			return false, err
 		}
 	}
-	if bpv.cache[addr] {
+	if bpv.batchPosterCache[addr] {
 		bpv.mutex.Unlock()
 		return true, nil
 	}
@@ -54,38 +54,38 @@ func (bpv *BatchPosterVerifier) IsBatchPoster(ctx context.Context, addr common.A
 	}
 	if isBatchPoster {
 		bpv.mutex.Lock()
-		bpv.cache[addr] = true
+		bpv.batchPosterCache[addr] = true
 		bpv.mutex.Unlock()
 	}
 	return isBatchPoster, nil
 }
 
-func (bpv *BatchPosterVerifier) FlushCache(ctx context.Context) error {
+func (bpv *AddressVerifier) FlushCache(ctx context.Context) error {
 	bpv.mutex.Lock()
 	defer bpv.mutex.Unlock()
 	return bpv.flushCache_locked(ctx)
 }
 
-func (bpv *BatchPosterVerifier) flushCache_locked(ctx context.Context) error {
-	bpv.cache = make(map[common.Address]bool)
-	bpv.cacheExpiry = time.Now().Add(batchPosterVerifierLifetime)
+func (bpv *AddressVerifier) flushCache_locked(ctx context.Context) error {
+	bpv.batchPosterCache = make(map[common.Address]bool)
+	bpv.batchPosterCacheExpiry = time.Now().Add(addressVerifierLifetime)
 	return nil
 }
 
-func NewMockBatchPosterVerifier(validAddr common.Address) *MockBatchPosterVerifier {
-	return &MockBatchPosterVerifier{
+func NewMockAddressVerifier(validAddr common.Address) *MockAddressVerifier {
+	return &MockAddressVerifier{
 		validAddr: validAddr,
 	}
 }
 
-type MockBatchPosterVerifier struct {
+type MockAddressVerifier struct {
 	validAddr common.Address
 }
 
-func (bpv *MockBatchPosterVerifier) IsBatchPoster(_ context.Context, addr common.Address) (bool, error) {
+func (bpv *MockAddressVerifier) IsBatchPoster(_ context.Context, addr common.Address) (bool, error) {
 	return addr == bpv.validAddr, nil
 }
 
-type BatchPosterVerifierInterface interface {
+type AddressVerifierInterface interface {
 	IsBatchPoster(ctx context.Context, addr common.Address) (bool, error)
 }

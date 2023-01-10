@@ -19,7 +19,7 @@ import (
 type Verifier struct {
 	config        *VerifierConfig
 	authorizedMap map[common.Address]struct{}
-	bpValidator   contracts.BatchPosterVerifierInterface
+	bpValidator   contracts.AddressVerifierInterface
 }
 
 type VerifierConfig struct {
@@ -62,7 +62,7 @@ var TestingFeedVerifierConfig = VerifierConfig{
 	},
 }
 
-func NewVerifier(config *VerifierConfig, bpValidator contracts.BatchPosterVerifierInterface) (*Verifier, error) {
+func NewVerifier(config *VerifierConfig, bpValidator contracts.AddressVerifierInterface) (*Verifier, error) {
 	authorizedMap := make(map[common.Address]struct{}, len(config.AllowedAddresses))
 	for _, addrString := range config.AllowedAddresses {
 		addr := common.HexToAddress(addrString)

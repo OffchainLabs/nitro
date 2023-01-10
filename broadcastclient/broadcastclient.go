@@ -140,7 +140,7 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	confirmedSequencerNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
-	bpVerifier contracts.BatchPosterVerifierInterface,
+	bpVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
 ) (*BroadcastClient, error) {
 	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)

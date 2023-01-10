@@ -79,7 +79,7 @@ type SignAfterStoreDAS struct {
 	keysetHash     [32]byte
 	keysetBytes    []byte
 	storageService StorageService
-	bpVerifier     *contracts.BatchPosterVerifier
+	bpVerifier     *contracts.AddressVerifier
 
 	// Extra batch poster verifier, for local installations to have their
 	// own way of testing Stores.
@@ -137,9 +137,9 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
+	var bpVerifier *contracts.AddressVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	var extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool

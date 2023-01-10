@@ -28,7 +28,7 @@ func NewBroadcastClients(
 	txStreamer broadcastclient.TransactionStreamerInterface,
 	confirmedSequenceNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
-	bpVerifier contracts.BatchPosterVerifierInterface,
+	bpVerifier contracts.AddressVerifierInterface,
 ) (*BroadcastClients, error) {
 	urlCount := len(config.URLs)
 	if urlCount <= 0 {

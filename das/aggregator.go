@@ -60,7 +60,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	bpVerifier                     *contracts.BatchPosterVerifier
+	bpVerifier                     *contracts.AddressVerifier
 }
 
 type ServiceDetails struct {
@@ -153,9 +153,9 @@ func NewAggregatorWithSeqInboxCaller(
 		os.Exit(0)
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
+	var bpVerifier *contracts.AddressVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	return &Aggregator{

@@ -156,10 +156,10 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadca
 
 func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, confirmedSequenceNumberListener chan arbutil.MessageIndex, feedErrChan chan error, validAddr *common.Address) (*BroadcastClient, error) {
 	port := listenerAddress.(*net.TCPAddr).Port
-	var bpv contracts.BatchPosterVerifierInterface
+	var bpv contracts.AddressVerifierInterface
 	if validAddr != nil {
 		config.Verifier.AcceptSequencer = true
-		bpv = contracts.NewMockBatchPosterVerifier(*validAddr)
+		bpv = contracts.NewMockAddressVerifier(*validAddr)
 	} else {
 		config.Verifier.AcceptSequencer = false
 	}
