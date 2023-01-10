@@ -107,6 +107,18 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 				syncing = true
 			}
 		}
+
+		l1reader := s.inboxReader.l1Reader
+		if l1reader != nil {
+			header, err := l1reader.LastHeaderWithError()
+			if err != nil {
+				res["lastL1HeaderErr"] = err
+			}
+			if header != nil {
+				res["lastL1BlockNum"] = header.Number
+				res["lastl1BlockHash"] = header.Hash
+			}
+		}
 	}
 
 	if s.coordinator != nil {

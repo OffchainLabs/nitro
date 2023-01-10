@@ -65,6 +65,11 @@ func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
 }
 
+// FloatToBig casts a float to a huge
+func FloatToBig(value float64) *big.Int {
+	return new(big.Int).SetInt64(int64(value))
+}
+
 // UintToBigFloat casts a uint to a big float
 func UintToBigFloat(value uint64) *big.Float {
 	return new(big.Float).SetPrec(53).SetUint64(value)
@@ -341,4 +346,14 @@ func ApproxSquareRoot(value uint64) uint64 {
 		}
 	}
 	return approx
+}
+
+// SquareUint returns square of uint
+func SquareUint(value uint64) uint64 {
+	return value * value
+}
+
+// SquareFloat returns square of float
+func SquareFloat(value float64) float64 {
+	return value * value
 }
