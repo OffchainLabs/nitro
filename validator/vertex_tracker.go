@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	ErrNilPrev            = errors.New("Vertex parent is nil")
 	ErrConfirmed          = errors.New("Vertex has been confirmed")
 	ErrSiblingConfirmed   = errors.New("Vertex sibling has been confirmed")
 	ErrPrevNone           = errors.New("Vertex parent is none")
@@ -90,7 +89,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	}
 	v.vertex = vertex
 	if v.vertex.Prev.IsNone() {
-		return ErrNilPrev
+		return ErrPrevNone
 	}
 	if v.vertex.Status == protocol.ConfirmedAssertionState {
 		return ErrConfirmed

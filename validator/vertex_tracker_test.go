@@ -180,7 +180,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			challenge: &protocol.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx)
-		require.ErrorIs(t, err, ErrNilPrev)
+		require.ErrorIs(t, err, ErrPrevNone)
 	})
 	t.Run("vertex confirmed and returns", func(t *testing.T) {
 		history := util.HistoryCommitment{
