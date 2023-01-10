@@ -200,7 +200,7 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 				config.TargetPriceGwei) *
 				params.GWei)
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
-		log.Error(
+		log.Warn(
 			"reducing proposed fee cap to current maximum",
 			"proposedFeeCap", newFeeCap,
 			"maxFeeCap", maxFeeCap,
