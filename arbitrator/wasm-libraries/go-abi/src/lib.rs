@@ -20,9 +20,11 @@ impl GoStack {
         Self { sp, offset }
     }
 
+    /// returns the pointer at which a value may be accessed, moving the offset past the value
     fn advance(&mut self, bytes: usize) -> usize {
+        let before = self.offset;
         self.offset += bytes;
-        self.offset
+        before
     }
 
     pub unsafe fn read_u8(&mut self) -> u8 {
