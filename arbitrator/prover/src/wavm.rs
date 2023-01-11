@@ -9,10 +9,12 @@ use crate::{
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-use wasmparser::{BlockType, Operator};
+use wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
@@ -140,6 +142,8 @@ pub enum Opcode {
     Dup,
     /// Call a function in a different module
     CrossModuleCall,
+    /// Call a function in a different module, acting as the caller's module
+    CrossModuleForward,
     /// Call a caller module's internal method with a given function offset
     CallerModuleInternalCall,
     /// Gets bytes32 from global state
@@ -258,6 +262,7 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
+            Opcode::CrossModuleForward => 0x800B,
             Opcode::CallerModuleInternalCall => 0x800A,
             Opcode::GetGlobalStateBytes32 => 0x8010,
             Opcode::SetGlobalStateBytes32 => 0x8011,
@@ -307,6 +312,10 @@ pub fn unpack_cross_module_call(data: u64) -> (u32, u32) {
     ((data >> 32) as u32, data as u32)
 }
 
+lazy_static! {
+    static ref OP_HASHES: Mutex<HashMap<Opcode, Bytes32>> = Mutex::new(HashMap::default());
+}
+
 impl Instruction {
     #[must_use]
     pub fn simple(opcode: Opcode) -> Instruction {
@@ -343,12 +352,24 @@ impl Instruction {
         ret
     }
 
-    pub fn hash(self) -> Bytes32 {
+    pub fn hash(&self) -> Bytes32 {
+        let dataless = self.proving_argument_data.is_none() && self.argument_data == 0;
+        if dataless {
+            if let Some(hash) = OP_HASHES.lock().get(&self.opcode) {
+                return *hash;
+            }
+        }
+
         let mut h = Keccak256::new();
         h.update(b"Instruction:");
         h.update(self.opcode.repr().to_be_bytes());
         h.update(self.get_proving_argument_data());
-        h.finalize().into()
+        let hash: Bytes32 = h.finalize().into();
+
+        if dataless {
+            OP_HASHES.lock().insert(self.opcode, hash);
+        }
+        hash
     }
 }
 
@@ -415,13 +436,11 @@ impl Sub for StackState {
     type Output = isize;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let s = match self {
-            Self::Reachable(s) => s,
-            Self::Unreachable => return 0,
+        let Self::Reachable(s) = self else {
+            return 0
         };
-        let rhs = match rhs {
-            Self::Reachable(rhs) => rhs,
-            Self::Unreachable => return 0,
+        let Self::Reachable(rhs) = rhs else {
+            return 0
         };
         s as isize - rhs as isize
     }
@@ -555,9 +574,8 @@ pub fn wasm_to_wavm<'a>(
 
             let func = $func;
             let sig = func.signature();
-            let (module, func) = match fp_impls.get(&func) {
-                Some((module, func)) => (module, func),
-                None => bail!("No implementation for floating point operation {:?}", &func),
+            let Some((module, func)) = fp_impls.get(&func) else {
+                bail!("No implementation for floating point operation {:?}", &func)
             };
 
             // Reinterpret float args into ints
@@ -607,7 +625,7 @@ pub fn wasm_to_wavm<'a>(
 
     let block_type_params = |ty: BlockType| -> usize {
         match ty {
-            BlockType::Empty => 0,
+            BlockType::Type(Type::EmptyBlockType) => 0,
             BlockType::Type(_) => 0,
             BlockType::FuncType(idx) => all_types[idx as usize].inputs.len(),
         }
@@ -615,7 +633,7 @@ pub fn wasm_to_wavm<'a>(
 
     let block_type_results = |ty: BlockType| -> usize {
         match ty {
-            BlockType::Empty => 0,
+            BlockType::Type(Type::EmptyBlockType) => 0,
             BlockType::Type(_) => 1,
             BlockType::FuncType(idx) => all_types[idx as usize].outputs.len(),
         }

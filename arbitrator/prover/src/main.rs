@@ -1,10 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![cfg(feature = "native")]
+
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
-    console::Color,
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     utils::{Bytes32, CBytes},
     wavm::Opcode,
@@ -366,10 +367,7 @@ fn main() -> Result<()> {
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
     println!("End machine backtrace:");
-    for (module, func, pc) in mach.get_backtrace() {
-        let func = rustc_demangle::demangle(&func);
-        println!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
-    }
+    mach.print_backtrace(false);
 
     if let Some(out) = opts.output {
         let out = File::create(out)?;
@@ -419,14 +417,11 @@ fn main() -> Result<()> {
         let opts_binary = opts.binary;
         let opts_libraries = opts.libraries;
         let format_pc = |module_num: usize, func_num: usize| -> (String, String) {
-            let names = match mach.get_module_names(module_num) {
-                Some(n) => n,
-                None => {
-                    return (
-                        format!("[unknown {}]", module_num),
-                        format!("[unknown {}]", func_num),
-                    );
-                }
+            let Some(names) = mach.get_module_names(module_num) else {
+                return (
+                    format!("[unknown {}]", module_num),
+                    format!("[unknown {}]", func_num),
+                );
             };
             let module_name = if module_num == 0 {
                 names.module.clone()

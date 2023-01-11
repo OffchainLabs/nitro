@@ -49,7 +49,7 @@ replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSig
 replay_wasm=$(output_latest)/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs_nogo=$(output_root)/machines/latest/wasi_stub.wasm $(output_root)/machines/latest/host_io.wasm $(output_root)/machines/latest/soft-float.wasm
+arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float user_host forward)
 arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli)
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
@@ -69,12 +69,37 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
 rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.toml)
 
+prover_src = arbitrator/prover/src
+rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files)
+
 jit_dir = arbitrator/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
 
 wasm_lib = arbitrator/wasm-libraries
 wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
 wasm_lib_go_abi = $(call wasm_lib_deps,go-abi)
+
+wasm32_wasi = target/wasm32-wasi/release
+wasm32_unknown = target/wasm32-unknown-unknown/release
+
+stylus_dir = arbitrator/stylus
+stylus_test_dir = arbitrator/stylus/tests
+
+stylus_lang_rust = $(wildcard arbitrator/langs/rust/src/*.rs arbitrator/langs/rust/*.toml)
+stylus_lang_c    = $(wildcard arbitrator/langs/c/*.c arbitrator/langs/c/*.h)
+
+get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
+get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_lang_rust)
+get_stylus_test_c    = $(wildcard $(stylus_test_dir)/$(1)/*.c $(stylus_test_dir)/$(1)/*.h) $(stylus_lang_c)
+stylus_test_keccak_wasm     = $(call get_stylus_test_wasm,keccak)
+stylus_test_keccak_src      = $(call get_stylus_test_rust,keccak)
+stylus_test_keccak-100_wasm = $(call get_stylus_test_wasm,keccak-100)
+stylus_test_keccak-100_src  = $(call get_stylus_test_rust,keccak-100)
+stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
+stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
+
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_siphash_wasm)
+stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 
 # user targets
 
@@ -119,6 +144,10 @@ format fmt: .make/fmt
 lint: .make/lint
 	@printf $(done)
 
+stylus-benchmarks: $(stylus_benchmarks)
+	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
+	@printf $(done)
+
 test-go: .make/test-go
 	@printf $(done)
 
@@ -135,7 +164,7 @@ test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
 
-wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms)
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms)
 	@printf $(done)
 
 clean:
@@ -185,12 +214,12 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
 	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
 
-$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_lib): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
 	install arbitrator/target/release/libprover.a $@
@@ -200,8 +229,8 @@ $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@
 
-$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
-	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm,%, $@)
+$(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
+	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
 
 $(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go $(arbitrator_cases)/go/go.mod $(arbitrator_cases)/go/go.sum
 	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
@@ -213,7 +242,7 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs ar
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
-	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
 
 arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
@@ -254,15 +283,23 @@ $(output_latest)/soft-float.wasm: $(DEP_PREDICATE) \
 
 $(output_latest)/go_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,go-stub) $(wasm_lib_go_abi)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
-	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/go_stub.wasm $@
 
 $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(wasm_lib_go_abi)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
-	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
+
+$(output_root)/machines/latest/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host)
+	mkdir -p $(output_root)/machines/latest
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package user-host
+	install arbitrator/wasm-libraries/$(wasm32_unknown)/user_host.wasm $@
 
 $(output_latest)/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi) .make/cbrotli-wasm
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
-	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
+
+$(output_root)/machines/latest/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wat .make/machines
+	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
@@ -270,13 +307,24 @@ $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(ar
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
 
+$(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
+	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
+
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
-contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
+contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
 
 contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
@@ -284,6 +332,9 @@ contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_p
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
+	echo "[]" > $@
+
+contracts/test/prover/proofs/global-state.json:
 	echo "[]" > $@
 
 contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_prover_bin)
@@ -298,7 +349,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
-	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
+	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
@@ -348,4 +399,4 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint stylus-benchmarks test-go test-gen-proofs push clean docker

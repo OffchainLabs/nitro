@@ -7,10 +7,13 @@ use crate::{
     value::{ArbValueType, Value},
 };
 use digest::Digest;
-use rayon::prelude::*;
+use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
+
+#[cfg(feature = "native")]
+use rayon::prelude::*;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
@@ -72,9 +75,14 @@ impl Memory {
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
-        let mut leaf_hashes: Vec<Bytes32> = self
-            .buffer
-            .par_chunks(Self::LEAF_SIZE)
+
+        #[cfg(feature = "native")]
+        let leaf_hashes = self.buffer.par_chunks(Self::LEAF_SIZE);
+
+        #[cfg(not(feature = "native"))]
+        let leaf_hashes = self.buffer.chunks(Self::LEAF_SIZE);
+
+        let mut leaf_hashes: Vec<Bytes32> = leaf_hashes
             .map(|leaf| {
                 let mut full_leaf = [0u8; 32];
                 full_leaf[..leaf.len()].copy_from_slice(leaf);
@@ -174,11 +182,11 @@ impl Memory {
             ArbValueType::I64 => Value::I64(contents as u64),
             ArbValueType::F32 => {
                 assert!(bytes == 4 && !signed, "Invalid source for f32");
-                Value::F32(f32::from_bits(contents as u32))
+                f32::from_bits(contents as u32).into()
             }
             ArbValueType::F64 => {
                 assert!(bytes == 8 && !signed, "Invalid source for f64");
-                Value::F64(f64::from_bits(contents as u64))
+                f64::from_bits(contents as u64).into()
             }
             _ => panic!("Invalid memory load output type {:?}", ty),
         })
@@ -186,9 +194,8 @@ impl Memory {
 
     #[must_use]
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
-        let end_idx = match idx.checked_add(bytes.into()) {
-            Some(x) => x,
-            None => return false,
+        let Some(end_idx) = idx.checked_add(bytes.into()) else {
+            return false
         };
         if end_idx > self.buffer.len() as u64 {
             return false;
@@ -216,9 +223,8 @@ impl Memory {
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return false;
         }
-        let end_idx = match idx.checked_add(value.len() as u64) {
-            Some(x) => x,
-            None => return false,
+        let Some(end_idx) = idx.checked_add(value.len() as u64) else {
+            return false;
         };
         if end_idx > self.buffer.len() as u64 {
             return false;
@@ -242,9 +248,8 @@ impl Memory {
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return None;
         }
-        let idx = match usize::try_from(idx) {
-            Ok(x) => x,
-            Err(_) => return None,
+        let Ok(idx) = usize::try_from(idx) else {
+            return None;
         };
 
         let slice = self.get_range(idx, 32)?;
@@ -261,12 +266,13 @@ impl Memory {
         Some(&self.buffer[offset..end])
     }
 
-    pub fn set_range(&mut self, offset: usize, data: &[u8]) {
+    pub fn set_range(&mut self, offset: usize, data: &[u8]) -> Result<()> {
         self.merkle = None;
-        let end = offset
-            .checked_add(data.len())
-            .expect("Overflow in offset+data.len() in Memory::set_range");
+        let Some(end) = offset.checked_add(data.len()) else {
+            bail!("Overflow in offset+data.len() in Memory::set_range")
+        };
         self.buffer[offset..end].copy_from_slice(data);
+        Ok(())
     }
 
     pub fn cache_merkle_tree(&mut self) {

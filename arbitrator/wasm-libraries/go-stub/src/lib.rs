@@ -52,7 +52,6 @@ pub unsafe extern "C" fn go__runtime_wasmExit(sp: usize) {
 }
 
 /// Safety: λ(fd uintptr, p pointer, len int32)
-#[no_mangle]
 pub unsafe extern "C" fn go__runtime_wasmWrite(sp: usize) {
     let mut sp = GoStack::new(sp);
     let fd = sp.read_u64();

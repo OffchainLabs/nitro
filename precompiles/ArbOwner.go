@@ -5,8 +5,10 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
+
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -155,4 +157,19 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 		return nil, err
 	}
 	return weiToTransfer, nil
+}
+
+// Sets the price (in evm gas basis points) of wasm gas
+func (con ArbOwner) SetWasmGasPrice(c ctx, evm mech, price uint64) error {
+	return c.State.Programs().SetWasmGasPrice(arbmath.UBips(price))
+}
+
+// Sets the maximum depth (in wasm words) a wasm stack may grow
+func (con ArbOwner) SetWasmMaxDepth(c ctx, evm mech, depth uint32) error {
+	return c.State.Programs().SetWasmMaxDepth(depth)
+}
+
+// Sets the maximum size (in bytes) a wasm memory may be
+func (con ArbOwner) SetWasmHeapBound(c ctx, evm mech, bound uint32) error {
+	return c.State.Programs().SetWasmHeapBound(bound)
 }

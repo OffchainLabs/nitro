@@ -27,6 +27,10 @@ test-node.bash
 # Rust outputs
 arbitrator/target/**/*
 arbitrator/target
+arbitrator/stylus/tests/*/target/
+arbitrator/wasm-testsuite/target/
+arbitrator/wasm-upstream/wasmer/target/
+arbitrator/wasm-libraries/target/
 
 # Compiled files
 **/*.o

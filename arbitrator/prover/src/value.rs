@@ -1,14 +1,19 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{binary::FloatType, console::Color, utils::Bytes32};
+use crate::{binary::FloatType, utils::Bytes32};
+use arbutil::Color;
+use wasmparser::{FuncType, Type};
+
 use digest::Digest;
-use eyre::{bail, Result};
+use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use sha3::Keccak256;
-use std::convert::TryFrom;
-use wasmparser::{FuncType, Type};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Display,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -41,8 +46,48 @@ impl TryFrom<Type> for ArbValueType {
             FuncRef => Self::FuncRef,
             ExternRef => Self::FuncRef,
             V128 => bail!("128-bit types are not supported"),
+
+            // TODO: removed in wasmparser 0.95+
+            ExnRef => bail!("Type not used in newer versions of wasmparser"),
+            Func => bail!("Type not used in newer versions of wasmparser"),
+            EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),
         })
     }
+}
+
+impl From<ArbValueType> for Type {
+    fn from(ty: ArbValueType) -> Self {
+        use ArbValueType::*;
+        match ty {
+            I32 => Self::I32,
+            I64 => Self::I64,
+            F32 => Self::F32,
+            F64 => Self::F64,
+            // InternalRef's aren't analogous, but they can be viewed as function pointers from wavm's perspective
+            RefNull | FuncRef | InternalRef => Self::FuncRef,
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
+    match ty {
+        wasmer::Type::I32 => wasmer::wasmparser::Type::I32,
+        wasmer::Type::I64 => wasmer::wasmparser::Type::I64,
+        wasmer::Type::F32 => wasmer::wasmparser::Type::F32,
+        wasmer::Type::F64 => wasmer::wasmparser::Type::F64,
+        wasmer::Type::V128 => wasmer::wasmparser::Type::V128,
+        wasmer::Type::ExternRef => wasmer::wasmparser::Type::ExternRef,
+        wasmer::Type::FuncRef => wasmer::wasmparser::Type::FuncRef,
+    }
+}
+
+#[cfg(feature = "native")]
+pub fn parser_func_type(ty: wasmer::FunctionType) -> FuncType {
+    let convert = |t: &[wasmer::Type]| -> Vec<Type> { t.iter().map(parser_type).collect() };
+    let params = convert(ty.params()).into_boxed_slice();
+    let returns = convert(ty.results()).into_boxed_slice();
+    FuncType { params, returns }
 }
 
 impl From<FloatType> for ArbValueType {
@@ -211,20 +256,20 @@ impl Value {
     }
 
     pub fn pretty_print(&self) -> String {
-        let lparem = Color::grey("(");
-        let rparem = Color::grey(")");
+        let lparem = "(".grey();
+        let rparem = ")".grey();
 
         macro_rules! single {
             ($ty:expr, $value:expr) => {{
-                format!("{}{}{}{}", Color::grey($ty), lparem, $value, rparem)
+                format!("{}{}{}{}", $ty.grey(), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
-                let eq = Color::grey("=");
+                let eq = "=".grey();
                 format!(
                     "{}{}{} {} {}{}",
-                    Color::grey($ty),
+                    $ty.grey(),
                     lparem,
                     $left,
                     eq,
@@ -257,9 +302,62 @@ impl Value {
     }
 }
 
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = self.pretty_print();
+        write!(f, "{}", text)
+    }
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         self.ty() == other.ty() && self.contents_for_proof() == other.contents_for_proof()
+    }
+}
+
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value::I32(value)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(value: u64) -> Self {
+        Value::I64(value)
+    }
+}
+
+impl From<f32> for Value {
+    fn from(value: f32) -> Self {
+        Value::F32(value)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::F64(value)
+    }
+}
+
+impl TryInto<u32> for Value {
+    type Error = ErrReport;
+
+    fn try_into(self) -> Result<u32, Self::Error> {
+        match self {
+            Value::I32(value) => Ok(value),
+            _ => bail!("value not a u32"),
+        }
+    }
+}
+
+impl TryInto<u64> for Value {
+    type Error = ErrReport;
+
+    fn try_into(self) -> Result<u64> {
+        match self {
+            Value::I64(value) => Ok(value),
+            _ => bail!("value not a u64"),
+        }
     }
 }
 
@@ -304,7 +402,52 @@ impl TryFrom<FuncType> for FunctionType {
         for output in func.returns.iter() {
             outputs.push(ArbValueType::try_from(*output)?)
         }
-
         Ok(Self { inputs, outputs })
+    }
+}
+
+impl Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut signature = "λ(".to_string();
+        if !self.inputs.is_empty() {
+            for arg in &self.inputs {
+                signature += &format!("{}, ", arg);
+            }
+            signature.pop();
+            signature.pop();
+        }
+        signature += ")";
+
+        let output_tuple = self.outputs.len() > 2;
+        if !self.outputs.is_empty() {
+            signature += " -> ";
+            if output_tuple {
+                signature += "(";
+            }
+            for out in &self.outputs {
+                signature += &format!("{}, ", out);
+            }
+            signature.pop();
+            signature.pop();
+            if output_tuple {
+                signature += ")";
+            }
+        }
+        write!(f, "{}", signature)
+    }
+}
+
+impl Display for ArbValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ArbValueType::*;
+        match self {
+            I32 => write!(f, "i32"),
+            I64 => write!(f, "i64"),
+            F32 => write!(f, "f32"),
+            F64 => write!(f, "f64"),
+            RefNull => write!(f, "null"),
+            FuncRef => write!(f, "func"),
+            InternalRef => write!(f, "internal"),
+        }
     }
 }

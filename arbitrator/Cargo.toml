@@ -2,7 +2,11 @@
 members = [
         "arbutil",
         "prover",
+        "stylus",
         "jit",
+]
+exclude = [
+        "stylus/tests/"
 ]
 
 [profile.release]

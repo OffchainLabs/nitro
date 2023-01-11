@@ -2,11 +2,13 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
-    console::Color,
-    host::get_host_impl,
+    binary::{
+        self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+    },
+    host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
+    programs::{config::StylusConfig, ModuleMod, StylusGlobals},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -15,11 +17,11 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
+use arbutil::Color;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -27,14 +29,18 @@ use smallvec::SmallVec;
 use std::{
     borrow::Cow,
     convert::{TryFrom, TryInto},
-    fmt,
+    fmt::{self, Display},
     fs::File,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
+use wasmer_types::FunctionIndex;
+use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
+
+#[cfg(feature = "native")]
+use rayon::prelude::*;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -113,7 +119,7 @@ impl Function {
         Ok(Function::new_from_wavm(insts, func_ty, locals_with_params))
     }
 
-    fn new_from_wavm(
+    pub fn new_from_wavm(
         code: Vec<Instruction>,
         ty: FunctionType,
         local_types: Vec<ArbValueType>,
@@ -122,15 +128,17 @@ impl Function {
             u32::try_from(code.len()).is_ok(),
             "Function instruction count doesn't fit in a u32",
         );
-        let code_merkle = Merkle::new(
-            MerkleType::Instruction,
-            code.par_iter().map(|i| i.hash()).collect(),
-        );
+
+        #[cfg(feature = "native")]
+        let code_hashes = code.par_iter().map(|i| i.hash()).collect();
+
+        #[cfg(not(feature = "native"))]
+        let code_hashes = code.iter().map(|i| i.hash()).collect();
 
         Function {
             code,
             ty,
-            code_merkle,
+            code_merkle: Merkle::new(MerkleType::Instruction, code_hashes),
             local_types,
         }
     }
@@ -237,20 +245,17 @@ impl Table {
     }
 }
 
-fn make_internal_func(opcode: Opcode, ty: FunctionType) -> Function {
-    let wavm = vec![
-        Instruction::simple(Opcode::InitFrame),
-        Instruction::simple(opcode),
-        Instruction::simple(Opcode::Return),
-    ];
-    Function::new_from_wavm(wavm, ty, Vec::new())
-}
-
 #[derive(Clone, Debug)]
 struct AvailableImport {
     ty: FunctionType,
     module: u32,
     func: u32,
+}
+
+impl AvailableImport {
+    pub fn new(ty: FunctionType, module: u32, func: u32) -> Self {
+        Self { ty, module, func }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -269,62 +274,80 @@ struct Module {
     host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
-    exports: Arc<HashMap<String, u32>>,
+    /// Old modules use this format.
+    /// TODO: remove this after the jump to stylus.
+    #[serde(alias = "exports")]
+    func_exports: Arc<HashMap<String, u32>>,
+    #[serde(default)]
+    all_exports: Arc<ExportMap>,
 }
 
 impl Module {
+    const FORWARDING_PREFIX: &str = "arbitrator_forward__";
+
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        stylus_data: Option<StylusGlobals>,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
-        let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
         for import in &bin.imports {
-            if let TypeRef::Func(ty) = import.ty {
-                let mut qualified_name = format!("{}__{}", import.module, import.name);
-                qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
-                let have_ty = &bin.types[ty as usize];
-                let func;
-                if let Some(import) = available_imports.get(&qualified_name) {
-                    ensure!(
-                        &import.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        import.ty, have_ty,
-                    );
-                    let wavm = vec![
-                        Instruction::simple(Opcode::InitFrame),
-                        Instruction::with_data(
-                            Opcode::CrossModuleCall,
-                            pack_cross_module_call(import.module, import.func),
-                        ),
-                        Instruction::simple(Opcode::Return),
-                    ];
-                    func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
-                } else {
-                    func = get_host_impl(import.module, import.name)?;
-                    ensure!(
-                        &func.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        func.ty, have_ty,
-                    );
-                    ensure!(
-                        allow_hostapi,
-                        "Calling hostapi directly is not allowed. Function {}",
-                        import.name,
-                    );
-                }
-                func_type_idxs.push(ty);
-                code.push(func);
-                host_call_hooks.push(Some((import.module.into(), import.name.into())));
+            let module = import.module;
+            let have_ty = &bin.types[import.offset as usize];
+            let Some(import_name) = import.name else {
+                bail!("Missing name for import in {}", module.red());
+            };
+            let (forward, import_name) = match import_name.strip_prefix(Module::FORWARDING_PREFIX) {
+                Some(name) => (true, name),
+                None => (false, import_name),
+            };
+
+            let mut qualified_name = format!("{module}__{import_name}");
+            qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
+
+            let func = if let Some(import) = available_imports.get(&qualified_name) {
+                let call = match forward {
+                    true => Opcode::CrossModuleForward,
+                    false => Opcode::CrossModuleCall,
+                };
+                let wavm = vec![
+                    Instruction::simple(Opcode::InitFrame),
+                    Instruction::with_data(
+                        call,
+                        pack_cross_module_call(import.module, import.func),
+                    ),
+                    Instruction::simple(Opcode::Return),
+                ];
+                Function::new_from_wavm(wavm, import.ty.clone(), vec![])
+            } else if let Ok(hostio) = host::get_host_impl(import.module, import_name) {
+                ensure!(
+                    allow_hostapi,
+                    "Calling hostapi directly is not allowed. Func {}",
+                    import_name.red()
+                );
+                hostio
             } else {
-                bail!("Unsupport import kind {:?}", import);
-            }
+                bail!(
+                    "No such import {} in {}",
+                    import_name.red(),
+                    import.module.red()
+                )
+            };
+            ensure!(
+                &func.ty == have_ty,
+                "Import has different function signature than host function. Expected {} but got {}",
+                func.ty.red(), have_ty.red(),
+            );
+
+            func_type_idxs.push(import.offset);
+            code.push(func);
+            host_call_hooks.push(Some((import.module.into(), import_name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
         let types = &bin.types;
@@ -376,23 +399,6 @@ impl Module {
             memory = Memory::new(size as usize, max_size);
         }
 
-        let mut globals = vec![];
-        for global in &bin.globals {
-            let mut init = global.init_expr.get_operators_reader();
-
-            let value = match (init.read()?, init.read()?, init.eof()) {
-                (op, Operator::End, true) => crate::binary::op_as_const(op)?,
-                _ => bail!("Non-constant global initializer"),
-            };
-            globals.push(value);
-        }
-
-        for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                exports.insert(export.name.to_owned(), export.index);
-            }
-        }
-
         for data in &bin.datas {
             let (memory_index, mut init) = match data.kind {
                 DataKind::Active {
@@ -420,7 +426,7 @@ impl Module {
                     data.data.len(),
                 );
             }
-            memory.set_range(offset, data.data);
+            memory.set_range(offset, data.data)?;
         }
 
         for table in &bin.tables {
@@ -443,9 +449,8 @@ impl Module {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
                 x => bail!("Non-constant element segment offset expression {:?}", x),
             };
-            let table = match tables.get_mut(t as usize) {
-                Some(t) => t,
-                None => bail!("Element segment for non-exsistent table {}", t),
+            let Some(table) = tables.get_mut(t as usize) else {
+                bail!("Element segment for non-exsistent table {}", t)
             };
             let expected_ty = table.ty.element_type;
             ensure!(
@@ -459,11 +464,8 @@ impl Module {
             let mut item_reader = elem.items.get_items_reader()?;
             for _ in 0..item_reader.get_count() {
                 let item = item_reader.read()?;
-                let index = match item {
-                    ElementItem::Func(index) => index,
-                    ElementItem::Expr(_) => {
-                        bail!("Non-constant element initializers are not supported")
-                    }
+                let ElementItem::Func(index) = item else {
+                    bail!("Non-constant element initializers are not supported")
                 };
                 let func_ty = func_types[index as usize].clone();
                 contents.push(TableElement {
@@ -488,54 +490,21 @@ impl Module {
         );
         ensure!(!code.is_empty(), "Module has no code");
 
-        // Make internal functions
         let internals_offset = code.len() as u32;
-        let mut memory_load_internal_type = FunctionType::default();
-        memory_load_internal_type.inputs.push(ArbValueType::I32);
-        memory_load_internal_type.outputs.push(ArbValueType::I32);
-        func_types.push(memory_load_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryLoad {
-                ty: ArbValueType::I32,
-                bytes: 1,
-                signed: false,
-            },
-            memory_load_internal_type.clone(),
-        ));
-        func_types.push(memory_load_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryLoad {
-                ty: ArbValueType::I32,
-                bytes: 4,
-                signed: false,
-            },
-            memory_load_internal_type,
-        ));
-        let mut memory_store_internal_type = FunctionType::default();
-        memory_store_internal_type.inputs.push(ArbValueType::I32);
-        memory_store_internal_type.inputs.push(ArbValueType::I32);
-        func_types.push(memory_store_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryStore {
-                ty: ArbValueType::I32,
-                bytes: 1,
-            },
-            memory_store_internal_type.clone(),
-        ));
-        func_types.push(memory_store_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryStore {
-                ty: ArbValueType::I32,
-                bytes: 4,
-            },
-            memory_store_internal_type,
-        ));
+        host::add_internal_funcs(&mut code, &mut func_types, stylus_data);
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
+        let func_exports = bin
+            .exports
+            .iter()
+            .filter_map(|(name, (offset, kind))| {
+                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
+            })
+            .collect();
 
         Ok(Module {
             memory,
-            globals,
+            globals: bin.globals.clone(),
             tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
             tables,
             funcs_merkle: Arc::new(Merkle::new(
@@ -549,8 +518,20 @@ impl Module {
             host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
             func_types: Arc::new(func_types),
-            exports: Arc::new(exports),
+            func_exports: Arc::new(func_exports),
+            all_exports: Arc::new(bin.exports.clone()),
         })
+    }
+
+    fn name(&self) -> &str {
+        &self.names.module
+    }
+
+    fn find_func(&self, name: &str) -> Result<u32> {
+        let Some(func) = self.func_exports.iter().find(|x| x.0 == name) else {
+            bail!("func {} not found in {}", name.red(), self.name().red())
+        };
+        Ok(*func.1)
     }
 
     fn hash(&self) -> Bytes32 {
@@ -659,6 +640,17 @@ pub enum MachineStatus {
     Finished,
     Errored,
     TooFar,
+}
+
+impl Display for MachineStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Running => write!(f, "running"),
+            Self::Finished => write!(f, "finished"),
+            Self::Errored => write!(f, "errored"),
+            Self::TooFar => write!(f, "too far"),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -895,16 +887,16 @@ impl Machine {
         preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
-        let bin = parse(&bin_source)
+        let bin = parse(&bin_source, binary_path)
             .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
             let error_message = format!("failed to validate WASM binary at {:?}", path);
-            lib_sources.push((file_bytes(path)?, error_message));
+            lib_sources.push((file_bytes(path)?, path, error_message));
         }
-        for (source, error_message) in &lib_sources {
-            let library = parse(source).wrap_err_with(|| error_message.clone())?;
+        for (source, path, error_message) in &lib_sources {
+            let library = parse(source, path).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
         Self::from_binaries(
@@ -916,6 +908,30 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
+            None,
+        )
+    }
+
+    pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
+        let wasm = std::fs::read(path)?;
+        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        let stylus_data = bin.instrument(config)?;
+
+        let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
+        let forward = parse(&forward, Path::new("forward"))?;
+        let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
+        let user_host = parse(&user_host, Path::new("user_host"))?;
+
+        Self::from_binaries(
+            &[forward, user_host],
+            bin,
+            false,
+            false,
+            false,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("tried to read preimage")),
+            Some(stylus_data),
         )
     }
 
@@ -928,45 +944,49 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        stylus_data: Option<StylusGlobals>,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
+        let main_module_index = u32::try_from(modules.len() + libraries.len())?;
 
-        for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                if let Some(ty_idx) = usize::try_from(export.index)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                {
-                    let ty = bin.functions[ty_idx];
-                    let ty = &bin.types[usize::try_from(ty).unwrap()];
-                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+        // make the main module's exports available to libraries
+        for (name, &(export, kind)) in &bin.exports {
+            if kind == ExportKind::Func {
+                let index: usize = export.try_into()?;
+                if let Some(index) = index.checked_sub(bin.imports.len()) {
+                    let ty: usize = bin.functions[index].try_into()?;
+                    let ty = bin.types[ty].clone();
                     available_imports.insert(
-                        format!("env__wavm_guest_call__{}", export.name),
-                        AvailableImport {
-                            ty: ty.clone(),
-                            module,
-                            func: export.index,
-                        },
+                        format!("env__wavm_guest_call__{name}"),
+                        AvailableImport::new(ty, main_module_index, export),
                     );
                 }
             }
         }
 
+        // collect all the library exports in advance so they can use each other's
+        for (index, lib) in libraries.iter().enumerate() {
+            let module = 1 + index as u32; // off by one due to the entry point
+            for (name, &(export, kind)) in &lib.exports {
+                if kind == ExportKind::Func {
+                    let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
+                        Ok(ty) => ty,
+                        Err(error) => bail!("failed to read export {}: {}", name, error),
+                    };
+                    let import = AvailableImport::new(ty, module, export);
+                    available_imports.insert(name.to_owned(), import);
+                }
+            }
+        }
+
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
-            for (name, &func) in &*module.exports {
+            let module =
+                Module::from_binary(lib, &available_imports, &floating_point_impls, true, None)?;
+            for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
-                available_imports.insert(
-                    name.clone(),
-                    AvailableImport {
-                        module: modules.len() as u32,
-                        func,
-                        ty: ty.clone(),
-                    },
-                );
                 if let Ok(op) = name.parse::<FloatInstruction>() {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
@@ -979,10 +999,10 @@ impl Machine {
                     }
                     ensure!(
                         ty == sig,
-                        "Wrong type for floating point impl {:?} expecting {:?} but got {:?}",
-                        name,
-                        sig,
-                        ty
+                        "Wrong type for floating point impl {} expecting {} but got {}",
+                        name.red(),
+                        sig.red(),
+                        ty.red()
                     );
                     floating_point_impls.insert(op, (modules.len() as u32, func));
                 }
@@ -990,13 +1010,14 @@ impl Machine {
             modules.push(module);
         }
 
-        // Shouldn't be necessary, but to safe, don't allow the main binary to import its own guest calls
+        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             &bin,
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
+            stylus_data,
         )?);
 
         // Build the entrypoint module
@@ -1029,9 +1050,10 @@ impl Machine {
         }
         let main_module_idx = modules.len() - 1;
         let main_module = &modules[main_module_idx];
+        let main_exports = &main_module.func_exports;
 
         // Rust support
-        if let Some(&f) = main_module.exports.get("main").filter(|_| runtime_support) {
+        if let Some(&f) = main_exports.get("main").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -1048,7 +1070,7 @@ impl Machine {
         }
 
         // Go support
-        if let Some(&f) = main_module.exports.get("run").filter(|_| runtime_support) {
+        if let Some(&f) = main_exports.get("run").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -1135,7 +1157,8 @@ impl Machine {
             host_call_hooks: Arc::new(Vec::new()),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
-            exports: Arc::new(HashMap::default()),
+            func_exports: Arc::new(HashMap::default()),
+            all_exports: Arc::new(HashMap::default()),
         };
         modules[0] = entrypoint;
 
@@ -1197,6 +1220,7 @@ impl Machine {
         Ok(mach)
     }
 
+    #[cfg(feature = "native")]
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
@@ -1214,10 +1238,13 @@ impl Machine {
             let funcs =
                 Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
             for func in funcs.iter_mut() {
-                func.code_merkle = Merkle::new(
-                    MerkleType::Instruction,
-                    func.code.par_iter().map(|i| i.hash()).collect(),
-                );
+                #[cfg(feature = "native")]
+                let code_hashes = func.code.par_iter().map(|i| i.hash()).collect();
+
+                #[cfg(not(feature = "native"))]
+                let code_hashes = func.code.iter().map(|i| i.hash()).collect();
+
+                func.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -1245,6 +1272,7 @@ impl Machine {
         Ok(mach)
     }
 
+    #[cfg(feature = "native")]
     pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,
@@ -1335,37 +1363,136 @@ impl Machine {
         }
     }
 
-    pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {
+    pub fn main_module_name(&self) -> String {
+        self.modules.last().expect("no module").name().to_owned()
+    }
+
+    pub fn main_module_memory(&self) -> &Memory {
+        &self.modules.last().expect("no module").memory
+    }
+
+    /// finds the first module with the given name
+    pub fn find_module(&self, name: &str) -> Result<u32> {
+        let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
+            let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
+            let names = names.join(", ");
+            bail!("module {} not found among: {}", name.red(), names)
+        };
+        Ok(module as u32)
+    }
+
+    pub fn find_module_func(&self, module: &str, func: &str) -> Result<(u32, u32)> {
+        let qualified = format!("{module}__{func}");
+        let offset = self.find_module(module)?;
+        let module = &self.modules[offset as usize];
+        let func = module
+            .find_func(func)
+            .or_else(|_| module.find_func(&qualified))?;
+        Ok((offset, func))
+    }
+
+    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) -> Result<()> {
+        let Some(source_module) = self.modules.get(module as usize) else {
+            bail!("no module at offest {}", module.red())
+        };
+        let Some(source_func) = source_module.funcs.get(func as usize) else {
+            bail!("no func at offset {} in module {}", func.red(), source_module.name().red())
+        };
+        let ty = &source_func.ty;
+        if ty.inputs.len() != args.len() {
+            let name = source_module.names.functions.get(&func).unwrap();
+            bail!(
+                "func {} has type {} but received args {:?}",
+                name.red(),
+                ty.red(),
+                args
+            )
+        }
+
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
         self.value_stack = args;
-
-        let module = self.modules.last().expect("no module");
-        let export = module.exports.iter().find(|x| x.0 == func);
-        let export = export
-            .unwrap_or_else(|| panic!("func {} not found", func))
-            .1;
 
         self.frame_stack.clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
-            module: (self.modules.len() - 1).try_into().unwrap(),
-            func: *export,
+            module,
+            func,
             inst: 0,
         };
         self.status = MachineStatus::Running;
         self.steps = 0;
+        Ok(())
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
         if !self.frame_stack.is_empty() {
             bail!(
-                "machine has not successfully computed a final result {:?}",
-                self.status
+                "machine has not successfully computed a final result {}",
+                self.status.red()
             )
         }
         Ok(self.value_stack.clone())
+    }
+
+    pub fn call_function(
+        &mut self,
+        module: &str,
+        func: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>> {
+        let (module, func) = self.find_module_func(module, func)?;
+        self.jump_into_func(module, func, args)?;
+        self.step_n(Machine::MAX_STEPS)?;
+        self.get_final_result()
+    }
+
+    /// Gets the *last* global with the given name, if one exists
+    /// Note: two globals may have the same name, so use carefully!
+    pub fn get_global(&self, name: &str) -> Result<Value> {
+        for module in self.modules.iter().rev() {
+            if let Some((global, ExportKind::Global)) = module.all_exports.get(name) {
+                return Ok(module.globals[*global as usize]);
+            }
+        }
+        bail!("global {} not found", name.red())
+    }
+
+    /// Sets the *last* global with the given name, if one exists
+    /// Note: two globals may have the same name, so use carefully!
+    pub fn set_global(&mut self, name: &str, value: Value) -> Result<()> {
+        for module in self.modules.iter_mut().rev() {
+            if let Some((global, ExportKind::Global)) = module.all_exports.get(name) {
+                module.globals[*global as usize] = value;
+                return Ok(());
+            }
+        }
+        bail!("global {} not found", name.red())
+    }
+
+    pub fn read_memory(&mut self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
+        let Some(module) = &mut self.modules.get(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        let memory = module.memory.get_range(ptr as usize, len as usize);
+        let error = || format!("failed memory read of {} bytes @ {}", len.red(), ptr.red());
+        memory.ok_or_else(|| eyre!(error()))
+    }
+
+    pub fn write_memory(&mut self, module: u32, ptr: u32, data: &[u8]) -> Result<()> {
+        let Some(module) = &mut self.modules.get_mut(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        if let Err(err) = module.memory.set_range(ptr as usize, data) {
+            let msg = eyre!(
+                "failed to write {} bytes to memory @ {}",
+                data.len().red(),
+                ptr.red()
+            );
+            bail!(err.wrap_err(msg));
+        }
+        Ok(())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -1415,6 +1542,7 @@ impl Machine {
         }
         macro_rules! error {
             () => {{
+                println!("error on line {}", line!());
                 self.status = MachineStatus::Errored;
                 break;
             }};
@@ -1494,12 +1622,10 @@ impl Machine {
                     }
                 }
                 Opcode::Call => {
-                    let current_frame = self.frame_stack.last().unwrap();
+                    let frame = self.frame_stack.last().unwrap();
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack
-                        .push(Value::I32(current_frame.caller_module));
-                    self.value_stack
-                        .push(Value::I32(current_frame.caller_module_internals));
+                    self.value_stack.push(frame.caller_module.into());
+                    self.value_stack.push(frame.caller_module_internals.into());
                     self.pc.func = inst.argument_data as u32;
                     self.pc.inst = 0;
                     func = &module.funcs[self.pc.func()];
@@ -1509,6 +1635,19 @@ impl Machine {
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
+                    let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
+                    self.pc.module = call_module;
+                    self.pc.func = call_func;
+                    self.pc.inst = 0;
+                    module = &mut self.modules[self.pc.module()];
+                    func = &module.funcs[self.pc.func()];
+                }
+                Opcode::CrossModuleForward => {
+                    flush_module!();
+                    let frame = self.frame_stack.last().unwrap();
+                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(frame.caller_module.into());
+                    self.value_stack.push(frame.caller_module_internals.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
@@ -1549,24 +1688,21 @@ impl Machine {
                     };
                     let ty = &module.types[usize::try_from(ty).unwrap()];
                     let elems = &module.tables[usize::try_from(table).unwrap()].elems;
-                    if let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) {
-                        match elem.val {
-                            Value::FuncRef(call_func) => {
-                                let current_frame = self.frame_stack.last().unwrap();
-                                self.value_stack.push(Value::InternalRef(self.pc));
-                                self.value_stack
-                                    .push(Value::I32(current_frame.caller_module));
-                                self.value_stack
-                                    .push(Value::I32(current_frame.caller_module_internals));
-                                self.pc.func = call_func;
-                                self.pc.inst = 0;
-                                func = &module.funcs[self.pc.func()];
-                            }
-                            Value::RefNull => error!(),
-                            v => bail!("invalid table element value {:?}", v),
+                    let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) else {
+                        error!()
+                    };
+                    match elem.val {
+                        Value::FuncRef(call_func) => {
+                            let frame = self.frame_stack.last().unwrap();
+                            self.value_stack.push(Value::InternalRef(self.pc));
+                            self.value_stack.push(frame.caller_module.into());
+                            self.value_stack.push(frame.caller_module_internals.into());
+                            self.pc.func = call_func;
+                            self.pc.inst = 0;
+                            func = &module.funcs[self.pc.func()];
                         }
-                    } else {
-                        error!();
+                        Value::RefNull => error!(),
+                        v => bail!("invalid table element value {:?}", v),
                     }
                 }
                 Opcode::LocalGet => {
@@ -1593,16 +1729,13 @@ impl Machine {
                             x,
                         ),
                     };
-                    if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                        let val = module.memory.get_value(idx, ty, bytes, signed);
-                        if let Some(val) = val {
-                            self.value_stack.push(val);
-                        } else {
-                            error!();
-                        }
-                    } else {
-                        error!();
-                    }
+                    let Some(index) = inst.argument_data.checked_add(base.into()) else {
+                        error!()
+                    };
+                    let Some(value) = module.memory.get_value(index, ty, bytes, signed) else {
+                        error!()
+                    };
+                    self.value_stack.push(value);
                 }
                 Opcode::MemoryStore { ty: _, bytes } => {
                     let val = match self.value_stack.pop() {
@@ -1622,11 +1755,10 @@ impl Machine {
                             x,
                         ),
                     };
-                    if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                        if !module.memory.store_value(idx, val, bytes) {
-                            error!();
-                        }
-                    } else {
+                    let Some(idx) = inst.argument_data.checked_add(base.into()) else {
+                        error!()
+                    };
+                    if !module.memory.store_value(idx, val, bytes) {
                         error!();
                     }
                 }
@@ -1638,11 +1770,11 @@ impl Machine {
                 }
                 Opcode::F32Const => {
                     self.value_stack
-                        .push(Value::F32(f32::from_bits(inst.argument_data as u32)));
+                        .push(f32::from_bits(inst.argument_data as u32).into());
                 }
                 Opcode::F64Const => {
                     self.value_stack
-                        .push(Value::F64(f64::from_bits(inst.argument_data)));
+                        .push(f64::from_bits(inst.argument_data).into());
                 }
                 Opcode::I32Eqz => {
                     let val = self.value_stack.pop().unwrap();
@@ -1696,7 +1828,7 @@ impl Machine {
                 Opcode::MemorySize => {
                     let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE)
                         .expect("Memory pages grew past a u32");
-                    self.value_stack.push(Value::I32(pages));
+                    self.value_stack.push(pages.into());
                 }
                 Opcode::MemoryGrow => {
                     let old_size = module.memory.size();
@@ -1720,28 +1852,27 @@ impl Machine {
                         module.memory.resize(usize::try_from(new_size).unwrap());
                         // Push the old number of pages
                         let old_pages = u32::try_from(old_size / page_size).unwrap();
-                        self.value_stack.push(Value::I32(old_pages));
+                        self.value_stack.push(old_pages.into());
                     } else {
                         // Push -1
-                        self.value_stack.push(Value::I32(u32::MAX));
+                        self.value_stack.push(u32::MAX.into());
                     }
                 }
                 Opcode::IUnOp(w, op) => {
                     let va = self.value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
-                            if let Some(Value::I32(a)) = va {
-                                self.value_stack.push(Value::I32(exec_iun_op(a, op)));
-                            } else {
+                            let Some(Value::I32(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i32unop");
-                            }
+                            };
+                            self.value_stack.push(exec_iun_op(value, op).into());
                         }
                         IntegerValType::I64 => {
-                            if let Some(Value::I64(a)) = va {
-                                self.value_stack.push(Value::I64(exec_iun_op(a, op) as u64));
-                            } else {
+                            let Some(Value::I64(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i64unop");
-                            }
+                            };
+                            self.value_stack
+                                .push(Value::I64(exec_iun_op(value, op) as u64));
                         }
                     }
                 }
@@ -1750,38 +1881,30 @@ impl Machine {
                     let va = self.value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
-                            if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
-                                if op == IBinOpType::DivS
-                                    && (a as i32) == i32::MIN
-                                    && (b as i32) == -1
-                                {
-                                    error!();
-                                }
-                                let value = match exec_ibin_op(a, b, op) {
-                                    Some(value) => value,
-                                    None => error!(),
-                                };
-                                self.value_stack.push(Value::I32(value))
-                            } else {
-                                bail!("WASM validation failed: wrong types for i32binop");
+                            let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) else {
+                                bail!("WASM validation failed: wrong types for i32binop")
+                            };
+                            if op == IBinOpType::DivS && (a as i32) == i32::MIN && (b as i32) == -1
+                            {
+                                error!()
                             }
+                            let Some(value) = exec_ibin_op(a, b, op) else {
+                                error!()
+                            };
+                            self.value_stack.push(value.into());
                         }
                         IntegerValType::I64 => {
-                            if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
-                                if op == IBinOpType::DivS
-                                    && (a as i64) == i64::MIN
-                                    && (b as i64) == -1
-                                {
-                                    error!();
-                                }
-                                let value = match exec_ibin_op(a, b, op) {
-                                    Some(value) => value,
-                                    None => error!(),
-                                };
-                                self.value_stack.push(Value::I64(value))
-                            } else {
-                                bail!("WASM validation failed: wrong types for i64binop");
+                            let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) else {
+                                bail!("WASM validation failed: wrong types for i64binop")
+                            };
+                            if op == IBinOpType::DivS && (a as i64) == i64::MIN && (b as i64) == -1
+                            {
+                                error!();
                             }
+                            let Some(value) = exec_ibin_op(a, b, op) else {
+                                error!()
+                            };
+                            self.value_stack.push(value.into());
                         }
                     }
                 }
@@ -1801,25 +1924,25 @@ impl Machine {
                         true => x as i32 as i64 as u64,
                         false => x as u64,
                     };
-                    self.value_stack.push(Value::I64(x64));
+                    self.value_stack.push(x64.into());
                 }
                 Opcode::Reinterpret(dest, source) => {
                     let val = match self.value_stack.pop() {
                         Some(Value::I32(x)) if source == ArbValueType::I32 => {
                             assert_eq!(dest, ArbValueType::F32, "Unsupported reinterpret");
-                            Value::F32(f32::from_bits(x))
+                            f32::from_bits(x).into()
                         }
                         Some(Value::I64(x)) if source == ArbValueType::I64 => {
                             assert_eq!(dest, ArbValueType::F64, "Unsupported reinterpret");
-                            Value::F64(f64::from_bits(x))
+                            f64::from_bits(x).into()
                         }
                         Some(Value::F32(x)) if source == ArbValueType::F32 => {
                             assert_eq!(dest, ArbValueType::I32, "Unsupported reinterpret");
-                            Value::I32(x.to_bits())
+                            x.to_bits().into()
                         }
                         Some(Value::F64(x)) if source == ArbValueType::F64 => {
                             assert_eq!(dest, ArbValueType::I64, "Unsupported reinterpret");
-                            Value::I64(x.to_bits())
+                            x.to_bits().into()
                         }
                         v => bail!("bad reinterpret: val {:?} source {:?}", v, source),
                     };
@@ -1832,7 +1955,7 @@ impl Machine {
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(Value::I32(x));
+                    self.value_stack.push(x.into());
                 }
                 Opcode::I64ExtendS(b) => {
                     let mut x = self.value_stack.pop().unwrap().assume_u64();
@@ -1841,7 +1964,7 @@ impl Machine {
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(Value::I64(x));
+                    self.value_stack.push(x.into());
                 }
                 Opcode::MoveFromStackToInternal => {
                     self.internal_stack.push(self.value_stack.pop().unwrap());
@@ -1881,7 +2004,7 @@ impl Machine {
                         error!();
                     } else {
                         self.value_stack
-                            .push(Value::I64(self.global_state.u64_vals[idx]));
+                            .push(self.global_state.u64_vals[idx].into());
                     }
                 }
                 Opcode::SetGlobalStateU64 => {
@@ -1907,10 +2030,10 @@ impl Machine {
                         } else {
                             eprintln!(
                                 "{} for hash {}",
-                                Color::red("Missing requested preimage"),
-                                Color::red(hash),
+                                "Missing requested preimage".red(),
+                                hash.red(),
                             );
-                            self.eprint_backtrace();
+                            self.print_backtrace(true);
                             bail!("missing requested preimage for hash {}", hash);
                         }
                     } else {
@@ -1939,8 +2062,8 @@ impl Machine {
                     } else {
                         let delayed = inbox_identifier == InboxIdentifier::Delayed;
                         if msg_num < self.first_too_far || delayed {
-                            eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
-                            self.eprint_backtrace();
+                            eprintln!("{} {msg_num}", "Missing inbox message".red());
+                            self.print_backtrace(true);
                             bail!(
                                 "missing inbox message {msg_num} of {}",
                                 self.first_too_far - 1
@@ -1961,7 +2084,7 @@ impl Machine {
             // If we halted, print out any trailing output that didn't have a newline.
             println!(
                 "{} {}",
-                Color::yellow("WASM says:"),
+                "WASM says:".yellow(),
                 String::from_utf8_lossy(&self.stdio_output),
             );
             self.stdio_output.clear();
@@ -2129,6 +2252,7 @@ impl Machine {
         data.extend(self.pc.module.to_be_bytes());
         data.extend(self.pc.func.to_be_bytes());
         data.extend(self.pc.inst.to_be_bytes());
+
         let mod_merkle = self.get_modules_merkle();
         data.extend(mod_merkle.root());
 
@@ -2311,9 +2435,8 @@ impl Machine {
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     if next_inst.opcode == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let preimage = match self.preimage_resolver.get_const(self.context, hash) {
-                            Some(b) => b,
-                            None => panic!("Missing requested preimage for hash {}", hash),
+                        let Some(preimage) = self.preimage_resolver.get_const(self.context, hash) else {
+                            panic!("Missing requested preimage for hash {}", hash)
                         };
                         data.push(0); // preimage proof type
                         data.extend(preimage);
@@ -2372,35 +2495,42 @@ impl Machine {
         self.modules.get(module).map(|m| &*m.names)
     }
 
-    pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
-        let mut res = Vec::new();
-        let mut push_pc = |pc: ProgramCounter| {
+    pub fn print_backtrace(&self, stderr: bool) {
+        let print = |line: String| match stderr {
+            true => println!("{}", line),
+            false => eprintln!("{}", line),
+        };
+
+        let print_pc = |pc: ProgramCounter| {
             let names = &self.modules[pc.module()].names;
             let func = names
                 .functions
                 .get(&pc.func)
                 .cloned()
-                .unwrap_or_else(|| format!("{}", pc.func));
-            let mut module = names.module.clone();
-            if module.is_empty() {
-                module = format!("{}", pc.module);
-            }
-            res.push((module, func, pc.inst()));
+                .unwrap_or_else(|| pc.func.to_string());
+            let func = rustc_demangle::demangle(&func);
+            let module = match names.module.is_empty() {
+                true => pc.module.to_string(),
+                false => names.module.clone(),
+            };
+            let inst = format!("#{}", pc.inst);
+            print(format!(
+                "  {} {} {} {}",
+                module.grey(),
+                func.mint(),
+                "inst".grey(),
+                inst.blue(),
+            ));
         };
-        push_pc(self.pc);
-        for frame in self.frame_stack.iter().rev() {
+
+        print_pc(self.pc);
+        for frame in self.frame_stack.iter().rev().take(25) {
             if let Value::InternalRef(pc) = frame.return_ref {
-                push_pc(pc);
+                print_pc(pc);
             }
         }
-        res
-    }
-
-    pub fn eprint_backtrace(&self) {
-        eprintln!("Backtrace:");
-        for (module, func, pc) in self.get_backtrace() {
-            let func = rustc_demangle::demangle(&func);
-            eprintln!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
+        if self.frame_stack.len() > 25 {
+            print(format!("  ... and {} more", self.frame_stack.len() - 25).grey());
         }
     }
 }

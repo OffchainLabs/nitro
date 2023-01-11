@@ -6,8 +6,10 @@ package arbmath
 import "math/big"
 
 type Bips int64
+type UBips uint64
 
 const OneInBips Bips = 10000
+const OneInUBips UBips = 10000
 
 func NaturalToBips(natural int64) Bips {
 	return Bips(SaturatingMul(natural, int64(OneInBips)))
@@ -35,4 +37,8 @@ func UintMulByBips(value uint64, bips Bips) uint64 {
 
 func SaturatingCastToBips(value uint64) Bips {
 	return Bips(SaturatingCast(value))
+}
+
+func (bips UBips) Uint64() uint64 {
+	return uint64(bips)
 }

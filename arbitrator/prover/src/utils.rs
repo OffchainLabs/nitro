@@ -166,6 +166,11 @@ enum RemoteType {
     V128,
     FuncRef,
     ExternRef,
+
+    // TODO: types removed in wasmparser 0.95+
+    ExnRef,
+    Func,
+    EmptyBlockType,
 }
 
 #[derive(Serialize, Deserialize)]

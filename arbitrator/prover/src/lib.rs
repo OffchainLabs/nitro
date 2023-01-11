@@ -4,21 +4,27 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
-/// cbindgen:ignore
-pub mod console;
 mod host;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
 mod merkle;
+/// cbindgen:ignore
+pub mod programs;
 mod reinterpret;
 pub mod utils;
 pub mod value;
 pub mod wavm;
 
-use crate::machine::{argument_data_to_inbox, Machine};
+#[cfg(test)]
+mod test;
+
 use eyre::Result;
-use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
+pub use machine::Machine;
+use machine::{
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+    PreimageResolver,
+};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
@@ -56,7 +62,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size) {
         Ok(mach) => mach,
         Err(err) => {
-            eprintln!("Error loading binary: {}", err);
+            eprintln!("Error loading binary: {:?}", err);
             std::ptr::null_mut()
         }
     }
@@ -90,6 +96,7 @@ unsafe fn arbitrator_load_machine_impl(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);

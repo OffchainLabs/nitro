@@ -23,6 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
+          token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
       - name: Set up Docker Buildx

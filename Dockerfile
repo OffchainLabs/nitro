@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
-RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
+RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5 wabt
     # pinned rust 1.65.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.65.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
@@ -86,6 +86,8 @@ COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/stylus arbitrator/stylus
+COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
 FROM scratch as prover-header-export
@@ -104,14 +106,18 @@ COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
+COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
+COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
+RUN mkdir arbitrator/prover/src arbitrator/jit/src arbitrator/stylus/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
     rm arbitrator/jit/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/stylus arbitrator/stylus
 COPY --from=brotli-library-export / target/
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
