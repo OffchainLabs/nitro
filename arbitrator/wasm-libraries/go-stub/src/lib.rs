@@ -271,7 +271,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
     let mut sp = GoStack::new(sp);
     let dest_val = interpret_value(sp.read_u64());
     let (src_ptr, src_len) = sp.read_go_slice();
-    
+
     if let InterpValue::Ref(dest_id) = dest_val {
         let dest = DynamicObjectPool::singleton().get_mut(dest_id);
         if let Some(DynamicObject::Uint8Array(buf)) = dest {
@@ -307,7 +307,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     let mut sp = GoStack::new(sp);
     let (dest_ptr, dest_len) = sp.read_go_slice();
     let src_val = interpret_value(sp.read_u64());
-    
+
     if let InterpValue::Ref(src_id) = src_val {
         let source = DynamicObjectPool::singleton().get_mut(src_id);
         if let Some(DynamicObject::Uint8Array(buf)) = source {
