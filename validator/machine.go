@@ -27,6 +27,7 @@ type MachineInterface interface {
 	GetStepCount() uint64
 	IsRunning() bool
 	ValidForStep(uint64) bool
+	Status() uint8
 	Step(context.Context, uint64) error
 	Hash() common.Hash
 	GetGlobalState() GoGlobalState
