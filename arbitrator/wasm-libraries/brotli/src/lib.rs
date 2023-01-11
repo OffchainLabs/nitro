@@ -78,9 +78,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCom
     let mut sp = GoStack::new(sp);
     let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
     let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
-
-    let level = sp.read_u64() as u32;
-    let windowsize = sp.read_u64() as u32;
+    let level = sp.read_u32();
+    let windowsize = sp.read_u32();
 
     let in_slice = wavm::read_slice(in_buf_ptr, in_buf_len);
     let mut output = vec![0u8; out_buf_len as usize];
