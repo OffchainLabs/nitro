@@ -46,9 +46,9 @@ type DataPosterConfig struct {
 	RedisSigner           signature.SimpleHmacConfig `koanf:"redis-signer"`
 	ReplacementTimes      string                     `koanf:"replacement-times"`
 	L1LookBehind          uint64                     `koanf:"l1-look-behind" reload:"hot"`
-	MaxFeeCapGwei         float64                    `koanf:"max-fee-cap-gwei" reload:"hot"`
-	MaxFeeCapDoubling     time.Duration              `koanf:"max-fee-cap-doubling" reload:"hot"`
 	MaxQueuedTransactions uint64                     `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei       float64                    `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei           float64                    `koanf:"urgency-gwei" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -56,17 +56,17 @@ type DataPosterConfigFetcher func() *DataPosterConfig
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
-	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
-	f.Duration(prefix+".max-fee-cap-doubling", DefaultDataPosterConfig.MaxFeeCapDoubling, "after this duration, double the fee cap (repeats)")
 	f.Uint64(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
+	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:      "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
 	L1LookBehind:          2,
-	MaxFeeCapGwei:         105.,
-	MaxFeeCapDoubling:     2 * time.Hour,
+	TargetPriceGwei:       60.,
+	UrgencyGwei:           2.,
 	MaxQueuedTransactions: 64,
 }
 
@@ -74,8 +74,8 @@ var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:      "1s,2s,5s,10s,20s,30s,1m,5m",
 	RedisSigner:           signature.TestSimpleHmacConfig,
 	L1LookBehind:          0,
-	MaxFeeCapGwei:         105.,
-	MaxFeeCapDoubling:     5 * time.Second,
+	TargetPriceGwei:       60.,
+	UrgencyGwei:           2.,
 	MaxQueuedTransactions: 64,
 }
 
@@ -175,7 +175,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big.Int, dataCreatedAt time.Time) (*big.Int, *big.Int, error) {
+func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -192,22 +192,15 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 
 	elapsed := time.Since(dataCreatedAt)
 	config := p.config()
-	maxFeeCap := new(big.Int).SetUint64(uint64(config.MaxFeeCapGwei * params.GWei))
-	maxFeeCapDoublings := int64(elapsed / config.MaxFeeCapDoubling)
-	// in tests, this could get way too big
-	if maxFeeCapDoublings > 8 {
-		maxFeeCapDoublings = 8
-	}
-	multiplier := new(big.Int).Exp(big.NewInt(2), big.NewInt(maxFeeCapDoublings), nil)
-	maxFeeCap.Mul(maxFeeCap, multiplier)
+	// MaxFeeCap = (BacklogOfBatches^2 * UrgencyGWei^2 + TargetPriceGWei) * GWei
+	maxFeeCap :=
+		arbmath.FloatToBig(
+			(float64(arbmath.SquareUint(backlogOfBatches))*
+				arbmath.SquareFloat(config.UrgencyGwei) +
+				config.TargetPriceGwei) *
+				params.GWei)
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
-		logLevel := log.Info
-		if maxFeeCapDoublings >= 3 {
-			logLevel = log.Error
-		} else if maxFeeCapDoublings >= 1 {
-			logLevel = log.Warn
-		}
-		logLevel(
+		log.Warn(
 			"reducing proposed fee cap to current maximum",
 			"proposedFeeCap", newFeeCap,
 			"maxFeeCap", maxFeeCap,
@@ -222,7 +215,7 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt)
+	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt, 0)
 	if err != nil {
 		return err
 	}
@@ -283,8 +276,8 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 }
 
 // the mutex must be held by the caller
-func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta]) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.GasTipCap, prevTx.Created)
+func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
@@ -404,11 +397,12 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 			log.Warn("failed to get tx queue contents", "err", err)
 			return minWait
 		}
-		for _, tx := range queueContents {
+		for index, tx := range queueContents {
+			backlogOfBatches := len(queueContents) - index - 1
 			replacing := false
 			if now.After(tx.NextReplacement) {
 				replacing = true
-				err := p.replaceTx(ctx, tx)
+				err := p.replaceTx(ctx, tx, uint64(backlogOfBatches))
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
 			}
 			if nextCheck.After(tx.NextReplacement) {
