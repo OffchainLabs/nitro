@@ -42,18 +42,20 @@ pub unsafe extern "C" fn go__debug(x: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_resetMemoryDataView(_: GoStack) {}
+pub unsafe extern "C" fn go__runtime_resetMemoryDataView(_: usize) {}
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_wasmExit(sp: GoStack) {
-    std::process::exit(sp.read_u32(0) as i32);
+pub unsafe extern "C" fn go__runtime_wasmExit(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    std::process::exit(sp.read_u32() as i32);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_wasmWrite(sp: GoStack) {
-    let fd = sp.read_u64(0);
-    let ptr = sp.read_u64(1);
-    let len = sp.read_u32(2);
+pub unsafe extern "C" fn go__runtime_wasmWrite(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let fd = sp.read_u64();
+    let ptr = sp.read_u64();
+    let len = sp.read_u32();
     let buf = wavm::read_slice(ptr, len.into());
     if fd == 2 {
         let stderr = std::io::stderr();
@@ -72,23 +74,26 @@ static mut TIME: u64 = 0;
 static mut TIME_INTERVAL: u64 = 10_000_000;
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_nanotime1(sp: GoStack) {
+pub unsafe extern "C" fn go__runtime_nanotime1(sp: usize) {
+    let mut sp = GoStack::new(sp);
     TIME += TIME_INTERVAL;
-    sp.write_u64(0, TIME);
+    sp.write_u64(TIME);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_walltime(sp: GoStack) {
+pub unsafe extern "C" fn go__runtime_walltime(sp: usize) {
+    let mut sp = GoStack::new(sp);
     TIME += TIME_INTERVAL;
-    sp.write_u64(0, TIME / 1_000_000_000);
-    sp.write_u32(1, (TIME % 1_000_000_000) as u32);
+    sp.write_u64(TIME / 1_000_000_000);
+    sp.write_u32((TIME % 1_000_000_000) as u32);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_walltime1(sp: GoStack) {
+pub unsafe extern "C" fn go__runtime_walltime1(sp: usize) {
+    let mut sp = GoStack::new(sp);
     TIME += TIME_INTERVAL;
-    sp.write_u64(0, TIME / 1_000_000_000);
-    sp.write_u64(1, TIME % 1_000_000_000);
+    sp.write_u64(TIME / 1_000_000_000);
+    sp.write_u64(TIME % 1_000_000_000);
 }
 
 static mut RNG: Option<Pcg32> = None;
@@ -98,11 +103,11 @@ unsafe fn get_rng<'a>() -> &'a mut Pcg32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
+pub unsafe extern "C" fn go__runtime_getRandomData(sp: usize) {
+    let mut sp = GoStack::new(sp);
     let rng = get_rng();
-    let mut ptr =
-        usize::try_from(sp.read_u64(0)).expect("Go getRandomData pointer didn't fit in usize");
-    let mut len = sp.read_u64(1);
+    let mut ptr = usize::try_from(sp.read_u64()).expect("Go getRandomData pointer not a usize");
+    let mut len = sp.read_u64();
     while len >= 4 {
         wavm::caller_store32(ptr, rng.next_u32());
         ptr += 4;
@@ -150,8 +155,9 @@ struct TimeoutState {
 static mut TIMEOUT_STATE: Option<TimeoutState> = None;
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(sp: GoStack) {
-    let mut time = sp.read_u64(0);
+pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let mut time = sp.read_u64();
     time = time.saturating_mul(1_000_000); // milliseconds to nanoseconds
     time = time.saturating_add(TIME); // add the current time to the delay
 
@@ -161,12 +167,13 @@ pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(sp: GoStack) {
     state.times.push(TimeoutInfo { time, id });
     state.pending_ids.insert(id);
 
-    sp.write_u32(1, id);
+    sp.write_u32(id);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(sp: GoStack) {
-    let id = sp.read_u32(0);
+pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let id = sp.read_u32();
 
     let state = TIMEOUT_STATE.get_or_insert_with(Default::default);
     if !state.pending_ids.remove(&id) {
@@ -178,7 +185,7 @@ macro_rules! unimpl_js {
     ($($f:ident),* $(,)?) => {
         $(
             #[no_mangle]
-            pub unsafe extern "C" fn $f(_: GoStack) {
+            pub unsafe extern "C" fn $f(_: usize) {
                 unimplemented!("Go JS interface {} not supported", stringify!($f));
             }
         )*
@@ -195,12 +202,13 @@ unimpl_js!(
     go__syscall_js_valueInstanceOf,
 );
 
+/// Safety: λ(v value, field string) value
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
-    let source = interpret_value(sp.read_u64(0));
-    let field_ptr = sp.read_u64(1);
-    let field_len = sp.read_u64(2);
-    let field = wavm::read_slice(field_ptr, field_len);
+pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let source = interpret_value(sp.read_u64());
+    let field = sp.read_js_string();
+
     let value = match source {
         InterpValue::Ref(id) => get_field(id, &field),
         val => {
@@ -212,21 +220,24 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
             GoValue::Null
         }
     };
-    sp.write_u64(3, value.encode());
+    sp.write_u64(value.encode());
 }
 
+/// Safety: λ(v value, args []value) (value, bool)
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
-    let class = sp.read_u32(0);
-    let args_ptr = sp.read_u64(1);
-    let args_len = sp.read_u64(2);
+pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let class = sp.read_u32();
+    sp.skip_u32(); // TODO: see if this skip should be removed
+
+    let (args_ptr, args_len) = sp.read_go_slice();
     let args = read_value_slice(args_ptr, args_len);
     if class == UINT8_ARRAY_ID {
         if let Some(InterpValue::Number(size)) = args.get(0) {
             let id = DynamicObjectPool::singleton()
                 .insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
-            sp.write_u64(4, GoValue::Object(id).encode());
-            sp.write_u8(5, 1);
+            sp.write_u64(GoValue::Object(id).encode());
+            sp.write_u8(1);
             return;
         } else {
             eprintln!(
@@ -236,8 +247,8 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
         }
     } else if class == DATE_ID {
         let id = DynamicObjectPool::singleton().insert(DynamicObject::Date);
-        sp.write_u64(4, GoValue::Object(id).encode());
-        sp.write_u8(5, 1);
+        sp.write_u64(GoValue::Object(id).encode());
+        sp.write_u8(1);
         return;
     } else {
         eprintln!(
@@ -245,16 +256,17 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
             class,
         );
     }
-    sp.write_u64(4, GoValue::Null.encode());
-    sp.write_u8(5, 0);
+    sp.write_u64(GoValue::Null.encode());
+    sp.write_u8(0);
 }
 
+/// Safety: λ(dest value, src []byte) (int, bool)
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
-    let dest_val = interpret_value(sp.read_u64(0));
+pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let dest_val = interpret_value(sp.read_u64());
     if let InterpValue::Ref(dest_id) = dest_val {
-        let src_ptr = sp.read_u64(1);
-        let src_len = sp.read_u64(2);
+        let (src_ptr, src_len) = sp.read_go_slice();
         let dest = DynamicObjectPool::singleton().get_mut(dest_id);
         if let Some(DynamicObject::Uint8Array(buf)) = dest {
             if buf.len() as u64 != src_len {
@@ -267,8 +279,8 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
             let len = std::cmp::min(src_len, buf.len() as u64) as usize;
             // Slightly inefficient as this allocates a new temporary buffer
             buf[..len].copy_from_slice(&wavm::read_slice(src_ptr, len as u64));
-            sp.write_u64(4, GoValue::Number(len as f64).encode());
-            sp.write_u8(5, 1);
+            sp.write_u64(GoValue::Number(len as f64).encode());
+            sp.write_u8(1);
             return;
         } else {
             eprintln!(
@@ -279,15 +291,16 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
     } else {
         eprintln!("Go attempting to copy bytes into {:?}", dest_val);
     }
-    sp.write_u64(4, GoValue::Null.encode());
-    sp.write_u8(5, 0);
+    sp.write_u64(GoValue::Null.encode());
+    sp.write_u8(0);
 }
 
+/// Safety: λ(dest []byte, src value) (int, bool)
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: GoStack) {
-    let dest_ptr = sp.read_u64(0);
-    let dest_len = sp.read_u64(1);
-    let src_val = interpret_value(sp.read_u64(3));
+pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let (dest_ptr, dest_len) = sp.read_go_slice();
+    let src_val = interpret_value(sp.read_u64());
     if let InterpValue::Ref(src_id) = src_val {
         let source = DynamicObjectPool::singleton().get_mut(src_id);
         if let Some(DynamicObject::Uint8Array(buf)) = source {
@@ -301,8 +314,8 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: GoStack) {
             let len = std::cmp::min(buf.len() as u64, dest_len) as usize;
             wavm::write_slice(&buf[..len], dest_ptr);
 
-            sp.write_u64(4, GoValue::Number(len as f64).encode());
-            sp.write_u8(5, 1);
+            sp.write_u64(GoValue::Number(len as f64).encode());
+            sp.write_u8(1);
             return;
         } else {
             eprintln!(
@@ -313,16 +326,15 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: GoStack) {
     } else {
         eprintln!("Go attempting to copy bytes from {:?}", src_val);
     }
-    sp.write_u8(5, 0);
+    sp.write_u8(0);
 }
 
+/// Safety: λ(v value, method string, args []value) (value, bool)
 unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
-    let object = interpret_value(sp.read_u64(0));
-    let method_name_ptr = sp.read_u64(1);
-    let method_name_len = sp.read_u64(2);
-    let method_name = wavm::read_slice(method_name_ptr, method_name_len);
-    let args_ptr = sp.read_u64(3);
-    let args_len = sp.read_u64(4);
+    let object = interpret_value(sp.read_u64());
+    let method_name = sp.read_js_string();
+    let args_ptr = sp.read_u64();
+    let args_len = sp.read_u64();
     let args = read_value_slice(args_ptr, args_len);
     if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
         let id = args.get(0).ok_or_else(|| {
@@ -398,9 +410,8 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
                     GoValue::Number(length as f64), // amount written
                 ],
             });
-            wavm_guest_call__resume();
 
-            *sp = GoStack(wavm_guest_call__getsp());
+            sp.resume();
             Ok(GoValue::Null)
         } else {
             Err(format!(
@@ -463,28 +474,31 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     }
 }
 
+/// Safety: λ(v value, method string, args []value) (value, bool)
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueCall(mut sp: GoStack) {
+pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
+    let mut sp = GoStack::new(sp);
     match value_call_impl(&mut sp) {
         Ok(val) => {
-            sp.write_u64(6, val.encode());
-            sp.write_u8(7, 1);
+            sp.write_u64(val.encode());
+            sp.write_u8(1);
         }
         Err(err) => {
             eprintln!("{}", err);
-            sp.write_u64(6, GoValue::Null.encode());
-            sp.write_u8(7, 0);
+            sp.write_u64(GoValue::Null.encode());
+            sp.write_u8(0);
         }
     }
 }
 
+/// Safety: λ(v value, field string, x value)
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueSet(sp: GoStack) {
-    let source = interpret_value(sp.read_u64(0));
-    let field_ptr = sp.read_u64(1);
-    let field_len = sp.read_u64(2);
-    let new_value = interpret_value(sp.read_u64(3));
-    let field = wavm::read_slice(field_ptr, field_len);
+pub unsafe extern "C" fn go__syscall_js_valueSet(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let source = interpret_value(sp.read_u64());
+    let field = sp.read_js_string();
+    let new_value = interpret_value(sp.read_u64());
+
     if source == InterpValue::Ref(GO_ID)
         && &field == b"_pendingEvent"
         && new_value == InterpValue::Ref(NULL_ID)
@@ -509,9 +523,11 @@ pub unsafe extern "C" fn go__syscall_js_valueSet(sp: GoStack) {
     );
 }
 
+/// Safety: λ(v value) int
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueLength(sp: GoStack) {
-    let source = interpret_value(sp.read_u64(0));
+pub unsafe extern "C" fn go__syscall_js_valueLength(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let source = interpret_value(sp.read_u64());
     let pool = DynamicObjectPool::singleton();
     let source = match source {
         InterpValue::Ref(x) => pool.get(x),
@@ -523,23 +539,24 @@ pub unsafe extern "C" fn go__syscall_js_valueLength(sp: GoStack) {
         _ => None,
     };
     if let Some(len) = len {
-        sp.write_u64(1, len as u64);
+        sp.write_u64(len as u64);
     } else {
         eprintln!(
             "Go attempted to get length of unsupported value {:?}",
             source,
         );
-        sp.write_u64(1, 0);
+        sp.write_u64(0);
     }
 }
 
-unsafe fn value_index_impl(sp: GoStack) -> Result<GoValue, String> {
+/// Safety: λ(v value, i int) value
+unsafe fn value_index_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let pool = DynamicObjectPool::singleton();
-    let source = match interpret_value(sp.read_u64(0)) {
+    let source = match interpret_value(sp.read_u64()) {
         InterpValue::Ref(x) => pool.get(x),
         val => return Err(format!("Go attempted to index into {:?}", val)),
     };
-    let index = usize::try_from(sp.read_u64(1)).map_err(|e| format!("{:?}", e))?;
+    let index = usize::try_from(sp.read_u64()).map_err(|e| format!("{:?}", e))?;
     let val = match source {
         Some(DynamicObject::Uint8Array(x)) => {
             Some(x.get(index).map(|x| GoValue::Number(*x as f64)))
@@ -560,20 +577,24 @@ unsafe fn value_index_impl(sp: GoStack) -> Result<GoValue, String> {
     }
 }
 
+/// Safety: λ(v value, i int) value
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: GoStack) {
-    match value_index_impl(sp) {
-        Ok(v) => sp.write_u64(2, v.encode()),
+pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    match value_index_impl(&mut sp) {
+        Ok(v) => sp.write_u64(v.encode()),
         Err(e) => {
             eprintln!("{}", e);
-            sp.write_u64(2, GoValue::Null.encode());
+            sp.write_u64(GoValue::Null.encode());
         }
     }
 }
 
+/// Safety: λ(v value)
 #[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: GoStack) {
-    let val = interpret_value(sp.read_u64(0));
+pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let val = interpret_value(sp.read_u64());
     match val {
         InterpValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
         InterpValue::Ref(x) => {
