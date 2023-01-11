@@ -36,7 +36,7 @@ var (
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
 type CatchupBuffer interface {
-	OnRegisterClient(context.Context, *ClientConnection) error
+	OnRegisterClient(*ClientConnection) (error, int, time.Duration)
 	OnDoBroadcast(interface{}) error
 	GetMessageCount() int
 }
@@ -82,9 +82,13 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 	clientsConnectedGauge.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
-	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
+	err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
+	if err != nil {
 		clientsTotalFailedRegisterCounter.Inc(1)
 		return err
+	}
+	if cm.config().LogConnect {
+		log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", sent, "elapsed", elapsed)
 	}
 
 	clientConnection.Start(ctx)
@@ -132,8 +136,10 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
-	log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
-	clientsDurationHistogram.Update(clientConnection.Age().Nanoseconds())
+	if cm.config().LogDisconnect {
+		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
+	}
+	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
 	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
@@ -161,6 +167,12 @@ func (cm *ClientManager) ClientCount() int32 {
 
 // Broadcast sends batch item to all clients.
 func (cm *ClientManager) Broadcast(bm interface{}) {
+	if cm.Stopped() {
+		// This should only occur if a reorg occurs after the broadcast server is stopped,
+		// with the sequencer enabled but not the sequencer coordinator.
+		// In this case we should proceed without broadcasting the message.
+		return
+	}
 	cm.broadcastChan <- bm
 }
 
@@ -179,14 +191,23 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 		return nil, errors.Wrap(err, "unable to flush message")
 	}
 
+	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
 		select {
 		case client.out <- buf.Bytes():
 		default:
 			// Queue for client too backed up, disconnect instead of blocking on channel send
-			log.Info("disconnecting because send queue too large", "client", client.Name, "size", len(client.out))
+			sendQueueTooLargeCount++
 			clientDeleteList = append(clientDeleteList, client)
+		}
+	}
+
+	if sendQueueTooLargeCount > 0 {
+		if sendQueueTooLargeCount < 10 {
+			log.Warn("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
+		} else {
+			log.Error("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
 		}
 	}
 
@@ -197,7 +218,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 func (cm *ClientManager) verifyClients() []*ClientConnection {
 	clientConnectionCount := len(cm.clientPtrMap)
 
-	// Create list of clients to clients to remove
+	// Create list of clients to remove
 	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
 
 	// Send ping to all connected clients
@@ -205,12 +226,12 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 	for client := range cm.clientPtrMap {
 		diff := time.Since(client.GetLastHeard())
 		if diff > cm.config().ClientTimeout {
-			log.Info("disconnecting because connection timed out", "client", client.Name)
+			log.Debug("disconnecting because connection timed out", "client", client.Name)
 			clientDeleteList = append(clientDeleteList, client)
 		} else {
 			err := client.Ping()
 			if err != nil {
-				log.Warn("disconnecting because error pinging client", "client", client.Name)
+				log.Debug("disconnecting because error pinging client", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
 			}
 		}

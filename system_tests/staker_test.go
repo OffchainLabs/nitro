@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -94,10 +95,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
 	l1authB := l1info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	valWalletAddrAPtr, err := validator.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
+	valWalletAddrAPtr, err := staker.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validator.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
+	valWalletAddrCheck, err := staker.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
@@ -115,20 +116,21 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	valConfig := validator.L1ValidatorConfig{
+	valConfig := staker.L1ValidatorConfig{
 		TargetMachineCount: 4,
 	}
 
-	valWalletA, err := validator.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
+	valWalletA, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, nil)
-	statelessA, err := validator.NewStatelessBlockValidator(
-		nitroMachineLoader,
+	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, nil)
+	Require(t, err)
+	statelessA, err := staker.NewStatelessBlockValidator(
+		spawner,
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
@@ -136,10 +138,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.ChainDB,
 		l2nodeA.ArbDB,
 		nil,
-		&validator.DefaultBlockValidatorConfig,
+		&staker.DefaultBlockValidatorConfig,
 	)
 	Require(t, err)
-	stakerA, err := validator.NewStaker(
+	stakerA, err := staker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
@@ -152,11 +154,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerA.Initialize(ctx)
 	Require(t, err)
 
-	valWalletB, err := validator.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
+	valWalletB, err := staker.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
-	statelessB, err := validator.NewStatelessBlockValidator(
-		nitroMachineLoader,
+	statelessB, err := staker.NewStatelessBlockValidator(
+		spawner,
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
@@ -164,10 +166,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.ChainDB,
 		l2nodeB.ArbDB,
 		nil,
-		&validator.DefaultBlockValidatorConfig,
+		&staker.DefaultBlockValidatorConfig,
 	)
 	Require(t, err)
-	stakerB, err := validator.NewStaker(
+	stakerB, err := staker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
@@ -180,10 +182,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
 
-	valWalletC, err := validator.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {})
+	valWalletC, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {})
 	Require(t, err)
 	valConfig.Strategy = "Watchtower"
-	stakerC, err := validator.NewStaker(
+	stakerC, err := staker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletC,
 		bind.CallOpts{},
