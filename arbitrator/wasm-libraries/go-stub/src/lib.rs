@@ -324,16 +324,16 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     } else {
         eprintln!("Go attempting to copy bytes from {:?}", src_val);
     }
-    sp.write_u8(0);
+    sp.skip_u64().write_u8(0);
 }
 
 /// Safety: λ(v value, method string, args []value) (value, bool)
 unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let object = interpret_value(sp.read_u64());
     let method_name = sp.read_js_string();
-    let args_ptr = sp.read_u64();
-    let args_len = sp.read_u64();
+    let (args_ptr, args_len) = sp.read_go_slice();
     let args = read_value_slice(args_ptr, args_len);
+
     if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
         let id = args.get(0).ok_or_else(|| {
             format!(
