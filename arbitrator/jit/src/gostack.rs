@@ -5,12 +5,10 @@ use crate::{
     machine::{WasmEnv, WasmEnvMut},
     syscall::JsValue,
 };
-
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
-use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
-
 use std::collections::{BTreeSet, BinaryHeap};
+use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
 
 #[self_referencing]
 struct MemoryViewContainer {
@@ -45,21 +43,22 @@ impl MemoryViewContainer {
 }
 
 pub struct GoStack {
-    start: u32,
+    sp: u32,
+    top: u32,
     memory: MemoryViewContainer,
 }
 
 #[allow(dead_code)]
 impl GoStack {
     pub fn new<'a, 'b: 'a>(start: u32, env: &'a mut WasmEnvMut<'b>) -> (Self, &'a mut WasmEnv) {
-        let memory = MemoryViewContainer::create(env);
-        let sp = Self { start, memory };
+        let sp = Self::simple(start, env);
         (sp, env.data_mut())
     }
 
-    pub fn simple(start: u32, env: &WasmEnvMut<'_>) -> Self {
+    pub fn simple(sp: u32, env: &WasmEnvMut<'_>) -> Self {
+        let top = sp + 8;
         let memory = MemoryViewContainer::create(env);
-        Self { start, memory }
+        Self { sp, top, memory }
     }
 
     fn view(&self) -> &MemoryView {
@@ -72,24 +71,29 @@ impl GoStack {
         self.view().size().0 as u64 * 65536
     }
 
-    pub fn relative_offset(&self, arg: u32) -> u32 {
-        (arg + 1) * 8
+    pub fn save_offset(&self) -> u32 {
+        self.top - (self.sp + 8)
     }
 
-    fn offset(&self, arg: u32) -> u32 {
-        self.start + self.relative_offset(arg)
+    fn advance(&mut self, bytes: usize) -> u32 {
+        let before = self.top;
+        self.top += bytes as u32;
+        before
     }
 
-    pub fn read_u8(&self, arg: u32) -> u8 {
-        self.read_u8_ptr(self.offset(arg))
+    pub fn read_u8(&mut self) -> u8 {
+        let ptr = self.advance(1);
+        self.read_u8_ptr(ptr)
     }
 
-    pub fn read_u32(&self, arg: u32) -> u32 {
-        self.read_u32_ptr(self.offset(arg))
+    pub fn read_u32(&mut self) -> u32 {
+        let ptr = self.advance(4);
+        self.read_u32_ptr(ptr)
     }
 
-    pub fn read_u64(&self, arg: u32) -> u64 {
-        self.read_u64_ptr(self.offset(arg))
+    pub fn read_u64(&mut self) -> u64 {
+        let ptr = self.advance(8);
+        self.read_u64_ptr(ptr)
     }
 
     pub fn read_u8_ptr(&self, ptr: u32) -> u8 {
@@ -107,16 +111,19 @@ impl GoStack {
         ptr.deref(self.view()).read().unwrap()
     }
 
-    pub fn write_u8(&self, arg: u32, x: u8) {
-        self.write_u8_ptr(self.offset(arg), x);
+    pub fn write_u8(&mut self, x: u8) {
+        let ptr = self.advance(1);
+        self.write_u8_ptr(ptr, x);
     }
 
-    pub fn write_u32(&self, arg: u32, x: u32) {
-        self.write_u32_ptr(self.offset(arg), x);
+    pub fn write_u32(&mut self, x: u32) {
+        let ptr = self.advance(4);
+        self.write_u32_ptr(ptr, x);
     }
 
-    pub fn write_u64(&self, arg: u32, x: u64) {
-        self.write_u64_ptr(self.offset(arg), x);
+    pub fn write_u64(&mut self, x: u64) {
+        let ptr = self.advance(8);
+        self.write_u64_ptr(ptr, x);
     }
 
     pub fn write_u8_ptr(&self, ptr: u32, x: u8) {
@@ -132,6 +139,21 @@ impl GoStack {
     pub fn write_u64_ptr(&self, ptr: u32, x: u64) {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
+    }
+
+    pub fn skip_u8(&mut self) -> &mut Self {
+        self.advance(1);
+        self
+    }
+
+    pub fn skip_u32(&mut self) -> &mut Self {
+        self.advance(4);
+        self
+    }
+
+    pub fn skip_u64(&mut self) -> &mut Self {
+        self.advance(8);
+        self
     }
 
     pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
@@ -155,6 +177,19 @@ impl GoStack {
             ptr += 8;
         }
         values
+    }
+
+    pub fn read_go_slice(&mut self) -> (u64, u64) {
+        let ptr = self.read_u64();
+        let len = self.read_u64();
+        self.skip_u64(); // skip the slice's capacity
+        (ptr, len)
+    }
+
+    pub fn read_js_string(&mut self) -> Vec<u8> {
+        let ptr = self.read_u64();
+        let len = self.read_u64();
+        self.read_slice(ptr, len)
     }
 }
 

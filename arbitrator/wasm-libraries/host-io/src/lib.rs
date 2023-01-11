@@ -18,7 +18,7 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Reads 32-bytes of global state
-/// SAFETY: λ(idx uint64, output []byte)
+/// Safety: λ(idx uint64, output []byte)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateBytes32(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalState
 }
 
 /// Writes 32-bytes of global state
-/// SAFETY: λ(idx uint64, val []byte)
+/// Safety: λ(idx uint64, val []byte)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateBytes32(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
 }
 
 /// Reads 8-bytes of global state
-/// SAFETY: λ(idx uint64) uint64
+/// Safety: λ(idx uint64) uint64
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateU64(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalState
 }
 
 /// Writes 8-bytes of global state
-/// SAFETY: λ(idx uint64, val uint64)
+/// Safety: λ(idx uint64, val uint64)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateU64(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
 }
 
 /// Reads an inbox message
-/// SAFETY: λ(msgNum uint64, offset uint32, output []byte) uint32
+/// Safety: λ(msgNum uint64, offset uint32, output []byte) uint32
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessage(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessa
 }
 
 /// Reads a delayed inbox message
-/// SAFETY: λ(seqNum uint64, offset uint32, output []byte) uint32
+/// Safety: λ(seqNum uint64, offset uint32, output []byte) uint32
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInboxMessage(
     sp: usize,
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInb
 }
 
 /// Retrieves the preimage of the given hash.
-/// SAFETY: λ(hash []byte, offset uint32, output []byte) uint32
+/// Safety: λ(hash []byte, offset uint32, output []byte) uint32
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImage(sp: usize) {
     let mut sp = GoStack::new(sp);

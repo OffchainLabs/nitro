@@ -57,12 +57,12 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDec
     );
     if (res != BrotliStatus::Success) || (output_len as u64 > out_buf_len) {
         sp.skip_u64();
-        sp.write_u32(BrotliStatus::Failure as u32);
+        sp.write_u32(BrotliStatus::Failure as _);
         return;
     }
     wavm::write_slice(&output[..output_len], out_buf_ptr);
     sp.write_u64(output_len as u64);
-    sp.write_u32(BrotliStatus::Success as u32);
+    sp.write_u32(BrotliStatus::Success as _);
 }
 
 /// Brotli compresses a go slice
@@ -95,10 +95,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCom
     );
     if (res != BrotliStatus::Success) || (output_len as u64 > out_buf_len) {
         sp.skip_u64();
-        sp.write_u32(BrotliStatus::Failure as u32);
+        sp.write_u32(BrotliStatus::Failure as _);
         return;
     }
     wavm::write_slice(&output[..output_len], out_buf_ptr);
     sp.write_u64(output_len as u64);
-    sp.write_u32(BrotliStatus::Success as u32);
+    sp.write_u32(BrotliStatus::Success as _);
 }

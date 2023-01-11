@@ -11,19 +11,19 @@ extern "C" {
 #[derive(Clone)]
 pub struct GoStack {
     sp: usize,
-    offset: usize,
+    top: usize,
 }
 
 impl GoStack {
     pub fn new(sp: usize) -> Self {
-        let offset = sp + 8;
-        Self { sp, offset }
+        let top = sp + 8;
+        Self { sp, top }
     }
 
     /// returns the pointer at which a value may be accessed, moving the offset past the value
     fn advance(&mut self, bytes: usize) -> usize {
-        let before = self.offset;
-        self.offset += bytes;
+        let before = self.top;
+        self.top += bytes;
         before
     }
 
@@ -51,17 +51,17 @@ impl GoStack {
         wavm::caller_store64(self.advance(8), x);
     }
 
-    pub unsafe fn skip_u8(&mut self) -> &mut Self {
+    pub fn skip_u8(&mut self) -> &mut Self {
         self.advance(1);
         self
     }
 
-    pub unsafe fn skip_u32(&mut self) -> &mut Self {
+    pub fn skip_u32(&mut self) -> &mut Self {
         self.advance(4);
         self
     }
 
-    pub unsafe fn skip_u64(&mut self) -> &mut Self {
+    pub fn skip_u64(&mut self) -> &mut Self {
         self.advance(8);
         self
     }
@@ -82,7 +82,7 @@ impl GoStack {
     /// Resumes the go runtime, updating the stack pointer.
     /// Safety: caller must cut lifetimes before this call.
     pub unsafe fn resume(&mut self) {
-        let saved = self.offset - (self.sp + 8);
+        let saved = self.top - (self.sp + 8);
         wavm_guest_call__resume();
         *self = Self::new(wavm_guest_call__getsp());
         self.advance(saved);

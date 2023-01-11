@@ -44,12 +44,14 @@ pub unsafe extern "C" fn go__debug(x: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_resetMemoryDataView(_: usize) {}
 
+/// Safety: λ(code int32)
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_wasmExit(sp: usize) {
     let mut sp = GoStack::new(sp);
     std::process::exit(sp.read_u32() as i32);
 }
 
+/// Safety: λ(fd uintptr, p pointer, len int32)
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_wasmWrite(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -73,6 +75,7 @@ static mut TIME: u64 = 0;
 // The amount of TIME advanced each check. Currently 10 milliseconds.
 static mut TIME_INTERVAL: u64 = 10_000_000;
 
+/// Safety: λ() int64
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_nanotime1(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -80,6 +83,7 @@ pub unsafe extern "C" fn go__runtime_nanotime1(sp: usize) {
     sp.write_u64(TIME);
 }
 
+/// Safety: λ() (seconds int64, nanos int32)
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_walltime(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -102,6 +106,7 @@ unsafe fn get_rng<'a>() -> &'a mut Pcg32 {
     RNG.get_or_insert_with(|| Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7))
 }
 
+/// Safety: λ(dest []byte)
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_getRandomData(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -154,6 +159,7 @@ struct TimeoutState {
 
 static mut TIMEOUT_STATE: Option<TimeoutState> = None;
 
+/// Safety: λ() (delay int64) int32
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -170,6 +176,7 @@ pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(sp: usize) {
     sp.write_u32(id);
 }
 
+/// Safety: λ(id int32)
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(sp: usize) {
     let mut sp = GoStack::new(sp);
@@ -263,8 +270,9 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
 pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
     let mut sp = GoStack::new(sp);
     let dest_val = interpret_value(sp.read_u64());
+    let (src_ptr, src_len) = sp.read_go_slice();
+    
     if let InterpValue::Ref(dest_id) = dest_val {
-        let (src_ptr, src_len) = sp.read_go_slice();
         let dest = DynamicObjectPool::singleton().get_mut(dest_id);
         if let Some(DynamicObject::Uint8Array(buf)) = dest {
             if buf.len() as u64 != src_len {
@@ -299,6 +307,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     let mut sp = GoStack::new(sp);
     let (dest_ptr, dest_len) = sp.read_go_slice();
     let src_val = interpret_value(sp.read_u64());
+    
     if let InterpValue::Ref(src_id) = src_val {
         let source = DynamicObjectPool::singleton().get_mut(src_id);
         if let Some(DynamicObject::Uint8Array(buf)) = source {
