@@ -161,10 +161,7 @@ impl StylusConfig {
             let debug = self.debug.clone().unwrap();
 
             if debug.enable_operator_count {
-                let counter = Counter::new(
-                    debug.max_unique_operator_count,
-                    debug.opcode_indexes,
-                );
+                let counter = Counter::new(debug.max_unique_operator_count, debug.opcode_indexes);
                 compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
             }
         }

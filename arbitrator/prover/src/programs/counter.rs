@@ -4,7 +4,7 @@
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
 
-use arbutil::operator::{operator_factor, operator_at_end_of_basic_block, OperatorCode};
+use arbutil::operator::{operator_at_end_of_basic_block, operator_factor, OperatorCode};
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
