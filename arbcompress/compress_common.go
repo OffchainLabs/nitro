@@ -3,6 +3,13 @@
 
 package arbcompress
 
+type BrotliStatus = uint32
+
+const (
+	BrotliFailure uint32 = iota
+	BrotliSuccess
+)
+
 const LEVEL_FAST = 0
 const LEVEL_WELL = 11
 const WINDOW_SIZE = 22 // BROTLI_DEFAULT_WINDOW

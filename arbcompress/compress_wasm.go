@@ -10,14 +10,7 @@ import (
 	"fmt"
 )
 
-type BrotliStatus = uint8
-
-const (
-	BrotliFailure uint8 = iota
-	BrotliSuccess
-)
-
-func brotliCompress(inBuf []byte, outBuf []byte, level, windowSize uint64) (outLen uint64, status BrotliStatus)
+func brotliCompress(inBuf []byte, outBuf []byte, level, windowSize uint32) (outLen uint64, status BrotliStatus)
 
 func brotliDecompress(inBuf []byte, outBuf []byte) (outLen uint64, status BrotliStatus)
 
@@ -30,7 +23,7 @@ func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return outBuf[:outLen], nil
 }
 
-func compressLevel(input []byte, level uint64) ([]byte, error) {
+func compressLevel(input []byte, level uint32) ([]byte, error) {
 	maxOutSize := compressedBufferSizeFor(len(input))
 	outBuf := make([]byte, maxOutSize)
 	outLen, status := brotliCompress(input, outBuf, level, WINDOW_SIZE)

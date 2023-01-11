@@ -49,16 +49,19 @@ impl GoStack {
         wavm::caller_store64(self.advance(8), x);
     }
 
-    pub unsafe fn skip_u8(&mut self) {
+    pub unsafe fn skip_u8(&mut self) -> &mut Self {
         self.advance(1);
+        self
     }
 
-    pub unsafe fn skip_u32(&mut self) {
+    pub unsafe fn skip_u32(&mut self) -> &mut Self {
         self.advance(4);
+        self
     }
 
-    pub unsafe fn skip_u64(&mut self) {
+    pub unsafe fn skip_u64(&mut self) -> &mut Self {
         self.advance(8);
+        self
     }
 
     pub unsafe fn read_go_slice(&mut self) -> (u64, u64) {
