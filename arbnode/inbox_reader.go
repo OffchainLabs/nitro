@@ -352,6 +352,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			r.lastReadBatchCount = checkingBatchCount
 			r.lastReadMutex.Unlock()
 			storeSeenBatchCount()
+			if !r.caughtUp {
+				r.caughtUp = true
+				close(r.caughtUpChan)
+			}
 			continue
 		}
 
@@ -398,7 +402,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				return err
 			}
 			if !r.caughtUp && to.Cmp(currentHeight) == 0 {
-				// TODO better caught up tracking
 				r.caughtUp = true
 				close(r.caughtUpChan)
 			}

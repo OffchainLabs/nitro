@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -68,13 +69,10 @@ type S3StorageService struct {
 }
 
 func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) {
-	credCache := aws.NewCredentialsCache(
-		credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, ""),
-	)
-	client := s3.New(s3.Options{
-		Region:      config.Region,
-		Credentials: credCache,
-	})
+	client, err := buildS3Client(config.AccessKey, config.SecretKey, config.Region)
+	if err != nil {
+		return nil, err
+	}
 	return &S3StorageService{
 		client:              client,
 		bucket:              config.Bucket,
@@ -83,6 +81,20 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 		downloader:          manager.NewDownloader(client),
 		discardAfterTimeout: config.DiscardAfterTimeout,
 	}, nil
+}
+
+func buildS3Client(accessKey, secretKey, region string) (*s3.Client, error) {
+	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(), awsConfig.WithRegion(region), func(options *awsConfig.LoadOptions) error {
+		// remain backward compatible with accessKey and secretKey credentials provided via cli flags
+		if accessKey != "" && secretKey != "" {
+			options.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s3.NewFromConfig(cfg), nil
 }
 
 func (s3s *S3StorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {

@@ -33,8 +33,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
@@ -276,7 +276,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			Context:     ctx,
 			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
 		}
-		rollup, err := validator.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
+		rollup, err := staker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -301,7 +301,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			}
 
 			validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
-			lastValidated, err := validator.ReadLastValidatedFromDb(validatorDb)
+			lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
 			if err != nil {
 				return nil, err
 			}

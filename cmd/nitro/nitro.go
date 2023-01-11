@@ -47,11 +47,11 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 func printSampleUsage(name string) {
@@ -323,7 +323,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting deployment info for creating validator wallet contract", "error", err)
 		}
-		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 		}

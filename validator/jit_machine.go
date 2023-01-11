@@ -90,7 +90,7 @@ func (machine *JitMachine) close() {
 }
 
 func (machine *JitMachine) prove(
-	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver,
+	ctxIn context.Context, entry *ValidationInput, resolver GoPreimageResolver,
 ) (GoGlobalState, error) {
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
@@ -139,12 +139,6 @@ func (machine *JitMachine) prove(
 		return state, err
 	}
 
-	// Tell the new process about the global state
-	gsStart, err := entry.start()
-	if err != nil {
-		return state, err
-	}
-
 	writeExact := func(data []byte) error {
 		_, err := conn.Write(data)
 		return err
@@ -163,16 +157,16 @@ func (machine *JitMachine) prove(
 	}
 
 	// send global state
-	if err := writeUint64(gsStart.Batch); err != nil {
+	if err := writeUint64(entry.StartState.Batch); err != nil {
 		return state, err
 	}
-	if err := writeUint64(gsStart.PosInBatch); err != nil {
+	if err := writeUint64(entry.StartState.PosInBatch); err != nil {
 		return state, err
 	}
-	if err := writeExact(gsStart.BlockHash[:]); err != nil {
+	if err := writeExact(entry.StartState.BlockHash[:]); err != nil {
 		return state, err
 	}
-	if err := writeExact(gsStart.SendRoot[:]); err != nil {
+	if err := writeExact(entry.StartState.SendRoot[:]); err != nil {
 		return state, err
 	}
 
