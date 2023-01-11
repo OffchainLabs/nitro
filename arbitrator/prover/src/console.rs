@@ -78,8 +78,8 @@ impl Color {
     /// Color a bool one of two colors depending on its value.
     pub fn color_if(cond: bool, true_color: &str, false_color: &str) -> String {
         match cond {
-            true => Color::color(true_color, &format!("{}", cond)),
-            false => Color::color(false_color, &format!("{}", cond)),
+            true => Color::color(true_color, format!("{}", cond)),
+            false => Color::color(false_color, format!("{}", cond)),
         }
     }
 }

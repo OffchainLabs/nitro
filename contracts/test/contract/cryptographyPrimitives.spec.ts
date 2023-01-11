@@ -28,7 +28,8 @@ describe('CryptographyPrimitives', () => {
     const CryptographyPrimitivesTester = await ethers.getContractFactory(
       'CryptographyPrimitivesTester'
     )
-    cryptographyPrimitivesTester = (await CryptographyPrimitivesTester.deploy()) as CryptographyPrimitivesTester
+    cryptographyPrimitivesTester =
+      (await CryptographyPrimitivesTester.deploy()) as CryptographyPrimitivesTester
     await cryptographyPrimitivesTester.deployed()
   })
 
