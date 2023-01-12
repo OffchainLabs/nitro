@@ -189,25 +189,25 @@ func CreateBatchPosterDAS(
 	return daWriter, daReader, &lifecycleManager, nil
 }
 
-func CreateDAReaderWriterForStorage(
+func CreateDAComponentsForDaserver(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, *LifecycleManager, error) {
+) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 
 	// Check config requirements
 	if config.AggregatorConfig.Enable {
-		return nil, nil, nil, errors.New("--data-availability.rpc-aggregator")
+		return nil, nil, nil, nil, errors.New("--data-availability.rpc-aggregator")
 	}
 	if !config.LocalDBStorageConfig.Enable &&
 		!config.LocalFileStorageConfig.Enable &&
 		!config.S3StorageServiceConfig.Enable &&
 		!config.IpfsStorageServiceConfig.Enable {
-		return nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
+		return nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
 	}
 	// Done checking config requirements
 
@@ -215,12 +215,12 @@ func CreateDAReaderWriterForStorage(
 	var syncToStorageServices []StorageService
 	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	storageService, err = WrapStorageWithCache(ctx, config, storageService, &syncFromStorageServices, &syncToStorageServices, dasLifecycleManager)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// The REST aggregator is used as the fallback if requested data is not present
@@ -228,7 +228,7 @@ func CreateDAReaderWriterForStorage(
 	if config.RestfulClientAggregatorConfig.Enable {
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		restAgg.Start(ctx)
 		dasLifecycleManager.Register(restAgg)
@@ -243,21 +243,22 @@ func CreateDAReaderWriterForStorage(
 
 		if syncConf.Eager {
 			if l1Reader == nil || seqInboxAddress == nil {
-				return nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
+				return nil, nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 			}
 			storageService, err = NewSyncingFallbackStorageService(
 				ctx,
 				storageService,
+				restAgg,
 				restAgg,
 				l1Reader,
 				*seqInboxAddress,
 				syncConf)
 			dasLifecycleManager.Register(storageService)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 		} else {
-			storageService = NewFallbackStorageService(storageService, restAgg,
+			storageService = NewFallbackStorageService(storageService, restAgg, restAgg,
 				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
 			dasLifecycleManager.Register(storageService)
 		}
@@ -266,13 +267,14 @@ func CreateDAReaderWriterForStorage(
 
 	var daWriter DataAvailabilityServiceWriter
 	var daReader DataAvailabilityServiceReader = storageService
+	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
 
 	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
 		var seqInboxCaller *bridgegen.SequencerInboxCaller
 		if seqInboxAddress != nil {
 			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 
 			seqInboxCaller = &seqInbox.SequencerInboxCaller
@@ -283,7 +285,7 @@ func CreateDAReaderWriterForStorage(
 
 		privKey, err := config.KeyConfig.BLSPrivKey()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		daWriter, err = NewSignAfterStoreDASWriterWithSeqInboxCaller(
@@ -293,7 +295,7 @@ func CreateDAReaderWriterForStorage(
 			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
@@ -305,11 +307,11 @@ func CreateDAReaderWriterForStorage(
 	if seqInboxAddress != nil {
 		daReader, err = NewChainFetchReader(daReader, (*l1Reader).Client(), *seqInboxAddress)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
-	return daReader, daWriter, dasLifecycleManager, nil
+	return daReader, daWriter, daHealthChecker, dasLifecycleManager, nil
 }
 
 func CreateDAReaderForNode(
@@ -361,7 +363,7 @@ func CreateDAReaderForNode(
 			}
 
 			// This falls back to REST and updates the local IPFS repo if the data is found.
-			storageService = NewFallbackStorageService(storageService, restAgg,
+			storageService = NewFallbackStorageService(storageService, restAgg, restAgg,
 				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
 			dasLifecycleManager.Register(storageService)
 

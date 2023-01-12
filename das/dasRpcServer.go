@@ -30,23 +30,25 @@ var (
 )
 
 type DASRPCServer struct {
-	dasReader DataAvailabilityServiceReader
-	dasWriter DataAvailabilityServiceWriter
+	daReader        DataAvailabilityServiceReader
+	daWriter        DataAvailabilityServiceWriter
+	daHealthChecker DataAvailabilityServiceHealthChecker
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, dasReader DataAvailabilityServiceReader, dasWriter DataAvailabilityServiceWriter) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, dasReader, dasWriter)
+	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, daReader, daWriter, daHealthChecker)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, dasReader DataAvailabilityServiceReader, dasWriter DataAvailabilityServiceWriter) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		dasReader: dasReader,
-		dasWriter: dasWriter,
+		daReader:        daReader,
+		daWriter:        daWriter,
+		daHealthChecker: daHealthChecker,
 	})
 	if err != nil {
 		return nil, err
@@ -96,7 +98,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	cert, err := serv.dasWriter.Store(ctx, message, uint64(timeout), sig)
+	cert, err := serv.daWriter.Store(ctx, message, uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +115,11 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
-	return serv.dasReader.HealthCheck(ctx)
+	return serv.daHealthChecker.HealthCheck(ctx)
 }
 
 func (serv *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
-	expirationPolicy, err := serv.dasReader.ExpirationPolicy(ctx)
+	expirationPolicy, err := serv.daReader.ExpirationPolicy(ctx)
 	if err != nil {
 		return "", err
 	}

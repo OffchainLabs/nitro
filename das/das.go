@@ -31,6 +31,10 @@ type DataAvailabilityServiceReader interface {
 	fmt.Stringer
 }
 
+type DataAvailabilityServiceHealthChecker interface {
+	HealthCheck(ctx context.Context) error
+}
+
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 

@@ -193,7 +193,7 @@ func startup() error {
 		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
 	}
 
-	daReader, daWriter, dasLifecycleManager, err := das.CreateDAReaderWriterForStorage(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
+	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DAConf, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, daReader, daWriter)
+		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, daReader, daWriter, daHealthChecker)
 		if err != nil {
 			return err
 		}
@@ -218,7 +218,7 @@ func startup() error {
 	if serverConfig.EnableREST {
 		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader)
+		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, daReader, daHealthChecker)
 		if err != nil {
 			return err
 		}
