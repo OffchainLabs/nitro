@@ -19,12 +19,14 @@ var (
 )
 
 type vertexTracker struct {
-	actEveryNSeconds    time.Duration
-	timeRef             util.TimeReference
-	challenge           *protocol.Challenge
-	vertex              *protocol.ChallengeVertex
-	validator           *Validator
-	awaitingOneStepFork bool
+	actEveryNSeconds      time.Duration
+	timeRef               util.TimeReference
+	challenge             *protocol.Challenge
+	challengePeriodLenth  time.Duration
+	challengeCreationTime time.Time
+	vertex                *protocol.ChallengeVertex
+	validator             *Validator
+	awaitingOneStepFork   bool
 }
 
 func newVertexTracker(timeRef util.TimeReference, actEveryNSeconds time.Duration, challenge *protocol.Challenge, vertex *protocol.ChallengeVertex, validator *Validator) *vertexTracker {
@@ -230,4 +232,29 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 		return nil, err
 	}
 	return mergedTo, nil
+}
+
+func (v *vertexTracker) canConfirm() bool {
+	// Can't confirm if the vertex is not in correct state.
+	if v.vertex.Status != protocol.PendingAssertionState {
+		return false
+	}
+	// Can't confirm if parent isn't confirmed, exit early.
+	if v.vertex.Prev.Unwrap().Status != protocol.ConfirmedAssertionState {
+		return false
+	}
+
+	// Can confirm if vertex's parent has a sub-challenge, and the sub-challenge has reported vertex as its winner.
+	subChallenge := v.vertex.Prev.Unwrap().SubChallenge
+	if !subChallenge.IsNone() {
+		return subChallenge.Unwrap().Winner == v.vertex
+	}
+
+	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
+	if v.vertex.PsTimer.Get() > v.challengePeriodLenth {
+		return true
+	}
+
+	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
+	return v.timeRef.Get().After(v.challengeCreationTime.Add(2 * v.challengePeriodLenth))
 }

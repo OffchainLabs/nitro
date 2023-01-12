@@ -601,13 +601,13 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		})
 		ps := util.Some(&ChallengeVertex{
-			psTimer: counter,
+			PsTimer: counter,
 			Commitment: util.HistoryCommitment{
 				Height: 1,
 			},
 		})
 		mergingTo := &ChallengeVertex{
-			challenge: util.Some(&Challenge{
+			Challenge: util.Some(&Challenge{
 				rootAssertion: rootAssertion,
 			}),
 			PresumptiveSuccessor: ps,
@@ -708,7 +708,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			Merkle: exp.Root(),
 		}
 		mergingTo := &ChallengeVertex{
-			psTimer:    counter,
+			PsTimer:    counter,
 			Commitment: mergingToCommit,
 		}
 		exp = util.ExpansionFromLeaves(stateRoots[:4])
@@ -717,8 +717,8 @@ func TestAssertionChain_Merge(t *testing.T) {
 			Merkle: exp.Root(),
 		}
 		mergingFrom := &ChallengeVertex{
-			psTimer: counter,
-			challenge: util.Some[*Challenge](&Challenge{
+			PsTimer: counter,
+			Challenge: util.Some[*Challenge](&Challenge{
 				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
