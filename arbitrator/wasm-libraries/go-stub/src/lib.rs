@@ -235,7 +235,7 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
 pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
     let mut sp = GoStack::new(sp);
     let class = sp.read_u32();
-    let (args_ptr, args_len) = sp.skip_u32().read_go_slice();
+    let (args_ptr, args_len) = sp.skip_space().read_go_slice();
     let args = read_value_slice(args_ptr, args_len);
     if class == UINT8_ARRAY_ID {
         if let Some(InterpValue::Number(size)) = args.get(0) {

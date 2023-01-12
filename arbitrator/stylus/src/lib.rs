@@ -4,7 +4,7 @@
 use env::WasmEnv;
 use eyre::ErrReport;
 use prover::programs::prelude::*;
-use run::{RunProgram, UserOutcome};
+use run::RunProgram;
 use std::mem;
 use wasmer::{Bytes, Module};
 
@@ -18,16 +18,6 @@ mod test;
 
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
-
-#[derive(PartialEq, Eq)]
-#[repr(u8)]
-pub enum StylusStatus {
-    Success,
-    Revert,
-    OutOfGas,
-    OutOfStack,
-    Failure,
-}
 
 #[repr(C)]
 pub struct GoParams {
@@ -91,18 +81,18 @@ pub unsafe extern "C" fn stylus_compile(
     wasm: GoSlice,
     params: GoParams,
     mut output: RustVec,
-) -> StylusStatus {
+) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let config = params.config();
 
     match stylus::module(wasm, config) {
         Ok(module) => {
             output.write(module);
-            StylusStatus::Success
+            UserOutcomeKind::Success
         }
         Err(error) => {
             output.write_err(error);
-            StylusStatus::Revert
+            UserOutcomeKind::Failure
         }
     }
 }
@@ -114,8 +104,8 @@ pub unsafe extern "C" fn stylus_call(
     params: GoParams,
     mut output: RustVec,
     evm_gas: *mut u64,
-) -> StylusStatus {
-    use StylusStatus::*;
+) -> UserOutcomeKind {
+    use UserOutcomeKind::*;
 
     let module = module.slice();
     let calldata = calldata.slice();
@@ -145,17 +135,10 @@ pub unsafe extern "C" fn stylus_call(
     };
     native.set_gas(wasm_gas);
 
-    let outcome = match native.run_main(calldata, &config) {
-        Ok(outcome) => outcome,
-        Err(error) => error!("failed to execute program", error),
+    let (status, outs) = match native.run_main(calldata, &config) {
+        Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
+        Ok(outcome) => outcome.into_data(),
     };
-    let (status, outs) = match outcome {
-        UserOutcome::Success(outs) => (Success, outs),
-        UserOutcome::Revert(outs) => (Revert, outs),
-        UserOutcome::OutOfGas => (OutOfGas, vec![]),
-        UserOutcome::OutOfStack => (OutOfStack, vec![]),
-    };
-
     if pricing.wasm_gas_price != 0 {
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
     }

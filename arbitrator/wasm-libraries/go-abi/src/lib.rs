@@ -39,6 +39,14 @@ impl GoStack {
         wavm::caller_load64(self.advance(8))
     }
 
+    pub unsafe fn read_ptr<T>(&mut self) -> *const T {
+        self.read_u64() as *const T
+    }
+
+    pub unsafe fn read_ptr_mut<T>(&mut self) -> *mut T {
+        self.read_u64() as *mut T
+    }
+
     pub unsafe fn write_u8(&mut self, x: u8) {
         wavm::caller_store8(self.advance(1), x);
     }
@@ -49,6 +57,14 @@ impl GoStack {
 
     pub unsafe fn write_u64(&mut self, x: u64) {
         wavm::caller_store64(self.advance(8), x);
+    }
+
+    pub unsafe fn write_ptr<T>(&mut self, ptr: *const T) {
+        self.write_u64(ptr as u64)
+    }
+
+    pub unsafe fn write_nullptr(&mut self) {
+        self.write_u64(std::ptr::null::<u8>() as u64)
     }
 
     pub fn skip_u8(&mut self) -> &mut Self {
@@ -63,6 +79,12 @@ impl GoStack {
 
     pub fn skip_u64(&mut self) -> &mut Self {
         self.advance(8);
+        self
+    }
+
+    /// skips the rest of the remaining space in a u64
+    pub fn skip_space(&mut self) -> &mut Self {
+        self.advance((self.top - self.sp) % 8);
         self
     }
 

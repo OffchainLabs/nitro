@@ -66,6 +66,9 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program)
 	}
+	if db.Deterministic() {
+		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
+	}
 
 	module, err := db.GetUserModule(1, program)
 	if err != nil {

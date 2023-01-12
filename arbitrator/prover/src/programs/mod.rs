@@ -31,6 +31,7 @@ pub mod depth;
 pub mod heap;
 pub mod meter;
 pub mod prelude;
+pub mod run;
 pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";

@@ -14,11 +14,11 @@ TEXT ·callUserWasmRustImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·readRustVecImpl(SB), NOSPLIT, $0
+TEXT ·readRustVecLenImpl(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·freeRustVecImpl(SB), NOSPLIT, $0
+TEXT ·rustVecIntoSliceImpl(SB), NOSPLIT, $0
   CallImport
   RET
 

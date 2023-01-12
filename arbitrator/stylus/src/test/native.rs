@@ -3,7 +3,7 @@
 
 use crate::{
     env::WasmEnv,
-    run::{RunProgram, UserOutcome},
+    run::RunProgram,
     stylus::{self, NativeInstance},
 };
 use arbutil::{crypto, Color};

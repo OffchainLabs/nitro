@@ -28,14 +28,13 @@ type rustVec byte
 type rustConfig byte
 type rustMachine byte
 
-func compileUserWasmRustImpl(wasm []byte, params *rustConfig) (status userStatus, machine *rustMachine, err *rustVec)
+func compileUserWasmRustImpl(wasm []byte, params *rustConfig) (machine *rustMachine, err *rustVec)
 func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64) (status userStatus, out *rustVec)
-func readRustVecImpl(vec *rustVec) (ptr *byte, len usize)
-func freeRustVecImpl(vec *rustVec)
+func readRustVecLenImpl(vec *rustVec) (len u32)
+func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth, heapBound u32, wasmGasPrice, hostioCost u64) *rustConfig
 
 func compileUserWasm(db vm.StateDB, program addr, wasm []byte, params *goParams) error {
-	println("Go compile")
 	_, err := compileMachine(db, program, wasm, params)
 	if err != nil {
 		println("Go compile error: ", err.Error())
@@ -44,7 +43,6 @@ func compileUserWasm(db vm.StateDB, program addr, wasm []byte, params *goParams)
 }
 
 func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
-	println("Go call")
 	wasm, err := getWasm(db, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
@@ -57,29 +55,25 @@ func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, par
 }
 
 func compileMachine(db vm.StateDB, program addr, wasm []byte, params *goParams) (*rustMachine, error) {
-	println("Go compile machine")
-	status, machine, err := compileUserWasmRustImpl(wasm, params.encode())
-	if status != userSuccess {
-		return nil, errors.New(string(err.read()))
+	machine, err := compileUserWasmRustImpl(wasm, params.encode())
+	if err != nil {
+		return nil, errors.New(string(err.intoSlice()))
 	}
 	return machine, nil
 }
 
 func (m *rustMachine) call(calldata []byte, params *goParams, gas *u64) ([]byte, error) {
-	println("Go call machine")
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas)
-	return status.output(output.read())
+	return status.output(output.intoSlice())
 }
 
-func (vec *rustVec) read() []byte {
-	println("Go vec read")
-	ptr, len := readRustVecImpl(vec)
-	output := arbutil.PointerToSlice(ptr, int(len))
-	freeRustVecImpl(vec)
-	return output
+func (vec *rustVec) intoSlice() []byte {
+	len := readRustVecLenImpl(vec)
+	slice := make([]byte, len)
+	rustVecIntoSliceImpl(vec, arbutil.SliceToPointer(slice))
+	return slice
 }
 
 func (p *goParams) encode() *rustConfig {
-	println("Go encode")
 	return rustConfigImpl(p.version, p.maxDepth, p.heapBound, p.wasmGasPrice, p.hostioCost)
 }

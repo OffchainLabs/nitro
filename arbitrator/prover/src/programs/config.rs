@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use eyre::{bail, Result};
+use std::fmt::Debug;
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
@@ -120,5 +121,17 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(start));
 
         Store::new(compiler)
+    }
+}
+
+impl Debug for StylusConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StylusConfig")
+            .field("costs", &"λ(op) -> u64")
+            .field("start_gas", &self.start_gas)
+            .field("max_depth", &self.max_depth)
+            .field("heap_bound", &self.heap_bound)
+            .field("pricing", &self.pricing)
+            .finish()
     }
 }

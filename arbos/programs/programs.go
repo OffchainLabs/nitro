@@ -192,6 +192,7 @@ type userStatus uint8
 
 const (
 	userSuccess userStatus = iota
+	userRevert
 	userFailure
 	userOutOfGas
 	userOutOfStack
@@ -201,6 +202,8 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	switch status {
 	case userSuccess:
 		return data, nil
+	case userRevert:
+		return data, errors.New("program reverted")
 	case userFailure:
 		return nil, errors.New(string(data))
 	case userOutOfGas:
