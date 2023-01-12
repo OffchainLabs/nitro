@@ -19,8 +19,36 @@ http_archive(
 )
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 load("//:deps.bzl", "go_dependencies")
+
+go_repository(
+    name = "com_github_emicklei_dot",
+    importpath = "github.com/emicklei/dot",
+    sum = "h1:WjL422LPltH/ThM9AJQ8HJXEMw9SOxLrglppg/1pFYU=",
+    version = "v1.2.0",
+)
+
+go_repository(
+    name = "com_github_labstack_echo_v5",
+    importpath = "github.com/labstack/echo/v5",
+    sum = "h1:07/Vl+8iDqHkOFA59B2UvXfV/Wih+YHoEaLTWSxRiRE=",
+    version = "v5.0.0-20220717203827-74022662be4a",
+)
+
+go_repository(
+    name = "com_github_valyala_bytebufferpool",
+    importpath = "github.com/valyala/bytebufferpool",
+    sum = "h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=",
+    version = "v1.0.0",
+)
+
+go_repository(
+    name = "com_github_valyala_fasttemplate",
+    importpath = "github.com/valyala/fasttemplate",
+    sum = "h1:TVEnxayobAdVkhQfrfes2IzOB6o+z4roRkPF52WA1u4=",
+    version = "v1.2.1",
+)
 
 # gazelle:repository_macro deps.bzl%go_dependencies
 go_dependencies()
