@@ -59,7 +59,6 @@ type server struct {
 	cfg        *config
 	port       uint
 	chain      *protocol.AssertionChain
-	manager    statemanager.Manager
 	validators []*validator.Validator
 	timeRef    *util.ArtificialTimeReference
 	wsClients  map[*websocket.Conn]bool
@@ -261,6 +260,7 @@ func (s *server) sendChainEventsToClients(
 			s.lock.RUnlock()
 		case <-ctx.Done():
 			return
+		//nolint:staticcheck
 		default:
 		}
 	}
