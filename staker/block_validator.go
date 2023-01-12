@@ -62,8 +62,8 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
-	ArbitratorValidator      bool                          `koanf:"arbitrator-validator"`
-	JitValidator             bool                          `koanf:"jit-validator"`
+	URL                      string                        `koanf:"url"`
+	JWTSecret                string                        `koanf:"jwtsecret"`
 	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -81,8 +81,8 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
-	f.Bool(prefix+".arbitrator-validator", DefaultBlockValidatorConfig.ArbitratorValidator, "enable the complete, arbitrator block validator")
-	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
+	f.String(prefix+".url", DefaultBlockValidatorConfig.URL, "url for valiation")
+	f.String(prefix+".jwtsecret", DefaultBlockValidatorConfig.JWTSecret, "path to file with jwtsecret for validation - empty disables jwt")
 	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -98,8 +98,8 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	ArbitratorValidator:      false,
-	JitValidator:             true,
+	URL:                      "ws://localhost/",
+	JWTSecret:                "",
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,
@@ -111,8 +111,8 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	ArbitratorValidator:      false,
-	JitValidator:             false,
+	URL:                      "ws://localhost/",
+	JWTSecret:                "",
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
 	PrerecordedBlocks:        64,

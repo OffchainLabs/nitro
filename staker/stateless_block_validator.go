@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_api"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
@@ -263,7 +266,6 @@ func newRecordedValidationEntry(
 
 func NewStatelessBlockValidator(
 	execSpawner validator.ExecutionSpawner,
-	validationSpawners []validator.ValidationSpawner,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -277,9 +279,18 @@ func NewStatelessBlockValidator(
 	if err != nil {
 		return nil, err
 	}
+	var jwt []byte
+	if config.JWTSecret != "" {
+		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
+		if err != nil {
+			return nil, err
+		}
+		jwt = jwtHash.Bytes()
+	}
+	valClient := server_api.NewValidationClient(config.URL, jwt)
 	validator := &StatelessBlockValidator{
 		execSpawner:        execSpawner,
-		validationSpawners: validationSpawners,
+		validationSpawners: []validator.ValidationSpawner{valClient},
 		inboxReader:        inboxReader,
 		inboxTracker:       inbox,
 		streamer:           streamer,
@@ -606,16 +617,8 @@ func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 	return v.recordingDatabase.ReferenceCount()
 }
 
-func (v *StatelessBlockValidator) Start(ctx_in context.Context) {
-	v.execSpawner.Start(ctx_in)
-	for _, spawner := range v.validationSpawners {
-		spawner.Start(ctx_in)
-	}
+func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	return nil
 }
 
-func (v *StatelessBlockValidator) Stop() {
-	v.execSpawner.Stop()
-	for _, spawner := range v.validationSpawners {
-		spawner.Stop()
-	}
-}
+func (v *StatelessBlockValidator) Stop() {}

@@ -52,6 +52,8 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func printSampleUsage(name string) {
@@ -396,6 +398,20 @@ func mainImpl() int {
 	}
 
 	fatalErrChan := make(chan error, 10)
+
+	var exec validator.ExecutionSpawner
+	valNode, err := valnode.CreateValidationNode(
+		func() *valnode.Config { return &liveNodeConfig.get().Validation },
+		stack,
+		fatalErrChan,
+	)
+	if err == nil {
+		exec = valNode.GetExec()
+	} else {
+		valNode = nil
+		log.Warn("couldn't init validation node", "err", err)
+	}
+
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
@@ -404,6 +420,7 @@ func mainImpl() int {
 		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
+		exec,
 		&rollupAddrs,
 		l1TransactionOpts,
 		dataSigner,
@@ -440,8 +457,17 @@ func mainImpl() int {
 		}
 	}
 
-	if err := currentNode.Start(ctx); err != nil {
-		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+	if valNode != nil {
+		err = valNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
+		}
+	}
+	if err == nil {
+		err = currentNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		}
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -468,6 +494,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
+	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
@@ -502,6 +529,7 @@ var NodeConfigDefault = NodeConfig{
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
+	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")

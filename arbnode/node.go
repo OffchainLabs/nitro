@@ -49,9 +49,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_arb"
-	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/offchainlabs/nitro/validator/server_jit"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -407,32 +404,14 @@ type Config struct {
 	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
 	Staker                 staker.L1ValidatorConfig    `koanf:"staker"`
-	Validation             ValidationConfig            `koanf:"validation" reload:"hot"`
 	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
-	Wasm                   WasmConfig                  `koanf:"wasm"`
 	SyncMonitor            SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous              DangerousConfig             `koanf:"dangerous"`
 	Caching                CachingConfig               `koanf:"caching"`
 	Archive                bool                        `koanf:"archive"`
 	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
 	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
-}
-
-// joint for comfort only - the two configs are entirely separate.
-type ValidationConfig struct {
-	Arbitrator server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	Jit        server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
-}
-
-var DefaultValidationConfig = ValidationConfig{
-	Jit:        server_jit.DefaultJitSpawnerConfig,
-	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
-}
-
-func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
-	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
-	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 }
 
 func (c *Config) Validate() error {
@@ -487,10 +466,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
-	ValidationConfigAddOptions(prefix+".validation", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
-	WasmConfigAddOptions(prefix+".wasm", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
@@ -513,10 +490,8 @@ var ConfigDefault = Config{
 	BlockValidator:         staker.DefaultBlockValidatorConfig,
 	Feed:                   broadcastclient.FeedConfigDefault,
 	Staker:                 staker.DefaultL1ValidatorConfig,
-	Validation:             DefaultValidationConfig,
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
-	Wasm:                   DefaultWasmConfig,
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
@@ -543,7 +518,6 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
-	config.Wasm.RootPath = ""
 	config.BlockValidator = staker.TestBlockValidatorConfig
 
 	return &config
@@ -591,18 +565,6 @@ var TestDangerousSequencerConfig = DangerousSequencerConfig{
 
 func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
-}
-
-type WasmConfig struct {
-	RootPath string `koanf:"root-path"`
-}
-
-func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
-}
-
-var DefaultWasmConfig = WasmConfig{
-	RootPath: "",
 }
 
 type CachingConfig struct {
@@ -709,6 +671,7 @@ func createNodeImpl(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
+	execSpawner validator.ExecutionSpawner,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
@@ -939,38 +902,13 @@ func createNodeImpl(
 	txStreamer.SetInboxReader(inboxReader)
 
 	blockValidatorConf := &config.BlockValidator
-	if blockValidatorConf.Enable && !(blockValidatorConf.ArbitratorValidator || blockValidatorConf.JitValidator) {
-		log.Warn("No block-by-block validator configured. Enabling the JIT block validator")
-		blockValidatorConf.JitValidator = true
-	}
 
 	var blockValidator *staker.BlockValidator
 	var statelessBlockValidator *staker.StatelessBlockValidator
 
-	locator, err := server_common.NewMachineLocator(config.Wasm.RootPath)
 	if err == nil {
-		arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
-			return &configFetcher.Get().Validation.Arbitrator
-		}
-		execSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
-		if err != nil {
-			return nil, err
-		}
-		valSpawners := []validator.ValidationSpawner{}
-		if config.BlockValidator.ArbitratorValidator {
-			valSpawners = append(valSpawners, execSpawner)
-		}
-		if config.BlockValidator.JitValidator {
-			jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher.Get().Validation.Jit }
-			jitSpawner, err := server_jit.NewJitSpawner(locator, jitConfigFetcher, fatalErrChan)
-			if err != nil {
-				return nil, err
-			}
-			valSpawners = append(valSpawners, jitSpawner)
-		}
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			execSpawner,
-			valSpawners,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
@@ -1329,12 +1267,13 @@ func CreateNode(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
+	exec validator.ExecutionSpawner,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, exec, deployInfo, txOpts, dataSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1449,7 +1388,10 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.StatelessBlockValidator != nil {
-		n.StatelessBlockValidator.Start(ctx)
+		err = n.StatelessBlockValidator.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing stateless block validator: %w", err)
+		}
 	}
 	if n.BlockValidator != nil {
 		err = n.BlockValidator.Initialize()
