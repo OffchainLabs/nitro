@@ -923,9 +923,11 @@ impl Machine {
         let user_host = parse(&user_host, Path::new(USER_HOST))?;
         let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
         let wasi_stub = parse(&wasi_stub, Path::new("wasi_stub"))?;
+        let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
+        let soft_float = parse(&soft_float, Path::new("soft-float"))?;
 
         Self::from_binaries(
-            &[forward, user_host, wasi_stub],
+            &[forward, soft_float, user_host, wasi_stub],
             bin,
             false,
             false,
