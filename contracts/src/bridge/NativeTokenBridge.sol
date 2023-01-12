@@ -14,6 +14,9 @@ error InvalidToken();
 /// @dev Provided insufficient value for token fees
 error InvalidTokenFeeAmount(uint256);
 
+/// @dev Function not applicable for native token bridge
+error NotApplicable();
+
 /**
  * @title Staging ground for incoming and outgoing messages
  * @notice Holds the inbox accumulator for sequenced and delayed messages.
@@ -35,11 +38,11 @@ contract NativeTokenBridge is Bridge {
 
     /// @inheritdoc IBridge
     function enqueueDelayedMessage(
-        uint8 kind,
-        address sender,
-        bytes32 messageDataHash
+        uint8,
+        address,
+        bytes32
     ) external payable override returns (uint256) {
-        revert("Not applicable");
+        revert NotApplicable();
     }
 
     function enqueueDelayedMessage(
@@ -49,18 +52,19 @@ contract NativeTokenBridge is Bridge {
         uint256 tokenFeeAmount
     ) external returns (uint256) {
         if (!this.allowedDelayedInboxes(msg.sender)) revert NotDelayedInbox(msg.sender);
-        if (tokenFeeAmount == 0) revert InvalidTokenFeeAmount(tokenFeeAmount);
 
-        IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), tokenFeeAmount);
+        uint256 messageCount = addMessageToDelayedAccumulator(
+            kind,
+            sender,
+            uint64(block.number),
+            uint64(block.timestamp), // solhint-disable-line not-rely-on-time
+            block.basefee,
+            messageDataHash
+        );
 
-        return
-            addMessageToDelayedAccumulator(
-                kind,
-                sender,
-                uint64(block.number),
-                uint64(block.timestamp), // solhint-disable-line not-rely-on-time
-                block.basefee,
-                messageDataHash
-            );
+        // escrow fee token
+        IERC20(nativeToken).safeTransferFrom(sender, address(this), tokenFeeAmount);
+
+        return messageCount;
     }
 }
