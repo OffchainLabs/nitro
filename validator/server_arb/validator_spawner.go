@@ -11,11 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/util/readymarker"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
-	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -94,11 +95,9 @@ func NewArbitratorSpawner(locator *server_common.MachineLocator, config Arbitrat
 	return spawner, nil
 }
 
-func (s *ArbitratorSpawner) Start(ctx_in context.Context) {
-	// could be used as both exec and validation spawner
-	if !s.Started() {
-		s.StopWaiter.Start(ctx_in, s)
-	}
+func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
+	s.StopWaiter.Start(ctx_in, s)
+	return nil
 }
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() (common.Hash, error) {

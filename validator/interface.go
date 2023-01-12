@@ -9,7 +9,7 @@ import (
 
 type ValidationSpawner interface {
 	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
-	Start(context.Context)
+	Start(context.Context) error
 	Stop()
 	Name() string
 	Room() int

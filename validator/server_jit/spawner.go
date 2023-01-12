@@ -57,8 +57,9 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 	return spawner, nil
 }
 
-func (v *JitSpawner) Start(ctx_in context.Context) {
+func (v *JitSpawner) Start(ctx_in context.Context) error {
 	v.StopWaiter.Start(ctx_in, v)
+	return nil
 }
 
 func (v *JitSpawner) execute(
