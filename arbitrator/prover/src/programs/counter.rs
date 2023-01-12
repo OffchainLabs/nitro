@@ -15,7 +15,6 @@ use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
 #[derive(Debug)]
 pub struct Counter {
-    pub max_unique_opcodes: usize,
     pub index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
     pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
 }
@@ -25,13 +24,11 @@ pub fn opcode_count_name(index: &usize) -> String {
 }
 
 impl Counter {
-    pub fn new(
-        max_unique_opcodes: usize,
-        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
-    ) -> Self {
+    pub fn new(opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>) -> Self {
         Self {
-            max_unique_opcodes,
-            index_counts_global: Arc::new(Mutex::new(Vec::with_capacity(max_unique_opcodes))),
+            index_counts_global: Arc::new(Mutex::new(Vec::with_capacity(
+                OperatorCode::OPERATOR_COUNT,
+            ))),
             opcode_indexes,
         }
     }
@@ -46,7 +43,7 @@ where
     fn update_module(&self, module: &mut M) -> Result<()> {
         let zero_count = GlobalInit::I64Const(0);
         let mut index_counts_global = self.index_counts_global.lock();
-        for index in 0..self.max_unique_opcodes {
+        for index in 0..OperatorCode::OPERATOR_COUNT {
             let count_global =
                 module.add_global(&opcode_count_name(&index), Type::I64, zero_count)?;
             index_counts_global.push(count_global);
@@ -56,21 +53,18 @@ where
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         Ok(FuncCounter::new(
-            self.max_unique_opcodes,
             self.index_counts_global.clone(),
             self.opcode_indexes.clone(),
         ))
     }
 
     fn name(&self) -> &'static str {
-        "opcode counter"
+        "operator counter"
     }
 }
 
 #[derive(Debug)]
 pub struct FuncCounter<'a> {
-    /// Maximum number of unique opcodes to count
-    max_unique_opcodes: usize,
     /// WASM global variables to keep track of opcode counts
     index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
     ///  Mapping of operator code to index for opcode_counts_global and block_opcode_counts
@@ -83,48 +77,16 @@ pub struct FuncCounter<'a> {
 
 impl<'a> FuncCounter<'a> {
     fn new(
-        max_unique_opcodes: usize,
         index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
         opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Self {
         Self {
-            max_unique_opcodes,
             index_counts_global,
             opcode_indexes,
             block: vec![],
-            block_index_counts: vec![0; max_unique_opcodes],
+            block_index_counts: vec![0; OperatorCode::OPERATOR_COUNT],
         }
     }
-}
-
-macro_rules! opcode_count_add {
-    ($self:expr, $op:expr, $count:expr) => {{
-        let mut opcode_indexes = $self.opcode_indexes.lock();
-        let next = opcode_indexes.len();
-        let index = opcode_indexes.entry($op.into()).or_insert(next);
-        assert!(
-            *index < $self.max_unique_opcodes,
-            "too many unique opcodes {next}"
-        );
-        $self.block_index_counts[*index] += $count * operator_factor($op);
-    }};
-}
-
-macro_rules! get_wasm_opcode_count_add {
-    ($global_index:expr, $count:expr) => {
-        vec![
-            GlobalGet {
-                global_index: $global_index,
-            },
-            I64Const {
-                value: $count as i64,
-            },
-            I64Add,
-            GlobalSet {
-                global_index: $global_index,
-            },
-        ]
-    };
 }
 
 impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
@@ -134,6 +96,30 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     {
         use Operator::*;
 
+        macro_rules! opcode_count_add {
+            ($self:expr, $op:expr, $count:expr) => {{
+                let mut opcode_indexes = $self.opcode_indexes.lock();
+                let next = opcode_indexes.len();
+                let index = opcode_indexes.entry($op.into()).or_insert(next);
+                assert!(
+                    *index < OperatorCode::OPERATOR_COUNT,
+                    "too many unique opcodes {next}"
+                );
+                $self.block_index_counts[*index] += $count * operator_factor($op);
+            }};
+        }
+
+        let get_wasm_opcode_count_add = |global_index: u32, value: u64| -> Vec<Operator> {
+            vec![
+                GlobalGet { global_index },
+                I64Const {
+                    value: value as i64,
+                },
+                I64Add,
+                GlobalSet { global_index },
+            ]
+        };
+
         let end = operator_at_end_of_basic_block(&op);
 
         opcode_count_add!(self, &op, 1);
@@ -141,36 +127,38 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
 
         if end {
             // Ensure opcode count add instruction counts are all greater than zero
-            for opcode in get_wasm_opcode_count_add!(0, 0) {
+            for opcode in get_wasm_opcode_count_add(0, 0) {
                 opcode_count_add!(self, &opcode, 1);
             }
 
             // Get list of all opcodes with nonzero counts
-            let mut nonzero_opcodes: Vec<(u32, usize)> =
-                Vec::with_capacity(self.max_unique_opcodes);
-            for (index, global_index) in self.index_counts_global.lock().iter().enumerate() {
-                if self.block_index_counts[index] > 0 {
-                    nonzero_opcodes.push((global_index.as_u32(), index));
-                }
-            }
+            let nonzero_counts: Vec<_> = self
+                .index_counts_global
+                .lock()
+                .iter()
+                .enumerate()
+                .filter_map(
+                    |(index, global_index)| match self.block_index_counts[index] {
+                        0 => None,
+                        count => Some((global_index.as_u32(), count)),
+                    },
+                )
+                .collect();
 
             // Account for all wasm instructions added, minus 1 for what we already added above
-            let unique_instructions = nonzero_opcodes.len() - 1;
-            for opcode in get_wasm_opcode_count_add!(0, 0) {
+            let unique_instructions = nonzero_counts.len() - 1;
+            for opcode in get_wasm_opcode_count_add(0, 0) {
                 opcode_count_add!(self, &opcode, unique_instructions as u64);
             }
 
             // Inject wasm instructions for adding counts
-            for (global_index, index) in nonzero_opcodes {
-                out.extend(get_wasm_opcode_count_add!(
-                    global_index,
-                    self.block_index_counts[index]
-                ));
+            for (global_index, count) in nonzero_counts {
+                out.extend(get_wasm_opcode_count_add(global_index, count));
             }
 
             out.extend(self.block.clone());
             self.block.clear();
-            self.block_index_counts = vec![0; self.max_unique_opcodes]
+            self.block_index_counts = vec![0; OperatorCode::OPERATOR_COUNT]
         }
         Ok(())
     }
@@ -180,27 +168,39 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     }
 }
 
-pub trait CountedMachine {
+pub trait CountingMachine {
     fn get_opcode_counts(
         &mut self,
         opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Result<BTreeMap<OperatorCode, u64>>;
 }
 
-impl CountedMachine for Machine {
+impl CountingMachine for Machine {
     fn get_opcode_counts(
         &mut self,
         opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Result<BTreeMap<OperatorCode, u64>> {
-        let mut counts = BTreeMap::new();
-        for (opcode, index) in opcode_indexes.lock().clone().iter() {
-            let value = self.get_global(&opcode_count_name(index))?;
-            let count = value.try_into().expect("type mismatch");
-            if count > 0 {
-                counts.insert(*opcode, count);
-            }
-        }
-
-        Ok(counts)
+        Ok(opcode_indexes
+            .lock()
+            .clone()
+            .iter()
+            .filter_map(|(opcode, index)| -> Option<(OperatorCode, u64)> {
+                let count = self
+                    .get_global(&opcode_count_name(index))
+                    .expect(&format!(
+                        "global variable {} should have been present",
+                        opcode_count_name(index)
+                    ))
+                    .try_into()
+                    .expect(&format!(
+                        "global variable {} should be u64",
+                        opcode_count_name(index)
+                    ));
+                match count {
+                    0 => None,
+                    count => Some((*opcode, count)),
+                }
+            })
+            .collect())
     }
 }

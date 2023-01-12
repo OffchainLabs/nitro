@@ -24,28 +24,22 @@ pub type OpCosts = fn(&Operator) -> u64;
 #[repr(C)]
 #[derive(Clone)]
 pub struct StylusDebugConfig {
-    pub enable_operator_count: bool,
-    pub max_unique_operator_count: usize,
     pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
 }
 
 impl Default for StylusDebugConfig {
     fn default() -> Self {
         Self {
-            enable_operator_count: false,
-            max_unique_operator_count: 0,
             opcode_indexes: Arc::new(Mutex::new(HashMap::default())),
         }
     }
 }
 
 impl StylusDebugConfig {
-    pub fn new(enable_operator_count: bool, max_unique_operator_count: usize) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let opcode_indexes =
-            HashMap::with_capacity_and_hasher(max_unique_operator_count, Default::default());
+            HashMap::with_capacity_and_hasher(OperatorCode::OPERATOR_COUNT, Default::default());
         Ok(Self {
-            enable_operator_count,
-            max_unique_operator_count,
             opcode_indexes: Arc::new(Mutex::new(opcode_indexes)),
         })
     }
@@ -157,13 +151,9 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
 
-        if self.debug.is_some() {
-            let debug = self.debug.clone().unwrap();
-
-            if debug.enable_operator_count {
-                let counter = Counter::new(debug.max_unique_operator_count, debug.opcode_indexes);
-                compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
-            }
+        if let Some(debug) = &self.debug {
+            let counter = Counter::new(debug.opcode_indexes.clone());
+            compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
         }
 
         Store::new(compiler)

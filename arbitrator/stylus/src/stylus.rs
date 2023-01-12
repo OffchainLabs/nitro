@@ -10,7 +10,7 @@ use eyre::{bail, eyre, ErrReport, Result};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
 use prover::programs::{
-    counter::{opcode_count_name, CountedMachine},
+    counter::{opcode_count_name, CountingMachine},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     prelude::*,
@@ -109,20 +109,28 @@ impl MeteredMachine for NativeInstance {
     }
 }
 
-impl CountedMachine for NativeInstance {
+impl CountingMachine for NativeInstance {
     fn get_opcode_counts(
         &mut self,
         opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
     ) -> Result<BTreeMap<OperatorCode, u64>> {
-        let mut counts = BTreeMap::new();
-        for (opcode, index) in opcode_indexes.lock().clone().iter() {
-            let count: u64 = self.get_global(&opcode_count_name(index))?;
-            if count > 0 {
-                counts.insert(*opcode, count);
-            }
-        }
-
-        Ok(counts)
+        Ok(opcode_indexes
+            .lock()
+            .clone()
+            .iter()
+            .filter_map(|(opcode, index)| -> Option<(OperatorCode, u64)> {
+                let count = self
+                    .get_global::<u64>(&opcode_count_name(index))
+                    .expect(&format!(
+                        "global variable {} should have been present",
+                        opcode_count_name(index)
+                    ));
+                match count {
+                    0 => None,
+                    count => Some((*opcode, count)),
+                }
+            })
+            .collect())
     }
 }
 

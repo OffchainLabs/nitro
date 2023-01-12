@@ -1,6 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::inconsistent_digit_grouping
+)]
+
 use crate::{
     env::WasmEnv,
     run::{RunProgram, UserOutcome},
@@ -8,11 +13,12 @@ use crate::{
 };
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
-use prover::programs::config::StylusDebugConfig;
-use prover::programs::counter::CountedMachine;
 use prover::{
     binary,
-    programs::{prelude::*, ModuleMod, STYLUS_ENTRY_POINT},
+    programs::{
+        config::StylusDebugConfig, counter::CountingMachine, prelude::*, ModuleMod,
+        STYLUS_ENTRY_POINT,
+    },
     Machine,
 };
 use std::path::Path;
@@ -48,8 +54,6 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     Ok(NativeInstance::new_sans_env(instance, store))
 }
 
-#[allow(clippy::field_reassign_with_default)]
-#[allow(clippy::inconsistent_digit_grouping)]
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
     config.start_gas = 1_000_000;
@@ -60,7 +64,6 @@ fn uniform_cost_config() -> StylusConfig {
 }
 
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn test_gas() -> Result<()> {
     let mut config = StylusConfig::default();
     config.costs = super::expensive_add;
@@ -97,7 +100,6 @@ fn test_gas() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn test_depth() -> Result<()> {
     // in depth.wat
     //    the `depth` global equals the number of times `recurse` is called
@@ -174,9 +176,8 @@ fn test_start() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn test_count_clz() -> Result<()> {
-    let debug = StylusDebugConfig::new(true, 255)?;
+    let debug = StylusDebugConfig::new()?;
     let opcode_indexes = debug.opcode_indexes.clone();
 
     let mut config = StylusConfig::default();
@@ -253,7 +254,6 @@ fn test_module_mod() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn test_heap() -> Result<()> {
     // test wasms
     //     memory.wat   there's a 2-page memory with an upper limit of 4
@@ -372,9 +372,8 @@ fn test_c() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::field_reassign_with_default)]
 fn test_counter_rust() -> Result<()> {
-    let debug = StylusDebugConfig::new(true, 255)?;
+    let debug = StylusDebugConfig::new()?;
     let opcode_indexes = debug.opcode_indexes.clone();
 
     let mut config = StylusConfig::default();
