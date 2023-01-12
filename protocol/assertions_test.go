@@ -112,6 +112,49 @@ func TestAssertionChain(t *testing.T) {
 	}
 }
 
+func TestAssertionChain_CreateLeaf_MustHaveValidParent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timeRef := util.NewArtificialTimeReference()
+	staker := common.BytesToAddress([]byte{1})
+
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	require.Equal(t, 1, len(assertionsChain.assertions))
+	require.Equal(t, AssertionSequenceNumber(0), assertionsChain.latestConfirmed)
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+		genesis := p.LatestConfirmed(tx)
+		require.Equal(t, StateCommitment{
+			Height:    0,
+			StateRoot: common.Hash{},
+		}, genesis.StateCommitment)
+
+		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+		chain.SetBalance(tx, staker, bigBalance)
+
+		foo := common.BytesToHash([]byte("foo"))
+		bar := common.BytesToHash([]byte("bar"))
+		_ = bar
+		comm := StateCommitment{Height: 1, StateRoot: foo}
+		leaf, err := chain.CreateLeaf(tx, genesis, comm, staker)
+		require.NoError(t, err)
+
+		// Trying to create a new leaf with the same commitment as before should fail.
+		leaf.StateCommitment = StateCommitment{Height: 0, StateRoot: bar} // Mutate leaf.
+		_, err = chain.CreateLeaf(tx, leaf, comm, staker)
+		require.ErrorIs(t, err, ErrVertexAlreadyExists)
+
+		// Trying to create a new leaf on top of a non-existent parent should fail.
+		leaf.StateCommitment = StateCommitment{Height: 0, StateRoot: bar} // Mutate leaf.
+		comm = StateCommitment{Height: 2, StateRoot: foo}
+		_, err = chain.CreateLeaf(tx, leaf, comm, staker)
+		require.ErrorIs(t, err, ErrParentDoesNotExist)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 	ctx := context.Background()
 	assertionsChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
@@ -547,7 +590,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 }
 
 func TestAssertionChain_Merge(t *testing.T) {
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	t.Run("past deadline", func(t *testing.T) {
 		timeRef := util.NewArtificialTimeReference()
 		counter := util.NewCountUpTimer(timeRef)
@@ -558,13 +601,13 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		})
 		ps := util.Some(&ChallengeVertex{
-			psTimer: counter,
+			PsTimer: counter,
 			Commitment: util.HistoryCommitment{
 				Height: 1,
 			},
 		})
 		mergingTo := &ChallengeVertex{
-			challenge: util.Some(&Challenge{
+			Challenge: util.Some(&Challenge{
 				rootAssertion: rootAssertion,
 			}),
 			PresumptiveSuccessor: ps,
@@ -665,7 +708,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			Merkle: exp.Root(),
 		}
 		mergingTo := &ChallengeVertex{
-			psTimer:    counter,
+			PsTimer:    counter,
 			Commitment: mergingToCommit,
 		}
 		exp = util.ExpansionFromLeaves(stateRoots[:4])
@@ -674,8 +717,8 @@ func TestAssertionChain_Merge(t *testing.T) {
 			Merkle: exp.Root(),
 		}
 		mergingFrom := &ChallengeVertex{
-			psTimer: counter,
-			challenge: util.Some[*Challenge](&Challenge{
+			PsTimer: counter,
+			Challenge: util.Some[*Challenge](&Challenge{
 				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
@@ -719,7 +762,7 @@ func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	require.ErrorContains(t, chain.DeductFromBalance(
-		&ActiveTx{txStatus: readWriteTxStatus},
+		&ActiveTx{TxStatus: ReadWriteTxStatus},
 		common.BytesToAddress([]byte{1}),
 		AssertionStakeWei,
 	), "0 < 1000000000: insufficient balance")
@@ -728,7 +771,7 @@ func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
 func TestAssertionChain_ChallengePeriodLength(t *testing.T) {
 	ctx := context.Background()
 	cp := 123 * time.Second
-	tx := &ActiveTx{txStatus: readOnlyTxStatus}
+	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), cp)
 	require.Equal(t, chain.ChallengePeriodLength(tx), cp)
 }
@@ -745,7 +788,7 @@ func TestAssertionChain_RetrieveAssertions(t *testing.T) {
 	require.Equal(t, chain.Inbox().messages, NewInbox(ctx).messages)
 	staker := common.BytesToAddress([]byte{1})
 	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	p := chain.LatestConfirmed(tx)
 	a, err := chain.CreateLeaf(tx, p, StateCommitment{Height: 1}, staker)
@@ -763,7 +806,7 @@ func TestAssertionChain_LeafCreationErrors(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	badChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod+1)
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	lc := chain.LatestConfirmed(tx)
 	_, err := badChain.CreateLeaf(tx, lc, StateCommitment{}, common.BytesToAddress([]byte{}))
 	require.ErrorIs(t, err, ErrWrongChain)
@@ -774,7 +817,7 @@ func TestAssertionChain_LeafCreationErrors(t *testing.T) {
 func TestAssertion_ErrWrongState(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	a := chain.LatestConfirmed(tx)
 	require.ErrorIs(t, a.RejectForPrev(tx), ErrWrongState)
 	require.ErrorIs(t, a.RejectForLoss(tx), ErrWrongState)
@@ -786,7 +829,7 @@ func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
 	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
@@ -799,7 +842,7 @@ func TestAssertion_ErrNotYet(t *testing.T) {
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
 	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
@@ -811,7 +854,7 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
 	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
@@ -820,4 +863,25 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	require.ErrorIs(t, newA.RejectForLoss(tx), ErrInvalidOp)
 	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalidOp)
 	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrInvalidOp)
+}
+
+func TestAssertion_HasConfirmedAboveSeqNumber(t *testing.T) {
+	c := &Challenge{}
+	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 0))
+	a := util.Some(&Assertion{
+		chain: &AssertionChain{
+			challengeVerticesByCommitHash: make(map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex),
+		}})
+	c.rootAssertion = a
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 0))
+
+	h := c.ParentStateCommitment().Hash()
+	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[ChallengeCommitHash(h)] = map[VertexCommitHash]*ChallengeVertex{
+		VertexCommitHash(h): {SequenceNum: 100, Status: ConfirmedAssertionState},
+	}
+
+	require.True(t, c.HasConfirmedAboveSeqNumber(tx, 99))
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 100))
+	require.False(t, c.HasConfirmedAboveSeqNumber(tx, 101))
 }

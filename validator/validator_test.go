@@ -280,7 +280,7 @@ func createTwoValidatorFork(
 
 func Test_findLatestValidAssertion(t *testing.T) {
 	ctx := context.Background()
-	tx := &protocol.ActiveTx{}
+	tx := &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}
 	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
 		v, p, _ := setupValidator(t)
 		genesis := &protocol.Assertion{

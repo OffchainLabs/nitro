@@ -11,13 +11,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	ErrConfirmed          = errors.New("Vertex has been confirmed")
+	ErrSiblingConfirmed   = errors.New("Vertex sibling has been confirmed")
+	ErrPrevNone           = errors.New("Vertex parent is none")
+	ErrChallengeCompleted = errors.New("Challenge has been completed")
+)
+
 type vertexTracker struct {
-	actEveryNSeconds    time.Duration
-	timeRef             util.TimeReference
-	challenge           *protocol.Challenge
-	vertex              *protocol.ChallengeVertex
-	validator           *Validator
-	awaitingOneStepFork bool
+	actEveryNSeconds      time.Duration
+	timeRef               util.TimeReference
+	challenge             *protocol.Challenge
+	challengePeriodLenth  time.Duration
+	challengeCreationTime time.Time
+	vertex                *protocol.ChallengeVertex
+	validator             *Validator
+	awaitingOneStepFork   bool
 }
 
 func newVertexTracker(timeRef util.TimeReference, actEveryNSeconds time.Duration, challenge *protocol.Challenge, vertex *protocol.ChallengeVertex, validator *Validator) *vertexTracker {
@@ -43,7 +52,18 @@ func (v *vertexTracker) track(ctx context.Context) {
 		select {
 		case <-t.C():
 			if err := v.actOnBlockChallenge(ctx); err != nil {
-				log.Error(err)
+				switch {
+				case errors.Is(err, ErrConfirmed):
+					return
+				case errors.Is(err, ErrSiblingConfirmed):
+					return
+				case errors.Is(err, ErrChallengeCompleted):
+					return
+				case errors.Is(err, ErrPrevNone):
+					return
+				default:
+					log.Error(err)
+				}
 			}
 		case <-ctx.Done():
 			log.WithFields(logrus.Fields{
@@ -71,7 +91,25 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	}
 	v.vertex = vertex
 	if v.vertex.Prev.IsNone() {
+		return ErrPrevNone
+	}
+	if v.vertex.Status == protocol.ConfirmedAssertionState {
+		return ErrConfirmed
+	}
+	var challengeCompleted bool
+	var siblingConfirmed bool
+	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challengeCompleted = v.challenge.Completed(tx)
+		siblingConfirmed = v.challenge.HasConfirmedAboveSeqNumber(tx, v.vertex.SequenceNum)
 		return nil
+	}); err != nil {
+		return err
+	}
+	if challengeCompleted {
+		return ErrChallengeCompleted
+	}
+	if siblingConfirmed {
+		return ErrSiblingConfirmed
 	}
 
 	// We check if we are one-step away from the parent, in which case we then
@@ -194,4 +232,29 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 		return nil, err
 	}
 	return mergedTo, nil
+}
+
+func (v *vertexTracker) canConfirm() bool {
+	// Can't confirm if the vertex is not in correct state.
+	if v.vertex.Status != protocol.PendingAssertionState {
+		return false
+	}
+	// Can't confirm if parent isn't confirmed, exit early.
+	if v.vertex.Prev.Unwrap().Status != protocol.ConfirmedAssertionState {
+		return false
+	}
+
+	// Can confirm if vertex's parent has a sub-challenge, and the sub-challenge has reported vertex as its winner.
+	subChallenge := v.vertex.Prev.Unwrap().SubChallenge
+	if !subChallenge.IsNone() {
+		return subChallenge.Unwrap().Winner == v.vertex
+	}
+
+	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
+	if v.vertex.PsTimer.Get() > v.challengePeriodLenth {
+		return true
+	}
+
+	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
+	return v.timeRef.Get().After(v.challengeCreationTime.Add(2 * v.challengePeriodLenth))
 }
