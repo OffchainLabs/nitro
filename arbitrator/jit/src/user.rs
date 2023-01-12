@@ -17,7 +17,7 @@ macro_rules! reject {
 reject!(
     compile_user_wasm,
     call_user_wasm,
-    read_rust_vec,
-    free_rust_vec,
+    read_rust_vec_len,
+    rust_vec_into_slice,
     rust_config_impl,
 );

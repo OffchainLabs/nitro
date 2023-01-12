@@ -117,8 +117,8 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
 
             github!("arbos/programs.compileUserWasmRustImpl") => func!(user::compile_user_wasm),
             github!("arbos/programs.callUserWasmRustImpl") => func!(user::call_user_wasm),
-            github!("arbos/programs.readRustVecImpl") => func!(user::read_rust_vec),
-            github!("arbos/programs.freeRustVecImpl") => func!(user::free_rust_vec),
+            github!("arbos/programs.readRustVecLenImpl") => func!(user::read_rust_vec_len),
+            github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
             github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),
 
             github!("arbcompress.brotliCompress") => func!(arbcompress::brotli_compress),
