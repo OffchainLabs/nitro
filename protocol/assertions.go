@@ -1103,7 +1103,7 @@ func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
 		if challenge.rootAssertion.IsNone() {
 			continue
 		}
-		if challenge.Completed(&ActiveTx{txStatus: readOnlyTxStatus}) {
+		if challenge.Completed(&ActiveTx{TxStatus: ReadOnlyTxStatus}) {
 			continue
 		}
 
