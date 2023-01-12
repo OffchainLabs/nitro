@@ -65,44 +65,8 @@ type DataAvailabilityCheck struct {
 	config         *DataAvailabilityCheckConfig
 	inboxAddr      *common.Address
 	inboxContract  *bridgegen.SequencerInbox
-	dataSource     arbstate.DataAvailabilityReader
 	urlToReaderMap map[string]arbstate.DataAvailabilityReader
 	checkInterval  time.Duration
-}
-
-type emptyStorageService struct {
-}
-
-func NewEmptyStorageService() *emptyStorageService {
-	return &emptyStorageService{}
-}
-
-func (s *emptyStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return nil, das.ErrNotFound
-}
-
-func (s *emptyStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
-	return nil
-}
-
-func (s *emptyStorageService) Sync(ctx context.Context) error {
-	return nil
-}
-
-func (s *emptyStorageService) Close(ctx context.Context) error {
-	return nil
-}
-
-func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.DiscardImmediately, nil
-}
-
-func (s *emptyStorageService) String() string {
-	return "emptyStorageService"
-}
-
-func (s *emptyStorageService) HealthCheck(ctx context.Context) error {
-	return nil
 }
 
 func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *DataAvailabilityCheckConfig) (*DataAvailabilityCheck, error) {
@@ -115,10 +79,6 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 		return nil, err
 	}
 	inboxContract, err := bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
-	if err != nil {
-		return nil, err
-	}
-	dataSource, err := das.NewChainFetchReader(NewEmptyStorageService(), l1Client, *seqInboxAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +99,6 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 		config:         dataAvailabilityCheckConfig,
 		inboxAddr:      seqInboxAddress,
 		inboxContract:  inboxContract,
-		dataSource:     dataSource,
 		urlToReaderMap: urlToReaderMap,
 		checkInterval:  dataAvailabilityCheckConfig.CheckInterval,
 	}, nil
