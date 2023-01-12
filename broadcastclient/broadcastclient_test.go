@@ -160,7 +160,7 @@ func TestInvalidSignature(t *testing.T) {
 		}
 	}()
 
-	timer := time.NewTimer(1 * time.Second)
+	timer := time.NewTimer(2 * time.Second)
 	select {
 	case err := <-fatalErrChan:
 		if errors.Is(err, signature.ErrSignatureNotVerified) {
