@@ -5,4 +5,8 @@ go_library(
     srcs = ["web.go"],
     importpath = "github.com/OffchainLabs/new-rollup-exploration/web",
     visibility = ["//visibility:public"],
+    embedsrcs = glob(["dist/**"]),
+    deps = [
+        "@com_github_labstack_echo_v5//:go_default_library",
+    ],
 )

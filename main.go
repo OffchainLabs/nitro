@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -67,8 +68,7 @@ type server struct {
 func (s *server) renderConfig(c echo.Context) error {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	c.JSON(http.StatusOK, s.cfg)
-	return nil
+	return c.JSON(http.StatusOK, s.cfg)
 }
 
 func (s *server) updateConfig(c echo.Context) error {
@@ -79,14 +79,10 @@ func (s *server) updateConfig(c echo.Context) error {
 	defer c.Request().Body.Close()
 	enc, err := io.ReadAll(c.Request().Body)
 	if err != nil {
-		log.Error(err)
-		// http.Error(w, "Could not read body", http.StatusBadRequest)
-		return nil
+		return err
 	}
 	if err := json.Unmarshal(enc, req); err != nil {
-		log.Error(err)
-		// http.Error(w, "Could not decode", http.StatusBadRequest)
-		return nil
+		return err
 	}
 
 	log.Info("Received update config request, restarting application...")
@@ -104,8 +100,7 @@ func (s *server) updateConfig(c echo.Context) error {
 
 	log.Info("Successfully restarted background routines")
 
-	c.JSON(http.StatusOK, s.cfg)
-	return nil
+	return c.JSON(http.StatusOK, s.cfg)
 }
 
 type assertionCreationRequest struct {
@@ -113,37 +108,26 @@ type assertionCreationRequest struct {
 }
 
 func (s *server) triggerAssertionCreation(c echo.Context) error {
-	if c.Request().Method != http.MethodPost {
-		// http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return nil
-	}
-
 	req := &assertionCreationRequest{}
 	defer c.Request().Body.Close()
 	enc, err := io.ReadAll(c.Request().Body)
 	if err != nil {
-		// http.Error(w, "Could not read body", http.StatusBadRequest)
-		return nil
+		return err
 	}
 	if err := json.Unmarshal(enc, req); err != nil {
-		// http.Error(w, "Could not decode", http.StatusBadRequest)
-		return nil
+		return err
 	}
 	if int(req.Index) >= len(s.validators) {
-		// http.Error(w, "Validator index out of range", http.StatusBadRequest)
-		return nil
+		return errors.New("index out of rnage")
 	}
 	s.lock.RLock()
 	v := s.validators[req.Index]
 	s.lock.RUnlock()
 	assertion, err := v.SubmitLeafCreation(s.ctx)
 	if err != nil {
-		log.WithError(err).Error("Failed to create a new assertion leaf")
-		// http.Error(w, "Assertion creation failed", http.StatusInternalServerError)
-		return nil
+		return err
 	}
-	c.JSON(http.StatusOK, assertion)
-	return nil
+	return c.JSON(http.StatusOK, assertion)
 }
 
 func (s *server) registerWebsocketConnection(c echo.Context) error {
