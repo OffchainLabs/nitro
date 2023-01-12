@@ -37,6 +37,10 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		encData := base64.StdEncoding.EncodeToString(data)
 		res.PreimagesB64[encHash] = encData
 	}
+	for _, binfo := range entry.BatchInfo {
+		encData := base64.StdEncoding.EncodeToString(binfo.Data)
+		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
+	}
 	return res
 }
 
@@ -63,6 +67,17 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			return nil, err
 		}
 		valInput.Preimages[common.BytesToHash(hash)] = data
+	}
+	for _, binfo := range entry.BatchInfo {
+		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := validator.BatchInfo{
+			Number: binfo.Number,
+			Data:   data,
+		}
+		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
 	return valInput, nil
 }

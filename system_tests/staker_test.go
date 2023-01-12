@@ -20,14 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_arb"
-	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {
@@ -127,13 +126,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	locator, err := server_common.NewMachineLocator("")
-	Require(t, err)
-	spawner, err := server_arb.NewArbitratorSpawner(locator, server_arb.DefaultArbitratorSpawnerConfigFetcher)
-	Require(t, err)
+
+	valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	spawner := valNode.GetExec()
+	blockValidatorConfig := staker.DefaultBlockValidatorConfig
+	blockValidatorConfig.URL = valStack.WSEndpoint()
+
 	statelessA, err := staker.NewStatelessBlockValidator(
 		spawner,
-		[]validator.ValidationSpawner{},
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
@@ -141,7 +141,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.ChainDB,
 		l2nodeA.ArbDB,
 		nil,
-		&staker.DefaultBlockValidatorConfig,
+		&blockValidatorConfig,
 	)
 	Require(t, err)
 	stakerA, err := staker.NewStaker(
@@ -162,7 +162,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		spawner,
-		[]validator.ValidationSpawner{},
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,

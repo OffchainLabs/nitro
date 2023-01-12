@@ -618,7 +618,16 @@ func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	for _, spawner := range v.validationSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (v *StatelessBlockValidator) Stop() {}
+func (v *StatelessBlockValidator) Stop() {
+	for _, spawner := range v.validationSpawners {
+		spawner.Stop()
+	}
+}

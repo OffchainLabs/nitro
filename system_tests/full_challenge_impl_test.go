@@ -253,7 +253,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, nil, asserterRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
@@ -262,7 +262,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, nil, &challengerRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
@@ -333,9 +333,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 	spawner, err := server_arb.NewArbitratorSpawner(locator, server_arb.DefaultArbitratorSpawnerConfigFetcher)
 	Require(t, err)
-	spawner.Start(ctx)
+	err = spawner.Start(ctx)
+	Require(t, err)
 	defer spawner.Stop()
-	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, []validator.ValidationSpawner{}, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
+	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -343,7 +344,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(spawner, []validator.ValidationSpawner{}, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
+	challengerValidator, err := staker.NewStatelessBlockValidator(spawner, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}

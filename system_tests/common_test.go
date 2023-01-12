@@ -6,10 +6,16 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/validator"
+
+	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/valnode"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -201,6 +207,58 @@ func getTestStackConfig(t *testing.T) *node.Config {
 	return &stackConfig
 }
 
+func createDefaultStackForTest(dataDir string) (*node.Node, error) {
+	stackConf := node.DefaultConfig
+	var err error
+	stackConf.DataDir = dataDir
+	stackConf.HTTPHost = ""
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		return nil, fmt.Errorf("error creating protocol stack: %w", err)
+	}
+	return stack, nil
+}
+
+func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
+	stackConf := node.DefaultConfig
+	stackConf.HTTPPort = 0
+	stackConf.DataDir = ""
+	stackConf.WSHost = "127.0.0.1"
+	stackConf.WSPort = 0
+	stackConf.WSModules = []string{server_api.Namespace}
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
+	stack, err := node.New(&stackConf)
+	Require(t, err)
+
+	configFetcher := func() *valnode.Config { return config }
+	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
+	Require(t, err)
+
+	err = stack.Start()
+	Require(t, err)
+
+	err = valnode.Start(ctx)
+	Require(t, err)
+
+	go func() {
+		<-ctx.Done()
+		stack.Close()
+	}()
+
+	return valnode, stack
+}
+
+func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
+	clientConfig.BlockValidator.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.JWTSecret = ""
+}
+
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
@@ -295,7 +353,7 @@ func createL2BlockChain(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	stack, err := arbnode.CreateDefaultStackForTest(dataDir)
+	stack, err := createDefaultStackForTest(dataDir)
 	Require(t, err)
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
@@ -380,10 +438,17 @@ func createTestNodeOnL1WithConfigImpl(
 		nodeConfig.DelayedSequencer.Enable = false
 	}
 
+	var execSpawner validator.ExecutionSpawner
+	if nodeConfig.ValidatorRequired() {
+		valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		configByValidationNode(t, nodeConfig, valStack)
+		execSpawner = valNode.GetExec()
+	}
+
 	var err error
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
-		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
+		execSpawner, addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
@@ -406,8 +471,16 @@ func CreateTestL2WithConfig(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
+
+	var execSpawner validator.ExecutionSpawner
+	if nodeConfig.ValidatorRequired() {
+		valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		configByValidationNode(t, nodeConfig, valStack)
+		execSpawner = valNode.GetExec()
+	}
+
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, execSpawner, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -493,7 +566,7 @@ func Create2ndNodeWithConfig(
 		Fail(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	l2stack, err := arbnode.CreateDefaultStackForTest("")
+	l2stack, err := createDefaultStackForTest("")
 	Require(t, err)
 
 	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
@@ -508,7 +581,14 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	var execSpawner validator.ExecutionSpawner
+	if nodeConfig.ValidatorRequired() {
+		valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		configByValidationNode(t, nodeConfig, valStack)
+		execSpawner = valNode.GetExec()
+	}
+
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, execSpawner, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

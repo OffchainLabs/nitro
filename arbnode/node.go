@@ -450,6 +450,16 @@ func (c *Config) ForwardingTarget() string {
 	return c.ForwardingTargetImpl
 }
 
+func (c *Config) ValidatorRequired() bool {
+	if c.BlockValidator.Enable {
+		return true
+	}
+	if c.Staker.Enable {
+		return !c.Staker.Dangerous.WithoutBlockValidator
+	}
+	return false
+}
+
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
@@ -901,12 +911,10 @@ func createNodeImpl(
 	}
 	txStreamer.SetInboxReader(inboxReader)
 
-	blockValidatorConf := &config.BlockValidator
-
 	var blockValidator *staker.BlockValidator
 	var statelessBlockValidator *staker.StatelessBlockValidator
 
-	if err == nil {
+	if execSpawner != nil {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			execSpawner,
 			inboxReader,
@@ -921,14 +929,13 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+	} else if config.ValidatorRequired() {
+		return nil, fmt.Errorf("%w: failed to find machines", err)
 	} else {
-		if blockValidatorConf.Enable || config.Staker.Enable {
-			return nil, fmt.Errorf("%w: failed to find machines", err)
-		}
 		log.Warn("Failed to find machines", "err", err)
 	}
 
-	if blockValidatorConf.Enable {
+	if config.BlockValidator.Enable {
 		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
@@ -1480,22 +1487,6 @@ func (n *Node) StopAndWait() {
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stak close", "err", err)
 	}
-}
-
-func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
-	stackConf := node.DefaultConfig
-	var err error
-	stackConf.DataDir = dataDir
-	stackConf.HTTPHost = ""
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
-	stackConf.P2P.NoDiscovery = true
-	stackConf.P2P.ListenAddr = ""
-
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		return nil, fmt.Errorf("error creating protocol stack: %w", err)
-	}
-	return stack, nil
 }
 
 func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -31,7 +33,9 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *ValidationInp
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
-	return valRun.Result()
+	res, err := valRun.Result()
+	log.Info("validation serviced", "before", entry.StartState, "after", res, "err", err)
+	return res, err
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
