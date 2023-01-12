@@ -135,9 +135,9 @@ compile_error!("Architectures with less than a 32 bit pointer width are not supp
 impl ProgramCounter {
     pub fn serialize(self) -> Bytes32 {
         let mut b = [0u8; 32];
-        b[28..].copy_from_slice(&(self.inst).to_be_bytes());
-        b[24..28].copy_from_slice(&(self.func).to_be_bytes());
-        b[20..24].copy_from_slice(&(self.module).to_be_bytes());
+        b[28..].copy_from_slice(&self.inst.to_be_bytes());
+        b[24..28].copy_from_slice(&self.func.to_be_bytes());
+        b[20..24].copy_from_slice(&self.module.to_be_bytes());
         Bytes32(b)
     }
 

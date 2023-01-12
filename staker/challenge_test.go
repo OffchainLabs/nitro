@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package staker
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
@@ -47,7 +48,7 @@ func CreateChallenge(
 	auth *bind.TransactOpts,
 	client bind.ContractBackend,
 	ospEntry common.Address,
-	inputMachine MachineInterface,
+	inputMachine validator.MachineInterface,
 	maxInboxMessage uint64,
 	asserter common.Address,
 	challenger common.Address,
@@ -108,8 +109,8 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 
 func runChallengeTest(
 	t *testing.T,
-	baseMachine *ArbitratorMachine,
-	incorrectMachine MachineInterface,
+	baseMachine *validator.ArbitratorMachine,
+	incorrectMachine validator.MachineInterface,
 	asserterIsCorrect bool,
 	testTimeout bool,
 	maxInboxMessage uint64,
@@ -130,7 +131,7 @@ func runChallengeTest(
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend)
 	backend.Commit()
 
-	var asserterMachine, challengerMachine MachineInterface
+	var asserterMachine, challengerMachine validator.MachineInterface
 	var expectedWinner common.Address
 	if asserterIsCorrect {
 		expectedWinner = asserter.From
@@ -227,7 +228,7 @@ func runChallengeTest(
 	t.Fatal("challenge timed out without winner")
 }
 
-func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *ArbitratorMachine {
+func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *validator.ArbitratorMachine {
 	_, filename, _, _ := runtime.Caller(0)
 	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
 
@@ -238,7 +239,7 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *Arb
 		modulePaths = append(modulePaths, path.Join(wasmDir, moduleName))
 	}
 
-	machine, err := LoadSimpleMachine(wasmPath, modulePaths)
+	machine, err := validator.LoadSimpleMachine(wasmPath, modulePaths)
 	Require(t, err)
 
 	return machine
@@ -246,37 +247,37 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *Arb
 
 func TestChallengeToOSP(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := NewIncorrectMachine(machine, 200)
+	IncorrectMachine := validator.NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := NewIncorrectMachine(machine, 200)
+	IncorrectMachine := validator.NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
-	IncorrectMachine := NewIncorrectMachine(machine, 10)
+	IncorrectMachine := validator.NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
-	IncorrectMachine := NewIncorrectMachine(machine, 10)
+	IncorrectMachine := validator.NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToTimeout(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := NewIncorrectMachine(machine, 200)
+	IncorrectMachine := validator.NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, false, true, 0)
 }
 
 func TestChallengeToTooFar(t *testing.T) {
 	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
-	Require(t, machine.SetGlobalState(GoGlobalState{PosInBatch: 10}))
+	Require(t, machine.SetGlobalState(validator.GoGlobalState{PosInBatch: 10}))
 	incorrectMachine := machine.Clone()
 	Require(t, incorrectMachine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
 	runChallengeTest(t, machine, incorrectMachine, false, false, 9)
@@ -284,7 +285,7 @@ func TestChallengeToTooFar(t *testing.T) {
 
 func TestChallengeToFailedTooFar(t *testing.T) {
 	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
-	Require(t, machine.SetGlobalState(GoGlobalState{PosInBatch: 10}))
+	Require(t, machine.SetGlobalState(validator.GoGlobalState{PosInBatch: 10}))
 	incorrectMachine := machine.Clone()
 	Require(t, machine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
 	runChallengeTest(t, machine, incorrectMachine, true, false, 11)

@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package staker
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -224,7 +225,7 @@ type OurStakerInfo struct {
 
 // Returns (block number, global state inbox position is invalid, error).
 // If global state is invalid, block number is set to the last of the batch.
-func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
+func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (int64, bool, error) {
 	var batchHeight arbutil.MessageIndex
 	if gs.Batch > 0 {
 		var err error
@@ -276,7 +277,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	}
 
 	startBlock := v.l2Blockchain.GetBlockByHash(startState.GlobalState.BlockHash)
-	if startBlock == nil && (startState.GlobalState != GoGlobalState{}) {
+	if startBlock == nil && (startState.GlobalState != validator.GoGlobalState{}) {
 		expectedBlockHeight, inboxPositionInvalid, err := v.blockNumberFromGlobalState(startState.GlobalState)
 		if err != nil {
 			return nil, false, err
@@ -470,7 +471,7 @@ func (v *L1Validator) createNewNodeAction(
 	localBatchCount uint64,
 	prevInboxMaxCount *big.Int,
 	startBlock *types.Block,
-	startState *ExecutionState,
+	startState *validator.ExecutionState,
 	lastNodeHashIfExists *common.Hash,
 ) (nodeAction, error) {
 	if !prevInboxMaxCount.IsUint64() {
@@ -558,14 +559,14 @@ func (v *L1Validator) createNewNodeAction(
 	}
 	assertion := &Assertion{
 		BeforeState: startState,
-		AfterState: &ExecutionState{
-			GlobalState: GoGlobalState{
+		AfterState: &validator.ExecutionState{
+			GlobalState: validator.GoGlobalState{
 				BlockHash:  assertingBlock.Hash(),
 				SendRoot:   assertingBlockExtra.SendRoot,
 				Batch:      afterGsBatch,
 				PosInBatch: afterGsPosInBatch,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: validator.MachineStatusFinished,
 		},
 		NumBlocks: assertionNumBlocks,
 	}
@@ -591,15 +592,15 @@ func (v *L1Validator) createNewNodeAction(
 }
 
 // Returns (execution state, inbox max count, block proposed, error)
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*ExecutionState, *big.Int, uint64, error) {
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		return &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		return &validator.ExecutionState{
+			GlobalState:   validator.GoGlobalState{},
+			MachineStatus: validator.MachineStatusFinished,
 		}, big.NewInt(1), creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)

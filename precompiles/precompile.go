@@ -591,9 +591,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 }
 
 func (p *Precompile) CloneWithImpl(impl interface{}) *Precompile {
-	dup := *p
-	dup.implementer = reflect.ValueOf(impl)
-	return &dup
+	clone := *p
+	clone.implementer = reflect.ValueOf(impl)
+	return &clone
 }
 
 func (p *Precompile) GetMethodID(name string) bytes4 {

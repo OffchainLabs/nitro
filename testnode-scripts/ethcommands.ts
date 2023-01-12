@@ -17,6 +17,10 @@ async function sendTransaction(argv: any, threadId: number) {
                 nonce: startNonce + index,
             })
         console.log(response)
+        if (argv.wait) {
+          const receipt = await response.wait()
+          console.log(receipt)
+        }
         if (argv.delay > 0) {
             await new Promise(f => setTimeout(f, argv.delay));
         }
@@ -37,6 +41,11 @@ export const bridgeFundsCommand = {
       describe: "account (see general help)",
       default: "funnel",
     },
+    wait: {
+      boolean: true,
+      describe: "wait till l2 has balance of ethamount",
+      default: false,
+    },
   },
   handler: async (argv: any) => {
     argv.provider = new ethers.providers.WebSocketProvider(argv.l1url);
@@ -54,6 +63,18 @@ export const bridgeFundsCommand = {
     await runStress(argv, sendTransaction);
 
     argv.provider.destroy();
+    if (argv.wait) {
+      const l2provider = new ethers.providers.WebSocketProvider(argv.l2url);
+      const account = namedAccount(argv.from, argv.threadId).connect(l2provider)
+      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+      while (true) {
+        const balance = await account.getBalance()
+        if (balance >= ethers.utils.parseEther(argv.ethamount)) {
+          return
+        }
+        await sleep(100)
+      }
+    }
   },
 };
 
@@ -75,6 +96,11 @@ export const sendL1Command = {
       string: true,
       describe: "address (see general help)",
       default: "funnel",
+    },
+    wait: {
+      boolean: true,
+      describe: "wait for transaction to complete",
+      default: false,
     },
     data: { string: true, describe: "data" },
   },
@@ -105,6 +131,11 @@ export const sendL2Command = {
       string: true,
       describe: "address (see general help)",
       default: "funnel",
+    },
+    wait: {
+      boolean: true,
+      describe: "wait for transaction to complete",
+      default: false,
     },
     data: { string: true, describe: "data" },
   },

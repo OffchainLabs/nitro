@@ -13,28 +13,21 @@ use std::{mem, path::Path, sync::Arc};
 /// λ(wasm []byte, params *StylusConfig) (status userStatus, machine *Machine, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
-    sp: GoStack,
+    sp: usize,
 ) {
     println!("{}", "compile".blue());
-    const WASM_PTR: usize = 0;
-    const WASM_LEN: usize = 1;
-    const _WASM_CAP: usize = 2;
-    const CONFIG: usize = 3;
-    const STATUS: usize = 4;
-    const MACHINE: usize = 5;
-    const ERROR: usize = 6;
+    let mut sp = GoStack::new(sp);
+    let wasm = sp.read_go_slice_owned();
+    let config = Box::from_raw(sp.read_u64() as *mut StylusConfig);
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
             let error = format!("{}: {:?}", $msg, $error).as_bytes().to_vec();
-            sp.write_u32(ERROR, heapify(error));
-            sp.write_u32(STATUS, 1);
+            sp.write_u32(1);
+            sp.write_u32(heapify(error));
             return;
         }};
     }
-
-    let wasm = read_go_slice(sp, WASM_PTR, WASM_LEN);
-    let config = Box::from_raw(sp.read_u32(CONFIG) as *mut StylusConfig);
 
     let mut bin = match prover::binary::parse(&wasm, Path::new("user")) {
         Ok(bin) => bin,
@@ -60,10 +53,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         Some(stylus_data),
     );
     match machine {
-        Ok(machine) => sp.write_u32(MACHINE, heapify(machine)),
+        Ok(machine) => sp.write_u32(heapify(machine)),
         Err(err) => error!("failed to instrument user program", err),
     }
-    sp.write_u32(STATUS, 0);
+    sp.write_u32(0);
 }
 
 /// Links and executes a user wasm.
@@ -72,8 +65,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 /// λ(machine *Machine, calldata []byte, params *StylusConfig, gas *u64) (status userStatus, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
-    sp: GoStack,
+    sp: usize,
 ) {
+    //let mut sp = GoStack::new(sp);
     println!("{}", "call".blue());
     todo!("callUserWasmRustImpl")
 }
@@ -84,12 +78,13 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 /// λ(vec *Vec<u8>) (ptr *byte, len usize)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_readRustVecImpl(
-    sp: GoStack,
+    sp: usize,
 ) {
     println!("{}", "read vec".blue());
-    let vec = &*(sp.read_u32(0) as *const Vec<u8>);
-    sp.write_u32(1, vec.as_ptr() as u32);
-    sp.write_u32(2, vec.len() as u32);
+    let mut sp = GoStack::new(sp);
+    let vec = &*(sp.read_u32() as *const Vec<u8>);
+    sp.write_u32(vec.as_ptr() as u32);
+    sp.write_u32(vec.len() as u32);
 }
 
 /// Frees a rust `Vec`.
@@ -98,10 +93,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_readRu
 /// λ(vec *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_freeRustVecImpl(
-    sp: GoStack,
+    sp: usize,
 ) {
     println!("{}", "free vec".blue());
-    let vec = Box::from_raw(sp.read_u32(0) as *mut Vec<u8>);
+    let mut sp = GoStack::new(sp);
+    let vec = Box::from_raw(sp.read_u32() as *mut Vec<u8>);
     mem::drop(vec)
 }
 
@@ -111,25 +107,20 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_freeRu
 /// λ(version, maxDepth, heapBound u32, wasmGasPrice, hostioCost u64) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
-    sp: GoStack,
+    sp: usize,
 ) {
     println!("{}", "config".blue());
-    let version = sp.read_u32(0);
+    let mut sp = GoStack::new(sp);
+    let version = sp.read_u32();
 
     let mut config = Box::new(StylusConfig::version(version));
-    config.max_depth = sp.read_u32(1);
-    config.heap_bound = sp.read_u32(2).into();
-    config.pricing.wasm_gas_price = sp.read_u64(3);
-    config.pricing.hostio_cost = sp.read_u64(4);
+    config.max_depth = sp.read_u32();
+    config.heap_bound = sp.read_u32().into();
+    config.pricing.wasm_gas_price = sp.skip_u32().read_u64();
+    config.pricing.hostio_cost = sp.read_u64();
 
     let handle = Box::into_raw(config) as u32;
-    sp.write_u32(5, handle);
-}
-
-unsafe fn read_go_slice(sp: GoStack, ptr: usize, len: usize) -> Vec<u8> {
-    let wasm_ptr = sp.read_u64(ptr);
-    let wasm_len = sp.read_u64(len);
-    wavm::read_slice(wasm_ptr, wasm_len)
+    sp.write_u32(handle);
 }
 
 /// Puts an arbitrary type on the heap. The type must be later freed or the value will be leaked.
