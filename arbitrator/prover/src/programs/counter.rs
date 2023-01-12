@@ -19,10 +19,6 @@ pub struct Counter {
     pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
 }
 
-pub fn opcode_count_name(index: &usize) -> String {
-    format!("stylus_opcode{}_count", index)
-}
-
 impl Counter {
     pub fn new(opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>) -> Self {
         Self {
@@ -31,6 +27,10 @@ impl Counter {
             ))),
             opcode_indexes,
         }
+    }
+
+    pub fn global_name(index: &usize) -> String {
+        format!("stylus_opcode{}_count", index)
     }
 }
 
@@ -45,7 +45,7 @@ where
         let mut index_counts_global = self.index_counts_global.lock();
         for index in 0..OperatorCode::OPERATOR_COUNT {
             let count_global =
-                module.add_global(&opcode_count_name(&index), Type::I64, zero_count)?;
+                module.add_global(&Counter::global_name(&index), Type::I64, zero_count)?;
             index_counts_global.push(count_global);
         }
         Ok(())
@@ -186,15 +186,15 @@ impl CountingMachine for Machine {
             .iter()
             .filter_map(|(opcode, index)| -> Option<(OperatorCode, u64)> {
                 let count = self
-                    .get_global(&opcode_count_name(index))
+                    .get_global(&Counter::global_name(index))
                     .expect(&format!(
                         "global variable {} should have been present",
-                        opcode_count_name(index)
+                        Counter::global_name(index)
                     ))
                     .try_into()
                     .expect(&format!(
                         "global variable {} should be u64",
-                        opcode_count_name(index)
+                        Counter::global_name(index)
                     ));
                 match count {
                     0 => None,

@@ -10,7 +10,7 @@ use eyre::{bail, eyre, ErrReport, Result};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
 use prover::programs::{
-    counter::{opcode_count_name, CountingMachine},
+    counter::{opcode_count_name, Counter, CountingMachine},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     prelude::*,
@@ -120,7 +120,7 @@ impl CountingMachine for NativeInstance {
             .iter()
             .filter_map(|(opcode, index)| -> Option<(OperatorCode, u64)> {
                 let count = self
-                    .get_global::<u64>(&opcode_count_name(index))
+                    .get_global::<u64>(&Counter::global_name(index))
                     .expect(&format!(
                         "global variable {} should have been present",
                         opcode_count_name(index)
