@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "web",
+    srcs = ["web.go"],
+    importpath = "github.com/OffchainLabs/new-rollup-exploration/web",
+    visibility = ["//visibility:public"],
+)
