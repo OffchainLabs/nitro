@@ -143,8 +143,7 @@ func (s *server) registerWebsocketConnection(c echo.Context) error {
 
 func (s *server) stepTimeReference(c echo.Context) error {
 	s.timeRef.Add(time.Second)
-	c.JSON(http.StatusOK, nil)
-	return nil
+	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
@@ -219,7 +218,10 @@ func (s *server) sendChainEventsToClients(
 			for client := range s.wsClients {
 				err := client.WriteMessage(websocket.TextMessage, enc)
 				if err != nil {
-					client.Close()
+					if err = client.Close(); err != nil {
+						log.Error(err)
+						return
+					}
 					delete(s.wsClients, client)
 				}
 			}
@@ -249,7 +251,10 @@ func (s *server) sendChainEventsToClients(
 			for client := range s.wsClients {
 				err := client.WriteMessage(websocket.TextMessage, enc)
 				if err != nil {
-					client.Close()
+					if err = client.Close(); err != nil {
+						log.Error(err)
+						return
+					}
 					delete(s.wsClients, client)
 				}
 			}

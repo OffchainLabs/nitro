@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@bazel_gazelle//:def.bzl", "gazelle")
 
 # gazelle:prefix github.com/OffchainLabs/new-rollup-exploration
@@ -20,27 +21,4 @@ nogo(
     config = ":nogo.json",
     visibility = ["//visibility:public"],
     deps = TOOLS_NOGO,
-)
-
-go_library(
-    name = "new-rollup-exploration_lib",
-    srcs = ["main.go"],
-    importpath = "github.com/OffchainLabs/new-rollup-exploration",
-    visibility = ["//visibility:private"],
-    deps = [
-        "//protocol",
-        "//state-manager",
-        "//util",
-        "//validator",
-        "//web",
-        "@com_github_ethereum_go_ethereum//common",
-        "@com_github_gorilla_websocket//:websocket",
-        "@com_github_sirupsen_logrus//:logrus",
-    ],
-)
-
-go_binary(
-    name = "new-rollup-exploration",
-    embed = [":new-rollup-exploration_lib"],
-    visibility = ["//visibility:public"],
 )
