@@ -175,7 +175,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -209,13 +209,25 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 		newFeeCap = maxFeeCap
 	}
 
+	balanceFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(gasLimit))
+	if arbmath.BigGreaterThan(newFeeCap, balanceFeeCap) {
+		log.Error(
+			"lack of L1 balance prevents posting transaction with desired fee cap",
+			"balance", p.balance,
+			"gasLimit", gasLimit,
+			"desiredFeeCap", newFeeCap,
+			"balanceFeeCap", balanceFeeCap,
+		)
+		newFeeCap = balanceFeeCap
+	}
+
 	return newFeeCap, newTipCap, nil
 }
 
 func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt, 0)
+	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, gasLimit, nil, dataCreatedAt, 0)
 	if err != nil {
 		return err
 	}
@@ -277,26 +289,14 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
 
-	desiredFeeCap := newFeeCap
-	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.Data.Gas))
-	newFeeCap = arbmath.BigMin(newFeeCap, maxFeeCap)
 	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.GasFeeCap, minRbfIncrease)
 	newTx := *prevTx
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
-		if desiredFeeCap.Cmp(minNewFeeCap) >= 0 {
-			log.Error(
-				"lack of L1 balance prevents posting transaction with a higher fee cap",
-				"balance", p.balance,
-				"gasLimit", prevTx.Data.Gas,
-				"desiredFeeCap", desiredFeeCap,
-				"maxFeeCap", maxFeeCap,
-			)
-		}
 		newTx.NextReplacement = time.Now().Add(time.Minute)
 		return p.sendTx(ctx, prevTx, &newTx)
 	}
