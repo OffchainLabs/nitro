@@ -90,7 +90,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
-	das.DataAvailabilityConfigAddOptions("data-availability", f)
+	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)

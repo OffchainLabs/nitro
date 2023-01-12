@@ -155,20 +155,8 @@ func CreateBatchPosterDAS(
 		return nil, nil, nil, errors.New("--node.data-availabilty.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
 	}
 
-	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable || config.IpfsStorageServiceConfig.Enable {
-		return nil, nil, nil, errors.New("None of --node.data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage).enable may be set when running a Nitro AnyTrust node in Batch Poster mode")
-	}
-
-	if config.RedisCacheConfig.Enable || config.LocalCacheConfig.Enable {
-		return nil, nil, nil, errors.New("--node.data-availbility.*-cache options are only for daserver")
-	}
-
-	if config.RegularSyncStorageConfig.Enable {
-		return nil, nil, nil, errors.New("--node.data-availability.regular-sync-store options are only for daserver")
-	}
-
-	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
-		return nil, nil, nil, errors.New("--node.data-availability.key.(key-dir|priv-key) options are only for daserver")
+	if config.IpfsStorageServiceConfig.Enable {
+		return nil, nil, nil, errors.New("--node.data-availability.ipfs-storage.enable may not be set when running a Nitro AnyTrust node in Batch Poster mode")
 	}
 	// Done checking config requirements
 
@@ -337,25 +325,6 @@ func CreateDAReaderForNode(
 	// Check config requirements
 	if config.AggregatorConfig.Enable {
 		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
-	}
-	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
-		return nil, nil, errors.New("node.data-availability.key options are only for daserver committee members")
-	}
-
-	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable {
-		return nil, nil, errors.New("None of --node.data-availability.(local-db-storage|local-file-storage|s3-storage).enable may be set when running a Nitro AnyTrust node in non-Batch Poster mode.")
-	}
-
-	if config.RedisCacheConfig.Enable || config.LocalCacheConfig.Enable {
-		return nil, nil, errors.New("--node.data-availbility.*-cache options are only for daserver")
-	}
-
-	if config.RegularSyncStorageConfig.Enable {
-		return nil, nil, errors.New("--node.data-availability.regular-sync-store options are only for daserver")
-	}
-
-	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
-		return nil, nil, errors.New("--node.data-availability.key.(key-dir|priv-key) options are only for daserver")
 	}
 
 	if !config.RestfulClientAggregatorConfig.Enable && !config.IpfsStorageServiceConfig.Enable {

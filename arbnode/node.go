@@ -474,7 +474,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".validator", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
-	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
+	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
