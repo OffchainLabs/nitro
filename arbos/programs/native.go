@@ -13,6 +13,7 @@ package programs
 // typedef struct GoParams {
 //   uint32_t version;
 //   uint32_t max_depth;
+//   uint32_t max_frame_size;
 //   uint32_t heap_bound;
 //   uint64_t wasm_gas_price;
 //   uint64_t hostio_cost;
@@ -114,6 +115,7 @@ func (params *goParams) encode() C.GoParams {
 	return C.GoParams{
 		version:        u32(params.version),
 		max_depth:      u32(params.maxDepth),
+		max_frame_size: u32(params.maxFrameSize),
 		heap_bound:     u32(params.heapBound),
 		wasm_gas_price: u64(params.wasmGasPrice),
 		hostio_cost:    u64(params.hostioCost),

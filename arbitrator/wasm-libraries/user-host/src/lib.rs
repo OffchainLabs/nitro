@@ -1,28 +1,32 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use gas::PricingParams;
+use gas::Pricing;
+use prover::programs::config::PricingParams;
 
 mod gas;
 mod link;
 mod user;
 
-static mut PROGRAMS: Vec<Program> = vec![];
+pub(crate) static mut PROGRAMS: Vec<Program> = vec![];
 
-struct Program {
+pub(crate) struct Program {
     args: Vec<u8>,
     outs: Vec<u8>,
-    pricing: PricingParams,
+    pricing: Pricing,
 }
 
 impl Program {
-    pub fn new(args: Vec<u8>, pricing: PricingParams) -> Self {
-        let outs = vec![];
+    pub fn new(args: Vec<u8>, params: PricingParams) -> Self {
         Self {
             args,
-            outs,
-            pricing,
+            outs: vec![],
+            pricing: Pricing(params),
         }
+    }
+
+    pub fn into_outs(self) -> Vec<u8> {
+        self.outs
     }
 }
 

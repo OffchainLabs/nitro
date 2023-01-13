@@ -1,11 +1,36 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::{Program, PROGRAMS};
 use arbutil::wavm;
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
-use prover::{programs::config::StylusConfig, Machine};
+use prover::{
+    programs::{config::{StylusConfig, DepthParams}, run::UserOutcomeKind},
+    Machine,
+};
 use std::{mem, path::Path, sync::Arc};
+
+// these hostio methods allow the replay machine to modify itself
+#[link(wasm_import_module = "hostio")]
+extern "C" {
+    fn link_module(hash: *const MemoryLeaf) -> u32;
+    fn unlink_module();
+}
+
+// these dynamic hostio methods allow introspection into user modules
+#[link(wasm_import_module = "hostio")]
+extern "C" {
+    fn program_set_gas(module: u32, internals: u32, gas: u64);
+    fn program_set_stack(module: u32, internals: u32, stack: u32);
+    fn program_gas_left(module: u32, internals: u32) -> u64;
+    fn program_gas_status(module: u32, internals: u32) -> u32;
+    fn program_stack_left(module: u32, internals: u32) -> u32;
+    fn program_call_main(module: u32, main: u32, args_len: usize) -> u32;
+}
+
+#[repr(C, align(256))]
+struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
 /// Safety: λ(wasm []byte, params *StylusConfig) (machine *Machine, err *Vec<u8>)
@@ -15,7 +40,11 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 ) {
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
-    let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
+    let mut config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
+
+    // zero-out dynamic values that affect the module root
+    config.start_gas = 0; 
+    config.depth.max_depth = 0;
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -67,9 +96,46 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let machine: Box<Machine> = Box::from_raw(sp.read_ptr_mut());
     let calldata = sp.read_go_slice_owned();
     let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
-    let gas: *mut u64 = sp.read_ptr_mut();
-    
-    todo!("callUserWasmRustImpl")
+    let gas = sp.read_ptr_mut::<*mut u64>() as usize;
+    let gas_left = wavm::caller_load64(gas);
+
+    let args_len = calldata.len();
+    PROGRAMS.push(Program::new(calldata, config.pricing));
+
+    let (module, main, internals) = machine.into_program_info();
+    let module = link_module(&MemoryLeaf(module.0));
+    program_set_gas(module, internals, gas_left);
+    program_set_stack(module, internals, config.depth.max_depth);
+
+    let status = program_call_main(module, main, args_len);
+    let outs = PROGRAMS.pop().unwrap().into_outs();
+
+    macro_rules! finish {
+        ($status:expr) => {
+            finish!($status, std::ptr::null::<u8>(), 0);
+        };
+        ($status:expr, $outs:expr, $gas_left:expr) => {{
+            sp.write_u8($status as u8).skip_space();
+            sp.write_ptr($outs);
+            wavm::caller_store64(gas, $gas_left);
+            unlink_module();
+            return;
+        }};
+    }
+
+    use UserOutcomeKind::*;
+    if program_gas_status(module, internals) != 0 {
+        finish!(OutOfGas);
+    }
+    if program_stack_left(module, internals) == 0 {
+        finish!(OutOfStack);
+    }
+
+    let gas_left = program_gas_left(module, internals);
+    match status {
+        0 => finish!(Success, heapify(outs), gas_left),
+        _ => finish!(Revert, heapify(outs), gas_left),
+    };
 }
 
 /// Reads the length of a rust `Vec`
@@ -97,7 +163,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version, maxDepth, heapBound u32, wasmGasPrice, hostioCost u64) *StylusConfig
+/// Safety: λ(version, maxDepth, maxFrameSize, heapBound u32, wasmGasPrice, hostioCost u64) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
@@ -106,9 +172,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     let version = sp.read_u32();
 
     let mut config = StylusConfig::version(version);
-    config.max_depth = sp.read_u32();
+    config.depth = DepthParams::new(sp.read_u32(), sp.read_u32());
     config.heap_bound = sp.read_u32().into();
-    config.pricing.wasm_gas_price = sp.skip_space().read_u64();
+    config.pricing.wasm_gas_price = sp.read_u64();
     config.pricing.hostio_cost = sp.read_u64();
     sp.write_ptr(heapify(config));
 }

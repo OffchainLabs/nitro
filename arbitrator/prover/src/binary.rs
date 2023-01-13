@@ -515,7 +515,7 @@ impl<'a> Debug for WasmBinary<'a> {
 impl<'a> WasmBinary<'a> {
     pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
         let meter = Meter::new(config.costs, config.start_gas);
-        let depth = DepthChecker::new(config.max_depth);
+        let depth = DepthChecker::new(config.depth);
         let bound = HeapBound::new(config.heap_bound)?;
         let start = StartMover::default();
 

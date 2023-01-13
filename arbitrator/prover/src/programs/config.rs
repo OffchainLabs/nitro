@@ -18,14 +18,19 @@ use {
 
 pub type OpCosts = fn(&Operator) -> u64;
 
-#[repr(C)]
 #[derive(Clone)]
 pub struct StylusConfig {
-    pub costs: OpCosts,
+    pub costs: OpCosts, // requires recompilation
     pub start_gas: u64,
-    pub max_depth: u32,
-    pub heap_bound: Bytes,
+    pub heap_bound: Bytes, // requires recompilation
+    pub depth: DepthParams,
     pub pricing: PricingParams,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DepthParams {
+    pub max_depth: u32,
+    pub max_frame_size: u32, // requires recompilation
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -42,9 +47,18 @@ impl Default for StylusConfig {
         Self {
             costs,
             start_gas: 0,
-            max_depth: u32::MAX,
             heap_bound: Bytes(u32::MAX as usize),
+            depth: DepthParams::default(),
             pricing: PricingParams::default(),
+        }
+    }
+}
+
+impl Default for DepthParams {
+    fn default() -> Self {
+        Self {
+            max_depth: u32::MAX,
+            max_frame_size: u32::MAX,
         }
     }
 }
@@ -58,6 +72,15 @@ impl StylusConfig {
             _ => panic!("no config exists for Stylus version {version}"),
         }
         config
+    }
+}
+
+impl DepthParams {
+    pub fn new(max_depth: u32, max_frame_size: u32) -> Self {
+        Self {
+            max_depth,
+            max_frame_size,
+        }
     }
 }
 
@@ -87,17 +110,19 @@ impl StylusConfig {
         costs: OpCosts,
         start_gas: u64,
         max_depth: u32,
+        max_frame_size: u32,
         heap_bound: Bytes,
         wasm_gas_price: u64,
         hostio_cost: u64,
     ) -> Result<Self> {
+        let depth = DepthParams::new(max_depth, max_frame_size);
         let pricing = PricingParams::new(wasm_gas_price, hostio_cost);
         Pages::try_from(heap_bound)?; // ensure the limit represents a number of pages
         Ok(Self {
             costs,
             start_gas,
-            max_depth,
             heap_bound,
+            depth,
             pricing,
         })
     }
@@ -109,7 +134,7 @@ impl StylusConfig {
         compiler.enable_verifier();
 
         let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_gas));
-        let depth = MiddlewareWrapper::new(DepthChecker::new(self.max_depth));
+        let depth = MiddlewareWrapper::new(DepthChecker::new(self.depth));
         let bound = MiddlewareWrapper::new(HeapBound::new(self.heap_bound).unwrap()); // checked in new()
         let start = MiddlewareWrapper::new(StartMover::default());
 
@@ -129,8 +154,8 @@ impl Debug for StylusConfig {
         f.debug_struct("StylusConfig")
             .field("costs", &"λ(op) -> u64")
             .field("start_gas", &self.start_gas)
-            .field("max_depth", &self.max_depth)
             .field("heap_bound", &self.heap_bound)
+            .field("depth", &self.depth)
             .field("pricing", &self.pricing)
             .finish()
     }

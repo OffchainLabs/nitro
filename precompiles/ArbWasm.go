@@ -39,6 +39,11 @@ func (con ArbWasm) WasmMaxDepth(c ctx, evm mech) (uint32, error) {
 	return c.State.Programs().WasmMaxDepth()
 }
 
+// Gets the wasm stack frame-size limit
+func (con ArbWasm) WasmMaxFrameSize(c ctx, evm mech) (uint32, error) {
+	return c.State.Programs().WasmMaxFrameSize()
+}
+
 // Gets the wasm memory limit
 func (con ArbWasm) WasmHeapBound(c ctx, evm mech) (uint32, error) {
 	return c.State.Programs().WasmHeapBound()

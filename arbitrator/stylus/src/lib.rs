@@ -3,7 +3,7 @@
 
 use env::WasmEnv;
 use eyre::ErrReport;
-use prover::programs::prelude::*;
+use prover::programs::{config::DepthParams, prelude::*};
 use run::RunProgram;
 use std::mem;
 use wasmer::{Bytes, Module};
@@ -23,6 +23,7 @@ mod benchmarks;
 pub struct GoParams {
     version: u32,
     max_depth: u32,
+    max_frame_size: u32,
     heap_bound: u32,
     wasm_gas_price: u64,
     hostio_cost: u64,
@@ -31,7 +32,7 @@ pub struct GoParams {
 impl GoParams {
     fn config(self) -> StylusConfig {
         let mut config = StylusConfig::version(self.version);
-        config.max_depth = self.max_depth;
+        config.depth = DepthParams::new(self.max_depth, self.max_frame_size);
         config.heap_bound = Bytes(self.heap_bound as usize);
         config.pricing.wasm_gas_price = self.wasm_gas_price;
         config.pricing.hostio_cost = self.hostio_cost;

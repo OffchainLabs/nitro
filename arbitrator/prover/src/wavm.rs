@@ -158,6 +158,10 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
+    /// Dynamically adds a module to the replay machine
+    LinkModule,
+    /// Dynamically removes the last module to the replay machine
+    UnlinkModule,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
 }
@@ -270,6 +274,8 @@ impl Opcode {
             Opcode::SetGlobalStateU64 => 0x8013,
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
+            Opcode::LinkModule => 0x8023,
+            Opcode::UnlinkModule => 0x8024,
             Opcode::HaltAndSetFinished => 0x8022,
         }
     }

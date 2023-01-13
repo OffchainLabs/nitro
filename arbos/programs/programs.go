@@ -18,13 +18,14 @@ import (
 const MaxWasmSize = 64 * 1024
 
 type Programs struct {
-	backingStorage  *storage.Storage
-	machineVersions *storage.Storage
-	wasmGasPrice    storage.StorageBackedUBips
-	wasmMaxDepth    storage.StorageBackedUint32
-	wasmHeapBound   storage.StorageBackedUint32
-	wasmHostioCost  storage.StorageBackedUint64
-	version         storage.StorageBackedUint32
+	backingStorage   *storage.Storage
+	machineVersions  *storage.Storage
+	wasmGasPrice     storage.StorageBackedUBips
+	wasmMaxDepth     storage.StorageBackedUint32
+	wasmMaxFrameSize storage.StorageBackedUint32
+	wasmHeapBound    storage.StorageBackedUint32
+	wasmHostioCost   storage.StorageBackedUint64
+	version          storage.StorageBackedUint32
 }
 
 var machineVersionsKey = []byte{0}
@@ -33,6 +34,7 @@ const (
 	versionOffset uint64 = iota
 	wasmGasPriceOffset
 	wasmMaxDepthOffset
+	wasmMaxFrameSizeOffset
 	wasmHeapBoundOffset
 	wasmHostioCostOffset
 )
@@ -40,11 +42,13 @@ const (
 func Initialize(sto *storage.Storage) {
 	wasmGasPrice := sto.OpenStorageBackedBips(wasmGasPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
+	wasmMaxFrameSize := sto.OpenStorageBackedUint32(wasmMaxFrameSizeOffset)
 	wasmHeapBound := sto.OpenStorageBackedUint32(wasmHeapBoundOffset)
 	wasmHostioCost := sto.OpenStorageBackedUint32(wasmHostioCostOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = wasmGasPrice.Set(0)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
+	_ = wasmMaxFrameSize.Set(math.MaxInt32)
 	_ = wasmHeapBound.Set(math.MaxUint32)
 	_ = wasmHostioCost.Set(0)
 	_ = version.Set(1)
@@ -52,13 +56,14 @@ func Initialize(sto *storage.Storage) {
 
 func Open(sto *storage.Storage) *Programs {
 	return &Programs{
-		backingStorage:  sto,
-		machineVersions: sto.OpenSubStorage(machineVersionsKey),
-		wasmGasPrice:    sto.OpenStorageBackedUBips(wasmGasPriceOffset),
-		wasmMaxDepth:    sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHeapBound:   sto.OpenStorageBackedUint32(wasmHeapBoundOffset),
-		wasmHostioCost:  sto.OpenStorageBackedUint64(wasmHostioCostOffset),
-		version:         sto.OpenStorageBackedUint32(versionOffset),
+		backingStorage:   sto,
+		machineVersions:  sto.OpenSubStorage(machineVersionsKey),
+		wasmGasPrice:     sto.OpenStorageBackedUBips(wasmGasPriceOffset),
+		wasmMaxDepth:     sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
+		wasmMaxFrameSize: sto.OpenStorageBackedUint32(wasmMaxFrameSizeOffset),
+		wasmHeapBound:    sto.OpenStorageBackedUint32(wasmHeapBoundOffset),
+		wasmHostioCost:   sto.OpenStorageBackedUint64(wasmHostioCostOffset),
+		version:          sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
 
@@ -78,16 +83,16 @@ func (p Programs) WasmMaxDepth() (uint32, error) {
 	return p.wasmMaxDepth.Get()
 }
 
+func (p Programs) WasmMaxFrameSize() (uint32, error) {
+	return p.wasmMaxDepth.Get()
+}
+
 func (p Programs) SetWasmMaxDepth(depth uint32) error {
 	return p.wasmMaxDepth.Set(depth)
 }
 
 func (p Programs) WasmHeapBound() (uint32, error) {
 	return p.wasmHeapBound.Get()
-}
-
-func (p Programs) SetWasmHeapBound(bound uint32) error {
-	return p.wasmHeapBound.Set(bound)
 }
 
 func (p Programs) WasmHostioCost() (uint64, error) {
@@ -156,6 +161,7 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 type goParams struct {
 	version      uint32
 	maxDepth     uint32
+	maxFrameSize uint32
 	heapBound    uint32
 	wasmGasPrice uint64
 	hostioCost   uint64
@@ -163,6 +169,10 @@ type goParams struct {
 
 func (p Programs) goParams(version uint32) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
+	if err != nil {
+		return nil, err
+	}
+	maxFrameSize, err := p.WasmMaxFrameSize()
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +191,7 @@ func (p Programs) goParams(version uint32) (*goParams, error) {
 	config := &goParams{
 		version:      version,
 		maxDepth:     maxDepth,
+		maxFrameSize: maxFrameSize,
 		heapBound:    heapBound,
 		wasmGasPrice: wasmGasPrice.Uint64(),
 		hostioCost:   hostioCost,
@@ -205,6 +216,7 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userRevert:
 		return data, errors.New("program reverted")
 	case userFailure:
+		println("failure: ", string(data))
 		return nil, errors.New(string(data))
 	case userOutOfGas:
 		return nil, vm.ErrOutOfGas

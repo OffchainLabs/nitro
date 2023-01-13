@@ -592,9 +592,9 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
         Ok(v) => sp.write_u64(v.encode()),
         Err(e) => {
             eprintln!("{}", e);
-            sp.write_u64(GoValue::Null.encode());
+            sp.write_u64(GoValue::Null.encode())
         }
-    }
+    };
 }
 
 /// Safety: λ(v value)

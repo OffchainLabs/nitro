@@ -115,21 +115,57 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(HaltAndSetFinished);
         }
         ("hostio", "user_gas_left") => {
-            // user_gas_left() -> gas_left
+            // λ() -> gas_left
             ty = FunctionType::new(vec![], vec![I64]);
             opcode!(CallerModuleInternalCall, UserGasLeft);
         }
         ("hostio", "user_gas_status") => {
-            // user_gas_status() -> gas_status
+            // λ() -> gas_status
             ty = FunctionType::new(vec![], vec![I32]);
             opcode!(CallerModuleInternalCall, UserGasStatus);
         }
         ("hostio", "user_set_gas") => {
-            // user_set_gas(gas_left, gas_status)
+            // λ(gas_left, gas_status)
             ty = FunctionType::new(vec![I64, I32], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
             opcode!(CallerModuleInternalCall, UserGasSet);
+        }
+        ("hostio", "link_module") => {
+            // λ(hash)
+            ty = FunctionType::new(vec![I32], vec![I32]);
+            opcode!(LocalGet, 0);
+            opcode!(LinkModule);
+        }
+        ("hostio", "unlink_module") => {
+            // λ(hash)
+            ty = FunctionType::new(vec![], vec![]);
+            opcode!(LocalGet, 0);
+            opcode!(UnlinkModule);
+        }
+        ("hostio", "program_set_gas") => {
+            // λ(module, internals, gas_left)
+            ty = FunctionType::new(vec![I32, I32, I64], vec![]);
+        }
+        ("hostio", "program_set_stack") => {
+            // λ(module, internals, stack_left)
+            ty = FunctionType::new(vec![I32, I32, I32], vec![]);
+        }
+        ("hostio", "program_gas_left") => {
+            // λ(module, internals) -> gas_left
+            ty = FunctionType::new(vec![I32, I32], vec![I64]);
+        }
+        ("hostio", "program_gas_status") => {
+            // λ(module, internals) -> gas_status
+            ty = FunctionType::new(vec![I32, I32], vec![I32]);
+        }
+        ("hostio", "program_stack_left") => {
+            // λ(module, internals) -> stack_left
+            ty = FunctionType::new(vec![I32, I32], vec![I32]);
+        }
+        ("hostio", "program_call_main") => {
+            // λ(module, main, args_len) -> status
+            ty = FunctionType::new(vec![I32, I32, I32], vec![I32]);
         }
         _ => eyre::bail!("no such hostio {} in {}", name.red(), module.red()),
     }

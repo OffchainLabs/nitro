@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::StylusConfig, ModuleMod, StylusGlobals, USER_HOST},
+    programs::{config::StylusConfig, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT, USER_HOST},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -341,8 +341,8 @@ impl Module {
             };
             ensure!(
                 &func.ty == have_ty,
-                "Import has different function signature than host function. Expected {} but got {}",
-                func.ty.red(), have_ty.red(),
+                "Import {} has different function signature than host function. Expected {} but got {}",
+                import_name.red(), func.ty.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
@@ -1367,6 +1367,12 @@ impl Machine {
         }
     }
 
+    pub fn into_program_info(self) -> (Bytes32, u32, u32) {
+        let module = self.modules.last().unwrap();
+        let main = module.find_func(STYLUS_ENTRY_POINT).unwrap();
+        (module.hash(), main, module.internals_offset)
+    }
+
     pub fn main_module_name(&self) -> String {
         self.modules.last().expect("no module").name().to_owned()
     }
@@ -1537,6 +1543,12 @@ impl Machine {
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
+        macro_rules! reset_refs {
+            () => {
+                module = &mut self.modules[self.pc.module()];
+                func = &module.funcs[self.pc.func()];
+            };
+        }
         macro_rules! flush_module {
             () => {
                 if let Some(merkle) = self.modules_merkle.as_mut() {
@@ -1545,8 +1557,12 @@ impl Machine {
             };
         }
         macro_rules! error {
-            () => {{
+            () => {
+                error!("")
+            };
+            ($format:expr $(,$message:expr)*) => {{
                 println!("error on line {}", line!());
+                println!($format, $($message.red()),*);
                 self.status = MachineStatus::Errored;
                 println!("Backtrace:");
                 self.print_backtrace(true);
@@ -1647,8 +1663,7 @@ impl Machine {
                     self.pc.module = call_module;
                     self.pc.func = call_func;
                     self.pc.inst = 0;
-                    module = &mut self.modules[self.pc.module()];
-                    func = &module.funcs[self.pc.func()];
+                    reset_refs!();
                 }
                 Opcode::CrossModuleForward => {
                     flush_module!();
@@ -1660,8 +1675,7 @@ impl Machine {
                     self.pc.module = call_module;
                     self.pc.func = call_func;
                     self.pc.inst = 0;
-                    module = &mut self.modules[self.pc.module()];
-                    func = &module.funcs[self.pc.func()];
+                    reset_refs!();
                 }
                 Opcode::CallerModuleInternalCall => {
                     self.value_stack.push(Value::InternalRef(self.pc));
@@ -1678,8 +1692,7 @@ impl Machine {
                         self.pc.module = current_frame.caller_module;
                         self.pc.func = func_idx;
                         self.pc.inst = 0;
-                        module = &mut self.modules[self.pc.module()];
-                        func = &module.funcs[self.pc.func()];
+                        reset_refs!();
                     } else {
                         // The caller module has no internals
                         error!();
@@ -2080,6 +2093,20 @@ impl Machine {
                         self.status = MachineStatus::TooFar;
                         break;
                     }
+                }
+                Opcode::LinkModule => {
+                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!("no hash for {}", ptr)
+                    };
+                    flush_module!();
+                    // link the program
+                    reset_refs!();
+                }
+                Opcode::UnlinkModule => {
+                    flush_module!();
+                    self.modules.pop();
+                    reset_refs!();
                 }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;

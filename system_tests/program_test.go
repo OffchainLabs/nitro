@@ -118,12 +118,14 @@ func TestKeccakProgram(t *testing.T) {
 		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
 		Require(t, err)
 
+		now := time.Now()
 		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, true, common.Hash{})
 		Require(t, err, "block", block)
+		passed := time.Since(now).String()
 		if correct {
-			colors.PrintMint("yay!! we validated block ", block)
+			colors.PrintMint("yay!! we validated block ", block, " in ", passed)
 		} else {
-			colors.PrintRed("failed to validate block ", block)
+			colors.PrintRed("failed to validate block ", block, " in ", passed)
 		}
 		success = success && correct
 	}

@@ -32,13 +32,10 @@ func compileUserWasmRustImpl(wasm []byte, params *rustConfig) (machine *rustMach
 func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64) (status userStatus, out *rustVec)
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth, heapBound u32, wasmGasPrice, hostioCost u64) *rustConfig
+func rustConfigImpl(version, maxDepth, maxFrameSize, heapBound u32, wasmGasPrice, hostioCost u64) *rustConfig
 
 func compileUserWasm(db vm.StateDB, program addr, wasm []byte, params *goParams) error {
 	_, err := compileMachine(db, program, wasm, params)
-	if err != nil {
-		println("Go compile error: ", err.Error())
-	}
 	return err
 }
 
@@ -64,6 +61,7 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, params *goParams) 
 
 func (m *rustMachine) call(calldata []byte, params *goParams, gas *u64) ([]byte, error) {
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas)
+	println("Call ", status, output)
 	return status.output(output.intoSlice())
 }
 
@@ -75,5 +73,5 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.heapBound, p.wasmGasPrice, p.hostioCost)
+	return rustConfigImpl(p.version, p.maxDepth, p.maxFrameSize, p.heapBound, p.wasmGasPrice, p.hostioCost)
 }
