@@ -69,6 +69,8 @@ interface ISequencerInbox is IDelayedMessageProvider {
 
     function isBatchPoster(address) external view returns (bool);
 
+    function isSequencer(address) external view returns (bool);
+
     struct DasKeySetInfo {
         bool isValidKeyset;
         uint64 creationBlock;
@@ -153,6 +155,14 @@ interface ISequencerInbox is IDelayedMessageProvider {
      * @param ksHash hash of the keyset
      */
     function invalidateKeysetHash(bytes32 ksHash) external;
+
+    /**
+     * @notice Updates whether an address is authorized to be a sequencer.
+     * @dev The IsSequencer information is used only off-chain by the nitro node to validate sequencer feed signer.
+     * @param addr the address
+     * @param isSequencer_ if the specified address should be authorized as a sequencer
+     */
+    function setIsSequencer(address addr, bool isSequencer_) external;
 
     // ---------- initializer ----------
 

@@ -64,6 +64,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     uint256 internal immutable deployTimeChainId = block.chainid;
 
+    mapping(address => bool) public isSequencer;
+
     function _chainIdChanged() internal view returns (bool) {
         return deployTimeChainId != block.chainid;
     }
@@ -448,6 +450,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
+    }
+
+    /// @inheritdoc ISequencerInbox
+    function setIsSequencer(address addr, bool isSequencer_) external onlyRollupOwner {
+        isSequencer[addr] = isSequencer_;
+        emit OwnerFunctionCalled(4);
     }
 
     function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {
