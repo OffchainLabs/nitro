@@ -4,6 +4,7 @@ pragma solidity ^0.8.4;
 import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
 import "../../src/bridge/NativeTokenBridge.sol";
+import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
@@ -12,7 +13,7 @@ contract NativeTokenBridgeTest is Test {
     IERC20 public nativeToken;
 
     address public zero = address(0);
-    address public msgSender = address(100);
+    address public user = address(100);
 
     address public rollup = address(1000);
     address public inbox = address(1001);
@@ -30,8 +31,8 @@ contract NativeTokenBridgeTest is Test {
         // init bridge
         bridge.initialize(IOwnable(rollup), address(nativeToken));
 
-        // fund msgSender account
-        nativeToken.transfer(msgSender, 1_000);
+        // fund user account
+        nativeToken.transfer(user, 1_000);
     }
 
     function testInitialization() public {
@@ -51,7 +52,7 @@ contract NativeTokenBridgeTest is Test {
 
     function testEnqueueDelayedMessage() public {
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
-        uint256 msgSenderTokenBalanceBefore = nativeToken.balanceOf(address(msgSender));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
         uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
 
         // allow inbox
@@ -59,12 +60,13 @@ contract NativeTokenBridgeTest is Test {
         bridge.setDelayedInbox(inbox, true);
 
         // approve bridge to escrow tokens
-        vm.prank(msgSender);
+        vm.prank(user);
         nativeToken.approve(address(bridge), tokenFeeAmount);
 
         // enqueue msg
+        address userAliased = AddressAliasHelper.applyL1ToL2Alias(user);
         vm.prank(inbox);
-        bridge.enqueueDelayedMessage(kind, msgSender, messageDataHash, tokenFeeAmount);
+        bridge.enqueueDelayedMessage(kind, userAliased, messageDataHash, tokenFeeAmount);
 
         //// checks
 
@@ -75,11 +77,11 @@ contract NativeTokenBridgeTest is Test {
             "Invalid bridge token balance"
         );
 
-        uint256 msgSenderTokenBalanceAfter = nativeToken.balanceOf(address(msgSender));
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
         assertEq(
-            msgSenderTokenBalanceBefore - msgSenderTokenBalanceAfter,
+            userTokenBalanceBefore - userTokenBalanceAfter,
             tokenFeeAmount,
-            "Invalid msgSender token balance"
+            "Invalid user token balance"
         );
 
         uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
@@ -94,12 +96,12 @@ contract NativeTokenBridgeTest is Test {
         // enqueue msg
         hoax(inbox);
         vm.expectRevert(NotApplicable.selector);
-        bridge.enqueueDelayedMessage{value: 0.1 ether}(kind, msgSender, messageDataHash);
+        bridge.enqueueDelayedMessage{value: 0.1 ether}(kind, user, messageDataHash);
     }
 
     function testCantEnqueueMsgFromUnregisteredInbox() public {
         vm.prank(inbox);
         vm.expectRevert(abi.encodeWithSelector(NotDelayedInbox.selector, inbox));
-        bridge.enqueueDelayedMessage(kind, msgSender, messageDataHash, tokenFeeAmount);
+        bridge.enqueueDelayedMessage(kind, user, messageDataHash, tokenFeeAmount);
     }
 }

@@ -5,6 +5,7 @@
 pragma solidity ^0.8.4;
 
 import "./Bridge.sol";
+import "../libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -62,8 +63,11 @@ contract NativeTokenBridge is Bridge {
             messageDataHash
         );
 
+        // inbox applies alias to sender, undo it to fetch tokens
+        address undoAliasSender = AddressAliasHelper.undoL1ToL2Alias(sender);
+
         // escrow fee token
-        IERC20(nativeToken).safeTransferFrom(sender, address(this), tokenFeeAmount);
+        IERC20(nativeToken).safeTransferFrom(undoAliasSender, address(this), tokenFeeAmount);
 
         return messageCount;
     }
