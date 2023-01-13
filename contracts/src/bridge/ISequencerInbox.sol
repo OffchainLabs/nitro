@@ -157,7 +157,8 @@ interface ISequencerInbox is IDelayedMessageProvider {
     function invalidateKeysetHash(bytes32 ksHash) external;
 
     /**
-     * @notice Updates whether an address is authorized to be a sequencer at the sequencer inbox
+     * @notice Updates whether an address is authorized to be a sequencer.
+     * @dev The IsSequencer information is used only off-chain by the nitro node to validate sequencer feed signer.
      * @param addr the address
      * @param isSequencer_ if the specified address should be authorized as a sequencer
      */
