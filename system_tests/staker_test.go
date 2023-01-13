@@ -127,13 +127,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig.Strategy = "MakeNodes"
 	}
 
-	valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-	spawner := valNode.GetExec()
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.DefaultBlockValidatorConfig
 	blockValidatorConfig.URL = valStack.WSEndpoint()
 
 	statelessA, err := staker.NewStatelessBlockValidator(
-		spawner,
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
@@ -161,7 +159,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
-		spawner,
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,

@@ -52,7 +52,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -399,15 +398,12 @@ func mainImpl() int {
 
 	fatalErrChan := make(chan error, 10)
 
-	var exec validator.ExecutionSpawner
 	valNode, err := valnode.CreateValidationNode(
 		func() *valnode.Config { return &liveNodeConfig.get().Validation },
 		stack,
 		fatalErrChan,
 	)
-	if err == nil {
-		exec = valNode.GetExec()
-	} else {
+	if err != nil {
 		valNode = nil
 		log.Warn("couldn't init validation node", "err", err)
 	}
@@ -420,7 +416,6 @@ func mainImpl() int {
 		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
-		exec,
 		&rollupAddrs,
 		l1TransactionOpts,
 		dataSigner,

@@ -70,7 +70,9 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 
 func (c *ValidationClient) Stop() {
 	c.StopWaiter.StopOnly()
-	c.client.Close()
+	if c.client != nil {
+		c.client.Close()
+	}
 }
 
 func (c *ValidationClient) Name() string {
@@ -92,6 +94,12 @@ func (c *ValidationClient) Room() int {
 
 type ExecutionClient struct {
 	ValidationClient
+}
+
+func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
+	return &ExecutionClient{
+		ValidationClient: *NewValidationClient(url, jwtSecret),
+	}
 }
 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {

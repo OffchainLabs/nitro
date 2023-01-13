@@ -27,6 +27,8 @@ import (
 )
 
 type StatelessBlockValidator struct {
+	config *BlockValidatorConfig
+
 	execSpawner        validator.ExecutionSpawner
 	validationSpawners []validator.ValidationSpawner
 
@@ -265,7 +267,6 @@ func newRecordedValidationEntry(
 }
 
 func NewStatelessBlockValidator(
-	execSpawner validator.ExecutionSpawner,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -288,8 +289,10 @@ func NewStatelessBlockValidator(
 		jwt = jwtHash.Bytes()
 	}
 	valClient := server_api.NewValidationClient(config.URL, jwt)
+	execClient := server_api.NewExecutionClient(config.URL, jwt)
 	validator := &StatelessBlockValidator{
-		execSpawner:        execSpawner,
+		config:             config,
+		execSpawner:        execClient,
 		validationSpawners: []validator.ValidationSpawner{valClient},
 		inboxReader:        inboxReader,
 		inboxTracker:       inbox,
@@ -299,20 +302,6 @@ func NewStatelessBlockValidator(
 		daService:          das,
 		genesisBlockNum:    genesisBlockNum,
 		recordingDatabase:  arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
-	}
-	if config.PendingUpgradeModuleRoot != "" {
-		if config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := execSpawner.LatestWasmModuleRoot()
-			if err != nil {
-				return nil, err
-			}
-			validator.pendingWasmModuleRoot = latest
-		} else {
-			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
-			if (validator.pendingWasmModuleRoot == common.Hash{}) {
-				return nil, errors.New("pending-upgrade-module-root config value illegal")
-			}
-		}
 	}
 	return validator, nil
 }
@@ -618,6 +607,24 @@ func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	err := v.execSpawner.Start(ctx_in)
+	if err != nil {
+		return err
+	}
+	if v.config.PendingUpgradeModuleRoot != "" {
+		if v.config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := v.execSpawner.LatestWasmModuleRoot()
+			if err != nil {
+				return err
+			}
+			v.pendingWasmModuleRoot = latest
+		} else {
+			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
+			if (v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+	}
 	for _, spawner := range v.validationSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
 			return err

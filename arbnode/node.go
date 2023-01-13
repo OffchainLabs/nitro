@@ -48,7 +48,6 @@ import (
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -681,7 +680,6 @@ func createNodeImpl(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	execSpawner validator.ExecutionSpawner,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
@@ -911,12 +909,10 @@ func createNodeImpl(
 	}
 	txStreamer.SetInboxReader(inboxReader)
 
-	var blockValidator *staker.BlockValidator
 	var statelessBlockValidator *staker.StatelessBlockValidator
-
-	if execSpawner != nil {
+	err = nil
+	if config.BlockValidator.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
-			execSpawner,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
@@ -926,15 +922,15 @@ func createNodeImpl(
 			daReader,
 			&configFetcher.Get().BlockValidator,
 		)
-		if err != nil {
-			return nil, err
+	}
+	if err != nil {
+		if config.ValidatorRequired() {
+			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		}
-	} else if config.ValidatorRequired() {
-		return nil, fmt.Errorf("%w: failed to find machines", err)
-	} else {
-		log.Warn("Failed to find machines", "err", err)
+		statelessBlockValidator = nil
 	}
 
+	var blockValidator *staker.BlockValidator
 	if config.BlockValidator.Enable {
 		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
@@ -1274,13 +1270,12 @@ func CreateNode(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	exec validator.ExecutionSpawner,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, exec, deployInfo, txOpts, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1397,7 +1392,11 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.StatelessBlockValidator != nil {
 		err = n.StatelessBlockValidator.Start(ctx)
 		if err != nil {
-			return fmt.Errorf("error initializing stateless block validator: %w", err)
+			if n.configFetcher.Get().ValidatorRequired() {
+				return fmt.Errorf("error initializing stateless block validator: %w", err)
+			} else {
+				log.Info("validation not set up", "err", err)
+			}
 		}
 	}
 	if n.BlockValidator != nil {

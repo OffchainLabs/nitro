@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/validator"
-
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
@@ -438,17 +436,15 @@ func createTestNodeOnL1WithConfigImpl(
 		nodeConfig.DelayedSequencer.Enable = false
 	}
 
-	var execSpawner validator.ExecutionSpawner
 	if nodeConfig.ValidatorRequired() {
-		valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 		configByValidationNode(t, nodeConfig, valStack)
-		execSpawner = valNode.GetExec()
 	}
 
 	var err error
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
-		execSpawner, addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
+		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
@@ -472,15 +468,13 @@ func CreateTestL2WithConfig(
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
 
-	var execSpawner validator.ExecutionSpawner
 	if nodeConfig.ValidatorRequired() {
-		valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 		configByValidationNode(t, nodeConfig, valStack)
-		execSpawner = valNode.GetExec()
 	}
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, execSpawner, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -581,14 +575,12 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	var execSpawner validator.ExecutionSpawner
 	if nodeConfig.ValidatorRequired() {
-		valNode, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 		configByValidationNode(t, nodeConfig, valStack)
-		execSpawner = valNode.GetExec()
 	}
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, execSpawner, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
