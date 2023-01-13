@@ -33,6 +33,11 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+var (
+	sequencerBatchPostMethodName          = "addSequencerL2BatchFromOrigin0"
+	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchWithBlobs"
+)
+
 type batchPosterPosition struct {
 	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
@@ -70,6 +75,7 @@ type BatchPosterConfig struct {
 	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	EIP4844                            bool                        `koanf:"eip-4844" reload:"hot"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -96,6 +102,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
+	f.Bool(prefix+".eip-4844", DefaultBatchPosterConfig.EIP4844, "send batches as shard blob transactions to L1")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 }
@@ -112,6 +119,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
+	EIP4844:                            false,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -125,6 +133,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:   "",
 	ExtraBatchGas:        10_000,
 	DataPoster:           dataposter.TestDataPosterConfig,
+	EIP4844:              false,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
@@ -165,7 +174,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, config().EIP4844, b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -418,25 +427,51 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
-	method, ok := b.seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
+func (b *BatchPoster) encodeAddBatch(
+	seqNum *big.Int,
+	prevMsgNum arbutil.MessageIndex,
+	newMsgNum arbutil.MessageIndex,
+	l2MessageData []byte,
+	delayedMsg uint64,
+) (*dataposter.DataToPost, error) {
+	methodName := sequencerBatchPostMethodName
+	if b.config().EIP4844 {
+		methodName = sequencerBatchPostWithBlobsMethodName
+	}
+	method, ok := b.seqInboxABI.Methods[methodName]
 	if !ok {
 		return nil, errors.New("failed to find add batch method")
 	}
-	inputData, err := method.Inputs.Pack(
-		seqNum,
-		message,
-		new(big.Int).SetUint64(delayedMsg),
-		common.HexToAddress(b.config().GasRefunderAddress),
-		new(big.Int).SetUint64(uint64(prevMsgNum)),
-		new(big.Int).SetUint64(uint64(newMsgNum)),
-	)
+	dataToPost := &dataposter.DataToPost{}
+	var sequencerInboxCalldata []byte
+	var err error
+	if b.config().EIP4844 {
+		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
+		sequencerInboxCalldata, err = method.Inputs.Pack(
+			seqNum,
+			new(big.Int).SetUint64(delayedMsg),
+			common.HexToAddress(b.config().GasRefunderAddress),
+			new(big.Int).SetUint64(uint64(prevMsgNum)),
+			new(big.Int).SetUint64(uint64(newMsgNum)),
+		)
+		dataToPost.L2MessageData = l2MessageData
+	} else {
+		sequencerInboxCalldata, err = method.Inputs.Pack(
+			seqNum,
+			l2MessageData,
+			new(big.Int).SetUint64(delayedMsg),
+			common.HexToAddress(b.config().GasRefunderAddress),
+			new(big.Int).SetUint64(uint64(prevMsgNum)),
+			new(big.Int).SetUint64(uint64(newMsgNum)),
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
-	fullData := append([]byte{}, method.ID...)
-	fullData = append(fullData, inputData...)
-	return fullData, nil
+	fullSequencerInboxCalldata := append([]byte{}, method.ID...)
+	fullSequencerInboxCalldata = append(fullSequencerInboxCalldata, sequencerInboxCalldata...)
+	dataToPost.SequencerInboxCalldata = fullSequencerInboxCalldata
+	return dataToPost, nil
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
@@ -451,7 +486,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
 		From: b.dataPoster.From(),
 		To:   &b.seqInboxAddr,
-		Data: data,
+		Data: data.SequencerInboxCalldata,
 	})
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage
