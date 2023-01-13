@@ -31,47 +31,40 @@ import (
 
 func TestReceiveMessagesWithoutCompression(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, false, false, false)
+	testReceiveMessages(t, false, false, false, false)
 }
 
 func TestReceiveMessagesWithCompression(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, true, true, false)
+	testReceiveMessages(t, true, true, false, false)
 }
 
 func TestReceiveMessagesWithServerOptionalCompression(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, true, true, false)
+	testReceiveMessages(t, true, true, false, false)
 }
 
 func TestReceiveMessagesWithServerOnlyCompression(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, false, true, false)
+	testReceiveMessages(t, false, true, false, false)
 }
 
 func TestReceiveMessagesWithClientOnlyCompression(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, true, false, false)
+	testReceiveMessages(t, true, false, false, false)
 }
 
 func TestReceiveMessagesWithRequiredCompression(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, true, true, true)
+	testReceiveMessages(t, true, true, true, false)
 }
 
 func TestReceiveMessagesWithRequiredCompressionButClientDisabled(t *testing.T) {
 	t.Parallel()
-	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	testReceiveMessages(t, false, true, true)
+	testReceiveMessages(t, false, true, true, true)
 }
 
-func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool) {
+func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool, expectNoMessagesReceived bool) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -99,8 +92,14 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 	config := DefaultTestConfig
 	config.EnableCompression = clientCompression
 	var wg sync.WaitGroup
+	var expectedCount int
+	if expectNoMessagesReceived {
+		expectedCount = 0
+	} else {
+		expectedCount = messageCount
+	}
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, messageCount, chainId, &wg, &sequencerAddr)
+		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, expectedCount, chainId, &wg, &sequencerAddr)
 	}
 
 	go func() {
@@ -233,9 +232,15 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 	go func() {
 		defer wg.Done()
 		defer broadcastClient.StopAndWait()
+		var timeout time.Duration
+		if expectedCount == 0 {
+			timeout = 1 * time.Second
+		} else {
+			timeout = 60 * time.Second
+		}
 		for {
 			gotMsg := false
-			timer := time.NewTimer(60 * time.Second)
+			timer := time.NewTimer(timeout)
 			select {
 			case <-ts.messageReceiver:
 				messageCount++
@@ -247,10 +252,11 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 				return
 			}
 			timer.Stop()
-			if !gotMsg {
-				t.Errorf("Client %d expected %d meesages, only got %d messages\n", index, expectedCount, messageCount)
+			if (!gotMsg && expectedCount > 0) || (gotMsg && expectedCount == 0) {
+				t.Errorf("Client %d expected %d meesages, got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
+
 			if messageCount == expectedCount {
 				return
 			}

@@ -279,6 +279,11 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		if compress != nil {
 			_, compressionAccepted = compress.Accepted()
 		}
+		if config.RequireCompression && !compressionAccepted {
+			log.Warn("client did not accept required compression, disconnecting", "connectingIP", connectingIP)
+			_ = conn.Close()
+			return
+		}
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
 		if err != nil {
