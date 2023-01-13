@@ -138,7 +138,6 @@ type BroadcastClient struct {
 	fatalErrChan                    chan error
 	adjustCount                     func(int32)
 
-	compression bool
 	flateReader *wsflate.Reader
 }
 
@@ -322,7 +321,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.connMutex.Lock()
 	bc.conn = conn
 	bc.connMutex.Unlock()
-	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum, "compression", bc.compression)
+	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
 	return earlyFrameData, nil
 }
