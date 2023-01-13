@@ -38,10 +38,6 @@ type ExecutionRun interface {
 
 type MachineStep interface {
 	readymarker.ReadyMarkerInt
-	Hash() (common.Hash, error)
-	Proof() ([]byte, error)
-	Position() (uint64, error)
-	Status() (MachineStatus, error)
-	GlobalState() (GoGlobalState, error)
+	Get() (*MachineStepResult, error)
 	Close()
 }

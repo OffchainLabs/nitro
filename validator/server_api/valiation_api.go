@@ -2,6 +2,10 @@ package server_api
 
 import (
 	"context"
+	"errors"
+	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -40,4 +44,110 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *ValidationInp
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
 	return &ValidationServerAPI{spawner}
+}
+
+type ExecServerAPI struct {
+	ValidationServerAPI
+	execSpawner validator.ExecutionSpawner
+
+	runIdLock sync.Mutex
+	nextId    uint64
+	runs      map[uint64]validator.ExecutionRun // TODO: expire when old
+}
+
+func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner) *ExecServerAPI {
+	time.Now().Unix()
+	return &ExecServerAPI{
+		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
+		execSpawner:         execution,
+		nextId:              rand.Uint64(), // good-enough to aver reusing ids after reboot
+		runs:                make(map[uint64]validator.ExecutionRun),
+	}
+
+}
+
+type MachineStepJson struct {
+	Hash        common.Hash
+	ProofB64    string
+	Position    uint64
+	Status      uint8
+	GlobalState validator.GoGlobalState
+}
+
+func (a *ExecServerAPI) CreateExecutionRun(wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
+	input, err := ValidationInputFromJson(jsonInput)
+	if err != nil {
+		return 0, err
+	}
+	execRun, err := a.execSpawner.CreateExecutionRun(wasmModuleRoot, input)
+	if err != nil {
+		return 0, err
+	}
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	newId := a.nextId
+	a.nextId++
+	a.runs[newId] = execRun
+	return newId, nil
+}
+
+func (a *ExecServerAPI) LatestWasmModuleRoot() (common.Hash, error) {
+	return a.execSpawner.LatestWasmModuleRoot()
+}
+
+func (a *ExecServerAPI) WriteToFile(jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+	input, err := ValidationInputFromJson(jsonInput)
+	if err != nil {
+		return err
+	}
+	return a.execSpawner.WriteToFile(input, expOut, moduleRoot)
+}
+
+var ErrRunNotFound error = errors.New("run not found")
+
+func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	run, found := a.runs[id]
+	if !found {
+		return nil, ErrRunNotFound
+	}
+	return run, nil
+}
+
+func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*MachineStepResultJson, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return nil, err
+	}
+	step := run.GetStepAt(position)
+	err = step.WaitReady(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := step.Get()
+	if err != nil {
+		return nil, err
+	}
+	return MachineStepResultToJson(res), nil
+}
+
+func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return err
+	}
+	run.PrepareRange(start, end)
+	return nil
+}
+
+func (a *ExecServerAPI) CloseExec(execid uint64) {
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	run, found := a.runs[execid]
+	if !found {
+		return
+	}
+	run.Close()
+	delete(a.runs, execid)
 }

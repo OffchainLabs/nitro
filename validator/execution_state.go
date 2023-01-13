@@ -106,3 +106,11 @@ func (s *ExecutionState) RequiredBatches() uint64 {
 	}
 	return count
 }
+
+type MachineStepResult struct {
+	Hash        common.Hash
+	Proof       []byte
+	Position    uint64
+	Status      MachineStatus
+	GlobalState GoGlobalState
+}

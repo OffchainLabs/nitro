@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/util/readymarker"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -20,11 +19,7 @@ type executionRun struct {
 
 type machineStep struct {
 	readymarker.ReadyMarker
-	position uint64
-	status   validator.MachineStatus
-	state    validator.GoGlobalState
-	hash     common.Hash
-	proof    []byte
+	result validator.MachineStepResult
 }
 
 func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
@@ -33,54 +28,26 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		return
 	}
 	machineStep := machine.GetStepCount()
-	if s.position != machine.GetStepCount() {
+	if s.result.Position != machine.GetStepCount() {
 		machineRunning := machine.IsRunning()
-		if (machineRunning && s.position != machineStep) || machineStep > s.position {
-			s.SignalReady(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.position, machine.GetStepCount()))
+		if (machineRunning && s.result.Position != machineStep) || machineStep > s.result.Position {
+			s.SignalReady(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.result.Position, machine.GetStepCount()))
 			return
 		}
-		s.position = machineStep
+		s.result.Position = machineStep
 	}
-	s.status = validator.MachineStatus(machine.Status())
-	s.state = machine.GetGlobalState()
-	s.proof = machine.ProveNextStep()
-	s.hash = machine.Hash()
+	s.result.Status = validator.MachineStatus(machine.Status())
+	s.result.GlobalState = machine.GetGlobalState()
+	s.result.Proof = machine.ProveNextStep()
+	s.result.Hash = machine.Hash()
 	s.SignalReady(nil)
 }
 
-func (s *machineStep) Hash() (common.Hash, error) {
-	if err := s.TestReady(); err != nil {
-		return common.Hash{}, err
-	}
-	return s.hash, nil
-}
-
-func (s *machineStep) Proof() ([]byte, error) {
+func (s *machineStep) Get() (*validator.MachineStepResult, error) {
 	if err := s.TestReady(); err != nil {
 		return nil, err
 	}
-	return s.proof, nil
-}
-
-func (s *machineStep) Position() (uint64, error) {
-	if err := s.TestReady(); err != nil {
-		return 0, err
-	}
-	return s.position, nil
-}
-
-func (s *machineStep) Status() (validator.MachineStatus, error) {
-	if err := s.TestReady(); err != nil {
-		return 0, err
-	}
-	return s.status, nil
-}
-
-func (s *machineStep) GlobalState() (validator.GoGlobalState, error) {
-	if err := s.TestReady(); err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	return s.state, nil
+	return &s.result, nil
 }
 
 func (s *machineStep) Close() {}
@@ -110,7 +77,9 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) {
 func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
 	mstep := &machineStep{
 		ReadyMarker: readymarker.NewReadyMarker(),
-		position:    position,
+		result: validator.MachineStepResult{
+			Position: position,
+		},
 	}
 	e.LaunchThread(func(ctx context.Context) {
 		if position == ^uint64(0) {

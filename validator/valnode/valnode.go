@@ -83,7 +83,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		return nil, err
 	}
 	node.DefaultAuthModules = []string{server_api.Namespace}
-	var serverAPI *server_api.ValidationServerAPI
+	var serverAPI *server_api.ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {
 		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
@@ -92,9 +92,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = server_api.NewValidationServerAPI(jitSpawner)
+		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner)
 	} else {
-		serverAPI = server_api.NewValidationServerAPI(arbSpawner)
+		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner)
 	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,

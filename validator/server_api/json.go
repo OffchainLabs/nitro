@@ -81,3 +81,35 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 	}
 	return valInput, nil
 }
+
+type MachineStepResultJson struct {
+	Hash        common.Hash
+	ProofB64    string
+	Position    uint64
+	Status      uint8
+	GlobalState validator.GoGlobalState
+}
+
+func MachineStepResultToJson(result *validator.MachineStepResult) *MachineStepResultJson {
+	return &MachineStepResultJson{
+		Hash:        result.Hash,
+		ProofB64:    base64.StdEncoding.EncodeToString(result.Proof),
+		Position:    result.Position,
+		Status:      uint8(result.Status),
+		GlobalState: result.GlobalState,
+	}
+}
+
+func MachineStepResultFromJson(resultJson *MachineStepResultJson) (*validator.MachineStepResult, error) {
+	proof, err := base64.StdEncoding.DecodeString(resultJson.ProofB64)
+	if err != nil {
+		return nil, err
+	}
+	return &validator.MachineStepResult{
+		Hash:        resultJson.Hash,
+		Proof:       proof,
+		Position:    resultJson.Position,
+		Status:      validator.MachineStatus(resultJson.Status),
+		GlobalState: resultJson.GlobalState,
+	}, nil
+}

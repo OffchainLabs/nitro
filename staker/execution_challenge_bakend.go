@@ -35,9 +35,8 @@ func (b *ExecutionChallengeBackend) getStep(ctx context.Context, position uint64
 	lastStep := b.lastStep
 	b.lastStepMutex.Unlock()
 	if lastStep != nil && lastStep.Ready() {
-		lastpos, err := lastStep.Position()
-		if err != nil && lastpos == position {
-
+		lastRes, err := lastStep.Get()
+		if err != nil && (lastRes.Position == position || (lastRes.Position > position && lastRes.Status != validator.MachineStatusRunning)) {
 			return lastStep, nil
 		}
 	}
@@ -56,7 +55,11 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return step.Hash()
+	res, err := step.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return res.Hash, nil
 }
 
 func (b *ExecutionChallengeBackend) GetProofAt(
@@ -67,7 +70,11 @@ func (b *ExecutionChallengeBackend) GetProofAt(
 	if err != nil {
 		return nil, err
 	}
-	return step.Proof()
+	res, err := step.Get()
+	if err != nil {
+		return nil, err
+	}
+	return res.Proof, nil
 }
 
 func finalStateError(err error) (uint64, validator.GoGlobalState, uint8, error) {
@@ -80,17 +87,9 @@ func (b *ExecutionChallengeBackend) GetFinalState(ctx context.Context) (uint64, 
 	if err != nil {
 		return finalStateError(err)
 	}
-	pos, err := step.Position()
+	res, err := step.Get()
 	if err != nil {
 		return finalStateError(err)
 	}
-	status, err := step.Status()
-	if err != nil {
-		return finalStateError(err)
-	}
-	globalstate, err := step.GlobalState()
-	if err != nil {
-		return finalStateError(err)
-	}
-	return pos, globalstate, uint8(status), nil
+	return res.Position, res.GlobalState, uint8(res.Status), nil
 }
