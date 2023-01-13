@@ -137,8 +137,6 @@ type BroadcastClient struct {
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
 	adjustCount                     func(int32)
-
-	flateReader *wsflate.Reader
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
@@ -331,6 +329,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
 		backoffDuration := bc.config().ReconnectInitialBackoff
+		flateReader := wsbroadcastserver.NewFlateReader()
 		for {
 			select {
 			case <-ctx.Done():
@@ -342,7 +341,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			var op ws.OpCode
 			var err error
 			config := bc.config()
-			msg, op, bc.flateReader, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, config.Timeout, ws.StateClientSide, config.EnableCompression, bc.flateReader)
+			msg, op, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, config.Timeout, ws.StateClientSide, config.EnableCompression, flateReader)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return

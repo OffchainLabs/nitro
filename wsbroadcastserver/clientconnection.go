@@ -64,6 +64,7 @@ func NewClientConnection(
 		lastHeardUnix:   time.Now().Unix(),
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 		compression:     compression,
+		flateReader:     NewFlateReader(),
 	}
 }
 
@@ -132,7 +133,7 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 	var data []byte
 	var opCode ws.OpCode
 	var err error
-	data, opCode, cc.flateReader, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
+	data, opCode, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
 	return data, opCode, err
 }
 

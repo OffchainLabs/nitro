@@ -64,7 +64,13 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 	return cr
 }
 
-func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, *wsflate.Reader, error) {
+func NewFlateReader() *wsflate.Reader {
+	return wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
+		return flate.NewReaderDict(r, GetStaticCompressorDictionary())
+	})
+}
+
+func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, error) {
 	if compression {
 		state |= ws.StateExtended
 	}
@@ -88,13 +94,13 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, 0, flateReader, nil
+			return nil, 0, nil
 		default:
 		}
 
 		err := conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		if err != nil {
-			return nil, 0, flateReader, err
+			return nil, 0, err
 		}
 
 		// Control packet may be returned even if err set
@@ -102,36 +108,31 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 		if header.OpCode.IsControl() {
 			// Control packet may be returned even if err set
 			if err2 := controlHandler(header, &reader); err2 != nil {
-				return nil, 0, flateReader, err2
+				return nil, 0, err2
 			}
 
 			// Discard any data after control packet
 			if err2 := reader.Discard(); err2 != nil {
-				return nil, 0, nil, err2
+				return nil, 0, err2
 			}
 
-			return nil, 0, flateReader, nil
+			return nil, 0, nil
 		}
 		if err != nil {
-			return nil, 0, flateReader, err
+			return nil, 0, err
 		}
 
 		if header.OpCode != ws.OpText &&
 			header.OpCode != ws.OpBinary {
 			if err := reader.Discard(); err != nil {
-				return nil, 0, flateReader, err
+				return nil, 0, err
 			}
 			continue
 		}
 		var data []byte
 		if msg.IsCompressed() {
 			if !compression {
-				return nil, 0, flateReader, errors.New("Received compressed frame even though compression is disabled")
-			}
-			if flateReader == nil {
-				flateReader = wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
-					return flate.NewReaderDict(r, GetStaticCompressorDictionary())
-				})
+				return nil, 0, errors.New("Received compressed frame even though compression is disabled")
 			}
 			flateReader.Reset(&reader)
 			data, err = io.ReadAll(flateReader)
@@ -139,6 +140,6 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 			data, err = io.ReadAll(&reader)
 		}
 
-		return data, header.OpCode, flateReader, err
+		return data, header.OpCode, err
 	}
 }
