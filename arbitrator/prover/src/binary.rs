@@ -513,7 +513,17 @@ impl<'a> Debug for WasmBinary<'a> {
 }
 
 impl<'a> WasmBinary<'a> {
-    pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
+    /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
+    /// Note: wasms instrumented with canonical module roots produce machines that cannot be ran.
+    pub fn instrument(&mut self, config: &StylusConfig, canonical_module_root: bool) -> Result<StylusGlobals> {
+        let mut config = config.clone();
+        
+        if canonical_module_root {
+            // zero-out dynamic values that affect the module root
+            config.start_gas = 0;
+            config.depth.max_depth = 0;
+        }
+        
         let meter = Meter::new(config.costs, config.start_gas);
         let depth = DepthChecker::new(config.depth);
         let bound = HeapBound::new(config.heap_bound)?;

@@ -6,34 +6,35 @@
 
 package programs
 
-//#cgo CFLAGS: -g -Wall
-//#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
-//#include <stdint.h>
-//
-// typedef struct GoParams {
-//   uint32_t version;
-//   uint32_t max_depth;
-//   uint32_t max_frame_size;
-//   uint32_t heap_bound;
-//   uint64_t wasm_gas_price;
-//   uint64_t hostio_cost;
-// } GoParams;
-//
-// typedef struct GoSlice {
-//   const uint8_t * ptr;
-//   const size_t len;
-// } GoSlice;
-//
-// typedef struct RustVec {
-//   uint8_t * const * ptr;
-//   size_t * len;
-//   size_t * cap;
-// } RustVec;
-//
-// extern uint8_t stylus_compile(GoSlice wasm, GoParams params, RustVec output);
-// extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * evm_gas);
-// extern void    stylus_free(RustVec vec);
-//
+/*
+#cgo CFLAGS: -g -Wall
+#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
+#include <stdint.h>
+
+typedef struct GoParams {
+  uint32_t version;
+  uint32_t max_depth;
+  uint32_t max_frame_size;
+  uint32_t heap_bound;
+  uint64_t wasm_gas_price;
+  uint64_t hostio_cost;
+} GoParams;
+
+typedef struct GoSlice {
+  const uint8_t * ptr;
+  const size_t len;
+} GoSlice;
+
+typedef struct RustVec {
+  uint8_t * const * ptr;
+  size_t * len;
+  size_t * cap;
+} RustVec;
+
+extern uint8_t stylus_compile(GoSlice wasm, GoParams params, RustVec output);
+extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * evm_gas);
+extern void    stylus_free(RustVec vec);
+*/
 import "C"
 import (
 	"github.com/ethereum/go-ethereum/common"
@@ -48,7 +49,7 @@ type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params *goParams) error {
+func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params *GoParams) error {
 	output := rustVec()
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
@@ -57,12 +58,12 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params 
 	))
 	result, err := status.output(output.read())
 	if err == nil {
-		db.AddUserModule(params.version, program, result)
+		db.AddUserModule(params.Version, program, result)
 	}
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *GoParams) ([]byte, error) {
 
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program)
@@ -111,13 +112,13 @@ func goSlice(slice []byte) C.GoSlice {
 	}
 }
 
-func (params *goParams) encode() C.GoParams {
+func (params *GoParams) encode() C.GoParams {
 	return C.GoParams{
-		version:        u32(params.version),
-		max_depth:      u32(params.maxDepth),
-		max_frame_size: u32(params.maxFrameSize),
-		heap_bound:     u32(params.heapBound),
-		wasm_gas_price: u64(params.wasmGasPrice),
-		hostio_cost:    u64(params.hostioCost),
+		version:        u32(params.Version),
+		max_depth:      u32(params.MaxDepth),
+		max_frame_size: u32(params.MaxFrameSize),
+		heap_bound:     u32(params.HeapBound),
+		wasm_gas_price: u64(params.WasmGasPrice),
+		hostio_cost:    u64(params.HostioCost),
 	}
 }

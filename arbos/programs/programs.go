@@ -158,16 +158,16 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
-type goParams struct {
-	version      uint32
-	maxDepth     uint32
-	maxFrameSize uint32
-	heapBound    uint32
-	wasmGasPrice uint64
-	hostioCost   uint64
+type GoParams struct {
+	Version      uint32
+	MaxDepth     uint32
+	MaxFrameSize uint32
+	HeapBound    uint32
+	WasmGasPrice uint64
+	HostioCost   uint64
 }
 
-func (p Programs) goParams(version uint32) (*goParams, error) {
+func (p Programs) goParams(version uint32) (*GoParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
@@ -188,13 +188,13 @@ func (p Programs) goParams(version uint32) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	config := &goParams{
-		version:      version,
-		maxDepth:     maxDepth,
-		maxFrameSize: maxFrameSize,
-		heapBound:    heapBound,
-		wasmGasPrice: wasmGasPrice.Uint64(),
-		hostioCost:   hostioCost,
+	config := &GoParams{
+		Version:      version,
+		MaxDepth:     maxDepth,
+		MaxFrameSize: maxFrameSize,
+		HeapBound:    heapBound,
+		WasmGasPrice: wasmGasPrice.Uint64(),
+		HostioCost:   hostioCost,
 	}
 	return config, nil
 }

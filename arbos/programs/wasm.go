@@ -34,12 +34,12 @@ func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth, maxFrameSize, heapBound u32, wasmGasPrice, hostioCost u64) *rustConfig
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, params *goParams) error {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, params *GoParams) error {
 	_, err := compileMachine(db, program, wasm, params)
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *GoParams) ([]byte, error) {
 	wasm, err := getWasm(db, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
@@ -51,7 +51,7 @@ func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, par
 	return machine.call(calldata, params, gas)
 }
 
-func compileMachine(db vm.StateDB, program addr, wasm []byte, params *goParams) (*rustMachine, error) {
+func compileMachine(db vm.StateDB, program addr, wasm []byte, params *GoParams) (*rustMachine, error) {
 	machine, err := compileUserWasmRustImpl(wasm, params.encode())
 	if err != nil {
 		return nil, errors.New(string(err.intoSlice()))
@@ -59,7 +59,7 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, params *goParams) 
 	return machine, nil
 }
 
-func (m *rustMachine) call(calldata []byte, params *goParams, gas *u64) ([]byte, error) {
+func (m *rustMachine) call(calldata []byte, params *GoParams, gas *u64) ([]byte, error) {
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas)
 	println("Call ", status, output)
 	return status.output(output.intoSlice())
@@ -72,6 +72,6 @@ func (vec *rustVec) intoSlice() []byte {
 	return slice
 }
 
-func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.maxFrameSize, p.heapBound, p.wasmGasPrice, p.hostioCost)
+func (p *GoParams) encode() *rustConfig {
+	return rustConfigImpl(p.Version, p.MaxDepth, p.MaxFrameSize, p.HeapBound, p.WasmGasPrice, p.HostioCost)
 }

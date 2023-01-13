@@ -3,7 +3,7 @@
 
 use eyre::{bail, Result};
 use std::fmt::Debug;
-use wasmer_types::{Bytes, Pages};
+use wasmer_types::Bytes;
 use wasmparser::Operator;
 
 #[cfg(feature = "native")]
@@ -106,27 +106,6 @@ impl PricingParams {
 }
 
 impl StylusConfig {
-    pub fn new(
-        costs: OpCosts,
-        start_gas: u64,
-        max_depth: u32,
-        max_frame_size: u32,
-        heap_bound: Bytes,
-        wasm_gas_price: u64,
-        hostio_cost: u64,
-    ) -> Result<Self> {
-        let depth = DepthParams::new(max_depth, max_frame_size);
-        let pricing = PricingParams::new(wasm_gas_price, hostio_cost);
-        Pages::try_from(heap_bound)?; // ensure the limit represents a number of pages
-        Ok(Self {
-            costs,
-            start_gas,
-            heap_bound,
-            depth,
-            pricing,
-        })
-    }
-
     #[cfg(feature = "native")]
     pub fn store(&self) -> Store {
         let mut compiler = Singlepass::new();
@@ -147,6 +126,7 @@ impl StylusConfig {
 
         Store::new(compiler)
     }
+
 }
 
 impl Debug for StylusConfig {
@@ -158,5 +138,26 @@ impl Debug for StylusConfig {
             .field("depth", &self.depth)
             .field("pricing", &self.pricing)
             .finish()
+    }
+}
+
+#[repr(C)]
+pub struct GoParams {
+    version: u32,
+    max_depth: u32,
+    max_frame_size: u32,
+    heap_bound: u32,
+    wasm_gas_price: u64,
+    hostio_cost: u64,
+}
+
+impl GoParams {
+    pub fn config(self) -> StylusConfig {
+        let mut config = StylusConfig::version(self.version);
+        config.depth = DepthParams::new(self.max_depth, self.max_frame_size);
+        config.heap_bound = Bytes(self.heap_bound as usize);
+        config.pricing.wasm_gas_price = self.wasm_gas_price;
+        config.pricing.hostio_cost = self.hostio_cost;
+        config
     }
 }

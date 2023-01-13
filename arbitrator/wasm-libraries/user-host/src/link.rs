@@ -6,7 +6,10 @@ use arbutil::wavm;
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::{config::{StylusConfig, DepthParams}, run::UserOutcomeKind},
+    programs::{
+        config::{DepthParams, StylusConfig},
+        run::UserOutcomeKind,
+    },
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -40,11 +43,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 ) {
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
-    let mut config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
-
-    // zero-out dynamic values that affect the module root
-    config.start_gas = 0; 
-    config.depth.max_depth = 0;
+    let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -59,7 +58,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         Ok(bin) => bin,
         Err(err) => error!("failed to parse user program", err),
     };
-    let stylus_data = match bin.instrument(&config) {
+    let stylus_data = match bin.instrument(&config, true) {
         Ok(stylus_data) => stylus_data,
         Err(err) => error!("failed to instrument user program", err),
     };

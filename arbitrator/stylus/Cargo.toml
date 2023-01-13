@@ -12,6 +12,7 @@ wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-crane
 wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm" }
 ouroboros = "0.15.5"
 thiserror = "1.0.33"
+libc = "0.2.108"
 eyre = "0.6.5"
 sha3 = "0.10.5"
 hex = "0.4.3"
