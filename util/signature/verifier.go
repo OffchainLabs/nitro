@@ -19,7 +19,7 @@ import (
 type Verifier struct {
 	config        *VerifierConfig
 	authorizedMap map[common.Address]struct{}
-	bpValidator   contracts.BatchPosterVerifierInterface
+	addrVerifier  contracts.AddressVerifierInterface
 }
 
 type VerifierConfig struct {
@@ -62,19 +62,19 @@ var TestingFeedVerifierConfig = VerifierConfig{
 	},
 }
 
-func NewVerifier(config *VerifierConfig, bpValidator contracts.BatchPosterVerifierInterface) (*Verifier, error) {
+func NewVerifier(config *VerifierConfig, addrVerifier contracts.AddressVerifierInterface) (*Verifier, error) {
 	authorizedMap := make(map[common.Address]struct{}, len(config.AllowedAddresses))
 	for _, addrString := range config.AllowedAddresses {
 		addr := common.HexToAddress(addrString)
 		authorizedMap[addr] = struct{}{}
 	}
-	if bpValidator == nil && !config.Dangerous.AcceptMissing && config.AcceptSequencer {
+	if addrVerifier == nil && !config.Dangerous.AcceptMissing && config.AcceptSequencer {
 		return nil, errors.New("cannot read batch poster addresses")
 	}
 	return &Verifier{
 		config:        config,
 		authorizedMap: authorizedMap,
-		bpValidator:   bpValidator,
+		addrVerifier:  addrVerifier,
 	}, nil
 }
 
@@ -107,20 +107,20 @@ func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Ha
 		return nil
 	}
 
-	if v.config.Dangerous.AcceptMissing && v.bpValidator == nil {
+	if v.config.Dangerous.AcceptMissing && v.addrVerifier == nil {
 		return nil
 	}
 
-	if !v.config.AcceptSequencer || v.bpValidator == nil {
+	if !v.config.AcceptSequencer || v.addrVerifier == nil {
 		return ErrSignerNotApproved
 	}
 
-	batchPoster, err := v.bpValidator.IsBatchPoster(ctx, addr)
+	batchPosterOrSequencer, err := v.addrVerifier.IsBatchPosterOrSequencer(ctx, addr)
 	if err != nil {
 		return err
 	}
 
-	if !batchPoster {
+	if !batchPosterOrSequencer {
 		return ErrSignerNotApproved
 	}
 

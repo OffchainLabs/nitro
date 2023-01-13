@@ -813,7 +813,7 @@ func createNodeImpl(
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
 	var sequencer *Sequencer
-	var bpVerifier *contracts.BatchPosterVerifier
+	var bpVerifier *contracts.AddressVerifier
 	if deployInfo != nil && l1client != nil {
 		sequencerInboxAddr := deployInfo.SequencerInbox
 
@@ -821,7 +821,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	if config.Sequencer.Enable {
