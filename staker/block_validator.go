@@ -1,14 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package staker
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -24,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type BlockValidator struct {
@@ -174,7 +172,6 @@ func NewBlockValidator(
 	statelessBlockValidator *StatelessBlockValidator,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
-	machineLoader *NitroMachineLoader,
 	reorgingToBlock *types.Block,
 	config BlockValidatorConfigFetcher,
 	fatalErr chan<- error,
@@ -416,107 +413,17 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	v.triggerSendValidations()
 }
 
-var launchTime = time.Now().Format("2006_01_02__15_04")
-
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, sequencerMsg []byte) error {
-	machConf := v.MachineLoader.GetConfig()
-	outDirPath := filepath.Join(machConf.RootPath, v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
-	err := os.MkdirAll(outDirPath, 0755)
+	input, err := validationEntry.ToInput()
 	if err != nil {
 		return err
 	}
-
-	rootPathAssign := ""
-	if executable, err := os.Executable(); err == nil {
-		rootPathAssign = "ROOTPATH=\"" + filepath.Dir(executable) + "\"\n"
-	}
-	cmdFile, err := os.OpenFile(filepath.Join(outDirPath, "run-prover.sh"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	expOut, err := validationEntry.expectedEnd()
 	if err != nil {
 		return err
 	}
-	defer cmdFile.Close()
-	_, err = cmdFile.WriteString("#!/bin/bash\n" +
-		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", validationEntry.EndPosition.BatchNumber, validationEntry.EndPosition.PosInBatch, validationEntry.BlockHash) +
-		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
-		rootPathAssign +
-		"if (( $# > 1 )); then\n" +
-		"	if [[ $1 == \"-m\" ]]; then\n" +
-		"		MACHPATH=$2\n" +
-		"		shift\n" +
-		"		shift\n" +
-		"	fi\n" +
-		"fi\n" +
-		"${ROOTPATH}/bin/prover ${MACHPATH}/" + machConf.ProverBinPath)
-	if err != nil {
-		return err
-	}
-
-	for _, module := range machConf.LibraryPaths {
-		_, err = cmdFile.WriteString(" -l " + "${MACHPATH}/" + module)
-		if err != nil {
-			return err
-		}
-	}
-	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", validationEntry.StartPosition.BatchNumber, validationEntry.StartPosition.PosInBatch, validationEntry.PrevBlockHash))
-	if err != nil {
-		return err
-	}
-
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", validationEntry.StartPosition.BatchNumber)
-	err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), sequencerMsg, 0644)
-	if err != nil {
-		return err
-	}
-	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
-	if err != nil {
-		return err
-	}
-
-	preimageFile, err := os.Create(filepath.Join(outDirPath, "preimages.bin"))
-	if err != nil {
-		return err
-	}
-	defer preimageFile.Close()
-	for _, data := range validationEntry.Preimages {
-		lenbytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
-		_, err := preimageFile.Write(lenbytes)
-		if err != nil {
-			return err
-		}
-		_, err = preimageFile.Write(data)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = cmdFile.WriteString(" --preimages preimages.bin")
-	if err != nil {
-		return err
-	}
-
-	if validationEntry.HasDelayedMsg {
-		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.DelayedMsgNr))
-		if err != nil {
-			return err
-		}
-		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
-		err = os.WriteFile(filepath.Join(outDirPath, filename), validationEntry.DelayedMsg, 0644)
-		if err != nil {
-			return err
-		}
-		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox %s", filename))
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = cmdFile.WriteString(" \"$@\"\n")
-	if err != nil {
-		return err
-	}
-	return nil
+	return v.validationSpawner.WriteToFile(v.config().OutputPath, input, expOut, moduleRoot, sequencerMsg)
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -561,7 +468,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
 		v.triggerSendValidations()
 	}()
-	entry.BatchInfo = append(entry.BatchInfo, BatchInfo{
+	entry.BatchInfo = append(entry.BatchInfo, validator.BatchInfo{
 		Number: entry.StartPosition.BatchNumber,
 		Data:   seqMsg,
 	})
@@ -571,11 +478,14 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0))
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
-		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, error)
+		type replay = func(context.Context, *validator.ValidationInput, common.Hash) (validator.GoGlobalState, error)
 
 		execValidation := func(replay replay, validationType string) error {
-			gsEnd, err := replay(ctx, entry, moduleRoot)
-
+			input, err := entry.ToInput()
+			if err != nil {
+				return err
+			}
+			gsEnd, err := replay(ctx, input, moduleRoot)
 			if err != nil {
 				canceled := ctx.Err() != nil
 				if canceled {
@@ -586,7 +496,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 					entry.BlockNumber, entry.BlockHash, validationType, err)
 			}
 
-			var gsExpected GoGlobalState
+			var gsExpected validator.GoGlobalState
 			gsExpected, err = entry.expectedEnd()
 			if err != nil || gsEnd != gsExpected {
 				return fmt.Errorf("validation of block failed. moduleRoot: %v got: %v expected: %v expectedHeader: %v, validationType: %v, gsErr: %w",
@@ -601,10 +511,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		config := v.config()
 		var valError error
 		if config.ArbitratorValidator {
-			valError = execValidation(v.executeBlock, "arbitrator")
+			valError = execValidation(v.validationSpawner.ExecuteArbitrator, "arbitrator")
 		}
 		if config.JitValidator && valError == nil {
-			valError = execValidation(v.jitBlock, "jit")
+			valError = execValidation(v.validationSpawner.ExecuteJit, "jit")
 		}
 		if valError != nil {
 			if errors.Is(valError, ErrValidationCanceled) {
@@ -891,7 +801,7 @@ func (v *BlockValidator) progressValidated() {
 	}
 }
 
-func (v *BlockValidator) AssumeValid(globalState GoGlobalState) error {
+func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
 		return errors.Errorf("cannot handle AssumeValid while running")
 	}
@@ -1081,7 +991,7 @@ func (v *BlockValidator) Initialize() error {
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
+		latest, err := v.validationSpawner.LatestWasmModuleRoot()
 		if err != nil {
 			return err
 		}
@@ -1096,17 +1006,6 @@ func (v *BlockValidator) Initialize() error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
-	if config.ArbitratorValidator {
-		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, false); err != nil {
-			return err
-		}
-	}
-	if config.JitValidator {
-		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, true); err != nil {
-			return err
-		}
-	}
-
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
 	return nil
 }

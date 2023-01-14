@@ -34,9 +34,9 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 // TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
@@ -72,7 +72,7 @@ type TransactionStreamer struct {
 
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
-	validator       *validator.BlockValidator
+	validator       *staker.BlockValidator
 	inboxReader     *InboxReader
 }
 
@@ -126,7 +126,7 @@ func uint64ToKey(x uint64) []byte {
 	return data
 }
 
-func (s *TransactionStreamer) SetBlockValidator(validator *validator.BlockValidator) {
+func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
 	if s.Started() {
 		panic("trying to set block validator after start")
 	}

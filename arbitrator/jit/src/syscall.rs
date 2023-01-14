@@ -214,11 +214,12 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
     }
 }
 
+/// go side: λ(v value)
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
     let pool = &mut env.js_state.pool;
 
-    let val = JsValue::new(sp.read_u64(0));
+    let val = JsValue::new(sp.read_u64());
     match val {
         JsValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
         JsValue::Ref(x) => {
@@ -230,12 +231,12 @@ pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
     }
 }
 
+/// go side: λ(v value, field string) value
 pub fn js_value_get(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    let source = JsValue::new(sp.read_u64(0));
-    let field_ptr = sp.read_u64(1);
-    let field_len = sp.read_u64(2);
-    let field = sp.read_slice(field_ptr, field_len);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    let source = JsValue::new(sp.read_u64());
+    let field = sp.read_js_string();
+
     let value = match source {
         JsValue::Ref(id) => get_field(env, id, &field),
         val => {
@@ -244,18 +245,18 @@ pub fn js_value_get(mut env: WasmEnvMut, sp: u32) {
             GoValue::Null
         }
     };
-    sp.write_u64(3, value.encode());
+    sp.write_u64(value.encode());
 }
 
+/// go side: λ(v value, field string, x value)
 pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
     use JsValue::*;
 
-    let source = JsValue::new(sp.read_u64(0));
-    let field_ptr = sp.read_u64(1);
-    let field_len = sp.read_u64(2);
-    let new_value = JsValue::new(sp.read_u64(3));
-    let field = sp.read_slice(field_ptr, field_len);
+    let source = JsValue::new(sp.read_u64());
+    let field = sp.read_js_string();
+    let new_value = JsValue::new(sp.read_u64());
+
     if source == Ref(GO_ID) && &field == b"_pendingEvent" && new_value == Ref(NULL_ID) {
         env.js_state.pending_event = None;
         return;
@@ -275,21 +276,22 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
     );
 }
 
+/// go side: λ(v value, i int) value
 pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
     macro_rules! fail {
         ($text:expr $(,$args:expr)*) => {{
             eprintln!($text $(,$args)*);
-            return sp.write_u64(2, GoValue::Null.encode());
+            return sp.write_u64(GoValue::Null.encode());
         }};
     }
 
-    let source = match JsValue::new(sp.read_u64(0)) {
+    let source = match JsValue::new(sp.read_u64()) {
         JsValue::Ref(x) => env.js_state.pool.get(x),
         val => fail!("Go attempted to index into {:?}", val),
     };
-    let index = match u32::try_from(sp.read_u64(1)) {
+    let index = match u32::try_from(sp.read_u64()) {
         Ok(index) => index as usize,
         Err(err) => fail!("{:?}", err),
     };
@@ -301,9 +303,10 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
     let Some(value) = value else {
         fail!("Go indexing out of bounds into {:?} index {index}", source)
     };
-    sp.write_u64(2, value.encode());
+    sp.write_u64(value.encode());
 }
 
+/// go side: λ(v value, method string, args []value) (value, bool)
 pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let Some(resume) = env.data().exports.resume.clone() else {
         return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
@@ -311,26 +314,23 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let Some(get_stack_pointer) = env.data().exports.get_stack_pointer.clone() else {
         return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
     };
-    let sp = GoStack::simple(sp, &env);
+    let mut sp = GoStack::simple(sp, &env);
     let data = env.data_mut();
     let rng = &mut data.go_state.rng;
     let pool = &mut data.js_state.pool;
     use JsValue::*;
 
-    let object = JsValue::new(sp.read_u64(0));
-    let method_name_ptr = sp.read_u64(1);
-    let method_name_len = sp.read_u64(2);
-    let method_name = sp.read_slice(method_name_ptr, method_name_len);
-    let args_ptr = sp.read_u64(3);
-    let args_len = sp.read_u64(4);
+    let object = JsValue::new(sp.read_u64());
+    let method_name = sp.read_js_string();
+    let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_slice(args_ptr, args_len);
     let name = String::from_utf8_lossy(&method_name);
 
     macro_rules! fail {
         ($text:expr $(,$args:expr)*) => {{
             eprintln!($text $(,$args)*);
-            sp.write_u64(6, GoValue::Null.encode());
-            sp.write_u8(7, 1);
+            sp.write_u64(GoValue::Null.encode());
+            sp.write_u8(1);
             return Ok(())
         }};
     }
@@ -399,14 +399,17 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                         ],
                     });
 
+                    // save our progress from the stack pointer
+                    let saved = sp.save_offset();
+
                     // recursively call into wasmer
                     let mut store = env.as_store_mut();
                     resume.call(&mut store)?;
 
                     // the stack pointer has changed, so we'll need to write our return results elsewhere
                     let pointer = get_stack_pointer.call(&mut store)? as u32;
-                    sp.write_u64_ptr(pointer + sp.relative_offset(6), GoValue::Null.encode());
-                    sp.write_u8_ptr(pointer + sp.relative_offset(7), 1);
+                    sp.write_u64_ptr(pointer + saved, GoValue::Null.encode());
+                    sp.write_u8_ptr(pointer + saved + 8, 1);
                     return Ok(());
                 }
                 _ => fail!("Go trying to call fs.write with bad args {:?}", args),
@@ -442,25 +445,25 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
         _ => fail!("Go trying to call unknown method {:?} . {name}", object),
     };
 
-    sp.write_u64(6, value.encode());
-    sp.write_u8(7, 1);
+    sp.write_u64(value.encode());
+    sp.write_u8(1);
     Ok(())
 }
 
+/// go side: λ(v value, args []value) (value, bool)
 pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
     let pool = &mut env.js_state.pool;
 
-    let class = sp.read_u32(0);
-    let args_ptr = sp.read_u64(1);
-    let args_len = sp.read_u64(2);
+    let class = sp.read_u32();
+    let (args_ptr, args_len) = sp.skip_u32().read_go_slice();
     let args = sp.read_value_slice(args_ptr, args_len);
     match class {
         UINT8_ARRAY_ID => match args.get(0) {
             Some(JsValue::Number(size)) => {
                 let id = pool.insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
-                sp.write_u64(4, GoValue::Object(id).encode());
-                sp.write_u8(5, 1);
+                sp.write_u64(GoValue::Object(id).encode());
+                sp.write_u8(1);
                 return;
             }
             _ => eprintln!(
@@ -470,20 +473,21 @@ pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
         },
         DATE_ID => {
             let id = pool.insert(DynamicObject::Date);
-            sp.write_u64(4, GoValue::Object(id).encode());
-            sp.write_u8(5, 1);
+            sp.write_u64(GoValue::Object(id).encode());
+            sp.write_u8(1);
             return;
         }
         _ => eprintln!("Go trying to construct unimplemented JS value {class}"),
     }
-    sp.write_u64(4, GoValue::Null.encode());
-    sp.write_u8(5, 0);
+    sp.write_u64(GoValue::Null.encode());
+    sp.write_u8(0);
 }
 
+/// go side: λ(v value) int
 pub fn js_value_length(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
-    let source = match JsValue::new(sp.read_u64(0)) {
+    let source = match JsValue::new(sp.read_u64()) {
         JsValue::Ref(x) => env.js_state.pool.get(x),
         _ => None,
     };
@@ -498,14 +502,14 @@ pub fn js_value_length(mut env: WasmEnvMut, sp: u32) {
             0
         }
     };
-    sp.write_u64(1, length as u64);
+    sp.write_u64(length as u64);
 }
 
+/// go side: λ(dest []byte, src value) (int, bool)
 pub fn js_copy_bytes_to_go(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    let dest_ptr = sp.read_u64(0);
-    let dest_len = sp.read_u64(1);
-    let src_val = JsValue::new(sp.read_u64(3));
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    let (dest_ptr, dest_len) = sp.read_go_slice();
+    let src_val = JsValue::new(sp.read_u64());
 
     match src_val {
         JsValue::Ref(src_id) => match env.js_state.pool.get_mut(src_id) {
@@ -518,8 +522,8 @@ pub fn js_copy_bytes_to_go(mut env: WasmEnvMut, sp: u32) {
                 }
                 let len = std::cmp::min(src_len, dest_len) as usize;
                 sp.write_slice(dest_ptr, &buf[..len]);
-                sp.write_u64(4, GoValue::Number(len as f64).encode());
-                sp.write_u8(5, 1);
+                sp.write_u64(GoValue::Number(len as f64).encode());
+                sp.write_u8(1);
                 return;
             }
             source => {
@@ -531,18 +535,17 @@ pub fn js_copy_bytes_to_go(mut env: WasmEnvMut, sp: u32) {
         },
         _ => eprintln!("Go trying to copy bytes from {:?}", src_val),
     }
-
-    sp.write_u8(5, 0);
+    sp.skip_u64().write_u8(0);
 }
 
+/// go side: λ(dest value, src []byte) (int, bool)
 pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    let dest_val = JsValue::new(sp.read_u64());
+    let (src_ptr, src_len) = sp.read_go_slice();
 
-    match JsValue::new(sp.read_u64(0)) {
+    match dest_val {
         JsValue::Ref(dest_id) => {
-            let src_ptr = sp.read_u64(1);
-            let src_len = sp.read_u64(2);
-
             match env.js_state.pool.get_mut(dest_id) {
                 Some(DynamicObject::Uint8Array(buf)) => {
                     let dest_len = buf.len() as u64;
@@ -556,8 +559,8 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
                     // Slightly inefficient as this allocates a new temporary buffer
                     let data = sp.read_slice(src_ptr, len as u64);
                     buf[..len].copy_from_slice(&data);
-                    sp.write_u64(4, GoValue::Number(len as f64).encode());
-                    sp.write_u8(5, 1);
+                    sp.write_u64(GoValue::Number(len as f64).encode());
+                    sp.write_u8(1);
                     return;
                 }
                 dest => eprintln!("Go trying to copy bytes into unsupported target {:?}", dest),
@@ -565,9 +568,8 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
         }
         value => eprintln!("Go trying to copy bytes into {:?}", value),
     }
-
-    sp.write_u64(4, GoValue::Null.encode());
-    sp.write_u8(5, 0);
+    sp.write_u64(GoValue::Null.encode());
+    sp.write_u8(0);
 }
 
 macro_rules! unimpl_js {

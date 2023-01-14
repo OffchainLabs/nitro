@@ -74,6 +74,10 @@ func (m *IncorrectMachine) Step(ctx context.Context, count uint64) error {
 	return nil
 }
 
+func (m *IncorrectMachine) Status() uint8 {
+	return m.inner.Status()
+}
+
 func (m *IncorrectMachine) Hash() common.Hash {
 	if m.GetStepCount() >= m.incorrectStep {
 		if m.inner.IsErrored() {

@@ -1919,7 +1919,7 @@ impl Machine {
                     self.value_stack.push(Value::I32(x as u32));
                 }
                 Opcode::I64ExtendI32(signed) => {
-                    let x = self.value_stack.pop().unwrap().assume_u32();
+                    let x: u32 = self.value_stack.pop().unwrap().assume_u32();
                     let x64 = match signed {
                         true => x as i32 as i64 as u64,
                         false => x as u64,
@@ -2249,9 +2249,10 @@ impl Machine {
 
         data.extend(self.global_state.hash());
 
-        data.extend((self.pc.module).to_be_bytes());
-        data.extend((self.pc.func).to_be_bytes());
-        data.extend((self.pc.inst).to_be_bytes());
+        data.extend(self.pc.module.to_be_bytes());
+        data.extend(self.pc.func.to_be_bytes());
+        data.extend(self.pc.inst.to_be_bytes());
+
         let mod_merkle = self.get_modules_merkle();
         data.extend(mod_merkle.root());
 

@@ -16,16 +16,18 @@ pub fn go_debug(x: u32) {
 
 pub fn reset_memory_data_view(_: u32) {}
 
-pub fn wasm_exit(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, _) = GoStack::new(sp, &mut env);
-    Escape::exit(sp.read_u32(0))
+/// go side: λ(code int32)
+pub fn wasm_exit(env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let mut sp = GoStack::simple(sp, &env);
+    Escape::exit(sp.read_u32())
 }
 
-pub fn wasm_write(mut env: WasmEnvMut, sp: u32) {
-    let (sp, _) = GoStack::new(sp, &mut env);
-    let fd = sp.read_u64(0);
-    let ptr = sp.read_u64(1);
-    let len = sp.read_u32(2);
+/// go side: λ(fd uintptr, p pointer, len int32)
+pub fn wasm_write(env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &env);
+    let fd = sp.read_u64();
+    let ptr = sp.read_u64();
+    let len = sp.read_u32();
     let buf = sp.read_slice(ptr, len.into());
     if fd == 2 {
         let stderr = std::io::stderr();
@@ -38,29 +40,33 @@ pub fn wasm_write(mut env: WasmEnvMut, sp: u32) {
     }
 }
 
+/// go side: λ() int64
 pub fn nanotime1(mut env: WasmEnvMut, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, &mut env);
+    let (mut sp, mut env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
-    sp.write_u64(0, env.go_state.time);
+    sp.write_u64(env.go_state.time);
 }
 
+/// go side: λ() (seconds int64, nanos int32)
 pub fn walltime(mut env: WasmEnvMut, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, &mut env);
+    let (mut sp, mut env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
-    sp.write_u64(0, env.go_state.time / 1_000_000_000);
-    sp.write_u32(1, (env.go_state.time % 1_000_000_000) as u32);
+    sp.write_u64(env.go_state.time / 1_000_000_000);
+    sp.write_u32((env.go_state.time % 1_000_000_000) as u32);
 }
 
+/// go side: λ() (seconds int64, nanos int32)
 pub fn walltime1(mut env: WasmEnvMut, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, &mut env);
+    let (mut sp, mut env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
-    sp.write_u64(0, env.go_state.time / 1_000_000_000);
-    sp.write_u64(1, env.go_state.time % 1_000_000_000);
+    sp.write_u64(env.go_state.time / 1_000_000_000);
+    sp.write_u64(env.go_state.time % 1_000_000_000);
 }
 
+/// go side: λ() (delay int64) int32
 pub fn schedule_timeout_event(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    let mut time = sp.read_u64(0);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    let mut time = sp.read_u64();
     time = time.saturating_mul(1_000_000); // milliseconds to nanoseconds
     time = time.saturating_add(env.go_state.time); // add the current time to the delay
 
@@ -70,23 +76,25 @@ pub fn schedule_timeout_event(mut env: WasmEnvMut, sp: u32) {
     timeouts.times.push(TimeoutInfo { time, id });
     timeouts.pending_ids.insert(id);
 
-    sp.write_u32(1, id);
+    sp.write_u32(id);
 }
 
+/// go side: λ(id int32)
 pub fn clear_timeout_event(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
-    let id = sp.read_u32(0);
+    let id = sp.read_u32();
     if !env.go_state.timeouts.pending_ids.remove(&id) {
         eprintln!("Go attempting to clear not pending timeout event {id}");
     }
 }
 
+/// go side: λ(dest []byte)
 pub fn get_random_data(mut env: WasmEnvMut, sp: u32) {
-    let (sp, env) = GoStack::new(sp, &mut env);
+    let (mut sp, env) = GoStack::new(sp, &mut env);
 
-    let mut ptr = u32::try_from(sp.read_u64(0)).expect("Go getRandomData pointer not a u32");
-    let mut len = sp.read_u64(1);
+    let mut ptr = u32::try_from(sp.read_u64()).expect("Go getRandomData pointer not a u32");
+    let mut len = sp.read_u64();
     while len >= 4 {
         let next = env.go_state.rng.next_u32();
         sp.write_u32_ptr(ptr, next);
