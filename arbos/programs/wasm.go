@@ -50,7 +50,6 @@ func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, par
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 	root := db.NoncanonicalProgramHash(program, params.version)
-	println("GO ROOT ", root.Hex())
 	return machine.call(calldata, params, gas, &root)
 }
 
