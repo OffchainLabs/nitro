@@ -138,10 +138,8 @@ pub unsafe extern "C" fn stylus_call(
         Ok(outcome) => outcome.into_data(),
     };
     if pricing.wasm_gas_price != 0 {
+        let wasm_gas = native.gas_left().into();
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
-    }
-    if status == OutOfGas {
-        *evm_gas = 0;
     }
     output.write(outs);
     status

@@ -61,8 +61,8 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*
 
 func (m *rustMachine) call(calldata []byte, params *GoParams, gas *u64) ([]byte, error) {
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas)
-	println("Call ", status, output)
-	return status.output(output.intoSlice())
+	result := output.intoSlice()
+	return status.output(result)
 }
 
 func (vec *rustVec) intoSlice() []byte {

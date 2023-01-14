@@ -6,10 +6,7 @@ use arbutil::wavm;
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::{
-        config::StylusConfig,
-        run::UserOutcomeKind,
-    },
+    programs::{config::StylusConfig, run::UserOutcomeKind},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -96,15 +93,18 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let machine: Box<Machine> = Box::from_raw(sp.read_ptr_mut());
     let calldata = sp.read_go_slice_owned();
     let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
-    let gas = sp.read_ptr_mut::<*mut u64>() as usize;
-    let gas_left = wavm::caller_load64(gas);
+    let pricing = config.pricing;
+    let evm_gas = sp.read_ptr_mut::<*mut u64>() as usize;
+    let wasm_gas = pricing
+        .evm_to_wasm(wavm::caller_load64(evm_gas))
+        .unwrap_or(u64::MAX);
 
     let args_len = calldata.len();
     PROGRAMS.push(Program::new(calldata, config.pricing));
 
     let (module, main, internals) = machine.into_program_info();
     let module = link_module(&MemoryLeaf(module.0));
-    program_set_gas(module, internals, gas_left);
+    program_set_gas(module, internals, wasm_gas);
     program_set_stack(module, internals, config.depth.max_depth);
 
     let status = program_call_main(module, main, args_len);
@@ -117,7 +117,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
         ($status:expr, $outs:expr, $gas_left:expr) => {{
             sp.write_u8($status as u8).skip_space();
             sp.write_ptr($outs);
-            wavm::caller_store64(gas, $gas_left);
+            if pricing.wasm_gas_price != 0 {
+                wavm::caller_store64(evm_gas, pricing.wasm_to_evm($gas_left));
+            }
             unlink_module();
             return;
         }};

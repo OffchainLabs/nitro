@@ -196,7 +196,6 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     root: *const Bytes32,
     version: u32,
 ) -> *mut libc::c_char {
-    println!("ADD USER WASM {:#x} {}", wasm as u64, wasm_len);
     let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
 
     // provide the opportunity to skip calculating the module root

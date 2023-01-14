@@ -311,7 +311,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let preimage = socket::read_bytes(stream)?;
         env.preimages.insert(hash, preimage);
     }
-    
+
     let programs_count = socket::read_u32(stream)?;
     for _ in 0..programs_count {
         let addr = socket::read_bytes20(stream)?;

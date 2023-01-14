@@ -964,7 +964,7 @@ impl Machine {
 
         let module = machine.modules.pop().unwrap();
         let hash = hash.unwrap_or_else(|| module.hash());
-        machine.stylus_modules.insert(hash, module);
+        self.stylus_modules.insert(hash, module);
         Ok(())
     }
 

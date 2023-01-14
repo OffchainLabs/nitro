@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -39,8 +40,29 @@ func TestKeccakProgram(t *testing.T) {
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	arbWasm, err := precompilesgen.NewArbWasm(common.HexToAddress("0x71"), l2client)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
+
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, l2client)
+	Require(t, err)
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	// set non-zero costs
+	wasmGasPrice := rand.Uint64() % 200
+	wasmHostioCost := rand.Uint64() % 10000
+	ensure(arbDebug.BecomeChainOwner(&auth))
+	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
+	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))
+	colors.PrintBlue("Wasm pricing ", wasmGasPrice, wasmHostioCost)
 
 	file := "../arbitrator/stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm"
 	wasmSource, err := os.ReadFile(file)
@@ -50,14 +72,6 @@ func TestKeccakProgram(t *testing.T) {
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
-
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		return receipt
-	}
 
 	timed := func(message string, lambda func()) {
 		t.Helper()

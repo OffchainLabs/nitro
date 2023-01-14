@@ -2,8 +2,13 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState, user,
-    wavmio, wavmio::{Bytes20, Bytes32}, Opts,
+    arbcompress,
+    gostack::GoRuntimeState,
+    runtime, socket, syscall,
+    syscall::JsRuntimeState,
+    user, wavmio,
+    wavmio::{Bytes20, Bytes32},
+    Opts,
 };
 
 use arbutil::Color;
