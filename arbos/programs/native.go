@@ -61,10 +61,10 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *GoParams) ([]byte, error) {
+func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
 
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program, params.Version)
+		db.RecordProgram(program, params.version)
 	}
 	if db.Deterministic() {
 		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
@@ -110,11 +110,11 @@ func goSlice(slice []byte) C.GoSlice {
 	}
 }
 
-func (params *GoParams) encode() C.GoParams {
+func (params *goParams) encode() C.GoParams {
 	return C.GoParams{
-		version:        u32(params.Version),
-		max_depth:      u32(params.MaxDepth),
-		wasm_gas_price: u64(params.WasmGasPrice),
-		hostio_cost:    u64(params.HostioCost),
+		version:        u32(params.version),
+		max_depth:      u32(params.maxDepth),
+		wasm_gas_price: u64(params.wasmGasPrice),
+		hostio_cost:    u64(params.hostioCost),
 	}
 }

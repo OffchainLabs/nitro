@@ -16,6 +16,7 @@ import (
 )
 
 type addr = common.Address
+type hash = common.Hash
 
 // rust types
 type u8 = uint8
@@ -29,7 +30,7 @@ type rustConfig byte
 type rustMachine byte
 
 func compileUserWasmRustImpl(wasm []byte, version u32) (machine *rustMachine, err *rustVec)
-func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64) (status userStatus, out *rustVec)
+func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64, root *hash) (status userStatus, out *rustVec)
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, wasmGasPrice, hostioCost u64) *rustConfig
@@ -39,16 +40,18 @@ func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) e
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *GoParams) ([]byte, error) {
+func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
 	wasm, err := getWasm(db, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, err := compileMachine(db, program, wasm, params.Version)
+	machine, err := compileMachine(db, program, wasm, params.version)
 	if err != nil {
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
-	return machine.call(calldata, params, gas)
+	root := db.NoncanonicalProgramHash(program, params.version)
+	println("GO ROOT ", root.Hex())
+	return machine.call(calldata, params, gas, &root)
 }
 
 func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*rustMachine, error) {
@@ -59,8 +62,8 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*
 	return machine, nil
 }
 
-func (m *rustMachine) call(calldata []byte, params *GoParams, gas *u64) ([]byte, error) {
-	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas)
+func (m *rustMachine) call(calldata []byte, params *goParams, gas *u64, root *hash) ([]byte, error) {
+	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas, root)
 	result := output.intoSlice()
 	return status.output(result)
 }
@@ -72,6 +75,6 @@ func (vec *rustVec) intoSlice() []byte {
 	return slice
 }
 
-func (p *GoParams) encode() *rustConfig {
-	return rustConfigImpl(p.Version, p.MaxDepth, p.WasmGasPrice, p.HostioCost)
+func (p *goParams) encode() *rustConfig {
+	return rustConfigImpl(p.version, p.maxDepth, p.wasmGasPrice, p.hostioCost)
 }

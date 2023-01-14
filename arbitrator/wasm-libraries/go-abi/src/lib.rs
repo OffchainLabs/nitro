@@ -1,6 +1,8 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use std::convert::TryInto;
+
 use arbutil::wavm;
 
 extern "C" {
@@ -45,6 +47,10 @@ impl GoStack {
 
     pub unsafe fn read_ptr_mut<T>(&mut self) -> *mut T {
         self.read_u64() as *mut T
+    }
+
+    pub unsafe fn read_go_ptr(&mut self) -> usize {
+        self.read_u64().try_into().expect("go pointer doesn't fit")
     }
 
     pub unsafe fn write_u8(&mut self, x: u8) -> &mut Self {

@@ -199,11 +199,9 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
 
     // provide the opportunity to skip calculating the module root
-    let root = match root != std::ptr::null() {
-        true => Some(*root),
-        false => None,
-    };
-    match (*mach).add_program(wasm, version, None) {
+    let root = (!root.is_null()).then(|| *root);
+
+    match (*mach).add_program(wasm, version, root) {
         Ok(_) => std::ptr::null_mut(),
         Err(err) => err_to_c_string(err),
     }

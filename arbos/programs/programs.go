@@ -136,14 +136,14 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
-type GoParams struct {
-	Version      uint32
-	MaxDepth     uint32
-	WasmGasPrice uint64
-	HostioCost   uint64
+type goParams struct {
+	version      uint32
+	maxDepth     uint32
+	wasmGasPrice uint64
+	hostioCost   uint64
 }
 
-func (p Programs) goParams(version uint32) (*GoParams, error) {
+func (p Programs) goParams(version uint32) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
@@ -156,11 +156,11 @@ func (p Programs) goParams(version uint32) (*GoParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	config := &GoParams{
-		Version:      version,
-		MaxDepth:     maxDepth,
-		WasmGasPrice: wasmGasPrice.Uint64(),
-		HostioCost:   hostioCost,
+	config := &goParams{
+		version:      version,
+		maxDepth:     maxDepth,
+		wasmGasPrice: wasmGasPrice.Uint64(),
+		hostioCost:   hostioCost,
 	}
 	return config, nil
 }
@@ -182,7 +182,6 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userRevert:
 		return data, errors.New("program reverted")
 	case userFailure:
-		println("failure: ", string(data))
 		return nil, errors.New(string(data))
 	case userOutOfGas:
 		return nil, vm.ErrOutOfGas

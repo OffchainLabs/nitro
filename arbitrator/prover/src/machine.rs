@@ -1398,10 +1398,10 @@ impl Machine {
         }
     }
 
-    pub fn into_program_info(self) -> (Bytes32, u32, u32) {
+    pub fn program_info(&self) -> (u32, u32) {
         let module = self.modules.last().unwrap();
         let main = module.find_func(STYLUS_ENTRY_POINT).unwrap();
-        (module.hash(), main, module.internals_offset)
+        (main, module.internals_offset)
     }
 
     pub fn main_module_name(&self) -> String {
@@ -1410,6 +1410,10 @@ impl Machine {
 
     pub fn main_module_memory(&self) -> &Memory {
         &self.modules.last().expect("no module").memory
+    }
+
+    pub fn main_module_hash(&self) -> Bytes32 {
+        self.modules.last().expect("no module").hash()
     }
 
     /// finds the first module with the given name

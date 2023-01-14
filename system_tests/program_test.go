@@ -27,6 +27,7 @@ import (
 func TestKeccakProgram(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	rand.Seed(time.Now().UTC().UnixNano())
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2config := arbnode.ConfigDefaultL1Test()
@@ -57,8 +58,8 @@ func TestKeccakProgram(t *testing.T) {
 	}
 
 	// set non-zero costs
-	wasmGasPrice := rand.Uint64() % 200
-	wasmHostioCost := rand.Uint64() % 10000
+	wasmGasPrice := uint64(rand.Intn(200) * rand.Intn(2))
+	wasmHostioCost := uint64(rand.Intn(2000))
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
 	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))

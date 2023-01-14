@@ -349,7 +349,7 @@ func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWas
 		return errors.New("machine frozen")
 	}
 	hashBytes := [32]u8{}
-	for index, byte := range wasm.NonconsensusHash.Bytes() {
+	for index, byte := range wasm.NoncanonicalHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
 	err := C.arbitrator_add_user_wasm(

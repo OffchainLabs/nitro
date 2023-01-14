@@ -241,7 +241,7 @@ func (machine *JitMachine) prove(
 		if err := writeBytes(wasm.Wasm); err != nil {
 			return state, err
 		}
-		if err := writeExact(wasm.NonconsensusHash[:]); err != nil {
+		if err := writeExact(wasm.NoncanonicalHash[:]); err != nil {
 			return state, err
 		}
 		if err := writeUint32(call.Version); err != nil {

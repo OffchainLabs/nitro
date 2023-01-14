@@ -84,7 +84,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 }
 
 /// Links and executes a user wasm.
-/// Safety: λ(machine *Machine, calldata []byte, params *StylusConfig, gas *u64) (status userStatus, out *Vec<u8>)
+/// Safety: λ(mach *Machine, data []byte, params *StylusConfig, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
     sp: usize,
@@ -94,16 +94,20 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let calldata = sp.read_go_slice_owned();
     let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
     let pricing = config.pricing;
-    let evm_gas = sp.read_ptr_mut::<*mut u64>() as usize;
+    let evm_gas = sp.read_go_ptr();
     let wasm_gas = pricing
         .evm_to_wasm(wavm::caller_load64(evm_gas))
         .unwrap_or(u64::MAX);
 
+    let root = sp.read_go_ptr();
+    let root = (root != 0).then(|| wavm::read_bytes32(root as u64));
+
     let args_len = calldata.len();
     PROGRAMS.push(Program::new(calldata, config.pricing));
 
-    let (module, main, internals) = machine.into_program_info();
-    let module = link_module(&MemoryLeaf(module.0));
+    let module = root.unwrap_or_else(|| machine.main_module_hash().0);
+    let (main, internals) = machine.program_info();
+    let module = link_module(&MemoryLeaf(module));
     program_set_gas(module, internals, wasm_gas);
     program_set_stack(module, internals, config.depth.max_depth);
 
