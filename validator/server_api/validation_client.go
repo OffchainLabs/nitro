@@ -6,7 +6,7 @@ import (
 
 	"github.com/offchainlabs/nitro/validator"
 
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -129,31 +129,29 @@ func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut v
 }
 
 type ExecutionClientStep struct {
-	readymarker.ReadyMarker
-	result validator.MachineStepResult
+	containers.Promise[validator.MachineStepResult]
 	cancel func()
 }
 
 func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
 	ctx, cancel := context.WithCancel(r.client.GetContext())
 	step := &ExecutionClientStep{
-		ReadyMarker: readymarker.NewReadyMarker(),
-		cancel:      cancel,
+		Promise: containers.NewPromise[validator.MachineStepResult](),
+		cancel:  cancel,
 	}
 	go func() {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
-			step.SignalReady(err)
+			step.ProduceError(err)
 			return
 		}
 		res, err := MachineStepResultFromJson(&resJson)
 		if err != nil {
-			step.SignalReady(err)
+			step.ProduceError(err)
 			return
 		}
-		step.result = *res
-		step.SignalReady(nil)
+		step.Produce(*res)
 	}()
 	return step
 }
@@ -182,12 +180,4 @@ func (r *ExecutionClientRun) Close() {
 
 func (f *ExecutionClientStep) Close() {
 	f.cancel()
-}
-
-func (f *ExecutionClientStep) Get() (*validator.MachineStepResult, error) {
-	err := f.TestReady()
-	if err != nil {
-		return nil, err
-	}
-	return &f.result, nil
 }

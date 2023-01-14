@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -33,13 +32,7 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *ValidationInp
 		return validator.GoGlobalState{}, err
 	}
 	valRun := a.spawner.Launch(valInput, moduleRoot)
-	err = valRun.WaitReady(ctx)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	res, err := valRun.Result()
-	log.Info("validation serviced", "before", entry.StartState, "after", res, "err", err)
-	return res, err
+	return valRun.Await(ctx)
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
@@ -121,15 +114,11 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 		return nil, err
 	}
 	step := run.GetStepAt(position)
-	err = step.WaitReady(ctx)
+	res, err := step.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
-	res, err := step.Get()
-	if err != nil {
-		return nil, err
-	}
-	return MachineStepResultToJson(res), nil
+	return MachineStepResultToJson(&res), nil
 }
 
 func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {

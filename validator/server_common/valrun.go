@@ -2,21 +2,13 @@ package server_common
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 type ValRun struct {
-	readymarker.ReadyMarker
-	root   common.Hash
-	result validator.GoGlobalState
-}
-
-func (r *ValRun) Result() (validator.GoGlobalState, error) {
-	if err := r.TestReady(); err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	return r.result, nil
+	containers.Promise[validator.GoGlobalState]
+	root common.Hash
 }
 
 func (r *ValRun) WasmModuleRoot() common.Hash {
@@ -27,12 +19,15 @@ func (r *ValRun) Close() {}
 
 func NewValRun(root common.Hash) *ValRun {
 	return &ValRun{
-		ReadyMarker: readymarker.NewReadyMarker(),
-		root:        root,
+		Promise: containers.NewPromise[validator.GoGlobalState](),
+		root:    root,
 	}
 }
 
 func (r *ValRun) ConsumeResult(res validator.GoGlobalState, err error) {
-	r.result = res
-	r.SignalReady(err)
+	if err != nil {
+		r.ProduceError(err)
+	} else {
+		r.Produce(res)
+	}
 }

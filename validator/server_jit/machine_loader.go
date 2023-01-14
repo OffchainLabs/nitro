@@ -69,7 +69,7 @@ func (j *JitMachineLoader) Stop() {
 	if j.stopped {
 		return
 	}
-	err := j.ForEachMachine(func(machine *JitMachine) error { machine.close(); return nil })
+	err := j.ForEachReadyMachine(func(machine *JitMachine) error { machine.close(); return nil })
 	if err != nil {
 		log.Error("error while closing jit validator", "err", err)
 	}

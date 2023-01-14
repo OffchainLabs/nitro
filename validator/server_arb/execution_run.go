@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -18,36 +18,32 @@ type executionRun struct {
 }
 
 type machineStep struct {
-	readymarker.ReadyMarker
-	result validator.MachineStepResult
+	containers.Promise[validator.MachineStepResult]
+	reqPosition uint64
 }
 
 func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 	if err != nil {
-		s.SignalReady(err)
+		s.ProduceError(err)
 		return
 	}
 	machineStep := machine.GetStepCount()
-	if s.result.Position != machine.GetStepCount() {
+	if s.reqPosition != machine.GetStepCount() {
 		machineRunning := machine.IsRunning()
-		if (machineRunning && s.result.Position != machineStep) || machineStep > s.result.Position {
-			s.SignalReady(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.result.Position, machine.GetStepCount()))
+		if (machineRunning && s.reqPosition != machineStep) || machineStep > s.reqPosition {
+			s.ProduceError(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.reqPosition, machine.GetStepCount()))
 			return
 		}
-		s.result.Position = machineStep
-	}
-	s.result.Status = validator.MachineStatus(machine.Status())
-	s.result.GlobalState = machine.GetGlobalState()
-	s.result.Proof = machine.ProveNextStep()
-	s.result.Hash = machine.Hash()
-	s.SignalReady(nil)
-}
 
-func (s *machineStep) Get() (*validator.MachineStepResult, error) {
-	if err := s.TestReady(); err != nil {
-		return nil, err
 	}
-	return &s.result, nil
+	result := validator.MachineStepResult{
+		Position:    machineStep,
+		Status:      validator.MachineStatus(machine.Status()),
+		GlobalState: machine.GetGlobalState(),
+		Proof:       machine.ProveNextStep(),
+		Hash:        machine.Hash(),
+	}
+	s.Produce(result)
 }
 
 func (s *machineStep) Close() {}
@@ -76,10 +72,8 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) {
 
 func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
 	mstep := &machineStep{
-		ReadyMarker: readymarker.NewReadyMarker(),
-		result: validator.MachineStepResult{
-			Position: position,
-		},
+		Promise:     containers.NewPromise[validator.MachineStepResult](),
+		reqPosition: position,
 	}
 	e.LaunchThread(func(ctx context.Context) {
 		if position == ^uint64(0) {

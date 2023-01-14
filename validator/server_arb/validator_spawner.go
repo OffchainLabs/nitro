@@ -13,7 +13,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -55,16 +55,8 @@ type ArbitratorSpawner struct {
 }
 
 type valRun struct {
-	readymarker.ReadyMarker
-	root   common.Hash
-	result validator.GoGlobalState
-}
-
-func (r *valRun) Result() (validator.GoGlobalState, error) {
-	if err := r.TestReady(); err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	return r.result, nil
+	containers.Promise[validator.GoGlobalState]
+	root common.Hash
 }
 
 func (r *valRun) WasmModuleRoot() common.Hash {
@@ -75,14 +67,17 @@ func (r *valRun) Close() {}
 
 func NewvalRun(root common.Hash) *valRun {
 	return &valRun{
-		ReadyMarker: readymarker.NewReadyMarker(),
-		root:        root,
+		Promise: containers.NewPromise[validator.GoGlobalState](),
+		root:    root,
 	}
 }
 
 func (r *valRun) consumeResult(res validator.GoGlobalState, err error) {
-	r.result = res
-	r.SignalReady(err)
+	if err != nil {
+		r.ProduceError(err)
+	} else {
+		r.Produce(res)
+	}
 }
 
 func NewArbitratorSpawner(locator *server_common.MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {

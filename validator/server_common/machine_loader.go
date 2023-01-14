@@ -5,17 +5,16 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type MachineStatus[M any] struct {
-	readymarker.ReadyMarker
-	Machine *M
+	containers.Promise[*M]
 }
 
 func newMachineStatus[M any]() *MachineStatus[M] {
 	return &MachineStatus[M]{
-		ReadyMarker: readymarker.NewReadyMarker(),
+		Promise: containers.NewPromise[*M](),
 	}
 }
 
@@ -50,25 +49,25 @@ func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Has
 		l.machines[moduleRoot] = status
 		go func() {
 			machine, err := l.createMachineThread(context.Background(), moduleRoot)
-			if err == nil {
-				status.Machine = machine
+			if err != nil {
+				status.ProduceError(err)
+				return
 			}
-			status.SignalReady(err)
+			status.Produce(machine)
 		}()
 	}
 	l.mapMutex.Unlock()
-	err := status.WaitReady(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return status.Machine, nil
+	return status.Await(ctx)
 }
 
-func (l *MachineLoader[M]) ForEachMachine(runme func(*M) error) error {
+func (l *MachineLoader[M]) ForEachReadyMachine(runme func(*M) error) error {
 	for _, stat := range l.machines {
-		if stat.Machine != nil {
-			if err := runme(stat.Machine); err != nil {
-				return err
+		if stat.Ready() {
+			machine, err := stat.Current()
+			if err != nil {
+				if err := runme(machine); err != nil {
+					return err
+				}
 			}
 		}
 	}

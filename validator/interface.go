@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 type ValidationSpawner interface {
@@ -16,9 +16,8 @@ type ValidationSpawner interface {
 }
 
 type ValidationRun interface {
-	readymarker.ReadyMarkerInt
+	containers.PromiseInterface[GoGlobalState]
 	WasmModuleRoot() common.Hash
-	Result() (GoGlobalState, error)
 	Close()
 }
 
@@ -37,7 +36,6 @@ type ExecutionRun interface {
 }
 
 type MachineStep interface {
-	readymarker.ReadyMarkerInt
-	Get() (*MachineStepResult, error)
+	containers.PromiseInterface[MachineStepResult]
 	Close()
 }

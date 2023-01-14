@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/offchainlabs/nitro/util/readymarker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
@@ -15,7 +15,7 @@ import (
 // MachineCache manages a list of machines at various step counts.
 // Aims to speed the retrieval of a machine at a given step count.
 type MachineCache struct {
-	readymarker.ReadyMarker
+	containers.Promise[struct{}]
 	zeroStepMachine     MachineInterface
 	finalMachine        MachineInterface
 	machines            []MachineInterface
@@ -42,8 +42,8 @@ func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
 // `initialMachine` won't be mutated by this function.
 func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Context) (MachineInterface, error), config *MachineCacheConfig) *MachineCache {
 	cache := &MachineCache{
-		ReadyMarker: readymarker.NewReadyMarker(),
-		config:      config,
+		Promise: containers.NewPromise[struct{}](),
+		config:  config,
 	}
 	go func() {
 		zeroStepMachine, err := initialMachineGetter(ctx)
@@ -52,7 +52,7 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 			err = errors.New("initialMachine not at step count 0")
 		}
 		if err != nil {
-			cache.SignalReady(err)
+			cache.ProduceError(err)
 			return
 		}
 		zeroStepMachine.Freeze()
@@ -62,12 +62,12 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 		cache.machineStepInterval = config.InitialSteps
 		err = cache.populateInitialCache(ctx, ^uint64(0))
 		if err != nil {
-			cache.SignalReady(err)
+			cache.ProduceError(err)
 			return
 		}
 		cache.finalMachine = cache.machines[len(cache.machines)-1]
 		cache.finalMachine.Freeze()
-		cache.SignalReady(nil)
+		cache.Produce(struct{}{})
 	}()
 	return cache
 }
@@ -78,32 +78,32 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 		return c
 	}
 	newCache := &MachineCache{
-		ReadyMarker: readymarker.NewReadyMarker(),
-		config:      c.config,
+		Promise: containers.NewPromise[struct{}](),
+		config:  c.config,
 	}
 	go func() {
-		err := c.WaitReady(ctx)
+		_, err := c.Await(ctx)
 		if err != nil {
-			newCache.SignalReady(err)
+			newCache.ProduceError(err)
 			return
 		}
 		newCache.zeroStepMachine = c.zeroStepMachine
 		newCache.finalMachine = c.finalMachine
 		closest, err := c.getClosestMachine(start)
 		if err != nil {
-			newCache.SignalReady(err)
+			newCache.ProduceError(err)
 			return
 		}
 		initial := closest.CloneMachineInterface()
 		initialStep := initial.GetStepCount()
 		if initialStep > start {
-			newCache.SignalReady(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
+			newCache.ProduceError(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
 			return
 		}
 		if initialStep < start {
 			err := initial.Step(ctx, start-initialStep)
 			if err != nil {
-				newCache.SignalReady(err)
+				newCache.ProduceError(err)
 				return
 			}
 		}
@@ -111,7 +111,11 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 		newCache.firstMachineStep = start
 		newCache.machineStepInterval = newInterval
 		err = newCache.populateInitialCache(ctx, newInterval*uint64(c.config.TargetMachineCount))
-		newCache.SignalReady(err)
+		if err != nil {
+			newCache.ProduceError(err)
+		} else {
+			newCache.Produce(struct{}{})
+		}
 	}()
 	return newCache
 }
@@ -163,7 +167,7 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (MachineInterface, er
 
 // GetMachineAt a given step count, optionally using a passed in machine if that's the best option.
 func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine MachineInterface, stepCount uint64) (MachineInterface, error) {
-	err := c.WaitReady(ctx)
+	_, err := c.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +191,7 @@ func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine MachineInte
 }
 
 func (c *MachineCache) GetFinalMachine(ctx context.Context) (MachineInterface, error) {
-	err := c.WaitReady(ctx)
+	_, err := c.Await(ctx)
 	if err != nil {
 		return nil, err
 	}

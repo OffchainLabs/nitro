@@ -697,7 +697,7 @@ func (v *BlockValidator) progressValidated() {
 			if !run.Ready() {
 				return
 			}
-			runEnd, err := run.Result()
+			runEnd, err := run.Current()
 			if err == nil && runEnd != expectedEnd {
 				err = fmt.Errorf("validation failed: expected %v got %v", expectedEnd, runEnd)
 				writeErr := v.writeToFile(validationEntry, run.WasmModuleRoot())

@@ -594,7 +594,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 			return false, ctx.Err()
 		case <-run.ReadyChan():
 		}
-		gsEnd, err := run.Result()
+		gsEnd, err := run.Current()
 		if err != nil && gsEnd != expEnd {
 			return false, err
 		}
