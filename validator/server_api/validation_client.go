@@ -104,7 +104,7 @@ func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
 	var res uint64
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_createExecutionRun")
+	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
 	if err != nil {
 		return nil, err
 	}

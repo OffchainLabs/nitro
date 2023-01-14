@@ -341,6 +341,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		Fail(t, err)
 	}
+	err = asserterValidator.Start(ctx)
+	if err != nil {
+		Fail(t, err)
+	}
+	defer asserterValidator.Stop()
 	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, asserterL2.InboxTracker, asserterValidator, 0, 0)
 	if err != nil {
 		Fail(t, err)
@@ -349,6 +354,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		Fail(t, err)
 	}
+	err = challengerValidator.Start(ctx)
+	if err != nil {
+		Fail(t, err)
+	}
+	defer challengerValidator.Stop()
 	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, challengerL2.InboxTracker, challengerValidator, 0, 0)
 	if err != nil {
 		Fail(t, err)

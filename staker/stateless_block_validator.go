@@ -611,6 +611,11 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	if err != nil {
 		return err
 	}
+	for _, spawner := range v.validationSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
 			latest, err := v.execSpawner.LatestWasmModuleRoot()
@@ -625,15 +630,11 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			}
 		}
 	}
-	for _, spawner := range v.validationSpawners {
-		if err := spawner.Start(ctx_in); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
 func (v *StatelessBlockValidator) Stop() {
+	v.execSpawner.Stop()
 	for _, spawner := range v.validationSpawners {
 		spawner.Stop()
 	}
