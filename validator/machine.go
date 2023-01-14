@@ -18,8 +18,8 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
 )
@@ -344,21 +344,21 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	return nil
 }
 
-func (m *ArbitratorMachine) AddUserWasm(wasm []byte, params *programs.GoParams) error {
+func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWasm) error {
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	config := C.GoParams{
-		version:        u32(params.Version),
-		max_depth:      u32(params.MaxDepth),
-		max_frame_size: u32(params.MaxFrameSize),
-		heap_bound:     u32(params.HeapBound),
-		wasm_gas_price: u64(params.WasmGasPrice),
-		hostio_cost:    u64(params.HostioCost),
+	hashBytes := [32]u8{}
+	for index, byte := range wasm.NonconsensusHash.Bytes() {
+		hashBytes[index] = u8(byte)
 	}
-	ptr := (*u8)(arbutil.SliceToPointer(wasm))
-	len := u32(len(wasm))
-	err := C.arbitrator_add_user_wasm(m.ptr, ptr, len, config)
+	err := C.arbitrator_add_user_wasm(
+		m.ptr,
+		(*u8)(arbutil.SliceToPointer(wasm.Wasm)),
+		u32(len(wasm.Wasm)),
+		&C.struct_Bytes32{hashBytes},
+		u32(call.Version),
+	)
 	defer C.free(unsafe.Pointer(err))
 	if err != nil {
 		return errors.New(C.GoString(err))

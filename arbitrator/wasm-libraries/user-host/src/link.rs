@@ -7,7 +7,7 @@ use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
     programs::{
-        config::{DepthParams, StylusConfig},
+        config::StylusConfig,
         run::UserOutcomeKind,
     },
     Machine,
@@ -36,14 +36,15 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, params *StylusConfig) (machine *Machine, err *Vec<u8>)
+/// Safety: λ(wasm []byte, version u32) (machine *Machine, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
-    let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
+    let config = StylusConfig::version(sp.read_u32());
+    sp.skip_space();
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -58,7 +59,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         Ok(bin) => bin,
         Err(err) => error!("failed to parse user program", err),
     };
-    let stylus_data = match bin.instrument(&config, true) {
+    let stylus_data = match bin.instrument(&config) {
         Ok(stylus_data) => stylus_data,
         Err(err) => error!("failed to instrument user program", err),
     };
@@ -162,7 +163,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version, maxDepth, maxFrameSize, heapBound u32, wasmGasPrice, hostioCost u64) *StylusConfig
+/// Safety: λ(version, maxDepth u32, wasmGasPrice, hostioCost u64) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
@@ -171,8 +172,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     let version = sp.read_u32();
 
     let mut config = StylusConfig::version(version);
-    config.depth = DepthParams::new(sp.read_u32(), sp.read_u32());
-    config.heap_bound = sp.read_u32().into();
+    config.depth.max_depth = sp.read_u32();
     config.pricing.wasm_gas_price = sp.read_u64();
     config.pricing.hostio_cost = sp.read_u64();
     sp.write_ptr(heapify(config));

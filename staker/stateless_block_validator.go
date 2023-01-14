@@ -8,17 +8,20 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/pkg/errors"
 )
@@ -159,6 +162,7 @@ type validationEntry struct {
 	msg             *arbstate.MessageWithMetadata
 	// Valid since Recorded:
 	Preimages  map[common.Hash][]byte
+	UserWasms  state.UserWasms
 	BatchInfo  []validator.BatchInfo
 	DelayedMsg []byte
 	// Valid since Ready:
@@ -209,6 +213,7 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		Preimages:     e.Preimages,
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
+		UserWasms:     e.UserWasms,
 		StartState:    startState,
 	}, nil
 }
@@ -246,6 +251,7 @@ func newRecordedValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
 	preimages map[common.Hash][]byte,
+	userWasms state.UserWasms,
 	batchInfos []validator.BatchInfo,
 	delayedMsg []byte,
 ) (*validationEntry, error) {
@@ -254,6 +260,7 @@ func newRecordedValidationEntry(
 		return nil, err
 	}
 	entry.Preimages = preimages
+	entry.UserWasms = userWasms
 	entry.BatchInfo = batchInfos
 	entry.DelayedMsg = delayedMsg
 	entry.Stage = Recorded
@@ -337,11 +344,12 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
 	keepReference bool,
-) (common.Hash, map[common.Hash][]byte, []validator.BatchInfo, error) {
+) (common.Hash, map[common.Hash][]byte, state.UserWasms, []validator.BatchInfo, error) {
+	hash0 := common.Hash{}
 
 	recordingdb, chaincontext, recordingKV, err := v.recordingDatabase.PrepareRecording(ctx, prevHeader, stateLogFunc)
 	if err != nil {
-		return common.Hash{}, nil, nil, err
+		return hash0, nil, nil, nil, err
 	}
 	defer func() { v.recordingDatabase.Dereference(prevHeader) }()
 
@@ -352,22 +360,22 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	if prevHeader != nil {
 		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
 		if err != nil {
-			return common.Hash{}, nil, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
+			return hash0, nil, nil, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
 		}
 		chainId, err := initialArbosState.ChainId()
 		if err != nil {
-			return common.Hash{}, nil, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
+			return hash0, nil, nil, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
 		}
 		if chainId.Cmp(chainConfig.ChainID) != 0 {
-			return common.Hash{}, nil, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+			return hash0, nil, nil, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
 		}
 		genesisNum, err := initialArbosState.GenesisBlockNum()
 		if err != nil {
-			return common.Hash{}, nil, nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
+			return hash0, nil, nil, nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
 		}
 		expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
 		if genesisNum != expectedNum {
-			return common.Hash{}, nil, nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
+			return hash0, nil, nil, nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
 		}
 	}
 
@@ -398,19 +406,30 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 			batchFetcher,
 		)
 		if err != nil {
-			return common.Hash{}, nil, nil, err
+			return hash0, nil, nil, nil, err
 		}
 		blockHash = block.Hash()
 	}
 
 	preimages, err := v.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
 	if err != nil {
-		return common.Hash{}, nil, nil, err
+		return hash0, nil, nil, nil, err
 	}
+
+	userWasms := recordingdb.UserWasms()
+	for _, wasm := range userWasms {
+		inflated, err := arbcompress.Decompress(wasm.CompressedWasm, programs.MaxWasmSize)
+		if err != nil {
+			return hash0, nil, nil, nil, fmt.Errorf("error decompressing program: %w", err)
+		}
+		wasm.CompressedWasm = nil // release the memory
+		wasm.Wasm = inflated
+	}
+
 	if keepReference {
 		prevHeader = nil
 	}
-	return blockHash, preimages, readBatchInfo, err
+	return blockHash, preimages, userWasms, readBatchInfo, err
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, keepReference bool) error {
@@ -421,7 +440,9 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.Stage = Recorded
 		return nil
 	}
-	blockhash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, e.PrevBlockHeader, e.msg, keepReference)
+	blockhash, preimages, userWasms, readBatchInfo, err := v.RecordBlockCreation(
+		ctx, e.PrevBlockHeader, e.msg, keepReference,
+	)
 	if err != nil {
 		return err
 	}
@@ -440,6 +461,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.DelayedMsg = delayedMsg
 	}
 	e.Preimages = preimages
+	e.UserWasms = userWasms
 	e.BatchInfo = readBatchInfo
 	e.msg = nil // no longer needed
 	e.Stage = Recorded
@@ -505,7 +527,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
+	resHash, preimages, userWasms, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
@@ -534,7 +556,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 			return nil, fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 	}
-	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, readBatchInfo, delayed)
+	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, userWasms, readBatchInfo, delayed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validation entry %w", err)
 	}

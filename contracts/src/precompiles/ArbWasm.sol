@@ -36,14 +36,6 @@ interface ArbWasm {
     // @return depth the maximum depth (in wasm words) a wasm stack may grow
     function wasmMaxDepth() external view returns (uint32 depth);
 
-    // @notice gets the wasm stack frame-size limit
-    // @return frame_size the maximum size (in wasm words) a wasm stack frame may be
-    function wasmMaxFrameSize() external view returns (uint32 frame_size);
-
-    // @notice gets the wasm memory limit
-    // @return bound the maximum size (in bytes) a wasm memory may be
-    function wasmHeapBound() external view returns (uint32 bound);
-
     // @notice gets the fixed-cost overhead needed to initiate a hostio call
     // @return cost the cost (in wasm gas) of starting a stylus hostio call
     function wasmHostioCost() external view returns (uint64 price);

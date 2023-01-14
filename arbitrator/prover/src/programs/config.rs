@@ -20,6 +20,7 @@ pub type OpCosts = fn(&Operator) -> u64;
 
 #[derive(Clone)]
 pub struct StylusConfig {
+    pub version: u32,   // requires recompilation
     pub costs: OpCosts, // requires recompilation
     pub start_gas: u64,
     pub heap_bound: Bytes, // requires recompilation
@@ -45,6 +46,7 @@ impl Default for StylusConfig {
     fn default() -> Self {
         let costs = |_: &Operator| 0;
         Self {
+            version: 0,
             costs,
             start_gas: 0,
             heap_bound: Bytes(u32::MAX as usize),
@@ -66,11 +68,17 @@ impl Default for DepthParams {
 impl StylusConfig {
     pub fn version(version: u32) -> Self {
         let mut config = Self::default();
+        config.version = version;
+
         match version {
             0 => {}
-            1 => config.costs = |_| 1,
+            1 => {
+                config.costs = |_| 1;
+                config.heap_bound = Bytes(2 * 1024 * 1024);
+                config.depth.max_depth = 1 * 1024 * 1024;
+            }
             _ => panic!("no config exists for Stylus version {version}"),
-        }
+        };
         config
     }
 }
@@ -126,7 +134,6 @@ impl StylusConfig {
 
         Store::new(compiler)
     }
-
 }
 
 impl Debug for StylusConfig {
@@ -138,26 +145,5 @@ impl Debug for StylusConfig {
             .field("depth", &self.depth)
             .field("pricing", &self.pricing)
             .finish()
-    }
-}
-
-#[repr(C)]
-pub struct GoParams {
-    version: u32,
-    max_depth: u32,
-    max_frame_size: u32,
-    heap_bound: u32,
-    wasm_gas_price: u64,
-    hostio_cost: u64,
-}
-
-impl GoParams {
-    pub fn config(self) -> StylusConfig {
-        let mut config = StylusConfig::version(self.version);
-        config.depth = DepthParams::new(self.max_depth, self.max_frame_size);
-        config.heap_bound = Bytes(self.heap_bound as usize);
-        config.pricing.wasm_gas_price = self.wasm_gas_price;
-        config.pricing.hostio_cost = self.hostio_cost;
-        config
     }
 }

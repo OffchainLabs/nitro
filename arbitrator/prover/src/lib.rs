@@ -9,6 +9,7 @@ pub mod machine;
 /// cbindgen:ignore
 mod memory;
 mod merkle;
+/// cbindgen:ignore
 pub mod programs;
 mod reinterpret;
 pub mod utils;
@@ -24,7 +25,6 @@ use machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
     PreimageResolver,
 };
-use programs::config::GoParams;
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
 }
 
 pub fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
-    let err = format!("{:#}", err);
+    let err = format!("{:?}", err);
     unsafe {
         let buf = libc::malloc(err.len() + 1);
         if buf.is_null() {
@@ -193,10 +193,18 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
     wasm: *const u8,
     wasm_len: u32,
-    params: GoParams,
+    root: *const Bytes32,
+    version: u32,
 ) -> *mut libc::c_char {
+    println!("ADD USER WASM {:#x} {}", wasm as u64, wasm_len);
     let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
-    match (*mach).add_program(wasm, &params.config(), None) {
+
+    // provide the opportunity to skip calculating the module root
+    let root = match root != std::ptr::null() {
+        true => Some(*root),
+        false => None,
+    };
+    match (*mach).add_program(wasm, version, None) {
         Ok(_) => std::ptr::null_mut(),
         Err(err) => err_to_c_string(err),
     }

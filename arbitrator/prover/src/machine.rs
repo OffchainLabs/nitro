@@ -916,7 +916,7 @@ impl Machine {
     pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(&config, false)?;
+        let stylus_data = bin.instrument(&config)?;
 
         let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
         let forward = parse(&forward, Path::new("forward"))?;
@@ -941,12 +941,13 @@ impl Machine {
     }
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
-    /// The canonical hash may be overridden to speed up proving.
-    pub fn add_program(&mut self, wasm: &[u8], config: &StylusConfig, hash: Option<Bytes32>) -> Result<()> {
+    /// Note that the module produced will need to be configured before execution via hostio calls.
+    pub fn add_program(&mut self, wasm: &[u8], version: u32, hash: Option<Bytes32>) -> Result<()> {
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(&config, true)?;
+        let config = StylusConfig::version(version);
+        let stylus_data = bin.instrument(&config)?;
 
-        let forward = std::fs::read("../../target/machines/latest/forward_stub.wasm")?;
+        let forward = std::fs::read("../target/machines/latest/forward_stub.wasm")?;
         let forward = binary::parse(&forward, Path::new("forward")).unwrap();
 
         let mut machine = Self::from_binaries(
@@ -2142,7 +2143,8 @@ impl Machine {
                         error!("no hash for {}", ptr)
                     };
                     let Some(module) = self.stylus_modules.get(&hash) else {
-                        error!("no program for {}", hash)
+                        let keys: Vec<_> = self.stylus_modules.keys().map(hex::encode).collect();
+                        error!("no program for {} in {{{}}}", hash, keys.join(", "))
                     };
                     flush_module!();
                     let index = self.modules.len() as u32;

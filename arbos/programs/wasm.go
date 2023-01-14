@@ -28,14 +28,14 @@ type rustVec byte
 type rustConfig byte
 type rustMachine byte
 
-func compileUserWasmRustImpl(wasm []byte, params *rustConfig) (machine *rustMachine, err *rustVec)
+func compileUserWasmRustImpl(wasm []byte, version u32) (machine *rustMachine, err *rustVec)
 func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64) (status userStatus, out *rustVec)
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth, maxFrameSize, heapBound u32, wasmGasPrice, hostioCost u64) *rustConfig
+func rustConfigImpl(version, maxDepth u32, wasmGasPrice, hostioCost u64) *rustConfig
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, params *GoParams) error {
-	_, err := compileMachine(db, program, wasm, params)
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) error {
+	_, err := compileMachine(db, program, wasm, version)
 	return err
 }
 
@@ -44,15 +44,15 @@ func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, par
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, err := compileMachine(db, program, wasm, params)
+	machine, err := compileMachine(db, program, wasm, params.Version)
 	if err != nil {
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 	return machine.call(calldata, params, gas)
 }
 
-func compileMachine(db vm.StateDB, program addr, wasm []byte, params *GoParams) (*rustMachine, error) {
-	machine, err := compileUserWasmRustImpl(wasm, params.encode())
+func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*rustMachine, error) {
+	machine, err := compileUserWasmRustImpl(wasm, version)
 	if err != nil {
 		return nil, errors.New(string(err.intoSlice()))
 	}
@@ -73,5 +73,5 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *GoParams) encode() *rustConfig {
-	return rustConfigImpl(p.Version, p.MaxDepth, p.MaxFrameSize, p.HeapBound, p.WasmGasPrice, p.HostioCost)
+	return rustConfigImpl(p.Version, p.MaxDepth, p.WasmGasPrice, p.HostioCost)
 }

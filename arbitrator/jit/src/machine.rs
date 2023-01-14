@@ -3,7 +3,7 @@
 
 use crate::{
     arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState, user,
-    wavmio, wavmio::Bytes32, Opts,
+    wavmio, wavmio::{Bytes20, Bytes32}, Opts,
 };
 
 use arbutil::Color;
@@ -17,7 +17,7 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
@@ -189,7 +189,8 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
+pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
+pub type UserWasms = HashMap<(Bytes20, u32), (Vec<u8>, Bytes32)>;
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -205,6 +206,8 @@ pub struct WasmEnv {
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
+    /// A collection of user wasms called during the course of execution
+    pub user_wasms: UserWasms,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages

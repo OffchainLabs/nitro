@@ -17,7 +17,7 @@ pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
-    let stylus_data = bin.instrument(&config, false)?;
+    let stylus_data = bin.instrument(&config)?;
 
     let wat = std::fs::read("tests/test.wat")?;
     let wasm = wasmer::wat2wasm(&wat)?;

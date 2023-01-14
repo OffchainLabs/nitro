@@ -3,7 +3,7 @@
 
 use env::WasmEnv;
 use eyre::ErrReport;
-use prover::programs::{config::GoParams, prelude::*};
+use prover::programs::prelude::*;
 use run::RunProgram;
 use std::mem;
 use wasmer::Module;
@@ -18,6 +18,24 @@ mod test;
 
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
+
+#[repr(C)]
+pub struct GoParams {
+    version: u32,
+    max_depth: u32,
+    wasm_gas_price: u64,
+    hostio_cost: u64,
+}
+
+impl GoParams {
+    pub fn config(self) -> StylusConfig {
+        let mut config = StylusConfig::version(self.version);
+        config.depth.max_depth = self.max_depth;
+        config.pricing.wasm_gas_price = self.wasm_gas_price;
+        config.pricing.hostio_cost = self.hostio_cost;
+        config
+    }
+}
 
 #[repr(C)]
 pub struct GoSlice {
@@ -59,11 +77,11 @@ impl RustVec {
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSlice,
-    params: GoParams,
+    version: u32,
     mut output: RustVec,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-    let config = params.config();
+    let config = StylusConfig::version(version);
 
     match stylus::module(wasm, config) {
         Ok(module) => {
