@@ -46,6 +46,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
+COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
@@ -138,6 +139,7 @@ COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
 COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
+COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-upstream/ arbitrator/wasm-upstream/
 COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
 COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
