@@ -22,6 +22,7 @@ import "../libraries/DelegateCallAware.sol";
 
 import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
 
+
 /**
  * @title Staging ground for incoming and outgoing messages
  * @notice Holds the inbox accumulator for sequenced and delayed messages.
@@ -206,7 +207,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         address to,
         uint256 value,
         bytes calldata data
-    ) external returns (bool success, bytes memory returnData) {
+    ) external virtual returns (bool success, bytes memory returnData) {
         if (!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = _activeOutbox;

@@ -4,9 +4,12 @@ pragma solidity ^0.8.4;
 import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
 import "../../src/bridge/NativeTokenBridge.sol";
+import "../../src/bridge/NativeTokenInbox.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
+
+import "forge-std/console.sol";
 
 contract NativeTokenBridgeTest is Test {
     NativeTokenBridge public bridge;
@@ -14,9 +17,11 @@ contract NativeTokenBridgeTest is Test {
 
     address public zero = address(0);
     address public user = address(100);
+    address public userB = address(101);
 
     address public rollup = address(1000);
     address public inbox = address(1001);
+    address public outbox = address(1002);
 
     // msg details
     uint8 kind = 7;
@@ -103,5 +108,39 @@ contract NativeTokenBridgeTest is Test {
         vm.prank(inbox);
         vm.expectRevert(abi.encodeWithSelector(NotDelayedInbox.selector, inbox));
         bridge.enqueueDelayedMessage(kind, user, messageDataHash, tokenFeeAmount);
+    }
+
+    function testExecuteCallNoData() public {
+        // fund bridge with some tokens
+        vm.startPrank(user);
+        nativeToken.approve(address(bridge), 100);
+        nativeToken.transfer(address(bridge), 100);
+        vm.stopPrank();
+
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+
+        //// execute call
+        vm.prank(outbox);
+        uint256 withdrawalAmount = 15;
+        bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceBefore - bridgeTokenBalanceAfter,
+            withdrawalAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(
+            userTokenBalanceAfter - userTokenBalanceBefore,
+            withdrawalAmount,
+            "Invalid user token balance"
+        );
     }
 }

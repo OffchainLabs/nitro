@@ -9,6 +9,8 @@ import "../libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import "forge-std/console.sol";
+
 /// @dev Provided zero address token
 error InvalidToken();
 
@@ -26,6 +28,7 @@ error NotApplicable();
  * outboxes that can make calls from here and withdraw this escrow.
  */
 contract NativeTokenBridge is Bridge {
+    using AddressUpgradeable for address;
     using SafeERC20 for IERC20;
 
     address public nativeToken;
@@ -70,5 +73,36 @@ contract NativeTokenBridge is Bridge {
         IERC20(nativeToken).safeTransferFrom(undoAliasSender, address(this), tokenFeeAmount);
 
         return messageCount;
+    }
+
+    function executeCall(
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external override returns (bool success, bytes memory returnData) {
+        if (!this.allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
+        if (data.length > 0 && !to.isContract()) revert NotContract(to);
+        address prevOutbox = _activeOutbox;
+        _activeOutbox = msg.sender;
+        // We set and reset active outbox around external call so activeOutbox remains valid during call
+
+        // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
+        // rather than reverting on failure as well as allow contract and non-contract calls
+        // solhint-disable-next-line avoid-low-level-calls
+
+        // first release native token
+        (success, returnData) = nativeToken.call(
+            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
+        );
+
+        // if there's data do additional contract call (if token transfer was succesful)
+        if (data.length > 0) {
+            if (success) {
+                (success, returnData) = to.call(data);
+            }
+        }
+
+        _activeOutbox = prevOutbox;
+        emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 }
