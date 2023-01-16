@@ -88,10 +88,6 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
 
     uint256 internal immutable deployTimeChainId = block.chainid;
 
-    function _chainIdChanged() internal view returns (bool) {
-        return deployTimeChainId != block.chainid;
-    }
-
     /// @inheritdoc INativeTokenInbox
     function pause() external onlyRollupOrOwner {
         _pause();
@@ -132,113 +128,113 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
             );
     }
 
+    /// @inheritdoc INativeTokenInbox
+    function createRetryableTicket(
+        address to,
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 tokenTotalFeeAmount,
+        bytes calldata data
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // ensure the user's deposit alone will make submission succeed
+        if (tokenTotalFeeAmount < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
+            revert InsufficientValue(
+                maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
+                tokenTotalFeeAmount
+            );
+        }
+
+        // if a refund address is a contract, we apply the alias to it
+        // so that it can access its funds on the L2
+        // since the beneficiary and other refund addresses don't get rewritten by arb-os
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
+            excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
+        }
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
+            // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
+            callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
+        }
+
+        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
+        return
+            unsafeCreateRetryableTicket(
+                to,
+                l2CallValue,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                tokenTotalFeeAmount,
+                data
+            );
+    }
+
     // /// @inheritdoc INativeTokenInbox
-    // function createRetryableTicket(
-    //     address to,
-    //     uint256 l2CallValue,
-    //     uint256 maxSubmissionCost,
-    //     address excessFeeRefundAddress,
-    //     address callValueRefundAddress,
-    //     uint256 gasLimit,
-    //     uint256 maxFeePerGas,
-    //     bytes calldata data
-    // ) external payable whenNotPaused onlyAllowed returns (uint256) {
-    //     // ensure the user's deposit alone will make submission succeed
-    //     if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
-    //         revert InsufficientValue(
-    //             maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
-    //             msg.value
-    //         );
-    //     }
+    function unsafeCreateRetryableTicket(
+        address to,
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 tokenTotalFeeAmount,
+        bytes calldata data
+    ) public payable whenNotPaused onlyAllowed returns (uint256) {
+        // gas price and limit of 1 should never be a valid input, so instead they are used as
+        // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
+        if (gasLimit == 1 || maxFeePerGas == 1)
+            revert RetryableData(
+                msg.sender,
+                to,
+                l2CallValue,
+                tokenTotalFeeAmount,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                data
+            );
 
-    //     // if a refund address is a contract, we apply the alias to it
-    //     // so that it can access its funds on the L2
-    //     // since the beneficiary and other refund addresses don't get rewritten by arb-os
-    //     if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
-    //         excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
-    //     }
-    //     if (AddressUpgradeable.isContract(callValueRefundAddress)) {
-    //         // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
-    //         callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
-    //     }
+        // arbos will discard retryable with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
 
-    //     // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
-    //     return
-    //         unsafeCreateRetryableTicket(
-    //             to,
-    //             l2CallValue,
-    //             maxSubmissionCost,
-    //             excessFeeRefundAddress,
-    //             callValueRefundAddress,
-    //             gasLimit,
-    //             maxFeePerGas,
-    //             data
-    //         );
-    // }
+        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
+        if (maxSubmissionCost < submissionFee)
+            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
 
-    // /// @inheritdoc INativeTokenInbox
-    // function unsafeCreateRetryableTicket(
-    //     address to,
-    //     uint256 l2CallValue,
-    //     uint256 maxSubmissionCost,
-    //     address excessFeeRefundAddress,
-    //     address callValueRefundAddress,
-    //     uint256 gasLimit,
-    //     uint256 maxFeePerGas,
-    //     bytes calldata data
-    // ) public payable whenNotPaused onlyAllowed returns (uint256) {
-    //     // gas price and limit of 1 should never be a valid input, so instead they are used as
-    //     // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
-    //     if (gasLimit == 1 || maxFeePerGas == 1)
-    //         revert RetryableData(
-    //             msg.sender,
-    //             to,
-    //             l2CallValue,
-    //             msg.value,
-    //             maxSubmissionCost,
-    //             excessFeeRefundAddress,
-    //             callValueRefundAddress,
-    //             gasLimit,
-    //             maxFeePerGas,
-    //             data
-    //         );
+        return
+            _deliverMessage(
+                L1MessageType_submitRetryableTx,
+                msg.sender,
+                abi.encodePacked(
+                    uint256(uint160(to)),
+                    l2CallValue,
+                    tokenTotalFeeAmount,
+                    maxSubmissionCost,
+                    uint256(uint160(excessFeeRefundAddress)),
+                    uint256(uint160(callValueRefundAddress)),
+                    gasLimit,
+                    maxFeePerGas,
+                    data.length,
+                    data
+                ),
+                tokenTotalFeeAmount
+            );
+    }
 
-    //     // arbos will discard retryable with gas limit too large
-    //     if (gasLimit > type(uint64).max) {
-    //         revert GasLimitTooLarge();
-    //     }
-
-    //     uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-    //     if (maxSubmissionCost < submissionFee)
-    //         revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
-
-    //     return
-    //         _deliverMessage(
-    //             L1MessageType_submitRetryableTx,
-    //             msg.sender,
-    //             abi.encodePacked(
-    //                 uint256(uint160(to)),
-    //                 l2CallValue,
-    //                 msg.value,
-    //                 maxSubmissionCost,
-    //                 uint256(uint160(excessFeeRefundAddress)),
-    //                 uint256(uint160(callValueRefundAddress)),
-    //                 gasLimit,
-    //                 maxFeePerGas,
-    //                 data.length,
-    //                 data
-    //             )
-    //         );
-    // }
-
-    // function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
-    //     public
-    //     view
-    //     returns (uint256)
-    // {
-    //     // Use current block basefee if baseFee parameter is 0
-    //     return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
-    // }
+    /// @inheritdoc INativeTokenInbox
+    function calculateRetryableSubmissionFee(uint256, uint256) public pure returns (uint256) {
+        return 0;
+    }
 
     function _deliverMessage(
         uint8 _kind,

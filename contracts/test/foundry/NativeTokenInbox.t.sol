@@ -74,4 +74,49 @@ contract NativeTokenInboxTest is Test {
         uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
         assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
     }
+
+    function testCreateRetryableTicket() public {
+        uint256 tokenTotalFeeAmount = 300;
+
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+        uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
+
+        // approve bridge to escrow tokens
+        vm.prank(user);
+        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+
+        // create retryable
+        vm.prank(user);
+        inbox.createRetryableTicket({
+            to: address(user),
+            l2CallValue: 10,
+            maxSubmissionCost: 0,
+            excessFeeRefundAddress: address(user),
+            callValueRefundAddress: address(user),
+            gasLimit: 100,
+            maxFeePerGas: 2,
+            tokenTotalFeeAmount: tokenTotalFeeAmount,
+            data: abi.encodePacked("some msg")
+        });
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceAfter - bridgeTokenBalanceBefore,
+            tokenTotalFeeAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(
+            userTokenBalanceBefore - userTokenBalanceAfter,
+            tokenTotalFeeAmount,
+            "Invalid user token balance"
+        );
+
+        uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
+        assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
+    }
 }
