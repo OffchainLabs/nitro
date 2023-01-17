@@ -572,12 +572,13 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			}
 		}
 		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		if !haveBatch && batchCount == v.globalPosNextSend.BatchNumber+1 {
+			// This is the latest batch.
+			// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
+			time.Sleep(time.Second)
+			seqBatchEntry, haveBatch = v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		}
 		if !haveBatch {
-			if batchCount == v.globalPosNextSend.BatchNumber+1 {
-				// This is the latest batch.
-				// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
-				return
-			}
 			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
 			if err != nil {
 				log.Error("validator failed to read sequencer message", "err", err)
