@@ -15,6 +15,41 @@ var _ = OnChainProtocol(&AssertionChain{})
 
 const testChallengePeriod = 100 * time.Second
 
+func TestAssertionChain_ConfirmAndRefund(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timeRef := util.NewArtificialTimeReference()
+	correctBlockHashes := correctBlockHashesForTest(200)
+	staker := common.BytesToAddress([]byte{1})
+
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	require.Equal(t, 1, len(assertionsChain.assertions))
+	require.Equal(t, AssertionSequenceNumber(0), assertionsChain.latestConfirmed)
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+
+		chain.SetBalance(tx, staker, AssertionStakeWei)
+		genesis := p.LatestConfirmed(tx)
+		comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[99]}
+		a1, err := chain.CreateLeaf(tx, genesis, comm, staker)
+		require.NoError(t, err)
+		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
+
+		comm = StateCommitment{2, correctBlockHashes[199]}
+		_, err = chain.CreateLeaf(tx, a1, comm, staker)
+		require.NoError(t, err)
+		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
+		timeRef.Add(testChallengePeriod + time.Second)
+		require.NoError(t, a1.ConfirmNoRival(tx))
+		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
+
+		return nil
+	})
+
+	require.NoError(t, err)
+}
+
 func TestAssertionChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
