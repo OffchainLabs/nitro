@@ -300,7 +300,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AllowedAddresses = []string{l2Info.GetAddress("User2").Hex()}
 	}
-	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig)
+	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig, nil)
 	defer nodeB.StopAndWait()
 
 	tx := l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(1e12), nil)
