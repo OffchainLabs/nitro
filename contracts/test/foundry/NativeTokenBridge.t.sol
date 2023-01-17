@@ -16,7 +16,6 @@ contract NativeTokenBridgeTest is Test {
     NativeTokenBridge public bridge;
     IERC20 public nativeToken;
 
-    address public zero = address(0);
     address public user = address(100);
     address public userB = address(101);
 
@@ -44,7 +43,7 @@ contract NativeTokenBridgeTest is Test {
     function testInitialization() public {
         assertEq(bridge.nativeToken(), address(nativeToken), "Invalid nativeToken ref");
         assertEq(address(bridge.rollup()), rollup, "Invalid rollup ref");
-        assertEq(bridge.activeOutbox(), zero, "Invalid activeOutbox ref");
+        assertEq(bridge.activeOutbox(), address(0), "Invalid activeOutbox ref");
     }
 
     function testSetDelayedInbox() public {
