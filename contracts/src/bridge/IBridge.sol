@@ -54,17 +54,6 @@ interface IBridge {
 
     function sequencerReportedSubMessageCount() external view returns (uint256);
 
-    /**
-     * @dev Enqueue a message in the delayed inbox accumulator.
-     *      These messages are later sequenced in the SequencerInbox, either
-     *      by the sequencer as part of a normal batch, or by force inclusion.
-     */
-    function enqueueDelayedMessage(
-        uint8 kind,
-        address sender,
-        bytes32 messageDataHash
-    ) external payable returns (uint256);
-
     function executeCall(
         address to,
         uint256 value,
@@ -108,8 +97,4 @@ interface IBridge {
     function setDelayedInbox(address inbox, bool enabled) external;
 
     function setOutbox(address inbox, bool enabled) external;
-
-    // ---------- initializer ----------
-
-    function initialize(IOwnable rollup_) external;
 }

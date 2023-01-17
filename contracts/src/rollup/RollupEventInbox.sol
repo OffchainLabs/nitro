@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 
 import "./IRollupEventInbox.sol";
 import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 import "../bridge/IDelayedMessageProvider.sol";
 import "../libraries/DelegateCallAware.sol";
 import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
@@ -32,7 +33,7 @@ contract RollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, Delegat
 
     function rollupInitialized(uint256 chainId) external override onlyRollup {
         bytes memory initMsg = abi.encodePacked(chainId);
-        uint256 num = bridge.enqueueDelayedMessage(
+        uint256 num = IEthBridge(address(bridge)).enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),
             keccak256(initMsg)

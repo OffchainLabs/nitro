@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 
 import "../bridge/IInbox.sol";
 import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 
 import "../bridge/Messages.sol";
 import "./BridgeStub.sol";
@@ -65,7 +66,12 @@ contract InboxStub is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
+        return
+            IEthBridge(address(bridge)).enqueueDelayedMessage{value: msg.value}(
+                kind,
+                sender,
+                messageDataHash
+            );
     }
 
     function sendUnsignedTransaction(

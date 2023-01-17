@@ -19,7 +19,7 @@ import {
 } from "../libraries/Error.sol";
 import "./INativeTokenInbox.sol";
 import "./ISequencerInbox.sol";
-import "./NativeTokenBridge.sol";
+import "./INativeTokenBridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -37,7 +37,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeTokenInbox {
-    NativeTokenBridge public bridge;
+    IBridge public bridge;
     ISequencerInbox public sequencerInbox;
 
     /// ------------------------------------ allow list start ------------------------------------ ///
@@ -98,7 +98,7 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
         _unpause();
     }
 
-    function initialize(NativeTokenBridge _bridge, ISequencerInbox _sequencerInbox)
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox)
         external
         initializer
         onlyDelegated
@@ -256,7 +256,7 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
         uint256 tokenAmount
     ) internal returns (uint256) {
         return
-            bridge.enqueueDelayedMessage(
+            INativeTokenBridge(address(bridge)).enqueueDelayedMessage(
                 kind,
                 AddressAliasHelper.applyL1ToL2Alias(sender),
                 messageDataHash,

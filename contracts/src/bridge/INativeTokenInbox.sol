@@ -11,7 +11,7 @@ import "./ISequencerInbox.sol";
 import "./NativeTokenBridge.sol";
 
 interface INativeTokenInbox is IDelayedMessageProvider {
-    function bridge() external view returns (NativeTokenBridge);
+    function bridge() external view returns (IBridge);
 
     function sequencerInbox() external view returns (ISequencerInbox);
 
@@ -102,5 +102,5 @@ interface INativeTokenInbox is IDelayedMessageProvider {
 
     // ---------- initializer ----------
 
-    function initialize(NativeTokenBridge _bridge, ISequencerInbox _sequencerInbox) external;
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox) external;
 }

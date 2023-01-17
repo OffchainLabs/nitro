@@ -4,12 +4,11 @@
 
 pragma solidity ^0.8.4;
 
-import "./Bridge.sol";
+import "./BaseBridge.sol";
+import "./INativeTokenBridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-import "forge-std/console.sol";
 
 /// @dev Provided zero address token
 error InvalidToken();
@@ -22,17 +21,16 @@ error NotApplicable();
 
 /**
  * @title Staging ground for incoming and outgoing messages
- * @notice Holds the inbox accumulator for sequenced and delayed messages.
- * Unlike the standard bridge, native token bridge escrows the native token that is used to pay for fees.
- * Since the escrow is held here, this contract also contains a list of allowed
- * outboxes that can make calls from here and withdraw this escrow.
+ * @notice Unlike the standard Eth bridge, native token bridge escrows the custom ERC20 token which is
+ * used as native currency on L2.
  */
-contract NativeTokenBridge is Bridge {
+contract NativeTokenBridge is BaseBridge, INativeTokenBridge {
     using AddressUpgradeable for address;
     using SafeERC20 for IERC20;
 
     address public nativeToken;
 
+    /// @inheritdoc INativeTokenBridge
     function initialize(IOwnable rollup_, address nativeToken_) external initializer onlyDelegated {
         if (nativeToken_ == address(0)) revert InvalidToken();
         nativeToken = nativeToken_;
@@ -40,15 +38,7 @@ contract NativeTokenBridge is Bridge {
         rollup = rollup_;
     }
 
-    /// @inheritdoc IBridge
-    function enqueueDelayedMessage(
-        uint8,
-        address,
-        bytes32
-    ) external payable override returns (uint256) {
-        revert NotApplicable();
-    }
-
+    /// @inheritdoc INativeTokenBridge
     function enqueueDelayedMessage(
         uint8 kind,
         address sender,
@@ -75,11 +65,12 @@ contract NativeTokenBridge is Bridge {
         return messageCount;
     }
 
+    /// @inheritdoc IBridge
     function executeCall(
         address to,
         uint256 value,
         bytes calldata data
-    ) external override returns (bool success, bytes memory returnData) {
+    ) external returns (bool success, bytes memory returnData) {
         if (!this.allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = _activeOutbox;

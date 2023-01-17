@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
 import "../../src/bridge/NativeTokenBridge.sol";
 import "../../src/bridge/NativeTokenInbox.sol";
+import "../../src/bridge/IEthBridge.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
@@ -100,8 +101,12 @@ contract NativeTokenBridgeTest is Test {
 
         // enqueue msg
         hoax(inbox);
-        vm.expectRevert(NotApplicable.selector);
-        bridge.enqueueDelayedMessage{value: 0.1 ether}(kind, user, messageDataHash);
+        vm.expectRevert();
+        IEthBridge(address(bridge)).enqueueDelayedMessage{value: 0.1 ether}(
+            kind,
+            user,
+            messageDataHash
+        );
     }
 
     function testCantEnqueueMsgFromUnregisteredInbox() public {

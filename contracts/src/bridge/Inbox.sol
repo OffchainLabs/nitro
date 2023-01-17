@@ -23,6 +23,7 @@ import {
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "./IBridge.sol";
+import "./IEthBridge.sol";
 
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
@@ -623,7 +624,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes32 messageDataHash
     ) internal returns (uint256) {
         return
-            bridge.enqueueDelayedMessage{value: msg.value}(
+            IEthBridge(address(bridge)).enqueueDelayedMessage{value: msg.value}(
                 kind,
                 AddressAliasHelper.applyL1ToL2Alias(sender),
                 messageDataHash
