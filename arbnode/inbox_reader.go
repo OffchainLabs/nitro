@@ -570,7 +570,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	if err != nil {
 		return nil, err
 	}
-	blockNum := big.NewInt(0).SetUint64(metadata.L1Block)
+	blockNum := arbmath.UintToBig(metadata.L1Block)
 	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
 	if err != nil {
 		return nil, err
@@ -580,7 +580,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 			return batch.Serialize(ctx, r.client)
 		}
 	}
-	return nil, errors.New("sequencer batch not found")
+	return nil, fmt.Errorf("sequencer batch %v not found in L1 block %v", seqNum, metadata.L1Block)
 }
 
 func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
