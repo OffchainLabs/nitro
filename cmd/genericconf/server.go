@@ -180,7 +180,7 @@ var AuthRPCConfigDefault = AuthRPCConfig{
 
 func AuthRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", AuthRPCConfigDefault.Addr, "AUTH-RPC server listening interface")
-	f.String(prefix+".jwtsecret", AuthRPCConfigDefault.Addr, "Path to file holding JWT secret (32B hex)")
+	f.String(prefix+".jwtsecret", AuthRPCConfigDefault.JwtSecret, "Path to file holding JWT secret (32B hex)")
 	f.Int(prefix+".port", AuthRPCConfigDefault.Port, "AUTH-RPC server listening port")
 	f.StringSlice(prefix+".origins", AuthRPCConfigDefault.Origins, "Origins from which to accept AUTH requests")
 	f.StringSlice(prefix+".api", AuthRPCConfigDefault.API, "APIs offered over the AUTH-RPC interface")

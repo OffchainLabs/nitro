@@ -98,7 +98,7 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "ws://localhost/",
+	URL:                      "ws://127.0.0.1:8549/",
 	JWTSecret:                "",
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
