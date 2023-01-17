@@ -26,3 +26,5 @@ web/node_nodules
 web/node_nodules/*
 tmp/*
 node_modules/
+contracts/cache
+contracts/out

@@ -75,11 +75,7 @@ func (v *vertexTracker) track(ctx context.Context) {
 	}
 }
 
-// TODO: Add a condition that exits the whole vertex tracker (close the goroutine) once the vertex:
-// (a) is confirmed, or
-// (b) another vertex with a height >= ours is confirmed in the protocol.
 // TODO: Add a condition that determines when the vertex is at a one-step-fork is resolved (can check some data from parent)
-// TODO: Add a condition that checks if we should take a confirmation action.
 func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	if v.awaitingOneStepFork {
 		return nil
@@ -112,10 +108,15 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return ErrSiblingConfirmed
 	}
 
+	confirmed, err := v.confirmed()
+	if err != nil {
+		log.WithError(err).Error("Could not check if vertex is confirmed")
+	} else if confirmed {
+		return ErrConfirmed
+	}
+
 	// We check if we are one-step away from the parent, in which case we then
 	// await the resolution of any one-step fork if needed, or confirm once time passes.
-	// TODO: Add a condition that confirms the vertex after a certain amount of time
-	// and the parent has been confirmed.
 	if v.vertex.Commitment.Height == v.vertex.Prev.Unwrap().Commitment.Height+1 {
 		// Check if in a one-step fork.
 		atOneStepFork, fetchErr := v.isAtOneStepFork()
@@ -234,27 +235,48 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 	return mergedTo, nil
 }
 
-func (v *vertexTracker) canConfirm() bool {
+func (v *vertexTracker) confirmed() (bool, error) {
 	// Can't confirm if the vertex is not in correct state.
 	if v.vertex.Status != protocol.PendingAssertionState {
-		return false
+		return false, nil
 	}
 	// Can't confirm if parent isn't confirmed, exit early.
 	if v.vertex.Prev.Unwrap().Status != protocol.ConfirmedAssertionState {
-		return false
+		return false, nil
 	}
 
 	// Can confirm if vertex's parent has a sub-challenge, and the sub-challenge has reported vertex as its winner.
 	subChallenge := v.vertex.Prev.Unwrap().SubChallenge
 	if !subChallenge.IsNone() {
-		return subChallenge.Unwrap().Winner == v.vertex
+		if subChallenge.Unwrap().Winner == v.vertex {
+			if err := v.validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+				return v.vertex.ConfirmForSubChallengeWin(tx)
+			}); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		return false, nil
 	}
 
 	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
 	if v.vertex.PsTimer.Get() > v.challengePeriodLenth {
-		return true
+		if err := v.validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			return v.vertex.ConfirmForPsTimer(tx)
+		}); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
 	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
-	return v.timeRef.Get().After(v.challengeCreationTime.Add(2 * v.challengePeriodLenth))
+	if v.timeRef.Get().After(v.challengeCreationTime.Add(2 * v.challengePeriodLenth)) {
+		if err := v.validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			return v.vertex.ConfirmForChallengeDeadline(tx)
+		}); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
