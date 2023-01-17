@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"math"
@@ -240,6 +241,25 @@ func mainImpl() int {
 	stackConf.P2P.NoDiscovery = true
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
+
+	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
+		fileName := stackConf.ResolvePath("jwtsecret")
+		//secret := make([]byte, 32)
+		secret := common.Hash{}
+		_, err := rand.Read(secret[:])
+		if err != nil {
+			log.Crit("couldn't create jwt secret", "err", err)
+		}
+		err = os.WriteFile(fileName, []byte(secret.Hex()), 0600)
+		if err != nil {
+			log.Crit("couldn't create jwt secret", "err", err)
+		}
+		stackConf.JWTSecret = fileName
+	}
+
+	if nodeConfig.Node.BlockValidator.JWTSecret == "" {
+		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
+	}
 
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
