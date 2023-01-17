@@ -140,6 +140,10 @@ func (v *Validator) Start(ctx context.Context) {
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)
 	}
+	log.WithField(
+		"address",
+		v.address.Hex(),
+	).Info("Started validator client")
 }
 
 func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
@@ -148,14 +152,11 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			leaf, err := v.submitLeafCreation(ctx)
+			leaf, err := v.SubmitLeafCreation(ctx)
 			if err != nil {
 				log.WithError(err).Error("Could not submit leaf to protocol")
 				continue
 			}
-			v.leavesLock.Lock()
-			v.createdLeaves[leaf.StateCommitment.StateRoot] = leaf
-			v.leavesLock.Unlock()
 			go v.confirmLeafAfterChallengePeriod(leaf)
 		case <-ctx.Done():
 			return
@@ -197,7 +198,7 @@ func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 // TODO: Include leaf creation validity conditions which are more complex than this.
 // For example, a validator must include messages from the inbox that were not included
 // by the last validator in the last leaf's creation.
-func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion, error) {
+func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion, error) {
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
@@ -262,6 +263,10 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		leaf.SequenceNum,
 	)
 	v.assertionsLock.Unlock()
+
+	v.leavesLock.Lock()
+	v.createdLeaves[leaf.StateCommitment.StateRoot] = leaf
+	v.leavesLock.Unlock()
 	return leaf, nil
 }
 

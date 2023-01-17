@@ -383,7 +383,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 
 	// Submit leaf creation manually for each validator.
 	for _, val := range validators {
-		_, err = val.submitLeafCreation(ctx)
+		_, err = val.SubmitLeafCreation(ctx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Submitted leaf creation")
 	}
@@ -418,8 +418,8 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			fmt.Printf(
 				"validator=%s to=%d commit=%#x\n",
 				cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-				e.History.Height,
-				e.History.Merkle,
+				e.ToHistory.Height,
+				e.ToHistory.Merkle,
 			)
 			fmt.Println("")
 		case *protocol.ChallengeBisectEvent:
@@ -427,8 +427,8 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			fmt.Printf(
 				"validator=%s to=%d commit=%#x\n",
 				cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-				e.History.Height,
-				e.History.Merkle,
+				e.ToHistory.Height,
+				e.ToHistory.Merkle,
 			)
 			fmt.Println("")
 		default:

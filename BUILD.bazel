@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@bazel_gazelle//:def.bzl", "gazelle")
 
 # gazelle:prefix github.com/OffchainLabs/new-rollup-exploration
@@ -13,7 +14,7 @@ gazelle(
     command = "update-repos",
 )
 
-load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
+load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "go_binary", "go_library", "nogo")
 
 nogo(
     name = "nogo",

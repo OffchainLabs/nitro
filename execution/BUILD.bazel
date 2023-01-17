@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "execution",
+    srcs = ["execution_engine.go"],
+    importpath = "github.com/OffchainLabs/new-rollup-exploration/execution",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+    ],
+)
+
+go_test(
+    name = "execution_test",
+    srcs = ["execution_engine_test.go"],
+    embed = [":execution"],
+)
