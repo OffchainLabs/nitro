@@ -11,14 +11,69 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params *goParams) error {
-	return errors.New("unimplemented")
+type addr = common.Address
+type hash = common.Hash
+
+// rust types
+type u8 = uint8
+type u32 = uint32
+type u64 = uint64
+type usize = uintptr
+
+// opaque types
+type rustVec byte
+type rustConfig byte
+type rustMachine byte
+
+func compileUserWasmRustImpl(wasm []byte, version u32) (machine *rustMachine, err *rustVec)
+func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64, root *hash) (status userStatus, out *rustVec)
+func readRustVecLenImpl(vec *rustVec) (len u32)
+func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
+func rustConfigImpl(version, maxDepth u32, wasmGasPrice, hostioCost u64) *rustConfig
+
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) error {
+	_, err := compileMachine(db, program, wasm, version)
+	return err
 }
 
-func callUserWasm(
-	db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams,
-) (uint32, []byte, error) {
-	return 0, nil, errors.New("unimplemented")
+func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+	wasm, err := getWasm(db, program)
+	if err != nil {
+		log.Crit("failed to get wasm", "program", program, "err", err)
+	}
+	machine, err := compileMachine(db, program, wasm, params.version)
+	if err != nil {
+		log.Crit("failed to create machine", "program", program, "err", err)
+	}
+	root := db.NoncanonicalProgramHash(program, params.version)
+	return machine.call(calldata, params, gas, &root)
+}
+
+func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*rustMachine, error) {
+	machine, err := compileUserWasmRustImpl(wasm, version)
+	if err != nil {
+		return nil, errors.New(string(err.intoSlice()))
+	}
+	return machine, nil
+}
+
+func (m *rustMachine) call(calldata []byte, params *goParams, gas *u64, root *hash) ([]byte, error) {
+	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas, root)
+	result := output.intoSlice()
+	return status.output(result)
+}
+
+func (vec *rustVec) intoSlice() []byte {
+	len := readRustVecLenImpl(vec)
+	slice := make([]byte, len)
+	rustVecIntoSliceImpl(vec, arbutil.SliceToPointer(slice))
+	return slice
+}
+
+func (p *goParams) encode() *rustConfig {
+	return rustConfigImpl(p.version, p.maxDepth, p.wasmGasPrice, p.hostioCost)
 }

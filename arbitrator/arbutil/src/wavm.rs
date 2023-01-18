@@ -76,3 +76,8 @@ pub unsafe fn read_slice_usize(mut ptr: usize, mut len: usize) -> Vec<u8> {
     }
     data
 }
+
+pub unsafe fn read_bytes32(ptr: u64) -> [u8; 32] {
+    let data = read_slice(ptr, 32);
+    data.try_into().unwrap()
+}

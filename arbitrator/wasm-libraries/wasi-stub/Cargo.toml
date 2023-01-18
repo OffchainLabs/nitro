@@ -8,3 +8,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+rand = { version = "0.8.4", default-features = false }
+rand_pcg = { version = "0.3.1", default-features = false }

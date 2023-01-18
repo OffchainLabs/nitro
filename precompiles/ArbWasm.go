@@ -15,7 +15,7 @@ func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error)
 
 // Calls a wasm program
 // TODO: move into geth
-func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) (uint32, []byte, error) {
+func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) ([]byte, error) {
 	// TODO: require some intrinsic amount of gas
 	programs := c.State.Programs()
 
@@ -37,11 +37,6 @@ func (con ArbWasm) WasmGasPrice(c ctx, evm mech) (uint64, error) {
 // Gets the wasm stack size limit
 func (con ArbWasm) WasmMaxDepth(c ctx, evm mech) (uint32, error) {
 	return c.State.Programs().WasmMaxDepth()
-}
-
-// Gets the wasm memory limit
-func (con ArbWasm) WasmHeapBound(c ctx, evm mech) (uint32, error) {
-	return c.State.Programs().WasmHeapBound()
 }
 
 // Gets the cost (in wasm gas) of starting a stylus hostio call

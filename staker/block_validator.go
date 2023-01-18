@@ -475,7 +475,8 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	log.Debug(
 		"starting validation for block", "blockNr", entry.BlockNumber,
 		"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
-		"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0))
+		"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0),
+	)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
 		type replay = func(context.Context, *validator.ValidationInput, common.Hash) (validator.GoGlobalState, error)

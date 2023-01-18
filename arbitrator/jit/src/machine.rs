@@ -2,8 +2,13 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState,
-    wavmio, wavmio::Bytes32, Opts,
+    arbcompress,
+    gostack::GoRuntimeState,
+    runtime, socket, syscall,
+    syscall::JsRuntimeState,
+    user, wavmio,
+    wavmio::{Bytes20, Bytes32},
+    Opts,
 };
 
 use arbutil::Color;
@@ -17,7 +22,7 @@ use wasmer::{
 use wasmer_compiler_cranelift::Cranelift;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
@@ -70,6 +75,11 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             Function::new_typed_with_env(&mut store, &func_env, $func)
         };
     }
+    macro_rules! github {
+        ($name:expr) => {
+            concat!("github.com/offchainlabs/nitro/", $name)
+        };
+    }
 
     let imports = imports! {
         "go" => {
@@ -102,16 +112,22 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "syscall/js.copyBytesToGo" => func!(syscall::js_copy_bytes_to_go),
             "syscall/js.copyBytesToJS" => func!(syscall::js_copy_bytes_to_js),
 
-            "github.com/offchainlabs/nitro/wavmio.getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
-            "github.com/offchainlabs/nitro/wavmio.setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
-            "github.com/offchainlabs/nitro/wavmio.getGlobalStateU64" => func!(wavmio::get_global_state_u64),
-            "github.com/offchainlabs/nitro/wavmio.setGlobalStateU64" => func!(wavmio::set_global_state_u64),
-            "github.com/offchainlabs/nitro/wavmio.readInboxMessage" => func!(wavmio::read_inbox_message),
-            "github.com/offchainlabs/nitro/wavmio.readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-            "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => func!(wavmio::resolve_preimage),
+            github!("wavmio.getGlobalStateBytes32") => func!(wavmio::get_global_state_bytes32),
+            github!("wavmio.setGlobalStateBytes32") => func!(wavmio::set_global_state_bytes32),
+            github!("wavmio.getGlobalStateU64") => func!(wavmio::get_global_state_u64),
+            github!("wavmio.setGlobalStateU64") => func!(wavmio::set_global_state_u64),
+            github!("wavmio.readInboxMessage") => func!(wavmio::read_inbox_message),
+            github!("wavmio.readDelayedInboxMessage") => func!(wavmio::read_delayed_inbox_message),
+            github!("wavmio.resolvePreImage") => func!(wavmio::resolve_preimage),
 
-            "github.com/offchainlabs/nitro/arbcompress.brotliCompress" => func!(arbcompress::brotli_compress),
-            "github.com/offchainlabs/nitro/arbcompress.brotliDecompress" => func!(arbcompress::brotli_decompress),
+            github!("arbos/programs.compileUserWasmRustImpl") => func!(user::compile_user_wasm),
+            github!("arbos/programs.callUserWasmRustImpl") => func!(user::call_user_wasm),
+            github!("arbos/programs.readRustVecLenImpl") => func!(user::read_rust_vec_len),
+            github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
+            github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),
+
+            github!("arbcompress.brotliCompress") => func!(arbcompress::brotli_compress),
+            github!("arbcompress.brotliDecompress") => func!(arbcompress::brotli_decompress),
         },
     };
 
@@ -178,7 +194,8 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
+pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
+pub type UserWasms = HashMap<(Bytes20, u32), (Vec<u8>, Bytes32)>;
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -194,6 +211,8 @@ pub struct WasmEnv {
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
+    /// A collection of user wasms called during the course of execution
+    pub user_wasms: UserWasms,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages

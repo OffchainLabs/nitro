@@ -4,8 +4,8 @@
 use crate::{
     machine::{Function, InboxIdentifier},
     programs::StylusGlobals,
-    value::{ArbValueType, FunctionType},
-    wavm::{Instruction, Opcode},
+    value::{ArbValueType, FunctionType, IntegerValType},
+    wavm::{IBinOpType, Instruction, Opcode},
 };
 use arbutil::Color;
 
@@ -18,7 +18,9 @@ enum InternalFunc {
     WavmCallerStore32,
     UserGasLeft,
     UserGasStatus,
-    UserGasSet,
+    UserSetGas,
+    UserStackLeft,
+    UserSetStack,
 }
 
 impl InternalFunc {
@@ -38,6 +40,15 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         };
         ($opcode:expr, $value:expr) => {
             out.push(Instruction::with_data($opcode, $value as u64))
+        };
+    }
+    macro_rules! dynamic {
+        ($func:expr) => {
+            opcode!(LocalGet, 0); // module
+            opcode!(LocalGet, 1); // internals offset
+            opcode!(I32Const, $func); // relative position of the func
+            opcode!(IBinOp(IntegerValType::I32, IBinOpType::Add)); // absolute position of the func
+            opcode!(CrossModuleDynamicCall); // consumes module and func
         };
     }
 
@@ -115,21 +126,68 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(HaltAndSetFinished);
         }
         ("hostio", "user_gas_left") => {
-            // user_gas_left() -> gas_left
+            // λ() -> gas_left
             ty = FunctionType::new(vec![], vec![I64]);
             opcode!(CallerModuleInternalCall, UserGasLeft);
         }
         ("hostio", "user_gas_status") => {
-            // user_gas_status() -> gas_status
+            // λ() -> gas_status
             ty = FunctionType::new(vec![], vec![I32]);
             opcode!(CallerModuleInternalCall, UserGasStatus);
         }
         ("hostio", "user_set_gas") => {
-            // user_set_gas(gas_left, gas_status)
+            // λ(gas_left, gas_status)
             ty = FunctionType::new(vec![I64, I32], vec![]);
             opcode!(LocalGet, 0);
             opcode!(LocalGet, 1);
-            opcode!(CallerModuleInternalCall, UserGasSet);
+            opcode!(CallerModuleInternalCall, UserSetGas);
+        }
+        ("hostio", "link_module") => {
+            // λ(module_hash)
+            ty = FunctionType::new(vec![I32], vec![I32]);
+            opcode!(LocalGet, 0);
+            opcode!(LinkModule);
+        }
+        ("hostio", "unlink_module") => {
+            // λ()
+            ty = FunctionType::new(vec![], vec![]);
+            opcode!(UnlinkModule);
+        }
+        ("hostio", "program_gas_left") => {
+            // λ(module, internals) -> gas_left
+            ty = FunctionType::new(vec![I32, I32], vec![I64]);
+            dynamic!(UserGasLeft);
+        }
+        ("hostio", "program_gas_status") => {
+            // λ(module, internals) -> gas_status
+            ty = FunctionType::new(vec![I32, I32], vec![I32]);
+            dynamic!(UserGasStatus);
+        }
+        ("hostio", "program_set_gas") => {
+            // λ(module, internals, gas_left)
+            ty = FunctionType::new(vec![I32, I32, I64], vec![]);
+            opcode!(LocalGet, 2); // gas_left
+            opcode!(I32Const, 0); // gas_status
+            dynamic!(UserSetGas);
+        }
+        ("hostio", "program_stack_left") => {
+            // λ(module, internals) -> stack_left
+            ty = FunctionType::new(vec![I32, I32], vec![I32]);
+            dynamic!(UserStackLeft);
+        }
+        ("hostio", "program_set_stack") => {
+            // λ(module, internals, stack_left)
+            ty = FunctionType::new(vec![I32, I32, I32], vec![]);
+            opcode!(LocalGet, 2); // stack_left
+            dynamic!(UserSetStack);
+        }
+        ("hostio", "program_call_main") => {
+            // λ(module, main, args_len) -> status
+            ty = FunctionType::new(vec![I32, I32, I32], vec![I32]);
+            opcode!(LocalGet, 2); // args_len
+            opcode!(LocalGet, 0); // module
+            opcode!(LocalGet, 1); // main
+            opcode!(CrossModuleDynamicCall) // consumes module and main, passing args_len
         }
         _ => eyre::bail!("no such hostio {} in {}", name.red(), module.red()),
     }
@@ -197,7 +255,7 @@ pub fn add_internal_funcs(
     ));
 
     if let Some(globals) = globals {
-        let (gas, status, _depth) = globals.offsets();
+        let (gas, status, depth) = globals.offsets();
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, gas)],
             host(UserGasLeft),
@@ -211,7 +269,15 @@ pub fn add_internal_funcs(
                 Instruction::with_data(GlobalSet, status),
                 Instruction::with_data(GlobalSet, gas),
             ],
-            host(UserGasSet),
+            host(UserSetGas),
+        ));
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalGet, depth)],
+            host(UserStackLeft),
+        ));
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalSet, depth)],
+            host(UserSetStack),
         ));
     }
 }

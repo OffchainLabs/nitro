@@ -15,6 +15,7 @@ use std::{
     time::Instant,
 };
 
+pub type Bytes20 = [u8; 20];
 pub type Bytes32 = [u8; 32];
 
 /// Reads 32-bytes of global state
@@ -304,11 +305,20 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.delayed_messages.insert(position, message);
     }
 
-    let preimage_count = socket::read_u64(stream)?;
+    let preimage_count = socket::read_u32(stream)?;
     for _ in 0..preimage_count {
         let hash = socket::read_bytes32(stream)?;
         let preimage = socket::read_bytes(stream)?;
         env.preimages.insert(hash, preimage);
+    }
+
+    let programs_count = socket::read_u32(stream)?;
+    for _ in 0..programs_count {
+        let addr = socket::read_bytes20(stream)?;
+        let wasm = socket::read_bytes(stream)?;
+        let hash = socket::read_bytes32(stream)?;
+        let version = socket::read_u32(stream)?;
+        env.user_wasms.insert((addr, version), (wasm, hash));
     }
 
     if socket::read_u8(stream)? != socket::READY {

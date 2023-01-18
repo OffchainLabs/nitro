@@ -11,8 +11,8 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::{clone::Clone, fmt::Debug, sync::Arc};
-use wasmer::{wasmparser::Operator, GlobalInit, Type};
-use wasmer_types::{GlobalIndex, LocalFunctionIndex};
+use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
+use wasmparser::Operator;
 
 lazy_static! {
     /// Assigns each operator a sequential offset

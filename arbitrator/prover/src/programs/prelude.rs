@@ -2,9 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 pub use super::{
-    config::StylusConfig,
+    config::{DepthParams, StylusConfig},
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
+    run::{UserOutcome, UserOutcomeKind},
 };
 
 #[cfg(feature = "native")]

@@ -44,7 +44,7 @@ var DefaultNitroMachineConfig = NitroMachineConfig{
 
 	JitCranelift:  false,
 	ProverBinPath: "replay.wasm",
-	LibraryPaths:  []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
+	LibraryPaths:  []string{"forward.wasm", "soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "user_host.wasm", "brotli.wasm"},
 }
 
 func init() {

@@ -22,7 +22,7 @@ interface ArbWasm {
     function callProgram(address program, bytes calldata data)
         external
         view
-        returns (uint32 status, bytes memory result);
+        returns (bytes memory result);
 
     // @notice gets the latest stylus version
     // @return version the stylus version
@@ -35,10 +35,6 @@ interface ArbWasm {
     // @notice gets the wasm stack size limit
     // @return depth the maximum depth (in wasm words) a wasm stack may grow
     function wasmMaxDepth() external view returns (uint32 depth);
-
-    // @notice gets the wasm memory limit
-    // @return bound the maximum size (in bytes) a wasm memory may be
-    function wasmHeapBound() external view returns (uint32 bound);
 
     // @notice gets the fixed-cost overhead needed to initiate a hostio call
     // @return cost the cost (in wasm gas) of starting a stylus hostio call

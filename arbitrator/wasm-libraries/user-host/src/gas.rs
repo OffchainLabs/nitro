@@ -1,6 +1,9 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use prover::programs::config::PricingParams;
+use std::ops::Deref;
+
 #[link(wasm_import_module = "hostio")]
 extern "C" {
     fn user_gas_left() -> u64;
@@ -8,21 +11,17 @@ extern "C" {
     fn user_set_gas(gas: u64, status: u32);
 }
 
-pub(crate) struct PricingParams {
-    /// The price of wasm gas, measured in bips of an evm gas
-    pub wasm_gas_price: u64,
-    /// The amount of wasm gas one pays to do a user_host call
-    pub hostio_cost: u64,
+pub(crate) struct Pricing(pub PricingParams);
+
+impl Deref for Pricing {
+    type Target = PricingParams;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-impl PricingParams {
-    pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
-        Self {
-            wasm_gas_price,
-            hostio_cost,
-        }
-    }
-
+impl Pricing {
     pub fn begin(&self) {
         self.buy_gas(self.hostio_cost)
     }

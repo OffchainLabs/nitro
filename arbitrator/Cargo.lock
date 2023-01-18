@@ -1693,6 +1693,7 @@ dependencies = [
  "eyre",
  "fnv",
  "hex",
+ "libc",
  "ouroboros",
  "parking_lot 0.12.1",
  "prover",

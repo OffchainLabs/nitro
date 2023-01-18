@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::StylusConfig, ModuleMod, StylusGlobals, USER_HOST},
+    programs::{config::StylusConfig, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT, USER_HOST},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -341,8 +341,8 @@ impl Module {
             };
             ensure!(
                 &func.ty == have_ty,
-                "Import has different function signature than host function. Expected {} but got {}",
-                func.ty.red(), have_ty.red(),
+                "Import {} has different function signature than host function. Expected {} but got {}",
+                import_name.red(), func.ty.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
@@ -737,6 +737,7 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    stylus_modules: HashMap<Bytes32, Module>, // Not part of machine hash
     initial_hash: Bytes32,
     context: u64,
 }
@@ -915,15 +916,19 @@ impl Machine {
     pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(config)?;
+        let stylus_data = bin.instrument(&config)?;
 
         let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
         let forward = parse(&forward, Path::new("forward"))?;
         let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
         let user_host = parse(&user_host, Path::new(USER_HOST))?;
+        let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
+        let wasi_stub = parse(&wasi_stub, Path::new("wasi_stub"))?;
+        let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
+        let soft_float = parse(&soft_float, Path::new("soft-float"))?;
 
         Self::from_binaries(
-            &[forward, user_host],
+            &[forward, soft_float, user_host, wasi_stub],
             bin,
             false,
             false,
@@ -933,6 +938,34 @@ impl Machine {
             Arc::new(|_, _| panic!("tried to read preimage")),
             Some(stylus_data),
         )
+    }
+
+    /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
+    /// Note that the module produced will need to be configured before execution via hostio calls.
+    pub fn add_program(&mut self, wasm: &[u8], version: u32, hash: Option<Bytes32>) -> Result<()> {
+        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        let config = StylusConfig::version(version);
+        let stylus_data = bin.instrument(&config)?;
+
+        let forward = std::fs::read("../target/machines/latest/forward_stub.wasm")?;
+        let forward = binary::parse(&forward, Path::new("forward")).unwrap();
+
+        let mut machine = Self::from_binaries(
+            &[forward],
+            bin,
+            false,
+            false,
+            false,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("tried to read preimage")),
+            Some(stylus_data),
+        )?;
+
+        let module = machine.modules.pop().unwrap();
+        let hash = hash.unwrap_or_else(|| module.hash());
+        self.stylus_modules.insert(hash, module);
+        Ok(())
     }
 
     pub fn from_binaries(
@@ -1213,6 +1246,7 @@ impl Machine {
             inbox_contents,
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
+            stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
         };
@@ -1265,6 +1299,7 @@ impl Machine {
             inbox_contents: Default::default(),
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
+            stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
         };
@@ -1363,12 +1398,22 @@ impl Machine {
         }
     }
 
+    pub fn program_info(&self) -> (u32, u32) {
+        let module = self.modules.last().unwrap();
+        let main = module.find_func(STYLUS_ENTRY_POINT).unwrap();
+        (main, module.internals_offset)
+    }
+
     pub fn main_module_name(&self) -> String {
         self.modules.last().expect("no module").name().to_owned()
     }
 
     pub fn main_module_memory(&self) -> &Memory {
         &self.modules.last().expect("no module").memory
+    }
+
+    pub fn main_module_hash(&self) -> Bytes32 {
+        self.modules.last().expect("no module").hash()
     }
 
     /// finds the first module with the given name
@@ -1533,6 +1578,12 @@ impl Machine {
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
+        macro_rules! reset_refs {
+            () => {
+                module = &mut self.modules[self.pc.module()];
+                func = &module.funcs[self.pc.func()];
+            };
+        }
         macro_rules! flush_module {
             () => {
                 if let Some(merkle) = self.modules_merkle.as_mut() {
@@ -1541,9 +1592,16 @@ impl Machine {
             };
         }
         macro_rules! error {
-            () => {{
+            () => {
+                error!("")
+            };
+            ($format:expr $(,$message:expr)*) => {{
                 println!("error on line {}", line!());
+                println!($format, $($message.red()),*);
                 self.status = MachineStatus::Errored;
+                println!("Backtrace:");
+                self.print_backtrace(true);
+                module = &mut self.modules[self.pc.module()];
                 break;
             }};
         }
@@ -1633,14 +1691,13 @@ impl Machine {
                 Opcode::CrossModuleCall => {
                     flush_module!();
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module));
-                    self.value_stack.push(Value::I32(module.internals_offset));
+                    self.value_stack.push(self.pc.module.into());
+                    self.value_stack.push(module.internals_offset.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
                     self.pc.inst = 0;
-                    module = &mut self.modules[self.pc.module()];
-                    func = &module.funcs[self.pc.func()];
+                    reset_refs!();
                 }
                 Opcode::CrossModuleForward => {
                     flush_module!();
@@ -1652,13 +1709,24 @@ impl Machine {
                     self.pc.module = call_module;
                     self.pc.func = call_func;
                     self.pc.inst = 0;
-                    module = &mut self.modules[self.pc.module()];
-                    func = &module.funcs[self.pc.func()];
+                    reset_refs!();
+                }
+                Opcode::CrossModuleDynamicCall => {
+                    flush_module!();
+                    let call_func = self.value_stack.pop().unwrap().assume_u32();
+                    let call_module = self.value_stack.pop().unwrap().assume_u32();
+                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(self.pc.module.into());
+                    self.value_stack.push(module.internals_offset.into());
+                    self.pc.module = call_module;
+                    self.pc.func = call_func;
+                    self.pc.inst = 0;
+                    reset_refs!();
                 }
                 Opcode::CallerModuleInternalCall => {
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module));
-                    self.value_stack.push(Value::I32(module.internals_offset));
+                    self.value_stack.push(self.pc.module.into());
+                    self.value_stack.push(module.internals_offset.into());
 
                     let current_frame = self.frame_stack.last().unwrap();
                     if current_frame.caller_module_internals > 0 {
@@ -1670,8 +1738,7 @@ impl Machine {
                         self.pc.module = current_frame.caller_module;
                         self.pc.func = func_idx;
                         self.pc.inst = 0;
-                        module = &mut self.modules[self.pc.module()];
-                        func = &module.funcs[self.pc.func()];
+                        reset_refs!();
                     } else {
                         // The caller module has no internals
                         error!();
@@ -2072,6 +2139,26 @@ impl Machine {
                         self.status = MachineStatus::TooFar;
                         break;
                     }
+                }
+                Opcode::LinkModule => {
+                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!("no hash for {}", ptr)
+                    };
+                    let Some(module) = self.stylus_modules.get(&hash) else {
+                        let keys: Vec<_> = self.stylus_modules.keys().map(hex::encode).collect();
+                        error!("no program for {} in {{{}}}", hash, keys.join(", "))
+                    };
+                    flush_module!();
+                    let index = self.modules.len() as u32;
+                    self.value_stack.push(index.into());
+                    self.modules.push(module.clone());
+                    reset_refs!();
+                }
+                Opcode::UnlinkModule => {
+                    flush_module!();
+                    self.modules.pop();
+                    reset_refs!();
                 }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;

@@ -144,6 +144,8 @@ pub enum Opcode {
     CrossModuleCall,
     /// Call a function in a different module, acting as the caller's module
     CrossModuleForward,
+    /// Call a function in a different module provided via the stack
+    CrossModuleDynamicCall,
     /// Call a caller module's internal method with a given function offset
     CallerModuleInternalCall,
     /// Gets bytes32 from global state
@@ -158,6 +160,10 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
+    /// Dynamically adds a module to the replay machine
+    LinkModule,
+    /// Dynamically removes the last module to the replay machine
+    UnlinkModule,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
 }
@@ -263,6 +269,7 @@ impl Opcode {
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
             Opcode::CrossModuleForward => 0x800B,
+            Opcode::CrossModuleDynamicCall => 0x800C,
             Opcode::CallerModuleInternalCall => 0x800A,
             Opcode::GetGlobalStateBytes32 => 0x8010,
             Opcode::SetGlobalStateBytes32 => 0x8011,
@@ -270,6 +277,8 @@ impl Opcode {
             Opcode::SetGlobalStateU64 => 0x8013,
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
+            Opcode::LinkModule => 0x8023,
+            Opcode::UnlinkModule => 0x8024,
             Opcode::HaltAndSetFinished => 0x8022,
         }
     }
