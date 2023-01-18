@@ -37,12 +37,18 @@ func TestAssertionChain_ConfirmAndRefund(t *testing.T) {
 		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
 
 		comm = StateCommitment{2, correctBlockHashes[199]}
-		_, err = chain.CreateLeaf(tx, a1, comm, staker)
+		a2, err := chain.CreateLeaf(tx, a1, comm, staker)
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
 		timeRef.Add(testChallengePeriod + time.Second)
+
+		// Parent is confirmed. Staker should not get a refund because it's not a leaf.
 		require.NoError(t, a1.ConfirmNoRival(tx))
 		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
+
+		// Child is confirmed. Staker should get a refund because it's a leaf.
+		require.NoError(t, a2.ConfirmNoRival(tx))
+		require.Equal(t, AssertionStakeWei.Uint64(), chain.GetBalance(tx, staker).Uint64())
 
 		return nil
 	})
