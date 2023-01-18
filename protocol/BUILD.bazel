@@ -17,6 +17,7 @@ go_library(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//common/hexutil",
         "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_ethereum_go_ethereum//params",
         "@com_github_pkg_errors//:errors",
     ],
 )
