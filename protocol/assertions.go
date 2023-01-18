@@ -550,7 +550,8 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	a.chain.feed.Append(&ConfirmEvent{
 		SeqNum: a.SequenceNum,
 	})
-	if !a.Staker.IsNone() {
+
+	if !a.Staker.IsNone() && a.firstChildCreationTime.IsNone() {
 		a.chain.AddToBalance(tx, a.Staker.Unwrap(), AssertionStake)
 		a.Staker = util.None[common.Address]()
 	}
