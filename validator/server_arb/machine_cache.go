@@ -6,6 +6,7 @@ package server_arb
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
@@ -22,6 +23,9 @@ type MachineCache struct {
 	firstMachineStep    uint64
 	machineStepInterval uint64
 	config              *MachineCacheConfig
+
+	lastMachine     MachineInterface
+	lastMachineLock sync.Mutex
 }
 
 type MachineCacheConfig struct {
@@ -165,8 +169,24 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (MachineInterface, er
 	}
 }
 
+func (c *MachineCache) getLastMachine() MachineInterface {
+	c.lastMachineLock.Lock()
+	defer c.lastMachineLock.Unlock()
+	return c.lastMachine
+}
+
+func (c *MachineCache) setLastMachine(machine MachineInterface) {
+	c.lastMachineLock.Lock()
+	prevLast := c.lastMachine
+	c.lastMachine = machine
+	c.lastMachineLock.Unlock()
+	if prevLast != nil && prevLast != machine {
+		prevLast.Destroy()
+	}
+}
+
 // GetMachineAt a given step count, optionally using a passed in machine if that's the best option.
-func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine MachineInterface, stepCount uint64) (MachineInterface, error) {
+func (c *MachineCache) GetMachineAt(ctx context.Context, stepCount uint64) (MachineInterface, error) {
 	_, err := c.Await(ctx)
 	if err != nil {
 		return nil, err
@@ -175,8 +195,9 @@ func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine MachineInte
 	if err != nil {
 		return nil, err
 	}
-	if haveMachine != nil && haveMachine.GetStepCount() >= closestMachine.GetStepCount() && haveMachine.GetStepCount() <= stepCount {
-		closestMachine = haveMachine
+	lastMachine := c.getLastMachine()
+	if lastMachine != nil && lastMachine.GetStepCount() >= closestMachine.GetStepCount() && lastMachine.GetStepCount() <= stepCount {
+		closestMachine = lastMachine
 	} else {
 		closestMachine = closestMachine.CloneMachineInterface()
 	}
@@ -187,6 +208,7 @@ func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine MachineInte
 	if !closestMachine.ValidForStep(stepCount) {
 		return nil, errors.Errorf("internal error: got machine with wrong step count %v looking for step count %v", closestMachine.GetStepCount(), stepCount)
 	}
+	c.setLastMachine(closestMachine)
 	return closestMachine, nil
 }
 

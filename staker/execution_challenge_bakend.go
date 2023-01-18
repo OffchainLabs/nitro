@@ -62,11 +62,12 @@ func (b *ExecutionChallengeBackend) GetProofAt(
 	ctx context.Context,
 	position uint64,
 ) ([]byte, error) {
-	res, err := b.getStepResult(ctx, position)
+	async := b.exec.GetProofAt(position)
+	res, err := async.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return res.Proof, nil
+	return res, nil
 }
 
 func (b *ExecutionChallengeBackend) GetFinalState(ctx context.Context) (uint64, validator.GoGlobalState, uint8, error) {

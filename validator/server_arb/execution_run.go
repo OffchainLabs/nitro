@@ -40,7 +40,6 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		Position:    machineStep,
 		Status:      validator.MachineStatus(machine.Status()),
 		GlobalState: machine.GetGlobalState(),
-		Proof:       machine.ProveNextStep(),
 		Hash:        machine.Hash(),
 	}
 	s.Produce(result)
@@ -80,10 +79,31 @@ func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
 			mstep.consumeMachine(e.cache.GetFinalMachine(ctx))
 		} else {
 			// todo cache last machine
-			mstep.consumeMachine(e.cache.GetMachineAt(ctx, nil, position))
+			mstep.consumeMachine(e.cache.GetMachineAt(ctx, position))
 		}
 	})
 	return mstep
+}
+
+type asyncProof struct {
+	containers.Promise[[]byte]
+}
+
+func (p *asyncProof) Close() {}
+
+func (e *executionRun) GetProofAt(position uint64) validator.ProofPromise {
+	proof := &asyncProof{
+		Promise: containers.NewPromise[[]byte](),
+	}
+	e.LaunchThread(func(ctx context.Context) {
+		machine, err := e.cache.GetMachineAt(ctx, position)
+		if err != nil {
+			proof.ProduceError(err)
+			return
+		}
+		proof.Produce(machine.ProveNextStep())
+	})
+	return proof
 }
 
 func (e *executionRun) GetLastStep() validator.MachineStep {

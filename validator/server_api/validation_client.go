@@ -2,6 +2,7 @@ package server_api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 
 	"github.com/offchainlabs/nitro/validator"
@@ -154,6 +155,36 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
 		step.Produce(*res)
 	}()
 	return step
+}
+
+type asyncProof struct {
+	containers.Promise[[]byte]
+	cancel func()
+}
+
+func (a *asyncProof) Close() { a.cancel() }
+
+func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
+	ctx, cancel := context.WithCancel(r.client.GetContext())
+	proof := &asyncProof{
+		Promise: containers.NewPromise[[]byte](),
+		cancel:  cancel,
+	}
+	go func() {
+		var resString string
+		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
+		if err != nil {
+			proof.ProduceError(err)
+			return
+		}
+		res, err := base64.StdEncoding.DecodeString(resString)
+		if err != nil {
+			proof.ProduceError(err)
+			return
+		}
+		proof.Produce(res)
+	}()
+	return proof
 }
 
 func (r *ExecutionClientRun) GetLastStep() validator.MachineStep {

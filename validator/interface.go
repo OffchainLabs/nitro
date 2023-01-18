@@ -31,7 +31,13 @@ type ExecutionSpawner interface {
 type ExecutionRun interface {
 	GetStepAt(uint64) MachineStep
 	GetLastStep() MachineStep
+	GetProofAt(uint64) ProofPromise
 	PrepareRange(uint64, uint64)
+	Close()
+}
+
+type ProofPromise interface {
+	containers.PromiseInterface[[]byte]
 	Close()
 }
 

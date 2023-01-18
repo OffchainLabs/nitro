@@ -2,6 +2,7 @@ package server_api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"math/rand"
 	"sync"
@@ -111,6 +112,19 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 		return nil, err
 	}
 	return MachineStepResultToJson(&res), nil
+}
+
+func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return "", err
+	}
+	promise := run.GetProofAt(position)
+	res, err := promise.Await(ctx)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(res), nil
 }
 
 func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, end uint64) error {
