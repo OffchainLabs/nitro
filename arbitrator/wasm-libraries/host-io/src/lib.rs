@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::wavm;
@@ -17,18 +17,16 @@ extern "C" {
 #[repr(C, align(256))]
 struct MemoryLeaf([u8; 32]);
 
+/// Reads 32-bytes of global state
+/// Safety: λ(idx uint64, output []byte)
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateBytes32(
-    sp: GoStack,
-) {
-    let idx = sp.read_u64(0) as u32;
-    let out_ptr = sp.read_u64(1);
-    let mut out_len = sp.read_u64(2);
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateBytes32(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let idx = sp.read_u64() as u32;
+    let (out_ptr, mut out_len) = sp.read_go_slice();
+
     if out_len < 32 {
-        eprintln!(
-            "Go attempting to read block hash into {} bytes long buffer",
-            out_len,
-        );
+        eprintln!("Go attempting to read block hash into {out_len} bytes long buffer");
     } else {
         out_len = 32;
     }
@@ -39,18 +37,16 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalState
     wavm::write_slice(&our_buf.0[..(out_len as usize)], out_ptr);
 }
 
+/// Writes 32-bytes of global state
+/// Safety: λ(idx uint64, val []byte)
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateBytes32(
-    sp: GoStack,
-) {
-    let idx = sp.read_u64(0) as u32;
-    let src_ptr = sp.read_u64(1);
-    let src_len = sp.read_u64(2);
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateBytes32(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let idx = sp.read_u64() as u32;
+    let (src_ptr, src_len) = sp.read_go_slice();
+
     if src_len != 32 {
-        eprintln!(
-            "Go attempting to set block hash from {} bytes long buffer",
-            src_len,
-        );
+        eprintln!("Go attempting to set block hash from {src_len} bytes long buffer");
         return;
     }
     let mut our_buf = MemoryLeaf([0u8; 32]);
@@ -61,30 +57,39 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
     wavm_set_globalstate_bytes32(idx, our_ptr);
 }
 
+/// Reads 8-bytes of global state
+/// Safety: λ(idx uint64) uint64
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateU64(sp: GoStack) {
-    let idx = sp.read_u64(0) as u32;
-    sp.write_u64(1, wavm_get_globalstate_u64(idx));
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateU64(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let idx = sp.read_u64() as u32;
+    sp.write_u64(wavm_get_globalstate_u64(idx));
 }
 
+/// Writes 8-bytes of global state
+/// Safety: λ(idx uint64, val uint64)
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateU64(sp: GoStack) {
-    let idx = sp.read_u64(0) as u32;
-    wavm_set_globalstate_u64(idx, sp.read_u64(1));
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateU64(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let idx = sp.read_u64() as u32;
+    wavm_set_globalstate_u64(idx, sp.read_u64());
 }
 
+/// Reads an inbox message
+/// Safety: λ(msgNum uint64, offset uint32, output []byte) uint32
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessage(sp: GoStack) {
-    let msg_num = sp.read_u64(0);
-    let offset = sp.read_u64(1);
-    let out_ptr = sp.read_u64(2);
-    let out_len = sp.read_u64(3);
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessage(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let msg_num = sp.read_u64();
+    let offset = sp.read_u64();
+    let (out_ptr, out_len) = sp.read_go_slice();
+
     if out_len != 32 {
         eprintln!(
             "Go attempting to read inbox message with out len {}",
             out_len,
         );
-        sp.write_u64(5, 0);
+        sp.write_u64(0);
         return;
     }
     let mut our_buf = MemoryLeaf([0u8; 32]);
@@ -93,23 +98,26 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessa
     let read = wavm_read_inbox_message(msg_num, our_ptr, offset as usize);
     assert!(read <= 32);
     wavm::write_slice(&our_buf.0[..read], out_ptr);
-    sp.write_u64(5, read as u64);
+    sp.write_u64(read as u64);
 }
 
+/// Reads a delayed inbox message
+/// Safety: λ(seqNum uint64, offset uint32, output []byte) uint32
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInboxMessage(
-    sp: GoStack,
+    sp: usize,
 ) {
-    let seq_num = sp.read_u64(0);
-    let offset = sp.read_u64(1);
-    let out_ptr = sp.read_u64(2);
-    let out_len = sp.read_u64(3);
+    let mut sp = GoStack::new(sp);
+    let seq_num = sp.read_u64();
+    let offset = sp.read_u64();
+    let (out_ptr, out_len) = sp.read_go_slice();
+
     if out_len != 32 {
         eprintln!(
             "Go attempting to read inbox message with out len {}",
             out_len,
         );
-        sp.write_u64(4, 0);
+        sp.write_u64(0);
         return;
     }
     let mut our_buf = MemoryLeaf([0u8; 32]);
@@ -118,22 +126,24 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInb
     let read = wavm_read_delayed_inbox_message(seq_num, our_ptr, offset as usize);
     assert!(read <= 32);
     wavm::write_slice(&our_buf.0[..read], out_ptr);
-    sp.write_u64(5, read as u64);
+    sp.write_u64(read as u64);
 }
 
+/// Retrieves the preimage of the given hash.
+/// Safety: λ(hash []byte, offset uint32, output []byte) uint32
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImage(sp: GoStack) {
-    let hash_ptr = sp.read_u64(0);
-    let hash_len = sp.read_u64(1);
-    let offset = sp.read_u64(3);
-    let out_ptr = sp.read_u64(4);
-    let out_len = sp.read_u64(5);
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImage(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let (hash_ptr, hash_len) = sp.read_go_slice();
+    let offset = sp.read_u64();
+    let (out_ptr, out_len) = sp.read_go_slice();
+
     if hash_len != 32 || out_len != 32 {
         eprintln!(
             "Go attempting to resolve pre image with hash len {} and out len {}",
             hash_len, out_len,
         );
-        sp.write_u64(7, 0);
+        sp.write_u64(0);
         return;
     }
     let mut our_buf = MemoryLeaf([0u8; 32]);
@@ -144,5 +154,5 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImag
     let read = wavm_read_pre_image(our_ptr, offset as usize);
     assert!(read <= 32);
     wavm::write_slice(&our_buf.0[..read], out_ptr);
-    sp.write_u64(7, read as u64);
+    sp.write_u64(read as u64);
 }

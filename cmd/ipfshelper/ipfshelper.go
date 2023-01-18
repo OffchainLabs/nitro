@@ -218,8 +218,8 @@ func (h *IpfsHelper) AddFile(ctx context.Context, filePath string, includeHidden
 	return h.api.Unixfs().Add(ctx, fileNode)
 }
 
-func CreateIpfsHelper(ctx context.Context, downloadPath string, clientOnly bool, profiles string) (*IpfsHelper, error) {
-	return createIpfsHelperImpl(ctx, downloadPath, clientOnly, []string{}, profiles)
+func CreateIpfsHelper(ctx context.Context, downloadPath string, clientOnly bool, peerList []string, profiles string) (*IpfsHelper, error) {
+	return createIpfsHelperImpl(ctx, downloadPath, clientOnly, peerList, profiles)
 }
 
 func (h *IpfsHelper) Close() error {

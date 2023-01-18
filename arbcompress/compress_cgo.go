@@ -25,7 +25,7 @@ func Decompress(input []byte, maxSize int) ([]byte, error) {
 		ptr = (*C.uint8_t)(&input[0])
 	}
 	res := C.BrotliDecoderDecompress(C.size_t(len(input)), ptr, &outsize, (*C.uint8_t)(&outbuf[0]))
-	if res != 1 {
+	if uint32(res) != BrotliSuccess {
 		return nil, fmt.Errorf("failed decompression: %d", res)
 	}
 	if int(outsize) > maxSize {
@@ -42,9 +42,11 @@ func compressLevel(input []byte, level int) ([]byte, error) {
 	if len(input) > 0 {
 		inputPtr = (*C.uint8_t)(&input[0])
 	}
-	res := C.BrotliEncoderCompress(C.int(level), C.BROTLI_DEFAULT_WINDOW, C.BROTLI_MODE_GENERIC,
-		C.size_t(len(input)), inputPtr, &outSize, (*C.uint8_t)(&outbuf[0]))
-	if res != 1 {
+	res := C.BrotliEncoderCompress(
+		C.int(level), C.BROTLI_DEFAULT_WINDOW, C.BROTLI_MODE_GENERIC,
+		C.size_t(len(input)), inputPtr, &outSize, (*C.uint8_t)(&outbuf[0]),
+	)
+	if uint32(res) != BrotliSuccess {
 		return nil, fmt.Errorf("failed compression: %d", res)
 	}
 	return outbuf[:outSize], nil

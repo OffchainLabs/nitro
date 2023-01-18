@@ -72,6 +72,7 @@ var DefaultConfig = Config{
 func AddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable reader connection")
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
+	f.Bool(prefix+".use-finality-data", DefaultConfig.UseFinalityData, "use l1 data about finalized/safe blocks")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
 	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
 	f.Duration(prefix+".old-header-timeout", DefaultConfig.OldHeaderTimeout, "warns if the latest l1 block is at least this old")
@@ -318,25 +319,22 @@ func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transa
 }
 
 func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {
-	return s.lastHeaderImpl(ctx, false)
+	header, err := s.LastHeaderWithError()
+	if err == nil && header != nil {
+		return header, nil
+	}
+	return s.client.HeaderByNumber(ctx, nil)
 }
 
-func (s *HeaderReader) LastHeaderWithError(ctx context.Context) (*types.Header, error) {
-	return s.lastHeaderImpl(ctx, true)
-}
-
-func (s *HeaderReader) lastHeaderImpl(ctx context.Context, withError bool) (*types.Header, error) {
+func (s *HeaderReader) LastHeaderWithError() (*types.Header, error) {
 	s.chanMutex.RLock()
 	storedHeader := s.lastBroadcastHeader
 	storedError := s.lastBroadcastErr
 	s.chanMutex.RUnlock()
-	if withError && storedError != nil {
+	if storedError != nil {
 		return nil, storedError
 	}
-	if storedHeader != nil {
-		return storedHeader, nil
-	}
-	return s.client.HeaderByNumber(ctx, nil)
+	return storedHeader, nil
 }
 
 func (s *HeaderReader) UpdatingPendingCallBlockNr() bool {
