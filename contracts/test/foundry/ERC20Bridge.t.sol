@@ -46,6 +46,23 @@ contract ERC20BridgeTest is Test {
         assertEq(bridge.activeOutbox(), address(0), "Invalid activeOutbox ref");
     }
 
+    function testCantInitZeroAddressToken() public {
+        IERC20Bridge noTokenBridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
+        vm.expectRevert(InvalidToken.selector);
+        noTokenBridge.initialize(IOwnable(rollup), address(0));
+    }
+
+    function testCantReInit() public {
+        vm.expectRevert("Initializable: contract is already initialized");
+        bridge.initialize(IOwnable(rollup), address(nativeToken));
+    }
+
+    function testCantInitNonDelegated() public {
+        IERC20Bridge noTokenBridge = new ERC20Bridge();
+        vm.expectRevert("Function must be called through delegatecall");
+        noTokenBridge.initialize(IOwnable(rollup), address(nativeToken));
+    }
+
     function testSetDelayedInbox() public {
         assertEq(bridge.allowedDelayedInboxes(inbox), false, "Inbox shouldn't be allowed");
 
