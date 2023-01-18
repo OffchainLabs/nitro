@@ -59,14 +59,6 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 
 }
 
-type MachineStepJson struct {
-	Hash        common.Hash
-	ProofB64    string
-	Position    uint64
-	Status      uint8
-	GlobalState validator.GoGlobalState
-}
-
 func (a *ExecServerAPI) CreateExecutionRun(wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
