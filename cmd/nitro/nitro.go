@@ -40,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -564,6 +565,27 @@ func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
 }
 
+type RpcLogger struct{}
+
+func (l RpcLogger) OnRequest(request interface{}) rpc.ResultHook {
+	log.Trace("sending L1 RPC request", "request", request)
+	return RpcResultLogger{request}
+}
+
+type RpcResultLogger struct {
+	request interface{}
+}
+
+func (l RpcResultLogger) OnResult(response interface{}, err error) {
+	if err != nil {
+		// The request might not've been logged if the log level is debug not trace, so we log it again here
+		log.Debug("received error response from L1 RPC", "request", l.request, "response", response, "err", err)
+	} else {
+		// The request was already logged and can be cross-referenced by JSON-RPC id
+		log.Trace("received response from L1 RPC", "response", response, "err", err)
+	}
+}
+
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
@@ -584,8 +606,11 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			maxConnectionAttempts = math.MaxInt
 		}
 		for i := 1; i <= maxConnectionAttempts; i++ {
-			l1Client, err = ethclient.DialContext(ctx, l1URL)
+			rawRpc, err := rpc.DialContext(ctx, l1URL)
+			var requestHook rpc.RequestHook = RpcLogger{}
+			rawRpc.RequestHook.Store(&requestHook)
 			if err == nil {
+				l1Client = ethclient.NewClient(rawRpc)
 				l1ChainId, err = l1Client.ChainID(ctx)
 				if err == nil {
 					// Successfully got chain ID
