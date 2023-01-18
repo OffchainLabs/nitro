@@ -434,6 +434,9 @@ func (c *Config) Validate() error {
 	if err := c.BatchPoster.Validate(); err != nil {
 		return err
 	}
+	if err := c.Feed.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -881,7 +884,7 @@ func createNodeImpl(
 		}
 
 		broadcastClients, err = broadcastclients.NewBroadcastClients(
-			config.Feed.Input,
+			func() *broadcastclient.Config { return &configFetcher.Get().Feed.Input },
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,

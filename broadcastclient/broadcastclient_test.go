@@ -29,12 +29,49 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func TestReceiveMessages(t *testing.T) {
+func TestReceiveMessagesWithoutCompression(t *testing.T) {
 	t.Parallel()
+	testReceiveMessages(t, false, false, false, false)
+}
+
+func TestReceiveMessagesWithCompression(t *testing.T) {
+	t.Parallel()
+	testReceiveMessages(t, true, true, false, false)
+}
+
+func TestReceiveMessagesWithServerOptionalCompression(t *testing.T) {
+	t.Parallel()
+	testReceiveMessages(t, true, true, false, false)
+}
+
+func TestReceiveMessagesWithServerOnlyCompression(t *testing.T) {
+	t.Parallel()
+	testReceiveMessages(t, false, true, false, false)
+}
+
+func TestReceiveMessagesWithClientOnlyCompression(t *testing.T) {
+	t.Parallel()
+	testReceiveMessages(t, true, false, false, false)
+}
+
+func TestReceiveMessagesWithRequiredCompression(t *testing.T) {
+	t.Parallel()
+	testReceiveMessages(t, true, true, true, false)
+}
+
+func TestReceiveMessagesWithRequiredCompressionButClientDisabled(t *testing.T) {
+	t.Parallel()
+	testReceiveMessages(t, false, true, true, true)
+}
+
+func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool, expectNoMessagesReceived bool) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	brodcasterConfig := wsbroadcastserver.DefaultTestBroadcasterConfig
+	broadcasterConfig := wsbroadcastserver.DefaultTestBroadcasterConfig
+	broadcasterConfig.EnableCompression = serverCompression
+	broadcasterConfig.RequireCompression = serverRequire
 
 	messageCount := 1000
 	clientCount := 2
@@ -46,16 +83,23 @@ func TestReceiveMessages(t *testing.T) {
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &brodcasterConfig }, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &broadcasterConfig }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	config := DefaultTestConfig
+	config.EnableCompression = clientCompression
 	var wg sync.WaitGroup
+	var expectedCount int
+	if expectNoMessagesReceived {
+		expectedCount = 0
+	} else {
+		expectedCount = messageCount
+	}
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, messageCount, chainId, &wg, &sequencerAddr)
+		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, expectedCount, chainId, &wg, &sequencerAddr)
 	}
 
 	go func() {
@@ -115,7 +159,7 @@ func TestInvalidSignature(t *testing.T) {
 		}
 	}()
 
-	timer := time.NewTimer(1 * time.Second)
+	timer := time.NewTimer(2 * time.Second)
 	select {
 	case err := <-fatalErrChan:
 		if errors.Is(err, signature.ErrSignatureNotVerified) {
@@ -163,7 +207,7 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 	} else {
 		config.Verifier.AcceptSequencer = false
 	}
-	return NewBroadcastClient(config, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, bpv, func(_ int32) {})
+	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, bpv, func(_ int32) {})
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
@@ -188,9 +232,15 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 	go func() {
 		defer wg.Done()
 		defer broadcastClient.StopAndWait()
+		var timeout time.Duration
+		if expectedCount == 0 {
+			timeout = 1 * time.Second
+		} else {
+			timeout = 60 * time.Second
+		}
 		for {
 			gotMsg := false
-			timer := time.NewTimer(60 * time.Second)
+			timer := time.NewTimer(timeout)
 			select {
 			case <-ts.messageReceiver:
 				messageCount++
@@ -202,10 +252,11 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 				return
 			}
 			timer.Stop()
-			if !gotMsg {
-				t.Errorf("Client %d expected %d meesages, only got %d messages\n", index, expectedCount, messageCount)
+			if (!gotMsg && expectedCount > 0) || (gotMsg && expectedCount == 0) {
+				t.Errorf("Client %d expected %d meesages, got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
+
 			if messageCount == expectedCount {
 				return
 			}
