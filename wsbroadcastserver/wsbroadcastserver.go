@@ -13,8 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gobwas/httphead"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -35,20 +37,29 @@ const (
 )
 
 type BroadcasterConfig struct {
-	Enable         bool          `koanf:"enable"`
-	Signed         bool          `koanf:"signed"`
-	Addr           string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
-	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
-	Port           string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
-	Ping           time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
-	ClientTimeout  time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
-	Queue          int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
-	Workers        int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
-	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
-	RequireVersion bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
-	DisableSigning bool          `koanf:"disable-signing"`
-	LogConnect     bool          `koanf:"log-connect"`
-	LogDisconnect  bool          `koanf:"log-disconnect"`
+	Enable             bool          `koanf:"enable"`
+	Signed             bool          `koanf:"signed"`
+	Addr               string        `koanf:"addr"`
+	IOTimeout          time.Duration `koanf:"io-timeout" reload:"hot"` // reloading will affect only new connections
+	Port               string        `koanf:"port"`
+	Ping               time.Duration `koanf:"ping" reload:"hot"`           // reloaded value will change future ping intervals
+	ClientTimeout      time.Duration `koanf:"client-timeout" reload:"hot"` // reloaded value will affect all clients (next time the timeout is checked)
+	Queue              int           `koanf:"queue"`
+	Workers            int           `koanf:"workers"`
+	MaxSendQueue       int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
+	RequireVersion     bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
+	DisableSigning     bool          `koanf:"disable-signing"`
+	LogConnect         bool          `koanf:"log-connect"`
+	LogDisconnect      bool          `koanf:"log-disconnect"`
+	EnableCompression  bool          `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
+	RequireCompression bool          `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
+}
+
+func (bc *BroadcasterConfig) Validate() error {
+	if !bc.EnableCompression && bc.RequireCompression {
+		return errors.New("require-compression cannot be true while enable-compression is false")
+	}
+	return nil
 }
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig
@@ -68,40 +79,46 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-signing", DefaultBroadcasterConfig.DisableSigning, "don't sign feed messages")
 	f.Bool(prefix+".log-connect", DefaultBroadcasterConfig.LogConnect, "log every client connect")
 	f.Bool(prefix+".log-disconnect", DefaultBroadcasterConfig.LogDisconnect, "log every client disconnect")
+	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
+	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.EnableCompression, "require clients to use compression")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
-	Enable:         false,
-	Signed:         false,
-	Addr:           "",
-	IOTimeout:      5 * time.Second,
-	Port:           "9642",
-	Ping:           5 * time.Second,
-	ClientTimeout:  15 * time.Second,
-	Queue:          100,
-	Workers:        100,
-	MaxSendQueue:   4096,
-	RequireVersion: false,
-	DisableSigning: true,
-	LogConnect:     false,
-	LogDisconnect:  false,
+	Enable:             false,
+	Signed:             false,
+	Addr:               "",
+	IOTimeout:          5 * time.Second,
+	Port:               "9642",
+	Ping:               5 * time.Second,
+	ClientTimeout:      15 * time.Second,
+	Queue:              100,
+	Workers:            100,
+	MaxSendQueue:       4096,
+	RequireVersion:     false,
+	DisableSigning:     true,
+	LogConnect:         false,
+	LogDisconnect:      false,
+	EnableCompression:  true,
+	RequireCompression: false,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
-	Enable:         false,
-	Signed:         false,
-	Addr:           "0.0.0.0",
-	IOTimeout:      2 * time.Second,
-	Port:           "0",
-	Ping:           5 * time.Second,
-	ClientTimeout:  15 * time.Second,
-	Queue:          1,
-	Workers:        100,
-	MaxSendQueue:   4096,
-	RequireVersion: false,
-	DisableSigning: false,
-	LogConnect:     false,
-	LogDisconnect:  false,
+	Enable:             false,
+	Signed:             false,
+	Addr:               "0.0.0.0",
+	IOTimeout:          2 * time.Second,
+	Port:               "0",
+	Ping:               5 * time.Second,
+	ClientTimeout:      15 * time.Second,
+	Queue:              1,
+	Workers:            100,
+	MaxSendQueue:       4096,
+	RequireVersion:     false,
+	DisableSigning:     false,
+	LogConnect:         false,
+	LogDisconnect:      false,
+	EnableCompression:  true,
+	RequireCompression: false,
 }
 
 type WSBroadcastServer struct {
@@ -174,9 +191,16 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	//
 	// Called below in accept() loop.
 	handle := func(conn net.Conn) {
-
-		safeConn := deadliner{conn, s.config().IOTimeout}
-
+		config := s.config()
+		safeConn := deadliner{conn, config.IOTimeout}
+		var compress *wsflate.Extension
+		var negotiate func(httphead.Option) (httphead.Option, error)
+		if config.EnableCompression {
+			compress = &wsflate.Extension{
+				Parameters: wsflate.DefaultParameters, // TODO
+			}
+			negotiate = compress.Negotiate
+		}
 		var feedClientVersionSeen bool
 		var connectingIP string
 		var requestedSeqNum arbutil.MessageIndex
@@ -222,7 +246,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				return nil
 			},
 			OnBeforeUpgrade: func() (ws.HandshakeHeader, error) {
-				if s.config().RequireVersion && !feedClientVersionSeen {
+				if config.RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
 						ws.RejectionReason(fmt.Sprintf("Missing HTTP header %s", HTTPHeaderFeedClientVersion)),
@@ -230,6 +254,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				}
 				return header, nil
 			},
+			Negotiate: negotiate,
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
@@ -250,6 +275,15 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			return
 		}
 
+		compressionAccepted := false
+		if compress != nil {
+			_, compressionAccepted = compress.Accepted()
+		}
+		if config.RequireCompression && !compressionAccepted {
+			log.Warn("client did not accept required compression, disconnecting", "connectingIP", connectingIP)
+			_ = conn.Close()
+			return
+		}
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
 		if err != nil {
@@ -259,7 +293,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Register incoming client in clientManager.
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP)
+		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
@@ -291,7 +325,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	}
 
 	// Create tcp server for relay connections
-	ln, err := net.Listen("tcp", s.config().Addr+":"+s.config().Port)
+	config := s.config()
+	ln, err := net.Listen("tcp", config.Addr+":"+config.Port)
 	if err != nil {
 		log.Error("error calling net.Listen", "err", err)
 		return err
