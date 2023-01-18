@@ -17,9 +17,9 @@ import {
     NotRollupOrOwner,
     GasLimitTooLarge
 } from "../libraries/Error.sol";
-import "./INativeTokenInbox.sol";
+import "./IERC20Inbox.sol";
 import "./ISequencerInbox.sol";
-import "./INativeTokenBridge.sol";
+import "./IERC20Bridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -36,7 +36,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  * @notice Messages created via this inbox are enqueued in the delayed accumulator
  * to await inclusion in the SequencerInbox
  */
-contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeTokenInbox {
+contract ERC20Inbox is DelegateCallAware, PausableUpgradeable, IERC20Inbox {
     IBridge public bridge;
     ISequencerInbox public sequencerInbox;
 
@@ -88,12 +88,12 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
 
     uint256 internal immutable deployTimeChainId = block.chainid;
 
-    /// @inheritdoc INativeTokenInbox
+    /// @inheritdoc IERC20Inbox
     function pause() external onlyRollupOrOwner {
         _pause();
     }
 
-    /// @inheritdoc INativeTokenInbox
+    /// @inheritdoc IERC20Inbox
     function unpause() external onlyRollupOrOwner {
         _unpause();
     }
@@ -109,8 +109,8 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
         __Pausable_init();
     }
 
-    /// @inheritdoc INativeTokenInbox
-    function depositNativeToken(uint256 amount) public whenNotPaused onlyAllowed returns (uint256) {
+    /// @inheritdoc IERC20Inbox
+    function depositERC20(uint256 amount) public whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
 
         // solhint-disable-next-line avoid-tx-origin
@@ -128,7 +128,7 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
             );
     }
 
-    /// @inheritdoc INativeTokenInbox
+    /// @inheritdoc IERC20Inbox
     function createRetryableTicket(
         address to,
         uint256 l2CallValue,
@@ -174,7 +174,7 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
             );
     }
 
-    // /// @inheritdoc INativeTokenInbox
+    // /// @inheritdoc IERC20Inbox
     function unsafeCreateRetryableTicket(
         address to,
         uint256 l2CallValue,
@@ -231,7 +231,7 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
             );
     }
 
-    /// @inheritdoc INativeTokenInbox
+    /// @inheritdoc IERC20Inbox
     function calculateRetryableSubmissionFee(uint256, uint256) public pure returns (uint256) {
         return 0;
     }
@@ -256,7 +256,7 @@ contract NativeTokenInbox is DelegateCallAware, PausableUpgradeable, INativeToke
         uint256 tokenAmount
     ) internal returns (uint256) {
         return
-            INativeTokenBridge(address(bridge)).enqueueDelayedMessage(
+            IERC20Bridge(address(bridge)).enqueueDelayedMessage(
                 kind,
                 AddressAliasHelper.applyL1ToL2Alias(sender),
                 messageDataHash,

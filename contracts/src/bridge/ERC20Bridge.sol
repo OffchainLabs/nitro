@@ -4,8 +4,8 @@
 
 pragma solidity ^0.8.4;
 
-import "./BaseBridge.sol";
-import "./INativeTokenBridge.sol";
+import "./AbsBridge.sol";
+import "./IERC20Bridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -24,13 +24,13 @@ error NotApplicable();
  * @notice Unlike the standard Eth bridge, native token bridge escrows the custom ERC20 token which is
  * used as native currency on L2.
  */
-contract NativeTokenBridge is BaseBridge, INativeTokenBridge {
+contract ERC20Bridge is AbsBridge, IERC20Bridge {
     using AddressUpgradeable for address;
     using SafeERC20 for IERC20;
 
     address public nativeToken;
 
-    /// @inheritdoc INativeTokenBridge
+    /// @inheritdoc IERC20Bridge
     function initialize(IOwnable rollup_, address nativeToken_) external initializer onlyDelegated {
         if (nativeToken_ == address(0)) revert InvalidToken();
         nativeToken = nativeToken_;
@@ -38,7 +38,7 @@ contract NativeTokenBridge is BaseBridge, INativeTokenBridge {
         rollup = rollup_;
     }
 
-    /// @inheritdoc INativeTokenBridge
+    /// @inheritdoc IERC20Bridge
     function enqueueDelayedMessage(
         uint8 kind,
         address sender,

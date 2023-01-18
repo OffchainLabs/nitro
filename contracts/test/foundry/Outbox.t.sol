@@ -3,14 +3,14 @@ pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
-import "../../src/bridge/NativeTokenBridge.sol";
+import "../../src/bridge/ERC20Bridge.sol";
 import "../../src/bridge/Outbox.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
 contract OutboxTest is Test {
     Outbox public outbox;
-    NativeTokenBridge public bridge;
+    ERC20Bridge public bridge;
     IERC20 public nativeToken;
 
     address public user = address(100);
@@ -20,7 +20,7 @@ contract OutboxTest is Test {
     function setUp() public {
         // deploy token, bridge and outbox
         nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
-        bridge = NativeTokenBridge(TestUtil.deployProxy(address(new NativeTokenBridge())));
+        bridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
         outbox = Outbox(TestUtil.deployProxy(address(new Outbox())));
 
         // init bridge and outbox

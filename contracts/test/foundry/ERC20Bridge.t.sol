@@ -3,8 +3,8 @@ pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
-import "../../src/bridge/NativeTokenBridge.sol";
-import "../../src/bridge/NativeTokenInbox.sol";
+import "../../src/bridge/ERC20Bridge.sol";
+import "../../src/bridge/ERC20Inbox.sol";
 import "../../src/bridge/IEthBridge.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -12,8 +12,8 @@ import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
 import "forge-std/console.sol";
 
-contract NativeTokenBridgeTest is Test {
-    NativeTokenBridge public bridge;
+contract ERC20BridgeTest is Test {
+    ERC20Bridge public bridge;
     IERC20 public nativeToken;
 
     address public user = address(100);
@@ -31,7 +31,7 @@ contract NativeTokenBridgeTest is Test {
     function setUp() public {
         // deploy token and bridge
         nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
-        bridge = NativeTokenBridge(TestUtil.deployProxy(address(new NativeTokenBridge())));
+        bridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
 
         // init bridge
         bridge.initialize(IOwnable(rollup), address(nativeToken));

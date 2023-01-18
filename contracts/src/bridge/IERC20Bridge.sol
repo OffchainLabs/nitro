@@ -7,7 +7,7 @@ pragma solidity >=0.6.9 <0.9.0;
 
 import "./IOwnable.sol";
 
-interface INativeTokenBridge {
+interface IERC20Bridge {
     /**
      * @dev Enqueue a message in the delayed inbox accumulator.
      *      These messages are later sequenced in the SequencerInbox, either

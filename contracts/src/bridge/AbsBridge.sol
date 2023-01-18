@@ -28,7 +28,7 @@ import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
-abstract contract BaseBridge is Initializable, DelegateCallAware, IBridge {
+abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
     using AddressUpgradeable for address;
 
     struct InOutInfo {

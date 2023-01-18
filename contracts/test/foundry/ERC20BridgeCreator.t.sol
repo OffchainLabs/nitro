@@ -60,9 +60,9 @@ contract ERC20BridgeCreatorTest is Test {
         timeVars.delayBlocks;
 
         (
-            NativeTokenBridge bridge,
+            ERC20Bridge bridge,
             SequencerInbox seqInbox,
-            NativeTokenInbox inbox,
+            ERC20Inbox inbox,
             RollupEventInbox eventInbox,
             Outbox outbox
         ) = creator.createBridge(proxyAdmin, rollup, nativeToken, timeVars);

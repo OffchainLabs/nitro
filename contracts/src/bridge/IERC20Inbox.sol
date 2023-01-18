@@ -5,12 +5,12 @@
 // solhint-disable-next-line compiler-version
 pragma solidity >=0.6.9 <0.9.0;
 
-import "./INativeTokenInbox.sol";
+import "./IERC20Inbox.sol";
 import "./IDelayedMessageProvider.sol";
 import "./ISequencerInbox.sol";
-import "./NativeTokenBridge.sol";
+import "./ERC20Bridge.sol";
 
-interface INativeTokenInbox is IDelayedMessageProvider {
+interface IERC20Inbox is IDelayedMessageProvider {
     function bridge() external view returns (IBridge);
 
     function sequencerInbox() external view returns (ISequencerInbox);
@@ -33,7 +33,7 @@ interface INativeTokenInbox is IDelayedMessageProvider {
      *      Look into retryable tickets if you are interested in this functionality.
      * @dev This function should not be called inside contract constructors
      */
-    function depositNativeToken(uint256 amount) external returns (uint256);
+    function depositERC20(uint256 amount) external returns (uint256);
 
     /**
      * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts

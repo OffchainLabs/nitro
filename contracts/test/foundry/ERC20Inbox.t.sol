@@ -3,15 +3,15 @@ pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
-import "../../src/bridge/NativeTokenBridge.sol";
-import "../../src/bridge/NativeTokenInbox.sol";
+import "../../src/bridge/ERC20Bridge.sol";
+import "../../src/bridge/ERC20Inbox.sol";
 import "../../src/bridge/ISequencerInbox.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
-contract NativeTokenInboxTest is Test {
-    NativeTokenInbox public inbox;
-    NativeTokenBridge public bridge;
+contract ERC20InboxTest is Test {
+    ERC20Inbox public inbox;
+    ERC20Bridge public bridge;
     IERC20 public nativeToken;
 
     address public user = address(100);
@@ -21,8 +21,8 @@ contract NativeTokenInboxTest is Test {
     function setUp() public {
         // deploy token, bridge and inbox
         nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
-        bridge = NativeTokenBridge(TestUtil.deployProxy(address(new NativeTokenBridge())));
-        inbox = NativeTokenInbox(TestUtil.deployProxy(address(new NativeTokenInbox())));
+        bridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
+        inbox = ERC20Inbox(TestUtil.deployProxy(address(new ERC20Inbox())));
 
         // init bridge and inbox
         bridge.initialize(IOwnable(rollup), address(nativeToken));
@@ -40,7 +40,7 @@ contract NativeTokenInboxTest is Test {
         assertEq(inbox.allowListEnabled(), false, "Invalid allowListEnabled");
     }
 
-    function testDepositNativeToken() public {
+    function testDepositERC20() public {
         uint256 depositAmount = 300;
 
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
@@ -53,7 +53,7 @@ contract NativeTokenInboxTest is Test {
 
         // deposit tokens
         vm.prank(user);
-        inbox.depositNativeToken(depositAmount);
+        inbox.depositERC20(depositAmount);
 
         //// checks
 

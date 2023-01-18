@@ -4,10 +4,10 @@
 
 pragma solidity ^0.8.0;
 
-import "../bridge/NativeTokenBridge.sol";
+import "../bridge/ERC20Bridge.sol";
 import "../bridge/SequencerInbox.sol";
 import "../bridge/ISequencerInbox.sol";
-import "../bridge/NativeTokenInbox.sol";
+import "../bridge/ERC20Inbox.sol";
 import "../bridge/Outbox.sol";
 import "./RollupEventInbox.sol";
 
@@ -16,18 +16,18 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
 contract ERC20BridgeCreator is Ownable {
-    NativeTokenBridge public bridgeTemplate;
+    ERC20Bridge public bridgeTemplate;
     SequencerInbox public sequencerInboxTemplate;
-    NativeTokenInbox public inboxTemplate;
+    ERC20Inbox public inboxTemplate;
     RollupEventInbox public rollupEventInboxTemplate;
     Outbox public outboxTemplate;
 
     event TemplatesUpdated();
 
     constructor() Ownable() {
-        bridgeTemplate = new NativeTokenBridge();
+        bridgeTemplate = new ERC20Bridge();
         sequencerInboxTemplate = new SequencerInbox();
-        inboxTemplate = new NativeTokenInbox();
+        inboxTemplate = new ERC20Inbox();
         rollupEventInboxTemplate = new RollupEventInbox();
         outboxTemplate = new Outbox();
     }
@@ -39,9 +39,9 @@ contract ERC20BridgeCreator is Ownable {
         address _rollupEventInboxTemplate,
         address _outboxTemplate
     ) external onlyOwner {
-        bridgeTemplate = NativeTokenBridge(_bridgeTemplate);
+        bridgeTemplate = ERC20Bridge(_bridgeTemplate);
         sequencerInboxTemplate = SequencerInbox(_sequencerInboxTemplate);
-        inboxTemplate = NativeTokenInbox(_inboxTemplate);
+        inboxTemplate = ERC20Inbox(_inboxTemplate);
         rollupEventInboxTemplate = RollupEventInbox(_rollupEventInboxTemplate);
         outboxTemplate = Outbox(_outboxTemplate);
 
@@ -50,9 +50,9 @@ contract ERC20BridgeCreator is Ownable {
 
     struct CreateBridgeFrame {
         ProxyAdmin admin;
-        NativeTokenBridge bridge;
+        ERC20Bridge bridge;
         SequencerInbox sequencerInbox;
-        NativeTokenInbox inbox;
+        ERC20Inbox inbox;
         RollupEventInbox rollupEventInbox;
         Outbox outbox;
     }
@@ -65,16 +65,16 @@ contract ERC20BridgeCreator is Ownable {
     )
         external
         returns (
-            NativeTokenBridge,
+            ERC20Bridge,
             SequencerInbox,
-            NativeTokenInbox,
+            ERC20Inbox,
             RollupEventInbox,
             Outbox
         )
     {
         CreateBridgeFrame memory frame;
         {
-            frame.bridge = NativeTokenBridge(
+            frame.bridge = ERC20Bridge(
                 address(new TransparentUpgradeableProxy(address(bridgeTemplate), adminProxy, ""))
             );
             frame.sequencerInbox = SequencerInbox(
@@ -82,7 +82,7 @@ contract ERC20BridgeCreator is Ownable {
                     new TransparentUpgradeableProxy(address(sequencerInboxTemplate), adminProxy, "")
                 )
             );
-            frame.inbox = NativeTokenInbox(
+            frame.inbox = ERC20Inbox(
                 address(new TransparentUpgradeableProxy(address(inboxTemplate), adminProxy, ""))
             );
             frame.rollupEventInbox = RollupEventInbox(
