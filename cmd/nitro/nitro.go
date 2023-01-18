@@ -606,9 +606,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			maxConnectionAttempts = math.MaxInt
 		}
 		for i := 1; i <= maxConnectionAttempts; i++ {
-			rawRpc, err := rpc.DialContext(ctx, l1URL)
-			var requestHook rpc.RequestHook = RpcLogger{}
-			rawRpc.RequestHook.Store(&requestHook)
+			rawRpc, err := rpc.DialContextWithRequestHook(ctx, l1URL, RpcLogger{})
 			if err == nil {
 				l1Client = ethclient.NewClient(rawRpc)
 				l1ChainId, err = l1Client.ChainID(ctx)
