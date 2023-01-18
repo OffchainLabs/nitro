@@ -14,6 +14,7 @@ macro_rules! reject {
     }
 }
 
+// TODO: implement these as done in arbitrator
 reject!(
     compile_user_wasm,
     call_user_wasm,

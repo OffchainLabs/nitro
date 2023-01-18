@@ -73,6 +73,7 @@ impl StylusConfig {
         match version {
             0 => {}
             1 => {
+                // TODO: settle on reasonable values for the v1 release
                 config.costs = |_| 1;
                 config.heap_bound = Bytes(2 * 1024 * 1024);
                 config.depth.max_depth = 1 * 1024 * 1024;

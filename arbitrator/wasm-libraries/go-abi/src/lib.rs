@@ -124,3 +124,13 @@ impl GoStack {
         self.advance(saved);
     }
 }
+
+#[test]
+fn test_sp() {
+    let mut sp = GoStack::new(0);
+    assert_eq!(sp.advance(3), 8 + 0);
+    assert_eq!(sp.advance(2), 8 + 3);
+    assert_eq!(sp.skip_space().top, 8 + 8);
+    assert_eq!(sp.skip_space().top, 8 + 16);
+    assert_eq!(sp.skip_u32().skip_space().top, 8 + 24);
+}

@@ -93,27 +93,34 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let machine: Box<Machine> = Box::from_raw(sp.read_ptr_mut());
     let calldata = sp.read_go_slice_owned();
     let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
+
+    // buy wasm gas. If free, provide a virtually limitless amount
     let pricing = config.pricing;
     let evm_gas = sp.read_go_ptr();
     let wasm_gas = pricing
         .evm_to_wasm(wavm::caller_load64(evm_gas))
         .unwrap_or(u64::MAX);
 
+    // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();
     let root = (root != 0).then(|| wavm::read_bytes32(root as u64));
-
-    let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, config.pricing));
-
     let module = root.unwrap_or_else(|| machine.main_module_hash().0);
     let (main, internals) = machine.program_info();
+
+    // link the program and ready its instrumentation
     let module = link_module(&MemoryLeaf(module));
     program_set_gas(module, internals, wasm_gas);
     program_set_stack(module, internals, config.depth.max_depth);
 
+    // provide arguments
+    let args_len = calldata.len();
+    PROGRAMS.push(Program::new(calldata, config.pricing));
+
+    // call the program
     let status = program_call_main(module, main, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
 
+    /// cleans up and writes the output
     macro_rules! finish {
         ($status:expr) => {
             finish!($status, std::ptr::null::<u8>(), 0);
@@ -129,6 +136,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
         }};
     }
 
+    // check if instrumentation stopped the program
     use UserOutcomeKind::*;
     if program_gas_status(module, internals) != 0 {
         finish!(OutOfGas);
@@ -137,6 +145,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
         finish!(OutOfStack);
     }
 
+    // the program computed a final result
     let gas_left = program_gas_left(module, internals);
     match status {
         0 => finish!(Success, heapify(outs), gas_left),
