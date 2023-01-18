@@ -5,15 +5,17 @@ use crate::{
     env::{SystemStateData, WasmEnv},
     host,
 };
-use arbutil::Color;
+use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::programs::{
+    counter::{Counter, CountingMachine, OP_OFFSETS},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     prelude::*,
     start::STYLUS_START,
 };
 use std::{
+    collections::BTreeMap,
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
@@ -101,6 +103,20 @@ impl MeteredMachine for NativeInstance {
     fn set_gas(&mut self, gas: u64) {
         self.set_global(STYLUS_GAS_LEFT, gas).unwrap();
         self.set_global(STYLUS_GAS_STATUS, 0).unwrap();
+    }
+}
+
+impl CountingMachine for NativeInstance {
+    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
+        let mut counts = BTreeMap::new();
+
+        for (&op, &offset) in OP_OFFSETS.lock().iter() {
+            let count: u64 = self.get_global(&Counter::global_name(offset))?;
+            if count != 0 {
+                counts.insert(op, count);
+            }
+        }
+        Ok(counts)
     }
 }
 

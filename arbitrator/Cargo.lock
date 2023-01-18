@@ -70,6 +70,7 @@ version = "0.1.0"
 dependencies = [
  "sha3 0.10.6",
  "siphasher",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1690,9 +1691,11 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "eyre",
+ "fnv",
  "hex",
  "libc",
  "ouroboros",
+ "parking_lot 0.12.1",
  "prover",
  "sha3 0.10.6",
  "thiserror",

@@ -3,7 +3,7 @@
 
 use crate::{
     programs::{
-        config::StylusConfig, depth::DepthChecker, heap::HeapBound, meter::Meter,
+        config::StylusConfig, counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter,
         start::StartMover, FuncMiddleware, Middleware, StylusGlobals,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
@@ -525,6 +525,11 @@ impl<'a> WasmBinary<'a> {
         bound.update_module(self)?;
         start.update_module(self)?;
 
+        let count = config.debug.as_ref().map(|_| Counter::new());
+        if let Some(count) = &count {
+            count.update_module(self)?;
+        }
+
         for (index, code) in self.codes.iter_mut().enumerate() {
             let index = LocalFunctionIndex::from_u32(index as u32);
             let locals: Vec<Type> = code.locals.iter().map(|x| x.value.into()).collect();
@@ -553,6 +558,11 @@ impl<'a> WasmBinary<'a> {
             apply!(depth);
             apply!(bound);
             apply!(start);
+
+            if let Some(count) = &count {
+                apply!(*count);
+            }
+
             code.expr = build;
         }
 

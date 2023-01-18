@@ -3,6 +3,7 @@
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
+use arbutil::operator::OperatorInfo;
 use eyre::Result;
 use parking_lot::Mutex;
 use std::fmt::Debug;
@@ -100,16 +101,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
     {
         use Operator::*;
 
-        macro_rules! dot {
-            ($first:ident $(,$opcode:ident)*) => {
-                $first { .. } $(| $opcode { .. })*
-            };
-        }
-
-        let end = matches!(
-            op,
-            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
-        );
+        let end = op.ends_basic_block();
 
         let mut cost = self.block_cost.saturating_add((self.costs)(&op));
         self.block_cost = cost;

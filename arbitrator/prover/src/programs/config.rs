@@ -9,7 +9,8 @@ use wasmparser::Operator;
 #[cfg(feature = "native")]
 use {
     super::{
-        depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover, MiddlewareWrapper,
+        counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover,
+        MiddlewareWrapper,
     },
     std::sync::Arc,
     wasmer::{CompilerConfig, Store},
@@ -17,6 +18,9 @@ use {
 };
 
 pub type OpCosts = fn(&Operator) -> u64;
+
+#[derive(Clone, Default)]
+pub struct StylusDebugConfig {}
 
 #[derive(Clone)]
 pub struct StylusConfig {
@@ -26,6 +30,7 @@ pub struct StylusConfig {
     pub heap_bound: Bytes, // requires recompilation
     pub depth: DepthParams,
     pub pricing: PricingParams,
+    pub debug: Option<StylusDebugConfig>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -52,6 +57,7 @@ impl Default for StylusConfig {
             heap_bound: Bytes(u32::MAX as usize),
             depth: DepthParams::default(),
             pricing: PricingParams::default(),
+            debug: None,
         }
     }
 }
@@ -81,6 +87,10 @@ impl StylusConfig {
             _ => panic!("no config exists for Stylus version {version}"),
         };
         config
+    }
+
+    pub fn add_debug_params(&mut self) {
+        self.debug = Some(StylusDebugConfig::default())
     }
 }
 
@@ -132,6 +142,11 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(depth));
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
+
+        if let Some(_debug) = &self.debug {
+            let counter = Counter::new();
+            compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
+        }
 
         Store::new(compiler)
     }

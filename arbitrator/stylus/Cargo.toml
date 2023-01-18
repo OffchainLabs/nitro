@@ -11,9 +11,11 @@ wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-sing
 wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm" }
 ouroboros = "0.15.5"
+parking_lot = "0.12.1"
 thiserror = "1.0.33"
 libc = "0.2.108"
 eyre = "0.6.5"
+fnv = "1.0.7"
 sha3 = "0.10.5"
 hex = "0.4.3"
 

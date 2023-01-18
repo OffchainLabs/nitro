@@ -27,6 +27,7 @@ use {
 };
 
 pub mod config;
+pub mod counter;
 pub mod depth;
 pub mod heap;
 pub mod meter;

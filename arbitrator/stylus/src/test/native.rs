@@ -1,6 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::inconsistent_digit_grouping
+)]
+
 use crate::{
     env::WasmEnv,
     run::RunProgram,
@@ -10,10 +15,16 @@ use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
     binary,
-    programs::{config::DepthParams, prelude::*, ModuleMod, STYLUS_ENTRY_POINT},
+    programs::{
+        counter::{Counter, CountingMachine},
+        prelude::*,
+        start::StartMover,
+        MiddlewareWrapper, ModuleMod, STYLUS_ENTRY_POINT,
+    },
     Machine,
 };
-use std::path::Path;
+use std::{path::Path, sync::Arc};
+use wasmer::wasmparser::Operator;
 use wasmer::{
     imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
     Store,
@@ -21,9 +32,13 @@ use wasmer::{
 use wasmer_compiler_singlepass::Singlepass;
 
 fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
-    let mut store = config.store();
+    let store = config.store();
+    new_test_instance_from_store(path, store)
+}
+
+fn new_test_instance_from_store(path: &str, mut store: Store) -> Result<NativeInstance> {
     let wat = std::fs::read(path)?;
-    let module = Module::new(&store, &wat)?;
+    let module = Module::new(&store, wat)?;
     let imports = imports! {
         "test" => {
             "noop" => Function::new_typed(&mut store, || {}),
@@ -40,18 +55,30 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
     let mut store = Store::new(compiler);
     let wat = std::fs::read(path)?;
-    let module = Module::new(&mut store, &wat)?;
+    let module = Module::new(&store, wat)?;
     let instance = Instance::new(&mut store, &module, &Imports::new())?;
     Ok(NativeInstance::new_sans_env(instance, store))
 }
 
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
+    config.add_debug_params();
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;
     config.costs = |_| 1;
     config
+}
+
+fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
+    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
+
+    let native_counts = native.operator_counts()?;
+    let machine_counts = machine.operator_counts()?;
+    assert_eq!(native_counts.get(&Operator::Unreachable.into()), None);
+    assert_eq!(native_counts, machine_counts);
+    Ok(())
 }
 
 #[test]
@@ -167,6 +194,38 @@ fn test_start() -> Result<()> {
 }
 
 #[test]
+fn test_count() -> Result<()> {
+    let mut compiler = Singlepass::new();
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
+
+    let starter = StartMover::default();
+    let counter = Counter::new();
+    compiler.push_middleware(Arc::new(MiddlewareWrapper::new(starter)));
+    compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
+
+    let mut instance = new_test_instance_from_store("tests/clz.wat", Store::new(compiler))?;
+
+    let starter = instance.get_start()?;
+    starter.call(&mut instance.store)?;
+
+    let counts = instance.operator_counts()?;
+    let check = |value: Operator<'_>| counts.get(&value.into());
+
+    use Operator::*;
+    assert_eq!(check(Unreachable), None);
+    assert_eq!(check(Drop), Some(&1));
+    assert_eq!(check(I64Clz), Some(&1));
+
+    // test the instrumentation's contribution
+    assert_eq!(check(GlobalGet { global_index: 0 }), Some(&8)); // one in clz.wat
+    assert_eq!(check(GlobalSet { global_index: 0 }), Some(&7));
+    assert_eq!(check(I64Add), Some(&7));
+    assert_eq!(check(I64Const { value: 0 }), Some(&7));
+    Ok(())
+}
+
+#[test]
 fn test_import_export_safety() -> Result<()> {
     // test wasms
     //     bad-export.wat   there's a global named `stylus_gas_left`
@@ -201,7 +260,7 @@ fn test_module_mod() -> Result<()> {
     let file = "tests/module-mod.wat";
     let wat = std::fs::read(file)?;
     let wasm = wasmer::wat2wasm(&wat)?;
-    let binary = binary::parse(&wasm, &Path::new(file))?;
+    let binary = binary::parse(&wasm, Path::new(file))?;
 
     let config = StylusConfig::default();
     let instance = new_test_instance(file, config)?;
@@ -234,14 +293,14 @@ fn test_heap() -> Result<()> {
     let mut config = StylusConfig::default();
     config.heap_bound = Pages(1).into();
     assert!(new_test_instance("tests/memory.wat", config.clone()).is_err());
-    assert!(new_test_instance("tests/memory2.wat", config.clone()).is_err());
+    assert!(new_test_instance("tests/memory2.wat", config).is_err());
 
     let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
         let mut config = StylusConfig::default();
         config.heap_bound = Pages(bound).into();
 
         let instance = new_test_instance(file, config.clone())?;
-        let machine = super::wavm::new_test_machine(file, config.clone())?;
+        let machine = super::wavm::new_test_machine(file, config)?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;
@@ -295,9 +354,7 @@ fn test_rust() -> Result<()> {
     };
 
     assert_eq!(output, hash);
-    assert_eq!(native.gas_left(), machine.gas_left());
-    assert_eq!(native.stack_left(), machine.stack_left());
-    Ok(())
+    check_instrumentation(native, machine)
 }
 
 #[test]
@@ -338,7 +395,5 @@ fn test_c() -> Result<()> {
     };
 
     assert_eq!(output, hex::encode(&env.outs));
-    assert_eq!(native.gas_left(), machine.gas_left());
-    assert_eq!(native.stack_left(), machine.stack_left());
-    Ok(())
+    check_instrumentation(native, machine)
 }
