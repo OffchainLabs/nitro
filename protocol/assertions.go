@@ -12,12 +12,13 @@ import (
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
 )
 
 var (
-	Gwei              = big.NewInt(1000000000)
-	AssertionStakeWei = Gwei
+	AssertionStake       = big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(100))
+	ChallengeVertexStake = big.NewInt(params.Ether)
 
 	ErrWrongChain             = errors.New("wrong chain")
 	ErrParentDoesNotExist     = errors.New("assertion's parent does not exist on-chain")
@@ -431,19 +432,20 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	if err := prev.Staker.IfLet(
 		func(oldStaker common.Address) error {
 			if staker != oldStaker {
-				if err := chain.DeductFromBalance(tx, staker, AssertionStakeWei); err != nil {
+				if err := chain.DeductFromBalance(tx, staker, AssertionStake); err != nil {
 					return err
 				}
-				chain.AddToBalance(tx, oldStaker, AssertionStakeWei)
+				chain.AddToBalance(tx, oldStaker, AssertionStake)
 				prev.Staker = util.None[common.Address]()
 			}
 			return nil
 		},
 		func() error {
-			if err := chain.DeductFromBalance(tx, staker, AssertionStakeWei); err != nil {
+			if err := chain.DeductFromBalance(tx, staker, AssertionStake); err != nil {
 				return err
 			}
 			return nil
+
 		},
 	); err != nil {
 		return nil, err
@@ -548,8 +550,9 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	a.chain.feed.Append(&ConfirmEvent{
 		SeqNum: a.SequenceNum,
 	})
+
 	if !a.Staker.IsNone() && a.firstChildCreationTime.IsNone() {
-		a.chain.AddToBalance(tx, a.Staker.Unwrap(), AssertionStakeWei)
+		a.chain.AddToBalance(tx, a.Staker.Unwrap(), AssertionStake)
 		a.Staker = util.None[common.Address]()
 	}
 	return nil
@@ -696,6 +699,9 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	}
 	if c.includedHistories[history.Hash()] {
 		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
+	}
+	if err := c.rootAssertion.Unwrap().chain.DeductFromBalance(tx, validator, ChallengeVertexStake); err != nil {
+		return nil, errors.Wrapf(ErrInsufficientBalance, err.Error())
 	}
 
 	chain := assertion.chain
@@ -919,7 +925,7 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 	if subChal.IsNone() || subChal.Unwrap().Winner != v {
 		return ErrInvalidOp
 	}
-	v._confirm()
+	v._confirm(tx)
 	return nil
 }
 
@@ -944,7 +950,7 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 				v.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod),
 		)
 	}
-	v._confirm()
+	v._confirm(tx)
 	return nil
 }
 
@@ -974,13 +980,14 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 			),
 		)
 	}
-	v._confirm()
+	v._confirm(tx)
 	return nil
 }
 
-func (v *ChallengeVertex) _confirm() {
+func (v *ChallengeVertex) _confirm(tx *ActiveTx) {
 	v.Status = ConfirmedAssertionState
 	if v.isLeaf {
+		v.Challenge.Unwrap().rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, ChallengeVertexStake)
 		v.Challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
 	}
 }
