@@ -210,7 +210,7 @@ func createTwoValidatorFork(
 	v := setupValidatorWithChain(t, chain, stateManager, staker3)
 
 	// Add balances to the stakers.
-	bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+	bal := big.NewInt(0).Mul(protocol.AssertionStake, big.NewInt(100))
 	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		chain.AddToBalance(tx, staker1, bal)
 		chain.AddToBalance(tx, staker2, bal)

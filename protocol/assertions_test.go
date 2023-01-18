@@ -36,10 +36,8 @@ func TestAssertionChain(t *testing.T) {
 			Height:    0,
 			StateRoot: common.Hash{},
 		}, genesis.StateCommitment)
-
-		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-		chain.SetBalance(tx, staker1, bigBalance)
-		chain.SetBalance(tx, staker2, bigBalance)
+		chain.SetBalance(tx, staker1, big.NewInt(0).Add(AssertionStake, ChallengeVertexStake))
+		chain.SetBalance(tx, staker2, big.NewInt(0).Add(AssertionStake, ChallengeVertexStake))
 
 		chain.feed.SubscribeWithFilter(ctx, eventChan, func(ev AssertionChainEvent) bool {
 			switch ev.(type) {
@@ -73,8 +71,10 @@ func TestAssertionChain(t *testing.T) {
 
 		// create a fork, let first branch win by timeout
 		comm = StateCommitment{2, correctBlockHashes[199]}
+
 		branch1, err := chain.CreateLeaf(tx, newAssertion, comm, staker1)
 		require.NoError(t, err)
+
 		timeRef.Add(5 * time.Second)
 		verifyCreateLeafEventInFeed(t, eventChan, 2, 1, staker1, comm)
 		comm = StateCommitment{2, wrongBlockHashes[199]}
@@ -84,8 +84,10 @@ func TestAssertionChain(t *testing.T) {
 		challenge, err := newAssertion.CreateChallenge(tx, ctx, staker2)
 		require.NoError(t, err)
 		verifyStartChallengeEventInFeed(t, eventChan, newAssertion.SequenceNum)
+
 		chal1, err := challenge.AddLeaf(tx, branch1, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()}, staker1)
 		require.NoError(t, err)
+
 		_, err = challenge.AddLeaf(tx, branch2, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()}, staker2)
 		require.NoError(t, err)
 		err = chal1.ConfirmForPsTimer(tx)
@@ -93,6 +95,7 @@ func TestAssertionChain(t *testing.T) {
 
 		timeRef.Add(testChallengePeriod)
 		require.NoError(t, chal1.ConfirmForPsTimer(tx))
+		require.Equal(t, ChallengeVertexStake, chain.GetBalance(tx, chal1.Validator)) // Should receive challenge vertex stake back.
 		require.NoError(t, branch1.ConfirmForWin(tx))
 		require.Equal(t, branch1, chain.LatestConfirmed(tx))
 
@@ -130,7 +133,7 @@ func TestAssertionChain_CreateLeaf_MustHaveValidParent(t *testing.T) {
 			StateRoot: common.Hash{},
 		}, genesis.StateCommitment)
 
-		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+		bigBalance := new(big.Int).Mul(AssertionStake, big.NewInt(1000))
 		chain.SetBalance(tx, staker, bigBalance)
 
 		foo := common.BytesToHash([]byte("foo"))
@@ -164,16 +167,16 @@ func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 		oldStaker := common.BytesToAddress([]byte{1})
 		staker := common.BytesToAddress([]byte{2})
 		require.Equal(t, chain.GetBalance(tx, oldStaker), big.NewInt(0)) // Old staker has 0 because it's already staked.
-		chain.SetBalance(tx, staker, AssertionStakeWei)
-		require.Equal(t, chain.GetBalance(tx, staker), AssertionStakeWei) // New staker has full balance because it's not yet staked.
+		chain.SetBalance(tx, staker, AssertionStake)
+		require.Equal(t, chain.GetBalance(tx, staker), AssertionStake) // New staker has full balance because it's not yet staked.
 
 		lc := chain.LatestConfirmed(tx)
 		lc.Staker = util.Some[common.Address](oldStaker)
 		_, err := chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.NoError(t, err)
 
-		require.Equal(t, chain.GetBalance(tx, staker), big.NewInt(0))        // New staker has 0 balance after staking.
-		require.Equal(t, chain.GetBalance(tx, oldStaker), AssertionStakeWei) // Old staker has full balance after unstaking.
+		require.Equal(t, chain.GetBalance(tx, staker), big.NewInt(0))     // New staker has 0 balance after staking.
+		require.Equal(t, chain.GetBalance(tx, oldStaker), AssertionStake) // Old staker has full balance after unstaking.
 		return nil
 	}))
 }
@@ -501,7 +504,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		chain := p.(*AssertionChain)
 		// We create a fork with genesis as the rootAssertion, where one branch is a higher depth than the other.
 		genesis := chain.LatestConfirmed(tx)
-		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+		bigBalance := new(big.Int).Mul(AssertionStake, big.NewInt(1000))
 		chain.SetBalance(tx, staker1, bigBalance)
 		chain.SetBalance(tx, staker2, bigBalance)
 
@@ -764,8 +767,8 @@ func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
 	require.ErrorContains(t, chain.DeductFromBalance(
 		&ActiveTx{TxStatus: ReadWriteTxStatus},
 		common.BytesToAddress([]byte{1}),
-		AssertionStakeWei,
-	), "0 < 1000000000: insufficient balance")
+		AssertionStake,
+	), "0 < 100000000000000000000: insufficient balance")
 }
 
 func TestAssertionChain_ChallengePeriodLength(t *testing.T) {
@@ -787,7 +790,7 @@ func TestAssertionChain_RetrieveAssertions(t *testing.T) {
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	require.Equal(t, chain.Inbox().messages, NewInbox(ctx).messages)
 	staker := common.BytesToAddress([]byte{1})
-	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	bigBalance := new(big.Int).Mul(AssertionStake, big.NewInt(1000))
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	p := chain.LatestConfirmed(tx)
@@ -828,7 +831,7 @@ func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
-	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	bigBalance := new(big.Int).Mul(AssertionStake, big.NewInt(1000))
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
@@ -841,7 +844,7 @@ func TestAssertion_ErrNotYet(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
-	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	bigBalance := new(big.Int).Mul(AssertionStake, big.NewInt(1000))
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
@@ -853,7 +856,7 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
-	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	bigBalance := new(big.Int).Mul(AssertionStake, big.NewInt(1000))
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)

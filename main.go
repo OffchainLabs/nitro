@@ -42,7 +42,7 @@ type config struct {
 }
 
 func defaultConfig() *config {
-	defaultBalance := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+	defaultBalance := new(big.Int).Add(protocol.AssertionStake, protocol.ChallengeVertexStake)
 	return &config{
 		NumValidators:          2,
 		NumStates:              10,
@@ -299,7 +299,7 @@ func initializeSystem(
 	}
 
 	// Increase the balance for each validator in the test.
-	bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+	bal := big.NewInt(0).Add(protocol.AssertionStake, protocol.ChallengeVertexStake)
 	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		for _, addr := range validatorAddrs {
 			chain.AddToBalance(tx, addr, bal)
