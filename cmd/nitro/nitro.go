@@ -244,7 +244,6 @@ func mainImpl() int {
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		fileName := stackConf.ResolvePath("jwtsecret")
-		//secret := make([]byte, 32)
 		secret := common.Hash{}
 		_, err := rand.Read(secret[:])
 		if err != nil {
