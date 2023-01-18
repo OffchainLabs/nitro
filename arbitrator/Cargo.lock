@@ -1691,6 +1691,7 @@ dependencies = [
  "arbutil",
  "eyre",
  "hex",
+ "libc",
  "ouroboros",
  "prover",
  "sha3 0.10.6",

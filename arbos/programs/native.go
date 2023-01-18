@@ -6,37 +6,35 @@
 
 package programs
 
-//#cgo CFLAGS: -g -Wall
-//#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
-//#include <stdint.h>
-//
-// typedef struct GoParams {
-//   uint32_t version;
-//   uint32_t max_depth;
-//   uint32_t heap_bound;
-//   uint64_t wasm_gas_price;
-//   uint64_t hostio_cost;
-// } GoParams;
-//
-// typedef struct GoSlice {
-//   const uint8_t * ptr;
-//   const size_t len;
-// } GoSlice;
-//
-// typedef struct RustVec {
-//   uint8_t * const * ptr;
-//   size_t * len;
-//   size_t * cap;
-// } RustVec;
-//
-// extern uint8_t stylus_compile(GoSlice wasm, GoParams params, RustVec output);
-// extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * evm_gas);
-// extern void    stylus_free(RustVec vec);
-//
+/*
+#cgo CFLAGS: -g -Wall
+#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
+#include <stdint.h>
+
+typedef struct GoParams {
+  uint32_t version;
+  uint32_t max_depth;
+  uint64_t wasm_gas_price;
+  uint64_t hostio_cost;
+} GoParams;
+
+typedef struct GoSlice {
+  const uint8_t * ptr;
+  const size_t len;
+} GoSlice;
+
+typedef struct RustVec {
+  uint8_t * const * ptr;
+  size_t * len;
+  size_t * cap;
+} RustVec;
+
+extern uint8_t stylus_compile(GoSlice wasm, uint32_t version, RustVec output);
+extern uint8_t stylus_call(GoSlice module, GoSlice calldata, GoParams params, RustVec output, uint64_t * evm_gas);
+extern void    stylus_free(RustVec vec);
+*/
 import "C"
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -49,56 +47,43 @@ type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
 
-const (
-	Success u8 = iota
-	Failure
-	OutOfGas
-)
-
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, params *goParams) error {
+func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32) error {
 	output := rustVec()
-	status := C.stylus_compile(
+	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
-		params.encode(),
+		u32(version),
 		output,
-	)
-	result := output.read()
-
-	if status != Success {
-		return errors.New(string(result))
+	))
+	result, err := status.output(output.read())
+	if err == nil {
+		db.AddUserModule(version, program, result)
 	}
-	db.AddUserModule(params.version, program, result)
-	return nil
+	return err
 }
 
-func callUserWasm(
-	db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams,
-) (uint32, []byte, error) {
+func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
 
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program)
+		db.RecordProgram(program, params.version)
+	}
+	if db.Deterministic() {
+		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
 	}
 
 	module, err := db.GetUserModule(1, program)
 	if err != nil {
-		log.Crit("machine does not exist")
+		log.Crit("instance module does not exist")
 	}
 
 	output := rustVec()
-	status := C.stylus_call(
+	status := userStatus(C.stylus_call(
 		goSlice(module),
 		goSlice(calldata),
 		params.encode(),
 		output,
 		(*u64)(gas),
-	)
-	if status == Failure {
-		return 0, nil, errors.New(string(output.read()))
-	}
-	if status == OutOfGas {
-		return 0, nil, vm.ErrOutOfGas
-	}
-	return uint32(status), output.read(), nil
+	))
+	return status.output(output.read())
 }
 
 func rustVec() C.RustVec {
@@ -128,9 +113,8 @@ func goSlice(slice []byte) C.GoSlice {
 func (params *goParams) encode() C.GoParams {
 	return C.GoParams{
 		version:        u32(params.version),
-		max_depth:      u32(params.max_depth),
-		heap_bound:     u32(params.heap_bound),
-		wasm_gas_price: u64(params.wasm_gas_price),
-		hostio_cost:    u64(params.hostio_cost),
+		max_depth:      u32(params.maxDepth),
+		wasm_gas_price: u64(params.wasmGasPrice),
+		hostio_cost:    u64(params.hostioCost),
 	}
 }

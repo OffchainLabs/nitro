@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
@@ -130,8 +130,8 @@ pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
     (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
 }
 
-fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
-    let err = format!("{:#}", err);
+pub fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
+    let err = format!("{:?}", err);
     unsafe {
         let buf = libc::malloc(err.len() + 1);
         if buf.is_null() {
@@ -183,6 +183,27 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
         0
     } else {
         1
+    }
+}
+
+/// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
+/// Returns a c string error (freeable with libc's free) on compilation error, or nullptr on success.
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_add_user_wasm(
+    mach: *mut Machine,
+    wasm: *const u8,
+    wasm_len: u32,
+    root: *const Bytes32,
+    version: u32,
+) -> *mut libc::c_char {
+    let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
+
+    // provide the opportunity to skip calculating the module root
+    let root = (!root.is_null()).then(|| *root);
+
+    match (*mach).add_program(wasm, version, root) {
+        Ok(_) => std::ptr::null_mut(),
+        Err(err) => err_to_c_string(err),
     }
 }
 

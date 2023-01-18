@@ -3,14 +3,14 @@
 
 use crate::{
     env::WasmEnv,
-    run::{RunProgram, UserOutcome},
+    run::RunProgram,
     stylus::{self, NativeInstance},
 };
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
     binary,
-    programs::{prelude::*, ModuleMod, STYLUS_ENTRY_POINT},
+    programs::{config::DepthParams, prelude::*, ModuleMod, STYLUS_ENTRY_POINT},
     Machine,
 };
 use std::path::Path;
@@ -99,7 +99,7 @@ fn test_depth() -> Result<()> {
     //    comments show that the max depth is 3 words
 
     let mut config = StylusConfig::default();
-    config.max_depth = 64;
+    config.depth = DepthParams::new(64, 16);
 
     let mut instance = new_test_instance("tests/depth.wat", config)?;
     let exports = &instance.exports;

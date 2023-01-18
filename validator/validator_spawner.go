@@ -60,20 +60,30 @@ func (v *ValidationSpawner) loadEntryToMachine(ctx context.Context, entry *Valid
 		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {
 			log.Error(
-				"error while trying to add sequencer msg for proving",
+				"error adding sequencer msg for proving",
 				"err", err, "seq", entry.StartState.Batch, "blockNr", entry.Id,
 			)
-			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
+			return fmt.Errorf("error adding sequencer msg for proving: %w", err)
+		}
+	}
+	for call, wasm := range entry.UserWasms {
+		err = mach.AddUserWasm(call, wasm)
+		if err != nil {
+			log.Error(
+				"error adding user wasm for proving",
+				"err", err, "address", call.Address, "blockNr", entry.Id,
+			)
+			return fmt.Errorf("error adding user wasm for proving: %w", err)
 		}
 	}
 	if entry.HasDelayedMsg {
 		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, entry.DelayedMsg)
 		if err != nil {
 			log.Error(
-				"error while trying to add delayed msg for proving",
+				"error adding delayed msg for proving",
 				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.Id,
 			)
-			return fmt.Errorf("error while trying to add delayed msg for proving: %w", err)
+			return fmt.Errorf("error adding delayed msg for proving: %w", err)
 		}
 	}
 	return nil

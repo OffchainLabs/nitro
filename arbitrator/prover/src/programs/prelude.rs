@@ -5,6 +5,7 @@ pub use super::{
     config::StylusConfig,
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
+    run::{UserOutcome, UserOutcomeKind},
 };
 
 #[cfg(feature = "native")]

@@ -4,9 +4,9 @@
 use env::WasmEnv;
 use eyre::ErrReport;
 use prover::programs::prelude::*;
-use run::{RunProgram, UserOutcome};
+use run::RunProgram;
 use std::mem;
-use wasmer::{Bytes, Module};
+use wasmer::Module;
 
 mod env;
 pub mod host;
@@ -19,30 +19,18 @@ mod test;
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
 
-#[derive(PartialEq, Eq)]
-#[repr(u8)]
-pub enum StylusStatus {
-    Success,
-    Revert,
-    OutOfGas,
-    OutOfStack,
-    Failure,
-}
-
 #[repr(C)]
 pub struct GoParams {
     version: u32,
     max_depth: u32,
-    heap_bound: u32,
     wasm_gas_price: u64,
     hostio_cost: u64,
 }
 
 impl GoParams {
-    fn config(self) -> StylusConfig {
+    pub fn config(self) -> StylusConfig {
         let mut config = StylusConfig::version(self.version);
-        config.max_depth = self.max_depth;
-        config.heap_bound = Bytes(self.heap_bound as usize);
+        config.depth.max_depth = self.max_depth;
         config.pricing.wasm_gas_price = self.wasm_gas_price;
         config.pricing.hostio_cost = self.hostio_cost;
         config
@@ -89,20 +77,20 @@ impl RustVec {
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSlice,
-    params: GoParams,
+    version: u32,
     mut output: RustVec,
-) -> StylusStatus {
+) -> UserOutcomeKind {
     let wasm = wasm.slice();
-    let config = params.config();
+    let config = StylusConfig::version(version);
 
     match stylus::module(wasm, config) {
         Ok(module) => {
             output.write(module);
-            StylusStatus::Success
+            UserOutcomeKind::Success
         }
         Err(error) => {
             output.write_err(error);
-            StylusStatus::Revert
+            UserOutcomeKind::Failure
         }
     }
 }
@@ -114,8 +102,8 @@ pub unsafe extern "C" fn stylus_call(
     params: GoParams,
     mut output: RustVec,
     evm_gas: *mut u64,
-) -> StylusStatus {
-    use StylusStatus::*;
+) -> UserOutcomeKind {
+    use UserOutcomeKind::*;
 
     let module = module.slice();
     let calldata = calldata.slice();
@@ -145,22 +133,13 @@ pub unsafe extern "C" fn stylus_call(
     };
     native.set_gas(wasm_gas);
 
-    let outcome = match native.run_main(calldata, &config) {
-        Ok(outcome) => outcome,
-        Err(error) => error!("failed to execute program", error),
+    let (status, outs) = match native.run_main(calldata, &config) {
+        Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
+        Ok(outcome) => outcome.into_data(),
     };
-    let (status, outs) = match outcome {
-        UserOutcome::Success(outs) => (Success, outs),
-        UserOutcome::Revert(outs) => (Revert, outs),
-        UserOutcome::OutOfGas => (OutOfGas, vec![]),
-        UserOutcome::OutOfStack => (OutOfStack, vec![]),
-    };
-
     if pricing.wasm_gas_price != 0 {
+        let wasm_gas = native.gas_left().into();
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
-    }
-    if status == OutOfGas {
-        *evm_gas = 0;
     }
     output.write(outs);
     status

@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{FuncMiddleware, Middleware, ModuleMod};
+use super::{config::DepthParams, FuncMiddleware, Middleware, ModuleMod};
 use crate::{value::FunctionType, Machine};
 
 use arbutil::Color;
@@ -28,6 +28,8 @@ pub struct DepthChecker {
     pub global: Mutex<Option<GlobalIndex>>,
     /// The maximum size of the stack, measured in words
     limit: u32,
+    /// The maximum size of a stack frame, measured in words
+    frame_limit: u32,
     /// The function types of the module being instrumented
     funcs: Mutex<Arc<HashMap<FunctionIndex, FunctionType>>>,
     /// The types of the module being instrumented
@@ -35,10 +37,11 @@ pub struct DepthChecker {
 }
 
 impl DepthChecker {
-    pub fn new(limit: u32) -> Self {
+    pub fn new(params: DepthParams) -> Self {
         Self {
             global: Mutex::new(None),
-            limit,
+            limit: params.max_depth,
+            frame_limit: params.max_frame_size,
             funcs: Mutex::new(Arc::new(HashMap::default())),
             sigs: Mutex::new(Arc::new(HashMap::default())),
         }
@@ -62,11 +65,13 @@ impl<M: ModuleMod> Middleware<M> for DepthChecker {
     }
 
     fn instrument<'a>(&self, func: LocalFunctionIndex) -> Result<Self::FM<'a>> {
-        let global = self.global.lock().unwrap();
-        let funcs = self.funcs.lock().clone();
-        let sigs = self.sigs.lock().clone();
-        let limit = self.limit;
-        Ok(FuncDepthChecker::new(global, funcs, sigs, limit, func))
+        Ok(FuncDepthChecker::new(
+            self.global.lock().unwrap(),
+            self.funcs.lock().clone(),
+            self.sigs.lock().clone(),
+            self.frame_limit,
+            func,
+        ))
     }
 
     fn name(&self) -> &'static str {
@@ -86,8 +91,8 @@ pub struct FuncDepthChecker<'a> {
     locals: Option<usize>,
     /// The function being instrumented
     func: LocalFunctionIndex,
-    /// The maximum size of the stack, measured in words
-    limit: u32,
+    /// The maximum size of a stack frame, measured in words
+    frame_limit: u32,
     /// The number of open scopes
     scopes: isize,
     /// The entirety of the func's original instructions
@@ -101,7 +106,7 @@ impl<'a> FuncDepthChecker<'a> {
         global: GlobalIndex,
         funcs: Arc<HashMap<FunctionIndex, FunctionType>>,
         sigs: Arc<HashMap<SignatureIndex, FunctionType>>,
-        limit: u32,
+        frame_limit: u32,
         func: LocalFunctionIndex,
     ) -> Self {
         Self {
@@ -110,7 +115,7 @@ impl<'a> FuncDepthChecker<'a> {
             sigs,
             locals: None,
             func,
-            limit,
+            frame_limit,
             scopes: 1, // a function starts with an open scope
             code: vec![],
             done: false,
@@ -157,10 +162,9 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
 
         let size = self.worst_case_depth()?;
         let global_index = self.global.as_u32();
-        let max_frame_size = self.limit / 4;
 
-        if size > max_frame_size {
-            let limit = max_frame_size.red();
+        if size > self.frame_limit {
+            let limit = self.frame_limit.red();
             bail!("frame too large: {} > {}-word limit", size.red(), limit);
         }
 

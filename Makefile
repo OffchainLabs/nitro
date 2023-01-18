@@ -36,8 +36,10 @@ precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 output_root=target
 output_latest=$(output_root)/machines/latest
 
-repo_dirs = arbcompress arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
-go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
+repo_dirs = arbos arbnode arbutil arbstate cmd das precompiles solgen system_tests util validator wavmio
+go_source.go = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
+go_source.s  = $(wildcard $(patsubst %,%/*.s, $(repo_dirs)) $(patsubst %,%/*/*.s, $(repo_dirs)))
+go_source = $(go_source.go) $(go_source.s)
 
 color_pink = "\e[38;5;161;1m"
 color_reset = "\e[0;0m"
@@ -212,11 +214,9 @@ $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
-# recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
-	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
-	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
+	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 $(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_bin)`
@@ -293,20 +293,23 @@ $(output_latest)/host_io.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,host-io) $(
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
 
-$(output_root)/machines/latest/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host)
-	mkdir -p $(output_root)/machines/latest
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package user-host
-	install arbitrator/wasm-libraries/$(wasm32_unknown)/user_host.wasm $@
+$(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host) $(rust_prover_files) $(output_latest)/forward_stub.wasm .make/machines
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-host
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
 
 $(output_latest)/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi) .make/cbrotli-wasm
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
 
-$(output_root)/machines/latest/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wat .make/machines
+$(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wat .make/machines
 	wat2wasm $(wasm_lib)/user-host/forward.wat -o $@
 
+$(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward_stub.wat .make/machines
+	wat2wasm $(wasm_lib)/user-host/forward_stub.wat -o $@
+
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
+	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub go_stub host_io user_host brotli)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
@@ -322,8 +325,8 @@ $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
 	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
-contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
-	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
+contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_latest)/soft-float.wasm
+	$(arbitrator_prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize

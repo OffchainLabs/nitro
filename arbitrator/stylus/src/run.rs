@@ -2,36 +2,9 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{env::Escape, stylus::NativeInstance};
-use eyre::{ensure, ErrReport, Result};
+use eyre::{ensure, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};
-use std::fmt::Display;
-
-pub enum UserOutcome {
-    Success(Vec<u8>),
-    Revert(Vec<u8>),
-    OutOfGas,
-    OutOfStack,
-}
-
-impl UserOutcome {
-    fn revert(error: ErrReport) -> Self {
-        let data = format!("{:?}", error);
-        Self::Revert(data.into_bytes())
-    }
-}
-
-impl Display for UserOutcome {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use UserOutcome::*;
-        match self {
-            Success(data) => write!(f, "success {}", hex::encode(data)),
-            Revert(data) => write!(f, "revert {}", hex::encode(data)),
-            OutOfGas => write!(f, "out of gas"),
-            OutOfStack => write!(f, "out of stack"),
-        }
-    }
-}
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: &StylusConfig) -> Result<UserOutcome>;

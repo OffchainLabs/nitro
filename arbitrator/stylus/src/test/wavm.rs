@@ -5,7 +5,7 @@ use eyre::Result;
 use prover::{
     machine::GlobalState,
     programs::{
-        config::StylusConfig,
+        config::{DepthParams, StylusConfig},
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
     },
@@ -81,7 +81,7 @@ fn test_depth() -> Result<()> {
     //    comments show that the max depth is 3 words
 
     let mut config = StylusConfig::default();
-    config.max_depth = 64;
+    config.depth = DepthParams::new(64, 16);
 
     let machine = &mut new_test_machine("tests/depth.wat", config)?;
     let call = |mech: &mut Machine| mech.call_function("user", "recurse", vec![0_u64.into()]);

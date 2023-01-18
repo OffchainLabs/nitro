@@ -146,6 +146,9 @@ func (machine *JitMachine) prove(
 	writeUint8 := func(data uint8) error {
 		return writeExact([]byte{data})
 	}
+	writeUint32 := func(data uint32) error {
+		return writeExact(arbmath.Uint32ToBytes(data))
+	}
 	writeUint64 := func(data uint64) error {
 		return writeExact(arbmath.UintToBytes(data))
 	}
@@ -214,7 +217,7 @@ func (machine *JitMachine) prove(
 
 	// send known preimages
 	knownPreimages := entry.Preimages
-	if err := writeUint64(uint64(len(knownPreimages))); err != nil {
+	if err := writeUint32(uint32(len(knownPreimages))); err != nil {
 		return state, err
 	}
 	for hash, preimage := range knownPreimages {
@@ -222,6 +225,26 @@ func (machine *JitMachine) prove(
 			return state, err
 		}
 		if err := writeBytes(preimage); err != nil {
+			return state, err
+		}
+	}
+
+	// send user wasms
+	userWasms := entry.UserWasms
+	if err := writeUint32(uint32(len(userWasms))); err != nil {
+		return state, err
+	}
+	for call, wasm := range userWasms {
+		if err := writeExact(call.Address[:]); err != nil {
+			return state, err
+		}
+		if err := writeBytes(wasm.Wasm); err != nil {
+			return state, err
+		}
+		if err := writeExact(wasm.NoncanonicalHash[:]); err != nil {
+			return state, err
+		}
+		if err := writeUint32(call.Version); err != nil {
 			return state, err
 		}
 	}
