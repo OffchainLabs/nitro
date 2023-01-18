@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -184,10 +185,11 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	}
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
-	for _, parsedLog := range parsedLogs {
+	for i, parsedLog := range parsedLogs {
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
 		data, ok := messageData[msgKey]
 		if !ok {
+			log.Warn("delayed bridge message not found", "msgKey", msgKey, "log", logs[i], "parsed", parsedLog[i])
 			return nil, errors.New("message not found")
 		}
 		if crypto.Keccak256Hash(data) != parsedLog.MessageDataHash {
