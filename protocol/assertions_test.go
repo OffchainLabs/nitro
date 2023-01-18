@@ -29,7 +29,7 @@ func TestAssertionChain_ConfirmAndRefund(t *testing.T) {
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
 
-		chain.SetBalance(tx, staker, AssertionStakeWei)
+		chain.SetBalance(tx, staker, AssertionStake)
 		genesis := p.LatestConfirmed(tx)
 		comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[99]}
 		a1, err := chain.CreateLeaf(tx, genesis, comm, staker)
@@ -48,7 +48,7 @@ func TestAssertionChain_ConfirmAndRefund(t *testing.T) {
 
 		// Child is confirmed. Staker should get a refund because it's a leaf.
 		require.NoError(t, a2.ConfirmNoRival(tx))
-		require.Equal(t, AssertionStakeWei.Uint64(), chain.GetBalance(tx, staker).Uint64())
+		require.Equal(t, AssertionStake.Uint64(), chain.GetBalance(tx, staker).Uint64())
 
 		return nil
 	})
