@@ -2,9 +2,10 @@
 ;; For license information, see https://github.com/nitro/blob/master/LICENSE
 
 (module
+    (global $global (mut i64) (i64.const 32))
     (func $start
-        i32.const 1
-        i32.clz
+        global.get $global
+        i64.clz
         drop
         )
     (start $start))

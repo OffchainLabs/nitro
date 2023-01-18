@@ -1,10 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::operator::OperatorCode;
 use eyre::{bail, Result};
-use fnv::FnvHashMap as HashMap;
-use parking_lot::Mutex;
 use wasmer_types::{Bytes, Pages};
 use wasmparser::Operator;
 
@@ -22,28 +19,8 @@ use {
 pub type OpCosts = fn(&Operator) -> u64;
 
 #[repr(C)]
-#[derive(Clone)]
-pub struct StylusDebugConfig {
-    pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
-}
-
-impl Default for StylusDebugConfig {
-    fn default() -> Self {
-        Self {
-            opcode_indexes: Arc::new(Mutex::new(HashMap::default())),
-        }
-    }
-}
-
-impl StylusDebugConfig {
-    pub fn new() -> Result<Self> {
-        let opcode_indexes =
-            HashMap::with_capacity_and_hasher(OperatorCode::OPERATOR_COUNT, Default::default());
-        Ok(Self {
-            opcode_indexes: Arc::new(Mutex::new(opcode_indexes)),
-        })
-    }
-}
+#[derive(Clone, Default)]
+pub struct StylusDebugConfig {}
 
 #[repr(C)]
 #[derive(Clone)]
@@ -87,6 +64,10 @@ impl StylusConfig {
             _ => panic!("no config exists for Stylus version {version}"),
         }
         config
+    }
+
+    pub fn add_debug_params(&mut self) {
+        self.debug = Some(StylusDebugConfig::default())
     }
 }
 
@@ -151,8 +132,8 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
 
-        if let Some(debug) = &self.debug {
-            let counter = Counter::new(debug.opcode_indexes.clone());
+        if let Some(_debug) = &self.debug {
+            let counter = Counter::new();
             compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
         }
 

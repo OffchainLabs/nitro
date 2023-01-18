@@ -10,6 +10,7 @@ use wasmparser::Operator;
 pub struct OperatorCode(usize);
 
 impl OperatorCode {
+    // TODO: use std::mem::variant_count when it's stabilized
     pub const OPERATOR_COUNT: usize = 529;
 }
 
@@ -1095,41 +1096,28 @@ impl<'a> From<&Operator<'a>> for OperatorCode {
     }
 }
 
-// Base cost of operators
-pub fn operator_base_cost(op: &Operator) -> u64 {
-    use Operator::*;
-
-    match op {
-        Unreachable => 1,
-        _ => 1,
-    }
+pub trait OperatorInfo {
+    fn ends_basic_block(&self) -> bool;
+    fn code(&self) -> OperatorCode;
 }
 
-pub fn operator_factor(op: &Operator) -> u64 {
-    use Operator::*;
+impl OperatorInfo for Operator<'_> {
+    fn ends_basic_block(&self) -> bool {
+        use Operator::*;
 
-    match op {
-        Unreachable => 1,
-        _ => 1,
-    }
-}
-
-// Cost of operator taking into account parameter factor
-pub fn operator_full_cost(op: &Operator) -> u64 {
-    operator_base_cost(op) * operator_factor(op)
-}
-
-pub fn operator_at_end_of_basic_block(op: &Operator) -> bool {
-    use Operator::*;
-
-    macro_rules! dot {
+        macro_rules! dot {
             ($first:ident $(,$opcode:ident)*) => {
                 $first { .. } $(| $opcode { .. })*
             };
         }
 
-    matches!(
-        op,
-        End | Else | Return | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
-    )
+        matches!(
+            self,
+            End | Else | Return | dot!(Loop, Br, BrTable, BrIf, If, Call, CallIndirect)
+        )
+    }
+
+    fn code(&self) -> OperatorCode {
+        self.into()
+    }
 }
