@@ -16,12 +16,14 @@ use eyre::{bail, Result};
 use prover::{
     binary,
     programs::{
-        config::StylusDebugConfig, counter::CountingMachine, prelude::*, ModuleMod,
-        STYLUS_ENTRY_POINT,
+        counter::{Counter, CountingMachine},
+        prelude::*,
+        start::StartMover,
+        MiddlewareWrapper, ModuleMod, STYLUS_ENTRY_POINT,
     },
     Machine,
 };
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 use wasmer::wasmparser::Operator;
 use wasmer::{
     imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
@@ -30,7 +32,11 @@ use wasmer::{
 use wasmer_compiler_singlepass::Singlepass;
 
 fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
-    let mut store = config.store();
+    let store = config.store();
+    new_test_instance_from_store(path, store)
+}
+
+fn new_test_instance_from_store(path: &str, mut store: Store) -> Result<NativeInstance> {
     let wat = std::fs::read(path)?;
     let module = Module::new(&store, wat)?;
     let imports = imports! {
@@ -56,11 +62,23 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
+    config.add_debug_params();
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;
     config.costs = |_| 1;
     config
+}
+
+fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
+    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
+
+    let native_counts = native.operator_counts()?;
+    let machine_counts = machine.operator_counts()?;
+    assert_eq!(native_counts.get(&Operator::Unreachable.into()), None);
+    assert_eq!(native_counts, machine_counts);
+    Ok(())
 }
 
 #[test]
@@ -176,21 +194,34 @@ fn test_start() -> Result<()> {
 }
 
 #[test]
-fn test_count_clz() -> Result<()> {
-    let debug = StylusDebugConfig::new()?;
-    let opcode_indexes = debug.opcode_indexes.clone();
+fn test_count() -> Result<()> {
+    let mut compiler = Singlepass::new();
+    compiler.canonicalize_nans(true);
+    compiler.enable_verifier();
 
-    let mut config = StylusConfig::default();
-    config.debug = Some(debug);
-    let mut instance = new_test_instance("tests/clz.wat", config)?;
+    let starter = StartMover::default();
+    let counter = Counter::new();
+    compiler.push_middleware(Arc::new(MiddlewareWrapper::new(starter)));
+    compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
+
+    let mut instance = new_test_instance_from_store("tests/clz.wat", Store::new(compiler))?;
 
     let starter = instance.get_start()?;
     starter.call(&mut instance.store)?;
 
-    let counts = instance.get_opcode_counts(opcode_indexes)?;
-    assert_eq!(counts.get(&(Operator::Unreachable).into()), None);
-    assert_eq!(counts.get(&(Operator::Drop).into()), Some(&1));
-    assert_eq!(counts.get(&(Operator::I32Clz).into()), Some(&1));
+    let counts = instance.operator_counts()?;
+    let check = |value: Operator<'_>| counts.get(&value.into());
+
+    use Operator::*;
+    assert_eq!(check(Unreachable), None);
+    assert_eq!(check(Drop), Some(&1));
+    assert_eq!(check(I64Clz), Some(&1));
+
+    // test the instrumentation's contribution
+    assert_eq!(check(GlobalGet { global_index: 0 }), Some(&8)); // one in clz.wat
+    assert_eq!(check(GlobalSet { global_index: 0 }), Some(&7));
+    assert_eq!(check(I64Add), Some(&7));
+    assert_eq!(check(I64Const { value: 0 }), Some(&7));
     Ok(())
 }
 
@@ -323,9 +354,7 @@ fn test_rust() -> Result<()> {
     };
 
     assert_eq!(output, hash);
-    assert_eq!(native.gas_left(), machine.gas_left());
-    assert_eq!(native.stack_left(), machine.stack_left());
-    Ok(())
+    check_instrumentation(native, machine)
 }
 
 #[test]
@@ -366,41 +395,5 @@ fn test_c() -> Result<()> {
     };
 
     assert_eq!(output, hex::encode(&env.outs));
-    assert_eq!(native.gas_left(), machine.gas_left());
-    assert_eq!(native.stack_left(), machine.stack_left());
-    Ok(())
-}
-
-#[test]
-fn test_counter_rust() -> Result<()> {
-    let debug = StylusDebugConfig::new()?;
-    let opcode_indexes = debug.opcode_indexes.clone();
-
-    let mut config = StylusConfig::default();
-    config.debug = Some(debug);
-
-    // in keccak.rs
-    //     the input is the # of hashings followed by a preimage
-    //     the output is the iterated hash of the preimage
-
-    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-    let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
-    let preimage = preimage.as_bytes().to_vec();
-
-    let mut args = vec![0x01];
-    args.extend(preimage);
-    let args_len = args.len() as i32;
-
-    let env = WasmEnv::new(config, args);
-    let mut native = stylus::instance(filename, env)?;
-
-    let main = native
-        .exports
-        .get_typed_function::<i32, i32>(&native.store, "arbitrum_main")?;
-    let status = main.call(&mut native.store, args_len)?;
-    assert_eq!(status, 0);
-
-    let counts = native.get_opcode_counts(opcode_indexes)?;
-    assert_eq!(counts.get(&(Operator::Unreachable).into()), None);
-    Ok(())
+    check_instrumentation(native, machine)
 }

@@ -7,10 +7,8 @@ use crate::{
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
-use fnv::FnvHashMap as HashMap;
-use parking_lot::Mutex;
 use prover::programs::{
-    counter::{Counter, CountingMachine},
+    counter::{Counter, CountingMachine, OP_OFFSETS},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     prelude::*,
@@ -20,7 +18,6 @@ use std::{
     collections::BTreeMap,
     fmt::Debug,
     ops::{Deref, DerefMut},
-    sync::Arc,
 };
 use wasmer::{
     imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Module, Store, TypedFunction,
@@ -110,27 +107,16 @@ impl MeteredMachine for NativeInstance {
 }
 
 impl CountingMachine for NativeInstance {
-    fn get_opcode_counts(
-        &mut self,
-        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
-    ) -> Result<BTreeMap<OperatorCode, u64>> {
-        Ok(opcode_indexes
-            .lock()
-            .clone()
-            .iter()
-            .filter_map(|(opcode, index)| -> Option<(OperatorCode, u64)> {
-                let count = self
-                    .get_global::<u64>(&Counter::global_name(index))
-                    .expect(&format!(
-                        "global variable {} should have been present",
-                        Counter::global_name(index)
-                    ));
-                match count {
-                    0 => None,
-                    count => Some((*opcode, count)),
-                }
-            })
-            .collect())
+    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
+        let mut counts = BTreeMap::new();
+
+        for (&op, &offset) in OP_OFFSETS.lock().iter() {
+            let count: u64 = self.get_global(&Counter::global_name(offset))?;
+            if count != 0 {
+                counts.insert(op, count);
+            }
+        }
+        Ok(counts)
     }
 }
 

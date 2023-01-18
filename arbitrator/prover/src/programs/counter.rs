@@ -4,32 +4,34 @@
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
 
-use arbutil::operator::{operator_at_end_of_basic_block, operator_factor, OperatorCode};
-use eyre::Result;
+use arbutil::operator::{OperatorCode, OperatorInfo};
+use eyre::{eyre, Result};
 use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
 use std::{clone::Clone, fmt::Debug, sync::Arc};
 use wasmer::{wasmparser::Operator, GlobalInit, Type};
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
+lazy_static! {
+    /// Assigns each operator a sequential offset
+    pub static ref OP_OFFSETS: Mutex<HashMap<OperatorCode, usize>> = Mutex::new(HashMap::default());
+}
+
 #[derive(Debug)]
 pub struct Counter {
-    pub index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
-    pub opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
+    /// Assigns each relative offset a global variable
+    pub counters: Arc<Mutex<Vec<GlobalIndex>>>,
 }
 
 impl Counter {
-    pub fn new(opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>) -> Self {
-        Self {
-            index_counts_global: Arc::new(Mutex::new(Vec::with_capacity(
-                OperatorCode::OPERATOR_COUNT,
-            ))),
-            opcode_indexes,
-        }
+    pub fn new() -> Self {
+        let counters = Arc::new(Mutex::new(Vec::with_capacity(OperatorCode::OPERATOR_COUNT)));
+        Self { counters }
     }
 
-    pub fn global_name(index: &usize) -> String {
+    pub fn global_name(index: usize) -> String {
         format!("stylus_opcode{}_count", index)
     }
 }
@@ -41,21 +43,17 @@ where
     type FM<'a> = FuncCounter<'a>;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
-        let zero_count = GlobalInit::I64Const(0);
-        let mut index_counts_global = self.index_counts_global.lock();
+        let mut counters = self.counters.lock();
         for index in 0..OperatorCode::OPERATOR_COUNT {
-            let count_global =
-                module.add_global(&Counter::global_name(&index), Type::I64, zero_count)?;
-            index_counts_global.push(count_global);
+            let zero_count = GlobalInit::I64Const(0);
+            let global = module.add_global(&Self::global_name(index), Type::I64, zero_count)?;
+            counters.push(global);
         }
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
-        Ok(FuncCounter::new(
-            self.index_counts_global.clone(),
-            self.opcode_indexes.clone(),
-        ))
+        Ok(FuncCounter::new(self.counters.clone()))
     }
 
     fn name(&self) -> &'static str {
@@ -65,27 +63,16 @@ where
 
 #[derive(Debug)]
 pub struct FuncCounter<'a> {
-    /// WASM global variables to keep track of opcode counts
-    index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
-    ///  Mapping of operator code to index for opcode_counts_global and block_opcode_counts
-    opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
+    /// Assigns each relative offset a global variable
+    counters: Arc<Mutex<Vec<GlobalIndex>>>,
     /// Instructions of the current basic block
     block: Vec<Operator<'a>>,
-    /// Number of times each opcode was used in current basic block
-    block_index_counts: Vec<u64>,
 }
 
 impl<'a> FuncCounter<'a> {
-    fn new(
-        index_counts_global: Arc<Mutex<Vec<GlobalIndex>>>,
-        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
-    ) -> Self {
-        Self {
-            index_counts_global,
-            opcode_indexes,
-            block: vec![],
-            block_index_counts: vec![0; OperatorCode::OPERATOR_COUNT],
-        }
+    fn new(counters: Arc<Mutex<Vec<GlobalIndex>>>) -> Self {
+        let block = vec![];
+        Self { counters, block }
     }
 }
 
@@ -96,111 +83,67 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
     {
         use Operator::*;
 
-        macro_rules! opcode_count_add {
-            ($self:expr, $op:expr, $count:expr) => {{
-                let mut opcode_indexes = $self.opcode_indexes.lock();
-                let next = opcode_indexes.len();
-                let index = opcode_indexes.entry($op.into()).or_insert(next);
-                assert!(
-                    *index < OperatorCode::OPERATOR_COUNT,
-                    "too many unique opcodes {next}"
-                );
-                $self.block_index_counts[*index] += $count * operator_factor($op);
-            }};
-        }
-
-        let get_wasm_opcode_count_add = |global_index: u32, value: u64| -> Vec<Operator> {
-            vec![
-                GlobalGet { global_index },
-                I64Const {
-                    value: value as i64,
-                },
-                I64Add,
-                GlobalSet { global_index },
-            ]
-        };
-
-        let end = operator_at_end_of_basic_block(&op);
-
-        opcode_count_add!(self, &op, 1);
+        let end = op.ends_basic_block();
         self.block.push(op);
 
         if end {
-            // Ensure opcode count add instruction counts are all greater than zero
-            for opcode in get_wasm_opcode_count_add(0, 0) {
-                opcode_count_add!(self, &opcode, 1);
+            let update = |global_index: u32, value: i64| {
+                vec![
+                    GlobalGet { global_index },
+                    I64Const { value },
+                    I64Add,
+                    GlobalSet { global_index },
+                ]
+            };
+
+            // there's always at least one op, so we chain the instrumentation
+            let mut increments = HashMap::default();
+            for op in self.block.iter().chain(update(0, 0).iter()) {
+                let count = increments.entry(op.code()).or_default();
+                *count += 1;
             }
 
-            // Get list of all opcodes with nonzero counts
-            let nonzero_counts: Vec<_> = self
-                .index_counts_global
-                .lock()
-                .iter()
-                .enumerate()
-                .filter_map(
-                    |(index, global_index)| match self.block_index_counts[index] {
-                        0 => None,
-                        count => Some((global_index.as_u32(), count)),
-                    },
-                )
-                .collect();
-
-            // Account for all wasm instructions added, minus 1 for what we already added above
-            let unique_instructions = nonzero_counts.len() - 1;
-            for opcode in get_wasm_opcode_count_add(0, 0) {
-                opcode_count_add!(self, &opcode, unique_instructions as u64);
+            // add the instrumentation's contribution to the overall counts
+            let kinds = increments.len() as i64;
+            for op in update(0, 0) {
+                let count = increments.get_mut(&op.code()).unwrap();
+                *count += kinds - 1; // we included one in the last loop
             }
 
-            // Inject wasm instructions for adding counts
-            for (global_index, count) in nonzero_counts {
-                out.extend(get_wasm_opcode_count_add(global_index, count));
+            let counters = self.counters.lock();
+            let mut operators = OP_OFFSETS.lock();
+            for (op, count) in increments {
+                let opslen = operators.len();
+                let offset = *operators.entry(op).or_insert(opslen);
+                let global = *counters.get(offset).ok_or(eyre!("no global"))?;
+                out.extend(update(global.as_u32(), count));
             }
 
-            out.extend(self.block.clone());
-            self.block.clear();
-            self.block_index_counts = vec![0; OperatorCode::OPERATOR_COUNT]
+            out.extend(self.block.drain(..));
         }
         Ok(())
     }
 
     fn name(&self) -> &'static str {
-        "opcode counter"
+        "operator counter"
     }
 }
 
 pub trait CountingMachine {
-    fn get_opcode_counts(
-        &mut self,
-        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
-    ) -> Result<BTreeMap<OperatorCode, u64>>;
+    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>>;
 }
 
 impl CountingMachine for Machine {
-    fn get_opcode_counts(
-        &mut self,
-        opcode_indexes: Arc<Mutex<HashMap<OperatorCode, usize>>>,
-    ) -> Result<BTreeMap<OperatorCode, u64>> {
-        Ok(opcode_indexes
-            .lock()
-            .clone()
-            .iter()
-            .filter_map(|(opcode, index)| -> Option<(OperatorCode, u64)> {
-                let count = self
-                    .get_global(&Counter::global_name(index))
-                    .expect(&format!(
-                        "global variable {} should have been present",
-                        Counter::global_name(index)
-                    ))
-                    .try_into()
-                    .expect(&format!(
-                        "global variable {} should be u64",
-                        Counter::global_name(index)
-                    ));
-                match count {
-                    0 => None,
-                    count => Some((*opcode, count)),
-                }
-            })
-            .collect())
+    fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
+        let mut counts = BTreeMap::new();
+
+        for (&op, &offset) in OP_OFFSETS.lock().iter() {
+            let count = self.get_global(&Counter::global_name(offset))?;
+            let count: u64 = count.try_into()?;
+            if count != 0 {
+                counts.insert(op, count);
+            }
+        }
+        Ok(counts)
     }
 }
