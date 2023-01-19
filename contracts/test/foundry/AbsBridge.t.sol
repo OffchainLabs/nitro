@@ -26,6 +26,151 @@ abstract contract AbsBridgeTest is Test {
     address public seqInbox = address(1003);
 
     /* solhint-disable func-name-mixedcase */
+    function test_enqueueSequencerMessage_NoDelayedMsgs() public {
+        vm.prank(rollup);
+        bridge.setSequencerInbox(seqInbox);
+
+        // enqueue sequencer msg
+        vm.prank(seqInbox);
+        bytes32 dataHash = keccak256("blob");
+        uint256 afterDelayedMessagesRead = 0;
+        uint256 prevMessageCount = 0;
+        uint256 newMessageCount = 15;
+        (uint256 seqMessageIndex, bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc) = bridge
+            .enqueueSequencerMessage(
+                dataHash,
+                afterDelayedMessagesRead,
+                prevMessageCount,
+                newMessageCount
+            );
+
+        // checks
+        assertEq(
+            bridge.sequencerReportedSubMessageCount(),
+            newMessageCount,
+            "Invalid newMessageCount"
+        );
+        bytes32 seqInboxEntry = keccak256(abi.encodePacked(bytes32(0), dataHash, bytes32(0)));
+        assertEq(bridge.sequencerInboxAccs(0), seqInboxEntry, "Invalid sequencerInboxAccs entry");
+        assertEq(bridge.sequencerMessageCount(), 1, "Invalid sequencerMessageCount");
+        assertEq(seqMessageIndex, 0, "Invalid seqMessageIndex");
+        assertEq(beforeAcc, 0, "Invalid beforeAcc");
+        assertEq(delayedAcc, 0, "Invalid delayedAcc");
+        assertEq(acc, seqInboxEntry, "Invalid acc");
+    }
+
+    function test_enqueueSequencerMessage_IncludeDelayedMsgs() public {
+        vm.prank(rollup);
+        bridge.setSequencerInbox(seqInbox);
+
+        // put some msgs to delayed inbox
+        vm.startPrank(seqInbox);
+        bridge.submitBatchSpendingReport(address(1), keccak256("1"));
+        bridge.submitBatchSpendingReport(address(2), keccak256("2"));
+        bridge.submitBatchSpendingReport(address(3), keccak256("3"));
+        vm.stopPrank();
+
+        // enqueue sequencer msg with 2 delayed msgs
+        vm.prank(seqInbox);
+        bytes32 dataHash = keccak256("blob");
+        uint256 afterDelayedMessagesRead = 2;
+        uint256 prevMessageCount = 0;
+        uint256 newMessageCount = 15;
+        (uint256 seqMessageIndex, bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc) = bridge
+            .enqueueSequencerMessage(
+                dataHash,
+                afterDelayedMessagesRead,
+                prevMessageCount,
+                newMessageCount
+            );
+
+        // checks
+        assertEq(
+            bridge.sequencerReportedSubMessageCount(),
+            newMessageCount,
+            "Invalid sequencerReportedSubMessageCount"
+        );
+        bytes32 seqInboxEntry = keccak256(
+            abi.encodePacked(bytes32(0), dataHash, bridge.delayedInboxAccs(1))
+        );
+        assertEq(bridge.sequencerInboxAccs(0), seqInboxEntry, "Invalid sequencerInboxAccs entry");
+        assertEq(bridge.sequencerMessageCount(), 1, "Invalid sequencerMessageCount");
+        assertEq(seqMessageIndex, 0, "Invalid seqMessageIndex");
+        assertEq(beforeAcc, 0, "Invalid beforeAcc");
+        assertEq(delayedAcc, bridge.delayedInboxAccs(1), "Invalid delayedAcc");
+        assertEq(acc, seqInboxEntry, "Invalid acc");
+    }
+
+    function test_enqueueSequencerMessage_SecondEnqueuedMsg() public {
+        vm.prank(rollup);
+        bridge.setSequencerInbox(seqInbox);
+
+        // put some msgs to delayed inbox and seq inbox
+        vm.startPrank(seqInbox);
+        bridge.submitBatchSpendingReport(address(1), keccak256("1"));
+        bridge.submitBatchSpendingReport(address(2), keccak256("2"));
+        bridge.submitBatchSpendingReport(address(3), keccak256("3"));
+        bridge.enqueueSequencerMessage(keccak256("seq"), 2, 0, 10);
+        vm.stopPrank();
+
+        // enqueue 2nd sequencer msg with additional delayed msgs
+        vm.prank(seqInbox);
+        bytes32 dataHash = keccak256("blob");
+        uint256 afterDelayedMessagesRead = 3;
+        uint256 prevMessageCount = 10;
+        uint256 newMessageCount = 20;
+        (uint256 seqMessageIndex, bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc) = bridge
+            .enqueueSequencerMessage(
+                dataHash,
+                afterDelayedMessagesRead,
+                prevMessageCount,
+                newMessageCount
+            );
+
+        // checks
+        assertEq(
+            bridge.sequencerReportedSubMessageCount(),
+            newMessageCount,
+            "Invalid sequencerReportedSubMessageCount"
+        );
+        bytes32 seqInboxEntry = keccak256(
+            abi.encodePacked(bridge.sequencerInboxAccs(0), dataHash, bridge.delayedInboxAccs(2))
+        );
+        assertEq(bridge.sequencerInboxAccs(1), seqInboxEntry, "Invalid sequencerInboxAccs entry");
+        assertEq(bridge.sequencerMessageCount(), 2, "Invalid sequencerMessageCount");
+        assertEq(seqMessageIndex, 1, "Invalid seqMessageIndex");
+        assertEq(beforeAcc, bridge.sequencerInboxAccs(0), "Invalid beforeAcc");
+        assertEq(delayedAcc, bridge.delayedInboxAccs(2), "Invalid delayedAcc");
+        assertEq(acc, seqInboxEntry, "Invalid acc");
+    }
+
+    function test_enqueueSequencerMessage_revert_BadSequencerMessageNumber() public {
+        vm.prank(rollup);
+        bridge.setSequencerInbox(seqInbox);
+
+        // put some msgs to delayed inbox and seq inbox
+        vm.startPrank(seqInbox);
+        bridge.submitBatchSpendingReport(address(1), keccak256("1"));
+        bridge.submitBatchSpendingReport(address(2), keccak256("2"));
+        bridge.submitBatchSpendingReport(address(3), keccak256("3"));
+        bridge.enqueueSequencerMessage(keccak256("seq"), 2, 0, 10);
+        vm.stopPrank();
+
+        //  setting wrong msg counter shall revert
+        vm.prank(seqInbox);
+        uint256 incorrectPrevMsgCount = 300;
+        vm.expectRevert(
+            abi.encodeWithSelector(BadSequencerMessageNumber.selector, 10, incorrectPrevMsgCount)
+        );
+        bridge.enqueueSequencerMessage(keccak256("seq"), 2, incorrectPrevMsgCount, 10);
+    }
+
+    function test_enqueueSequencerMessage_revert_NonSeqInboxCall() public {
+        // enqueueSequencerMessage shall revert
+        vm.expectRevert(abi.encodeWithSelector(NotSequencerInbox.selector, address(this)));
+        bridge.enqueueSequencerMessage(keccak256("msg"), 0, 0, 10);
+    }
+
     function test_submitBatchSpendingReport() public {
         address sender = address(250);
         bytes32 messageDataHash = keccak256(abi.encode("msg"));
