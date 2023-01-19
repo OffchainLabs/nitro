@@ -67,12 +67,20 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	err = l1Backend.BlockChain().ReorgToOldBlock(parentBlock)
 	Require(t, err)
 
+	// Produce a new l1Block so that the batch ends up in a different l1Block than before
 	TransferBalance(t, "User", "User", common.Big1, l1Info, l1Client, ctx)
 
 	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	newBatchReceipt, err := EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
+
+	newBatchBlock := newBatchReceipt.BlockNumber.Uint64()
+	if newBatchBlock == originalBatchBlock {
+		Fail(t, "Attempted to change L1 block number in batch reorg, but it ended up in the same block", newBatchBlock)
+	} else {
+		t.Log("Batch successfully moved in reorg from L1 block", originalBatchBlock, "to L1 block", newBatchBlock)
+	}
 
 	for i := 0; ; i++ {
 		if i >= 500 {
@@ -80,11 +88,10 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		}
 		metadata, err = arbNode.InboxTracker.GetBatchMetadata(1)
 		Require(t, err)
-		t.Log("got L1 block", metadata.L1Block, "vs original batch block", originalBatchBlock)
-		if metadata.L1Block > originalBatchBlock {
+		if metadata.L1Block == newBatchBlock {
 			break
-		} else if metadata.L1Block < originalBatchBlock {
-			Fail(t, "Batch L1 block decreased from", originalBatchBlock, "to", metadata.L1Block)
+		} else if metadata.L1Block != originalBatchBlock {
+			Fail(t, "Batch L1 block changed from", originalBatchBlock, "to", metadata.L1Block, "instead of expected", metadata.L1Block)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
