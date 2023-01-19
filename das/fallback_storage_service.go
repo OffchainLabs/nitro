@@ -19,6 +19,7 @@ import (
 type FallbackStorageService struct {
 	StorageService
 	backup                     arbstate.DataAvailabilityReader
+	backupHealthChecker        DataAvailabilityServiceHealthChecker
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
 	preventRecursiveGets       bool
@@ -32,6 +33,7 @@ type FallbackStorageService struct {
 func NewFallbackStorageService(
 	primary StorageService,
 	backup arbstate.DataAvailabilityReader,
+	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
 	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)
@@ -39,6 +41,7 @@ func NewFallbackStorageService(
 	return &FallbackStorageService{
 		primary,
 		backup,
+		backupHealthChecker,
 		backupRetentionSeconds,
 		ignoreRetentionWriteErrors,
 		preventRecursiveGets,
@@ -101,5 +104,5 @@ func (f *FallbackStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return f.backup.HealthCheck(ctx)
+	return f.backupHealthChecker.HealthCheck(ctx)
 }

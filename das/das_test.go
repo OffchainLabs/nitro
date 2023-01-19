@@ -51,18 +51,19 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config, &syncFromStorageServicesFirst, &syncToStorageServicesFirst)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	das, err := NewSignAfterStoreDAS(firstCtx, config, storageService)
+	daWriter, err := NewSignAfterStoreDASWriter(firstCtx, config, storageService)
 	Require(t, err, "no das")
+	var daReader DataAvailabilityServiceReader = storageService
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(firstCtx, messageSaved, timeout, []byte{})
+	cert, err := daWriter.Store(firstCtx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
 	}
 
-	messageRetrieved, err := das.GetByHash(firstCtx, cert.DataHash)
+	messageRetrieved, err := daReader.GetByHash(firstCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -80,16 +81,15 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config, &syncFromStorageServicesSecond, &syncToStorageServicesSecond)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	das2, err := NewSignAfterStoreDAS(secondCtx, config, storageService2)
-	Require(t, err, "no das")
+	var daReader2 DataAvailabilityServiceReader = storageService2
 
-	messageRetrieved2, err := das2.GetByHash(secondCtx, cert.DataHash)
+	messageRetrieved2, err := daReader2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 
-	messageRetrieved2, err = das2.GetByHash(secondCtx, cert.DataHash)
+	messageRetrieved2, err = daReader2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to getByHash message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -143,12 +143,13 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	das, err := NewSignAfterStoreDAS(ctx, config, storageService)
+	daWriter, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err, "no das")
+	var daReader DataAvailabilityServiceReader = storageService
 
 	messageSaved := []byte("hello world")
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
-	cert, err := das.Store(ctx, messageSaved, timeout, []byte{})
+	cert, err := daWriter.Store(ctx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
@@ -157,12 +158,12 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	// Change the hash to look up
 	cert.DataHash[0] += 1
 
-	_, err = das.GetByHash(ctx, cert.DataHash)
+	_, err = daReader.GetByHash(ctx, cert.DataHash)
 	if err == nil {
 		Fail(t, "Expected an error when retrieving message that is not in the store.")
 	}
 
-	_, err = das.GetByHash(ctx, cert.DataHash)
+	_, err = daReader.GetByHash(ctx, cert.DataHash)
 	if err == nil {
 		Fail(t, "Expected an error when getting by hash a message that is not in the store.")
 	}
