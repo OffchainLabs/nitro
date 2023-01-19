@@ -65,7 +65,6 @@ type DataAvailabilityCheck struct {
 	config         *DataAvailabilityCheckConfig
 	inboxAddr      *common.Address
 	inboxContract  *bridgegen.SequencerInbox
-	dataSource     arbstate.DataAvailabilityReader
 	urlToReaderMap map[string]arbstate.DataAvailabilityReader
 	checkInterval  time.Duration
 }
@@ -80,10 +79,6 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 		return nil, err
 	}
 	inboxContract, err := bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
-	if err != nil {
-		return nil, err
-	}
-	dataSource, err := das.NewChainFetchReader(das.NewEmptyStorageService(), l1Client, *seqInboxAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +99,6 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 		config:         dataAvailabilityCheckConfig,
 		inboxAddr:      seqInboxAddress,
 		inboxContract:  inboxContract,
-		dataSource:     dataSource,
 		urlToReaderMap: urlToReaderMap,
 		checkInterval:  dataAvailabilityCheckConfig.CheckInterval,
 	}, nil

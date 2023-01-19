@@ -411,6 +411,7 @@ type SyncingFallbackStorageService struct {
 func NewSyncingFallbackStorageService(ctx context.Context,
 	primary StorageService,
 	backup arbstate.DataAvailabilityReader,
+	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	l1Reader *headerreader.HeaderReader,
 	inboxAddr common.Address,
 	syncConf *SyncToStorageConfig) (*SyncingFallbackStorageService, error) {
@@ -423,6 +424,7 @@ func NewSyncingFallbackStorageService(ctx context.Context,
 		FallbackStorageService{
 			primary,
 			backup,
+			backupHealthChecker,
 			uint64(syncConf.RetentionPeriod.Seconds()),
 			syncConf.IgnoreWriteErrors,
 			true,
