@@ -303,7 +303,7 @@ func mainImpl() int {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
 			flag.Usage()
-			log.Crit("error opening L1 wallet", "err", err)
+			log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 		}
 	}
 

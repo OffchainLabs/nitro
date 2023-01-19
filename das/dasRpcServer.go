@@ -22,31 +22,34 @@ import (
 )
 
 var (
-	rpcStoreRequestGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
-	rpcStoreSuccessGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
-	rpcStoreFailureGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
-	rpcStoreStoredBytesGauge = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
-
-	// Lower reservoir size for stores since they typically will be every 30 minutes,
-	// and at most several times per minute.
-	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewExpDecaySample(32, 0.015))
+	rpcStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
+	rpcStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
+	rpcStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
+	rpcStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
+	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 type DASRPCServer struct {
-	localDAS DataAvailabilityService
+	daReader        DataAvailabilityServiceReader
+	daWriter        DataAvailabilityServiceWriter
+	daHealthChecker DataAvailabilityServiceHealthChecker
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, localDAS)
+	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, daReader, daWriter, daHealthChecker)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
-	err := rpcServer.RegisterName("das", &DASRPCServer{localDAS: localDAS})
+	err := rpcServer.RegisterName("das", &DASRPCServer{
+		daReader:        daReader,
+		daWriter:        daWriter,
+		daHealthChecker: daHealthChecker,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +98,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	cert, err := serv.localDAS.Store(ctx, message, uint64(timeout), sig)
+	cert, err := serv.daWriter.Store(ctx, message, uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
@@ -112,11 +115,11 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
-	return serv.localDAS.HealthCheck(ctx)
+	return serv.daHealthChecker.HealthCheck(ctx)
 }
 
 func (serv *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
-	expirationPolicy, err := serv.localDAS.ExpirationPolicy(ctx)
+	expirationPolicy, err := serv.daReader.ExpirationPolicy(ctx)
 	if err != nil {
 		return "", err
 	}

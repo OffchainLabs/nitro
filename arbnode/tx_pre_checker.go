@@ -36,11 +36,41 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
+type NonceError struct {
+	sender     common.Address
+	txNonce    uint64
+	stateNonce uint64
+}
+
+func (e NonceError) Error() string {
+	if e.txNonce < e.stateNonce {
+		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooLow, e.sender, e.txNonce, e.stateNonce)
+	} else if e.txNonce > e.stateNonce {
+		return fmt.Sprintf("%v: address %v, tx: %d state: %d", core.ErrNonceTooHigh, e.sender, e.txNonce, e.stateNonce)
+	} else {
+		// This should be unreachable
+		return fmt.Sprintf("invalid nonce error for address %v nonce %v", e.sender, e.txNonce)
+	}
+}
+
+func (e NonceError) Unwrap() error {
+	if e.txNonce < e.stateNonce {
+		return core.ErrNonceTooLow
+	} else if e.txNonce > e.stateNonce {
+		return core.ErrNonceTooHigh
+	} else {
+		// This should be unreachable
+		return nil
+	}
+}
+
 func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) error {
-	if txNonce < stateNonce {
-		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, txNonce, stateNonce)
-	} else if txNonce > stateNonce {
-		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, txNonce, stateNonce)
+	if txNonce != stateNonce {
+		return NonceError{
+			sender:     sender,
+			txNonce:    txNonce,
+			stateNonce: stateNonce,
+		}
 	} else {
 		return nil
 	}

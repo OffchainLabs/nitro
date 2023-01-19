@@ -352,6 +352,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			r.lastReadBatchCount = checkingBatchCount
 			r.lastReadMutex.Unlock()
 			storeSeenBatchCount()
+			if !r.caughtUp {
+				r.caughtUp = true
+				close(r.caughtUpChan)
+			}
 			continue
 		}
 
@@ -398,7 +402,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				return err
 			}
 			if !r.caughtUp && to.Cmp(currentHeight) == 0 {
-				// TODO better caught up tracking
 				r.caughtUp = true
 				close(r.caughtUpChan)
 			}
@@ -567,17 +570,19 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	if err != nil {
 		return nil, err
 	}
-	blockNum := big.NewInt(0).SetUint64(metadata.L1Block)
+	blockNum := arbmath.UintToBig(metadata.L1Block)
 	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
 	if err != nil {
 		return nil, err
 	}
+	var seenBatches []uint64
 	for _, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
 			return batch.Serialize(ctx, r.client)
 		}
+		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
-	return nil, errors.New("sequencer batch not found")
+	return nil, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.L1Block, seenBatches)
 }
 
 func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
