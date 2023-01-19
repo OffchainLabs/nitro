@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.4;
+
+import "forge-std/Test.sol";
+import "./util/TestUtil.sol";
+import "./AbsBridge.t.sol";
+import "../../src/bridge/IEthBridge.sol";
+import "../../src/libraries/AddressAliasHelper.sol";
+
+import "forge-std/console.sol";
+
+contract BridgeTest is AbsBridgeTest {
+    IEthBridge public ethBridge;
+
+    // msg details
+    uint8 kind = 7;
+    bytes32 messageDataHash = keccak256(abi.encodePacked("some msg"));
+    uint256 ethAmount = 2 ether;
+
+    function setUp() public {
+        // deploy eth and bridge
+        bridge = Bridge(TestUtil.deployProxy(address(new Bridge())));
+        ethBridge = IEthBridge(address(bridge));
+
+        // init bridge
+        ethBridge.initialize(IOwnable(rollup));
+
+        // fund user account
+        vm.deal(user, 10 ether);
+    }
+
+    /* solhint-disable func-name-mixedcase */
+    function test_initialize() public {
+        assertEq(address(bridge.rollup()), rollup, "Invalid rollup ref");
+        assertEq(bridge.activeOutbox(), address(0), "Invalid activeOutbox ref");
+    }
+
+    function test_initialize_revert_ReInit() public {
+        vm.expectRevert("Initializable: contract is already initialized");
+        ethBridge.initialize(IOwnable(rollup));
+    }
+
+    function test_initialize_revert_NonDelegated() public {
+        IEthBridge noTokenBridge = new Bridge();
+        vm.expectRevert("Function must be called through delegatecall");
+        noTokenBridge.initialize(IOwnable(rollup));
+    }
+
+    function test_enqueueDelayedMessage() public {
+        // inbox will move ETH to bridge
+        vm.deal(inbox, ethAmount);
+        uint256 inboxEthBalanceBefore = address(inbox).balance;
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+        uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
+
+        // allow inbox
+        vm.prank(rollup);
+        bridge.setDelayedInbox(inbox, true);
+
+        // enqueue msg inbox->bridge
+        address userAliased = AddressAliasHelper.applyL1ToL2Alias(user);
+        vm.prank(inbox);
+        ethBridge.enqueueDelayedMessage{value: ethAmount}(kind, userAliased, messageDataHash);
+
+        //// checks
+
+        uint256 bridgeEthBalanceAfter = address(bridge).balance;
+        assertEq(
+            bridgeEthBalanceAfter - bridgeEthBalanceBefore,
+            ethAmount,
+            "Invalid bridge eth balance"
+        );
+
+        uint256 inboxEthBalanceAfter = address(inbox).balance;
+        assertEq(
+            inboxEthBalanceBefore - inboxEthBalanceAfter,
+            ethAmount,
+            "Invalid user inboxbalance"
+        );
+
+        uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
+        assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
+    }
+
+    function test_enqueueDelayedMessage_revert_UseTokenForFees() public {
+        // allow inbox
+        vm.prank(rollup);
+        bridge.setDelayedInbox(inbox, true);
+
+        // enqueue msg
+        hoax(inbox);
+        vm.expectRevert();
+        IERC20Bridge(address(bridge)).enqueueDelayedMessage(kind, user, messageDataHash, 1000);
+    }
+
+    function test_enqueueDelayedMessage_revert_NotDelayedInbox() public {
+        hoax(inbox);
+        vm.expectRevert(abi.encodeWithSelector(NotDelayedInbox.selector, inbox));
+        ethBridge.enqueueDelayedMessage{value: ethAmount}(kind, user, messageDataHash);
+    }
+
+    function test_executeCall_EmptyData() public {
+        // fund bridge with some eth
+        vm.deal(address(bridge), 10 ether);
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+        uint256 userEthBalanceBefore = address(user).balance;
+
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        //// execute call
+        vm.prank(outbox);
+        uint256 withdrawalAmount = 3 ether;
+        bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+
+        uint256 bridgeEthBalanceAfter = address(bridge).balance;
+        assertEq(
+            bridgeEthBalanceBefore - bridgeEthBalanceAfter,
+            withdrawalAmount,
+            "Invalid bridge eth balance"
+        );
+
+        uint256 userEthBalanceAfter = address(user).balance;
+        assertEq(
+            userEthBalanceAfter - userEthBalanceBefore,
+            withdrawalAmount,
+            "Invalid user eth balance"
+        );
+    }
+}

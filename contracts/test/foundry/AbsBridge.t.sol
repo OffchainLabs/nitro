@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
+import "../../src/bridge/IBridge.sol";
 import "../../src/bridge/ERC20Bridge.sol";
 import "../../src/bridge/Bridge.sol";
 import "../../src/bridge/ERC20Inbox.sol";
@@ -13,48 +14,30 @@ import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
 import "forge-std/console.sol";
 
-contract AbsBridgeTest is Test {
-    IBridge public ethBridge;
+abstract contract AbsBridgeTest is Test {
+    IBridge public bridge;
 
-    IBridge public erc20Bridge;
-    IERC20 public nativeToken;
+    address public user = address(100);
+    address public userB = address(101);
 
-    IBridge[] public bridges;
+    address public rollup = address(1000);
+    address public inbox = address(1001);
+    address public outbox = address(1002);
+    address public seqInbox = address(1003);
 
-    address public ethRollup = address(1000);
-    address public erc20Rollup = address(1001);
-    address public seqInbox = address(1002);
+    function test_setSequencerInbox() public {
+        vm.prank(address(bridge.rollup()));
+        bridge.setSequencerInbox(seqInbox);
 
-    address public owner = address(10);
-    address public user = address(11);
-
-    function setUp() public {
-        vm.startPrank(owner);
-
-        // deploy Eth Bridge
-        ethBridge = IBridge(TestUtil.deployProxy(address(new Bridge())));
-        IEthBridge(address(ethBridge)).initialize(IOwnable(ethRollup));
-
-        // deploy erc20 Bridge
-        nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
-        erc20Bridge = IBridge(TestUtil.deployProxy(address(new ERC20Bridge())));
-        IERC20Bridge(address(erc20Bridge)).initialize(IOwnable(erc20Rollup), address(nativeToken));
-        vm.stopPrank();
-
-        // fund user account
-        nativeToken.transfer(user, 100_000);
-
-        bridges.push(ethBridge);
-        bridges.push(erc20Bridge);
-
+        assertEq(bridge.sequencerInbox(), seqInbox, "Invalid seqInbox");
     }
 
-    function testSetSequencerInbox() public {
-        for (uint256 i = 0; i < bridges.length; i++) {
-            vm.prank(address(bridges[i].rollup()));
-            bridges[i].setSequencerInbox(seqInbox);
+    function test_setDelayedInbox() public {
+        assertEq(bridge.allowedDelayedInboxes(inbox), false, "Inbox shouldn't be allowed");
 
-            assertEq(bridges[i].sequencerInbox(), seqInbox, "Invalid seqInbox");
-        }
+        // allow inbox
+        vm.prank(rollup);
+        bridge.setDelayedInbox(inbox, true);
+        assertEq(bridge.allowedDelayedInboxes(inbox), true, "Inbox should be allowed");
     }
 }

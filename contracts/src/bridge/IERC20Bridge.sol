@@ -9,6 +9,11 @@ import "./IOwnable.sol";
 
 interface IERC20Bridge {
     /**
+     * @dev token that is escrowed in bridge on L1 side and minted on L2 as native currency
+     */
+    function nativeToken() external returns (address);
+
+    /**
      * @dev Enqueue a message in the delayed inbox accumulator.
      *      These messages are later sequenced in the SequencerInbox, either
      *      by the sequencer as part of a normal batch, or by force inclusion.
