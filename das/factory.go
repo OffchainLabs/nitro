@@ -200,9 +200,6 @@ func CreateDAComponentsForDaserver(
 	}
 
 	// Check config requirements
-	if config.AggregatorConfig.Enable {
-		return nil, nil, nil, nil, errors.New("--data-availability.rpc-aggregator")
-	}
 	if !config.LocalDBStorageConfig.Enable &&
 		!config.LocalFileStorageConfig.Enable &&
 		!config.S3StorageServiceConfig.Enable &&
