@@ -15,7 +15,8 @@ contract ERC20BridgeCreatorTest is Test {
         creator = new ERC20BridgeCreator();
     }
 
-    function testDeployed() public {
+    /* solhint-disable func-name-mixedcase */
+    function test_constructor() public {
         assertTrue(address(creator.bridgeTemplate()) != address(0), "Bridge not created");
         assertTrue(address(creator.sequencerInboxTemplate()) != address(0), "SeqInbox not created");
         assertTrue(address(creator.inboxTemplate()) != address(0), "Inbox not created");
@@ -26,7 +27,7 @@ contract ERC20BridgeCreatorTest is Test {
         assertTrue(address(creator.outboxTemplate()) != address(0), "Outbox not created");
     }
 
-    function testUpdateTemplates() public {
+    function test_updateTemplates() public {
         address bridge = address(200);
         address sequencerInbox = address(201);
         address inbox = address(202);
@@ -47,7 +48,7 @@ contract ERC20BridgeCreatorTest is Test {
         assertEq(address(creator.outboxTemplate()), outbox, "Invalid outbox");
     }
 
-    function testCreateBridge() public {
+    function test_createBridge() public {
         address proxyAdmin = address(300);
         address rollup = address(301);
         address nativeToken = address(302);

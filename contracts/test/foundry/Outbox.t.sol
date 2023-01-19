@@ -34,12 +34,13 @@ contract OutboxTest is Test {
         nativeToken.transfer(user, 1_000);
     }
 
-    function testInitialization() public {
+    /* solhint-disable func-name-mixedcase */
+    function test_initialize() public {
         assertEq(address(outbox.bridge()), address(bridge), "Invalid bridge ref");
         assertEq(address(outbox.rollup()), rollup, "Invalid rollup ref");
     }
 
-    function testExecuteTransaction() public {
+    function test_executeTransaction() public {
         // fund bridge with some tokens
         vm.startPrank(user);
         nativeToken.approve(address(bridge), 100);

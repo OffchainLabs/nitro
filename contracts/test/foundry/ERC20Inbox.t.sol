@@ -34,13 +34,14 @@ contract ERC20InboxTest is Test {
         nativeToken.transfer(user, 1_000);
     }
 
-    function testInitialization() public {
+    /* solhint-disable func-name-mixedcase */
+    function test_initialize() public {
         assertEq(address(inbox.bridge()), address(bridge), "Invalid bridge ref");
         assertEq(address(inbox.sequencerInbox()), seqInbox, "Invalid seqInbox ref");
         assertEq(inbox.allowListEnabled(), false, "Invalid allowListEnabled");
     }
 
-    function testDepositERC20() public {
+    function test_depositERC20() public {
         uint256 depositAmount = 300;
 
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
@@ -75,7 +76,7 @@ contract ERC20InboxTest is Test {
         assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
     }
 
-    function testCreateRetryableTicket() public {
+    function test_createRetryableTicket() public {
         uint256 tokenTotalFeeAmount = 300;
 
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
