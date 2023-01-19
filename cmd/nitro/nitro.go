@@ -354,6 +354,10 @@ func mainImpl() int {
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	defer closeDb(chainDb, "chainDb")
+	if l2BlockChain != nil {
+		// Calling Stop on the blockchain multiple times does nothing
+		defer l2BlockChain.Stop()
+	}
 	if err != nil {
 		flag.Usage()
 		log.Error("error initializing database", "err", err)
