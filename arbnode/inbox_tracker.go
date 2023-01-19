@@ -312,6 +312,12 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
 }
 
+func (t *InboxTracker) clearBatchMetaCache() {
+	t.batchMetaMutex.Lock()
+	defer t.batchMetaMutex.Unlock()
+	t.batchMeta.Clear()
+}
+
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
@@ -366,12 +372,8 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	// which we'll do because of the defer.
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount != nil {
-		defer func() {
-			// Clear the batchMeta cache after writing the reorg to disk
-			t.batchMetaMutex.Lock()
-			t.batchMeta.Clear()
-			t.batchMetaMutex.Unlock()
-		}()
+		// Clear the batchMeta cache after writing the reorg to disk
+		defer t.clearBatchMetaCache()
 
 		count := *reorgSeqBatchesToCount
 		if t.validator != nil {
@@ -674,12 +676,8 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		t.validator.ReorgToBatchCount(count)
 	}
 
-	defer func() {
-		// Clear the batchMeta cache after writing the reorg to disk
-		t.batchMetaMutex.Lock()
-		t.batchMeta.Clear()
-		t.batchMetaMutex.Unlock()
-	}()
+	// Clear the batchMeta cache after writing the reorg to disk
+	defer t.clearBatchMetaCache()
 
 	dbBatch := t.db.NewBatch()
 
