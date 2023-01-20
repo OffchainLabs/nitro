@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "inbox_feeder",
     srcs = ["inbox_feeder.go"],
-    importpath = "github.com/OffchainLabs/new-rollup-exploration/inbox_feeder",
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/inbox_feeder",
     visibility = ["//visibility:public"],
     deps = [
         "//protocol",

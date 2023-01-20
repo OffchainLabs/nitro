@@ -3,7 +3,7 @@ package protocol
 import (
 	"math/big"
 
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 )
 
