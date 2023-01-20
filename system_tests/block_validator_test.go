@@ -128,7 +128,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	finalRefCount := nodeB.BlockValidator.RecordDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
-	largestRefCount := lastBlockNow.NumberU64() + 1 - lastBlock.NumberU64()
+	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
+	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
 		Fail(t, "unexpected refcount:", finalRefCount)
 	}
