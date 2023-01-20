@@ -18,7 +18,7 @@ type ManagerBackend interface {
 }
 
 // SimulatedManagerBackend defines a very naive manager backend that is initialized from a list of predetermined
-// state roots. It can produce state and merkel roots from those roots.
+// state roots. It can produce state and Merkle roots from those roots.
 type SimulatedManagerBackend struct {
 	stateRoots []common.Hash
 }
