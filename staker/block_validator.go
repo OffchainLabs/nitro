@@ -574,7 +574,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		if !haveBatch && batchCount == v.globalPosNextSend.BatchNumber+1 {
 			// This is the latest batch.
-			// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
+			// Wait a bit to see if the inbox tracker populates this sequencer batch,
+			// but if it's still missing after this wait, we'll query it from the inbox reader.
 			time.Sleep(time.Second)
 			seqBatchEntry, haveBatch = v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		}
