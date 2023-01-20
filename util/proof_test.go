@@ -100,6 +100,45 @@ func TestMerkleProof(t *testing.T) {
 	}
 }
 
+func TestMerkleProofBackend(t *testing.T) {
+	for _, c := range []struct {
+		lo uint64
+		hi uint64
+	}{
+		{0, 1},
+		{0, 2},
+		{1, 2},
+		{1, 3},
+		{1, 13},
+		{17, 39820},
+		{23, 39820},
+		{20, 39823},
+	} {
+		leaves := hashesForUints(0, c.hi)
+		loExp := ExpansionFromLeaves(leaves[:c.lo])
+		hiExp := ExpansionFromLeaves(leaves[:c.hi])
+		proof := GeneratePrefixProofBackend(
+			c.lo,
+			loExp,
+			c.hi,
+			func(lo uint64, hi uint64) (common.Hash, error) {
+				return ExpansionFromLeaves(leaves[lo : hi+1]).Root(), nil
+			})
+		err := VerifyPrefixProof(
+			HistoryCommitment{
+				Height: c.lo,
+				Merkle: loExp.Root(),
+			},
+			HistoryCommitment{
+				Height: c.hi,
+				Merkle: hiExp.Root(),
+			},
+			proof,
+		)
+		require.NoError(t, err, c.lo, c.hi)
+	}
+}
+
 func hashesForUints(lo, hi uint64) []common.Hash {
 	ret := []common.Hash{}
 	for i := lo; i < hi; i++ {
