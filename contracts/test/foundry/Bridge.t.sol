@@ -13,9 +13,9 @@ contract BridgeTest is AbsBridgeTest {
     IEthBridge public ethBridge;
 
     // msg details
-    uint8 kind = 7;
-    bytes32 messageDataHash = keccak256(abi.encodePacked("some msg"));
-    uint256 ethAmount = 2 ether;
+    uint8 public kind = 7;
+    bytes32 public messageDataHash = keccak256(abi.encodePacked("some msg"));
+    uint256 public ethAmount = 2 ether;
 
     function setUp() public {
         // deploy eth and bridge
@@ -99,7 +99,7 @@ contract BridgeTest is AbsBridgeTest {
         ethBridge.enqueueDelayedMessage{value: ethAmount}(kind, user, messageDataHash);
     }
 
-    function test_executeCall_EmptyData() public {
+    function test_executeCall_EmptyCalldata() public {
         // fund bridge with some eth
         vm.deal(address(bridge), 10 ether);
         uint256 bridgeEthBalanceBefore = address(bridge).balance;
@@ -112,7 +112,10 @@ contract BridgeTest is AbsBridgeTest {
         //// execute call
         vm.prank(outbox);
         uint256 withdrawalAmount = 3 ether;
-        bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+        (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+
+        //// checks
+        assertTrue(success, "Execute call failed");
 
         uint256 bridgeEthBalanceAfter = address(bridge).balance;
         assertEq(
@@ -127,5 +130,56 @@ contract BridgeTest is AbsBridgeTest {
             withdrawalAmount,
             "Invalid user eth balance"
         );
+    }
+
+    function test_executeCall_UseCalldata() public {
+        // fund bridge with some eth
+        vm.deal(address(bridge), 10 ether);
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+        uint256 userEthBalanceBefore = address(user).balance;
+
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        //// execute call
+        vm.prank(outbox);
+        uint256 withdrawalAmount = 3 ether;
+        (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+
+        //// checks
+        assertTrue(success, "Execute call failed");
+
+        uint256 bridgeEthBalanceAfter = address(bridge).balance;
+        assertEq(
+            bridgeEthBalanceBefore - bridgeEthBalanceAfter,
+            withdrawalAmount,
+            "Invalid bridge eth balance"
+        );
+
+        uint256 userEthBalanceAfter = address(user).balance;
+        assertEq(
+            userEthBalanceAfter - userEthBalanceBefore,
+            withdrawalAmount,
+            "Invalid user eth balance"
+        );
+    }
+
+
+    function test_executeCall_revert_NotOutbox() public {
+        vm.expectRevert(abi.encodeWithSelector(NotOutbox.selector, address(this)));
+        bridge.executeCall({to: user, value: 0.1 ether, data: ""});
+    }
+
+    function test_executeCall_revert_NotContract() public {
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        // executeCall shall revert when 'to' is not contract
+        address to = address(234);
+        vm.expectRevert(abi.encodeWithSelector(NotContract.selector, address(to)));
+        vm.prank(outbox);
+        bridge.executeCall({to: to, value: 0.1 ether, data: "some data"});
     }
 }

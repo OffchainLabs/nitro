@@ -28,6 +28,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
     using AddressUpgradeable for address;
     using SafeERC20 for IERC20;
 
+    /// @inheritdoc IERC20Bridge
     address public nativeToken;
 
     /// @inheritdoc IERC20Bridge
@@ -45,7 +46,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         bytes32 messageDataHash,
         uint256 tokenFeeAmount
     ) external returns (uint256) {
-        if (!this.allowedDelayedInboxes(msg.sender)) revert NotDelayedInbox(msg.sender);
+        if (!allowedDelayedInboxes(msg.sender)) revert NotDelayedInbox(msg.sender);
 
         uint256 messageCount = addMessageToDelayedAccumulator(
             kind,
@@ -71,7 +72,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         uint256 value,
         bytes calldata data
     ) external returns (bool success, bytes memory returnData) {
-        if (!this.allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
+        if (!allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = _activeOutbox;
         _activeOutbox = msg.sender;
@@ -79,9 +80,9 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
 
         // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
         // rather than reverting on failure as well as allow contract and non-contract calls
-        // solhint-disable-next-line avoid-low-level-calls
 
         // first release native token
+        // solhint-disable-next-line avoid-low-level-calls
         (success, returnData) = nativeToken.call(
             abi.encodeWithSelector(IERC20.transfer.selector, to, value)
         );
@@ -89,6 +90,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         // if there's data do additional contract call (if token transfer was succesful)
         if (data.length > 0) {
             if (success) {
+                // solhint-disable-next-line avoid-low-level-calls
                 (success, returnData) = to.call(data);
             }
         }
