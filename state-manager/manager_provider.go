@@ -2,10 +2,11 @@ package statemanager
 
 import (
 	"context"
+	statemanagerbackend "github.com/OffchainLabs/challenge-protocol-v2/state-manager/backend"
 	"math/bits"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	statemanagerbackend "github.com/OffchainLabs/challenge-protocol-v2/state-manager-backend"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/ethereum/go-ethereum/common"

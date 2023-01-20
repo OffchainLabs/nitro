@@ -32,7 +32,7 @@ func NewSimulatedManagerBackend(stateRoots []common.Hash) *SimulatedManagerBacke
 
 // GetMerkleRoot gets merkle root from start to end state passed as arguments from our local list of state roots.
 func (s *SimulatedManagerBackend) GetMerkleRoot(ctx context.Context, start uint64, end uint64) (common.Hash, error) {
-	if end >= uint64(len(s.stateRoots)) {
+	if start >= uint64(len(s.stateRoots)) || end >= uint64(len(s.stateRoots)) {
 		return common.Hash{}, errors.New("commitment height out of range")
 	}
 	return util.ExpansionFromLeaves(s.stateRoots[start : end+1]).Root(), nil
