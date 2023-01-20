@@ -336,7 +336,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		}
 	}
 
-	currentL1Block, err := v.client.BlockByNumber(ctx, nil)
+	currentL1BlockNum, err := v.client.BlockNumber(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -346,7 +346,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, err
 	}
 
-	timeSinceProposed := new(big.Int).Sub(currentL1Block.Number(), new(big.Int).SetUint64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(currentL1BlockNum) - int64(startStateProposed))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
