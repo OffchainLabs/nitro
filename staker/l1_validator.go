@@ -599,7 +599,7 @@ func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum ui
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
 		}
 		return &validator.ExecutionState{
 			GlobalState:   validator.GoGlobalState{},

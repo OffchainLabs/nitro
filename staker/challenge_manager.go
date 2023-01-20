@@ -104,10 +104,10 @@ func NewChallengeManager(
 		Topics:    [][]common.Hash{{initiatedChallengeID}, {uint64ToIndex(challengeIndex)}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error searching logs for InitiatedChallenge event: %w", err)
+		return nil, fmt.Errorf("error searching logs for InitiatedChallenge event from block %v: %w", startL1Block, err)
 	}
 	if len(logs) == 0 {
-		return nil, errors.New("didn't find InitiatedChallenge event")
+		return nil, fmt.Errorf("didn't find InitiatedChallenge event for challenge %v starting at block %v", challengeIndex, startL1Block)
 	}
 	// Multiple logs are in theory fine, as they should all reveal the same preimage.
 	// We'll use the most recent log to be safe.
@@ -239,10 +239,10 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 		Topics:    [][]common.Hash{{challengeBisectedID}, {uint64ToIndex(m.challengeIndex)}, {stateHash}},
 	})
 	if err != nil {
-		return ChallengeState{}, fmt.Errorf("error searching logs for Bisected event: %w", err)
+		return ChallengeState{}, fmt.Errorf("error searching logs for Bisected event from block %v: %w", m.startL1Block, err)
 	}
 	if len(logs) == 0 {
-		return ChallengeState{}, errors.New("didn't find Bisected event")
+		return ChallengeState{}, fmt.Errorf("didn't find Bisected event for challenge %v starting at block %v", m.challengeIndex, m.startL1Block)
 	}
 	// Multiple logs are in theory fine, as they should all reveal the same preimage.
 	// We'll use the most recent log to be safe.
@@ -412,10 +412,10 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		Topics:    [][]common.Hash{{executionChallengeBegunID}, {uint64ToIndex(m.challengeIndex)}},
 	})
 	if err != nil {
-		return fmt.Errorf("error searching challenge %v logs from ExecutionChallengeBegun event: %w", m.challengeIndex, err)
+		return fmt.Errorf("error searching challenge %v logs for ExecutionChallengeBegun event from block %v: %w", m.challengeIndex, m.startL1Block, err)
 	}
 	if len(logs) == 0 {
-		return errors.New("expected ExecutionChallengeBegun event")
+		return fmt.Errorf("didn't find ExecutionChallengeBegun event for challenge %v starting at block %v", m.challengeIndex, m.startL1Block)
 	}
 	if len(logs) > 1 {
 		return errors.New("expected only one ExecutionChallengeBegun event")
