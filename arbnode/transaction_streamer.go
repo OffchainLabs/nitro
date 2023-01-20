@@ -57,8 +57,7 @@ type TransactionStreamer struct {
 	newMessageNotifier        chan struct{}
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
-	nextAllowedPendingReorgLog time.Time
-	nextAllowedFeedReorgLog    time.Time
+	nextAllowedFeedReorgLog time.Time
 
 	broadcasterQueuedMessages            []arbstate.MessageWithMetadata
 	broadcasterQueuedMessagesPos         uint64
@@ -490,6 +489,9 @@ func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (
 // skipDuplicateMessages removes any duplicate messages that are already in database and
 // triggers reorg if message doesn't match what is stored in database.
 // confirmedMessageCount is the number of messages that are from L1 starting at the beginning of messages array
+// Returns: feedReorg, confirmedReorg, prevDelayedRead, deduplicatedMessagesStartPos, deduplicatedMessages, err
+// Note that feedReorg and confirmedReorg will never both be set
+// If feedReorg or confirmedReorg are set, the returned deduplicatedMessages will start at the point of the reorg
 func (s *TransactionStreamer) skipDuplicateMessages(
 	prevDelayedRead uint64,
 	pos arbutil.MessageIndex,
@@ -657,8 +659,12 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 	if feedReorg {
 		// Never allow feed to reorg confirmed messages
-		messages = messages[:0]
-		clearQueueOnSuccess = false
+		// Note that any remaining messages must be feed messages, so we're done here
+		// The feed reorg was already logged if necessary in skipDuplicateMessages
+		if batch == nil {
+			return nil
+		}
+		return batch.Write()
 	}
 
 	// Validate delayed message counts of remaining messages
@@ -705,13 +711,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		if err != nil {
 			return err
 		}
-	} else if feedReorg {
-		if !time.Now().After(s.nextAllowedPendingReorgLog) {
-			return nil
-		}
-
-		s.nextAllowedPendingReorgLog = time.Now().Add(time.Minute)
-		return errors.New("reorg waiting for on-chain confirmation")
 	}
 	if len(messages) == 0 {
 		if batch == nil {
