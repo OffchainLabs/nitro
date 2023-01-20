@@ -616,7 +616,10 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		// We'll return early if we already havea stake
 		if info.StakeExists {
 			_, err = s.rollup.StakeOnExistingNode(s.builder.Auth(ctx), action.number, action.hash)
-			return fmt.Errorf("error staking on existing node: %w", err)
+			if err != nil {
+				return fmt.Errorf("error staking on existing node: %w", err)
+			}
+			return nil
 		}
 
 		// If we have no stake yet, we'll put one down
