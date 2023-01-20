@@ -63,12 +63,14 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 func TransferBalance(
 	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
+	t.Helper()
 	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
 }
 
 func TransferBalanceTo(
 	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
+	t.Helper()
 	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -605,18 +607,20 @@ func setupConfigWithDAS(
 
 	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
 	var lifecycleManager *das.LifecycleManager
+	var daReader das.DataAvailabilityServiceReader
+	var daWriter das.DataAvailabilityServiceWriter
+	var daHealthChecker das.DataAvailabilityServiceHealthChecker
 	if dasModeString != "onchain" {
-		var dasServerStack das.DataAvailabilityService
-		dasServerStack, lifecycleManager, err = arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+		daReader, daWriter, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daWriter, daHealthChecker)
 		Require(t, err)
-		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 		Require(t, err)
 
 		beConfigA := das.BackendConfig{
