@@ -6,6 +6,7 @@ package staker
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -16,9 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/pkg/errors"
 )
 
 const maxBisectionDegree uint64 = 40
@@ -94,7 +95,7 @@ func NewChallengeManager(
 ) (*ChallengeManager, error) {
 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating bindgen ChallengeManager: %w", err)
 	}
 
 	logs, err := l1client.FilterLogs(ctx, ethereum.FilterQuery{
@@ -103,7 +104,7 @@ func NewChallengeManager(
 		Topics:    [][]common.Hash{{initiatedChallengeID}, {uint64ToIndex(challengeIndex)}},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error searching logs for InitiatedChallenge event: %w", err)
 	}
 	if len(logs) == 0 {
 		return nil, errors.New("didn't find InitiatedChallenge event")
@@ -113,13 +114,13 @@ func NewChallengeManager(
 	evmLog := logs[len(logs)-1]
 	parsedLog, err := con.ParseInitiatedChallenge(evmLog)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error parsing InitiatedChallenge event: %w", err)
 	}
 
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeInfo, err := con.Challenges(callOpts, new(big.Int).SetUint64(challengeIndex))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting challenge info: %w", err)
 	}
 
 	genesisBlockNum := l2blockChain.Config().ArbitrumChainParams.GenesisBlockNum
@@ -130,7 +131,7 @@ func NewChallengeManager(
 		genesisBlockNum,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating block challenge backend: %w", err)
 	}
 	return &ChallengeManager{
 		challengeCore: &challengeCore{
@@ -204,7 +205,14 @@ func (m *ChallengeManager) latestConfirmedBlock(ctx context.Context) (*big.Int, 
 	}
 	latestBlock, err := m.client.HeaderByNumber(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting latest header from client: %w", err)
+	}
+	if latestBlock.Difficulty.Sign() == 0 {
+		latestConfirmed, err := m.client.HeaderByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
+		if err != nil {
+			return nil, fmt.Errorf("error getting finalized block from client: %w", err)
+		}
+		return latestConfirmed.Number, nil
 	}
 	block := new(big.Int).Sub(latestBlock.Number, big.NewInt(m.confirmationBlocks))
 	if block.Sign() < 0 {
@@ -231,7 +239,7 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 		Topics:    [][]common.Hash{{challengeBisectedID}, {uint64ToIndex(m.challengeIndex)}, {stateHash}},
 	})
 	if err != nil {
-		return ChallengeState{}, err
+		return ChallengeState{}, fmt.Errorf("error searching logs for Bisected event: %w", err)
 	}
 	if len(logs) == 0 {
 		return ChallengeState{}, errors.New("didn't find Bisected event")
@@ -241,7 +249,7 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 	evmLog := logs[len(logs)-1]
 	parsedLog, err := m.con.ParseBisected(evmLog)
 	if err != nil {
-		return ChallengeState{}, err
+		return ChallengeState{}, fmt.Errorf("error parsing Bisected event log: %w", err)
 	}
 	state := ChallengeState{
 		Start:       parsedLog.ChallengedSegmentStart,
@@ -278,7 +286,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	newChallengeLength := endSegmentPosition - startSegmentPosition
 	err := backend.SetRange(ctx, startSegmentPosition, endSegmentPosition)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error setting challenge range on backend: %w", err)
 	}
 	bisectionDegree := maxBisectionDegree
 	if newChallengeLength < bisectionDegree {
@@ -296,7 +304,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 		}
 		newSegments[i], err = backend.GetHashAtStep(ctx, position)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error getting hash at step %v: %w", position, err)
 		}
 		position += normalSegmentLength
 	}
@@ -317,7 +325,7 @@ func (m *ChallengeManager) IsMyTurn(ctx context.Context) (bool, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	responder, err := m.con.CurrentResponder(callOpts, m.challengeIndex)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("error getting current responder of challenge %v: %w", m.challengeIndex, err)
 	}
 	if responder != m.actingAs {
 		return false, nil
@@ -329,7 +337,7 @@ func (m *ChallengeManager) IsMyTurn(ctx context.Context) (bool, error) {
 	}
 	responder, err = m.con.CurrentResponder(callOpts, m.challengeIndex)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("error getting confirmed current responder of challenge %v: %w", m.challengeIndex, err)
 	}
 	if responder != m.actingAs {
 		return false, nil
@@ -346,14 +354,14 @@ func (m *ChallengeManager) GetChallengeState(ctx context.Context) (*ChallengeSta
 	}
 	challengeState, err := m.con.ChallengeInfo(callOpts, m.challengeIndex)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, fmt.Errorf("error getting challenge %v info: %w", m.challengeIndex, err)
 	}
 	if challengeState.ChallengeStateHash == (common.Hash{}) {
 		return nil, errors.New("lost challenge (state hash 0)")
 	}
 	state, err := m.resolveStateHash(ctx, challengeState.ChallengeStateHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error resolving state hash %v: %w", challengeState.ChallengeStateHash, err)
 	}
 	return &state, nil
 }
@@ -362,12 +370,12 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	for i, segment := range state.Segments {
 		ourHash, err := backend.GetHashAtStep(ctx, segment.Position)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("error getting hash from challenge backend at step %v: %w", segment.Position, err)
 		}
 		log.Debug("checking challenge segment", "challenge", m.challengeIndex, "position", segment.Position, "ourHash", ourHash, "segmentHash", segment.Hash)
 		if segment.Hash != ourHash {
 			if i == 0 {
-				return 0, errors.Errorf(
+				return 0, fmt.Errorf(
 					"first challenge segment doesn't match: at step count %v challenge has %v but resolved %v",
 					segment.Position, segment.Hash, ourHash,
 				)
@@ -375,7 +383,7 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 			return i - 1, nil
 		}
 	}
-	return 0, errors.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
+	return 0, fmt.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
 }
 
 func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error {
@@ -392,8 +400,11 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		BlockNumber: latestConfirmedBlock,
 	}
 	challengeState, err := m.con.ChallengeInfo(callOpts, m.challengeIndex)
-	if err != nil || challengeState.Mode != challengeModeExecution {
-		return errors.WithStack(err)
+	if err != nil {
+		return fmt.Errorf("error getting challenge %v info: %w", m.challengeIndex, err)
+	}
+	if challengeState.Mode != challengeModeExecution {
+		return nil
 	}
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
@@ -401,7 +412,7 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		Topics:    [][]common.Hash{{executionChallengeBegunID}, {uint64ToIndex(m.challengeIndex)}},
 	})
 	if err != nil {
-		return errors.WithStack(err)
+		return fmt.Errorf("error searching challenge %v logs from ExecutionChallengeBegun event: %w", m.challengeIndex, err)
 	}
 	if len(logs) == 0 {
 		return errors.New("expected ExecutionChallengeBegun event")
@@ -411,7 +422,7 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 	}
 	ev, err := m.con.ParseExecutionChallengeBegun(logs[0])
 	if err != nil {
-		return errors.WithStack(err)
+		return fmt.Errorf("error parsing ExecutionChallengeBegun event: %w", err)
 	}
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
 	return m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
@@ -422,9 +433,10 @@ func (m *ChallengeManager) IssueOneStepProof(
 	oldState *ChallengeState,
 	startSegment int,
 ) (*types.Transaction, error) {
-	proof, err := m.executionChallengeBackend.GetProofAt(ctx, oldState.Segments[startSegment].Position)
+	position := oldState.Segments[startSegment].Position
+	proof, err := m.executionChallengeBackend.GetProofAt(ctx, position)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting OSP from challenge backend at step %v: %w", position, err)
 	}
 	return m.challengeCore.con.OneStepProveExecution(
 		m.challengeCore.auth,
@@ -451,18 +463,18 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	}
 	entry, err := m.validator.CreateReadyValidationEntry(ctx, nextHeader)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating validation entry for block %v for execution challenge: %w", blockNum, err)
 	}
 	input, err := entry.ToInput()
 	if err != nil {
-		return err
+		return fmt.Errorf("error getting validation entry input of block %v: %w", blockNum, err)
 	}
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
 	m.executionChallengeBackend, err = m.validator.validationSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input, m.targetNumMachines)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating execution backend for block %v: %w", blockNum, err)
 	}
 	m.initialMachineBlockNr = int64(blockNum)
 	return nil
@@ -471,15 +483,15 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) {
 	err := m.LoadExecChallengeIfExists(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error loading execution challenge: %w", err)
 	}
 	myTurn, err := m.IsMyTurn(ctx)
 	if !myTurn || (err != nil) {
-		return nil, err
+		return nil, fmt.Errorf("error checking if it's our turn: %w", err)
 	}
 	state, err := m.GetChallengeState(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting challenge state: %w", err)
 	}
 
 	var backend ChallengeBackend
@@ -491,12 +503,12 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 
 	err = backend.SetRange(ctx, state.Start.Uint64(), state.End.Uint64())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error setting challenge range on backend: %w", err)
 	}
 
 	nextMovePos, err := m.ScanChallengeState(ctx, backend, state)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error scanning challenge state: %w", err)
 	}
 	startPosition := state.Segments[nextMovePos].Position
 	endPosition := state.Segments[nextMovePos+1].Position
@@ -515,15 +527,15 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
 	expectedState, expectedStatus, err := m.blockChallengeBackend.GetInfoAtStep(uint64(nextMovePos + 1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting info from block challenge backend: %w", err)
 	}
 	err = m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating execution backend: %w", err)
 	}
 	stepCount, computedState, computedStatus, err := m.executionChallengeBackend.GetFinalState(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting execution challenge final state: %w", err)
 	}
 	if expectedStatus != computedStatus {
 		return nil, fmt.Errorf("after block %v expected status %v but got %v", blockNum, expectedStatus, computedStatus)
