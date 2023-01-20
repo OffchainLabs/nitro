@@ -14,7 +14,7 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 .idea/vcs.xml
-.idea/new-rollup-exploration.iml
+.idea/challenge-protocol-v2.iml
 .idea/modules.xml
 .idea/workspace.xml
 

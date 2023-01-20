@@ -3,7 +3,8 @@ package execution
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )

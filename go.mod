@@ -1,4 +1,4 @@
-module github.com/OffchainLabs/new-rollup-exploration
+module github.com/OffchainLabs/challenge-protocol-v2
 
 go 1.19
 
