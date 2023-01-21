@@ -333,7 +333,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		var err error
 		rawInfo, err = s.rollup.StakerInfo(ctx, walletAddressOrZero)
 		if err != nil {
-			return nil, fmt.Errorf("error getting own staker info: %w", err)
+			return nil, fmt.Errorf("error getting own staker (%v) info: %w", walletAddressOrZero, err)
 		}
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
@@ -342,7 +342,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		callOpts, s.rollupAddress, walletAddressOrZero,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error getting latest staked node: %w", err)
+		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
@@ -408,7 +408,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 		resolvingNode, err = s.resolveNextNode(ctx, rawInfo, &latestConfirmedNode)
 		if err != nil {
-			return nil, fmt.Errorf("error resolving nodes: %w", err)
+			return nil, fmt.Errorf("error resolving node %v: %w", latestConfirmedNode+1, err)
 		}
 		if resolvingNode && rawInfo == nil && latestConfirmedNode > info.LatestStakedNode {
 			// If we hit this condition, we've resolved what was previously the latest confirmed node,
@@ -417,7 +417,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			// to indicate that we're now entering the rollup on the newly confirmed node.
 			nodeInfo, err := s.rollup.GetNode(callOpts, latestConfirmedNode)
 			if err != nil {
-				return nil, fmt.Errorf("error getting latest confirmed node info: %w", err)
+				return nil, fmt.Errorf("error getting latest confirmed node %v info: %w", latestConfirmedNode, err)
 			}
 			info.LatestStakedNode = latestConfirmedNode
 			info.LatestStakedNodeHash = nodeInfo.NodeHash
@@ -437,11 +437,11 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			// Note: we must have an address if rawInfo != nil
 			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), walletAddressOrZero)
 			if err != nil {
-				return nil, fmt.Errorf("error returning old deposit: %w", err)
+				return nil, fmt.Errorf("error returning old deposit (from our staker %v): %w", walletAddressOrZero, err)
 			}
 			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
 			if err != nil {
-				return nil, fmt.Errorf("error withdrawing staker funds: %w", err)
+				return nil, fmt.Errorf("error withdrawing staker funds from our staker %v: %w", walletAddressOrZero, err)
 			}
 			log.Info("removing old stake and withdrawing funds")
 			return s.wallet.ExecuteTransactions(ctx, s.builder, common.HexToAddress(s.config.GasRefunderAddress))
@@ -451,12 +451,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if walletAddressOrZero != (common.Address{}) && canActFurther() {
 		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, walletAddressOrZero)
 		if err != nil {
-			return nil, fmt.Errorf("error checking withdrawable funds: %w", err)
+			return nil, fmt.Errorf("error checking withdrawable funds of our staker %v: %w", walletAddressOrZero, err)
 		}
 		if withdrawable.Sign() > 0 {
 			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
 			if err != nil {
-				return nil, fmt.Errorf("error withdrawing staker funds: %w", err)
+				return nil, fmt.Errorf("error withdrawing our staker %v funds: %w", walletAddressOrZero, err)
 			}
 		}
 	}
@@ -473,7 +473,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		// Advance stake up to 20 times in one transaction
 		for i := 0; info.CanProgress && i < 20; i++ {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
-				return nil, fmt.Errorf("error advancing stake: %w", err)
+				return nil, fmt.Errorf("error advancing stake from node %v (hash %v): %w", info.LatestStakedNode, info.LatestStakedNodeHash, err)
 			}
 			if !s.wallet.CanBatchTxs() && effectiveStrategy >= StakeLatestStrategy {
 				info.CanProgress = false

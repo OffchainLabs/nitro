@@ -109,18 +109,21 @@ func NewChallengeManager(
 	if len(logs) == 0 {
 		return nil, fmt.Errorf("didn't find InitiatedChallenge event for challenge %v starting at block %v", challengeIndex, startL1Block)
 	}
+	if len(logs) > 1 {
+		log.Warn("found multiple InitiatedChallenge logs", "challenge", challengeIndex, "count", len(logs), "fromBlock", startL1Block)
+	}
 	// Multiple logs are in theory fine, as they should all reveal the same preimage.
 	// We'll use the most recent log to be safe.
 	evmLog := logs[len(logs)-1]
 	parsedLog, err := con.ParseInitiatedChallenge(evmLog)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing InitiatedChallenge event: %w", err)
+		return nil, fmt.Errorf("error parsing InitiatedChallenge event for challenge %v: %w", challengeIndex, err)
 	}
 
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeInfo, err := con.Challenges(callOpts, new(big.Int).SetUint64(challengeIndex))
 	if err != nil {
-		return nil, fmt.Errorf("error getting challenge info: %w", err)
+		return nil, fmt.Errorf("error getting challenge %v info: %w", challengeIndex, err)
 	}
 
 	genesisBlockNum := l2blockChain.Config().ArbitrumChainParams.GenesisBlockNum
@@ -131,7 +134,7 @@ func NewChallengeManager(
 		genesisBlockNum,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating block challenge backend: %w", err)
+		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
 	}
 	return &ChallengeManager{
 		challengeCore: &challengeCore{
@@ -242,14 +245,17 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 		return ChallengeState{}, fmt.Errorf("error searching logs for Bisected event from block %v: %w", m.startL1Block, err)
 	}
 	if len(logs) == 0 {
-		return ChallengeState{}, fmt.Errorf("didn't find Bisected event for challenge %v starting at block %v", m.challengeIndex, m.startL1Block)
+		return ChallengeState{}, fmt.Errorf("didn't find Bisected event for challenge %v state hash %v starting at block %v", m.challengeIndex, stateHash, m.startL1Block)
+	}
+	if len(logs) > 1 {
+		log.Warn("found multiple Bisected logs", "challenge", m.challengeIndex, "count", len(logs), "fromBlock", m.startL1Block)
 	}
 	// Multiple logs are in theory fine, as they should all reveal the same preimage.
 	// We'll use the most recent log to be safe.
 	evmLog := logs[len(logs)-1]
 	parsedLog, err := m.con.ParseBisected(evmLog)
 	if err != nil {
-		return ChallengeState{}, fmt.Errorf("error parsing Bisected event log: %w", err)
+		return ChallengeState{}, fmt.Errorf("error parsing Bisected event log for challenge %v state hash %v: %w", m.challengeIndex, stateHash, err)
 	}
 	state := ChallengeState{
 		Start:       parsedLog.ChallengedSegmentStart,
@@ -286,7 +292,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	newChallengeLength := endSegmentPosition - startSegmentPosition
 	err := backend.SetRange(ctx, startSegmentPosition, endSegmentPosition)
 	if err != nil {
-		return nil, fmt.Errorf("error setting challenge range on backend: %w", err)
+		return nil, fmt.Errorf("error setting challenge %v range of %v to %v on backend: %w", m.challengeIndex, startSegmentPosition, endSegmentPosition, err)
 	}
 	bisectionDegree := maxBisectionDegree
 	if newChallengeLength < bisectionDegree {
@@ -304,7 +310,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 		}
 		newSegments[i], err = backend.GetHashAtStep(ctx, position)
 		if err != nil {
-			return nil, fmt.Errorf("error getting hash at step %v: %w", position, err)
+			return nil, fmt.Errorf("error getting challenge %v hash at step %v: %w", m.challengeIndex, position, err)
 		}
 		position += normalSegmentLength
 	}
@@ -361,7 +367,7 @@ func (m *ChallengeManager) GetChallengeState(ctx context.Context) (*ChallengeSta
 	}
 	state, err := m.resolveStateHash(ctx, challengeState.ChallengeStateHash)
 	if err != nil {
-		return nil, fmt.Errorf("error resolving state hash %v: %w", challengeState.ChallengeStateHash, err)
+		return nil, fmt.Errorf("error resolving challenge %v state hash %v: %w", m.challengeIndex, challengeState.ChallengeStateHash, err)
 	}
 	return &state, nil
 }
@@ -370,20 +376,20 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	for i, segment := range state.Segments {
 		ourHash, err := backend.GetHashAtStep(ctx, segment.Position)
 		if err != nil {
-			return 0, fmt.Errorf("error getting hash from challenge backend at step %v: %w", segment.Position, err)
+			return 0, fmt.Errorf("error getting hash from challenge %v backend at step %v: %w", m.challengeIndex, segment.Position, err)
 		}
 		log.Debug("checking challenge segment", "challenge", m.challengeIndex, "position", segment.Position, "ourHash", ourHash, "segmentHash", segment.Hash)
 		if segment.Hash != ourHash {
 			if i == 0 {
 				return 0, fmt.Errorf(
-					"first challenge segment doesn't match: at step count %v challenge has %v but resolved %v",
-					segment.Position, segment.Hash, ourHash,
+					"first segment of challenge %v doesn't match: at step count %v challenge has %v but resolved %v",
+					m.challengeIndex, segment.Position, segment.Hash, ourHash,
 				)
 			}
 			return i - 1, nil
 		}
 	}
-	return 0, fmt.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
+	return 0, fmt.Errorf("agreed with entire challenge %v (start step count %v and end step count %v)", m.challengeIndex, state.Start.String(), state.End.String())
 }
 
 func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error {
@@ -422,7 +428,7 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 	}
 	ev, err := m.con.ParseExecutionChallengeBegun(logs[0])
 	if err != nil {
-		return fmt.Errorf("error parsing ExecutionChallengeBegun event: %w", err)
+		return fmt.Errorf("error parsing ExecutionChallengeBegun event of challenge %v: %w", m.challengeIndex, err)
 	}
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
 	return m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
@@ -436,7 +442,7 @@ func (m *ChallengeManager) IssueOneStepProof(
 	position := oldState.Segments[startSegment].Position
 	proof, err := m.executionChallengeBackend.GetProofAt(ctx, position)
 	if err != nil {
-		return nil, fmt.Errorf("error getting OSP from challenge backend at step %v: %w", position, err)
+		return nil, fmt.Errorf("error getting OSP from challenge %v backend at step %v: %w", m.challengeIndex, position, err)
 	}
 	return m.challengeCore.con.OneStepProveExecution(
 		m.challengeCore.auth,
@@ -463,11 +469,11 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	}
 	entry, err := m.validator.CreateReadyValidationEntry(ctx, nextHeader)
 	if err != nil {
-		return fmt.Errorf("error creating validation entry for block %v for execution challenge: %w", blockNum, err)
+		return fmt.Errorf("error creating validation entry for challenge %v block %v for execution challenge: %w", m.challengeIndex, blockNum, err)
 	}
 	input, err := entry.ToInput()
 	if err != nil {
-		return fmt.Errorf("error getting validation entry input of block %v: %w", blockNum, err)
+		return fmt.Errorf("error getting validation entry input of challenge %v block %v: %w", m.challengeIndex, blockNum, err)
 	}
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}

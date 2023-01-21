@@ -255,7 +255,7 @@ func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (in
 func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, makeAssertionInterval time.Duration) (nodeAction, bool, error) {
 	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
-		return nil, false, fmt.Errorf("error looking up node start state: %w", err)
+		return nil, false, fmt.Errorf("error looking up node %v (hash %v) start state: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
 	}
 
 	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposed))
@@ -459,7 +459,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		}
 		action, err := v.createNewNodeAction(ctx, stakerInfo, lastBlockValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
 		if err != nil {
-			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action: %w", err)
+			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action (from start block %v to last block validated %v): %w", startBlock, lastBlockValidated, err)
 		}
 		return action, wrongNodesExist, nil
 	}
