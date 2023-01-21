@@ -5,8 +5,10 @@ package wsbroadcastserver
 
 import (
 	"bytes"
+	"compress/flate"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
@@ -36,7 +39,7 @@ var (
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
 type CatchupBuffer interface {
-	OnRegisterClient(context.Context, *ClientConnection) error
+	OnRegisterClient(*ClientConnection) (error, int, time.Duration)
 	OnDoBroadcast(interface{}) error
 	GetMessageCount() int
 }
@@ -53,6 +56,7 @@ type ClientManager struct {
 	clientAction  chan ClientConnectionAction
 	config        BroadcasterConfigFetcher
 	catchupBuffer CatchupBuffer
+	flateWriter   *flate.Writer
 }
 
 type ClientConnectionAction struct {
@@ -82,9 +86,13 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 	clientsConnectedGauge.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
-	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
+	err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
+	if err != nil {
 		clientsTotalFailedRegisterCounter.Inc(1)
 		return err
+	}
+	if cm.config().LogConnect {
+		log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", sent, "elapsed", elapsed)
 	}
 
 	clientConnection.Start(ctx)
@@ -100,12 +108,12 @@ func (cm *ClientManager) Register(
 	desc *netpoll.Desc,
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP string,
+	compression bool,
 ) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP),
+		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression),
 		true,
 	}
-
 	cm.clientAction <- createClient
 
 	return createClient.cc
@@ -132,8 +140,10 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
-	log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
-	clientsDurationHistogram.Update(clientConnection.Age().Nanoseconds())
+	if cm.config().LogDisconnect {
+		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
+	}
+	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
 	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
@@ -161,6 +171,12 @@ func (cm *ClientManager) ClientCount() int32 {
 
 // Broadcast sends batch item to all clients.
 func (cm *ClientManager) Broadcast(bm interface{}) {
+	if cm.Stopped() {
+		// This should only occur if a reorg occurs after the broadcast server is stopped,
+		// with the sequencer enabled but not the sequencer coordinator.
+		// In this case we should proceed without broadcasting the message.
+		return
+	}
 	cm.broadcastChan <- bm
 }
 
@@ -168,25 +184,89 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
 		return nil, err
 	}
+	config := cm.config()
+	//                                        /-> wsutil.Writer -> not compressed msg buffer
+	// bm -> json.Encoder -> io.MultiWriter -|
+	//                                        \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
+	writers := []io.Writer{}
+	var notCompressed bytes.Buffer
+	var notCompressedWriter *wsutil.Writer
+	var compressed bytes.Buffer
+	var compressedWriter *wsutil.Writer
+	if !config.RequireCompression {
+		notCompressedWriter = wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
+		writers = append(writers, notCompressedWriter)
+	}
+	if config.EnableCompression {
+		if cm.flateWriter == nil {
+			var err error
+			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to create flate writer")
+			}
+		}
+		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
+		var msg wsflate.MessageState
+		msg.SetCompressed(true)
+		compressedWriter.SetExtensions(&msg)
+		cm.flateWriter.Reset(compressedWriter)
+		writers = append(writers, cm.flateWriter)
+	}
 
-	var buf bytes.Buffer
-	writer := wsutil.NewWriter(&buf, ws.StateServerSide, ws.OpText)
-	encoder := json.NewEncoder(writer)
+	multiWriter := io.MultiWriter(writers...)
+	encoder := json.NewEncoder(multiWriter)
 	if err := encoder.Encode(bm); err != nil {
 		return nil, errors.Wrap(err, "unable to encode message")
 	}
-	if err := writer.Flush(); err != nil {
-		return nil, errors.Wrap(err, "unable to flush message")
+	if notCompressedWriter != nil {
+		if err := notCompressedWriter.Flush(); err != nil {
+			return nil, errors.Wrap(err, "unable to flush message")
+		}
+	}
+	if compressedWriter != nil {
+		if err := cm.flateWriter.Close(); err != nil {
+			return nil, errors.Wrap(err, "unable to close flate writer")
+		}
+		if err := compressedWriter.Flush(); err != nil {
+			return nil, errors.Wrap(err, "unable to flush message")
+		}
 	}
 
+	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
+		var data []byte
+		if client.Compression() {
+			if config.EnableCompression {
+				data = compressed.Bytes()
+			} else {
+				log.Warn("disconnecting because client has enabled compression, but compression support is disabled", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+				continue
+			}
+		} else {
+			if !config.RequireCompression {
+				data = notCompressed.Bytes()
+			} else {
+				log.Warn("disconnecting because client has disabled compression, but compression support is required", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+				continue
+			}
+		}
 		select {
-		case client.out <- buf.Bytes():
+		case client.out <- data:
 		default:
 			// Queue for client too backed up, disconnect instead of blocking on channel send
-			log.Info("disconnecting because send queue too large", "client", client.Name, "size", len(client.out))
+			sendQueueTooLargeCount++
 			clientDeleteList = append(clientDeleteList, client)
+		}
+	}
+
+	if sendQueueTooLargeCount > 0 {
+		if sendQueueTooLargeCount < 10 {
+			log.Warn("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
+		} else {
+			log.Error("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
 		}
 	}
 
@@ -197,7 +277,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 func (cm *ClientManager) verifyClients() []*ClientConnection {
 	clientConnectionCount := len(cm.clientPtrMap)
 
-	// Create list of clients to clients to remove
+	// Create list of clients to remove
 	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
 
 	// Send ping to all connected clients
@@ -205,12 +285,12 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 	for client := range cm.clientPtrMap {
 		diff := time.Since(client.GetLastHeard())
 		if diff > cm.config().ClientTimeout {
-			log.Info("disconnecting because connection timed out", "client", client.Name)
+			log.Debug("disconnecting because connection timed out", "client", client.Name)
 			clientDeleteList = append(clientDeleteList, client)
 		} else {
 			err := client.Ping()
 			if err != nil {
-				log.Warn("disconnecting because error pinging client", "client", client.Name)
+				log.Debug("disconnecting because error pinging client", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
 			}
 		}

@@ -3,7 +3,7 @@
  */
 module.exports = {
   solidity: {
-    version: "0.8.9",
+    version: '0.8.9',
     settings: {
       optimizer: {
         enabled: true,
@@ -12,7 +12,7 @@ module.exports = {
     },
   },
   paths: {
-    sources: "./src",
-    artifacts: "build/contracts",
+    sources: './src',
+    artifacts: 'build/contracts',
   },
-};
+}

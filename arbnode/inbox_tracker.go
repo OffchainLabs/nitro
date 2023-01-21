@@ -17,8 +17,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -26,7 +26,7 @@ type InboxTracker struct {
 	db         ethdb.Database
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
-	validator  *validator.BlockValidator
+	validator  *staker.BlockValidator
 	das        arbstate.DataAvailabilityReader
 
 	batchMetaMutex sync.Mutex
@@ -46,7 +46,7 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 	return tracker, nil
 }
 
-func (t *InboxTracker) SetBlockValidator(validator *validator.BlockValidator) {
+func (t *InboxTracker) SetBlockValidator(validator *staker.BlockValidator) {
 	t.validator = validator
 }
 
@@ -312,6 +312,12 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
 }
 
+func (t *InboxTracker) clearBatchMetaCache() {
+	t.batchMetaMutex.Lock()
+	defer t.batchMetaMutex.Unlock()
+	t.batchMeta.Clear()
+}
+
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
@@ -366,9 +372,9 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	// which we'll do because of the defer.
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount != nil {
-		t.batchMetaMutex.Lock()
-		t.batchMeta.Clear()
-		t.batchMetaMutex.Unlock()
+		// Clear the batchMeta cache after writing the reorg to disk
+		defer t.clearBatchMetaCache()
+
 		count := *reorgSeqBatchesToCount
 		if t.validator != nil {
 			t.validator.ReorgToBatchCount(count)
@@ -525,6 +531,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	lastBatchMeta := prevbatchmeta
+	batchMetas := make(map[uint64]BatchMetadata, len(batches))
 	for _, batch := range batches {
 		meta := BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
@@ -532,6 +539,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			MessageCount:        batchMessageCounts[batch.SequenceNumber],
 			L1Block:             batch.BlockNumber,
 		}
+		batchMetas[batch.SequenceNumber] = meta
 		metaBytes, err := rlp.EncodeToBytes(meta)
 		if err != nil {
 			return err
@@ -597,6 +605,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		return err
 	}
 
+	// Update the batchMeta cache immediately after writing the batch
+	t.batchMetaMutex.Lock()
+	for seqNum, meta := range batchMetas {
+		t.batchMeta.Add(seqNum, meta)
+	}
+	t.batchMetaMutex.Unlock()
+
 	if t.validator != nil {
 		batchBytes := make([][]byte, 0, len(batches))
 		for _, batch := range batches {
@@ -661,9 +676,8 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		t.validator.ReorgToBatchCount(count)
 	}
 
-	t.batchMetaMutex.Lock()
-	t.batchMeta.Clear()
-	t.batchMetaMutex.Unlock()
+	// Clear the batchMeta cache after writing the reorg to disk
+	defer t.clearBatchMetaCache()
 
 	dbBatch := t.db.NewBatch()
 

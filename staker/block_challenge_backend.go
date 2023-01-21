@@ -1,11 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package staker
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -17,53 +16,16 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/validator"
 )
-
-type GoGlobalState struct {
-	BlockHash  common.Hash
-	SendRoot   common.Hash
-	Batch      uint64
-	PosInBatch uint64
-}
-
-func u64ToBe(x uint64) []byte {
-	data := make([]byte, 8)
-	binary.BigEndian.PutUint64(data, x)
-	return data
-}
-
-func (s GoGlobalState) Hash() common.Hash {
-	data := []byte("Global state:")
-	data = append(data, s.BlockHash.Bytes()...)
-	data = append(data, s.SendRoot.Bytes()...)
-	data = append(data, u64ToBe(s.Batch)...)
-	data = append(data, u64ToBe(s.PosInBatch)...)
-	return crypto.Keccak256Hash(data)
-}
-
-func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
-	return GoGlobalState{
-		BlockHash:  gs.Bytes32Vals[0],
-		SendRoot:   gs.Bytes32Vals[1],
-		Batch:      gs.U64Vals[0],
-		PosInBatch: gs.U64Vals[1],
-	}
-}
-
-func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
-	return challengegen.GlobalState{
-		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
-		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
-	}
-}
 
 type BlockChallengeBackend struct {
 	bc                     *core.BlockChain
 	startBlock             int64
 	startPosition          uint64
 	endPosition            uint64
-	startGs                GoGlobalState
-	endGs                  GoGlobalState
+	startGs                validator.GoGlobalState
+	endGs                  validator.GoGlobalState
 	inboxTracker           InboxTrackerInterface
 	genesisBlockNumber     uint64
 	tooFarStartsAtPosition uint64
@@ -78,7 +40,7 @@ func NewBlockChallengeBackend(
 	inboxTracker InboxTrackerInterface,
 	genesisBlockNumber uint64,
 ) (*BlockChallengeBackend, error) {
-	startGs := GoGlobalStateFromSolidity(initialState.StartState)
+	startGs := validator.GoGlobalStateFromSolidity(initialState.StartState)
 	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNumber)
 	if startGs.BlockHash != (common.Hash{}) {
 		startBlock := bc.GetBlockByHash(startGs.BlockHash)
@@ -102,7 +64,7 @@ func NewBlockChallengeBackend(
 		return nil, fmt.Errorf("start block %v and start message count %v don't correspond", startBlockNum, startMsgCount)
 	}
 
-	endGs := GoGlobalStateFromSolidity(initialState.EndState)
+	endGs := validator.GoGlobalStateFromSolidity(initialState.EndState)
 	var endMsgCount arbutil.MessageIndex
 	if endGs.Batch > 0 {
 		var err error
@@ -157,30 +119,35 @@ func (b *BlockChallengeBackend) findBatchFromMessageIndex(msgCount arbutil.Messa
 	}
 }
 
-func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) (GoGlobalState, error) {
+func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) (validator.GoGlobalState, error) {
 	if header == nil {
-		return GoGlobalState{}, nil
+		return validator.GoGlobalState{}, nil
 	}
 	msgCount := arbutil.BlockNumberToMessageCount(header.Number.Uint64(), b.genesisBlockNumber)
 	batch, err := b.findBatchFromMessageIndex(msgCount)
 	if err != nil {
-		return GoGlobalState{}, err
+		return validator.GoGlobalState{}, err
 	}
 	var batchMsgCount arbutil.MessageIndex
 	if batch > 0 {
 		batchMsgCount, err = b.inboxTracker.GetBatchMessageCount(batch - 1)
 		if err != nil {
-			return GoGlobalState{}, err
+			return validator.GoGlobalState{}, err
 		}
 		if batchMsgCount > msgCount {
-			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
+			return validator.GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
 	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
-		return GoGlobalState{}, err
+		return validator.GoGlobalState{}, err
 	}
-	return GoGlobalState{header.Hash(), extraInfo.SendRoot, batch, uint64(msgCount - batchMsgCount)}, nil
+	return validator.GoGlobalState{
+		BlockHash:  header.Hash(),
+		SendRoot:   extraInfo.SendRoot,
+		Batch:      batch,
+		PosInBatch: uint64(msgCount - batchMsgCount),
+	}, nil
 }
 
 const StatusFinished uint8 = 1
@@ -190,21 +157,21 @@ func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) (int64, bool) {
 	return b.startBlock + int64(step), step >= b.tooFarStartsAtPosition
 }
 
-func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (GoGlobalState, uint8, error) {
+func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (validator.GoGlobalState, uint8, error) {
 	blockNum, tooFar := b.GetBlockNrAtStep(step)
 	if tooFar {
-		return GoGlobalState{}, StatusTooFar, nil
+		return validator.GoGlobalState{}, StatusTooFar, nil
 	}
 	var header *types.Header
 	if blockNum != -1 {
 		header = b.bc.GetHeaderByNumber(uint64(blockNum))
 		if header == nil {
-			return GoGlobalState{}, 0, fmt.Errorf("failed to get block %v in block challenge", blockNum)
+			return validator.GoGlobalState{}, 0, fmt.Errorf("failed to get block %v in block challenge", blockNum)
 		}
 	}
 	globalState, err := b.FindGlobalStateFromHeader(header)
 	if err != nil {
-		return GoGlobalState{}, 0, err
+		return validator.GoGlobalState{}, 0, err
 	}
 	return globalState, StatusFinished, nil
 }
@@ -255,7 +222,7 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 ) (*types.Transaction, error) {
 	position := oldState.Segments[startSegment].Position
 	machineStatuses := [2]uint8{}
-	globalStates := [2]GoGlobalState{}
+	globalStates := [2]validator.GoGlobalState{}
 	var err error
 	globalStates[0], machineStatuses[0], err = b.GetInfoAtStep(position)
 	if err != nil {

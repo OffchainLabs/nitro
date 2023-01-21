@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -46,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -398,27 +398,27 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 }
 
 type Config struct {
-	RPC                    arbitrum.Config                `koanf:"rpc"`
-	Sequencer              SequencerConfig                `koanf:"sequencer" reload:"hot"`
-	L1Reader               headerreader.Config            `koanf:"l1-reader" reload:"hot"`
-	InboxReader            InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster            BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	ForwardingTargetImpl   string                         `koanf:"forwarding-target"`
-	Forwarder              ForwarderConfig                `koanf:"forwarder"`
-	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness" reload:"hot"`
-	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
-	Feed                   broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Validator              validator.L1ValidatorConfig    `koanf:"validator"`
-	SeqCoordinator         SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability       das.DataAvailabilityConfig     `koanf:"data-availability"`
-	Wasm                   WasmConfig                     `koanf:"wasm"`
-	SyncMonitor            SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous              DangerousConfig                `koanf:"dangerous"`
-	Caching                CachingConfig                  `koanf:"caching"`
-	Archive                bool                           `koanf:"archive"`
-	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
-	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	RPC                    arbitrum.Config             `koanf:"rpc"`
+	Sequencer              SequencerConfig             `koanf:"sequencer" reload:"hot"`
+	L1Reader               headerreader.Config         `koanf:"l1-reader" reload:"hot"`
+	InboxReader            InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer       DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster            BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
+	ForwardingTargetImpl   string                      `koanf:"forwarding-target"`
+	Forwarder              ForwarderConfig             `koanf:"forwarder"`
+	TxPreCheckerStrictness uint                        `koanf:"tx-pre-checker-strictness" reload:"hot"`
+	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
+	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
+	Validator              staker.L1ValidatorConfig    `koanf:"validator"`
+	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
+	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
+	Wasm                   WasmConfig                  `koanf:"wasm"`
+	SyncMonitor            SyncMonitorConfig           `koanf:"sync-monitor"`
+	Dangerous              DangerousConfig             `koanf:"dangerous"`
+	Caching                CachingConfig               `koanf:"caching"`
+	Archive                bool                        `koanf:"archive"`
+	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
+	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -432,6 +432,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.BatchPoster.Validate(); err != nil {
+		return err
+	}
+	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -470,11 +473,11 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
 		"30 = full validation which may reject txs that would succeed"
 	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
-	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
+	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
-	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
+	staker.L1ValidatorConfigAddOptions(prefix+".validator", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
-	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
+	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -495,9 +498,9 @@ var ConfigDefault = Config{
 	BatchPoster:            DefaultBatchPosterConfig,
 	ForwardingTargetImpl:   "",
 	TxPreCheckerStrictness: TxPreCheckerStrictnessNone,
-	BlockValidator:         validator.DefaultBlockValidatorConfig,
+	BlockValidator:         staker.DefaultBlockValidatorConfig,
 	Feed:                   broadcastclient.FeedConfigDefault,
-	Validator:              validator.DefaultL1ValidatorConfig,
+	Validator:              staker.DefaultL1ValidatorConfig,
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
 	Wasm:                   DefaultWasmConfig,
@@ -528,7 +531,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
-	config.BlockValidator = validator.TestBlockValidatorConfig
+	config.BlockValidator = staker.TestBlockValidatorConfig
 
 	return &config
 }
@@ -635,10 +638,12 @@ func (w *WasmConfig) FindMachineDir() (string, bool) {
 }
 
 type CachingConfig struct {
-	Archive       bool          `koanf:"archive"`
-	BlockCount    uint64        `koanf:"block-count"`
-	BlockAge      time.Duration `koanf:"block-age"`
-	TrieTimeLimit time.Duration `koanf:"trie-time-limit"`
+	Archive               bool          `koanf:"archive"`
+	BlockCount            uint64        `koanf:"block-count"`
+	BlockAge              time.Duration `koanf:"block-age"`
+	TrieTimeLimit         time.Duration `koanf:"trie-time-limit"`
+	TrieDirtyCache        int           `koanf:"trie-dirty-cache"`
+	SnapshotRestoreMaxGas uint64        `koanf:"snapshot-restore-gas-limit"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -646,13 +651,17 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
+	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
+	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreMaxGas, "maximum gas rolled back to recover snapshot")
 }
 
 var DefaultCachingConfig = CachingConfig{
-	Archive:       false,
-	BlockCount:    128,
-	BlockAge:      30 * time.Minute,
-	TrieTimeLimit: time.Hour,
+	Archive:               false,
+	BlockCount:            128,
+	BlockAge:              30 * time.Minute,
+	TrieTimeLimit:         time.Hour,
+	TrieDirtyCache:        1024,
+	SnapshotRestoreMaxGas: 300_000_000_000,
 }
 
 type Node struct {
@@ -670,9 +679,9 @@ type Node struct {
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
 	BatchPoster             *BatchPoster
-	BlockValidator          *validator.BlockValidator
-	StatelessBlockValidator *validator.StatelessBlockValidator
-	Staker                  *validator.Staker
+	BlockValidator          *staker.BlockValidator
+	StatelessBlockValidator *staker.StatelessBlockValidator
+	Staker                  *staker.Staker
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -875,7 +884,7 @@ func createNodeImpl(
 		}
 
 		broadcastClients, err = broadcastclients.NewBroadcastClients(
-			config.Feed.Input,
+			func() *broadcastclient.Config { return &configFetcher.Get().Feed.Input },
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
@@ -939,7 +948,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		} else {
-			daReader, dasLifecycleManager, err = SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
+			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -977,14 +986,17 @@ func createNodeImpl(
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
 	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
-	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, fatalErrChan)
 
-	var blockValidator *validator.BlockValidator
-	var statelessBlockValidator *validator.StatelessBlockValidator
+	var blockValidator *staker.BlockValidator
+	var statelessBlockValidator *staker.StatelessBlockValidator
 
 	if foundMachines {
-		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
-			nitroMachineLoader,
+		spawner, err := validator.NewValidationSpawner(nitroMachineConfig, fatalErrChan)
+		if err != nil {
+			return nil, err
+		}
+		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
+			spawner,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
@@ -1005,13 +1017,12 @@ func createNodeImpl(
 	}
 
 	if blockValidatorConf.Enable {
-		blockValidator, err = validator.NewBlockValidator(
+		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
 			txStreamer,
-			nitroMachineLoader,
 			reorgingToBlock,
-			func() *validator.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
 		)
 		if err != nil {
@@ -1019,9 +1030,9 @@ func createNodeImpl(
 		}
 	}
 
-	var staker *validator.Staker
+	var stakerObj *staker.Staker
 	if config.Validator.Enable {
-		var wallet validator.ValidatorWalletInterface
+		var wallet staker.ValidatorWalletInterface
 		if config.Validator.UseSmartContractWallet || txOpts == nil {
 			var existingWalletAddress *common.Address
 			if len(config.Validator.ContractWalletAddress) > 0 {
@@ -1032,7 +1043,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = validator.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 			if err != nil {
 				return nil, err
 			}
@@ -1040,16 +1051,16 @@ func createNodeImpl(
 			if len(config.Validator.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = validator.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
+			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
 			if err != nil {
 				return nil, err
 			}
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
-		if staker.Strategy() != validator.WatchtowerStrategy {
+		if stakerObj.Strategy() != staker.WatchtowerStrategy {
 			err := wallet.Initialize(ctx)
 			if err != nil {
 				return nil, err
@@ -1059,7 +1070,7 @@ func createNodeImpl(
 		if txOpts != nil {
 			txSenderPtr = &txOpts.From
 		}
-		whitelisted, err := staker.IsWhitelisted(ctx)
+		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1100,7 +1111,7 @@ func createNodeImpl(
 		batchPoster,
 		blockValidator,
 		statelessBlockValidator,
-		staker,
+		stakerObj,
 		broadcastServer,
 		broadcastClients,
 		coordinator,
@@ -1115,225 +1126,6 @@ func createNodeImpl(
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	// TODO
 	return nil
-}
-
-type L1ReaderCloser struct {
-	l1Reader *headerreader.HeaderReader
-}
-
-func (c *L1ReaderCloser) Close(_ context.Context) error {
-	c.l1Reader.StopOnly()
-	return nil
-}
-
-func (c *L1ReaderCloser) String() string {
-	return "l1 reader closer"
-}
-
-// SetUpDataAvailabilityWithoutNode sets up a das.DataAvailabilityService stack
-// without relying on any objects already created for setting up the Node.
-func SetUpDataAvailabilityWithoutNode(
-	ctx context.Context,
-	config *das.DataAvailabilityConfig,
-) (das.DataAvailabilityService, *das.LifecycleManager, error) {
-	var l1Reader *headerreader.HeaderReader
-	if config.L1NodeURL != "" && config.L1NodeURL != "none" {
-		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
-		if err != nil {
-			return nil, nil, err
-		}
-		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
-	}
-	newDas, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	if l1Reader != nil {
-		l1Reader.Start(ctx)
-		lifeCycle.Register(&L1ReaderCloser{l1Reader})
-	}
-	return newDas, lifeCycle, err
-}
-
-// SetUpDataAvailability sets up a das.DataAvailabilityService stack allowing
-// some dependencies that were created for the Node to be injected.
-func SetUpDataAvailability(
-	ctx context.Context,
-	config *das.DataAvailabilityConfig,
-	l1Reader *headerreader.HeaderReader,
-	deployInfo *RollupAddresses,
-) (das.DataAvailabilityService, *das.LifecycleManager, error) {
-	if !config.Enable {
-		return nil, nil, nil
-	}
-	var syncFromStorageServices []*das.IterableStorageService
-	var syncToStorageServices []das.StorageService
-	var seqInbox *bridgegen.SequencerInbox
-	var err error
-	var seqInboxCaller *bridgegen.SequencerInboxCaller
-	var seqInboxAddress *common.Address
-
-	if l1Reader != nil && deployInfo != nil {
-		seqInboxAddress = &deployInfo.SequencerInbox
-		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
-		if err != nil {
-			return nil, nil, err
-		}
-		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		l1Reader = nil
-		seqInboxAddress = nil
-	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
-		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
-		if err != nil {
-			return nil, nil, err
-		}
-		if seqInboxAddress == nil {
-			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
-		if err != nil {
-			return nil, nil, err
-		}
-		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else {
-		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
-	}
-
-	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
-	/*
-			      ChainFetchDAS → Bigcache → Redis →
-				       SignAfterStoreDAS →
-				              FallbackDAS (if the REST client aggregator was specified)
-				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
-				                            → S3
-				                            → DiskStorage
-				                            → Database
-				         (fallback only)→ RESTful client aggregator
-
-		          → : X--delegates to-->Y
-	*/
-	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
-	if err != nil {
-		return nil, nil, err
-	}
-	hasPersistentStorage := topLevelStorageService != nil
-
-	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
-	// the REST aggregator is used as the fallback to them.
-	if config.RestfulClientAggregatorConfig.Enable {
-		restAgg, err := das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
-		if err != nil {
-			return nil, nil, err
-		}
-		restAgg.Start(ctx)
-		dasLifecycleManager.Register(restAgg)
-
-		// Wrap the primary storage service with the fallback to the restful aggregator
-		if hasPersistentStorage {
-			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
-			var retentionPeriodSeconds uint64
-			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
-				retentionPeriodSeconds = math.MaxUint64
-			} else {
-				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
-			}
-			if syncConf.Eager {
-				if l1Reader == nil || seqInboxAddress == nil {
-					return nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
-				}
-				topLevelStorageService, err = das.NewSyncingFallbackStorageService(
-					ctx,
-					topLevelStorageService,
-					restAgg,
-					l1Reader,
-					*seqInboxAddress,
-					syncConf)
-				if err != nil {
-					return nil, nil, err
-				}
-			} else {
-				topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
-					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
-			}
-		} else {
-			topLevelStorageService = das.NewReadLimitedStorageService(restAgg)
-		}
-		dasLifecycleManager.Register(topLevelStorageService)
-	}
-
-	var topLevelDas das.DataAvailabilityService
-	if config.AggregatorConfig.Enable {
-		panic("Tried to make an aggregator using wrong factory method")
-	}
-	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
-		_seqInboxCaller := seqInboxCaller
-		if config.DisableSignatureChecking {
-			_seqInboxCaller = nil
-		}
-
-		privKey, err := config.KeyConfig.BLSPrivKey()
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// TODO rename StorageServiceDASAdapter
-		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
-			privKey,
-			_seqInboxCaller,
-			topLevelStorageService,
-			config.ExtraSignatureCheckingPublicKey,
-		)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
-	}
-
-	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
-	if config.RedisCacheConfig.Enable {
-		cache, err := das.NewRedisStorageService(config.RedisCacheConfig, das.NewEmptyStorageService())
-		dasLifecycleManager.Register(cache)
-		if err != nil {
-			return nil, nil, err
-		}
-		if config.RedisCacheConfig.SyncFromStorageServices {
-			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
-			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
-			cache = iterableStorageService
-		}
-		if config.RedisCacheConfig.SyncToStorageServices {
-			syncToStorageServices = append(syncToStorageServices, cache)
-		}
-		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
-	}
-	if config.LocalCacheConfig.Enable {
-		cache, err := das.NewBigCacheStorageService(config.LocalCacheConfig, das.NewEmptyStorageService())
-		dasLifecycleManager.Register(cache)
-		if err != nil {
-			return nil, nil, err
-		}
-		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
-	}
-
-	if config.RegularSyncStorageConfig.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
-		regularlySyncStorage := das.NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorageConfig)
-		regularlySyncStorage.Start(ctx)
-	}
-
-	if topLevelDas != nil && seqInbox != nil {
-		topLevelDas, err = das.NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	if topLevelDas == nil {
-		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
-	}
-
-	return topLevelDas, dasLifecycleManager, nil
 }
 
 func CreateNode(
@@ -1507,38 +1299,48 @@ func (n *Node) StopAndWait() {
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
-	if n.BroadcastClients != nil {
-		n.BroadcastClients.StopAndWait()
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+		// Releases the chosen sequencer lockout,
+		// and stops the background thread but not the redis client.
+		n.SeqCoordinator.PrepareForShutdown()
 	}
-	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
-		n.BroadcastServer.StopAndWait()
-	}
-	if n.L1Reader != nil && n.L1Reader.Started() {
-		n.L1Reader.StopAndWait()
-	}
-	if n.BlockValidator != nil && n.BlockValidator.Started() {
-		n.BlockValidator.StopAndWait()
-	}
-	if n.StatelessBlockValidator != nil {
-		n.StatelessBlockValidator.Stop()
-	}
-	if n.BatchPoster != nil && n.BatchPoster.Started() {
-		n.BatchPoster.StopAndWait()
+	n.Stack.StopRPC() // does nothing if not running
+	if n.TxPublisher.Started() {
+		n.TxPublisher.StopAndWait()
 	}
 	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
 		n.DelayedSequencer.StopAndWait()
 	}
+	if n.BatchPoster != nil && n.BatchPoster.Started() {
+		n.BatchPoster.StopAndWait()
+	}
+	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
+		n.BroadcastServer.StopAndWait()
+	}
+	if n.BroadcastClients != nil {
+		n.BroadcastClients.StopAndWait()
+	}
+	if n.BlockValidator != nil && n.BlockValidator.Started() {
+		n.BlockValidator.StopAndWait()
+	}
+	if n.Staker != nil {
+		n.Staker.StopAndWait()
+	}
+	if n.StatelessBlockValidator != nil {
+		n.StatelessBlockValidator.Stop()
+	}
 	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()
 	}
-	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
-		n.SeqCoordinator.StopAndWait()
-	}
-	if n.TxPublisher.Started() {
-		n.TxPublisher.StopAndWait()
+	if n.L1Reader != nil && n.L1Reader.Started() {
+		n.L1Reader.StopAndWait()
 	}
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
+	}
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+		// Just stops the redis client (most other stuff was stopped earlier)
+		n.SeqCoordinator.StopAndWait()
 	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
@@ -1575,17 +1377,18 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:      baseConf.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(baseConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch: baseConf.NoPrefetch,
-		TrieDirtyLimit:      baseConf.TrieDirtyCache,
-		TrieDirtyDisabled:   cachingConfig.Archive,
-		TrieTimeLimit:       cachingConfig.TrieTimeLimit,
-		TriesInMemory:       cachingConfig.BlockCount,
-		TrieRetention:       cachingConfig.BlockAge,
-		SnapshotLimit:       baseConf.SnapshotCache,
-		Preimages:           baseConf.Preimages,
+		TrieCleanLimit:        baseConf.TrieCleanCache,
+		TrieCleanJournal:      stack.ResolvePath(baseConf.TrieCleanCacheJournal),
+		TrieCleanRejournal:    baseConf.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch:   baseConf.NoPrefetch,
+		TrieDirtyLimit:        cachingConfig.TrieDirtyCache,
+		TrieDirtyDisabled:     cachingConfig.Archive,
+		TrieTimeLimit:         cachingConfig.TrieTimeLimit,
+		TriesInMemory:         cachingConfig.BlockCount,
+		TrieRetention:         cachingConfig.BlockAge,
+		SnapshotLimit:         baseConf.SnapshotCache,
+		Preimages:             baseConf.Preimages,
+		SnapshotRestoreMaxGas: cachingConfig.SnapshotRestoreMaxGas,
 	}
 }
 

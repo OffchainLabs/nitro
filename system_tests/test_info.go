@@ -9,6 +9,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"math/big"
+	"sync/atomic"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -219,14 +220,14 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 ) *types.Transaction {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
+	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
 	txData := &types.DynamicFeeTx{
 		To:        to,
 		Gas:       gas,
 		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,
-		Nonce:     info.Nonce,
+		Nonce:     txNonce,
 		Data:      data,
 	}
-	info.Nonce += 1
 	return b.SignTxAs(from, txData)
 }

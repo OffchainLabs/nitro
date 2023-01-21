@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package staker
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -224,7 +225,7 @@ type OurStakerInfo struct {
 
 // Returns (block number, global state inbox position is invalid, error).
 // If global state is invalid, block number is set to the last of the batch.
-func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
+func (v *L1Validator) blockNumberFromGlobalState(gs validator.GoGlobalState) (int64, bool, error) {
 	var batchHeight arbutil.MessageIndex
 	if gs.Batch > 0 {
 		var err error
@@ -254,12 +255,12 @@ func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool,
 func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, makeAssertionInterval time.Duration) (nodeAction, bool, error) {
 	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("error looking up node %v (hash %v) start state: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
 	}
 
 	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposed))
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("error looking up L1 header of block %v of node start state: %w", startStateProposed, err)
 	}
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
@@ -268,7 +269,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 
 	localBatchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("error getting batch count from inbox tracker: %w", err)
 	}
 	if localBatchCount < startState.RequiredBatches() {
 		log.Info("catching up to chain batches", "localBatches", localBatchCount, "target", startState.RequiredBatches())
@@ -276,10 +277,10 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	}
 
 	startBlock := v.l2Blockchain.GetBlockByHash(startState.GlobalState.BlockHash)
-	if startBlock == nil && (startState.GlobalState != GoGlobalState{}) {
+	if startBlock == nil && (startState.GlobalState != validator.GoGlobalState{}) {
 		expectedBlockHeight, inboxPositionInvalid, err := v.blockNumberFromGlobalState(startState.GlobalState)
 		if err != nil {
-			return nil, false, err
+			return nil, false, fmt.Errorf("error getting block number from global state: %w", err)
 		}
 		if inboxPositionInvalid {
 			log.Error("invalid start global state inbox position", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
@@ -305,7 +306,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
 		}
 		if err := v.updateBlockValidatorModuleRoot(ctx); err != nil {
-			return nil, false, err
+			return nil, false, fmt.Errorf("error updating block validator module root: %w", err)
 		}
 		wasmRootValid := false
 		for _, root := range validRoots {
@@ -323,7 +324,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		if localBatchCount > 0 {
 			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
 			if err != nil {
-				return nil, false, err
+				return nil, false, fmt.Errorf("error getting latest batch %v message count: %w", localBatchCount-1, err)
 			}
 			// Must be non-negative as a batch must contain at least one message
 			lastBatchBlock := uint64(arbutil.MessageCountToBlockNumber(messageCount, v.genesisBlockNumber))
@@ -335,17 +336,17 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		}
 	}
 
-	currentL1Block, err := v.client.BlockByNumber(ctx, nil)
+	currentL1BlockNum, err := v.client.BlockNumber(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
 	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
-	timeSinceProposed := new(big.Int).Sub(currentL1Block.Number(), new(big.Int).SetUint64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(currentL1BlockNum) - int64(startStateProposed))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
@@ -353,7 +354,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 
 	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("error looking up node %v (hash %v) children: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
 	}
 
 	var correctNode nodeAction
@@ -375,7 +376,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			if requiredBatches > 0 {
 				haveAcc, err := v.inboxTracker.GetBatchAcc(requiredBatches - 1)
 				if err != nil {
-					return nil, false, err
+					return nil, false, fmt.Errorf("error getting batch %v accumulator: %w", requiredBatches-1, err)
 				}
 				if haveAcc != nd.AfterInboxBatchAcc {
 					return nil, false, fmt.Errorf("missed sequencer batches reorg: at seq num %v have acc %v but assertion has acc %v", requiredBatches-1, haveAcc, nd.AfterInboxBatchAcc)
@@ -383,7 +384,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			}
 			lastBlockNum, inboxPositionInvalid, err := v.blockNumberFromGlobalState(afterGs)
 			if err != nil {
-				return nil, false, err
+				return nil, false, fmt.Errorf("error getting block number from global state: %w", err)
 			}
 			if int64(lastBlockValidated) < lastBlockNum {
 				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", lastBlockValidated, lastBlockNum)
@@ -397,7 +398,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				}
 				lastBlockExtra, err := types.DeserializeHeaderExtraInformation(lastBlock.Header())
 				if err != nil {
-					return nil, false, err
+					return nil, false, fmt.Errorf("error getting block %v header extra info: %w", lastBlockNum, err)
 				}
 				expectedBlockHash = lastBlock.Hash()
 				expectedSendRoot = lastBlockExtra.SendRoot
@@ -457,7 +458,10 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
 		}
 		action, err := v.createNewNodeAction(ctx, stakerInfo, lastBlockValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
-		return action, wrongNodesExist, err
+		if err != nil {
+			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action (from start block %v to last block validated %v): %w", startBlock, lastBlockValidated, err)
+		}
+		return action, wrongNodesExist, nil
 	}
 
 	return nil, wrongNodesExist, nil
@@ -470,7 +474,7 @@ func (v *L1Validator) createNewNodeAction(
 	localBatchCount uint64,
 	prevInboxMaxCount *big.Int,
 	startBlock *types.Block,
-	startState *ExecutionState,
+	startState *validator.ExecutionState,
 	lastNodeHashIfExists *common.Hash,
 ) (nodeAction, error) {
 	if !prevInboxMaxCount.IsUint64() {
@@ -496,11 +500,11 @@ func (v *L1Validator) createNewNodeAction(
 	for i := localBatchCount - 1; i+1 >= minBatchCount && i > 0; i-- {
 		batchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error getting batch %v message count: %w", i, err)
 		}
 		prevBatchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i - 1)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error getting previous batch %v message count: %w", i-1, err)
 		}
 		// Must be non-negative as a batch must contain at least one message
 		lastBlockNum := uint64(arbutil.MessageCountToBlockNumber(batchMessageCount, v.genesisBlockNumber))
@@ -531,7 +535,7 @@ func (v *L1Validator) createNewNodeAction(
 	}
 	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(assertionCoversBatch)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting batch %v accumulator: %w", assertionCoversBatch, err)
 	}
 
 	assertingBlock := v.l2Blockchain.GetBlockByNumber(lastBlockValidated)
@@ -540,7 +544,7 @@ func (v *L1Validator) createNewNodeAction(
 	}
 	assertingBlockExtra, err := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting asserting block %v header extra info: %w", assertingBlock.Number(), err)
 	}
 
 	hasSiblingByte := [1]byte{0}
@@ -558,14 +562,14 @@ func (v *L1Validator) createNewNodeAction(
 	}
 	assertion := &Assertion{
 		BeforeState: startState,
-		AfterState: &ExecutionState{
-			GlobalState: GoGlobalState{
+		AfterState: &validator.ExecutionState{
+			GlobalState: validator.GoGlobalState{
 				BlockHash:  assertingBlock.Hash(),
 				SendRoot:   assertingBlockExtra.SendRoot,
 				Batch:      afterGsBatch,
 				PosInBatch: afterGsPosInBatch,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: validator.MachineStatusFinished,
 		},
 		NumBlocks: assertionNumBlocks,
 	}
@@ -574,7 +578,7 @@ func (v *L1Validator) createNewNodeAction(
 	if v.blockValidator == nil {
 		wasmModuleRoot, err = v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error rollup wasm module root: %w", err)
 		}
 	}
 
@@ -591,15 +595,15 @@ func (v *L1Validator) createNewNodeAction(
 }
 
 // Returns (execution state, inbox max count, block proposed, error)
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*ExecutionState, *big.Int, uint64, error) {
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
 		}
-		return &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		return &validator.ExecutionState{
+			GlobalState:   validator.GoGlobalState{},
+			MachineStatus: validator.MachineStatusFinished,
 		}, big.NewInt(1), creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
