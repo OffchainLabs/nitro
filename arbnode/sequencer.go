@@ -710,8 +710,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
-			"l1Timestamp", l1Timestamp,
-			"localTimestamp", timestamp,
+			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
+			"localTimestamp", time.Unix(int64(timestamp), 0),
 		)
 		return false
 	}
