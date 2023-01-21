@@ -101,6 +101,24 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
 
+	to := p.msg.To()
+	if to != nil {
+		rawCode := p.evm.StateDB.GetCode(*to)
+		if vm.IsStylusProgram(rawCode) {
+			gas := p.msg.Gas()
+			result, err := p.state.Programs().CallProgram(
+				p.evm.StateDB,
+				*to,
+				p.msg.Data(),
+				&gas,
+			)
+			if err != nil {
+				return true, 0, err, nil
+			}
+			return true, 0, nil, result
+		}
+	}
+
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
 		return false, 0, nil, nil
