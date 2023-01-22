@@ -2379,175 +2379,153 @@ impl Machine {
 
         // End next instruction proof, begin instruction specific serialization
 
-        if let Some(next_inst) = func.code.get(self.pc.inst()) {
-            if matches!(
-                next_inst.opcode,
-                Opcode::GetGlobalStateBytes32
-                    | Opcode::SetGlobalStateBytes32
-                    | Opcode::GetGlobalStateU64
-                    | Opcode::SetGlobalStateU64
-            ) {
-                data.extend(self.global_state.serialize());
-            }
-            if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
-                let locals = &self.frame_stack.last().unwrap().locals;
-                let idx = next_inst.argument_data as usize;
-                data.extend(locals[idx].serialize_for_proof());
-                let locals_merkle =
-                    Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
-                data.extend(
-                    locals_merkle
-                        .prove(idx)
-                        .expect("Out of bounds local access"),
-                );
-            } else if matches!(next_inst.opcode, Opcode::GlobalGet | Opcode::GlobalSet) {
-                let idx = next_inst.argument_data as usize;
-                data.extend(module.globals[idx].serialize_for_proof());
-                let locals_merkle = Merkle::new(
-                    MerkleType::Value,
-                    module.globals.iter().map(|v| v.hash()).collect(),
-                );
-                data.extend(
-                    locals_merkle
-                        .prove(idx)
-                        .expect("Out of bounds global access"),
-                );
-            } else if matches!(
-                next_inst.opcode,
-                Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. },
-            ) {
-                let is_store = matches!(next_inst.opcode, Opcode::MemoryStore { .. });
-                // this isn't really a bool -> int, it's determining an offset based on a bool
-                #[allow(clippy::bool_to_int_with_if)]
-                let stack_idx_offset = if is_store {
-                    // The index is one item below the top stack item for a memory store
-                    1
+        let Some(next_inst) = func.code.get(self.pc.inst()) else {
+            return data;
+        };
+
+        let op = next_inst.opcode;
+        let arg = next_inst.argument_data;
+
+        macro_rules! out {
+            ($bytes:expr) => {
+                data.extend($bytes);
+            };
+        }
+
+        use Opcode::*;
+        if matches!(
+            op,
+            GetGlobalStateBytes32 | SetGlobalStateBytes32 | GetGlobalStateU64 | SetGlobalStateU64
+        ) {
+            out!(self.global_state.serialize());
+        } else if matches!(op, LocalGet | LocalSet) {
+            let locals = &self.frame_stack.last().unwrap().locals;
+            let idx = arg as usize;
+            out!(locals[idx].serialize_for_proof());
+            let merkle = Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
+            out!(merkle.prove(idx).expect("Out of bounds local access"));
+        } else if matches!(op, GlobalGet | GlobalSet) {
+            let idx = arg as usize;
+            out!(module.globals[idx].serialize_for_proof());
+            let globals_merkle = module.globals.iter().map(|v| v.hash()).collect();
+            let merkle = Merkle::new(MerkleType::Value, globals_merkle);
+            out!(merkle.prove(idx).expect("Out of bounds global access"));
+        } else if matches!(op, MemoryLoad { .. } | MemoryStore { .. }) {
+            let is_store = matches!(op, MemoryStore { .. });
+            // this isn't really a bool -> int, it's determining an offset based on a bool
+            #[allow(clippy::bool_to_int_with_if)]
+            let stack_idx_offset = if is_store {
+                // The index is one item below the top stack item for a memory store
+                1
+            } else {
+                0
+            };
+            let base = match self
+                .value_stack
+                .get(self.value_stack.len() - 1 - stack_idx_offset)
+            {
+                Some(Value::I32(x)) => *x,
+                x => panic!("WASM validation failed: memory index type is {:?}", x),
+            };
+            if let Some(mut idx) = u64::from(base)
+                .checked_add(arg)
+                .and_then(|x| usize::try_from(x).ok())
+            {
+                // Prove the leaf this index is in, and the next one, if they are within the memory's size.
+                idx /= Memory::LEAF_SIZE;
+                out!(module.memory.get_leaf_data(idx));
+                out!(mem_merkle.prove(idx).unwrap_or_default());
+                // Now prove the next leaf too, in case it's accessed.
+                let next_leaf_idx = idx.saturating_add(1);
+                out!(module.memory.get_leaf_data(next_leaf_idx));
+                let second_mem_merkle = if is_store {
+                    // For stores, prove the second merkle against a state after the first leaf is set.
+                    // This state also happens to have the second leaf set, but that's irrelevant.
+                    let mut copy = self.clone();
+                    copy.step_n(1)
+                        .expect("Failed to step machine forward for proof");
+                    copy.modules[self.pc.module()]
+                        .memory
+                        .merkelize()
+                        .into_owned()
                 } else {
-                    0
+                    mem_merkle.into_owned()
                 };
-                let base = match self
-                    .value_stack
-                    .get(self.value_stack.len() - 1 - stack_idx_offset)
-                {
-                    Some(Value::I32(x)) => *x,
-                    x => panic!("WASM validation failed: memory index type is {:?}", x),
-                };
-                if let Some(mut idx) = u64::from(base)
-                    .checked_add(next_inst.argument_data)
-                    .and_then(|x| usize::try_from(x).ok())
-                {
-                    // Prove the leaf this index is in, and the next one, if they are within the memory's size.
-                    idx /= Memory::LEAF_SIZE;
-                    data.extend(module.memory.get_leaf_data(idx));
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
-                    // Now prove the next leaf too, in case it's accessed.
-                    let next_leaf_idx = idx.saturating_add(1);
-                    data.extend(module.memory.get_leaf_data(next_leaf_idx));
-                    let second_mem_merkle = if is_store {
-                        // For stores, prove the second merkle against a state after the first leaf is set.
-                        // This state also happens to have the second leaf set, but that's irrelevant.
-                        let mut copy = self.clone();
-                        copy.step_n(1)
-                            .expect("Failed to step machine forward for proof");
-                        copy.modules[self.pc.module()]
-                            .memory
-                            .merkelize()
-                            .into_owned()
-                    } else {
-                        mem_merkle.into_owned()
-                    };
-                    data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
-                }
-            } else if next_inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::wavm::unpack_call_indirect(next_inst.argument_data);
-                let idx = match self.value_stack.last() {
-                    Some(Value::I32(i)) => *i,
-                    x => panic!(
-                        "WASM validation failed: top of stack before call_indirect is {:?}",
-                        x,
-                    ),
-                };
-                let ty = &module.types[usize::try_from(ty).unwrap()];
-                data.extend((table as u64).to_be_bytes());
-                data.extend(ty.hash());
-                let table_usize = usize::try_from(table).unwrap();
-                let table = &module.tables[table_usize];
-                data.extend(
-                    table
-                        .serialize_for_proof()
-                        .expect("failed to serialize table"),
-                );
-                data.extend(
-                    module
-                        .tables_merkle
-                        .prove(table_usize)
-                        .expect("Failed to prove tables merkle"),
-                );
-                let idx_usize = usize::try_from(idx).unwrap();
-                if let Some(elem) = table.elems.get(idx_usize) {
-                    data.extend(elem.func_ty.hash());
-                    data.extend(elem.val.serialize_for_proof());
-                    data.extend(
-                        table
-                            .elems_merkle
-                            .prove(idx_usize)
-                            .expect("Failed to prove elements merkle"),
-                    );
-                }
-            } else if matches!(
-                next_inst.opcode,
-                Opcode::GetGlobalStateBytes32 | Opcode::SetGlobalStateBytes32,
-            ) {
-                let ptr = self.value_stack.last().unwrap().assume_u32();
-                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
-                    // Prove the leaf this index is in
-                    idx /= Memory::LEAF_SIZE;
-                    data.extend(module.memory.get_leaf_data(idx));
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
-                }
-            } else if matches!(
-                next_inst.opcode,
-                Opcode::ReadPreImage | Opcode::ReadInboxMessage,
-            ) {
-                let ptr = self
-                    .value_stack
-                    .get(self.value_stack.len() - 2)
-                    .unwrap()
-                    .assume_u32();
-                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
-                    // Prove the leaf this index is in
-                    idx /= Memory::LEAF_SIZE;
-                    let prev_data = module.memory.get_leaf_data(idx);
-                    data.extend(prev_data);
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
-                    if next_inst.opcode == Opcode::ReadPreImage {
-                        let hash = Bytes32(prev_data);
-                        let Some(preimage) = self.preimage_resolver.get_const(self.context, hash) else {
+                out!(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+            }
+        } else if op == CallIndirect {
+            let (table, ty) = crate::wavm::unpack_call_indirect(arg);
+            let idx = match self.value_stack.last() {
+                Some(Value::I32(i)) => *i,
+                x => panic!(
+                    "WASM validation failed: top of stack before call_indirect is {:?}",
+                    x,
+                ),
+            };
+            let ty = &module.types[usize::try_from(ty).unwrap()];
+            out!((table as u64).to_be_bytes());
+            out!(ty.hash());
+            let table_usize = usize::try_from(table).unwrap();
+            let table = &module.tables[table_usize];
+            out!(table
+                .serialize_for_proof()
+                .expect("failed to serialize table"));
+            out!(module
+                .tables_merkle
+                .prove(table_usize)
+                .expect("Failed to prove tables merkle"));
+            let idx_usize = usize::try_from(idx).unwrap();
+            if let Some(elem) = table.elems.get(idx_usize) {
+                out!(elem.func_ty.hash());
+                out!(elem.val.serialize_for_proof());
+                out!(table
+                    .elems_merkle
+                    .prove(idx_usize)
+                    .expect("Failed to prove elements merkle"));
+            }
+        } else if matches!(op, GetGlobalStateBytes32 | SetGlobalStateBytes32) {
+            let ptr = self.value_stack.last().unwrap().assume_u32();
+            if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                // Prove the leaf this index is in
+                idx /= Memory::LEAF_SIZE;
+                out!(module.memory.get_leaf_data(idx));
+                out!(mem_merkle.prove(idx).unwrap_or_default());
+            }
+        } else if matches!(op, ReadPreImage | ReadInboxMessage) {
+            let ptr = self
+                .value_stack
+                .get(self.value_stack.len() - 2)
+                .unwrap()
+                .assume_u32();
+            if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                // Prove the leaf this index is in
+                idx /= Memory::LEAF_SIZE;
+                let prev_data = module.memory.get_leaf_data(idx);
+                out!(prev_data);
+                out!(mem_merkle.prove(idx).unwrap_or_default());
+                if op == Opcode::ReadPreImage {
+                    let hash = Bytes32(prev_data);
+                    let Some(preimage) = self.preimage_resolver.get_const(self.context, hash) else {
                             panic!("Missing requested preimage for hash {}", hash)
                         };
-                        data.push(0); // preimage proof type
-                        data.extend(preimage);
-                    } else if next_inst.opcode == Opcode::ReadInboxMessage {
-                        let msg_idx = self
-                            .value_stack
-                            .get(self.value_stack.len() - 3)
-                            .unwrap()
-                            .assume_u64();
-                        let inbox_identifier = argument_data_to_inbox(next_inst.argument_data)
-                            .expect("Bad inbox indentifier");
-                        if let Some(msg_data) =
-                            self.inbox_contents.get(&(inbox_identifier, msg_idx))
-                        {
-                            data.push(0); // inbox proof type
-                            data.extend(msg_data);
-                        }
-                    } else {
-                        panic!("Should never ever get here");
+                    data.push(0); // preimage proof type
+                    out!(preimage);
+                } else if op == Opcode::ReadInboxMessage {
+                    let msg_idx = self
+                        .value_stack
+                        .get(self.value_stack.len() - 3)
+                        .unwrap()
+                        .assume_u64();
+                    let inbox_id = argument_data_to_inbox(arg).expect("Bad inbox indentifier");
+                    if let Some(msg_data) = self.inbox_contents.get(&(inbox_id, msg_idx)) {
+                        data.push(0); // inbox proof type
+                        out!(msg_data);
                     }
+                } else {
+                    unreachable!()
                 }
             }
         }
-
         data
     }
 
