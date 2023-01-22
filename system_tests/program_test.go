@@ -99,13 +99,10 @@ func TestKeccakProgram(t *testing.T) {
 	args = append(args, preimage...)
 
 	timed("execute", func() {
-		colors.PrintMint("EXECUTING CALL NOW")
 		result := sendContractCall(t, ctx, programAddress, l2client, args)
-
 		if len(result) != 32 {
 			Fail(t, "unexpected return result: ", "result", result)
 		}
-
 		hash := common.BytesToHash(result)
 		if hash != correct {
 			Fail(t, "computed hash mismatch", hash, correct)

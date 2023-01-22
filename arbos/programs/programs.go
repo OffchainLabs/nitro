@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/ethereum/go-ethereum/core/state"
 )
 
 const MaxWasmSize = 64 * 1024
@@ -133,7 +134,7 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	if rawWasm == nil {
 		return nil, fmt.Errorf("missing wasm at address %v", program)
 	}
-	wasm, err := vm.StripStylusPrefix(rawWasm)
+	wasm, err := state.StripStylusPrefix(rawWasm)
 	if err != nil {
 		return nil, err
 	}

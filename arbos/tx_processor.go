@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/core/state"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -104,7 +105,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	to := p.msg.To()
 	if to != nil {
 		rawCode := p.evm.StateDB.GetCode(*to)
-		if vm.IsStylusProgram(rawCode) {
+		if state.IsStylusProgram(rawCode) {
 			gas := p.msg.Gas()
 			result, err := p.state.Programs().CallProgram(
 				p.evm.StateDB,
