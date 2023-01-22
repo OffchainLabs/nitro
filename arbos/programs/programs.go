@@ -114,14 +114,21 @@ func (p Programs) CallProgram(
 	calldata []byte,
 	gas *uint64,
 ) ([]byte, error) {
-	version, err := p.StylusVersion()
+	stylusVersion, err := p.StylusVersion()
 	if err != nil {
 		return nil, err
 	}
-	if version == 0 {
-		return nil, errors.New("wasm not compiled")
+	programVersion, err := p.machineVersions.GetUint32(program.Hash())
+	if err != nil {
+		return nil, err
 	}
-	params, err := p.goParams(version)
+	if programVersion == 0 {
+		return nil, errors.New("program not compiled")
+	}
+	if programVersion != stylusVersion {
+		return nil, errors.New("program out of date, please recompile")
+	}
+	params, err := p.goParams(programVersion)
 	if err != nil {
 		return nil, err
 	}
