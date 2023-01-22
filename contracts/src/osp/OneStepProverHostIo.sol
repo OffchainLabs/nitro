@@ -286,6 +286,26 @@ contract OneStepProverHostIo is IOneStepProver {
         mach.status = MachineStatus.FINISHED;
     }
 
+    function executeLinkModule(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        revert("Unimplemented");
+    }
+
+    function executeUnlinkModule(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        revert("Unimplemented");
+    }
+
     function executeGlobalStateAccess(
         ExecutionContext calldata,
         Machine memory mach,
@@ -347,6 +367,10 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeReadInboxMessage;
         } else if (opcode == Instructions.HALT_AND_SET_FINISHED) {
             impl = executeHaltAndSetFinished;
+        } else if (opcode == Instructions.LINK_MODULE) {
+            impl = executeLinkModule;
+        } else if (opcode == Instructions.UNLINK_MODULE) {
+            impl = executeUnlinkModule;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }

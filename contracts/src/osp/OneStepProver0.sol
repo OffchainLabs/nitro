@@ -180,6 +180,29 @@ contract OneStepProver0 is IOneStepProver {
         mach.functionPc = 0;
     }
 
+    function executeCrossModuleDynamicCall(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata
+    ) internal pure {
+        // Get the target from the stack
+        uint32 func = mach.valueStack.pop().assumeI32();
+        uint32 module = mach.valueStack.pop().assumeI32();
+
+        // Push the return pc to the stack
+        mach.valueStack.push(createReturnValue(mach));
+
+        // Push caller module info to the stack
+        mach.valueStack.push(ValueLib.newI32(mach.moduleIdx));
+        mach.valueStack.push(ValueLib.newI32(mod.internalsOffset));
+
+        // Jump to the target
+        mach.moduleIdx = module;
+        mach.functionIdx = func;
+        mach.functionPc = 0;
+    }
+
     function executeCallerModuleInternalCall(
         Machine memory mach,
         Module memory mod,
@@ -479,6 +502,8 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeCrossModuleCall;
         } else if (opcode == Instructions.CROSS_MODULE_FORWARD) {
             impl = executeCrossModuleForward;
+        } else if (opcode == Instructions.CROSS_MODULE_DYNAMIC_CALL) {
+            impl = executeCrossModuleDynamicCall;
         } else if (opcode == Instructions.CALLER_MODULE_INTERNAL_CALL) {
             impl = executeCallerModuleInternalCall;
         } else if (opcode == Instructions.CALL_INDIRECT) {
