@@ -1,8 +1,8 @@
 package protocol
 
 import (
-	"github.com/pkg/errors"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/pkg/errors"
 	"time"
 )
 
@@ -38,27 +38,26 @@ func (b *BigStepChallenge) AddLeaf(v *ChallengeVertex) error {
 	if v.Prev.IsNone() {
 		return ErrInvalidOp
 	}
-	if v.Prev.Unwrap().SubChallenge
 	return nil
 }
 
-type SubChallenge struct {
-	parent *ChallengeVertex
-	Winner *ChallengeVertex
-}
+// type SubChallenge struct {
+// 	parent *ChallengeVertex
+// 	Winner *ChallengeVertex
+// }
 
-// SetWinner sets the winner of the sub-challenge.
-func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
-	tx.verifyReadWrite()
-	if sc.Winner != nil {
-		return ErrInvalidOp
-	}
-	if winner.Prev.Unwrap() != sc.parent {
-		return ErrInvalidOp
-	}
-	sc.Winner = winner
-	return nil
-}
+// // SetWinner sets the winner of the sub-challenge.
+// func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
+// 	tx.verifyReadWrite()
+// 	if sc.Winner != nil {
+// 		return ErrInvalidOp
+// 	}
+// 	if winner.Prev.Unwrap() != sc.parent {
+// 		return ErrInvalidOp
+// 	}
+// 	sc.Winner = winner
+// 	return nil
+// }
 
 // Checks if a challenge is still ongoing by making sure the current timestamp is within
 // the challenge's creation time + challenge period.
