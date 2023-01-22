@@ -132,23 +132,33 @@ contract BridgeTest is AbsBridgeTest {
         );
     }
 
-    function test_executeCall_UseCalldata() public {
+    function test_executeCall_WithCalldata() public {
         // fund bridge with some eth
         vm.deal(address(bridge), 10 ether);
-        uint256 bridgeEthBalanceBefore = address(bridge).balance;
-        uint256 userEthBalanceBefore = address(user).balance;
 
         // allow outbox
         vm.prank(rollup);
         bridge.setOutbox(outbox, true);
 
+        // deploy some contract that will be call receiver
+        EthVault vault = new EthVault();
+
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+        uint256 vaultEthBalanceBefore = address(vault).balance;
+
         //// execute call
         vm.prank(outbox);
         uint256 withdrawalAmount = 3 ether;
-        (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+        uint256 newVaultVersion = 7;
+        (bool success, ) = bridge.executeCall({
+            to: address(vault),
+            value: withdrawalAmount,
+            data: abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion)
+        });
 
         //// checks
         assertTrue(success, "Execute call failed");
+        assertEq(vault.version(), newVaultVersion, "Invalid newVaultVersion");
 
         uint256 bridgeEthBalanceAfter = address(bridge).balance;
         assertEq(
@@ -157,14 +167,62 @@ contract BridgeTest is AbsBridgeTest {
             "Invalid bridge eth balance"
         );
 
-        uint256 userEthBalanceAfter = address(user).balance;
+        uint256 vaultEthBalanceAfter = address(vault).balance;
         assertEq(
-            userEthBalanceAfter - userEthBalanceBefore,
+            vaultEthBalanceAfter - vaultEthBalanceBefore,
             withdrawalAmount,
-            "Invalid user eth balance"
+            "Invalid vault eth balance"
         );
     }
 
+    function test_executeCall_UnsuccessfulCall() public {
+        // fund bridge with some eth
+        vm.deal(address(bridge), 10 ether);
+
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        // deploy some contract that will be call receiver
+        EthVault vault = new EthVault();
+
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+        uint256 vaultEthBalanceBefore = address(vault).balance;
+
+        //// execute call - do call which reverts
+        vm.prank(outbox);
+        uint256 withdrawalAmount = 3 ether;
+        (bool success, bytes memory returnData) = bridge.executeCall({
+            to: address(vault),
+            value: withdrawalAmount,
+            data: abi.encodeWithSelector(EthVault.justRevert.selector)
+        });
+
+        //// checks
+        assertEq(success, false, "Execute shall be unsuccessful");
+        assertEq(vault.version(), 0, "Invalid vaultVersion");
+
+        // get revert reason
+        assembly {
+            returnData := add(returnData, 0x04)
+        }
+        string memory revertReason = abi.decode(returnData, (string));
+        assertEq(revertReason, "bye", "Invalid revert reason");
+
+        uint256 bridgeEthBalanceAfter = address(bridge).balance;
+        assertEq(
+            bridgeEthBalanceBefore,
+            bridgeEthBalanceAfter,
+            "Invalid bridge eth balance after unsuccessful call"
+        );
+
+        uint256 vaultEthBalanceAfter = address(vault).balance;
+        assertEq(
+            vaultEthBalanceAfter,
+            vaultEthBalanceBefore,
+            "Invalid vault eth balance after unsuccessful call"
+        );
+    }
 
     function test_executeCall_revert_NotOutbox() public {
         vm.expectRevert(abi.encodeWithSelector(NotOutbox.selector, address(this)));

@@ -516,3 +516,18 @@ abstract contract AbsBridgeTest is Test {
         uint64 timestamp
     );
 }
+
+/**
+ * Simple contract for testing bridge calls which include calldata
+ */
+contract EthVault {
+    uint256 public version = 0;
+
+    function setVersion(uint256 _version) external payable {
+        version = _version;
+    }
+
+    function justRevert() external payable {
+        revert("bye");
+    }
+}

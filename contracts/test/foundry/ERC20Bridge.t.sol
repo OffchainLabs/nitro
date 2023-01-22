@@ -171,34 +171,25 @@ contract ERC20BridgeTest is AbsBridgeTest {
         bridge.setOutbox(outbox, true);
 
         // deploy some contract that will be call receiver
-        IERC20 callReceiver = new ERC20PresetFixedSupply("Rando", "R", 1_000_000, address(this));
-        callReceiver.transfer(address(bridge), 3_000);
+        EthVault vault = new EthVault();
 
+        // native token balances
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
-
-        address tokenReceiver = address(500);
-        uint256 callReceiverNativeTokenBalanceBefore = nativeToken.balanceOf(address(callReceiver));
-        uint256 tokenReceiverBalanceBefore = callReceiver.balanceOf(tokenReceiver);
+        uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
 
         //// execute call
         vm.prank(outbox);
         uint256 withdrawalAmount = 15;
-        uint256 tokenMoveAmount = 3_000;
+        uint256 newVaultVersion = 7;
         (bool success, ) = bridge.executeCall({
-            to: address(callReceiver),
+            to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(IERC20.transfer.selector, tokenReceiver, tokenMoveAmount)
+            data: abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion)
         });
 
         //// checks
         assertTrue(success, "Execute call failed");
-
-        uint256 tokenReceiverBalanceAfter = callReceiver.balanceOf(tokenReceiver);
-        assertEq(
-            tokenReceiverBalanceAfter - tokenReceiverBalanceBefore,
-            tokenMoveAmount,
-            "Invalid receiver token balance"
-        );
+        assertEq(vault.version(), newVaultVersion, "Invalid newVaultVersion");
 
         uint256 bridgeNativeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
         assertEq(
@@ -207,15 +198,15 @@ contract ERC20BridgeTest is AbsBridgeTest {
             "Invalid bridge native token balance"
         );
 
-        uint256 callReceiverNativeTokenBalanceAfter = nativeToken.balanceOf(address(callReceiver));
+        uint256 vaultNativeTokenBalanceAfter = nativeToken.balanceOf(address(vault));
         assertEq(
-            callReceiverNativeTokenBalanceAfter - callReceiverNativeTokenBalanceBefore,
+            vaultNativeTokenBalanceAfter - vaultNativeTokenBalanceBefore,
             withdrawalAmount,
-            "Invalid tokenReceiver native token balance"
+            "Invalid vault native token balance"
         );
     }
 
-    function test_executeCall_revert_FailExtraCall() public {
+    function test_executeCall_UnsuccessfulExtraCall() public {
         // fund bridge with native tokens
         vm.startPrank(user);
         nativeToken.approve(address(bridge), 100);
@@ -227,38 +218,31 @@ contract ERC20BridgeTest is AbsBridgeTest {
         bridge.setOutbox(outbox, true);
 
         // deploy some contract that will be call receiver
-        IERC20 callReceiver = new ERC20PresetFixedSupply("Rando", "R", 1_000_000, address(this));
-        callReceiver.transfer(address(bridge), 3_000);
+        EthVault vault = new EthVault();
 
+        // native token balances
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
 
-        address tokenReceiver = address(500);
-        uint256 callReceiverNativeTokenBalanceBefore = nativeToken.balanceOf(address(callReceiver));
-        uint256 tokenReceiverBalanceBefore = callReceiver.balanceOf(tokenReceiver);
-
-        //// execute call - extra call shall be unsuccessful due to too high token amount
+        //// execute call - do call which reverts
         vm.prank(outbox);
         uint256 withdrawalAmount = 15;
-        uint256 invalidTokenMoveAmount = 100_000;
-        (bool success, ) = bridge.executeCall({
-            to: address(callReceiver),
+        (bool success, bytes memory returnData) = bridge.executeCall({
+            to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(
-                IERC20.transfer.selector,
-                tokenReceiver,
-                invalidTokenMoveAmount
-            )
+            data: abi.encodeWithSelector(EthVault.justRevert.selector)
         });
 
         //// checks
         assertEq(success, false, "Execute shall be unsuccessful");
+        assertEq(vault.version(), 0, "Invalid vaultVersion");
 
-        uint256 tokenReceiverBalanceAfter = callReceiver.balanceOf(tokenReceiver);
-        assertEq(
-            tokenReceiverBalanceAfter,
-            tokenReceiverBalanceBefore,
-            "Invalid receiver token balance after unsuccessful extra call"
-        );
+        // get and assert revert reason
+        assembly {
+            returnData := add(returnData, 0x04)
+        }
+        string memory revertReason = abi.decode(returnData, (string));
+        assertEq(revertReason, "bye", "Invalid revert reason");
 
         // bridge successfully sent native token even though extra call was unsuccessful (we didn't revert it)
         uint256 bridgeNativeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
@@ -268,12 +252,66 @@ contract ERC20BridgeTest is AbsBridgeTest {
             "Invalid bridge native token balance after unsuccessful extra call"
         );
 
-        // bridge successfully recieved native token even though extra call was unsuccessful (we didn't revert it)
-        uint256 callReceiverNativeTokenBalanceAfter = nativeToken.balanceOf(address(callReceiver));
+        // vault successfully recieved native token even though extra call was unsuccessful (we didn't revert it)
+        uint256 vaultNativeTokenBalanceAfter = nativeToken.balanceOf(address(vault));
         assertEq(
-            callReceiverNativeTokenBalanceAfter - callReceiverNativeTokenBalanceBefore,
+            vaultNativeTokenBalanceAfter - vaultNativeTokenBalanceBefore,
             withdrawalAmount,
-            "Invalid tokenReceiver native token balance after unsuccessful call"
+            "Invalid vault native token balance after unsuccessful call"
+        );
+    }
+
+    function test_executeCall_UnsuccessfulNativeTokenTransfer() public {
+        // fund bridge with native tokens
+        vm.startPrank(user);
+        nativeToken.approve(address(bridge), 100);
+        nativeToken.transfer(address(bridge), 100);
+        vm.stopPrank();
+
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        // deploy some contract that will be call receiver
+        EthVault vault = new EthVault();
+
+        // native token balances
+        uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
+
+        //// execute call - do call which reverts on native token transfer due to invalud amount
+        vm.prank(outbox);
+        uint256 withdrawalAmount = 100_000_000;
+        uint256 newVaultVersion = 9;
+        (bool success, bytes memory returnData) = bridge.executeCall({
+            to: address(vault),
+            value: withdrawalAmount,
+            data: abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion)
+        });
+
+        //// checks
+        assertEq(success, false, "Execute shall be unsuccessful");
+        assertEq(vault.version(), 0, "Invalid vaultVersion - shuold be unchanged");
+
+        // get and assert revert reason
+        assembly {
+            returnData := add(returnData, 0x04)
+        }
+        string memory revertReason = abi.decode(returnData, (string));
+        assertEq(revertReason, "ERC20: transfer amount exceeds balance", "Invalid revert reason");
+
+        uint256 bridgeNativeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeNativeTokenBalanceBefore,
+            bridgeNativeTokenBalanceAfter,
+            "Invalid bridge native token balance after unsuccessful native token transfer"
+        );
+
+        uint256 vaultNativeTokenBalanceAfter = nativeToken.balanceOf(address(vault));
+        assertEq(
+            vaultNativeTokenBalanceAfter,
+            vaultNativeTokenBalanceBefore,
+            "Invalid vault native token balance after unsuccessful native token transfer"
         );
     }
 
