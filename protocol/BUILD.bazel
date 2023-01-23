@@ -19,6 +19,7 @@ go_library(
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_ethereum_go_ethereum//params",
         "@com_github_pkg_errors//:errors",
+        "@com_github_prysmaticlabs_prysm_v3//container/trie:go_default_library",
     ],
 )
 
