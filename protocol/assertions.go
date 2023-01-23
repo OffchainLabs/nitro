@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
+	"github.com/prysmaticlabs/prysm/v3/container/trie"
 )
 
 var (
@@ -683,7 +684,12 @@ func (c *Challenge) RootVertex() *ChallengeVertex {
 }
 
 // AddLeaf adds a new leaf to the challenge.
-func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address) (*ChallengeVertex, error) {
+func (c *Challenge) AddLeaf(
+	tx *ActiveTx,
+	assertion *Assertion,
+	history util.HistoryCommitment,
+	validator common.Address,
+) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {
 		return nil, ErrInvalidOp
@@ -703,6 +709,60 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	}
 	if err := c.rootAssertion.Unwrap().chain.DeductFromBalance(tx, validator, ChallengeVertexStake); err != nil {
 		return nil, errors.Wrapf(ErrInsufficientBalance, err.Error())
+	}
+
+	// The last leaf claimed in the history commitment must be the
+	// state root of the assertion we are adding a leaf for.
+	if history.NumLeaves == 0 {
+		return nil, errors.New("cannot create a history commitment over 0 states")
+	}
+	if assertion.StateCommitment.StateRoot != history.LastLeaf {
+		return nil, errors.Wrapf(
+			ErrInvalidOp,
+			"last leaf of history does not match assertion state root %#x != %#x",
+			assertion.StateCommitment.StateRoot,
+			history.LastLeaf,
+		)
+	}
+
+	// Assert the history commitment's height is equal to the
+	// assertion.height - assertion.prev.height
+	if prev.StateCommitment.Height > assertion.StateCommitment.Height {
+		return nil, errors.Wrapf(
+			ErrInvalidOp,
+			"previous assertion's height %d, cannot be greater than %d",
+			prev.StateCommitment.Height,
+			assertion.StateCommitment.Height,
+		)
+	}
+	expectedHeight := assertion.StateCommitment.Height - prev.StateCommitment.Height
+	if history.Height != expectedHeight {
+		return nil, errors.Wrapf(
+			ErrInvalidOp,
+			"height of history does not match expected value %d != %d",
+			history.Height,
+			expectedHeight,
+		)
+	}
+
+	// The validator must provide a history commitment over
+	// a series of states where the last state must be proven to be
+	// one corresponding to the assertion specified.
+	proofBytes := make([][]byte, len(history.Proof))
+	for i, elem := range history.Proof {
+		b := [32]byte{}
+		copy(b[:], elem[:])
+		proofBytes[i] = b[:]
+	}
+	if !trie.VerifyMerkleProof(
+		history.Merkle[:],
+		history.LastLeaf[:],
+		history.NumLeaves-1,
+		proofBytes,
+	) {
+		return nil, errors.New(
+			"Merkle proof of last state from history commitment fails to verify",
+		)
 	}
 
 	chain := assertion.chain

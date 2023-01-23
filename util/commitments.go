@@ -8,8 +8,11 @@ import (
 )
 
 type HistoryCommitment struct {
-	Height uint64
-	Merkle common.Hash
+	Height    uint64
+	Merkle    common.Hash
+	Proof     []common.Hash
+	LastLeaf  common.Hash
+	NumLeaves uint64
 }
 
 func (comm HistoryCommitment) Hash() common.Hash {
