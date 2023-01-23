@@ -589,6 +589,14 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	return nil
 }
 
+type ChallengeKind uint
+
+const (
+	Block     ChallengeKind = iota
+	BigStep                 = 1
+	SmallStep               = 2
+)
+
 // Challenge created by an assertion.
 type Challenge struct {
 	rootAssertion         util.Option[*Assertion]
@@ -600,6 +608,7 @@ type Challenge struct {
 	includedHistories     map[common.Hash]bool
 	nextSequenceNum       VertexSequenceNumber
 	challengePeriod       time.Duration
+	kind                  ChallengeKind
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
@@ -639,6 +648,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 		includedHistories:     make(map[common.Hash]bool),
 		nextSequenceNum:       currSeqNumber + 1,
 		challengePeriod:       a.chain.challengePeriod,
+		kind:                  Block,
 	}
 	rootVertex.Challenge = util.Some(chal)
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
