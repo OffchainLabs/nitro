@@ -241,7 +241,7 @@ func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	txStreamer      *TransactionStreamer
+	txStreamer      *ExecutionEngine
 	txQueue         chan txQueueItem
 	txRetryQueue    containers.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
@@ -262,7 +262,7 @@ type Sequencer struct {
 	forwarder   *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(txStreamer *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -396,9 +396,10 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
-		return ErrNoSequencer
-	}
+	// TODO
+	// if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
+	// 	return ErrNoSequencer
+	// }
 	return nil
 }
 

@@ -672,6 +672,7 @@ type Node struct {
 	FilterSystem            *filters.FilterSystem
 	ArbInterface            *ArbInterface
 	L1Reader                *headerreader.HeaderReader
+	ExecEngine              *ExecutionEngine
 	TxStreamer              *TransactionStreamer
 	TxPublisher             TransactionPublisher
 	DeployInfo              *RollupAddresses
@@ -807,8 +808,13 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
 	}
 
+	execEngine, err := NewExecutionEngine(l2BlockChain)
+	if err != nil {
+		return nil, err
+	}
+
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain.Config(), execEngine, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -838,9 +844,9 @@ func createNodeImpl(
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1Reader, sequencerConfigFetcher)
+			sequencer, err = NewSequencer(execEngine, l1Reader, sequencerConfigFetcher)
 		} else {
-			sequencer, err = NewSequencer(txStreamer, nil, sequencerConfigFetcher)
+			sequencer, err = NewSequencer(execEngine, nil, sequencerConfigFetcher)
 		}
 		if err != nil {
 			return nil, err
@@ -905,6 +911,7 @@ func createNodeImpl(
 			filterSystem,
 			arbInterface,
 			nil,
+			execEngine,
 			txStreamer,
 			txPublisher,
 			nil,
@@ -1089,7 +1096,7 @@ func createNodeImpl(
 		}
 	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
-	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, execEngine, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
 		return nil, err
 	}
@@ -1102,6 +1109,7 @@ func createNodeImpl(
 		filterSystem,
 		arbInterface,
 		l1Reader,
+		execEngine,
 		txStreamer,
 		txPublisher,
 		deployInfo,
@@ -1230,6 +1238,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	n.TxStreamer.Start(ctx)
+	n.ExecEngine.Start(ctx)
 	if n.InboxReader != nil {
 		err = n.InboxReader.Start(ctx)
 		if err != nil {
@@ -1337,6 +1346,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
+	}
+	if n.ExecEngine.Started() {
+		n.ExecEngine.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Just stops the redis client (most other stuff was stopped earlier)

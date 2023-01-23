@@ -18,10 +18,12 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
+	exec, streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
 	tracker, err := NewInboxTracker(db, streamer, nil)
 	Require(t, err)
 
+	streamer.Start(ctx)
+	exec.Start(ctx)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
 

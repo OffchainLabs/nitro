@@ -71,7 +71,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	trySequencing := func(nodeNum int) bool {
 		node := nodes[nodeNum]
-		curMsgs, err := node.TxStreamer.GetMessageCountSync()
+		curMsgs, err := node.TxStreamer.GetMessageCountSync(t)
 		Require(t, err)
 		emptyMessage := arbstate.MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
@@ -122,7 +122,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 				continue
 			}
 			for attempts := 1; ; attempts++ {
-				msgCount, err := currentNode.TxStreamer.GetMessageCountSync()
+				msgCount, err := currentNode.TxStreamer.GetMessageCountSync(t)
 				Require(t, err)
 				if msgCount >= msgNum {
 					break

@@ -28,7 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, ethdb.Database, *core.BlockChain) {
+func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
@@ -51,7 +51,11 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	inbox, err := NewTransactionStreamer(arbDb, bc, nil, make(chan error, 1), transactionStreamerConfigFetcher)
+	execEngine, err := NewExecutionEngine(bc)
+	if err != nil {
+		Fail(t, err)
+	}
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execEngine, nil, make(chan error, 1), transactionStreamerConfigFetcher)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -62,7 +66,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
-	return inbox, arbDb, bc
+	return execEngine, inbox, arbDb, bc
 }
 
 type blockTestState struct {
@@ -75,11 +79,12 @@ type blockTestState struct {
 func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 
-	inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
+	exec, inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	inbox.Start(ctx)
+	exec.Start(ctx)
 
 	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))

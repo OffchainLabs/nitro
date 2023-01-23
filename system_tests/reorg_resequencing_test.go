@@ -52,6 +52,9 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
+	_, err = node.ExecEngine.HeadMessageNumberSync(t)
+	Require(t, err)
+
 	verifyBalances("after empty reorg")
 
 	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
@@ -74,10 +77,16 @@ func TestReorgResequencing(t *testing.T) {
 	}})
 	Require(t, err)
 
+	_, err = node.ExecEngine.HeadMessageNumberSync(t)
+	Require(t, err)
+
 	accountsWithBalance = append(accountsWithBalance, "User4")
 	verifyBalances("after reorg with new deposit")
 
 	err = node.TxStreamer.ReorgTo(startMsgCount)
+	Require(t, err)
+
+	_, err = node.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")

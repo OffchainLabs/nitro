@@ -45,7 +45,7 @@ func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
 }
 
 func (a *ArbInterface) BlockChain() *core.BlockChain {
-	return a.txStreamer.bc
+	return a.txStreamer.exec.bc
 }
 
 func (a *ArbInterface) ArbNode() interface{} {

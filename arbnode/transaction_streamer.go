@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -39,23 +40,40 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+type ExecutionEngine struct {
+	stopwaiter.StopWaiter
+
+	bc        *core.BlockChain
+	validator *staker.BlockValidator
+	streamer  *TransactionStreamer
+
+	resequenceChan    chan []*arbstate.MessageWithMetadata
+	createBlocksMutex sync.Mutex
+
+	newBlockNotifier chan struct{}
+	latestBlockMutex sync.Mutex
+	latestBlock      *types.Block
+
+	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
+
+	reorgSequencing func() *arbos.SequencingHooks
+}
+
 // TransactionStreamer produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
+	chainConfig *params.ChainConfig
+	exec        *ExecutionEngine
+
 	db           ethdb.Database
-	bc           *core.BlockChain
-	chainId      uint64
 	fatalErrChan chan<- error
 	config       TransactionStreamerConfigFetcher
 
-	insertionMutex            sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
-	createBlocksMutex         sync.Mutex // cannot be acquired while reorgMutex is held
-	reorgMutex                sync.RWMutex
-	reorgPending              uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
-	newMessageNotifier        chan struct{}
-	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
+	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
+	reorgMutex         sync.RWMutex
+	newMessageNotifier chan struct{}
 
 	nextAllowedFeedReorgLog time.Time
 
@@ -63,15 +81,8 @@ type TransactionStreamer struct {
 	broadcasterQueuedMessagesPos         uint64
 	broadcasterQueuedMessagesActiveReorg bool
 
-	latestBlockAndMessageMutex sync.Mutex
-	latestBlock                *types.Block
-	latestMessage              *arbos.L1IncomingMessage
-	newBlockNotifier           chan struct{}
-	reorgSequencing            func() *arbos.SequencingHooks
-
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
-	validator       *staker.BlockValidator
 	inboxReader     *InboxReader
 }
 
@@ -92,28 +103,37 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 }
 
+func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
+	return &ExecutionEngine{
+		bc:               bc,
+		resequenceChan:   make(chan []*arbstate.MessageWithMetadata),
+		newBlockNotifier: make(chan struct{}, 1),
+	}, nil
+}
+
 func NewTransactionStreamer(
 	db ethdb.Database,
-	bc *core.BlockChain,
+	chainConfig *params.ChainConfig,
+	exec *ExecutionEngine,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
 ) (*TransactionStreamer, error) {
-	inbox := &TransactionStreamer{
+	streamer := &TransactionStreamer{
+		exec:               exec,
+		chainConfig:        chainConfig,
 		db:                 db,
-		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
-		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
-		chainId:            bc.Config().ChainID.Uint64(),
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 	}
-	err := inbox.cleanupInconsistentState()
+	streamer.exec.streamer = streamer
+	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
 	}
-	return inbox, nil
+	return streamer, nil
 }
 
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
@@ -125,7 +145,7 @@ func uint64ToKey(x uint64) []byte {
 	return data
 }
 
-func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
+func (s *ExecutionEngine) setBlockValidator(validator *staker.BlockValidator) {
 	if s.Started() {
 		panic("trying to set block validator after start")
 	}
@@ -133,6 +153,11 @@ func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator
 		panic("trying to set block validator when already set")
 	}
 	s.validator = validator
+}
+
+// TODO: this is needed only for block validator
+func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
+	s.exec.setBlockValidator(validator)
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
@@ -155,7 +180,7 @@ func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
 	s.inboxReader = inboxReader
 }
 
-func (s *TransactionStreamer) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
+func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
 	if s.Started() {
 		panic("trying to set reorg sequencing policy after start")
 	}
@@ -188,7 +213,7 @@ func (s *TransactionStreamer) ReorgTo(count arbutil.MessageIndex) error {
 func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	oldMessages, err := s.reorgToInternal(batch, count)
+	err := s.reorg(batch, count, nil)
 	if err != nil {
 		return err
 	}
@@ -196,11 +221,6 @@ func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbuti
 	if err != nil {
 		return err
 	}
-	lastDelayedRead, err := s.getPrevPrevDelayedRead(count)
-	if err != nil {
-		return err
-	}
-	s.resequenceReorgedMessages(oldMessages, lastDelayedRead)
 	return nil
 }
 
@@ -218,68 +238,140 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
-func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) ([]*arbstate.MessageWithMetadata, error) {
+func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageIndex, newMessages []arbstate.MessageWithMetadata) error {
 	if count == 0 {
-		return nil, errors.New("cannot reorg out init message")
+		return errors.New("cannot reorg out init message")
+	}
+	lastDelayedSeqNum, err := s.getPrevPrevDelayedRead(count)
+	if err != nil {
+		return err
 	}
 	var oldMessages []*arbstate.MessageWithMetadata
-	if s.reorgSequencing != nil {
-		targetMsgCount, err := s.GetMessageCount()
-		if err != nil {
-			return nil, err
-		}
-		config := s.config()
-		maxResequenceMsgCount := count + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
-		if config.MaxReorgResequenceDepth >= 0 && maxResequenceMsgCount < targetMsgCount {
-			log.Error(
-				"unable to re-sequence all old messages because there are too many",
-				"reorgingToCount", count,
-				"removingMessages", targetMsgCount-count,
-				"maxReorgResequenceDepth", config.MaxReorgResequenceDepth,
-			)
-			targetMsgCount = maxResequenceMsgCount
-		}
-		for i := count; i < targetMsgCount; i++ {
-			oldMessage, err := s.GetMessage(i)
-			if err != nil {
-				log.Error("unable to lookup old message for re-sequencing", "position", i, "err", err)
-				break
-			}
-			oldMessages = append(oldMessages, oldMessage)
-		}
-	}
-	atomic.AddUint32(&s.reorgPending, 1)
-	s.reorgMutex.Lock()
-	defer s.reorgMutex.Unlock()
-	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
-	blockNum, err := s.MessageCountToBlockNumber(count)
+
+	targetMsgCount, err := s.GetMessageCount()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	// We can safely cast blockNum to a uint64 as we checked count == 0 above
-	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
-	if targetBlock != nil {
-		if s.validator != nil {
-			err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
-			if err != nil {
-				return nil, err
+	config := s.config()
+	maxResequenceMsgCount := count + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
+	if config.MaxReorgResequenceDepth >= 0 && maxResequenceMsgCount < targetMsgCount {
+		log.Error(
+			"unable to re-sequence all old messages because there are too many",
+			"reorgingToCount", count,
+			"removingMessages", targetMsgCount-count,
+			"maxReorgResequenceDepth", config.MaxReorgResequenceDepth,
+		)
+		targetMsgCount = maxResequenceMsgCount
+	}
+	for i := count; i < targetMsgCount; i++ {
+		oldMessage, err := s.GetMessage(i)
+		if err != nil {
+			log.Error("unable to lookup old message for re-sequencing", "position", i, "err", err)
+			break
+		}
+
+		if oldMessage.Message == nil || oldMessage.Message.Header == nil {
+			continue
+		}
+
+		header := oldMessage.Message.Header
+
+		if header.RequestId != nil {
+			// This is a delayed message
+			delayedSeqNum := header.RequestId.Big().Uint64()
+			if delayedSeqNum+1 != oldMessage.DelayedMessagesRead {
+				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", oldMessage.Message.Header, "delayedMessagesRead", oldMessage.DelayedMessagesRead)
+				continue
+			}
+			if delayedSeqNum != lastDelayedSeqNum {
+				// This is the wrong position for the delayed message
+				continue
+			}
+			lastDelayedSeqNum++
+
+			if s.inboxReader != nil {
+				// Verify that the delayed message we're re-sequencing matches what we have after the reorg
+				haveDelayedMessage, err := s.inboxReader.tracker.GetDelayedMessage(delayedSeqNum)
+				if err != nil {
+					if !strings.Contains(err.Error(), "not found") {
+						log.Error("failed to lookup delayed message to re-sequence", "id", header.RequestId, "err", err)
+					}
+					continue
+				}
+				haveDelayedMessageBytes, err := haveDelayedMessage.Serialize()
+				if err != nil {
+					log.Error("failed to serialize new delayed message from database", "err", err)
+					continue
+				}
+				oldDelayedMessageBytes, err := oldMessage.Message.Serialize()
+				if err != nil {
+					log.Error("failed to serialize old delayed message from database", "err", err)
+					continue
+				}
+				if !bytes.Equal(haveDelayedMessageBytes, oldDelayedMessageBytes) {
+					// This delayed message is different, so we'll save re-sequencing it for the real delayed sequencer later
+					continue
+				}
 			}
 		}
 
-		err = s.bc.ReorgToOldBlock(targetBlock)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		log.Warn("reorg target block not found", "block", blockNum)
+		oldMessages = append(oldMessages, oldMessage)
+	}
+
+	s.reorgMutex.Lock()
+	defer s.reorgMutex.Unlock()
+
+	err = s.exec.Reorg(count, newMessages, oldMessages)
+	if err != nil {
+		return err
 	}
 
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return oldMessages, setMessageCount(batch, count)
+	return setMessageCount(batch, count)
+}
+
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbstate.MessageWithMetadata, oldMessages []*arbstate.MessageWithMetadata) error {
+	s.createBlocksMutex.Lock()
+	successful := false
+	defer func() {
+		if !successful {
+			s.createBlocksMutex.Unlock()
+		}
+	}()
+	blockNum, err := s.MessageCountToBlockNumber(count)
+	if err != nil {
+		return err
+	}
+	// We can safely cast blockNum to a uint64 as we checked count == 0 above
+	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
+	if targetBlock == nil {
+		log.Warn("reorg target block not found", "block", blockNum)
+		return nil
+	}
+	if s.validator != nil {
+		err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
+		if err != nil {
+			return err
+		}
+	}
+
+	err = s.bc.ReorgToOldBlock(targetBlock)
+	if err != nil {
+		return err
+	}
+	for i := range newMessages {
+		err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i])
+		if err != nil {
+			return err
+		}
+	}
+	s.resequenceChan <- oldMessages
+	successful = true
+	return nil
 }
 
 func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
@@ -453,14 +545,14 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 				RequestId: &common.Hash{},
 				L1BaseFee: common.Big0,
 			},
-			L2msg: math.U256Bytes(s.bc.Config().ChainID),
+			L2msg: math.U256Bytes(s.chainConfig.ChainID),
 		},
 		DelayedMessagesRead: 1,
 	}})
 }
 
 // Used in redis tests
-func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
+func (s *TransactionStreamer) GetMessageCountSync(t *testing.T) (arbutil.MessageIndex, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	return s.GetMessageCount()
@@ -607,6 +699,24 @@ func (s *TransactionStreamer) skipDuplicateMessages(
 	return feedReorg, confirmedReorg, prevDelayedRead, pos, messages, nil
 }
 
+func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
+	msgCount, err := s.BlockNumberToMessageCount(s.bc.CurrentBlock().Header().Number.Uint64())
+	if err != nil {
+		return 0, err
+	}
+	return msgCount - 1, err
+}
+
+func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	return s.HeadMessageNumber()
+}
+
+func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
+	return s.bc.CurrentHeader().Nonce.Uint64(), nil
+}
+
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	var confirmedMessageCount int
 	if messagesAreConfirmed {
@@ -614,13 +724,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
-
-	startBlockNum, err := s.MessageCountToBlockNumber(messageStartPos)
-	if err != nil {
-		return err
-	}
-	config := s.config()
-	shouldResequence := config.MaxReorgResequenceDepth < 0 || s.bc.CurrentBlock().Header().Number.Int64()+config.MaxReorgResequenceDepth >= startBlockNum
 
 	lastDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
 	if err != nil {
@@ -682,30 +785,9 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	if confirmedReorg {
 		reorgBatch := s.db.NewBatch()
-		oldMessages, err := s.reorgToInternal(reorgBatch, messageStartPos)
+		err := s.reorg(reorgBatch, messageStartPos, messages)
 		if err != nil {
 			return err
-		}
-		err = reorgBatch.Write()
-		if err != nil {
-			return err
-		}
-		if len(oldMessages) > 0 {
-			if shouldResequence {
-				// Run this code after we've written the new messages at the end of this function
-				defer func() {
-					// The context is only necessary for batch fetching,
-					// which will no longer be necessary with the batch posting report refactor.
-					err := s.createBlocks(context.TODO())
-					if err != nil {
-						log.Error("unable to create block after reorg", "err", err)
-						return
-					}
-					s.resequenceReorgedMessages(oldMessages, lastDelayedRead)
-				}()
-			} else {
-				log.Error("unable to re-sequence old messages because block production was not caught up")
-			}
 		}
 		err = reorgBatch.Write()
 		if err != nil {
@@ -765,8 +847,21 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
-// The caller must hold the insertionMutex
-func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.MessageWithMetadata, lastDelayedSeqNum uint64) {
+// The caller must hold the createBlocksMutex
+func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbstate.MessageWithMetadata) {
+	if s.reorgSequencing == nil {
+		return
+	}
+
+	log.Info("Trying to resequence messages", "number", len(messages))
+	lastBlockHeader := s.bc.CurrentBlock().Header()
+	if lastBlockHeader == nil {
+		log.Error("block header not found during resequence")
+		return
+	}
+
+	nextDelayedSeqNum := lastBlockHeader.Nonce.Uint64()
+
 	for _, msg := range messages {
 		// Check if the message is non-nil just to be safe
 		if msg == nil || msg.Message == nil || msg.Message.Header == nil {
@@ -774,48 +869,16 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 		}
 		header := msg.Message.Header
 		if header.RequestId != nil {
-			// This is a delayed message
 			delayedSeqNum := header.RequestId.Big().Uint64()
-			if delayedSeqNum+1 != msg.DelayedMessagesRead {
-				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", msg.Message.Header, "delayedMessagesRead", msg.DelayedMessagesRead)
+			if delayedSeqNum != nextDelayedSeqNum {
+				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
 				continue
 			}
-			if delayedSeqNum != lastDelayedSeqNum {
-				// This is the wrong position for the delayed message
-				continue
-			}
-			lastDelayedSeqNum++
-			if s.inboxReader != nil {
-				// Verify that the delayed message we're re-sequencing matches what we have after the reorg
-				haveDelayedMessage, err := s.inboxReader.tracker.GetDelayedMessage(delayedSeqNum)
-				if err != nil {
-					if !strings.Contains(err.Error(), "not found") {
-						log.Error("failed to lookup delayed message to re-sequence", "id", header.RequestId, "err", err)
-					}
-					continue
-				}
-				haveDelayedMessageBytes, err := haveDelayedMessage.Serialize()
-				if err != nil {
-					log.Error("failed to serialize new delayed message from database", "err", err)
-					continue
-				}
-				oldDelayedMessageBytes, err := msg.Message.Serialize()
-				if err != nil {
-					log.Error("failed to serialize old delayed message from database", "err", err)
-					continue
-				}
-				if !bytes.Equal(haveDelayedMessageBytes, oldDelayedMessageBytes) {
-					// This delayed message is different, so we'll save re-sequencing it for the real delayed sequencer later
-					continue
-				}
-			}
-			// The context is only necessary for batch fetching,
-			// which will no longer be necessary with the batch posting report refactor.
-			err := s.sequenceDelayedMessagesWithInsertionMutex(context.TODO(), []*arbos.L1IncomingMessage{msg.Message}, delayedSeqNum)
+			err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
-				continue
 			}
+			nextDelayedSeqNum += 1
 			continue
 		}
 		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
@@ -829,7 +892,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing())
+		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, s.reorgSequencing())
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
@@ -837,47 +900,31 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 	}
 }
 
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
-	s.insertionMutex.Lock()
-	defer s.insertionMutex.Unlock()
-	return s.sequenceTransactionsWithInsertionMutex(header, txes, hooks)
+func (s *ExecutionEngine) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+	for {
+		hooks.TxErrors = nil
+		s.createBlocksMutex.Lock()
+		block, err := s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
+		s.createBlocksMutex.Unlock()
+		if !errors.Is(err, ErrSequencerInsertLockTaken) {
+			return block, err
+		}
+		<-time.After(time.Millisecond * 100)
+	}
 }
 
-func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
-	s.createBlocksMutex.Lock()
-	defer s.createBlocksMutex.Unlock()
-	s.reorgMutex.RLock()
-	defer s.reorgMutex.RUnlock()
-
-	pos, err := s.GetMessageCount()
-	if err != nil {
-		return nil, err
-	}
-
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
 		return nil, errors.New("current block header not found")
 	}
-	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
-	if err != nil {
-		return nil, err
-	}
-	if lastBlockHeader.Number.Int64() != expectedBlockNum {
-		return nil, fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
-	}
+
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return nil, err
 	}
 
-	var delayedMessagesRead uint64
-	if pos > 0 {
-		lastMsg, err := s.GetMessage(pos - 1)
-		if err != nil {
-			return nil, err
-		}
-		delayedMessagesRead = lastMsg.DelayedMessagesRead
-	}
+	delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
 
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -893,6 +940,7 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 	if err != nil {
 		return nil, err
 	}
+	blockCalcTime := time.Since(startTime)
 	if len(hooks.TxErrors) != len(txes) {
 		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -922,34 +970,21 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 		DelayedMessagesRead: delayedMessagesRead,
 	}
 
-	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
+	pos, err := s.BlockNumberToMessageCount(lastBlockHeader.Number.Uint64())
+	if err != nil {
 		return nil, err
 	}
 
-	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
-			return nil, err
-		}
+	err = s.streamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	if err != nil {
+		return nil, err
 	}
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
 	// it will naturally recover on startup by regenerating the missing block.
-	var logs []*types.Log
-	for _, receipt := range receipts {
-		logs = append(logs, receipt.Logs...)
-	}
-	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
-	}
-	if status == core.SideStatTy {
-		return nil, errors.New("geth rejected block as non-canonical")
 	}
 
 	if s.validator != nil {
@@ -959,80 +994,108 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 	return block, nil
 }
 
-func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
-	s.insertionMutex.Lock()
+var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
+
+func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbstate.MessageWithMetadata) error {
+	if s.coordinator != nil {
+		if !s.coordinator.CurrentlyChosen() {
+			return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
+		}
+	}
+	if !s.insertionMutex.TryLock() {
+		return ErrSequencerInsertLockTaken
+	}
 	defer s.insertionMutex.Unlock()
-	return s.sequenceDelayedMessagesWithInsertionMutex(ctx, messages, firstDelayedSeqNum)
-}
 
-func (s *TransactionStreamer) sequenceDelayedMessagesWithInsertionMutex(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
-	pos, err := s.GetMessageCount()
+	msgCount, err := s.GetMessageCount()
 	if err != nil {
 		return err
 	}
 
-	var delayedMessagesRead uint64
-	if pos > 0 {
-		lastMsg, err := s.GetMessage(pos - 1)
-		if err != nil {
+	if msgCount != pos {
+		return fmt.Errorf("wrong pos got %d expected %d", pos, msgCount)
+	}
+
+	if s.coordinator != nil {
+		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
 			return err
 		}
-		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
-	if delayedMessagesRead != firstDelayedSeqNum {
-		return fmt.Errorf("attempted to insert delayed messages at incorrect position got %d expected %d", firstDelayedSeqNum, delayedMessagesRead)
-	}
-
-	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
-	for i, message := range messages {
-		newMessage := arbstate.MessageWithMetadata{
-			Message:             message,
-			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
-		}
-		messagesWithMeta = append(messagesWithMeta, newMessage)
-		if s.coordinator != nil {
-			if err := s.coordinator.SequencingMessage(pos+arbutil.MessageIndex(i), &newMessage); err != nil {
-				return err
-			}
-		}
-	}
-
-	log.Info("TransactionStreamer: Added DelayedMessages", "pos", pos, "length", len(messages))
-	err = s.writeMessages(pos, messagesWithMeta, nil)
-	if err != nil {
+	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
 
-	for i, msg := range messagesWithMeta {
-		if s.broadcastServer != nil {
-			if err := s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i)); err != nil {
-				return err
-			}
-		}
-	}
-
-	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
-	if err != nil {
-		return err
-	}
-
-	// If we were already caught up to the latest message, ensure we produce blocks for the delayed messages.
-	if s.bc.CurrentBlock().Header().Number.Int64() >= expectedBlockNum {
-		err = s.createBlocks(ctx)
-		if err != nil {
-			return err
+	if s.broadcastServer != nil {
+		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
+			log.Error("failed broadcasting message", "pos", pos, "err", err)
 		}
 	}
 
 	return nil
 }
 
+func (s *ExecutionEngine) SequenceDelayedMessage(message *arbos.L1IncomingMessage, delayedSeqNum uint64) error {
+	for {
+		s.createBlocksMutex.Lock()
+		err := s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+		s.createBlocksMutex.Unlock()
+		if !errors.Is(err, ErrSequencerInsertLockTaken) {
+			return err
+		}
+		<-time.After(time.Millisecond * 100)
+	}
+}
+
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbos.L1IncomingMessage, delayedSeqNum uint64) error {
+	currentHeader := s.bc.CurrentBlock().Header()
+
+	expectedDelayed := currentHeader.Nonce.Uint64()
+
+	pos, err := s.BlockNumberToMessageCount(currentHeader.Number.Uint64())
+	if err != nil {
+		return err
+	}
+
+	if expectedDelayed != delayedSeqNum {
+		return fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedSeqNum, expectedDelayed)
+	}
+
+	messageWithMeta := arbstate.MessageWithMetadata{
+		Message:             message,
+		DelayedMessagesRead: delayedSeqNum + 1,
+	}
+
+	err = s.streamer.WriteMessageFromSequencer(pos, messageWithMeta)
+	if err != nil {
+		return err
+	}
+
+	startTime := time.Now()
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
+	if err != nil {
+		return err
+	}
+
+	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	if err != nil {
+		return err
+	}
+
+	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
+
+	return nil
+}
+
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
+	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum, nil
+}
+
+func (s *ExecutionEngine) GetGenesisBlockNumber() (uint64, error) {
 	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum, nil
 }
 
-func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {
 	genesis, err := s.GetGenesisBlockNumber()
 	if err != nil {
 		return 0, err
@@ -1040,7 +1103,7 @@ func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (arbuti
 	return arbutil.BlockNumberToMessageCount(blockNum, genesis), nil
 }
 
-func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.MessageIndex) (int64, error) {
+func (s *ExecutionEngine) MessageCountToBlockNumber(messageNum arbutil.MessageIndex) (int64, error) {
 	genesis, err := s.GetGenesisBlockNumber()
 	if err != nil {
 		return 0, err
@@ -1096,150 +1159,166 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-// Produce and record blocks for all available messages
-func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
-	s.createBlocksMutex.Lock()
-	defer s.createBlocksMutex.Unlock()
-	s.reorgMutex.RLock()
+// return value: true if should be called again
+func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *ExecutionEngine) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if !s.reorgMutex.TryRLock() {
+		return false
+	}
 	defer s.reorgMutex.RUnlock()
-
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
-		return err
+		log.Error("feedOneMsg failed to get message count", "err", err)
+		return false
 	}
-	initialLastBlock := s.bc.CurrentBlock()
-	err = s.bc.RecoverState(initialLastBlock)
+	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
-		return fmt.Errorf("failed to recover state: %w", err)
+		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
+		return false
 	}
-	lastBlockHeader := initialLastBlock.Header()
-	if lastBlockHeader == nil {
-		return errors.New("current block header not found")
+	pos++
+	if pos >= msgCount {
+		return false
 	}
-	pos, err := s.BlockNumberToMessageCount(lastBlockHeader.Number.Uint64())
+	msg, err := s.GetMessage(pos)
 	if err != nil {
-		return err
+		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
+		return false
+	}
+	err = s.exec.DigestMessage(pos, msg)
+	if err != nil {
+		log.Info("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
+		return false
+	}
+	return pos+1 < msgCount
+}
+
+// must hold createBlockMutex
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbstate.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
+	currentHeader := s.bc.CurrentBlock().Header()
+	if currentHeader == nil {
+		return nil, nil, nil, errors.New("failed to get current header")
 	}
 
-	var statedb *state.StateDB
-	defer func() {
-		if statedb != nil {
-			// This can safely be called even if the prefetcher hasn't been started,
-			// as it checks if a prefetcher is present before stopping it.
-			statedb.StopPrefetcher()
-		}
-	}()
+	statedb, err := s.bc.StateAt(currentHeader.Root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	statedb.StartPrefetcher("TransactionStreamer")
+	defer statedb.StopPrefetcher()
 
 	batchFetcher := func(batchNum uint64) ([]byte, error) {
-		return s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		return s.streamer.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 	}
 
-	for pos < msgCount {
+	block, receipts, err := arbos.ProduceBlock(
+		msg.Message,
+		msg.DelayedMessagesRead,
+		currentHeader,
+		statedb,
+		s.bc,
+		s.bc.Config(),
+		batchFetcher,
+	)
 
-		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
-		if err != nil {
-			return err
-		}
+	return block, statedb, receipts, err
+}
 
-		if atomic.LoadUint32(&s.reorgPending) > 0 {
-			// stop block creation as we need to reorg
-			break
-		}
-		if ctx.Err() != nil {
-			// the context is done, shut down
-			// nolint:nilerr
-			return nil
-		}
+// must hold createBlockMutex
+func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB, receipts types.Receipts, duration time.Duration) error {
+	var logs []*types.Log
+	for _, receipt := range receipts {
+		logs = append(logs, receipt.Logs...)
+	}
+	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, duration)
+	if err != nil {
+		return err
+	}
+	if status == core.SideStatTy {
+		return errors.New("geth rejected block as non-canonical")
+	}
+	return nil
+}
 
-		statedb.StartPrefetcher("TransactionStreamer")
+func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
+	if !s.createBlocksMutex.TryLock() {
+		return errors.New("mutex held")
+	}
+	defer s.createBlocksMutex.Unlock()
+	return s.digestMessageWithBlockMutex(num, msg)
+}
 
-		msg, err := s.GetMessage(pos)
-		if err != nil {
-			return err
-		}
-
-		startTime := time.Now()
-		block, receipts, err := arbos.ProduceBlock(
-			msg.Message,
-			msg.DelayedMessagesRead,
-			lastBlockHeader,
-			statedb,
-			s.bc,
-			s.bc.Config(),
-			batchFetcher,
-		)
-		if err != nil {
-			return err
-		}
-
-		// ProduceBlock advances one message
-		pos++
-
-		var logs []*types.Log
-		for _, receipt := range receipts {
-			logs = append(logs, receipt.Logs...)
-		}
-		status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
-		if err != nil {
-			return err
-		}
-		if status == core.SideStatTy {
-			return errors.New("geth rejected block as non-canonical")
-		}
-
-		if s.validator != nil {
-			s.validator.NewBlock(block, lastBlockHeader, *msg)
-		}
-
-		if time.Now().After(s.nextScheduledVersionCheck) {
-			s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
-			arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-			if err != nil {
-				return err
-			}
-			version, timestampInt, err := arbState.GetScheduledUpgrade()
-			if err != nil {
-				return err
-			}
-			var timeUntilUpgrade time.Duration
-			var timestamp time.Time
-			if timestampInt == 0 {
-				// This upgrade will take effect in the next block
-				timestamp = time.Now()
-			} else {
-				// This upgrade is scheduled for the future
-				timestamp = time.Unix(int64(timestampInt), 0)
-				timeUntilUpgrade = time.Until(timestamp)
-			}
-			maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
-			logLevel := log.Warn
-			if timeUntilUpgrade < time.Hour*24 {
-				logLevel = log.Error
-			}
-			if version > maxSupportedVersion {
-				logLevel(
-					"you need to update your node to the latest version before this scheduled ArbOS upgrade",
-					"timeUntilUpgrade", timeUntilUpgrade,
-					"upgradeScheduledFor", timestamp,
-					"maxSupportedArbosVersion", maxSupportedVersion,
-					"pendingArbosUpgradeVersion", version,
-				)
-			}
-		}
-
-		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
-		s.latestBlockAndMessageMutex.Lock()
-		s.latestBlock = block
-		s.latestMessage = msg.Message
-		s.latestBlockAndMessageMutex.Unlock()
-		select {
-		case s.newBlockNotifier <- struct{}{}:
-		default:
-		}
-
-		lastBlockHeader = block.Header()
+func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
+	currentHeader := s.bc.CurrentHeader()
+	expNum, err := s.BlockNumberToMessageCount(currentHeader.Number.Uint64())
+	if err != nil {
+		return err
+	}
+	if expNum != num {
+		return fmt.Errorf("wrong message number in digest got %d expected %d", num, expNum)
 	}
 
+	startTime := time.Now()
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
+	if err != nil {
+		return err
+	}
+
+	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	if err != nil {
+		return err
+	}
+
+	if s.validator != nil {
+		s.validator.NewBlock(block, currentHeader, *msg)
+	}
+
+	if time.Now().After(s.nextScheduledVersionCheck) {
+		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
+		arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if err != nil {
+			return err
+		}
+		version, timestampInt, err := arbState.GetScheduledUpgrade()
+		if err != nil {
+			return err
+		}
+		var timeUntilUpgrade time.Duration
+		var timestamp time.Time
+		if timestampInt == 0 {
+			// This upgrade will take effect in the next block
+			timestamp = time.Now()
+		} else {
+			// This upgrade is scheduled for the future
+			timestamp = time.Unix(int64(timestampInt), 0)
+			timeUntilUpgrade = time.Until(timestamp)
+		}
+		maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
+		logLevel := log.Warn
+		if timeUntilUpgrade < time.Hour*24 {
+			logLevel = log.Error
+		}
+		if version > maxSupportedVersion {
+			logLevel(
+				"you need to update your node to the latest version before this scheduled ArbOS upgrade",
+				"timeUntilUpgrade", timeUntilUpgrade,
+				"upgradeScheduledFor", timestamp,
+				"maxSupportedArbosVersion", maxSupportedVersion,
+				"pendingArbosUpgradeVersion", version,
+			)
+		}
+	}
+
+	sharedmetrics.UpdateSequenceNumberInBlockGauge(num)
+	s.latestBlockMutex.Lock()
+	s.latestBlock = block
+	s.latestBlockMutex.Unlock()
+	select {
+	case s.newBlockNotifier <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -1247,14 +1326,9 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(func(ctx context.Context) {
 		for {
-			err := s.createBlocks(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error creating blocks", "err", err.Error())
-				if errors.Is(err, arbosState.ErrFatalNodeOutOfDate) {
-					s.fatalErrChan <- err
-				}
+			for s.feedNextMsg(ctx, s.exec) {
 			}
-			timer := time.NewTimer(10 * time.Second)
+			timer := time.NewTimer(time.Second)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
@@ -1266,6 +1340,21 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 
 		}
 	})
+}
+
+func (s *ExecutionEngine) Start(ctx_in context.Context) {
+	s.StopWaiter.Start(ctx_in, s)
+	s.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case resequence := <-s.resequenceChan:
+				s.resequenceReorgedMessages(resequence)
+				s.createBlocksMutex.Unlock()
+			}
+		}
+	})
 	s.LaunchThread(func(ctx context.Context) {
 		var lastBlock *types.Block
 		for {
@@ -1274,17 +1363,14 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			case <-ctx.Done():
 				return
 			}
-			s.latestBlockAndMessageMutex.Lock()
+			s.latestBlockMutex.Lock()
 			block := s.latestBlock
-			message := s.latestMessage
-			s.latestBlockAndMessageMutex.Unlock()
-			if block != lastBlock && block != nil && message != nil {
+			s.latestBlockMutex.Unlock()
+			if block != lastBlock && block != nil {
 				log.Info(
 					"created block",
 					"l2Block", block.Number(),
 					"l2BlockHash", block.Hash(),
-					"l1Block", message.Header.BlockNumber,
-					"l1Timestamp", time.Unix(int64(message.Header.Timestamp), 0),
 				)
 				lastBlock = block
 				select {
