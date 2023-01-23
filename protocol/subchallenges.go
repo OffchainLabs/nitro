@@ -5,6 +5,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
+	"time"
 )
 
 var (
@@ -78,7 +79,8 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 		return ErrWrongChallengeKind
 	}
 	// The challenge must be ongoing.
-	if hasEnded(chal) {
+	chain := chal.rootAssertion.Unwrap().chain
+	if chal.hasEnded(chain) {
 		return ErrChallengeNotRunning
 	}
 	// There must not exist a subchallenge.
@@ -91,7 +93,6 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	}
 	// The vertex must have at least two children with unexpired
 	// chess clocks in order to create a big step challenge.
-	chain := chal.rootAssertion.Unwrap().chain
 	ok, err := hasUnexpiredChildren(chain, v)
 	if err != nil {
 		return err
@@ -107,7 +108,11 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 // that are the specified vertex's children and checking that at least two in this
 // filtered list have unexpired chess clocks.
 func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, error) {
-	challengeCommit := v.Challenge.Unwrap().ParentStateCommitment()
+	if v.Challenge.IsNone() {
+		return false, ErrNoChallenge
+	}
+	chal := v.Challenge.Unwrap()
+	challengeCommit := chal.ParentStateCommitment()
 	challengeHash := ChallengeCommitHash(challengeCommit.Hash())
 	vertices, ok := chain.challengeVerticesByCommitHash[challengeHash]
 	if !ok {
@@ -122,24 +127,24 @@ func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, erro
 		parentCommitHash := otherVertex.Prev.Unwrap().Commitment.Hash()
 		isChild := parentCommitHash == vertexCommitHash
 
-		if isChild && !chessClockExpired(otherVertex) {
+		if isChild && !otherVertex.chessClockExpired(chain.challengePeriod) {
 			unexpiredChildrenTotal++
 		}
 	}
+	fmt.Printf("Got %d\n", unexpiredChildrenTotal)
 	return unexpiredChildrenTotal > 1, nil
 }
 
 // Checks if a challenge is still ongoing by making sure the current
 // timestamp is within the challenge's creation time + challenge period.
-func hasEnded(challenge *Challenge) bool {
-	chain := challenge.rootAssertion.Unwrap().chain
-	now := chain.timeReference.Get()
-	return now.Unix() > challenge.creationTime.Add(challenge.challengePeriod).Unix()
+func (c *Challenge) hasEnded(chain *AssertionChain) bool {
+	challengeEndTime := c.creationTime.Add(chain.challengePeriod).Unix()
+	now := chain.timeReference.Get().Unix()
+	return now > challengeEndTime
 }
 
 // Checks if a vertex's chess-clock has expired according
 // to the challenge period length.
-func chessClockExpired(v *ChallengeVertex) bool {
-	chain := v.Challenge.Unwrap().rootAssertion.Unwrap().chain
-	return v.PsTimer.Get() > chain.challengePeriod
+func (v *ChallengeVertex) chessClockExpired(challengePeriod time.Duration) bool {
+	return v.PsTimer.Get() > challengePeriod
 }
