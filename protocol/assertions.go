@@ -592,15 +592,16 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 type ChallengeKind uint
 
 const (
-	Block     ChallengeKind = iota
-	BigStep                 = 1
-	SmallStep               = 2
+	BlockChallenge     ChallengeKind = iota
+	BigStepChallenge                 = 1
+	SmallStepChallenge               = 2
 )
 
 // Challenge created by an assertion.
 type Challenge struct {
 	rootAssertion         util.Option[*Assertion]
 	WinnerAssertion       util.Option[*Assertion]
+	WinnerVertex          util.Option[*ChallengeVertex]
 	rootVertex            util.Option[*ChallengeVertex]
 	latestConfirmedVertex util.Option[*ChallengeVertex]
 	leafVertexCount       uint64
@@ -636,7 +637,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 		Prev:                 util.None[*ChallengeVertex](),
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              util.NewCountUpTimer(a.chain.timeReference),
-		SubChallenge:         util.None[*SubChallenge](),
+		SubChallenge:         util.None[*Challenge](),
 	}
 
 	chal := &Challenge{
@@ -648,7 +649,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 		includedHistories:     make(map[common.Hash]bool),
 		nextSequenceNum:       currSeqNumber + 1,
 		challengePeriod:       a.chain.challengePeriod,
-		kind:                  Block,
+		kind:                  BlockChallenge,
 	}
 	rootVertex.Challenge = util.Some(chal)
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
@@ -733,7 +734,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		Prev:                 c.rootVertex,
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              timer,
-		SubChallenge:         util.None[*SubChallenge](),
+		SubChallenge:         util.None[*Challenge](),
 		winnerIfConfirmed:    util.Some[*Assertion](assertion),
 	}
 	c.nextSequenceNum++
@@ -805,7 +806,7 @@ type ChallengeVertex struct {
 	Prev                 util.Option[*ChallengeVertex]
 	PresumptiveSuccessor util.Option[*ChallengeVertex]
 	PsTimer              *util.CountUpTimer
-	SubChallenge         util.Option[*SubChallenge]
+	SubChallenge         util.Option[*Challenge]
 	winnerIfConfirmed    util.Option[*Assertion]
 }
 
@@ -937,7 +938,11 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
 	}
 	subChal := v.Prev.Unwrap().SubChallenge
-	if subChal.IsNone() || subChal.Unwrap().Winner != v {
+	if subChal.IsNone() || subChal.Unwrap().WinnerVertex.IsNone() {
+		return ErrInvalidOp
+	}
+	winnerVertex := subChal.Unwrap().WinnerVertex.Unwrap()
+	if winnerVertex != v {
 		return ErrInvalidOp
 	}
 	v._confirm(tx)

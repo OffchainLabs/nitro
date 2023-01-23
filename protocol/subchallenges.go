@@ -2,79 +2,45 @@ package protocol
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
 )
 
 var (
-	ErrNotBlockChallenge         = errors.New("can only create big step subchallenge on block challenge")
-	ErrNotBigStep                = errors.New("can only create small step subchallenge on big step challenge")
+	ErrWrongChallengeKind        = errors.New("wrong top-level kind for subchallenge creation")
 	ErrNoChallenge               = errors.New("no challenge corresponds to vertex")
 	ErrChallengeNotRunning       = errors.New("challenge is not ongoing")
 	ErrSubchallengeAlreadyExists = errors.New("subchallenge already exists on vertex")
 	ErrNotEnoughValidChildren    = errors.New("vertex needs at least two unexpired children")
 )
 
-type SubChallenge struct {
-	Parent       *ChallengeVertex
-	Winner       *ChallengeVertex
-	kind         ChallengeKind
-	creationTime time.Time
-}
-
 // CreateBigStepChallenge creates a BigStep subchallenge on a vertex.
 func (v *ChallengeVertex) CreateBigStepChallenge(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if v.Challenge.IsNone() {
-		return ErrNoChallenge
-	}
-	chal := v.Challenge.Unwrap()
-
-	// Can only create a big step challenge if the vertex is
-	// part of a BlockChallenge.
-	if chal.kind != Block {
-		return ErrNotBlockChallenge
-	}
-	if err := canCreateSubChallenge(chal, v); err != nil {
+	if err := v.canCreateSubChallenge(BigStepChallenge); err != nil {
 		return err
 	}
-	bigStepChal := &SubChallenge{
+	v.SubChallenge = util.Some(&Challenge{
 		// Set the creation time of the subchallenge to be
 		// the same as the top-level challenge, as they should
 		// expire at the same timestamp.
-		creationTime: chal.creationTime,
-		kind:         BigStep,
-	}
-	v.SubChallenge = util.Some(bigStepChal)
+		creationTime: v.Challenge.Unwrap().creationTime,
+		kind:         BigStepChallenge,
+	})
 	return nil
 }
 
 // CreateSmallStepChallenge creates a SmallStep subchallenge on a vertex.
 func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if v.Challenge.IsNone() {
-		return ErrNoChallenge
-	}
-	chal := v.Challenge.Unwrap()
-
-	// Can only create a big step challenge if the vertex is
-	// part of a BigStepChallenge.
-	if chal.kind != BigStep {
-		return ErrNotBigStep
-	}
-	if err := canCreateSubChallenge(chal, v); err != nil {
+	if err := v.canCreateSubChallenge(SmallStepChallenge); err != nil {
 		return err
 	}
-	smallStepChal := &SubChallenge{
-		// Set the creation time of the subchallenge to be
-		// the same as the top-level challenge, as they should
-		// expire at the same timestamp.
-		creationTime: chal.creationTime,
-		kind:         SmallStep,
-	}
-	v.SubChallenge = util.Some(smallStepChal)
+	v.SubChallenge = util.Some(&Challenge{
+		creationTime: v.Challenge.Unwrap().creationTime,
+		kind:         SmallStepChallenge,
+	})
 	return nil
 }
 
@@ -85,14 +51,39 @@ func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 //	  - P’s challenge has not reached its end time
 //	  - P’s has at least two children with unexpired chess clocks
 //	The end time of the new challenge is set equal to the end time of P’s challenge.
-func canCreateSubChallenge(chal *Challenge, v *ChallengeVertex) error {
-	// The overall challenge must be ongoing.
-	if !isStillOngoing(chal) {
+func (v *ChallengeVertex) canCreateSubChallenge(
+	subChallengeKind ChallengeKind,
+) error {
+	if v.Challenge.IsNone() {
+		return ErrNoChallenge
+	}
+	chal := v.Challenge.Unwrap()
+	// Can only create a subchallenge if the vertex is
+	// part of a challenge of a specified kind.
+	switch subChallengeKind {
+	case BlockChallenge:
+		return ErrWrongChallengeKind
+	case BigStepChallenge:
+		if chal.kind != BlockChallenge {
+			return ErrWrongChallengeKind
+		}
+	case SmallStepChallenge:
+		if chal.kind != BigStepChallenge {
+			return ErrWrongChallengeKind
+		}
+	}
+	if chal.kind != subChallengeKind {
+		return ErrWrongChallengeKind
+	}
+	// The challenge must be ongoing.
+	if hasEnded(chal) {
 		return ErrChallengeNotRunning
 	}
+	// There must not exist a subchallenge.
 	if !v.SubChallenge.IsNone() {
 		return ErrSubchallengeAlreadyExists
 	}
+	// The vertex must not be confirmed.
 	if v.Status == ConfirmedAssertionState {
 		return errors.Wrap(ErrWrongState, "vertex already confirmed")
 	}
@@ -138,10 +129,10 @@ func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, erro
 
 // Checks if a challenge is still ongoing by making sure the current
 // timestamp is within the challenge's creation time + challenge period.
-func isStillOngoing(challenge *Challenge) bool {
+func hasEnded(challenge *Challenge) bool {
 	chain := challenge.rootAssertion.Unwrap().chain
 	now := chain.timeReference.Get()
-	return now.Unix() < challenge.creationTime.Add(challenge.challengePeriod).Unix()
+	return now.Unix() > challenge.creationTime.Add(challenge.challengePeriod).Unix()
 }
 
 // Checks if a vertex's chess-clock has expired according
