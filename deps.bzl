@@ -543,8 +543,8 @@ def go_dependencies():
     go_repository(
         name = "in_gopkg_check_v1",
         importpath = "gopkg.in/check.v1",
-        sum = "h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=",
-        version = "v0.0.0-20161208181325-20d25e280405",
+        sum = "h1:qIbj1fsPNlZgppZ+VLlY7N33q108Sa+fhmuc+sWQYwY=",
+        version = "v1.0.0-20180628173108-788fd7840127",
     )
     go_repository(
         name = "in_gopkg_natefinch_npipe_v2",
