@@ -23,26 +23,6 @@ type SubChallenge struct {
 	creationTime time.Time
 }
 
-func (sc *SubChallenge) AddLeaf(v *ChallengeVertex) error {
-	if v.Prev.IsNone() {
-		return ErrInvalidOp
-	}
-	return nil
-}
-
-// SetWinner sets the winner of the sub-challenge.
-func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
-	tx.verifyReadWrite()
-	if sc.Winner != nil {
-		return ErrInvalidOp
-	}
-	if winner.Prev.Unwrap() != sc.Parent {
-		return ErrInvalidOp
-	}
-	sc.Winner = winner
-	return nil
-}
-
 // CreateBigStepChallenge creates a BigStep subchallenge for the vertex.
 func (v *ChallengeVertex) CreateBigStepChallenge(tx *ActiveTx) error {
 	tx.verifyReadWrite()
