@@ -30,6 +30,8 @@ func (v *ChallengeVertex) CreateBigStepChallenge(tx *ActiveTx) error {
 		creationTime: v.Challenge.Unwrap().creationTime,
 		kind:         BigStepChallenge,
 	})
+	// TODO: Add the challenge to the chain under a key that does not
+	// collide with top-level challenges and fire events.
 	return nil
 }
 
@@ -44,6 +46,8 @@ func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 		creationTime: v.Challenge.Unwrap().creationTime,
 		kind:         SmallStepChallenge,
 	})
+	// TODO: Add the challenge to the chain under a key that does not
+	// collide with top-level challenges and fire events.
 	return nil
 }
 
