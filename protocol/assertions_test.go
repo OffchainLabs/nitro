@@ -2,12 +2,14 @@ package protocol
 
 import (
 	"context"
+	"math"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/prysmaticlabs/prysm/v3/container/trie"
 	"github.com/stretchr/testify/require"
 )
 
@@ -126,10 +128,72 @@ func TestAssertionChain(t *testing.T) {
 		require.NoError(t, err)
 		verifyStartChallengeEventInFeed(t, eventChan, newAssertion.SequenceNum)
 
-		chal1, err := challenge.AddLeaf(tx, branch1, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()}, staker1)
+		blockHashes := correctBlockHashes[99:200]
+		hashesBytes := make([][]byte, len(blockHashes))
+		for i := 0; i < len(hashesBytes); i++ {
+			hashesBytes[i] = blockHashes[i][:]
+		}
+		depth := uint64(math.Ceil(math.Log2(float64(len(hashesBytes)))))
+		tr, err := trie.GenerateTrieFromItems(hashesBytes, depth)
+		require.NoError(t, err)
+		lastElem := hashesBytes[len(hashesBytes)-1]
+		lastIdx := len(hashesBytes) - 1
+		proof, err := tr.MerkleProof(lastIdx)
+		require.NoError(t, err)
+		proofHashes := make([]common.Hash, len(proof))
+		for i := 0; i < len(proof); i++ {
+			proofHashes[i] = common.BytesToHash(proof[i][:])
+		}
+		root, err := tr.HashTreeRoot()
 		require.NoError(t, err)
 
-		_, err = challenge.AddLeaf(tx, branch2, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()}, staker2)
+		ok := trie.VerifyMerkleProof(
+			root[:],
+			lastElem,
+			uint64(lastIdx),
+			proof,
+		)
+		require.True(t, ok)
+
+		historyCommit := util.HistoryCommitment{
+			Height:    1,
+			Merkle:    common.BytesToHash(root[:]),
+			Proof:     proofHashes,
+			LastLeaf:  common.BytesToHash(lastElem),
+			NumLeaves: uint64(len(hashesBytes)),
+		}
+
+		chal1, err := challenge.AddLeaf(tx, branch1, historyCommit, staker1)
+		require.NoError(t, err)
+
+		blockHashes = wrongBlockHashes[99:200]
+		hashesBytes = make([][]byte, len(blockHashes))
+		for i := 0; i < len(hashesBytes); i++ {
+			hashesBytes[i] = blockHashes[i][:]
+		}
+
+		tr, err = trie.GenerateTrieFromItems(hashesBytes, depth)
+		require.NoError(t, err)
+		lastElem = hashesBytes[len(hashesBytes)-1]
+		lastIdx = len(hashesBytes) - 1
+		proof, err = tr.MerkleProof(lastIdx)
+		require.NoError(t, err)
+		proofHashes = make([]common.Hash, len(proof))
+		for i := 0; i < len(proof); i++ {
+			proofHashes[i] = common.BytesToHash(proof[i][:])
+		}
+		root, err = tr.HashTreeRoot()
+		require.NoError(t, err)
+
+		badCommit := util.HistoryCommitment{
+			Height:    1,
+			Merkle:    common.BytesToHash(root[:]),
+			Proof:     proofHashes,
+			LastLeaf:  common.BytesToHash(lastElem),
+			NumLeaves: uint64(len(hashesBytes)),
+		}
+
+		_, err = challenge.AddLeaf(tx, branch2, badCommit, staker2)
 		require.NoError(t, err)
 		err = chal1.ConfirmForPsTimer(tx)
 		require.ErrorIs(t, err, ErrNotYet)
