@@ -95,7 +95,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		p.On("Completed", &protocol.ActiveTx{}).Return(
 			false,
 		)
-		p.On("HasConfirmedAboveSeqNumber", &protocol.ActiveTx{}, vertex.SequenceNum).Return(
+		p.On("HasConfirmedSibling", &protocol.ActiveTx{}, vertex.SequenceNum).Return(
 			false, nil,
 		)
 		p.On(

@@ -591,11 +591,12 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 
 // Challenge created by an assertion.
 type Challenge struct {
-	rootAssertion     util.Option[*Assertion]
-	WinnerAssertion   util.Option[*Assertion]
-	rootVertex        util.Option[*ChallengeVertex]
-	creationTime      time.Time
-	includedHistories map[common.Hash]bool
+	rootAssertion          util.Option[*Assertion]
+	WinnerAssertion        util.Option[*Assertion]
+	rootVertex             util.Option[*ChallengeVertex]
+	creationTime           time.Time
+	includedHistories      map[common.Hash]bool
+	currentVertexSeqNumber VertexSequenceNumber
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
@@ -706,8 +707,10 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		delta := prev.secondChildCreationTime.Unwrap().Sub(prev.firstChildCreationTime.Unwrap())
 		timer.Set(delta)
 	}
+	nextSeqNumber := c.currentVertexSeqNumber + 1
 	leaf := &ChallengeVertex{
 		Challenge:            util.Some[*Challenge](c),
+		SequenceNum:          nextSeqNumber,
 		Validator:            validator,
 		isLeaf:               true,
 		Status:               PendingAssertionState,
@@ -718,6 +721,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		SubChallenge:         util.None[*SubChallenge](),
 		winnerIfConfirmed:    util.Some[*Assertion](assertion),
 	}
+	c.currentVertexSeqNumber = nextSeqNumber
 	c.rootVertex.Unwrap().maybeNewPresumptiveSuccessor(leaf)
 	c.rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeLeafEvent{
 		ParentSeqNum:      leaf.Prev.Unwrap().SequenceNum,
@@ -755,8 +759,8 @@ func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 	return c.WinnerAssertion.Unwrap(), nil
 }
 
-// HasConfirmedAboveSeqNumber returns true if another vertex with higher sequence number has confirmed.
-func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequenceNumber) bool {
+// HasConfirmedSibling returns true if another sibling vertex is confirmed.
+func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex *ChallengeVertex) bool {
 	tx.verifyRead()
 
 	if c.rootAssertion.IsNone() {
@@ -766,11 +770,19 @@ func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequen
 	if !ok {
 		return false
 	}
-	for _, vertex := range vertices {
-		if vertex.SequenceNum > seqNum && vertex.Status == ConfirmedAssertionState {
-			return true
+
+	for _, v := range vertices {
+		if v.Prev.IsNone() {
+			continue
+		}
+		// We only check vertices that have a matching parent commit hash.
+		if v.Prev.Unwrap().Commitment.Hash() == vertex.Prev.Unwrap().Commitment.Hash() {
+			if vertex != v && v.Status == ConfirmedAssertionState {
+				return true
+			}
 		}
 	}
+
 	return false
 }
 
@@ -842,9 +854,10 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	}
 
 	v.PsTimer.Stop()
+	nextSeqNum := v.SequenceNum + 1
 	newVertex := &ChallengeVertex{
 		Challenge:            v.Challenge,
-		SequenceNum:          VertexSequenceNumber(bisectionHeight),
+		SequenceNum:          nextSeqNum,
 		Validator:            validator,
 		isLeaf:               false,
 		Commitment:           history,
@@ -852,6 +865,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              v.PsTimer.Clone(),
 	}
+	v.SequenceNum = nextSeqNum
 	newVertex.maybeNewPresumptiveSuccessor(v)
 	newVertex.Prev.Unwrap().maybeNewPresumptiveSuccessor(newVertex)
 	newVertex.Challenge.Unwrap().includedHistories[history.Hash()] = true
