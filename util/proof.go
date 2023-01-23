@@ -211,6 +211,47 @@ func GeneratePrefixProof(preHeight uint64, preExpansion MerkleExpansion, leaves 
 	return proof
 }
 
+func GeneratePrefixProofBackend(preHeight uint64, preExpansion MerkleExpansion, hi uint64, backendCall func(lo uint64, hi uint64) (common.Hash, error)) []common.Hash {
+	height := preHeight
+	postHeight := hi
+	proof, _ := preExpansion.Compact()
+	for height < postHeight {
+		// extHeight looks like   xxxxxxx0yyy
+		// post.height looks like xxxxxxx1zzz
+		firstDiffBit := 63 - bits.LeadingZeros64(height^postHeight)
+		mask := (uint64(1) << firstDiffBit) - 1
+		yyy := height & mask
+		zzz := postHeight & mask
+		if yyy != 0 {
+			lowBit := bits.TrailingZeros64(yyy)
+			numLeaves := uint64(1) << lowBit
+			root, err := backendCall(height, height+numLeaves-1)
+			if err != nil {
+				return nil
+			}
+			proof = append(proof, root)
+			height += numLeaves
+		} else if zzz != 0 {
+			highBit := 63 - bits.LeadingZeros64(zzz)
+			numLeaves := uint64(1) << highBit
+			root, err := backendCall(height, height+numLeaves-1)
+			if err != nil {
+				return nil
+			}
+			proof = append(proof, root)
+			height += numLeaves
+		} else {
+			root, err := backendCall(height, postHeight-1)
+			if err != nil {
+				return nil
+			}
+			proof = append(proof, root)
+			height = postHeight
+		}
+	}
+	return proof
+}
+
 func ExpansionFromLeaves(leaves []common.Hash) MerkleExpansion {
 	ret := NewEmptyMerkleExpansion()
 	for _, leaf := range leaves {

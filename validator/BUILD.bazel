@@ -8,7 +8,7 @@ go_library(
         "validator.go",
         "vertex_tracker.go",
     ],
-    importpath = "github.com/OffchainLabs/new-rollup-exploration/validator",
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/validator",
     visibility = ["//visibility:public"],
     deps = [
         "//protocol",

@@ -1,11 +1,12 @@
 package protocol
 
 import (
-	"github.com/OffchainLabs/new-rollup-exploration/util"
-	"github.com/emicklei/dot"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common"
 	"fmt"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/emicklei/dot"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // Visualize returns a graphviz string for the current assertion chain tree.

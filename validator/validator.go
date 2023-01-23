@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/new-rollup-exploration/protocol"
-	statemanager "github.com/OffchainLabs/new-rollup-exploration/state-manager"
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

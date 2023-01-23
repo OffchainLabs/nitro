@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
@@ -136,7 +136,10 @@ func TestAssertionChain(t *testing.T) {
 
 		timeRef.Add(testChallengePeriod)
 		require.NoError(t, chal1.ConfirmForPsTimer(tx))
-		require.Equal(t, ChallengeVertexStake, chain.GetBalance(tx, chal1.Validator)) // Should receive challenge vertex stake back.
+
+		half := big.NewInt(0).Div(ChallengeVertexStake, big.NewInt(2))
+		want := big.NewInt(0).Add(half, ChallengeVertexStake)
+		require.Equal(t, want, chain.GetBalance(tx, chal1.Validator)) // Should receive own mini stake plus half of others.
 		require.NoError(t, branch1.ConfirmForWin(tx))
 		require.Equal(t, branch1, chain.LatestConfirmed(tx))
 

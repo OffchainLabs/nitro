@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OffchainLabs/new-rollup-exploration/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
