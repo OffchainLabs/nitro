@@ -6,8 +6,9 @@
 pragma solidity >=0.6.9 <0.9.0;
 
 import "./IBridge.sol";
+import "./IInbox.sol";
 
-interface IEthInbox {
+interface IEthInbox is IInbox {
     /**
      * @notice Send a generic L2 message to the chain
      * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input

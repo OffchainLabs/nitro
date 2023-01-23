@@ -6,8 +6,9 @@
 pragma solidity >=0.6.9 <0.9.0;
 
 import "./IOwnable.sol";
+import "./IBridge.sol";
 
-interface IEthBridge {
+interface IEthBridge is IBridge {
     /**
      * @dev Enqueue a message in the delayed inbox accumulator.
      *      These messages are later sequenced in the SequencerInbox, either

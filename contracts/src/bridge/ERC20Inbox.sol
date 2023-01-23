@@ -19,18 +19,15 @@ import {
 } from "../libraries/Error.sol";
 import "./AbsInbox.sol";
 import "./IERC20Inbox.sol";
-import "./ISequencerInbox.sol";
 import "./IERC20Bridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
-import "../libraries/DelegateCallAware.sol";
 import {
     L1MessageType_submitRetryableTx,
     L1MessageType_ethDeposit
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 /**
  * @title Inbox for user and contract originated messages

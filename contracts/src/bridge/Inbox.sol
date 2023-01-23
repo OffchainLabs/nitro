@@ -22,10 +22,8 @@ import {
 } from "../libraries/Error.sol";
 import "./AbsInbox.sol";
 import "./IEthInbox.sol";
-import "./ISequencerInbox.sol";
 import "./IBridge.sol";
 import "./IEthBridge.sol";
-
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import {

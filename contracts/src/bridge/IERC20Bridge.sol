@@ -6,8 +6,9 @@
 pragma solidity >=0.6.9 <0.9.0;
 
 import "./IOwnable.sol";
+import "./IBridge.sol";
 
-interface IERC20Bridge {
+interface IERC20Bridge is IBridge {
     /**
      * @dev token that is escrowed in bridge on L1 side and minted on L2 as native currency
      */
