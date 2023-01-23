@@ -774,12 +774,16 @@ func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex *ChallengeVertex) b
 		return false
 	}
 
+	if vertex.Prev.IsNone() {
+		return false
+	}
+	parentHash := vertex.Prev.Unwrap().Commitment.Hash()
 	for _, v := range vertices {
 		if v.Prev.IsNone() {
 			continue
 		}
 		// We only check vertices that have a matching parent commit hash.
-		if v.Prev.Unwrap().Commitment.Hash() == vertex.Prev.Unwrap().Commitment.Hash() {
+		if v.Prev.Unwrap().Commitment.Hash() == parentHash {
 			if vertex != v && v.Status == ConfirmedAssertionState {
 				return true
 			}
