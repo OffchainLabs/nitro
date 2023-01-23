@@ -6,6 +6,7 @@ import "./util/TestUtil.sol";
 import "../../src/bridge/ERC20Bridge.sol";
 import "../../src/bridge/ERC20Inbox.sol";
 import "../../src/bridge/ISequencerInbox.sol";
+import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
@@ -196,7 +197,7 @@ contract ERC20InboxTest is Test {
         inb.initialize(bridge, ISequencerInbox(seqInbox));
     }
 
-    function test_depositERC20() public {
+    function test_depositERC20_FromEOA() public {
         uint256 depositAmount = 300;
 
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
@@ -207,7 +208,53 @@ contract ERC20InboxTest is Test {
         vm.prank(user);
         nativeToken.approve(address(bridge), depositAmount);
 
-        // deposit tokens
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(0, abi.encodePacked(user, depositAmount));
+
+        // deposit tokens -> tx.origin == msg.sender
+        vm.prank(user, user);
+        inbox.depositERC20(depositAmount);
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceAfter - bridgeTokenBalanceBefore,
+            depositAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(
+            userTokenBalanceBefore - userTokenBalanceAfter,
+            depositAmount,
+            "Invalid user token balance"
+        );
+
+        uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
+        assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
+    }
+
+    function test_depositERC20_FromContract() public {
+        uint256 depositAmount = 300;
+
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+        uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
+
+        // approve bridge to escrow tokens
+        vm.prank(user);
+        nativeToken.approve(address(bridge), depositAmount);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(
+            0,
+            abi.encodePacked(AddressAliasHelper.applyL1ToL2Alias(user), depositAmount)
+        );
+
+        // deposit tokens -> tx.origin != msg.sender
         vm.prank(user);
         inbox.depositERC20(depositAmount);
 
@@ -229,6 +276,27 @@ contract ERC20InboxTest is Test {
 
         uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
         assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
+    }
+
+    function test_depositERC20_revert_NativeTokenTransferFails() public {
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+
+        // deposit tokens
+        vm.prank(user);
+        uint256 invalidDepositAmount = 1_000_000;
+        vm.expectRevert("ERC20: insufficient allowance");
+        inbox.depositERC20(invalidDepositAmount);
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(bridgeTokenBalanceAfter, bridgeTokenBalanceBefore, "Invalid bridge token balance");
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(userTokenBalanceBefore, userTokenBalanceAfter, "Invalid user token balance");
+
+        assertEq(bridge.delayedMessageCount(), 0, "Invalid delayed message count");
     }
 
     function test_createRetryableTicket() public {
@@ -282,4 +350,6 @@ contract ERC20InboxTest is Test {
 
     event AllowListAddressSet(address indexed user, bool val);
     event AllowListEnabledUpdated(bool isEnabled);
+    event InboxMessageDelivered(uint256 indexed messageNum, bytes data);
+    event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }
