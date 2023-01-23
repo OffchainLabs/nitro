@@ -75,9 +75,6 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 			return ErrWrongChallengeKind
 		}
 	}
-	if chal.kind != subChallengeKind {
-		return ErrWrongChallengeKind
-	}
 	// The challenge must be ongoing.
 	chain := chal.rootAssertion.Unwrap().chain
 	if chal.hasEnded(chain) {
