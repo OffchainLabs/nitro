@@ -193,8 +193,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
 		vertices := make(map[VertexCommitHash]*ChallengeVertex, 0)
 
-		// Create two child vertices with unexpired chess clocks.
-		for i := uint(0); i < 2; i++ {
+		// Create child vertices with unexpired chess clocks.
+		for i := uint(0); i < 3; i++ {
 			timer := util.NewCountUpTimer(ref)
 			v := &ChallengeVertex{
 				Prev: util.Some(v),
@@ -204,6 +204,9 @@ func Test_canCreateSubChallenge(t *testing.T) {
 				PsTimer: timer,
 			}
 			vHash := VertexCommitHash(v.Commitment.Hash())
+			if i == 0 {
+				v.Prev = util.None[*ChallengeVertex]()
+			}
 			vertices[vHash] = v
 		}
 		chain.challengeVerticesByCommitHash[challengeHash] = vertices
