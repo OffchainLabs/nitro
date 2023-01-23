@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/OffchainLabs/new-rollup-exploration/protocol"
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 )

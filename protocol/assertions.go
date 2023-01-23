@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -594,6 +594,7 @@ type Challenge struct {
 	rootAssertion          util.Option[*Assertion]
 	WinnerAssertion        util.Option[*Assertion]
 	rootVertex             util.Option[*ChallengeVertex]
+	leafVertexCount        uint64
 	creationTime           time.Time
 	includedHistories      map[common.Hash]bool
 	currentVertexSeqNumber VertexSequenceNumber
@@ -735,6 +736,8 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	h := ChallengeCommitHash(c.rootAssertion.Unwrap().StateCommitment.Hash())
 	c.rootAssertion.Unwrap().chain.challengesByCommitHash[h] = c
 	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[h][VertexCommitHash(leaf.Commitment.Hash())] = leaf
+	c.leafVertexCount++
+
 	return leaf, nil
 }
 
@@ -994,7 +997,11 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 func (v *ChallengeVertex) _confirm(tx *ActiveTx) {
 	v.Status = ConfirmedAssertionState
 	if v.isLeaf {
-		v.Challenge.Unwrap().rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, ChallengeVertexStake)
+		refund := big.NewInt(0)
+		leafCount := int64(v.Challenge.Unwrap().leafVertexCount)
+		refund.Mul(ChallengeVertexStake, big.NewInt(leafCount+1))
+		refund.Div(refund, big.NewInt(2))
+		v.Challenge.Unwrap().rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, refund)
 		v.Challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
 	}
 }

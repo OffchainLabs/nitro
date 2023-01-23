@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "mocks",
     srcs = ["mocks.go"],
-    importpath = "github.com/OffchainLabs/new-rollup-exploration/testing/mocks",
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/mocks",
     visibility = ["//visibility:public"],
     deps = [
         "//protocol",
