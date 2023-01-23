@@ -17,6 +17,7 @@ import {
     NotRollupOrOwner,
     GasLimitTooLarge
 } from "../libraries/Error.sol";
+import "./AbsInbox.sol";
 import "./IERC20Inbox.sol";
 import "./ISequencerInbox.sol";
 import "./IERC20Bridge.sol";
@@ -36,79 +37,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  * @notice Messages created via this inbox are enqueued in the delayed accumulator
  * to await inclusion in the SequencerInbox
  */
-contract ERC20Inbox is DelegateCallAware, PausableUpgradeable, IERC20Inbox {
-    IBridge public bridge;
-    ISequencerInbox public sequencerInbox;
-
-    /// ------------------------------------ allow list start ------------------------------------ ///
-
-    bool public allowListEnabled;
-    mapping(address => bool) public isAllowed;
-
-    event AllowListAddressSet(address indexed user, bool val);
-    event AllowListEnabledUpdated(bool isEnabled);
-
-    function setAllowList(address[] memory user, bool[] memory val) external onlyRollupOrOwner {
-        require(user.length == val.length, "INVALID_INPUT");
-
-        for (uint256 i = 0; i < user.length; i++) {
-            isAllowed[user[i]] = val[i];
-            emit AllowListAddressSet(user[i], val[i]);
-        }
-    }
-
-    function setAllowListEnabled(bool _allowListEnabled) external onlyRollupOrOwner {
-        require(_allowListEnabled != allowListEnabled, "ALREADY_SET");
-        allowListEnabled = _allowListEnabled;
-        emit AllowListEnabledUpdated(_allowListEnabled);
-    }
-
-    /// @dev this modifier checks the tx.origin instead of msg.sender for convenience (ie it allows
-    /// allowed users to interact with the token bridge without needing the token bridge to be allowList aware).
-    /// this modifier is not intended to use to be used for security (since this opens the allowList to
-    /// a smart contract phishing risk).
-    modifier onlyAllowed() {
-        // solhint-disable-next-line avoid-tx-origin
-        if (allowListEnabled && !isAllowed[tx.origin]) revert NotAllowedOrigin(tx.origin);
-        _;
-    }
-
-    /// ------------------------------------ allow list end ------------------------------------ ///
-
-    modifier onlyRollupOrOwner() {
-        IOwnable rollup = bridge.rollup();
-        if (msg.sender != address(rollup)) {
-            address rollupOwner = rollup.owner();
-            if (msg.sender != rollupOwner) {
-                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
-            }
-        }
-        _;
-    }
-
-    uint256 internal immutable deployTimeChainId = block.chainid;
-
-    /// @inheritdoc IERC20Inbox
-    function pause() external onlyRollupOrOwner {
-        _pause();
-    }
-
-    /// @inheritdoc IERC20Inbox
-    function unpause() external onlyRollupOrOwner {
-        _unpause();
-    }
-
-    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox)
-        external
-        initializer
-        onlyDelegated
-    {
-        bridge = _bridge;
-        sequencerInbox = _sequencerInbox;
-        allowListEnabled = false;
-        __Pausable_init();
-    }
-
+contract ERC20Inbox is AbsInbox, IERC20Inbox {
     /// @inheritdoc IERC20Inbox
     function depositERC20(uint256 amount) public whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
@@ -231,7 +160,7 @@ contract ERC20Inbox is DelegateCallAware, PausableUpgradeable, IERC20Inbox {
             );
     }
 
-    /// @inheritdoc IERC20Inbox
+    /// @inheritdoc IInbox
     function calculateRetryableSubmissionFee(uint256, uint256) public pure returns (uint256) {
         return 0;
     }

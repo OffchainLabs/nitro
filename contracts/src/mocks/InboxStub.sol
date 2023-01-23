@@ -5,6 +5,7 @@
 pragma solidity ^0.8.0;
 
 import "../bridge/IInbox.sol";
+import "../bridge/IEthInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IEthBridge.sol";
 
@@ -18,7 +19,7 @@ import {
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 
-contract InboxStub is IInbox {
+contract InboxStub is IInbox, IEthInbox {
     IBridge public override bridge;
     ISequencerInbox public override sequencerInbox;
 
@@ -183,6 +184,22 @@ contract InboxStub is IInbox {
         override
         returns (uint256)
     {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function setAllowList(address[] memory, bool[] memory) external pure {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function setAllowListEnabled(bool) external pure {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function isAllowed(address) external pure returns (bool) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function allowListEnabled() external pure returns (bool) {
         revert("NOT_IMPLEMENTED");
     }
 }
