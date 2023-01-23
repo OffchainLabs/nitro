@@ -98,7 +98,7 @@ contract InboxTest is AbsInboxTest {
         assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
     }
 
-    function test_depositERC20_revert_EthTransferFails() public {
+    function test_depositEth_revert_EthTransferFails() public {
         uint256 bridgeEthBalanceBefore = address(bridge).balance;
         uint256 userEthBalanceBefore = address(user).balance;
 
@@ -119,7 +119,7 @@ contract InboxTest is AbsInboxTest {
         assertEq(bridge.delayedMessageCount(), 0, "Invalid delayed message count");
     }
 
-    function test_createRetryableTicket() public {
+    function test_createRetryableTicket_FromEOA() public {
         uint256 bridgeEthBalanceBefore = address(bridge).balance;
         uint256 userEthBalanceBefore = address(user).balance;
 
@@ -180,5 +180,88 @@ contract InboxTest is AbsInboxTest {
         );
 
         assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_createRetryableTicket_FromContract() public {
+        address sender = address(new Sender());
+        vm.deal(sender, 10 ether);
+
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+        uint256 senderEthBalanceBefore = sender.balance;
+
+        uint256 ethToSend = 0.3 ether;
+
+        // retyrable params
+        uint256 l2CallValue = 0.1 ether;
+        uint256 maxSubmissionCost = 0.1 ether;
+        uint256 gasLimit = 100_000;
+        uint256 maxFeePerGas = 0.000000001 ether;
+
+        // expect event
+        uint256 uintAlias = uint256(uint160(AddressAliasHelper.applyL1ToL2Alias(sender)));
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(
+            0,
+            abi.encodePacked(
+                uint256(uint160(sender)),
+                l2CallValue,
+                ethToSend,
+                maxSubmissionCost,
+                uintAlias,
+                uintAlias,
+                gasLimit,
+                maxFeePerGas,
+                abi.encodePacked("some msg").length,
+                abi.encodePacked("some msg")
+            )
+        );
+
+        // create retryable
+        vm.prank(sender);
+        ethInbox.createRetryableTicket{value: ethToSend}({
+            to: sender,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: sender,
+            callValueRefundAddress: sender,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            data: abi.encodePacked("some msg")
+        });
+
+        //// checks
+
+        uint256 bridgeEthBalanceAfter = address(bridge).balance;
+        assertEq(
+            bridgeEthBalanceAfter - bridgeEthBalanceBefore,
+            ethToSend,
+            "Invalid bridge token balance"
+        );
+
+        uint256 senderEthBalanceAfter = address(sender).balance;
+        assertEq(
+            senderEthBalanceBefore - senderEthBalanceAfter,
+            ethToSend,
+            "Invalid sender token balance"
+        );
+
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_createRetryableTicket_revert_WhenPaused() public {
+        vm.prank(rollup);
+        inbox.pause();
+
+        vm.expectRevert("Pausable: paused");
+        ethInbox.createRetryableTicket({
+            to: user,
+            l2CallValue: 100,
+            maxSubmissionCost: 0,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: 10,
+            maxFeePerGas: 1,
+            data: abi.encodePacked("data")
+        });
     }
 }

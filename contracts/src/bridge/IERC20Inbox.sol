@@ -41,7 +41,7 @@ interface IERC20Inbox is IInbox {
         uint256 maxFeePerGas,
         uint256 tokenTotalFeeAmount,
         bytes calldata data
-    ) external payable returns (uint256);
+    ) external returns (uint256);
 
     /**
      * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
@@ -71,5 +71,5 @@ interface IERC20Inbox is IInbox {
         uint256 maxFeePerGas,
         uint256 tokenTotalFeeAmount,
         bytes calldata data
-    ) external payable returns (uint256);
+    ) external returns (uint256);
 }

@@ -65,7 +65,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         uint256 maxFeePerGas,
         uint256 tokenTotalFeeAmount,
         bytes calldata data
-    ) external payable whenNotPaused onlyAllowed returns (uint256) {
+    ) external whenNotPaused onlyAllowed returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
         if (tokenTotalFeeAmount < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
             revert InsufficientValue(
@@ -100,7 +100,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
             );
     }
 
-    // /// @inheritdoc IERC20Inbox
+    /// @inheritdoc IERC20Inbox
     function unsafeCreateRetryableTicket(
         address to,
         uint256 l2CallValue,
@@ -111,7 +111,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         uint256 maxFeePerGas,
         uint256 tokenTotalFeeAmount,
         bytes calldata data
-    ) public payable whenNotPaused onlyAllowed returns (uint256) {
+    ) public whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)

@@ -197,3 +197,5 @@ abstract contract AbsInboxTest is Test {
     event InboxMessageDelivered(uint256 indexed messageNum, bytes data);
     event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }
+
+contract Sender {}
