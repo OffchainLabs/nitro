@@ -7,6 +7,7 @@ go_library(
         "event_feed.go",
         "events.go",
         "inbox.go",
+        "subchallenges.go",
         "visualization.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol",
@@ -27,6 +28,7 @@ go_test(
     srcs = [
         "assertions_test.go",
         "inbox_test.go",
+        "subchallenges_test.go",
     ],
     embed = [":protocol"],
     deps = [
