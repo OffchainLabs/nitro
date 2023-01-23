@@ -8,6 +8,86 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestChallengeVertex_CreateBigStepChallenge(t *testing.T) {
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
+	t.Run("top level challenge must be block challenge", func(t *testing.T) {
+		v := setupValidSubChallengeCreation(t, SmallStepChallenge)
+		err := v.CreateBigStepChallenge(tx)
+		require.ErrorIs(t, err, ErrWrongChallengeKind)
+	})
+	t.Run("OK", func(t *testing.T) {
+		v := setupValidSubChallengeCreation(t, BlockChallenge)
+		err := v.CreateBigStepChallenge(tx)
+		require.NoError(t, err)
+		sub := v.SubChallenge.Unwrap()
+		require.Equal(t, ChallengeKind(BigStepChallenge), sub.kind)
+	})
+}
+
+func TestChallengeVertex_CreateSmallStepChallenge(t *testing.T) {
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
+	t.Run("top level challenge must be big step challenge", func(t *testing.T) {
+		v := setupValidSubChallengeCreation(t, SmallStepChallenge)
+		err := v.CreateSmallStepChallenge(tx)
+		require.ErrorIs(t, err, ErrWrongChallengeKind)
+	})
+	t.Run("OK", func(t *testing.T) {
+		v := setupValidSubChallengeCreation(t, BigStepChallenge)
+		err := v.CreateSmallStepChallenge(tx)
+		require.NoError(t, err)
+		sub := v.SubChallenge.Unwrap()
+		require.Equal(t, ChallengeKind(SmallStepChallenge), sub.kind)
+	})
+}
+
+func setupValidSubChallengeCreation(t *testing.T, topLevelKind ChallengeKind) *ChallengeVertex {
+	challengePeriod := 5 * time.Second
+	ref := util.NewRealTimeReference()
+	m := make(map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex)
+	chain := &AssertionChain{
+		challengePeriod:               challengePeriod,
+		timeReference:                 ref,
+		challengeVerticesByCommitHash: m,
+	}
+
+	creationTime := ref.Get()
+	chal := &Challenge{
+		creationTime: creationTime,
+		kind:         topLevelKind,
+		rootAssertion: util.Some(&Assertion{
+			chain:           chain,
+			StateCommitment: StateCommitment{},
+		}),
+	}
+	v := &ChallengeVertex{
+		Challenge:    util.Some(chal),
+		SubChallenge: util.None[*Challenge](),
+		Status:       PendingAssertionState,
+	}
+
+	challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
+	vertices := make(map[VertexCommitHash]*ChallengeVertex, 0)
+
+	// Create child vertices with unexpired chess clocks.
+	for i := uint(0); i < 3; i++ {
+		timer := util.NewCountUpTimer(ref)
+		v := &ChallengeVertex{
+			Prev: util.Some(v),
+			Commitment: util.HistoryCommitment{
+				Height: uint64(i),
+			},
+			PsTimer: timer,
+		}
+		vHash := VertexCommitHash(v.Commitment.Hash())
+		if i == 0 {
+			v.Prev = util.None[*ChallengeVertex]()
+		}
+		vertices[vHash] = v
+	}
+	chain.challengeVerticesByCommitHash[challengeHash] = vertices
+	return v
+}
+
 func Test_canCreateSubChallenge(t *testing.T) {
 	t.Run("no challenge for vertex", func(t *testing.T) {
 		v := &ChallengeVertex{
