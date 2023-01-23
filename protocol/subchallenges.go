@@ -21,6 +21,7 @@ func (v *ChallengeVertex) CreateBigStepChallenge(tx *ActiveTx) error {
 	if err := v.canCreateSubChallenge(BigStepChallenge); err != nil {
 		return err
 	}
+	// TODO: Add all other required challenge fields.
 	v.SubChallenge = util.Some(&Challenge{
 		// Set the creation time of the subchallenge to be
 		// the same as the top-level challenge, as they should
@@ -37,6 +38,7 @@ func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 	if err := v.canCreateSubChallenge(SmallStepChallenge); err != nil {
 		return err
 	}
+	// TODO: Add all other required challenge fields.
 	v.SubChallenge = util.Some(&Challenge{
 		creationTime: v.Challenge.Unwrap().creationTime,
 		kind:         SmallStepChallenge,
