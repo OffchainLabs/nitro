@@ -340,10 +340,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(28);
     }
 
-    function createNitroMigrationGenesis(OldAssertion calldata assertion)
-        external
-        whenPaused
-    {
+    function createNitroMigrationGenesis(OldAssertion calldata assertion) external whenPaused {
         bytes32 expectedSendRoot = bytes32(0);
         uint64 expectedInboxCount = 1;
 

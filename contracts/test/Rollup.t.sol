@@ -10,13 +10,13 @@ import "../src/rollup/RollupUserLogic.sol";
 import "../src/rollup/RollupAdminLogic.sol";
 
 contract RollupTest is Test {
-    
     address owner = address(1);
     bytes32 wasmModuleRoot = keccak256("wasmModuleRoot");
 
     RollupProxy rollup;
     RollupUserLogic userRollup;
     RollupAdminLogic adminRollup;
+
     function setUp() public {
         Config memory config = Config({
             baseStake: 10,
@@ -57,5 +57,4 @@ contract RollupTest is Test {
         adminRollup.setValidatorWhitelistDisabled(true);
         vm.stopPrank();
     }
-
 }
