@@ -109,7 +109,7 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 // Checks if a challenge vertex has at least two children with
 // unexpired chess-clocks. It does this by filtering out vertices from the chain
 // that are the specified vertex's children and checking that at least two in this
-// filtered list have unexpired chess clocks.
+// filtered list have unexpired chess clocks and are one-step away from the parent.
 func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, error) {
 	if v.Challenge.IsNone() {
 		return false, ErrNoChallenge
@@ -127,14 +127,18 @@ func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, erro
 		if otherVertex.Prev.IsNone() {
 			continue
 		}
-		parentCommitHash := otherVertex.Prev.Unwrap().Commitment.Hash()
+		prev := otherVertex.Prev.Unwrap()
+		parentCommitHash := prev.Commitment.Hash()
+		isOneStepAway := otherVertex.Commitment.Height == prev.Commitment.Height+1
 		isChild := parentCommitHash == vertexCommitHash
-
-		if isChild && !otherVertex.chessClockExpired(chain.challengePeriod) {
+		if isOneStepAway && isChild && !otherVertex.chessClockExpired(chain.challengePeriod) {
 			unexpiredChildrenTotal++
+			if unexpiredChildrenTotal > 1 {
+				return true, nil
+			}
 		}
 	}
-	return unexpiredChildrenTotal > 1, nil
+	return false, nil
 }
 
 // Checks if a challenge is still ongoing by making sure the current

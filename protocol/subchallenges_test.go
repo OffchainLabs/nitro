@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,6 +65,10 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 		Challenge:    util.Some(chal),
 		SubChallenge: util.None[*Challenge](),
 		Status:       PendingAssertionState,
+		Commitment: util.HistoryCommitment{
+			Height: 0,
+			Merkle: common.BytesToHash([]byte("foo")),
+		},
 	}
 
 	challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
@@ -74,7 +80,8 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 		child := &ChallengeVertex{
 			Prev: util.Some(v),
 			Commitment: util.HistoryCommitment{
-				Height: uint64(i),
+				Height: v.Commitment.Height + 1,
+				Merkle: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
 			},
 			PsTimer: timer,
 		}
@@ -279,7 +286,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			child := &ChallengeVertex{
 				Prev: util.Some(v),
 				Commitment: util.HistoryCommitment{
-					Height: uint64(i),
+					Height: v.Commitment.Height + 1,
+					Merkle: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
 				},
 				PsTimer: timer,
 			}
@@ -390,7 +398,8 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 				v := &ChallengeVertex{
 					Prev: util.Some(parent),
 					Commitment: util.HistoryCommitment{
-						Height: uint64(i),
+						Height: parent.Commitment.Height + 1,
+						Merkle: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
 					},
 					PsTimer: timer,
 				}
