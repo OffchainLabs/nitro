@@ -238,15 +238,15 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address _sender,
         bytes memory _messageData,
         uint256 amount
-    ) internal virtual returns (uint256) {
+    ) internal returns (uint256) {
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData), amount);
+        uint256 msgNum = _deliverToBridge(_kind, _sender, keccak256(_messageData), amount);
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
     }
 
-    function deliverToBridge(
+    function _deliverToBridge(
         uint8 kind,
         address sender,
         bytes32 messageDataHash,

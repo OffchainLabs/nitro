@@ -116,16 +116,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         return 0;
     }
 
-    function _deliverMessage(
-        uint8 _kind,
-        address _sender,
-        bytes memory _messageData,
-        uint256 tokenAmount
-    ) internal override returns (uint256) {
-        return super._deliverMessage(_kind, _sender, _messageData, tokenAmount);
-    }
-
-    function deliverToBridge(
+    function _deliverToBridge(
         uint8 kind,
         address sender,
         bytes32 messageDataHash,

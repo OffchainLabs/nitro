@@ -60,7 +60,7 @@ contract Inbox is AbsInbox, IEthInbox {
         if (msg.sender != tx.origin) revert NotOrigin();
         if (messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
+        uint256 msgNum = _deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
     }
@@ -491,15 +491,15 @@ contract Inbox is AbsInbox, IEthInbox {
         return _deliverMessage(_kind, _sender, _messageData, msg.value);
     }
 
-    function deliverToBridge(
+    function _deliverToBridge(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return deliverToBridge(kind, sender, messageDataHash, 0);
+        return _deliverToBridge(kind, sender, messageDataHash, 0);
     }
 
-    function deliverToBridge(
+    function _deliverToBridge(
         uint8 kind,
         address sender,
         bytes32 messageDataHash,
