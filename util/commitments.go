@@ -8,11 +8,17 @@ import (
 )
 
 type HistoryCommitment struct {
-	Height    uint64
-	Merkle    common.Hash
-	Proof     []common.Hash
-	LastLeaf  common.Hash
-	NumLeaves uint64
+	// The "height" refers to a height of an assertion in the tree, or the "step"
+	// in a big step or small step challenge.
+	Height uint64
+	// The root of a Merkle expansion of leaves.
+	Merkle common.Hash
+	// The history commitment optionally provides a proof of the last
+	// leaf in the Merkle expansion, which can be verified using
+	// prefix proofs and is required by the spec in challenge creation.
+	LastLeafProof  []common.Hash
+	LastLeaf       common.Hash
+	LastLeafPrefix Option[HistoryCommitment]
 }
 
 func (comm HistoryCommitment) Hash() common.Hash {

@@ -3,7 +3,6 @@ package util
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,18 +31,14 @@ func (me MerkleExpansion) Root() common.Hash {
 	empty := true
 	for _, h := range me {
 		if empty {
-			fmt.Println("no accum, checking")
 			if h != (common.Hash{}) {
-				fmt.Println("no accum, post-check")
 				empty = false
 				accum = h
 			}
 		} else {
-			fmt.Println("Accum")
 			accum = crypto.Keccak256Hash(accum.Bytes(), h.Bytes())
 		}
 	}
-	fmt.Printf("Got result %#x\n", accum)
 	return accum
 }
 
@@ -83,7 +78,6 @@ func (me MerkleExpansion) AppendCompleteSubtree(level uint64, hash common.Hash) 
 		return exp, nil
 	}
 	if level >= uint64(len(me)) {
-		fmt.Println(level, len(me))
 		return nil, ErrInvalidLevel
 	}
 	ret := me.Clone()
