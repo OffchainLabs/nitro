@@ -71,18 +71,18 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 	// Create child vertices with unexpired chess clocks.
 	for i := uint(0); i < 3; i++ {
 		timer := util.NewCountUpTimer(ref)
-		v := &ChallengeVertex{
+		child := &ChallengeVertex{
 			Prev: util.Some(v),
 			Commitment: util.HistoryCommitment{
 				Height: uint64(i),
 			},
 			PsTimer: timer,
 		}
-		vHash := VertexCommitHash(v.Commitment.Hash())
+		vHash := VertexCommitHash(child.Commitment.Hash())
 		if i == 0 {
 			v.Prev = util.None[*ChallengeVertex]()
 		}
-		vertices[vHash] = v
+		vertices[vHash] = child
 	}
 	chain.challengeVerticesByCommitHash[challengeHash] = vertices
 	return v
