@@ -5,8 +5,10 @@ package wsbroadcastserver
 
 import (
 	"bytes"
+	"compress/flate"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
@@ -53,6 +56,7 @@ type ClientManager struct {
 	clientAction  chan ClientConnectionAction
 	config        BroadcasterConfigFetcher
 	catchupBuffer CatchupBuffer
+	flateWriter   *flate.Writer
 }
 
 type ClientConnectionAction struct {
@@ -104,12 +108,12 @@ func (cm *ClientManager) Register(
 	desc *netpoll.Desc,
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP string,
+	compression bool,
 ) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP),
+		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression),
 		true,
 	}
-
 	cm.clientAction <- createClient
 
 	return createClient.cc
@@ -180,22 +184,77 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
 		return nil, err
 	}
+	config := cm.config()
+	//                                        /-> wsutil.Writer -> not compressed msg buffer
+	// bm -> json.Encoder -> io.MultiWriter -|
+	//                                        \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
+	writers := []io.Writer{}
+	var notCompressed bytes.Buffer
+	var notCompressedWriter *wsutil.Writer
+	var compressed bytes.Buffer
+	var compressedWriter *wsutil.Writer
+	if !config.RequireCompression {
+		notCompressedWriter = wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
+		writers = append(writers, notCompressedWriter)
+	}
+	if config.EnableCompression {
+		if cm.flateWriter == nil {
+			var err error
+			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to create flate writer")
+			}
+		}
+		compressedWriter = wsutil.NewWriter(&compressed, ws.StateServerSide|ws.StateExtended, ws.OpText)
+		var msg wsflate.MessageState
+		msg.SetCompressed(true)
+		compressedWriter.SetExtensions(&msg)
+		cm.flateWriter.Reset(compressedWriter)
+		writers = append(writers, cm.flateWriter)
+	}
 
-	var buf bytes.Buffer
-	writer := wsutil.NewWriter(&buf, ws.StateServerSide, ws.OpText)
-	encoder := json.NewEncoder(writer)
+	multiWriter := io.MultiWriter(writers...)
+	encoder := json.NewEncoder(multiWriter)
 	if err := encoder.Encode(bm); err != nil {
 		return nil, errors.Wrap(err, "unable to encode message")
 	}
-	if err := writer.Flush(); err != nil {
-		return nil, errors.Wrap(err, "unable to flush message")
+	if notCompressedWriter != nil {
+		if err := notCompressedWriter.Flush(); err != nil {
+			return nil, errors.Wrap(err, "unable to flush message")
+		}
+	}
+	if compressedWriter != nil {
+		if err := cm.flateWriter.Close(); err != nil {
+			return nil, errors.Wrap(err, "unable to close flate writer")
+		}
+		if err := compressedWriter.Flush(); err != nil {
+			return nil, errors.Wrap(err, "unable to flush message")
+		}
 	}
 
 	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
+		var data []byte
+		if client.Compression() {
+			if config.EnableCompression {
+				data = compressed.Bytes()
+			} else {
+				log.Warn("disconnecting because client has enabled compression, but compression support is disabled", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+				continue
+			}
+		} else {
+			if !config.RequireCompression {
+				data = notCompressed.Bytes()
+			} else {
+				log.Warn("disconnecting because client has disabled compression, but compression support is required", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+				continue
+			}
+		}
 		select {
-		case client.out <- buf.Bytes():
+		case client.out <- data:
 		default:
 			// Queue for client too backed up, disconnect instead of blocking on channel send
 			sendQueueTooLargeCount++

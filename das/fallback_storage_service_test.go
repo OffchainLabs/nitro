@@ -29,7 +29,7 @@ func TestFallbackStorageService(t *testing.T) {
 	err = fallback.Put(ctx, val2, math.MaxUint64)
 	Require(t, err)
 
-	fss := NewFallbackStorageService(primary, fallback, 60*60, true, true)
+	fss := NewFallbackStorageService(primary, fallback, fallback, 60*60, true, true)
 
 	res1, err := fss.GetByHash(ctx, hash1)
 	Require(t, err)
@@ -57,7 +57,7 @@ func TestFallbackStorageServiceRecursive(t *testing.T) {
 	hash1 := dastree.Hash(val1)
 
 	ss := NewMemoryBackedStorageService(ctx)
-	fss := NewFallbackStorageService(ss, ss, 60*60, true, true)
+	fss := NewFallbackStorageService(ss, ss, ss, 60*60, true, true)
 
 	// artificially make fss recursive
 	fss.backup = fss
