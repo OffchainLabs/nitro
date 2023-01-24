@@ -133,7 +133,7 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	depthGasLimit := 256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	depthGasLimit := 256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei)
 	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32)
 	defer cancelNode()
 
