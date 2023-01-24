@@ -291,4 +291,51 @@ contract ERC20InboxTest is AbsInboxTest {
             data: abi.encodePacked("data")
         });
     }
+
+    function test_createRetryableTicket_revert_OnlyAllowed() public {
+        vm.prank(rollup);
+        inbox.setAllowListEnabled(true);
+
+        vm.prank(user, user);
+        vm.expectRevert(abi.encodeWithSelector(NotAllowedOrigin.selector, user));
+        erc20Inbox.createRetryableTicket({
+            to: user,
+            l2CallValue: 100,
+            maxSubmissionCost: 0,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: 10,
+            maxFeePerGas: 1,
+            tokenTotalFeeAmount: 200,
+            data: abi.encodePacked("data")
+        });
+    }
+
+    function test_createRetryableTicket_revert_InsufficientValue() public {
+        uint256 tooSmallTokenTotalFeeAmount = 3;
+        uint256 l2CallValue = 100;
+        uint256 maxSubmissionCost = 0;
+        uint256 gasLimit = 10;
+        uint256 maxFeePerGas = 1;
+
+        vm.prank(user, user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                InsufficientValue.selector,
+                maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
+                tooSmallTokenTotalFeeAmount
+            )
+        );
+        erc20Inbox.createRetryableTicket({
+            to: user,
+            l2CallValue: 100,
+            maxSubmissionCost: 0,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: 10,
+            maxFeePerGas: 1,
+            tokenTotalFeeAmount: tooSmallTokenTotalFeeAmount,
+            data: abi.encodePacked("data")
+        });
+    }
 }
