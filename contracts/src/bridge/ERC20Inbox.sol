@@ -66,18 +66,8 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         uint256 tokenTotalFeeAmount,
         bytes calldata data
     ) external whenNotPaused onlyAllowed returns (uint256) {
-        (excessFeeRefundAddress, callValueRefundAddress) = validateRetryableInputValue(
-            l2CallValue,
-            maxSubmissionCost,
-            excessFeeRefundAddress,
-            callValueRefundAddress,
-            gasLimit,
-            maxFeePerGas,
-            tokenTotalFeeAmount
-        );
-
         return
-            unsafeCreateRetryableTicket(
+            _createRetryableTicket(
                 to,
                 l2CallValue,
                 maxSubmissionCost,
@@ -102,38 +92,17 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         uint256 tokenTotalFeeAmount,
         bytes calldata data
     ) public whenNotPaused onlyAllowed returns (uint256) {
-        validateRetryableSubmissionParams(
-            to,
-            l2CallValue,
-            maxSubmissionCost,
-            excessFeeRefundAddress,
-            callValueRefundAddress,
-            gasLimit,
-            maxFeePerGas,
-            data
-        );
-
-        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-        if (maxSubmissionCost < submissionFee)
-            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
-
         return
-            _deliverMessage(
-                L1MessageType_submitRetryableTx,
-                msg.sender,
-                abi.encodePacked(
-                    uint256(uint160(to)),
-                    l2CallValue,
-                    tokenTotalFeeAmount,
-                    maxSubmissionCost,
-                    uint256(uint160(excessFeeRefundAddress)),
-                    uint256(uint160(callValueRefundAddress)),
-                    gasLimit,
-                    maxFeePerGas,
-                    data.length,
-                    data
-                ),
-                tokenTotalFeeAmount
+            _unsafeCreateRetryableTicket(
+                to,
+                l2CallValue,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                tokenTotalFeeAmount,
+                data
             );
     }
 
@@ -141,7 +110,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
     function calculateRetryableSubmissionFee(uint256, uint256)
         public
         pure
-        override
+        override(AbsInbox, IInbox)
         returns (uint256)
     {
         return 0;
@@ -152,12 +121,8 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         address _sender,
         bytes memory _messageData,
         uint256 tokenAmount
-    ) internal returns (uint256) {
-        if (_messageData.length > MAX_DATA_SIZE)
-            revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData), tokenAmount);
-        emit InboxMessageDelivered(msgNum, _messageData);
-        return msgNum;
+    ) internal override returns (uint256) {
+        return super._deliverMessage(_kind, _sender, _messageData, tokenAmount);
     }
 
     function deliverToBridge(
@@ -165,7 +130,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         address sender,
         bytes32 messageDataHash,
         uint256 tokenAmount
-    ) internal returns (uint256) {
+    ) internal override returns (uint256) {
         return
             IERC20Bridge(address(bridge)).enqueueDelayedMessage(
                 kind,

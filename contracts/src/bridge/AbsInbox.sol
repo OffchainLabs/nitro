@@ -132,15 +132,17 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         __Pausable_init();
     }
 
-    function validateRetryableInputValue(
+    function _createRetryableTicket(
+        address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
         address excessFeeRefundAddress,
         address callValueRefundAddress,
         uint256 gasLimit,
         uint256 maxFeePerGas,
-        uint256 amount
-    ) internal view returns (address, address) {
+        uint256 amount,
+        bytes calldata data
+    ) internal returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
         if (amount < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
             revert InsufficientValue(
@@ -160,10 +162,22 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
 
-        return (excessFeeRefundAddress, callValueRefundAddress);
+        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
+        return
+            _unsafeCreateRetryableTicket(
+                to,
+                l2CallValue,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                amount,
+                data
+            );
     }
 
-    function validateRetryableSubmissionParams(
+    function _unsafeCreateRetryableTicket(
         address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
@@ -171,8 +185,9 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address callValueRefundAddress,
         uint256 gasLimit,
         uint256 maxFeePerGas,
+        uint256 amount,
         bytes calldata data
-    ) internal view {
+    ) internal returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)
@@ -180,7 +195,7 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 msg.sender,
                 to,
                 l2CallValue,
-                msg.value,
+                amount,
                 maxSubmissionCost,
                 excessFeeRefundAddress,
                 callValueRefundAddress,
@@ -193,5 +208,54 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (gasLimit > type(uint64).max) {
             revert GasLimitTooLarge();
         }
+
+        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
+        if (maxSubmissionCost < submissionFee)
+            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
+
+        return
+            _deliverMessage(
+                L1MessageType_submitRetryableTx,
+                msg.sender,
+                abi.encodePacked(
+                    uint256(uint160(to)),
+                    l2CallValue,
+                    amount,
+                    maxSubmissionCost,
+                    uint256(uint160(excessFeeRefundAddress)),
+                    uint256(uint160(callValueRefundAddress)),
+                    gasLimit,
+                    maxFeePerGas,
+                    data.length,
+                    data
+                ),
+                amount
+            );
     }
+
+    function _deliverMessage(
+        uint8 _kind,
+        address _sender,
+        bytes memory _messageData,
+        uint256 amount
+    ) internal virtual returns (uint256) {
+        if (_messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
+        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData), amount);
+        emit InboxMessageDelivered(msgNum, _messageData);
+        return msgNum;
+    }
+
+    function deliverToBridge(
+        uint8 kind,
+        address sender,
+        bytes32 messageDataHash,
+        uint256 amount
+    ) internal virtual returns (uint256);
+
+    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
+        public
+        view
+        virtual
+        returns (uint256);
 }

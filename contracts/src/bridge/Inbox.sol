@@ -287,7 +287,7 @@ contract Inbox is AbsInbox, IEthInbox {
     function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
         public
         view
-        override
+        override(AbsInbox, IInbox)
         returns (uint256)
     {
         // Use current block basefee if baseFee parameter is 0
@@ -366,18 +366,8 @@ contract Inbox is AbsInbox, IEthInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
-        (excessFeeRefundAddress, callValueRefundAddress) = validateRetryableInputValue(
-            l2CallValue,
-            maxSubmissionCost,
-            excessFeeRefundAddress,
-            callValueRefundAddress,
-            gasLimit,
-            maxFeePerGas,
-            msg.value
-        );
-
         return
-            unsafeCreateRetryableTicket(
+            _createRetryableTicket(
                 to,
                 l2CallValue,
                 maxSubmissionCost,
@@ -385,6 +375,7 @@ contract Inbox is AbsInbox, IEthInbox {
                 callValueRefundAddress,
                 gasLimit,
                 maxFeePerGas,
+                msg.value,
                 data
             );
     }
@@ -400,37 +391,17 @@ contract Inbox is AbsInbox, IEthInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable whenNotPaused onlyAllowed returns (uint256) {
-        validateRetryableSubmissionParams(
-            to,
-            l2CallValue,
-            maxSubmissionCost,
-            excessFeeRefundAddress,
-            callValueRefundAddress,
-            gasLimit,
-            maxFeePerGas,
-            data
-        );
-
-        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-        if (maxSubmissionCost < submissionFee)
-            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
-
         return
-            _deliverMessage(
-                L1MessageType_submitRetryableTx,
-                msg.sender,
-                abi.encodePacked(
-                    uint256(uint160(to)),
-                    l2CallValue,
-                    msg.value,
-                    maxSubmissionCost,
-                    uint256(uint160(excessFeeRefundAddress)),
-                    uint256(uint160(callValueRefundAddress)),
-                    gasLimit,
-                    maxFeePerGas,
-                    data.length,
-                    data
-                )
+            _unsafeCreateRetryableTicket(
+                to,
+                l2CallValue,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                msg.value,
+                data
             );
     }
 
@@ -517,11 +488,7 @@ contract Inbox is AbsInbox, IEthInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
-        if (_messageData.length > MAX_DATA_SIZE)
-            revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
-        emit InboxMessageDelivered(msgNum, _messageData);
-        return msgNum;
+        return _deliverMessage(_kind, _sender, _messageData, msg.value);
     }
 
     function deliverToBridge(
@@ -529,6 +496,15 @@ contract Inbox is AbsInbox, IEthInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
+        return deliverToBridge(kind, sender, messageDataHash, 0);
+    }
+
+    function deliverToBridge(
+        uint8 kind,
+        address sender,
+        bytes32 messageDataHash,
+        uint256
+    ) internal override returns (uint256) {
         return
             IEthBridge(address(bridge)).enqueueDelayedMessage{value: msg.value}(
                 kind,
