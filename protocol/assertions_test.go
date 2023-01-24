@@ -147,6 +147,9 @@ func TestAssertionChain(t *testing.T) {
 		root, err := tr.HashTreeRoot()
 		require.NoError(t, err)
 
+		gotRoot := util.ExpansionFromLeaves(blockHashes).Root()
+		require.Equal(t, root[:], gotRoot[:], "mismatch expansion root")
+
 		ok := trie.VerifyMerkleProof(
 			root[:],
 			lastElem,
@@ -157,7 +160,7 @@ func TestAssertionChain(t *testing.T) {
 
 		historyCommit := util.HistoryCommitment{
 			Height:    1,
-			Merkle:    common.BytesToHash(root[:]),
+			Merkle:    util.ExpansionFromLeaves(blockHashes).Root(),
 			Proof:     proofHashes,
 			LastLeaf:  common.BytesToHash(lastElem),
 			NumLeaves: uint64(len(hashesBytes)),
@@ -187,7 +190,7 @@ func TestAssertionChain(t *testing.T) {
 
 		badCommit := util.HistoryCommitment{
 			Height:    1,
-			Merkle:    common.BytesToHash(root[:]),
+			Merkle:    util.ExpansionFromLeaves(blockHashes).Root(),
 			Proof:     proofHashes,
 			LastLeaf:  common.BytesToHash(lastElem),
 			NumLeaves: uint64(len(hashesBytes)),

@@ -5,7 +5,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/prysmaticlabs/prysm/v3/container/trie"
 	"github.com/stretchr/testify/require"
+	"math"
 )
 
 var nullHash = common.Hash{}
@@ -58,6 +60,49 @@ func TestMerkleExpansion(t *testing.T) {
 		h23,
 	)
 	require.NoError(t, err)
+}
+
+func TestMerkleExpansion_AgainstPrysmMerkleTrie(t *testing.T) {
+	hashes := []common.Hash{
+		common.BytesToHash([]byte{1}),
+		common.BytesToHash([]byte{2}),
+	}
+	hashesBytes := make([][]byte, len(hashes))
+	for i, h := range hashes {
+		var tmp [32]byte
+		copy(tmp[:], h[:])
+		hashed := crypto.Keccak256Hash(tmp[:])
+		hashesBytes[i] = hashed[:]
+	}
+	for _, h := range hashesBytes {
+		t.Logf("%#x got hashes bytes", h)
+	}
+	resulting := crypto.Keccak256Hash(hashesBytes[0], hashesBytes[1])
+	t.Logf("%#x resulting", resulting)
+
+	depth := uint64(math.Ceil(math.Log2(float64(len(hashes)))))
+
+	tr, err := trie.GenerateTrieFromItems(hashesBytes, depth)
+	require.NoError(t, err)
+
+	lastIdx := len(hashesBytes) - 1
+	proof, err := tr.MerkleProof(lastIdx)
+	require.NoError(t, err)
+
+	proofHashes := make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		proofHashes[i] = common.BytesToHash(proof[i][:])
+	}
+
+	want, err := tr.HashTreeRoot()
+	require.NoError(t, err)
+	t.Logf("HTR gives %#x", want)
+
+	exp := ExpansionFromLeaves(hashes)
+	t.Logf("%#x and %#x\n", exp[0], exp[1])
+
+	got := exp.Root()
+	require.Equal(t, want[:], got[:], "mismatch expansion root")
 }
 
 func compUncompTest(t *testing.T, me MerkleExpansion) {

@@ -32,14 +32,18 @@ func (me MerkleExpansion) Root() common.Hash {
 	empty := true
 	for _, h := range me {
 		if empty {
+			fmt.Println("no accum, checking")
 			if h != (common.Hash{}) {
+				fmt.Println("no accum, post-check")
 				empty = false
 				accum = h
 			}
 		} else {
+			fmt.Println("Accum")
 			accum = crypto.Keccak256Hash(accum.Bytes(), h.Bytes())
 		}
 	}
+	fmt.Printf("Got result %#x\n", accum)
 	return accum
 }
 
