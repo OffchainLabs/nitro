@@ -3,7 +3,6 @@ package util
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -79,7 +78,6 @@ func (me MerkleExpansion) AppendCompleteSubtree(level uint64, hash common.Hash) 
 		return exp, nil
 	}
 	if level >= uint64(len(me)) {
-		fmt.Println(level, len(me))
 		return nil, ErrInvalidLevel
 	}
 	ret := me.Clone()
