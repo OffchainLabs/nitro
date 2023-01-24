@@ -80,10 +80,10 @@ func NewHistoryCommitment(
 	opts ...CommitOpt,
 ) (HistoryCommitment, error) {
 	if len(leaves) == 0 {
-		return HistoryCommitment{}, errors.New("must commit to at least one leaf")
+		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
 	if height > uint64(len(leaves)) {
-		return HistoryCommitment{}, errors.New("height out of range")
+		return emptyCommit, errors.New("height out of range")
 	}
 	exp := ExpansionFromLeaves(leaves[:height])
 	h := HistoryCommitment{
@@ -92,7 +92,7 @@ func NewHistoryCommitment(
 	}
 	for _, o := range opts {
 		if err := o(&h); err != nil {
-			return HistoryCommitment{}, err
+			return emptyCommit, err
 		}
 	}
 	return h, nil
