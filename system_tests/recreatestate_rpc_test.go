@@ -181,7 +181,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, 0, headerCacheLimit+4)
+	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, 0, headerCacheLimit+5)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -196,7 +196,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	hash := rawdb.ReadCanonicalHash(db, headerToRemove)
 	rawdb.DeleteHeader(db, hash, headerToRemove)
 
-	firstBlock := lastBlock - headerCacheLimit - 4
+	firstBlock := lastBlock - headerCacheLimit - 5
 	fillHeaderCache(t, bc, firstBlock, firstBlock+headerCacheLimit)
 
 	for i := lastBlock; i > lastBlock-3; i-- {
