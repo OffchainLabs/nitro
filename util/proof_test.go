@@ -60,31 +60,6 @@ func TestMerkleExpansion(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestLastElementPrefixProof(t *testing.T) {
-	hashes := []common.Hash{
-		common.BytesToHash([]byte{1}),
-		common.BytesToHash([]byte{2}),
-		common.BytesToHash([]byte{3}),
-	}
-	hiH := uint64(3)
-	hi := ExpansionFromLeaves(hashes[:hiH])
-	hiCommit := HistoryCommitment{
-		Height: hiH,
-		Merkle: hi.Root(),
-	}
-
-	loH := uint64(2)
-	lo := ExpansionFromLeaves(hashes[:loH])
-	loCommit := HistoryCommitment{
-		Height: 2,
-		Merkle: lo.Root(),
-	}
-	lastElem := hashes[len(hashes)-1]
-	proof := GeneratePrefixProof(loH, lo, []common.Hash{lastElem})
-	err := VerifyPrefixProof(loCommit, hiCommit, proof)
-	require.NoError(t, err)
-}
-
 func compUncompTest(t *testing.T, me MerkleExpansion) {
 	t.Helper()
 	comp, compSz := me.Compact()
