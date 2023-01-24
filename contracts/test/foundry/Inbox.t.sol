@@ -309,4 +309,122 @@ contract InboxTest is AbsInboxTest {
             data: abi.encodePacked("data")
         });
     }
+
+    function test_createRetryableTicket_revert_RetryableDataTracer() public {
+        uint256 msgValue = 3 ether;
+        uint256 l2CallValue = 1 ether;
+        uint256 maxSubmissionCost = 0.1 ether;
+        uint256 gasLimit = 100000;
+        uint256 maxFeePerGas = 1;
+        bytes memory data = abi.encodePacked("xy");
+
+        // revert as maxFeePerGas == 1 is magic value
+        vm.prank(user, user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RetryableData.selector,
+                user,
+                user,
+                l2CallValue,
+                msgValue,
+                maxSubmissionCost,
+                user,
+                user,
+                gasLimit,
+                maxFeePerGas,
+                data
+            )
+        );
+        ethInbox.createRetryableTicket{value: msgValue}({
+            to: user,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            data: data
+        });
+
+        gasLimit = 1;
+        maxFeePerGas = 2;
+
+        // revert as gasLimit == 1 is magic value
+        vm.prank(user, user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RetryableData.selector,
+                user,
+                user,
+                l2CallValue,
+                msgValue,
+                maxSubmissionCost,
+                user,
+                user,
+                gasLimit,
+                maxFeePerGas,
+                data
+            )
+        );
+        ethInbox.createRetryableTicket{value: msgValue}({
+            to: user,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            data: data
+        });
+    }
+
+    function test_createRetryableTicket_revert_GasLimitTooLarge() public {
+        uint256 tooBigGasLimit = uint256(type(uint64).max) + 1;
+
+        vm.deal(user, uint256(type(uint64).max) * 3);
+        vm.prank(user, user);
+        vm.expectRevert(GasLimitTooLarge.selector);
+        ethInbox.createRetryableTicket{value: uint256(type(uint64).max) * 3}({
+            to: user,
+            l2CallValue: 100,
+            maxSubmissionCost: 0,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: tooBigGasLimit,
+            maxFeePerGas: 2,
+            data: abi.encodePacked("data")
+        });
+    }
+
+    function test_createRetryableTicket_revert_InsufficientSubmissionCost() public {
+        uint256 tooSmallMaxSubmissionCost = 5;
+        bytes memory data = abi.encodePacked("msg");
+
+        // simulate 23 gwei basefee
+        vm.fee(23000000000);
+        uint256 submissionFee = ethInbox.calculateRetryableSubmissionFee(
+            data.length,
+            block.basefee
+        );
+
+        // call shall revert
+        vm.prank(user, user);
+        vm.expectRevert(
+            abi.encodePacked(
+                InsufficientSubmissionCost.selector,
+                submissionFee,
+                tooSmallMaxSubmissionCost
+            )
+        );
+        ethInbox.createRetryableTicket{value: 1 ether}({
+            to: user,
+            l2CallValue: 100,
+            maxSubmissionCost: tooSmallMaxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: 60000,
+            maxFeePerGas: 0.00000001 ether,
+            data: data
+        });
+    }
 }

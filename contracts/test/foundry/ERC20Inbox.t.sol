@@ -328,13 +328,101 @@ contract ERC20InboxTest is AbsInboxTest {
         );
         erc20Inbox.createRetryableTicket({
             to: user,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            tokenTotalFeeAmount: tooSmallTokenTotalFeeAmount,
+            data: abi.encodePacked("data")
+        });
+    }
+
+    function test_createRetryableTicket_revert_RetryableDataTracer() public {
+        uint256 tokenTotalFeeAmount = 300;
+        uint256 l2CallValue = 100;
+        uint256 maxSubmissionCost = 0;
+        uint256 gasLimit = 10;
+        uint256 maxFeePerGas = 1;
+        bytes memory data = abi.encodePacked("xy");
+
+        // revert as maxFeePerGas == 1 is magic value
+        vm.prank(user, user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RetryableData.selector,
+                user,
+                user,
+                l2CallValue,
+                tokenTotalFeeAmount,
+                maxSubmissionCost,
+                user,
+                user,
+                gasLimit,
+                maxFeePerGas,
+                data
+            )
+        );
+        erc20Inbox.createRetryableTicket({
+            to: user,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            tokenTotalFeeAmount: tokenTotalFeeAmount,
+            data: data
+        });
+
+        gasLimit = 1;
+        maxFeePerGas = 2;
+
+        // revert as gasLimit == 1 is magic value
+        vm.prank(user, user);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RetryableData.selector,
+                user,
+                user,
+                l2CallValue,
+                tokenTotalFeeAmount,
+                maxSubmissionCost,
+                user,
+                user,
+                gasLimit,
+                maxFeePerGas,
+                data
+            )
+        );
+        erc20Inbox.createRetryableTicket({
+            to: user,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            tokenTotalFeeAmount: tokenTotalFeeAmount,
+            data: data
+        });
+    }
+
+    function test_createRetryableTicket_revert_GasLimitTooLarge() public {
+        uint256 tooBigGasLimit = uint256(type(uint64).max) + 1;
+
+        vm.prank(user, user);
+        vm.expectRevert(GasLimitTooLarge.selector);
+        erc20Inbox.createRetryableTicket({
+            to: user,
             l2CallValue: 100,
             maxSubmissionCost: 0,
             excessFeeRefundAddress: user,
             callValueRefundAddress: user,
-            gasLimit: 10,
-            maxFeePerGas: 1,
-            tokenTotalFeeAmount: tooSmallTokenTotalFeeAmount,
+            gasLimit: tooBigGasLimit,
+            maxFeePerGas: 2,
+            tokenTotalFeeAmount: uint256(type(uint64).max) * 3,
             data: abi.encodePacked("data")
         });
     }
