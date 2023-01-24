@@ -597,7 +597,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.StorageRaceErr) {
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.ErrStorageRace) {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {
