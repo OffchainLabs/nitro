@@ -131,4 +131,67 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         allowListEnabled = false;
         __Pausable_init();
     }
+
+    function validateRetryableInputValue(
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 amount
+    ) internal view returns (address, address) {
+        // ensure the user's deposit alone will make submission succeed
+        if (amount < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
+            revert InsufficientValue(
+                maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
+                amount
+            );
+        }
+
+        // if a refund address is a contract, we apply the alias to it
+        // so that it can access its funds on the L2
+        // since the beneficiary and other refund addresses don't get rewritten by arb-os
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
+            excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
+        }
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
+            // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
+            callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
+        }
+
+        return (excessFeeRefundAddress, callValueRefundAddress);
+    }
+
+    function validateRetryableSubmissionParams(
+        address to,
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        bytes calldata data
+    ) internal view {
+        // gas price and limit of 1 should never be a valid input, so instead they are used as
+        // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
+        if (gasLimit == 1 || maxFeePerGas == 1)
+            revert RetryableData(
+                msg.sender,
+                to,
+                l2CallValue,
+                msg.value,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                data
+            );
+
+        // arbos will discard retryable with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
+    }
 }

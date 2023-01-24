@@ -287,6 +287,7 @@ contract Inbox is AbsInbox, IEthInbox {
     function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
         public
         view
+        override
         returns (uint256)
     {
         // Use current block basefee if baseFee parameter is 0
@@ -365,26 +366,16 @@ contract Inbox is AbsInbox, IEthInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
-        // ensure the user's deposit alone will make submission succeed
-        if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
-            revert InsufficientValue(
-                maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
-                msg.value
-            );
-        }
+        (excessFeeRefundAddress, callValueRefundAddress) = validateRetryableInputValue(
+            l2CallValue,
+            maxSubmissionCost,
+            excessFeeRefundAddress,
+            callValueRefundAddress,
+            gasLimit,
+            maxFeePerGas,
+            msg.value
+        );
 
-        // if a refund address is a contract, we apply the alias to it
-        // so that it can access its funds on the L2
-        // since the beneficiary and other refund addresses don't get rewritten by arb-os
-        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
-            excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
-        }
-        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
-            // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
-            callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
-        }
-
-        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -409,26 +400,16 @@ contract Inbox is AbsInbox, IEthInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable whenNotPaused onlyAllowed returns (uint256) {
-        // gas price and limit of 1 should never be a valid input, so instead they are used as
-        // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
-        if (gasLimit == 1 || maxFeePerGas == 1)
-            revert RetryableData(
-                msg.sender,
-                to,
-                l2CallValue,
-                msg.value,
-                maxSubmissionCost,
-                excessFeeRefundAddress,
-                callValueRefundAddress,
-                gasLimit,
-                maxFeePerGas,
-                data
-            );
-
-        // arbos will discard retryable with gas limit too large
-        if (gasLimit > type(uint64).max) {
-            revert GasLimitTooLarge();
-        }
+        validateRetryableSubmissionParams(
+            to,
+            l2CallValue,
+            maxSubmissionCost,
+            excessFeeRefundAddress,
+            callValueRefundAddress,
+            gasLimit,
+            maxFeePerGas,
+            data
+        );
 
         uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
         if (maxSubmissionCost < submissionFee)
