@@ -869,7 +869,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		return nil, err
 	}
 	if bisectionHeight != history.Height {
-		return nil, errors.Wrapf(ErrInvalidHeight, fmt.Sprintf("%d != %d", bisectionHeight, history))
+		return nil, errors.Wrapf(ErrInvalidHeight, fmt.Sprintf("%d != %v", bisectionHeight, history))
 	}
 	if err := util.VerifyPrefixProof(history, v.Commitment, proof); err != nil {
 		return nil, err
