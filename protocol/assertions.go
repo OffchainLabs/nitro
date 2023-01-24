@@ -589,15 +589,27 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	return nil
 }
 
+type ChallengeType uint
+
+const (
+	NoChallengeType    ChallengeType = iota
+	BlockChallenge                   = 1
+	BigStepChallenge                 = 2
+	SmallStepChallenge               = 3
+)
+
 // Challenge created by an assertion.
 type Challenge struct {
 	rootAssertion          util.Option[*Assertion]
 	WinnerAssertion        util.Option[*Assertion]
+	WinnerVertex           util.Option[*ChallengeVertex]
 	rootVertex             util.Option[*ChallengeVertex]
 	leafVertexCount        uint64
 	creationTime           time.Time
 	includedHistories      map[common.Hash]bool
 	currentVertexSeqNumber VertexSequenceNumber
+	challengePeriod        time.Duration
+	challengeType          ChallengeType
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
@@ -625,15 +637,18 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 		Prev:                 util.None[*ChallengeVertex](),
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              util.NewCountUpTimer(a.chain.timeReference),
-		SubChallenge:         util.None[*SubChallenge](),
+		SubChallenge:         util.None[*Challenge](),
 	}
 
 	chal := &Challenge{
 		rootAssertion:     util.Some(a),
 		WinnerAssertion:   util.None[*Assertion](),
+		WinnerVertex:      util.None[*ChallengeVertex](),
 		rootVertex:        util.Some(rootVertex),
 		creationTime:      a.chain.timeReference.Get(),
 		includedHistories: make(map[common.Hash]bool),
+		challengePeriod:   a.chain.challengePeriod,
+		challengeType:     BlockChallenge,
 	}
 	rootVertex.Challenge = util.Some(chal)
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
@@ -719,7 +734,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		Prev:                 c.rootVertex,
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              timer,
-		SubChallenge:         util.None[*SubChallenge](),
+		SubChallenge:         util.None[*Challenge](),
 		winnerIfConfirmed:    util.Some[*Assertion](assertion),
 	}
 	c.currentVertexSeqNumber = nextSeqNumber
@@ -803,7 +818,7 @@ type ChallengeVertex struct {
 	Prev                 util.Option[*ChallengeVertex]
 	PresumptiveSuccessor util.Option[*ChallengeVertex]
 	PsTimer              *util.CountUpTimer
-	SubChallenge         util.Option[*SubChallenge]
+	SubChallenge         util.Option[*Challenge]
 	winnerIfConfirmed    util.Option[*Assertion]
 }
 
@@ -936,7 +951,11 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
 	}
 	subChal := v.Prev.Unwrap().SubChallenge
-	if subChal.IsNone() || subChal.Unwrap().Winner != v {
+	if subChal.IsNone() || subChal.Unwrap().WinnerVertex.IsNone() {
+		return ErrInvalidOp
+	}
+	winnerVertex := subChal.Unwrap().WinnerVertex.Unwrap()
+	if winnerVertex != v {
 		return ErrInvalidOp
 	}
 	v._confirm(tx)
@@ -1008,38 +1027,4 @@ func (v *ChallengeVertex) _confirm(tx *ActiveTx) {
 		v.Challenge.Unwrap().rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, refund)
 		v.Challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
 	}
-}
-
-// CreateSubChallenge creates a sub-challenge for the vertex.
-func (v *ChallengeVertex) CreateSubChallenge(tx *ActiveTx) error {
-	tx.verifyReadWrite()
-	if !v.SubChallenge.IsNone() {
-		return ErrVertexAlreadyExists
-	}
-	if v.Status == ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
-	}
-	v.SubChallenge = util.Some[*SubChallenge](&SubChallenge{
-		parent: v,
-		Winner: nil,
-	})
-	return nil
-}
-
-type SubChallenge struct {
-	parent *ChallengeVertex
-	Winner *ChallengeVertex
-}
-
-// SetWinner sets the winner of the sub-challenge.
-func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
-	tx.verifyReadWrite()
-	if sc.Winner != nil {
-		return ErrInvalidOp
-	}
-	if winner.Prev.Unwrap() != sc.parent {
-		return ErrInvalidOp
-	}
-	sc.Winner = winner
-	return nil
 }

@@ -2,11 +2,15 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "state-manager",
-    srcs = ["manager.go"],
+    srcs = [
+        "manager.go",
+        "manager_provider.go",
+    ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/state-manager",
     visibility = ["//visibility:public"],
     deps = [
         "//protocol",
+        "//state-manager/backend",
         "//util",
         "@com_github_ethereum_go_ethereum//common",
     ],
