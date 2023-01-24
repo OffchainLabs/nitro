@@ -24,3 +24,25 @@ type HistoryCommitment struct {
 func (comm HistoryCommitment) Hash() common.Hash {
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.Merkle.Bytes())
 }
+
+type CommitOpt func(c *HistoryCommitment)
+
+func WithLastElementProof() CommitOpt {
+	return func(c *HistoryCommitment) {
+
+	}
+}
+
+func NewHistoryCommitment(
+	height uint64,
+	leaves []common.Hash,
+	opts ...CommitOpt,
+) HistoryCommitment {
+	h := HistoryCommitment{
+		Height: height,
+	}
+	for _, o := range opts {
+		o(&h)
+	}
+	return h
+}
