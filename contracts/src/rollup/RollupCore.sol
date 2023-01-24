@@ -524,7 +524,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     }
 
     function createNewNode(
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         uint64 prevNodeNum,
         uint256 prevNodeInboxMaxCount,
         bytes32 expectedNodeHash

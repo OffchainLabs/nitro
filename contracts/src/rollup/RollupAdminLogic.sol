@@ -76,7 +76,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     function createInitialNode() private view returns (Node memory) {
         GlobalState memory emptyGlobalState;
         bytes32 state = RollupLib.stateHashMem(
-            RollupLib.ExecutionState(emptyGlobalState, MachineStatus.FINISHED),
+            ExecutionState(emptyGlobalState, MachineStatus.FINISHED),
             1 // inboxMaxCount - force the first assertion to read a message
         );
         return
@@ -285,7 +285,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     function forceCreateNode(
         uint64 prevNode,
         uint256 prevNodeInboxMaxCount,
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         bytes32 expectedNodeHash
     ) external override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
@@ -340,7 +340,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(28);
     }
 
-    function createNitroMigrationGenesis(RollupLib.Assertion calldata assertion)
+    function createNitroMigrationGenesis(OldAssertion calldata assertion)
         external
         whenPaused
     {

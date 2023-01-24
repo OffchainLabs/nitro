@@ -15,6 +15,17 @@ import "../bridge/IInbox.sol";
 import "./IRollupEventInbox.sol";
 import "./IRollupLogic.sol";
 
+struct ExecutionState {
+    GlobalState globalState;
+    MachineStatus machineStatus;
+}
+
+struct OldAssertion {
+    ExecutionState beforeState;
+    ExecutionState afterState;
+    uint64 numBlocks;
+}
+
 struct Config {
     uint64 confirmPeriodBlocks;
     uint64 extraChallengeTimeBlocks;
@@ -44,11 +55,6 @@ struct ContractDependencies {
 
 library RollupLib {
     using GlobalStateLib for GlobalState;
-
-    struct ExecutionState {
-        GlobalState globalState;
-        MachineStatus machineStatus;
-    }
 
     function stateHash(ExecutionState calldata execState, uint256 inboxMaxCount)
         internal
@@ -81,13 +87,7 @@ library RollupLib {
             );
     }
 
-    struct Assertion {
-        ExecutionState beforeState;
-        ExecutionState afterState;
-        uint64 numBlocks;
-    }
-
-    function executionHash(Assertion memory assertion) internal pure returns (bytes32) {
+    function executionHash(OldAssertion memory assertion) internal pure returns (bytes32) {
         MachineStatus[2] memory statuses;
         statuses[0] = assertion.beforeState.machineStatus;
         statuses[1] = assertion.afterState.machineStatus;
@@ -117,7 +117,7 @@ library RollupLib {
         return keccak256(abi.encodePacked(execution, proposedTime, wasmModuleRoot));
     }
 
-    function confirmHash(Assertion memory assertion) internal pure returns (bytes32) {
+    function confirmHash(OldAssertion memory assertion) internal pure returns (bytes32) {
         return
             confirmHash(
                 assertion.afterState.globalState.getBlockHash(),

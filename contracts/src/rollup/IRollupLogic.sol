@@ -28,7 +28,7 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
     function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external;
 
     function stakeOnNewNode(
-        RollupLib.Assertion memory assertion,
+        OldAssertion memory assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external;
@@ -75,7 +75,7 @@ interface IRollupUser is IRollupUserAbs {
     function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
 
     function newStakeOnNewNode(
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external payable;
@@ -92,7 +92,7 @@ interface IRollupUserERC20 is IRollupUserAbs {
 
     function newStakeOnNewNode(
         uint256 tokenAmount,
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external;
@@ -196,7 +196,7 @@ interface IRollupAdmin {
     function forceCreateNode(
         uint64 prevNode,
         uint256 prevNodeInboxMaxCount,
-        RollupLib.Assertion memory assertion,
+        OldAssertion memory assertion,
         bytes32 expectedNodeHash
     ) external;
 

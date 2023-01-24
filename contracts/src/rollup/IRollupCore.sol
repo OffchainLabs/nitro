@@ -24,7 +24,7 @@ interface IRollupCore {
         bytes32 indexed parentNodeHash,
         bytes32 indexed nodeHash,
         bytes32 executionHash,
-        RollupLib.Assertion assertion,
+        OldAssertion assertion,
         bytes32 afterInboxBatchAcc,
         bytes32 wasmModuleRoot,
         uint256 inboxMaxCount

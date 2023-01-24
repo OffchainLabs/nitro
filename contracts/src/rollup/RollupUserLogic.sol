@@ -189,7 +189,7 @@ abstract contract AbsRollupUserLogic is
      * @param expectedNodeHash The hash of the node being created (protects against reorgs)
      */
     function stakeOnNewNode(
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) public onlyValidator whenNotPaused {
@@ -632,7 +632,7 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @param prevNodeInboxMaxCount Total of messages in the inbox as of the previous node
      */
     function newStakeOnNewNode(
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external payable override {
@@ -701,7 +701,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
      */
     function newStakeOnNewNode(
         uint256 tokenAmount,
-        RollupLib.Assertion calldata assertion,
+        OldAssertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external override {
