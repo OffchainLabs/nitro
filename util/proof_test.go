@@ -5,7 +5,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/prysmaticlabs/prysm/v3/container/trie"
 	"github.com/stretchr/testify/require"
 	"math"
 )
@@ -62,7 +61,7 @@ func TestMerkleExpansion(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestMerkleExpansion_AgainstPrysmMerkleTrie(t *testing.T) {
+func TestMerkleExpansion_AgainstSparseMerkleTrie(t *testing.T) {
 	hashes := []common.Hash{
 		common.BytesToHash([]byte{1}),
 		common.BytesToHash([]byte{2}),
@@ -82,7 +81,7 @@ func TestMerkleExpansion_AgainstPrysmMerkleTrie(t *testing.T) {
 
 	depth := uint64(math.Ceil(math.Log2(float64(len(hashes)))))
 
-	tr, err := trie.GenerateTrieFromItems(hashesBytes, depth)
+	tr, err := GenerateTrieFromItems(hashesBytes, depth)
 	require.NoError(t, err)
 
 	lastIdx := len(hashesBytes) - 1
@@ -94,8 +93,7 @@ func TestMerkleExpansion_AgainstPrysmMerkleTrie(t *testing.T) {
 		proofHashes[i] = common.BytesToHash(proof[i][:])
 	}
 
-	want, err := tr.HashTreeRoot()
-	require.NoError(t, err)
+	want := tr.Root()
 	t.Logf("HTR gives %#x", want)
 
 	exp := ExpansionFromLeaves(hashes)

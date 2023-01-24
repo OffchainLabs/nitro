@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v3/container/trie"
 )
 
 var (
@@ -754,7 +753,7 @@ func (c *Challenge) AddLeaf(
 		copy(b[:], elem[:])
 		proofBytes[i] = b[:]
 	}
-	if !trie.VerifyMerkleProof(
+	if !util.VerifyMerkleProof(
 		history.Merkle[:],
 		history.LastLeaf[:],
 		history.NumLeaves-1,

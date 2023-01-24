@@ -9,7 +9,6 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/prysmaticlabs/prysm/v3/container/trie"
 	"github.com/stretchr/testify/require"
 )
 
@@ -134,7 +133,7 @@ func TestAssertionChain(t *testing.T) {
 			hashesBytes[i] = blockHashes[i][:]
 		}
 		depth := uint64(math.Ceil(math.Log2(float64(len(hashesBytes)))))
-		tr, err := trie.GenerateTrieFromItems(hashesBytes, depth)
+		tr, err := util.GenerateTrieFromItems(hashesBytes, depth)
 		require.NoError(t, err)
 		lastElem := hashesBytes[len(hashesBytes)-1]
 		lastIdx := len(hashesBytes) - 1
@@ -144,13 +143,11 @@ func TestAssertionChain(t *testing.T) {
 		for i := 0; i < len(proof); i++ {
 			proofHashes[i] = common.BytesToHash(proof[i][:])
 		}
-		root, err := tr.HashTreeRoot()
-		require.NoError(t, err)
-
+		root := tr.Root()
 		gotRoot := util.ExpansionFromLeaves(blockHashes).Root()
 		require.Equal(t, root[:], gotRoot[:], "mismatch expansion root")
 
-		ok := trie.VerifyMerkleProof(
+		ok := util.VerifyMerkleProof(
 			root[:],
 			lastElem,
 			uint64(lastIdx),
@@ -175,7 +172,7 @@ func TestAssertionChain(t *testing.T) {
 			hashesBytes[i] = blockHashes[i][:]
 		}
 
-		tr, err = trie.GenerateTrieFromItems(hashesBytes, depth)
+		tr, err = util.GenerateTrieFromItems(hashesBytes, depth)
 		require.NoError(t, err)
 		lastElem = hashesBytes[len(hashesBytes)-1]
 		lastIdx = len(hashesBytes) - 1
@@ -185,8 +182,7 @@ func TestAssertionChain(t *testing.T) {
 		for i := 0; i < len(proof); i++ {
 			proofHashes[i] = common.BytesToHash(proof[i][:])
 		}
-		root, err = tr.HashTreeRoot()
-		require.NoError(t, err)
+		root = tr.Root()
 
 		badCommit := util.HistoryCommitment{
 			Height:    1,
