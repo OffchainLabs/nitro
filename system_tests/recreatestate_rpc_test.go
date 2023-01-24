@@ -63,8 +63,7 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 	bc = node.Backend.ArbInterface().BlockChain()
 	db = node.Backend.ChainDb()
 
-	lastBlock, err := l2client.BlockNumber(ctx)
-	testhelpers.RequireImpl(t, err)
+	return
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
