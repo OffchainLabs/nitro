@@ -95,7 +95,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		p.On("Completed", &protocol.ActiveTx{}).Return(
 			false,
 		)
-		p.On("HasConfirmedAboveSeqNumber", &protocol.ActiveTx{}, vertex.SequenceNum).Return(
+		p.On("HasConfirmedSibling", &protocol.ActiveTx{}, vertex.SequenceNum).Return(
 			false, nil,
 		)
 		p.On(
@@ -532,8 +532,8 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	// Can confirm if vertex has won subchallenge
 	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
 		Status: protocol.ConfirmedAssertionState,
-		SubChallenge: util.Some(&protocol.SubChallenge{
-			Winner: tracker.vertex,
+		SubChallenge: util.Some(&protocol.Challenge{
+			WinnerVertex: util.Some(tracker.vertex),
 		}),
 	})
 	confirmed, err = tracker.confirmed()
@@ -544,8 +544,8 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	tracker.vertex.Status = protocol.PendingAssertionState
 	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
 		Status: protocol.ConfirmedAssertionState,
-		SubChallenge: util.Some(&protocol.SubChallenge{
-			Winner: &protocol.ChallengeVertex{},
+		SubChallenge: util.Some(&protocol.Challenge{
+			WinnerVertex: util.Some(&protocol.ChallengeVertex{}),
 		}),
 	})
 	confirmed, err = tracker.confirmed()
@@ -556,7 +556,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	tracker.vertex.Status = protocol.PendingAssertionState
 	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
 		Status:       protocol.ConfirmedAssertionState,
-		SubChallenge: util.None[*protocol.SubChallenge](),
+		SubChallenge: util.None[*protocol.Challenge](),
 	})
 	tracker.vertex.PsTimer.Add(1000000001)
 	confirmed, err = tracker.confirmed()
@@ -567,7 +567,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	tracker.vertex.Status = protocol.PendingAssertionState
 	tracker.vertex.Prev = util.Some(&protocol.ChallengeVertex{
 		Status:               protocol.ConfirmedAssertionState,
-		SubChallenge:         util.None[*protocol.SubChallenge](),
+		SubChallenge:         util.None[*protocol.Challenge](),
 		PresumptiveSuccessor: util.Some(tracker.vertex),
 	})
 	confirmed, err = tracker.confirmed()

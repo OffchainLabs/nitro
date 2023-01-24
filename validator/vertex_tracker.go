@@ -96,7 +96,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	var siblingConfirmed bool
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		challengeCompleted = v.challenge.Completed(tx)
-		siblingConfirmed = v.challenge.HasConfirmedAboveSeqNumber(tx, v.vertex.SequenceNum)
+		siblingConfirmed = v.challenge.HasConfirmedSibling(tx, v.vertex)
 		return nil
 	}); err != nil {
 		return err
@@ -247,8 +247,9 @@ func (v *vertexTracker) confirmed() (bool, error) {
 
 	// Can confirm if vertex's parent has a sub-challenge, and the sub-challenge has reported vertex as its winner.
 	subChallenge := v.vertex.Prev.Unwrap().SubChallenge
-	if !subChallenge.IsNone() {
-		if subChallenge.Unwrap().Winner == v.vertex {
+	if !subChallenge.IsNone() && !subChallenge.Unwrap().WinnerVertex.IsNone() {
+		winner := subChallenge.Unwrap().WinnerVertex.Unwrap()
+		if winner == v.vertex {
 			if err := v.validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 				return v.vertex.ConfirmForSubChallengeWin(tx)
 			}); err != nil {
