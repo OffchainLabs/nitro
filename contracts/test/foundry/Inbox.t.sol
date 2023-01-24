@@ -129,7 +129,7 @@ contract InboxTest is AbsInboxTest {
         uint256 l2CallValue = 0.1 ether;
         uint256 maxSubmissionCost = 0.1 ether;
         uint256 gasLimit = 100_000;
-        uint256 maxFeePerGas = 0.000000001 ether;
+        uint256 maxFeePerGas = 0.000000002 ether;
         bytes memory data = abi.encodePacked("some msg");
 
         // expect event
@@ -284,28 +284,28 @@ contract InboxTest is AbsInboxTest {
     }
 
     function test_createRetryableTicket_revert_InsufficientValue() public {
-        uint256 tooSmallTokenTotalFeeAmount = 3;
-        uint256 l2CallValue = 100;
-        uint256 maxSubmissionCost = 0;
-        uint256 gasLimit = 10;
-        uint256 maxFeePerGas = 1;
+        uint256 tooSmallEthAmount = 1 ether;
+        uint256 l2CallValue = 2 ether;
+        uint256 maxSubmissionCost = 0.1 ether;
+        uint256 gasLimit = 200000;
+        uint256 maxFeePerGas = 0.00000002 ether;
 
         vm.prank(user, user);
         vm.expectRevert(
             abi.encodeWithSelector(
                 InsufficientValue.selector,
                 maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
-                tooSmallTokenTotalFeeAmount
+                tooSmallEthAmount
             )
         );
-        ethInbox.createRetryableTicket({
+        ethInbox.createRetryableTicket{value: tooSmallEthAmount}({
             to: user,
-            l2CallValue: 100,
-            maxSubmissionCost: 0,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
             excessFeeRefundAddress: user,
             callValueRefundAddress: user,
-            gasLimit: 10,
-            maxFeePerGas: 1,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
             data: abi.encodePacked("data")
         });
     }
