@@ -108,7 +108,7 @@ type AssertionChain struct {
 	challengePeriod               time.Duration
 	latestConfirmed               AssertionSequenceNumber
 	assertions                    []*Assertion
-	assertionsSeen                map[common.Hash]AssertionSequenceNumber
+	assertionsBySeqNum            map[common.Hash]AssertionSequenceNumber
 	challengeVerticesByCommitHash map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex
 	challengesByCommitHash        map[ChallengeCommitHash]*Challenge
 	balances                      *util.MapWithDefault[common.Address, *big.Int]
@@ -235,7 +235,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:                          NewEventFeed[AssertionChainEvent](ctx),
 		challengesFeed:                NewEventFeed[ChallengeEvent](ctx),
 		inbox:                         NewInbox(ctx),
-		assertionsSeen:                assertionsSeen,
+		assertionsBySeqNum:            assertionsSeen,
 	}
 	genesis.chain = chain
 	return chain
@@ -413,13 +413,13 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	}
 
 	// Ensure the assertion being created is not a duplicate.
-	if _, ok := chain.assertionsSeen[commitment.Hash()]; ok {
+	if _, ok := chain.assertionsBySeqNum[commitment.Hash()]; ok {
 		return nil, ErrVertexAlreadyExists
 	}
 
 	if !prev.Prev.IsNone() {
 		// The parent must exist on-chain.
-		prevSeqNum, ok := chain.assertionsSeen[prev.StateCommitment.Hash()]
+		prevSeqNum, ok := chain.assertionsBySeqNum[prev.StateCommitment.Hash()]
 		if !ok {
 			return nil, ErrParentDoesNotExist
 		}
@@ -469,7 +469,7 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 		prev.secondChildCreationTime = util.Some(chain.timeReference.Get())
 	}
 	chain.assertions = append(chain.assertions, leaf)
-	chain.assertionsSeen[commitment.Hash()] = leaf.SequenceNum
+	chain.assertionsBySeqNum[commitment.Hash()] = leaf.SequenceNum
 	chain.feed.Append(&CreateLeafEvent{
 		PrevStateCommitment: prev.StateCommitment,
 		PrevSeqNum:          prev.SequenceNum,
@@ -600,17 +600,16 @@ const (
 
 // Challenge created by an assertion.
 type Challenge struct {
-	rootAssertion         util.Option[*Assertion]
-	WinnerAssertion       util.Option[*Assertion]
-	WinnerVertex          util.Option[*ChallengeVertex]
-	rootVertex            util.Option[*ChallengeVertex]
-	latestConfirmedVertex util.Option[*ChallengeVertex]
-	leafVertexCount       uint64
-	creationTime          time.Time
-	includedHistories     map[common.Hash]bool
-	nextSequenceNum       VertexSequenceNumber
-	challengePeriod       time.Duration
-	challengeType         ChallengeType
+	rootAssertion          util.Option[*Assertion]
+	WinnerAssertion        util.Option[*Assertion]
+	WinnerVertex           util.Option[*ChallengeVertex]
+	rootVertex             util.Option[*ChallengeVertex]
+	leafVertexCount        uint64
+	creationTime           time.Time
+	includedHistories      map[common.Hash]bool
+	currentVertexSeqNumber VertexSequenceNumber
+	challengePeriod        time.Duration
+	challengeType          ChallengeType
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
@@ -642,15 +641,14 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 	}
 
 	chal := &Challenge{
-		rootAssertion:         util.Some(a),
-		WinnerAssertion:       util.None[*Assertion](),
-		rootVertex:            util.Some(rootVertex),
-		latestConfirmedVertex: util.Some(rootVertex),
-		creationTime:          a.chain.timeReference.Get(),
-		includedHistories:     make(map[common.Hash]bool),
-		nextSequenceNum:       currSeqNumber + 1,
-		challengePeriod:       a.chain.challengePeriod,
-		challengeType:         BlockChallenge,
+		rootAssertion:     util.Some(a),
+		WinnerAssertion:   util.None[*Assertion](),
+		WinnerVertex:      util.None[*ChallengeVertex](),
+		rootVertex:        util.Some(rootVertex),
+		creationTime:      a.chain.timeReference.Get(),
+		includedHistories: make(map[common.Hash]bool),
+		challengePeriod:   a.chain.challengePeriod,
+		challengeType:     BlockChallenge,
 	}
 	rootVertex.Challenge = util.Some(chal)
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
@@ -725,9 +723,10 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		delta := prev.secondChildCreationTime.Unwrap().Sub(prev.firstChildCreationTime.Unwrap())
 		timer.Set(delta)
 	}
+	nextSeqNumber := c.currentVertexSeqNumber + 1
 	leaf := &ChallengeVertex{
 		Challenge:            util.Some[*Challenge](c),
-		SequenceNum:          c.nextSequenceNum,
+		SequenceNum:          nextSeqNumber,
 		Validator:            validator,
 		isLeaf:               true,
 		Status:               PendingAssertionState,
@@ -738,7 +737,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		SubChallenge:         util.None[*Challenge](),
 		winnerIfConfirmed:    util.Some[*Assertion](assertion),
 	}
-	c.nextSequenceNum++
+	c.currentVertexSeqNumber = nextSeqNumber
 	c.rootVertex.Unwrap().maybeNewPresumptiveSuccessor(leaf)
 	c.rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeLeafEvent{
 		ParentSeqNum:      leaf.Prev.Unwrap().SequenceNum,
@@ -778,8 +777,8 @@ func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 	return c.WinnerAssertion.Unwrap(), nil
 }
 
-// HasConfirmedAboveSeqNumber returns true if another vertex with higher sequence number has confirmed.
-func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequenceNumber) bool {
+// HasConfirmedSibling returns true if another sibling vertex is confirmed.
+func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex *ChallengeVertex) bool {
 	tx.verifyRead()
 
 	if c.rootAssertion.IsNone() {
@@ -789,11 +788,23 @@ func (c *Challenge) HasConfirmedAboveSeqNumber(tx *ActiveTx, seqNum VertexSequen
 	if !ok {
 		return false
 	}
-	for _, vertex := range vertices {
-		if vertex.SequenceNum > seqNum && vertex.Status == ConfirmedAssertionState {
-			return true
+
+	if vertex.Prev.IsNone() {
+		return false
+	}
+	parentHash := vertex.Prev.Unwrap().Commitment.Hash()
+	for _, v := range vertices {
+		if v.Prev.IsNone() {
+			continue
+		}
+		// We only check vertices that have a matching parent commit hash.
+		if v.Prev.Unwrap().Commitment.Hash() == parentHash {
+			if vertex != v && v.Status == ConfirmedAssertionState {
+				return true
+			}
 		}
 	}
+
 	return false
 }
 
@@ -865,9 +876,10 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	}
 
 	v.PsTimer.Stop()
+	nextSeqNum := v.SequenceNum + 1
 	newVertex := &ChallengeVertex{
 		Challenge:            v.Challenge,
-		SequenceNum:          v.Challenge.Unwrap().nextSequenceNum,
+		SequenceNum:          nextSeqNum,
 		Validator:            validator,
 		isLeaf:               false,
 		Commitment:           history,
@@ -875,7 +887,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              v.PsTimer.Clone(),
 	}
-	newVertex.Challenge.Unwrap().nextSequenceNum++
+	v.SequenceNum = nextSeqNum
 	newVertex.maybeNewPresumptiveSuccessor(v)
 	newVertex.Prev.Unwrap().maybeNewPresumptiveSuccessor(newVertex)
 	newVertex.Challenge.Unwrap().includedHistories[history.Hash()] = true
