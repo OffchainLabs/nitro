@@ -67,19 +67,19 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 }
 
 func fillHeaderCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
-	for i := to; i >= from; i-- {
+	for i := from; i <= to; i++ {
 		header := bc.GetHeaderByNumber(i)
 		if header == nil {
-			testhelpers.FailImpl(t, "internal test error - failed to get header while trying to fill headerCache")
+			testhelpers.FailImpl(t, "internal test error - failed to get header while trying to fill headerCache, header:", i)
 		}
 	}
 }
 
 func fillBlockCache(t *testing.T, bc *core.BlockChain, from, to uint64) {
-	for i := to; i >= from; i-- {
+	for i := from; i <= to; i++ {
 		block := bc.GetBlockByNumber(i)
 		if block == nil {
-			testhelpers.FailImpl(t, "internal test error - failed to get block while trying to fill blockCache")
+			testhelpers.FailImpl(t, "internal test error - failed to get block while trying to fill blockCache, block:", i)
 		}
 	}
 }
