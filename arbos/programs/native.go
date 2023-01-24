@@ -38,7 +38,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -70,10 +69,7 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
 	}
 
-	module, err := db.GetUserModule(1, program)
-	if err != nil {
-		log.Crit("instance module does not exist")
-	}
+	module := db.GetCompiledWasmCode(program)
 
 	output := rustVec()
 	status := userStatus(C.stylus_call(

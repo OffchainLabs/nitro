@@ -24,9 +24,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/core/state"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -96,6 +96,16 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 		pool.Sub(pool, take)
 		return new(big.Int).Set(take)
 	}
+}
+
+func (p *TxProcessor) ExecuteWASM(contract *vm.Contract, input []byte, readOnly bool, txContext vm.TxContext, blockContext vm.BlockContext) ([]byte, error) {
+	// We recieve a number of extra args here to prepare for being stateful and context-aware execution
+	return p.state.Programs().CallProgram(
+		p.evm.StateDB,
+		contract.Address(),
+		input,
+		&contract.Gas,
+	)
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
