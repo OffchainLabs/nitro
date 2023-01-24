@@ -20,7 +20,7 @@ func TestChallengeVertex_CreateBigStepChallenge(t *testing.T) {
 		err := v.CreateBigStepChallenge(tx)
 		require.NoError(t, err)
 		sub := v.SubChallenge.Unwrap()
-		require.Equal(t, ChallengeKind(BigStepChallenge), sub.kind)
+		require.Equal(t, ChallengeType(BigStepChallenge), sub.challengeType)
 	})
 }
 
@@ -36,11 +36,11 @@ func TestChallengeVertex_CreateSmallStepChallenge(t *testing.T) {
 		err := v.CreateSmallStepChallenge(tx)
 		require.NoError(t, err)
 		sub := v.SubChallenge.Unwrap()
-		require.Equal(t, ChallengeKind(SmallStepChallenge), sub.kind)
+		require.Equal(t, ChallengeType(SmallStepChallenge), sub.challengeType)
 	})
 }
 
-func setupValidSubChallengeCreation(t *testing.T, topLevelKind ChallengeKind) *ChallengeVertex {
+func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *ChallengeVertex {
 	challengePeriod := 5 * time.Second
 	ref := util.NewRealTimeReference()
 	m := make(map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex)
@@ -52,8 +52,8 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelKind ChallengeKind) *C
 
 	creationTime := ref.Get()
 	chal := &Challenge{
-		creationTime: creationTime,
-		kind:         topLevelKind,
+		creationTime:  creationTime,
+		challengeType: topLevelType,
 		rootAssertion: util.Some(&Assertion{
 			chain:           chain,
 			StateCommitment: StateCommitment{},
@@ -106,7 +106,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 	t.Run("parent of big step challenge must be block challenge", func(t *testing.T) {
 		v := &ChallengeVertex{
 			Challenge: util.Some(&Challenge{
-				kind: SmallStepChallenge,
+				challengeType: SmallStepChallenge,
 			}),
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
@@ -115,7 +115,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 	t.Run("parent of small step challenge must be big step challenge", func(t *testing.T) {
 		v := &ChallengeVertex{
 			Challenge: util.Some(&Challenge{
-				kind: SmallStepChallenge,
+				challengeType: SmallStepChallenge,
 			}),
 		}
 		err := v.canCreateSubChallenge(SmallStepChallenge)
@@ -131,8 +131,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		}
 		creationTime := ref.Get().Add(-2 * challengePeriod)
 		chal := &Challenge{
-			creationTime: creationTime,
-			kind:         BlockChallenge,
+			creationTime:  creationTime,
+			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain: chain,
 			}),
@@ -152,8 +152,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		}
 		creationTime := ref.Get()
 		chal := &Challenge{
-			creationTime: creationTime,
-			kind:         BlockChallenge,
+			creationTime:  creationTime,
+			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain: chain,
 			}),
@@ -174,8 +174,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		}
 		creationTime := ref.Get()
 		chal := &Challenge{
-			creationTime: creationTime,
-			kind:         BlockChallenge,
+			creationTime:  creationTime,
+			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain: chain,
 			}),
@@ -199,8 +199,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		}
 		creationTime := ref.Get()
 		chal := &Challenge{
-			creationTime: creationTime,
-			kind:         BlockChallenge,
+			creationTime:  creationTime,
+			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain:           chain,
 				StateCommitment: StateCommitment{},
@@ -230,8 +230,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 
 		creationTime := ref.Get()
 		chal := &Challenge{
-			creationTime: creationTime,
-			kind:         BlockChallenge,
+			creationTime:  creationTime,
+			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain:           chain,
 				StateCommitment: StateCommitment{},
@@ -257,8 +257,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 
 		creationTime := ref.Get()
 		chal := &Challenge{
-			creationTime: creationTime,
-			kind:         BlockChallenge,
+			creationTime:  creationTime,
+			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain:           chain,
 				StateCommitment: StateCommitment{},

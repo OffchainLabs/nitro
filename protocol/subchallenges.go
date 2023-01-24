@@ -27,8 +27,8 @@ func (v *ChallengeVertex) CreateBigStepChallenge(tx *ActiveTx) error {
 		// Set the creation time of the subchallenge to be
 		// the same as the top-level challenge, as they should
 		// expire at the same timestamp.
-		creationTime: v.Challenge.Unwrap().creationTime,
-		kind:         BigStepChallenge,
+		creationTime:  v.Challenge.Unwrap().creationTime,
+		challengeType: BigStepChallenge,
 	})
 	// TODO: Add the challenge to the chain under a key that does not
 	// collide with top-level challenges and fire events.
@@ -43,8 +43,8 @@ func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 	}
 	// TODO: Add all other required challenge fields.
 	v.SubChallenge = util.Some(&Challenge{
-		creationTime: v.Challenge.Unwrap().creationTime,
-		kind:         SmallStepChallenge,
+		creationTime:  v.Challenge.Unwrap().creationTime,
+		challengeType: SmallStepChallenge,
 	})
 	// TODO: Add the challenge to the chain under a key that does not
 	// collide with top-level challenges and fire events.
@@ -59,7 +59,7 @@ func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 //	  - P’s has at least two children with unexpired chess clocks
 //	The end time of the new challenge is set equal to the end time of P’s challenge.
 func (v *ChallengeVertex) canCreateSubChallenge(
-	subChallengeKind ChallengeKind,
+	subChallengeType ChallengeType,
 ) error {
 	if v.Challenge.IsNone() {
 		return ErrNoChallenge
@@ -67,15 +67,17 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	chal := v.Challenge.Unwrap()
 	// Can only create a subchallenge if the vertex is
 	// part of a challenge of a specified kind.
-	switch subChallengeKind {
+	switch subChallengeType {
+	case NoChallengeType:
+		return ErrWrongChallengeKind
 	case BlockChallenge:
 		return ErrWrongChallengeKind
 	case BigStepChallenge:
-		if chal.kind != BlockChallenge {
+		if chal.challengeType != BlockChallenge {
 			return ErrWrongChallengeKind
 		}
 	case SmallStepChallenge:
-		if chal.kind != BigStepChallenge {
+		if chal.challengeType != BigStepChallenge {
 			return ErrWrongChallengeKind
 		}
 	}
@@ -132,7 +134,6 @@ func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, erro
 			unexpiredChildrenTotal++
 		}
 	}
-	fmt.Printf("Got %d\n", unexpiredChildrenTotal)
 	return unexpiredChildrenTotal > 1, nil
 }
 
