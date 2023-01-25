@@ -2,18 +2,18 @@ name: CI
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'arbitrator/**'
-      - 'contracts/src/osp/**'
-      - 'contracts/src/mock/**'
-      - 'contracts/test/**'
-      - 'contracts/hardhat.config.ts'
-      - '.github/workflows/arbitrator-ci.yml'
-      - 'Makefile'
-  push:
-    branches:
-      - master
+    pull_request:
+      paths:
+        - 'arbitrator/**'
+        - 'contracts/src/osp/**'
+        - 'contracts/src/mock/**'
+        - 'contracts/test/**'
+        - 'contracts/hardhat.config.ts'
+        - '.github/workflows/arbitrator-ci.yml'
+        - 'Makefile'
+    push:
+      branches:
+        - master
 
 env:
   RUST_BACKTRACE: 1

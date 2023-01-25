@@ -12,6 +12,10 @@ jobs:
   test-unit:
     name: Test unit
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: contracts
     steps:
       - uses: actions/checkout@v3
         with:
@@ -33,7 +37,7 @@ jobs:
         run: yarn
 
       - name: Run unit tests
-        run: forge test --root contracts
+        run: forge test
   tests:
     name: Contract tests
     runs-on: ubuntu-8
