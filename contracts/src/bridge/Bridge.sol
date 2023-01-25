@@ -45,27 +45,16 @@ contract Bridge is AbsBridge, IEthBridge {
         return _enqueueDelayedMessage(kind, sender, messageDataHash, msg.value);
     }
 
-    /// @inheritdoc IBridge
-    function executeCall(
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external returns (bool success, bytes memory returnData) {
-        if (!allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
-        if (data.length > 0 && !to.isContract()) revert NotContract(to);
-        address prevOutbox = _activeOutbox;
-        _activeOutbox = msg.sender;
-        // We set and reset active outbox around external call so activeOutbox remains valid during call
-
-        // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
-        // rather than reverting on failure as well as allow contract and non-contract calls
-        // solhint-disable-next-line avoid-low-level-calls
-        (success, returnData) = to.call{value: value}(data);
-        _activeOutbox = prevOutbox;
-        emit BridgeCallTriggered(msg.sender, to, value, data);
-    }
-
     function _transferFunds(address, uint256) internal override {
         // do nothing as Eth transfer is part of TX execution
+    }
+
+    function _executeLowLevelCall(
+        address to,
+        uint256 value,
+        bytes memory data
+    ) internal override returns (bool success, bytes memory returnData) {
+        // solhint-disable-next-line avoid-low-level-calls
+        (success, returnData) = to.call{value: value}(data);
     }
 }

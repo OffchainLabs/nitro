@@ -49,21 +49,19 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         return _enqueueDelayedMessage(kind, sender, messageDataHash, tokenFeeAmount);
     }
 
-    /// @inheritdoc IBridge
-    function executeCall(
+    function _transferFunds(address sender, uint256 amount) internal override {
+        // inbox applies alias to sender, undo it to fetch tokens
+        address undoAliasSender = AddressAliasHelper.undoL1ToL2Alias(sender);
+
+        // escrow fee token
+        IERC20(nativeToken).safeTransferFrom(undoAliasSender, address(this), amount);
+    }
+
+    function _executeLowLevelCall(
         address to,
         uint256 value,
-        bytes calldata data
-    ) external returns (bool success, bytes memory returnData) {
-        if (!allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
-        if (data.length > 0 && !to.isContract()) revert NotContract(to);
-        address prevOutbox = _activeOutbox;
-        _activeOutbox = msg.sender;
-        // We set and reset active outbox around external call so activeOutbox remains valid during call
-
-        // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
-        // rather than reverting on failure as well as allow contract and non-contract calls
-
+        bytes memory data
+    ) internal override returns (bool success, bytes memory returnData) {
         // first release native token
         // solhint-disable-next-line avoid-low-level-calls
         (success, returnData) = nativeToken.call(
@@ -77,16 +75,5 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
                 (success, returnData) = to.call(data);
             }
         }
-
-        _activeOutbox = prevOutbox;
-        emit BridgeCallTriggered(msg.sender, to, value, data);
-    }
-
-    function _transferFunds(address sender, uint256 amount) internal override {
-        // inbox applies alias to sender, undo it to fetch tokens
-        address undoAliasSender = AddressAliasHelper.undoL1ToL2Alias(sender);
-
-        // escrow fee token
-        IERC20(nativeToken).safeTransferFrom(undoAliasSender, address(this), amount);
     }
 }

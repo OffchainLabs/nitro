@@ -142,6 +142,26 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
             );
     }
 
+    /// @inheritdoc IBridge
+    function executeCall(
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external returns (bool success, bytes memory returnData) {
+        if (!allowedOutboxes(msg.sender)) revert NotOutbox(msg.sender);
+        if (data.length > 0 && !to.isContract()) revert NotContract(to);
+        address prevOutbox = _activeOutbox;
+        _activeOutbox = msg.sender;
+        // We set and reset active outbox around external call so activeOutbox remains valid during call
+
+        // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
+        // rather than reverting on failure as well as allow contract and non-contract calls
+        (success, returnData) = _executeLowLevelCall(to, value, data);
+
+        _activeOutbox = prevOutbox;
+        emit BridgeCallTriggered(msg.sender, to, value, data);
+    }
+
     function addMessageToDelayedAccumulator(
         uint8 kind,
         address sender,
@@ -199,8 +219,6 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
 
         return messageCount;
     }
-
-    function _transferFunds(address sender, uint256 amount) internal virtual;
 
     function setSequencerInbox(address _sequencerInbox) external onlyRollupOrOwner {
         sequencerInbox = _sequencerInbox;
@@ -261,4 +279,12 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
 
     /// @dev For the classic -> nitro migration. TODO: remove post-migration.
     function acceptFundsFromOldBridge() external payable {}
+
+    function _transferFunds(address sender, uint256 amount) internal virtual;
+
+    function _executeLowLevelCall(
+        address to,
+        uint256 value,
+        bytes memory data
+    ) internal virtual returns (bool success, bytes memory returnData);
 }
