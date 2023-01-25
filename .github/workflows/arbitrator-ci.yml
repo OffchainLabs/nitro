@@ -2,18 +2,18 @@ name: CI
 
 on:
   workflow_dispatch:
-    pull_request:
-      paths:
-        - 'arbitrator/**'
-        - 'contracts/src/osp/**'
-        - 'contracts/src/mock/**'
-        - 'contracts/test/**'
-        - 'contracts/hardhat.config.ts'
-        - '.github/workflows/arbitrator-ci.yml'
-        - 'Makefile'
-    push:
-      branches:
-        - master
+  pull_request:
+    paths:
+      - 'arbitrator/**'
+      - 'contracts/src/osp/**'
+      - 'contracts/src/mock/**'
+      - 'contracts/test/**'
+      - 'contracts/hardhat.config.ts'
+      - '.github/workflows/arbitrator-ci.yml'
+      - 'Makefile'
+  push:
+    branches:
+      - master
 
 env:
   RUST_BACKTRACE: 1
@@ -161,14 +161,6 @@ jobs:
       - name: Create code-coverage files
         run: |
           grcov . --binary-path arbitrator/target/release/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
-
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info
-          fail_ci_if_error: true
-          verbose: false
 
       - name: Start geth server
         run: |
