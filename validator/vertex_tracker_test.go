@@ -466,8 +466,6 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
 	require.NoError(t, err)
 
-	t.Logf("Got commit %+v", historyCommit)
-
 	genesisCommit := protocol.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},

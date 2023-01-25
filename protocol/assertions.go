@@ -741,10 +741,10 @@ func (c *Challenge) AddLeaf(
 
 	// Assert the history commitment's height is equal to the
 	// assertion.height - assertion.prev.height
-	if prev.StateCommitment.Height > assertion.StateCommitment.Height {
+	if prev.StateCommitment.Height >= assertion.StateCommitment.Height {
 		return nil, errors.Wrapf(
 			ErrInvalidOp,
-			"previous assertion's height %d, cannot be greater than %d",
+			"previous assertion's height %d, must be less than %d",
 			prev.StateCommitment.Height,
 			assertion.StateCommitment.Height,
 		)
@@ -768,7 +768,7 @@ func (c *Challenge) AddLeaf(
 		history.LastLeafProof,
 	); err != nil {
 		return nil, errors.New(
-			"merkle proof of last state from history commitment fails to verify",
+			"merkle proof fails to verify for last state of history commitment",
 		)
 	}
 
