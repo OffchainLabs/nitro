@@ -52,11 +52,8 @@ type CommitOpt func(c *HistoryCommitment) error
 
 // WithLastElementProof allows HistoryCommitment creation to optionally
 // include a prefix proof of the last element in the commitment. This is useful
-// for asserting the "last leaf" of a commitment verifies agianst the Merkle
+// for asserting the "last leaf" of a commitment verifies against the Merkle
 // root contained within the commitment.
-//
-// It requires specifying the height of the penultimate element and the
-// slice of leaves as function arguments.
 func WithLastElementProof(
 	leaves []common.Hash,
 ) CommitOpt {
