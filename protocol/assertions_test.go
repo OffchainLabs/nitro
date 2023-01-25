@@ -587,7 +587,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 
 		correctBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{6, correctBlockHashes[6]}, staker1)
 		require.NoError(t, err)
-		wrongBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{7, wrongBlockHashes[7]}, staker2)
+		wrongBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{6, wrongBlockHashes[6]}, staker2)
 		require.NoError(t, err)
 
 		challenge, err := genesis.CreateChallenge(tx, ctx, staker2)
@@ -596,42 +596,49 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		// Add some leaves to the mix...
 		expectedBisectionHeight := uint64(4)
 		lo := expectedBisectionHeight
-		hi := uint64(7)
-		loExp := util.ExpansionFromLeaves(wrongBlockHashes[:lo])
-		hiExp := util.ExpansionFromLeaves(wrongBlockHashes[:hi])
 
-		cl1, err := challenge.AddLeaf(
+		hi := uint64(6)
+		loExp := util.ExpansionFromLeaves(wrongBlockHashes[:lo])
+		badCommit, err := util.NewHistoryCommitment(
+			hi,
+			wrongBlockHashes[:hi],
+			util.WithLastElementProof(wrongBlockHashes[:hi+1]),
+		)
+		require.NoError(t, err, "FAILS HERE")
+
+		badLeaf, err := challenge.AddLeaf(
 			tx,
 			wrongBranch,
-			util.HistoryCommitment{
-				Height: 6,
-				Merkle: util.ExpansionFromLeaves(correctBlockHashes[:7]).Root(),
-			},
+			badCommit,
 			staker1,
 		)
 		require.NoError(t, err)
-		cl2, err := challenge.AddLeaf(
+
+		goodCommit, err := util.NewHistoryCommitment(
+			hi,
+			correctBlockHashes[:hi],
+			util.WithLastElementProof(correctBlockHashes[:hi+1]),
+		)
+		require.NoError(t, err, "FAILS HERE TOO")
+		goodLeaf, err := challenge.AddLeaf(
 			tx,
 			correctBranch,
-			util.HistoryCommitment{
-				Height: 7,
-				Merkle: hiExp.Root(),
-			},
+			goodCommit,
 			staker2,
 		)
 		require.NoError(t, err)
 
 		// Ensure the lower height challenge vertex is the ps.
-		require.Equal(t, true, cl1.IsPresumptiveSuccessor())
-		require.Equal(t, false, cl2.IsPresumptiveSuccessor())
+		require.Equal(t, true, badLeaf.IsPresumptiveSuccessor())
+		require.Equal(t, false, goodLeaf.IsPresumptiveSuccessor())
 
 		// Next, only the vertex that is not the presumptive successor can start a bisection move.
-		bisectionHeight, err := cl2.requiredBisectionHeight()
+		bisectionHeight, err := goodLeaf.requiredBisectionHeight()
 		require.NoError(t, err)
 		require.Equal(t, expectedBisectionHeight, bisectionHeight)
 
-		proof := util.GeneratePrefixProof(lo, loExp, correctBlockHashes[lo:6])
-		_, err = cl1.Bisect(
+		proof := util.GeneratePrefixProof(lo, loExp, wrongBlockHashes[lo:6])
+		_, err = badLeaf.Bisect(
 			tx,
 			util.HistoryCommitment{
 				Height: lo,
@@ -644,8 +651,9 @@ func TestAssertionChain_Bisect(t *testing.T) {
 
 		// Generate a prefix proof for the associated history commitments from the bisection
 		// height up to the height of the state commitment for the non-presumptive challenge leaf.
-		proof = util.GeneratePrefixProof(lo, loExp, wrongBlockHashes[lo:hi])
-		bisection, err := cl2.Bisect(
+		loExp = util.ExpansionFromLeaves(correctBlockHashes[:lo])
+		proof = util.GeneratePrefixProof(lo, loExp, correctBlockHashes[lo:hi])
+		bisection, err := goodLeaf.Bisect(
 			tx,
 			util.HistoryCommitment{
 				Height: lo,
@@ -657,7 +665,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
-		require.Equal(t, bisection, cl2.Prev.Unwrap())
+		require.Equal(t, bisection, goodLeaf.Prev.Unwrap())
 
 		// The rootAssertion of the bisectoin should be the rootVertex of this challenge and the bisection
 		// should be the new presumptive successor.

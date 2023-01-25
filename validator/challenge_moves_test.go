@@ -30,8 +30,6 @@ func Test_computePrefixProof(t *testing.T) {
 	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
 	require.NoError(t, err)
 
-	// Perform an extra safety check to ensure our proof verifies against the specified commitment
-	// before we make an on-chain transaction.
 	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
 	require.NoError(t, err)
 }
@@ -240,11 +238,12 @@ func runBisectionTest(
 
 	bisectionHeight := uint64(4)
 	loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
+
 	bisectionCommit := util.HistoryCommitment{
 		Height: bisectionHeight,
 		Merkle: loExp.Root(),
 	}
-	require.Equal(t, bisectedVertex.Commitment, bisectionCommit)
+	require.Equal(t, bisectedVertex.Commitment.Hash(), bisectionCommit.Hash())
 
 	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
 	return bisectedVertex
