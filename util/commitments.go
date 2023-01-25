@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 
 	"errors"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -27,6 +26,7 @@ type HistoryCommitment struct {
 	LastLeafProof  []common.Hash
 	LastLeaf       common.Hash
 	LastLeafPrefix Option[HistoryCommitment]
+	normalized     Option[HistoryCommitment]
 }
 
 // Hash of a HistoryCommitment encompasses its height value and its Merkle root.
@@ -35,6 +35,16 @@ func (comm HistoryCommitment) Hash() common.Hash {
 		binary.BigEndian.AppendUint64([]byte{}, comm.Height),
 		comm.Merkle.Bytes(),
 	)
+}
+
+// Normalized returns a commitment that has its height
+// and Merkle expansion normalized to the number of leaves it has
+// rather than the absolute height. For example, if a commitment claims
+// height 100, but only has 3 leaves, the normalized version will
+// return a height of 3. This is useful for proving last leaf prefix
+// proofs.
+func (comm HistoryCommitment) Normalized() Option[HistoryCommitment] {
+	return comm.normalized
 }
 
 // CommitOpt defines a functional option for constructing HistoryCommitments.
@@ -54,48 +64,45 @@ func WithLastElementProof(
 		if len(leaves) == 0 {
 			return errors.New("must commit to at least one leaf")
 		}
-		elems := leaves[:c.Height]
-		for _, el := range elems {
-			fmt.Printf("%#x\n", el)
-		}
-		fmt.Println(c.Height - 1)
-		lo := ExpansionFromLeaves(leaves[:c.Height])
+		lo := uint64(len(leaves) - 1)
+		loExp := ExpansionFromLeaves(leaves[:lo])
 		loCommit := HistoryCommitment{
-			Height: c.Height - 1,
-			Merkle: lo.Root(),
+			Height: lo,
+			Merkle: loExp.Root(),
 		}
 		lastLeaf := leaves[len(leaves)-1]
-		fmt.Printf("%#x\n", lastLeaf)
+		proof := GeneratePrefixProof(lo, loExp, []common.Hash{lastLeaf})
 
-		proof := GeneratePrefixProof(c.Height-1, lo, []common.Hash{lastLeaf})
-		if err := VerifyPrefixProof(loCommit, *c, proof); err != nil {
+		hi := uint64(len(leaves))
+		hiExp := ExpansionFromLeaves(leaves)
+		hiCommit := HistoryCommitment{
+			Height: hi,
+			Merkle: hiExp.Root(),
+		}
+		if err := VerifyPrefixProof(loCommit, hiCommit, proof); err != nil {
 			return err
 		}
 		c.LastLeafProof = proof
 		c.LastLeaf = lastLeaf
 		c.LastLeafPrefix = Some(loCommit)
+		c.normalized = Some(hiCommit)
 		return nil
 	}
 }
 
 // NewHistoryCommitment constructs a commitment from a height and list of leaves.
 func NewHistoryCommitment(
-	height,
-	heightRange uint64,
+	height uint64,
 	leaves []common.Hash,
 	opts ...CommitOpt,
 ) (HistoryCommitment, error) {
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
-	if height > uint64(len(leaves)) {
-		return emptyCommit, errors.New("height out of range")
-	}
 	exp := ExpansionFromLeaves(leaves)
 	h := HistoryCommitment{
 		Merkle: exp.Root(),
 		Height: height,
-		Range:  heightRange,
 	}
 	for _, o := range opts {
 		if err := o(&h); err != nil {
