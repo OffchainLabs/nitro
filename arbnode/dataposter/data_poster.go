@@ -358,7 +358,9 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 		}
 		p.nonce = nonce
 	}
-	balance, err := p.client.BalanceAt(ctx, p.auth.From, p.lastBlock)
+	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
+	// so we want to see how much gas we could afford with our pending state.
+	balance, err := p.client.BalanceAt(ctx, p.auth.From, big.NewInt(-1))
 	if err != nil {
 		return err
 	}
