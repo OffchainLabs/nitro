@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	"errors"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -46,23 +47,26 @@ type CommitOpt func(c *HistoryCommitment) error
 // It requires specifying the height of the penultimate element and the
 // slice of leaves as function arguments.
 func WithLastElementProof(
-	penultimateHeight uint64,
 	leaves []common.Hash,
 ) CommitOpt {
 	return func(c *HistoryCommitment) error {
 		if len(leaves) == 0 {
 			return errors.New("must commit to at least one leaf")
 		}
-		if penultimateHeight > uint64(len(leaves)) {
-			return errors.New("penultimate height out of range")
+		elems := leaves[:c.Height]
+		for _, el := range elems {
+			fmt.Printf("%#x\n", el)
 		}
-		lo := ExpansionFromLeaves(leaves[:penultimateHeight])
+		fmt.Println(c.Height - 1)
+		lo := ExpansionFromLeaves(leaves[:c.Height])
 		loCommit := HistoryCommitment{
-			Height: penultimateHeight,
+			Height: c.Height - 1,
 			Merkle: lo.Root(),
 		}
 		lastLeaf := leaves[len(leaves)-1]
-		proof := GeneratePrefixProof(penultimateHeight, lo, []common.Hash{lastLeaf})
+		fmt.Printf("%#x\n", lastLeaf)
+
+		proof := GeneratePrefixProof(c.Height-1, lo, []common.Hash{lastLeaf})
 		if err := VerifyPrefixProof(loCommit, *c, proof); err != nil {
 			return err
 		}
@@ -85,7 +89,7 @@ func NewHistoryCommitment(
 	if height > uint64(len(leaves)) {
 		return emptyCommit, errors.New("height out of range")
 	}
-	exp := ExpansionFromLeaves(leaves[:height])
+	exp := ExpansionFromLeaves(leaves)
 	h := HistoryCommitment{
 		Merkle: exp.Root(),
 		Height: height,

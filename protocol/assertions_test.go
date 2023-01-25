@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"context"
-	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -91,7 +90,7 @@ func TestAssertionChain(t *testing.T) {
 		})
 
 		// add an assertion, then confirm it
-		comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[99]}
+		comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[0]}
 		newAssertion, err := chain.CreateLeaf(tx, genesis, comm, staker1)
 		require.NoError(t, err)
 		require.Equal(t, 2, len(chain.assertions))
@@ -108,95 +107,67 @@ func TestAssertionChain(t *testing.T) {
 		verifyConfirmEventInFeed(t, eventChan, AssertionSequenceNumber(1))
 
 		// try to create a duplicate assertion
-		_, err = chain.CreateLeaf(tx, genesis, StateCommitment{1, correctBlockHashes[99]}, staker1)
+		_, err = chain.CreateLeaf(tx, genesis, StateCommitment{1, correctBlockHashes[0]}, staker1)
 		require.ErrorIs(t, err, ErrVertexAlreadyExists)
 
 		// create a fork, let first branch win by timeout
-		comm = StateCommitment{2, correctBlockHashes[199]}
-
+		comm = StateCommitment{4, correctBlockHashes[3]}
 		branch1, err := chain.CreateLeaf(tx, newAssertion, comm, staker1)
 		require.NoError(t, err)
 
 		timeRef.Add(5 * time.Second)
 		verifyCreateLeafEventInFeed(t, eventChan, 2, 1, staker1, comm)
-		comm = StateCommitment{2, wrongBlockHashes[199]}
+		comm = StateCommitment{4, wrongBlockHashes[3]}
 		branch2, err := chain.CreateLeaf(tx, newAssertion, comm, staker2)
 		require.NoError(t, err)
+
+		// Assert the creation event.
 		verifyCreateLeafEventInFeed(t, eventChan, 3, 1, staker2, comm)
+
+		// Create a challenge at the fork.
 		challenge, err := newAssertion.CreateChallenge(tx, ctx, staker2)
 		require.NoError(t, err)
 		verifyStartChallengeEventInFeed(t, eventChan, newAssertion.SequenceNum)
 
-		blockHashes := correctBlockHashes[99:200]
-		hashesBytes := make([][]byte, len(blockHashes))
-		for i := 0; i < len(hashesBytes); i++ {
-			hashesBytes[i] = blockHashes[i][:]
-		}
-		depth := uint64(math.Ceil(math.Log2(float64(len(hashesBytes)))))
-		tr, err := util.GenerateTrieFromItems(hashesBytes, depth)
-		require.NoError(t, err)
-		lastElem := hashesBytes[len(hashesBytes)-1]
-		lastIdx := len(hashesBytes) - 1
-		proof, err := tr.MerkleProof(lastIdx)
-		require.NoError(t, err)
-		proofHashes := make([]common.Hash, len(proof))
-		for i := 0; i < len(proof); i++ {
-			proofHashes[i] = common.BytesToHash(proof[i][:])
-		}
-		root := tr.Root()
-		gotRoot := util.ExpansionFromLeaves(blockHashes).Root()
-		require.Equal(t, root[:], gotRoot[:], "mismatch expansion root")
+		// Add two competing challenge leaves.
+		// The last hash must be the state root of the assertion
+		// we are targeting.
+		hashes := correctBlockHashes[:4]
+		require.Equal(t, hashes[len(hashes)-1], branch1.StateCommitment.StateRoot)
 
-		ok := util.VerifyMerkleProof(
-			root[:],
-			lastElem,
-			uint64(lastIdx),
-			proof,
+		// We commit to a height that is equal to assertion.height - assertion.prev.height.
+		// That is, we are committing to a range of heights from the prev
+		// assertion to the assertion we are targeting.
+		prevHeight := branch1.Prev.Unwrap().StateCommitment.Height
+		height := branch1.StateCommitment.Height - prevHeight
+
+		t.Logf("hi = %d, lo = %d", height, prevHeight)
+		historyCommit, err := util.NewHistoryCommitment(
+			height,
+			hashes,
+			util.WithLastElementProof(prevHeight, hashes),
 		)
-		require.True(t, ok)
-
-		historyCommit := util.HistoryCommitment{
-			Height:    1,
-			Merkle:    util.ExpansionFromLeaves(blockHashes).Root(),
-			Proof:     proofHashes,
-			LastLeaf:  common.BytesToHash(lastElem),
-			NumLeaves: uint64(len(hashesBytes)),
-		}
+		require.NoError(t, err, "Cannot construct commitment")
 
 		chal1, err := challenge.AddLeaf(tx, branch1, historyCommit, staker1)
-		require.NoError(t, err)
+		require.NoError(t, err, "HERE")
 
-		blockHashes = wrongBlockHashes[99:200]
-		hashesBytes = make([][]byte, len(blockHashes))
-		for i := 0; i < len(hashesBytes); i++ {
-			hashesBytes[i] = blockHashes[i][:]
-		}
-
-		tr, err = util.GenerateTrieFromItems(hashesBytes, depth)
+		hashes = wrongBlockHashes[:3]
+		badCommit, err := util.NewHistoryCommitment(
+			3,
+			hashes,
+			util.WithLastElementProof(2, hashes),
+		)
 		require.NoError(t, err)
-		lastElem = hashesBytes[len(hashesBytes)-1]
-		lastIdx = len(hashesBytes) - 1
-		proof, err = tr.MerkleProof(lastIdx)
-		require.NoError(t, err)
-		proofHashes = make([]common.Hash, len(proof))
-		for i := 0; i < len(proof); i++ {
-			proofHashes[i] = common.BytesToHash(proof[i][:])
-		}
-		root = tr.Root()
-
-		badCommit := util.HistoryCommitment{
-			Height:    1,
-			Merkle:    util.ExpansionFromLeaves(blockHashes).Root(),
-			Proof:     proofHashes,
-			LastLeaf:  common.BytesToHash(lastElem),
-			NumLeaves: uint64(len(hashesBytes)),
-		}
 
 		_, err = challenge.AddLeaf(tx, branch2, badCommit, staker2)
 		require.NoError(t, err)
+
+		// Cannot be confirmed yet.
 		err = chal1.ConfirmForPsTimer(tx)
 		require.ErrorIs(t, err, ErrNotYet)
 
+		// Add a challenge period, and then the leaf can be confirmed.
 		timeRef.Add(testChallengePeriod)
 		require.NoError(t, chal1.ConfirmForPsTimer(tx))
 

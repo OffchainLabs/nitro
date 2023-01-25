@@ -724,8 +724,10 @@ func (c *Challenge) AddLeaf(
 
 	// The last leaf claimed in the history commitment must be the
 	// state root of the assertion we are adding a leaf for.
-	if history.NumLeaves == 0 {
-		return nil, errors.New("cannot create a history commitment over 0 states")
+	if history.LastLeaf == (common.Hash{}) ||
+		len(history.LastLeafProof) == 0 ||
+		history.LastLeafPrefix.IsNone() {
+		return nil, errors.New("history commitment must provide a last leaf proof")
 	}
 	if assertion.StateCommitment.StateRoot != history.LastLeaf {
 		return nil, errors.Wrapf(
@@ -759,20 +761,13 @@ func (c *Challenge) AddLeaf(
 	// The validator must provide a history commitment over
 	// a series of states where the last state must be proven to be
 	// one corresponding to the assertion specified.
-	proofBytes := make([][]byte, len(history.Proof))
-	for i, elem := range history.Proof {
-		b := [32]byte{}
-		copy(b[:], elem[:])
-		proofBytes[i] = b[:]
-	}
-	if !util.VerifyMerkleProof(
-		history.Merkle[:],
-		history.LastLeaf[:],
-		history.NumLeaves-1,
-		proofBytes,
-	) {
+	if err := util.VerifyPrefixProof(
+		history.LastLeafPrefix.Unwrap(),
+		history,
+		history.LastLeafProof,
+	); err != nil {
 		return nil, errors.New(
-			"Merkle proof of last state from history commitment fails to verify",
+			"merkle proof of last state from history commitment fails to verify",
 		)
 	}
 
@@ -784,7 +779,7 @@ func (c *Challenge) AddLeaf(
 	}
 	nextSeqNumber := c.currentVertexSeqNumber + 1
 	leaf := &ChallengeVertex{
-		Challenge:            util.Some[*Challenge](c),
+		Challenge:            util.Some(c),
 		SequenceNum:          nextSeqNumber,
 		Validator:            validator,
 		isLeaf:               true,
@@ -794,7 +789,7 @@ func (c *Challenge) AddLeaf(
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              timer,
 		SubChallenge:         util.None[*Challenge](),
-		winnerIfConfirmed:    util.Some[*Assertion](assertion),
+		winnerIfConfirmed:    util.Some(assertion),
 	}
 	c.currentVertexSeqNumber = nextSeqNumber
 	c.rootVertex.Unwrap().maybeNewPresumptiveSuccessor(leaf)
