@@ -51,11 +51,23 @@ contract BridgeTest is AbsBridgeTest {
         vm.deal(inbox, ethAmount);
         uint256 inboxEthBalanceBefore = address(inbox).balance;
         uint256 bridgeEthBalanceBefore = address(bridge).balance;
-        uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
 
         // allow inbox
         vm.prank(rollup);
         bridge.setDelayedInbox(inbox, true);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit MessageDelivered(
+            0,
+            0,
+            inbox,
+            kind,
+            AddressAliasHelper.applyL1ToL2Alias(user),
+            messageDataHash,
+            block.basefee,
+            uint64(block.timestamp)
+        );
 
         // enqueue msg inbox->bridge
         address userAliased = AddressAliasHelper.applyL1ToL2Alias(user);
@@ -72,14 +84,55 @@ contract BridgeTest is AbsBridgeTest {
         );
 
         uint256 inboxEthBalanceAfter = address(inbox).balance;
-        assertEq(
-            inboxEthBalanceBefore - inboxEthBalanceAfter,
-            ethAmount,
-            "Invalid user inboxbalance"
+        assertEq(inboxEthBalanceBefore - inboxEthBalanceAfter, ethAmount, "Invalid inbox balance");
+
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_enqueueDelayedMessage_TwoInRow() public {
+        // allow inbox
+        vm.prank(rollup);
+        bridge.setDelayedInbox(inbox, true);
+
+        vm.deal(inbox, ethAmount);
+        uint256 inboxEthBalanceBefore = address(inbox).balance;
+        uint256 bridgeEthBalanceBefore = address(bridge).balance;
+
+        // 1st enqueue msg
+        vm.prank(inbox);
+        ethBridge.enqueueDelayedMessage{value: 1 ether}(2, address(400), messageDataHash);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit MessageDelivered(
+            1,
+            bridge.delayedInboxAccs(0),
+            inbox,
+            8,
+            AddressAliasHelper.applyL1ToL2Alias(user),
+            messageDataHash,
+            block.basefee,
+            uint64(block.timestamp)
         );
 
-        uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
-        assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
+        // enqueue msg inbox->bridge
+        address userAliased = AddressAliasHelper.applyL1ToL2Alias(user);
+        vm.prank(inbox);
+        ethBridge.enqueueDelayedMessage{value: 1 ether}(8, userAliased, messageDataHash);
+
+        //// checks
+
+        uint256 bridgeEthBalanceAfter = address(bridge).balance;
+        assertEq(
+            bridgeEthBalanceAfter - bridgeEthBalanceBefore,
+            ethAmount,
+            "Invalid bridge eth balance"
+        );
+
+        uint256 inboxEthBalanceAfter = address(inbox).balance;
+        assertEq(inboxEthBalanceBefore - inboxEthBalanceAfter, ethAmount, "Invalid inbox balance");
+
+        assertEq(bridge.delayedMessageCount(), 2, "Invalid delayed message count");
     }
 
     function test_enqueueDelayedMessage_revert_UseTokenForFees() public {
@@ -109,9 +162,14 @@ contract BridgeTest is AbsBridgeTest {
         vm.prank(rollup);
         bridge.setOutbox(outbox, true);
 
+        uint256 withdrawalAmount = 3 ether;
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, user, withdrawalAmount, "");
+
         //// execute call
         vm.prank(outbox);
-        uint256 withdrawalAmount = 3 ether;
         (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
 
         //// checks
@@ -146,14 +204,21 @@ contract BridgeTest is AbsBridgeTest {
         uint256 bridgeEthBalanceBefore = address(bridge).balance;
         uint256 vaultEthBalanceBefore = address(vault).balance;
 
+        // call params
+        uint256 newVaultVersion = 7;
+        uint256 withdrawalAmount = 3 ether;
+        bytes memory data = abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, address(vault), withdrawalAmount, data);
+
         //// execute call
         vm.prank(outbox);
-        uint256 withdrawalAmount = 3 ether;
-        uint256 newVaultVersion = 7;
         (bool success, ) = bridge.executeCall({
             to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion)
+            data: data
         });
 
         //// checks
@@ -189,13 +254,20 @@ contract BridgeTest is AbsBridgeTest {
         uint256 bridgeEthBalanceBefore = address(bridge).balance;
         uint256 vaultEthBalanceBefore = address(vault).balance;
 
+        // call params
+        uint256 withdrawalAmount = 3 ether;
+        bytes memory revertingData = abi.encodeWithSelector(EthVault.justRevert.selector);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, address(vault), withdrawalAmount, revertingData);
+
         //// execute call - do call which reverts
         vm.prank(outbox);
-        uint256 withdrawalAmount = 3 ether;
         (bool success, bytes memory returnData) = bridge.executeCall({
             to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(EthVault.justRevert.selector)
+            data: revertingData
         });
 
         //// checks

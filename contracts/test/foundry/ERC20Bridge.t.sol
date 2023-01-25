@@ -76,6 +76,19 @@ contract ERC20BridgeTest is AbsBridgeTest {
         vm.prank(user);
         nativeToken.approve(address(bridge), tokenFeeAmount);
 
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit MessageDelivered(
+            0,
+            0,
+            inbox,
+            kind,
+            AddressAliasHelper.applyL1ToL2Alias(user),
+            messageDataHash,
+            block.basefee,
+            uint64(block.timestamp)
+        );
+
         // enqueue msg
         address userAliased = AddressAliasHelper.applyL1ToL2Alias(user);
         vm.prank(inbox);
@@ -136,10 +149,17 @@ contract ERC20BridgeTest is AbsBridgeTest {
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
 
+        // call params
+        uint256 withdrawalAmount = 15;
+        bytes memory data = "";
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, user, withdrawalAmount, data);
+
         //// execute call
         vm.prank(outbox);
-        uint256 withdrawalAmount = 15;
-        (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: ""});
+        (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: data});
 
         //// checks
         assertTrue(success, "Execute call failed");
@@ -177,14 +197,21 @@ contract ERC20BridgeTest is AbsBridgeTest {
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
 
-        //// execute call
-        vm.prank(outbox);
+        // call params
         uint256 withdrawalAmount = 15;
         uint256 newVaultVersion = 7;
+        bytes memory data = abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, address(vault), withdrawalAmount, data);
+
+        //// execute call
+        vm.prank(outbox);
         (bool success, ) = bridge.executeCall({
             to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion)
+            data: data
         });
 
         //// checks
@@ -224,13 +251,20 @@ contract ERC20BridgeTest is AbsBridgeTest {
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
 
+        // call params
+        uint256 withdrawalAmount = 15;
+        bytes memory data = abi.encodeWithSelector(EthVault.justRevert.selector);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, address(vault), withdrawalAmount, data);
+
         //// execute call - do call which reverts
         vm.prank(outbox);
-        uint256 withdrawalAmount = 15;
         (bool success, bytes memory returnData) = bridge.executeCall({
             to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(EthVault.justRevert.selector)
+            data: data
         });
 
         //// checks
@@ -279,14 +313,21 @@ contract ERC20BridgeTest is AbsBridgeTest {
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
 
-        //// execute call - do call which reverts on native token transfer due to invalud amount
-        vm.prank(outbox);
+        // call params
         uint256 withdrawalAmount = 100_000_000;
         uint256 newVaultVersion = 9;
+        bytes memory data = abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit BridgeCallTriggered(outbox, address(vault), withdrawalAmount, data);
+
+        //// execute call - do call which reverts on native token transfer due to invalud amount
+        vm.prank(outbox);
         (bool success, bytes memory returnData) = bridge.executeCall({
             to: address(vault),
             value: withdrawalAmount,
-            data: abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion)
+            data: data
         });
 
         //// checks

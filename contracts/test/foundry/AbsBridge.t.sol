@@ -515,6 +515,12 @@ abstract contract AbsBridgeTest is Test {
         uint256 baseFeeL1,
         uint64 timestamp
     );
+    event BridgeCallTriggered(
+        address indexed outbox,
+        address indexed to,
+        uint256 value,
+        bytes data
+    );
 }
 
 /**
