@@ -41,17 +41,8 @@ contract Bridge is AbsBridge, IEthBridge {
         uint8 kind,
         address sender,
         bytes32 messageDataHash
-    ) external payable virtual returns (uint256) {
-        if (!allowedDelayedInboxes(msg.sender)) revert NotDelayedInbox(msg.sender);
-        return
-            addMessageToDelayedAccumulator(
-                kind,
-                sender,
-                uint64(block.number),
-                uint64(block.timestamp), // solhint-disable-line not-rely-on-time
-                block.basefee,
-                messageDataHash
-            );
+    ) external payable returns (uint256) {
+        return _enqueueDelayedMessage(kind, sender, messageDataHash, msg.value);
     }
 
     /// @inheritdoc IBridge
@@ -72,5 +63,9 @@ contract Bridge is AbsBridge, IEthBridge {
         (success, returnData) = to.call{value: value}(data);
         _activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, to, value, data);
+    }
+
+    function _transferFunds(address, uint256) internal override {
+        // do nothing as Eth transfer is part of TX execution
     }
 }

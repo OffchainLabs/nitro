@@ -178,6 +178,30 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
         return count;
     }
 
+    function _enqueueDelayedMessage(
+        uint8 kind,
+        address sender,
+        bytes32 messageDataHash,
+        uint256 amount
+    ) internal returns (uint256) {
+        if (!allowedDelayedInboxes(msg.sender)) revert NotDelayedInbox(msg.sender);
+
+        uint256 messageCount = addMessageToDelayedAccumulator(
+            kind,
+            sender,
+            uint64(block.number),
+            uint64(block.timestamp), // solhint-disable-line not-rely-on-time
+            block.basefee,
+            messageDataHash
+        );
+
+        _transferFunds(sender, amount);
+
+        return messageCount;
+    }
+
+    function _transferFunds(address sender, uint256 amount) internal virtual;
+
     function setSequencerInbox(address _sequencerInbox) external onlyRollupOrOwner {
         sequencerInbox = _sequencerInbox;
         emit SequencerInboxUpdated(_sequencerInbox);

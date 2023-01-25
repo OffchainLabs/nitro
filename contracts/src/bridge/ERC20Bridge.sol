@@ -46,24 +46,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         bytes32 messageDataHash,
         uint256 tokenFeeAmount
     ) external returns (uint256) {
-        if (!allowedDelayedInboxes(msg.sender)) revert NotDelayedInbox(msg.sender);
-
-        uint256 messageCount = addMessageToDelayedAccumulator(
-            kind,
-            sender,
-            uint64(block.number),
-            uint64(block.timestamp), // solhint-disable-line not-rely-on-time
-            block.basefee,
-            messageDataHash
-        );
-
-        // inbox applies alias to sender, undo it to fetch tokens
-        address undoAliasSender = AddressAliasHelper.undoL1ToL2Alias(sender);
-
-        // escrow fee token
-        IERC20(nativeToken).safeTransferFrom(undoAliasSender, address(this), tokenFeeAmount);
-
-        return messageCount;
+        return _enqueueDelayedMessage(kind, sender, messageDataHash, tokenFeeAmount);
     }
 
     /// @inheritdoc IBridge
@@ -97,5 +80,13 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
 
         _activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, to, value, data);
+    }
+
+    function _transferFunds(address sender, uint256 amount) internal override {
+        // inbox applies alias to sender, undo it to fetch tokens
+        address undoAliasSender = AddressAliasHelper.undoL1ToL2Alias(sender);
+
+        // escrow fee token
+        IERC20(nativeToken).safeTransferFrom(undoAliasSender, address(this), amount);
     }
 }
