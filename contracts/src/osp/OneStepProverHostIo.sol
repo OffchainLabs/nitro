@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 
 import "../state/Value.sol";
 import "../state/Machine.sol";
+import "../state/MerkleProof.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 import "../bridge/Messages.sol";
@@ -286,6 +287,10 @@ contract OneStepProverHostIo is IOneStepProver {
         mach.status = MachineStatus.FINISHED;
     }
 
+    function isPowerOfTwo(uint256 value) internal pure returns (bool) {
+        return value != 0 && (value & (value - 1) == 0);
+    }
+
     function executeLinkModule(
         ExecutionContext calldata,
         Machine memory mach,
@@ -293,7 +298,36 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata,
         bytes calldata proof
     ) internal pure {
-        revert("Unimplemented");
+        bytes32 userMod = bytes32(mach.valueStack.pop().contents);
+        string memory prefix = "Module merkle tree:";
+        bytes32 root = mach.modulesRoot;
+        uint256 offset = 0;
+        uint32 leaf;
+
+        {
+            Module memory leafModule;
+            MerkleProof memory leafProof;
+            (leafModule, offset) = Deserialize.module(proof, offset);
+            (leaf, offset) = Deserialize.u32(proof, offset);
+            (leafProof, offset) = Deserialize.merkleProof(proof, offset);
+            bytes32 compRoot = leafProof.computeRootFromModule(uint256(leaf), leafModule);
+            require(compRoot == root, "WRONG_ROOT");
+        }
+
+        // if tree is unbalanced, check that the next leaf is 0
+        bool grow = isPowerOfTwo(leaf);
+        if (grow) {
+            mach.modulesRoot = MerkleProofLib.growToNewRoot(root, leaf, userMod, 0, prefix);
+        } else {
+            MerkleProof memory zeroProof;
+            (zeroProof, offset) = Deserialize.merkleProof(proof, offset);
+            uint256 zeroLeaf = uint256(leaf + 1);
+            bytes32 compRoot = zeroProof.computeRootUnsafe(zeroLeaf, 0, prefix);
+            require(compRoot == root, "WRONG_ROOT_FOR_ZERO");
+
+            // update the leaf
+            mach.modulesRoot = zeroProof.computeRootUnsafe(zeroLeaf, userMod, prefix);
+        }
     }
 
     function executeUnlinkModule(
@@ -303,7 +337,37 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata,
         bytes calldata proof
     ) internal pure {
-        revert("Unimplemented");
+        MerkleProof memory leafProof;
+        string memory prefix = "Module merkle tree:";
+        bytes32 root = mach.modulesRoot;
+        uint256 offset = 0;
+        uint32 leaf;
+
+        {
+            Module memory leafModule;
+            (leafModule, offset) = Deserialize.module(proof, offset);
+            (leaf, offset) = Deserialize.u32(proof, offset);
+            (leafProof, offset) = Deserialize.merkleProof(proof, offset);
+            bytes32 compRoot = leafProof.computeRootFromModule(uint256(leaf), leafModule);
+            require(compRoot == root, "WRONG_ROOT");
+        }
+
+        // if tree is unbalanced, check that the next leaf is 0
+        bool unbalanced = !isPowerOfTwo(leaf);
+        if (unbalanced) {
+            MerkleProof memory zeroProof;
+            (zeroProof, offset) = Deserialize.merkleProof(proof, offset);
+            uint256 zeroLeaf = uint256(leaf + 1);
+            bytes32 compRoot = zeroProof.computeRootUnsafe(zeroLeaf, 0, prefix);
+            require(compRoot == root, "WRONG_ROOT_FOR_ZERO");
+        }
+
+        bool shrink = isPowerOfTwo(leaf - 1);
+        if (shrink) {
+            mach.modulesRoot = leafProof.counterparts[leafProof.counterparts.length - 1];
+        } else {
+            mach.modulesRoot = leafProof.computeRootUnsafe(leaf, 0, prefix);
+        }
     }
 
     function executeGlobalStateAccess(

@@ -95,5 +95,23 @@ library MerkleProofLib {
             }
             index >>= 1;
         }
+        require(index == 0, "PROOF_TOO_SHORT");
+    }
+
+    function growToNewRoot(
+        bytes32 root,
+        uint256 leaf,
+        bytes32 hash,
+        bytes32 zero,
+        string memory prefix
+    ) internal pure returns (bytes32) {
+        bytes32 h = hash;
+        uint256 node = leaf / 2;
+        while (node > 0) {
+            h = keccak256(abi.encodePacked(prefix, h, zero));
+            zero = keccak256(abi.encodePacked(prefix, zero, zero));
+            node >>= 1;
+        }
+        return keccak256(abi.encodePacked(prefix, root, h));
     }
 }

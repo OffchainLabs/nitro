@@ -17,7 +17,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::Color;
+use arbutil::{crypto, math, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -2314,48 +2314,52 @@ impl Machine {
 
         let mut data = vec![self.status as u8];
 
-        data.extend(prove_stack(
+        macro_rules! out {
+            ($bytes:expr) => {
+                data.extend($bytes);
+            };
+        }
+
+        out!(prove_stack(
             &self.value_stack,
             STACK_PROVING_DEPTH,
             hash_value_stack,
             |v| v.serialize_for_proof(),
         ));
 
-        data.extend(prove_stack(
+        out!(prove_stack(
             &self.internal_stack,
             1,
             hash_value_stack,
             |v| v.serialize_for_proof(),
         ));
 
-        data.extend(prove_window(
+        out!(prove_window(
             &self.frame_stack,
             hash_stack_frame_stack,
             StackFrame::serialize_for_proof,
         ));
 
-        data.extend(self.global_state.hash());
+        out!(self.global_state.hash());
 
-        data.extend(self.pc.module.to_be_bytes());
-        data.extend(self.pc.func.to_be_bytes());
-        data.extend(self.pc.inst.to_be_bytes());
+        out!(self.pc.module.to_be_bytes());
+        out!(self.pc.func.to_be_bytes());
+        out!(self.pc.inst.to_be_bytes());
 
         let mod_merkle = self.get_modules_merkle();
-        data.extend(mod_merkle.root());
+        out!(mod_merkle.root());
 
         // End machine serialization, serialize module
 
         let module = &self.modules[self.pc.module()];
         let mem_merkle = module.memory.merkelize();
-        data.extend(module.serialize_for_proof(&mem_merkle));
+        out!(module.serialize_for_proof(&mem_merkle));
 
         // Prove module is in modules merkle tree
 
-        data.extend(
-            mod_merkle
-                .prove(self.pc.module())
-                .expect("Failed to prove module"),
-        );
+        out!(mod_merkle
+            .prove(self.pc.module())
+            .expect("Failed to prove module"));
 
         if self.is_halted() {
             return data;
@@ -2364,18 +2368,15 @@ impl Machine {
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func()];
-        data.extend(func.code[self.pc.inst()].serialize_for_proof());
-        data.extend(
-            func.code_merkle
-                .prove(self.pc.inst())
-                .expect("Failed to prove against code merkle"),
-        );
-        data.extend(
-            module
-                .funcs_merkle
-                .prove(self.pc.func())
-                .expect("Failed to prove against function merkle"),
-        );
+        out!(func.code[self.pc.inst()].serialize_for_proof());
+        out!(func
+            .code_merkle
+            .prove(self.pc.inst())
+            .expect("Failed to prove against code merkle"));
+        out!(module
+            .funcs_merkle
+            .prove(self.pc.func())
+            .expect("Failed to prove against function merkle"));
 
         // End next instruction proof, begin instruction specific serialization
 
@@ -2385,12 +2386,6 @@ impl Machine {
 
         let op = next_inst.opcode;
         let arg = next_inst.argument_data;
-
-        macro_rules! out {
-            ($bytes:expr) => {
-                data.extend($bytes);
-            };
-        }
 
         use Opcode::*;
         match op {
@@ -2532,11 +2527,23 @@ impl Machine {
                     }
                 }
             }
-            LinkModule => {
-                todo!()
-            }
-            UnlinkModule => {
-                todo!()
+            LinkModule | UnlinkModule => {
+                // prove that our proposed leaf x has a leaf-like hash
+                let module = self.modules.last().unwrap();
+                let leaves: Vec<_> = self.modules.iter().map(Module::hash).collect();
+                out!(module.serialize_for_proof(&module.memory.merkelize()));
+
+                // prove that leaf x is under the root at position p
+                let leaf = self.modules.len() - 1;
+                let merkle = Merkle::new(MerkleType::Module, leaves);
+                out!((leaf as u32).to_be_bytes());
+                out!(merkle.prove(leaf).unwrap());
+
+                // if needed, prove that x is the last module by proving that leaf p + 1 is 0
+                let balanced = math::is_power_of_2(self.modules.len());
+                if !balanced {
+                    out!(merkle.prove(leaf + 1).unwrap());
+                }
             }
             _ => {}
         }
