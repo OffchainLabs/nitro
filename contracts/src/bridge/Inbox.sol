@@ -5,17 +5,11 @@
 pragma solidity ^0.8.4;
 
 import {
-    AlreadyInit,
     NotOrigin,
     DataTooLarge,
-    AlreadyPaused,
-    AlreadyUnpaused,
-    Paused,
     InsufficientValue,
     InsufficientSubmissionCost,
-    NotAllowedOrigin,
     RetryableData,
-    NotRollupOrOwner,
     L1Forked,
     NotForked,
     GasLimitTooLarge
@@ -24,7 +18,6 @@ import "./AbsInbox.sol";
 import "./IEthInbox.sol";
 import "./IBridge.sol";
 import "./IEthBridge.sol";
-import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import {
     L2_MSG,
@@ -290,17 +283,6 @@ contract Inbox is AbsInbox, IEthInbox {
             );
     }
 
-    /// @inheritdoc IInbox
-    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
-        public
-        view
-        override(AbsInbox, IInbox)
-        returns (uint256)
-    {
-        // Use current block basefee if baseFee parameter is 0
-        return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
-    }
-
     /// @inheritdoc IEthInbox
     function depositEth() public payable whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
@@ -411,6 +393,17 @@ contract Inbox is AbsInbox, IEthInbox {
                 msg.value,
                 data
             );
+    }
+
+    /// @inheritdoc IInbox
+    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
+        public
+        view
+        override(AbsInbox, IInbox)
+        returns (uint256)
+    {
+        // Use current block basefee if baseFee parameter is 0
+        return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
     }
 
     /// @notice This is an one-time-exception to resolve a misconfiguration of Uniswap Arbitrum deployment

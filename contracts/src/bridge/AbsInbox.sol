@@ -5,39 +5,21 @@
 pragma solidity ^0.8.4;
 
 import {
-    AlreadyInit,
-    NotOrigin,
     DataTooLarge,
-    AlreadyPaused,
-    AlreadyUnpaused,
-    Paused,
     InsufficientValue,
     InsufficientSubmissionCost,
     NotAllowedOrigin,
     RetryableData,
     NotRollupOrOwner,
-    L1Forked,
-    NotForked,
     GasLimitTooLarge
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "./IBridge.sol";
-import "./IEthBridge.sol";
-
-import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import {
-    L2_MSG,
-    L1MessageType_L2FundedByL1,
-    L1MessageType_submitRetryableTx,
-    L1MessageType_ethDeposit,
-    L2MessageType_unsignedEOATx,
-    L2MessageType_unsignedContractTx
-} from "../libraries/MessageTypes.sol";
-import {MAX_DATA_SIZE, UNISWAP_L1_TIMELOCK, UNISWAP_L2_FACTORY} from "../libraries/Constants.sol";
-import "../precompiles/ArbSys.sol";
+import {L1MessageType_submitRetryableTx} from "../libraries/MessageTypes.sol";
+import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";

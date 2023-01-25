@@ -6,16 +6,6 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
-
-import {
-    NotContract,
-    NotRollupOrOwner,
-    NotDelayedInbox,
-    NotSequencerInbox,
-    NotOutbox,
-    InvalidOutboxSet,
-    BadSequencerMessageNumber
-} from "../libraries/Error.sol";
 import "./AbsBridge.sol";
 import "./IEthBridge.sol";
 import "./Messages.sol";

@@ -13,19 +13,12 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 /// @dev Provided zero address token
 error InvalidToken();
 
-/// @dev Provided insufficient value for token fees
-error InvalidTokenFeeAmount(uint256);
-
-/// @dev Function not applicable for native token bridge
-error NotApplicable();
-
 /**
  * @title Staging ground for incoming and outgoing messages
  * @notice Unlike the standard Eth bridge, native token bridge escrows the custom ERC20 token which is
  * used as native currency on L2.
  */
 contract ERC20Bridge is AbsBridge, IERC20Bridge {
-    using AddressUpgradeable for address;
     using SafeERC20 for IERC20;
 
     /// @inheritdoc IERC20Bridge
