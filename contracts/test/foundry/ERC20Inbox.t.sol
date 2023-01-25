@@ -426,4 +426,193 @@ contract ERC20InboxTest is AbsInboxTest {
             data: abi.encodePacked("data")
         });
     }
+
+    function test_unsafeCreateRetryableTicket_FromEOA() public {
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+
+        uint256 tokenTotalFeeAmount = 300;
+
+        // approve bridge to escrow tokens
+        vm.prank(user);
+        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+
+        // retyrable params
+        uint256 l2CallValue = 10;
+        uint256 maxSubmissionCost = 0;
+        uint256 gasLimit = 100;
+        uint256 maxFeePerGas = 2;
+        bytes memory data = abi.encodePacked("some msg");
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(
+            0,
+            abi.encodePacked(
+                uint256(uint160(user)),
+                l2CallValue,
+                tokenTotalFeeAmount,
+                maxSubmissionCost,
+                uint256(uint160(user)),
+                uint256(uint160(user)),
+                gasLimit,
+                maxFeePerGas,
+                data.length,
+                data
+            )
+        );
+
+        // create retryable -> tx.origin == msg.sender
+        vm.prank(user, user);
+        erc20Inbox.unsafeCreateRetryableTicket({
+            to: address(user),
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            tokenTotalFeeAmount: tokenTotalFeeAmount,
+            data: data
+        });
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceAfter - bridgeTokenBalanceBefore,
+            tokenTotalFeeAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(
+            userTokenBalanceBefore - userTokenBalanceAfter,
+            tokenTotalFeeAmount,
+            "Invalid user token balance"
+        );
+
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_unsafeCreateRetryableTicket_FromContract() public {
+        address sender = address(new Sender());
+        nativeToken.transfer(address(sender), 1_000);
+
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 senderTokenBalanceBefore = nativeToken.balanceOf(address(sender));
+
+        uint256 tokenTotalFeeAmount = 300;
+
+        // approve bridge to escrow tokens
+        vm.prank(sender);
+        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+
+        // retyrable params
+        uint256 l2CallValue = 10;
+        uint256 maxSubmissionCost = 0;
+        uint256 gasLimit = 100;
+        uint256 maxFeePerGas = 2;
+        bytes memory data = abi.encodePacked("some msg");
+
+        // expect event (address shall not be aliased)
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(
+            0,
+            abi.encodePacked(
+                uint256(uint160(sender)),
+                l2CallValue,
+                tokenTotalFeeAmount,
+                maxSubmissionCost,
+                uint256(uint160(sender)),
+                uint256(uint160(sender)),
+                gasLimit,
+                maxFeePerGas,
+                data.length,
+                data
+            )
+        );
+
+        // create retryable
+        vm.prank(sender);
+        erc20Inbox.unsafeCreateRetryableTicket({
+            to: sender,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: sender,
+            callValueRefundAddress: sender,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            tokenTotalFeeAmount: tokenTotalFeeAmount,
+            data: data
+        });
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceAfter - bridgeTokenBalanceBefore,
+            tokenTotalFeeAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 senderTokenBalanceAfter = nativeToken.balanceOf(sender);
+        assertEq(
+            senderTokenBalanceBefore - senderTokenBalanceAfter,
+            tokenTotalFeeAmount,
+            "Invalid sender token balance"
+        );
+
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_unsafeCreateRetryableTicket_NotRevertingOnInsufficientValue() public {
+        uint256 tooSmallTokenTotalFeeAmount = 3;
+        uint256 l2CallValue = 100;
+        uint256 maxSubmissionCost = 0;
+        uint256 gasLimit = 10;
+        uint256 maxFeePerGas = 2;
+
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+
+        // approve bridge to escrow tokens
+        vm.prank(user);
+        nativeToken.approve(address(bridge), tooSmallTokenTotalFeeAmount);
+
+        vm.prank(user, user);
+        erc20Inbox.unsafeCreateRetryableTicket({
+            to: user,
+            l2CallValue: l2CallValue,
+            maxSubmissionCost: maxSubmissionCost,
+            excessFeeRefundAddress: user,
+            callValueRefundAddress: user,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            tokenTotalFeeAmount: tooSmallTokenTotalFeeAmount,
+            data: abi.encodePacked("data")
+        });
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceAfter - bridgeTokenBalanceBefore,
+            tooSmallTokenTotalFeeAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(
+            userTokenBalanceBefore - userTokenBalanceAfter,
+            tooSmallTokenTotalFeeAmount,
+            "Invalid user token balance"
+        );
+
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_calculateRetryableSubmissionFee() public {
+        assertEq(inbox.calculateRetryableSubmissionFee(1, 2), 0, "Invalid ERC20 submission fee");
+    }
 }
