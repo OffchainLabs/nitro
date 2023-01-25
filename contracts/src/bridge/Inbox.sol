@@ -60,7 +60,7 @@ contract Inbox is AbsInbox, IEthInbox {
         if (msg.sender != tx.origin) revert NotOrigin();
         if (messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = _deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
+        uint256 msgNum = _deliverToBridge(L2_MSG, msg.sender, keccak256(messageData), 0);
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
     }
@@ -73,7 +73,7 @@ contract Inbox is AbsInbox, IEthInbox {
         returns (uint256)
     {
         if (_chainIdChanged()) revert L1Forked();
-        return _deliverMessage(L2_MSG, msg.sender, messageData);
+        return _deliverMessage(L2_MSG, msg.sender, messageData, 0);
     }
 
     /// @inheritdoc IEthInbox
@@ -100,7 +100,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(to)),
                     msg.value,
                     data
-                )
+                ),
+                msg.value
             );
     }
 
@@ -126,7 +127,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(to)),
                     msg.value,
                     data
-                )
+                ),
+                msg.value
             );
     }
 
@@ -155,7 +157,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(to)),
                     value,
                     data
-                )
+                ),
+                0
             );
     }
 
@@ -182,7 +185,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(to)),
                     value,
                     data
-                )
+                ),
+                0
             );
     }
 
@@ -214,7 +218,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(to)),
                     msg.value,
                     data
-                )
+                ),
+                msg.value
             );
     }
 
@@ -247,7 +252,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(to)),
                     value,
                     data
-                )
+                ),
+                0
             );
     }
 
@@ -279,7 +285,8 @@ contract Inbox is AbsInbox, IEthInbox {
                     uint256(uint160(address(100))), // ArbSys address
                     value,
                     abi.encode(ArbSys.withdrawEth.selector, withdrawTo)
-                )
+                ),
+                0
             );
     }
 
@@ -308,7 +315,8 @@ contract Inbox is AbsInbox, IEthInbox {
             _deliverMessage(
                 L1MessageType_ethDeposit,
                 msg.sender,
-                abi.encodePacked(dest, msg.value)
+                abi.encodePacked(dest, msg.value),
+                msg.value
             );
     }
 
@@ -479,34 +487,19 @@ contract Inbox is AbsInbox, IEthInbox {
                     maxFeePerGas,
                     data.length,
                     data
-                )
+                ),
+                msg.value
             );
-    }
-
-    function _deliverMessage(
-        uint8 _kind,
-        address _sender,
-        bytes memory _messageData
-    ) internal returns (uint256) {
-        return _deliverMessage(_kind, _sender, _messageData, msg.value);
-    }
-
-    function _deliverToBridge(
-        uint8 kind,
-        address sender,
-        bytes32 messageDataHash
-    ) internal returns (uint256) {
-        return _deliverToBridge(kind, sender, messageDataHash, 0);
     }
 
     function _deliverToBridge(
         uint8 kind,
         address sender,
         bytes32 messageDataHash,
-        uint256
+        uint256 amount
     ) internal override returns (uint256) {
         return
-            IEthBridge(address(bridge)).enqueueDelayedMessage{value: msg.value}(
+            IEthBridge(address(bridge)).enqueueDelayedMessage{value: amount}(
                 kind,
                 AddressAliasHelper.applyL1ToL2Alias(sender),
                 messageDataHash
