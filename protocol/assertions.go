@@ -748,13 +748,13 @@ func (c *Challenge) AddLeaf(
 			assertion.StateCommitment.Height,
 		)
 	}
-	expectedHeight := assertion.StateCommitment.Height - prev.StateCommitment.Height
-	if history.Height != expectedHeight {
+	expectedRange := assertion.StateCommitment.Height - prev.StateCommitment.Height
+	if history.Range != expectedRange {
 		return nil, errors.Wrapf(
 			ErrInvalidOp,
-			"height of history does not match expected value %d != %d",
-			history.Height,
-			expectedHeight,
+			"range of history does not match expected value %d != %d",
+			history.Range,
+			expectedRange,
 		)
 	}
 

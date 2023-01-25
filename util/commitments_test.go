@@ -15,7 +15,8 @@ func TestYay(t *testing.T) {
 		common.BytesToHash([]byte{4}),
 	}
 	_, err := NewHistoryCommitment(
-		3,
+		4,
+		4,
 		hashes,
 		WithLastElementProof(hashes),
 	)

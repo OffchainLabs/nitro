@@ -22,6 +22,7 @@ var (
 // specified root hash, which is required when verifying challenge creation invariants.
 type HistoryCommitment struct {
 	Height         uint64
+	Range          uint64
 	Merkle         common.Hash
 	LastLeafProof  []common.Hash
 	LastLeaf       common.Hash
@@ -79,7 +80,8 @@ func WithLastElementProof(
 
 // NewHistoryCommitment constructs a commitment from a height and list of leaves.
 func NewHistoryCommitment(
-	height uint64,
+	height,
+	heightRange uint64,
 	leaves []common.Hash,
 	opts ...CommitOpt,
 ) (HistoryCommitment, error) {
@@ -93,6 +95,7 @@ func NewHistoryCommitment(
 	h := HistoryCommitment{
 		Merkle: exp.Root(),
 		Height: height,
+		Range:  heightRange,
 	}
 	for _, o := range opts {
 		if err := o(&h); err != nil {
