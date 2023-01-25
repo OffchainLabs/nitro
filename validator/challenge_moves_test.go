@@ -12,6 +12,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_computePrefixProof(t *testing.T) {
+	ctx := context.Background()
+	stateRoots := generateStateRoots(10)
+	manager := statemanager.New(stateRoots)
+	commit, err := manager.HistoryCommitmentUpTo(ctx, 6)
+	require.NoError(t, err)
+
+	v := &Validator{
+		stateManager: manager,
+	}
+
+	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
+	require.NoError(t, err)
+
+	bisectToHeight := bisectToCommit.Height
+	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	require.NoError(t, err)
+
+	// Perform an extra safety check to ensure our proof verifies against the specified commitment
+	// before we make an on-chain transaction.
+	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
+	require.NoError(t, err)
+}
+
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {

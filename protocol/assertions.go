@@ -739,6 +739,8 @@ func (c *Challenge) AddLeaf(
 		)
 	}
 
+	fmt.Println("Matches...")
+
 	// Assert the history commitment's height is equal to the
 	// assertion.height - assertion.prev.height
 	if prev.StateCommitment.Height > assertion.StateCommitment.Height {
@@ -759,6 +761,7 @@ func (c *Challenge) AddLeaf(
 		)
 	}
 
+	fmt.Printf("Checking height %d\n", history.Height)
 	// The validator must provide a history commitment over
 	// a series of states where the last state must be proven to be
 	// one corresponding to the assertion specified.
@@ -771,6 +774,7 @@ func (c *Challenge) AddLeaf(
 			"merkle proof of last state from history commitment fails to verify",
 		)
 	}
+	fmt.Println("Passes")
 
 	chain := assertion.chain
 	timer := util.NewCountUpTimer(chain.timeReference)

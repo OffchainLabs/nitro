@@ -65,8 +65,8 @@ func (s *Simulated) LatestStateCommitment(ctx context.Context) (protocol.StateCo
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height],
-		util.WithLastElementProof(s.stateRoots[:height]),
+		s.stateRoots[:height+1],
+		util.WithLastElementProof(s.stateRoots[:height+1]),
 	)
 }
 
