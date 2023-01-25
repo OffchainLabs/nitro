@@ -141,22 +141,21 @@ func TestAssertionChain(t *testing.T) {
 		prevHeight := branch1.Prev.Unwrap().StateCommitment.Height
 		height := branch1.StateCommitment.Height - prevHeight
 
-		t.Logf("hi = %d, lo = %d", height, prevHeight)
 		historyCommit, err := util.NewHistoryCommitment(
 			height,
 			hashes,
-			util.WithLastElementProof(prevHeight, hashes),
+			util.WithLastElementProof(hashes),
 		)
-		require.NoError(t, err, "Cannot construct commitment")
+		require.NoError(t, err)
 
 		chal1, err := challenge.AddLeaf(tx, branch1, historyCommit, staker1)
-		require.NoError(t, err, "HERE")
+		require.NoError(t, err)
 
-		hashes = wrongBlockHashes[:3]
+		hashes = wrongBlockHashes[:4]
 		badCommit, err := util.NewHistoryCommitment(
-			3,
+			height,
 			hashes,
-			util.WithLastElementProof(2, hashes),
+			util.WithLastElementProof(hashes),
 		)
 		require.NoError(t, err)
 

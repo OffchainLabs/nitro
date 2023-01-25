@@ -726,7 +726,8 @@ func (c *Challenge) AddLeaf(
 	// state root of the assertion we are adding a leaf for.
 	if history.LastLeaf == (common.Hash{}) ||
 		len(history.LastLeafProof) == 0 ||
-		history.LastLeafPrefix.IsNone() {
+		history.LastLeafPrefix.IsNone() ||
+		history.Normalized().IsNone() {
 		return nil, errors.New("history commitment must provide a last leaf proof")
 	}
 	if assertion.StateCommitment.StateRoot != history.LastLeaf {
@@ -748,13 +749,13 @@ func (c *Challenge) AddLeaf(
 			assertion.StateCommitment.Height,
 		)
 	}
-	expectedRange := assertion.StateCommitment.Height - prev.StateCommitment.Height
-	if history.Range != expectedRange {
+	expectedHeight := assertion.StateCommitment.Height - prev.StateCommitment.Height
+	if history.Height != expectedHeight {
 		return nil, errors.Wrapf(
 			ErrInvalidOp,
-			"range of history does not match expected value %d != %d",
-			history.Range,
-			expectedRange,
+			"history height does not match expected value %d != %d",
+			history.Height,
+			expectedHeight,
 		)
 	}
 
@@ -763,7 +764,7 @@ func (c *Challenge) AddLeaf(
 	// one corresponding to the assertion specified.
 	if err := util.VerifyPrefixProof(
 		history.LastLeafPrefix.Unwrap(),
-		history,
+		history.Normalized().Unwrap(),
 		history.LastLeafProof,
 	); err != nil {
 		return nil, errors.New(
