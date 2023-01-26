@@ -212,12 +212,7 @@ contract AssertionChain is IAssertionChain {
 
         require(assertions[assertionId].successionChallenge == address(0), "Challenge already created");
 
-        // CHRIS: TODO: not strictly necessary to check the first child time here
-        // CHRIS: TODO: could handle the children times differently
-        require(
-            assertions[assertionId].firstChildCreationTime != 0 && assertions[assertionId].secondChildCreationTime != 0,
-            "At least two children not created"
-        );
+        require(assertions[assertionId].secondChildCreationTime != 0, "At least two children not created");
 
         // CHRIS: TODO: I think this should be secondChildTime + 1 challenge period, and in the endTime of BlockChallenge below
         require(
