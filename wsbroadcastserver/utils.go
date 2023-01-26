@@ -70,7 +70,7 @@ func NewFlateReader() *wsflate.Reader {
 	})
 }
 
-func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, error) {
+func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, timeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, error) {
 	if compression {
 		state |= ws.StateExtended
 	}
@@ -85,22 +85,22 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 		Extensions:      []wsutil.RecvExtension{&msg},
 	}
 
+	err := conn.SetReadDeadline(time.Now().Add(timeout))
+	if err != nil {
+		return nil, 0, err
+	}
+
 	// Remove timeout when leaving this function
-	defer func(conn net.Conn) {
+	defer func() {
 		err := conn.SetReadDeadline(time.Time{})
 		logError(err, "error removing read deadline")
-	}(conn)
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, 0, nil
 		default:
-		}
-
-		err := conn.SetReadDeadline(time.Now().Add(idleTimeout))
-		if err != nil {
-			return nil, 0, err
 		}
 
 		// Control packet may be returned even if err set
