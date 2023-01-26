@@ -21,7 +21,6 @@ import (
 
 type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
-	HealthCheck(ctx context.Context) error
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
 

@@ -32,23 +32,25 @@ var (
 
 type RestfulDasServer struct {
 	server               *http.Server
-	storage              arbstate.DataAvailabilityReader
+	daReader             arbstate.DataAvailabilityReader
+	daHealthChecker      DataAvailabilityServiceHealthChecker
 	httpServerExitedChan chan interface{}
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader arbstate.DataAvailabilityReader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
 	}
-	return NewRestfulDasServerOnListener(listener, restServerTimeouts, storageService)
+	return NewRestfulDasServerOnListener(listener, restServerTimeouts, daReader, daHealthChecker)
 }
 
-func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader arbstate.DataAvailabilityReader, daHealthChecker DataAvailabilityServiceHealthChecker) (*RestfulDasServer, error) {
 
 	ret := &RestfulDasServer{
-		storage:              storageService,
+		daReader:             daReader,
+		daHealthChecker:      daHealthChecker,
 		httpServerExitedChan: make(chan interface{}),
 	}
 
@@ -104,7 +106,7 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // HealthHandler implements health requests for remote health-checks
 func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
-	err := rds.storage.HealthCheck(r.Context())
+	err := rds.daHealthChecker.HealthCheck(r.Context())
 	if err != nil {
 		log.Warn("Unhealthy service", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -114,7 +116,7 @@ func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
-	expirationPolicy, err := rds.storage.ExpirationPolicy(r.Context())
+	expirationPolicy, err := rds.daReader.ExpirationPolicy(r.Context())
 	if err != nil {
 		log.Warn("Error retrieving expiration policy", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -161,7 +163,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	responseData, err := rds.storage.GetByHash(r.Context(), common.BytesToHash(hashBytes[:32]))
+	responseData, err := rds.daReader.GetByHash(r.Context(), common.BytesToHash(hashBytes[:32]))
 	if err != nil {
 		log.Warn("Unable to find data", "path", requestPath, "err", err, "remoteAddr", r.RemoteAddr)
 		w.WriteHeader(http.StatusNotFound)

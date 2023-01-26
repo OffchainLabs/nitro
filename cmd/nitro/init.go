@@ -424,7 +424,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 				if err != nil {
-					return chainDb, nil, err
+					return chainDb, l2BlockChain, err
 				}
 				return chainDb, l2BlockChain, nil
 			}
@@ -551,7 +551,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	txIndexWg.Wait()
 	err = chainDb.Sync()
 	if err != nil {
-		return chainDb, nil, err
+		return chainDb, l2BlockChain, err
 	}
 
 	err = pruneChainDb(ctx, chainDb, stack, config, cacheConfig, l1Client, rollupAddrs)
@@ -561,7 +561,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 	if err != nil {
-		return chainDb, nil, err
+		return chainDb, l2BlockChain, err
 	}
 
 	return chainDb, l2BlockChain, nil

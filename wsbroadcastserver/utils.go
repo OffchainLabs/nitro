@@ -4,6 +4,7 @@
 package wsbroadcastserver
 
 import (
+	"compress/flate"
 	"context"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 )
 
@@ -62,15 +64,25 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 	return cr
 }
 
-func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State) ([]byte, ws.OpCode, error) {
+func NewFlateReader() *wsflate.Reader {
+	return wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
+		return flate.NewReaderDict(r, GetStaticCompressorDictionary())
+	})
+}
 
+func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, error) {
+	if compression {
+		state |= ws.StateExtended
+	}
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
+	var msg wsflate.MessageState
 	reader := wsutil.Reader{
 		Source:          (&chainedReader{}).add(earlyFrameData).add(conn),
 		State:           state,
-		CheckUTF8:       true,
+		CheckUTF8:       !compression,
 		SkipHeaderCheck: false,
 		OnIntermediate:  controlHandler,
+		Extensions:      []wsutil.RecvExtension{&msg},
 	}
 
 	// Remove timeout when leaving this function
@@ -117,8 +129,16 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 			}
 			continue
 		}
-
-		data, err := io.ReadAll(&reader)
+		var data []byte
+		if msg.IsCompressed() {
+			if !compression {
+				return nil, 0, errors.New("Received compressed frame even though compression is disabled")
+			}
+			flateReader.Reset(&reader)
+			data, err = io.ReadAll(flateReader)
+		} else {
+			data, err = io.ReadAll(&reader)
+		}
 
 		return data, header.OpCode, err
 	}

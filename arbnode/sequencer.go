@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -709,8 +710,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
-			"l1Timestamp", l1Timestamp,
-			"localTimestamp", timestamp,
+			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
+			"localTimestamp", time.Unix(int64(timestamp), 0),
 		)
 		return false
 	}
@@ -727,11 +728,20 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	hooks := s.makeSequencingHooks()
 	start := time.Now()
 	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
-	blockCreationTimer.Update(time.Since(start))
+	elapsed := time.Since(start)
+	blockCreationTimer.Update(elapsed)
+	if elapsed >= time.Second*5 {
+		var blockNum *big.Int
+		if block != nil {
+			blockNum = block.Number()
+		}
+		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", len(txes), "success", block != nil, "l2Block", blockNum)
+	}
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 	if errors.Is(err, ErrRetrySequencer) {
+		log.Warn("error sequencing transactions", "err", err)
 		// we changed roles
 		// forward if we have where to
 		if s.handleInactive(ctx, queueItems) {
@@ -751,7 +761,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			}
 			return true // don't return failure to avoid retrying immediately
 		}
-		log.Warn("error sequencing transactions", "err", err)
+		log.Error("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
