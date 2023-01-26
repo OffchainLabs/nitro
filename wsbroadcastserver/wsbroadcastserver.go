@@ -201,15 +201,15 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	handle := func(conn net.Conn) {
 		config := s.config()
 		// Set read and write deadlines for the handshake/upgrade
-		err := conn.SetReadDeadline(time.Now().Add(config.WriteTimeout))
+		err := conn.SetReadDeadline(time.Now().Add(config.HandshakeTimeout))
 		if err != nil {
-			log.Warn("error setting initial read deadline", "err", err)
+			log.Warn("error setting handshake read deadline", "err", err)
 			_ = conn.Close()
 			return
 		}
-		err = conn.SetWriteDeadline(time.Now().Add(config.WriteTimeout))
+		err = conn.SetWriteDeadline(time.Now().Add(config.HandshakeTimeout))
 		if err != nil {
-			log.Warn("error setting initial write deadline", "err", err)
+			log.Warn("error setting handshake write deadline", "err", err)
 			_ = conn.Close()
 			return
 		}
