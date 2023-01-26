@@ -10,7 +10,7 @@ Parameters
 Licensor:             Offchain Labs
 
 Licensed Work:        Arbitrum Nitro
-                      The Licensed Work is (c) 2021-2022 Offchain Labs
+                      The Licensed Work is (c) 2021-2023 Offchain Labs
 
 Additional Use Grant: You may use the Licensed Work in a production environment solely
                       to provide a point of interface to permit end users or applications
@@ -22,7 +22,7 @@ Additional Use Grant: You may use the Licensed Work in a production environment 
                       Arbitrum Rinkeby testnet/Rinkarby (chainid:421611), and
                       Arbitrum Nitro Goerli testnet (chainid:421613).
 
-Change Date:          
+Change Date:          Dec 31, 2027
 
 Change License:       Apache License Version 2.0
 
