@@ -299,25 +299,25 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			if err != nil {
 				return nil, err
 			}
-
-			validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
-			lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
-			if err != nil {
-				return nil, err
-			}
-			if lastValidated != nil {
-				lastValidatedHeader := rawdb.ReadHeader(chainDb, lastValidated.BlockHash, lastValidated.BlockNumber)
-				if lastValidatedHeader != nil {
-					err = roots.addHeader(lastValidatedHeader, false)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					log.Warn("missing latest validated block", "number", lastValidated.BlockNumber, "hash", lastValidated.BlockHash)
-				}
-			}
 		} else {
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
+		}
+
+		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
+		lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
+		if err != nil {
+			return nil, err
+		}
+		if lastValidated != nil {
+			lastValidatedHeader := rawdb.ReadHeader(chainDb, lastValidated.BlockHash, lastValidated.BlockNumber)
+			if lastValidatedHeader != nil {
+				err = roots.addHeader(lastValidatedHeader, false)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				log.Warn("missing latest validated block", "number", lastValidated.BlockNumber, "hash", lastValidated.BlockHash)
+			}
 		}
 	} else if initConfig.Prune == "full" {
 		if nodeConfig.Node.Validator.Enable || nodeConfig.Node.BlockValidator.Enable {
@@ -325,9 +325,14 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
 		parts := strings.Split(initConfig.Prune, ",")
-		var roots []common.Hash
+		roots := []common.Hash{genesisHeader.Root}
 		for _, part := range parts {
-			roots = append(roots, common.HexToHash(part))
+			root := common.HexToHash(part)
+			if root == genesisHeader.Root {
+				// This was already included in the builtin list
+				continue
+			}
+			roots = append(roots, root)
 		}
 		return roots, nil
 	} else {
