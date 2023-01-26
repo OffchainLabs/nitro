@@ -285,7 +285,7 @@ library ChallengeVertexLib {
         return vertex.historyCommitment != 0;
     }
 
-    function existsMem(ChallengeVertex memory vertex) internal view returns (bool) {
+    function existsMem(ChallengeVertex memory vertex) internal pure returns (bool) {
         return vertex.historyCommitment != 0;
     }
 
@@ -293,7 +293,7 @@ library ChallengeVertexLib {
         return exists(vertex) && vertex.staker != address(0);
     }
 
-    function isLeafMem(ChallengeVertex memory vertex) internal view returns (bool) {
+    function isLeafMem(ChallengeVertex memory vertex) internal pure returns (bool) {
         return existsMem(vertex) && vertex.staker != address(0);
     }
 }
@@ -462,7 +462,14 @@ abstract contract Challenge {
 
     error CannotConfirmVertex();
 
-    function confirmVertex(bytes32 vId) public virtual {
+    function setConfirmed(bytes32 vId) internal {
+        vertices[vId].status = Status.Confirmed;
+        if (vertices[vId].isLeaf()) {
+            winningClaim = vertices[vId].claimId;
+        }
+    }
+
+    function confirmationPreChecks(bytes32 vId) internal {
         require(vertices.has(vId), "Vertex does not exist");
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertices.has(predecessorId), "Predecessor vertex does not exist");
@@ -471,28 +478,42 @@ abstract contract Challenge {
         // CHRIS: TODO: the correct order. Check with other OR conditions to see if this is a case - we don't want race conditions
 
         require(vertices[predecessorId].status == Status.Confirmed, "Predecessor not confirmed");
+    }
+
+    function confirmForChallengeDeadline(bytes32 vId) public {
+        confirmationPreChecks(vId);
+
+        require(hasEnded(), "Challenge end time not yet reached");
+
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertices[predecessorId].presumptiveSuccessorId == vId, "Vertex is not the presumptive successor");
+
+        setConfirmed(vId);
+    }
+
+    function confirmForPsTimer(bytes32 vId) public {
+        confirmationPreChecks(vId);
+
+        bytes32 predecessorId = vertices[vId].predecessorId;
         // we check the pstimer below, so we need to make sure to flush
         vertices.flushPsTimer(predecessorId);
+        require(vertices[vId].psTimer > challengePeriod, "PsTimer not greater than challenge period");
 
-        address successionChallenge = vertices[predecessorId].successionChallenge;
-        if (successionChallenge != address(0)) {
-            require(
-                Challenge(successionChallenge).winningClaim() == vId, "Succession challenge did not declare a winner"
-            );
-            // confirm
-        } else if (vertices[vId].psTimer > challengePeriod) {
-            // confirm
-        } else if (hasEnded() && vertices[predecessorId].presumptiveSuccessorId == vId) {
-            // confirm
-        } else {
-            // cant confirm
-            revert CannotConfirmVertex();
-        }
+        setConfirmed(vId);
+    }
 
-        vertices[vId].status = Status.Confirmed;
-        if (vertices[vId].isLeaf()) {
-            winningClaim = vertices[vId].claimId;
-        }
+    function confirmForSucessionChallengeWin(bytes32 vId) public {
+        confirmationPreChecks(vId);
+
+        address successionChallenge = vertices[vertices[vId].predecessorId].successionChallenge;
+        require(successionChallenge != address(0), "No succession challenge");
+
+        require(
+            Challenge(successionChallenge).winningClaim() == vId,
+            "Succession challenge did not declare this vertex the winner"
+        );
+
+        setConfirmed(vId);
     }
 
     function createSubChallenge(bytes32 child1Id, bytes32 child2Id) public virtual {
