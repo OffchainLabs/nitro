@@ -65,8 +65,10 @@ func getJitPath() (string, error) {
 	return jitBinary, err
 }
 
-func newMachineLoader[M any](locator *MachineLocator,
-	createMachineThread func(ctx context.Context, moduleRoot common.Hash, status *machineStatus[M])) *machineLoader[M] {
+func newMachineLoader[M any](
+	locator *MachineLocator,
+	createMachineThread func(ctx context.Context, moduleRoot common.Hash, status *machineStatus[M]),
+) *machineLoader[M] {
 
 	return &machineLoader[M]{
 		machines:            make(map[common.Hash]*machineStatus[M]),

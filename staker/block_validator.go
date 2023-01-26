@@ -491,7 +491,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		for _, spawner := range v.validationSpawners {
 			gsEnd, err := spawner.Execute(ctx, input, moduleRoot)
 			if err == nil && gsEnd != gsExpected {
-				err = fmt.Errorf("unexpected GlobalState. Got: %v", gsEnd)
+				err = fmt.Errorf("unexpected GlobalState. Got: %v Expected: %v", gsEnd, gsExpected)
 			}
 			if err != nil {
 				if ctx.Err() != nil {
