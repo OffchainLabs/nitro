@@ -162,7 +162,7 @@ type ArbMachineLoader struct {
 
 func NewArbMachineLoader(config *ArbitratorMachineConfig, locator *MachineLocator) *ArbMachineLoader {
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash, status *machineStatus[arbMachines]) {
-		createArbMachineThread(ctx, locator, config, moduleRoot, status)
+		createArbMachine(ctx, locator, config, moduleRoot, status)
 	}
 	return &ArbMachineLoader{
 		machineLoader: *newMachineLoader[arbMachines](locator, createMachineThreadFunc),
