@@ -17,11 +17,19 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+)
+
+var (
+	validatorPendingValidationsCounter = metrics.NewRegisteredCounter("arb/validator/pending_validations", nil)
+	validatorValidValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/valid_validations", nil)
+	validatorFailedValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/failed_validations", nil)
+	// TODO add last batch’s last block metric
 )
 
 type BlockValidator struct {
@@ -460,6 +468,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	entry := validationStatus.Entry
 	defer func() {
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
+		validatorPendingValidationsCounter.Dec(1)
 		v.triggerSendValidations()
 	}()
 	entry.BatchInfo = append(entry.BatchInfo, validator.BatchInfo{
@@ -523,6 +532,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 				v.possiblyFatal(valError)
 			}
 			validationStatus.setStatus(Failed)
+			validatorFailedValidationsCounter.Inc(1)
 			return
 		}
 
@@ -535,7 +545,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	}
 
 	validationStatus.setStatus(Valid) // after that - validation entry could be deleted from map
-
+	validatorValidValidationsCounter.Inc(1)
 	select {
 	case v.checkProgressChan <- struct{}{}:
 	default:
@@ -624,6 +634,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
+		validatorPendingValidationsCounter.Inc(1)
 
 		seqMsg, ok := seqBatchEntry.([]byte)
 		if !ok {
