@@ -80,6 +80,7 @@ contract AssertionChain is IAssertionChain {
 
         require(assertionExists(predecessorId), "Previous assertion does not exist");
         require(previousAssertion(assertionId).status != Status.Rejected, "Previous assertion rejected");
+        require(previousAssertion(assertionId).height < height, "Height not greater than predecessor");
 
         bool isFirstChild = assertions[predecessorId].firstChildCreationTime == 0;
         if (isFirstChild) {
