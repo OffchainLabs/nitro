@@ -63,11 +63,11 @@ func (s *Simulated) LatestStateCommitment(ctx context.Context) (protocol.StateCo
 
 // HistoryCommitmentUpTo gets the history commitment for the merkle expansion up to a height.
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
-	exp := util.ExpansionFromLeaves(s.stateRoots[:height])
-	return util.HistoryCommitment{
-		Height: height,
-		Merkle: exp.Root(),
-	}, nil
+	return util.NewHistoryCommitment(
+		height,
+		s.stateRoots[:height],
+		util.WithLastElementProof(s.stateRoots[:height+1]),
+	)
 }
 
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
@@ -93,8 +93,9 @@ func (s *Simulated) HasHistoryCommitment(ctx context.Context, commitment util.Hi
 // LatestHistoryCommitment gets the history commitment up to and including the last, local state root the manager has.
 func (s *Simulated) LatestHistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
 	height := uint64(len(s.stateRoots)) - 1
-	return util.HistoryCommitment{
-		Height: height,
-		Merkle: util.ExpansionFromLeaves(s.stateRoots[:height]).Root(),
-	}, nil
+	return util.NewHistoryCommitment(
+		height,
+		s.stateRoots[:height],
+		util.WithLastElementProof(s.stateRoots[:height+1]),
+	)
 }

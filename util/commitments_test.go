@@ -7,65 +7,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestYay(t *testing.T) {
+func TestHistoryCommitment_LastLeafProof(t *testing.T) {
 	hashes := []common.Hash{
-		common.BytesToHash([]byte{1}),
-		common.BytesToHash([]byte{2}),
-		common.BytesToHash([]byte{3}),
-		common.BytesToHash([]byte{4}),
+		common.BytesToHash([]byte{10}),
+		common.BytesToHash([]byte{11}),
+		common.BytesToHash([]byte{12}),
 	}
-	_, err := NewHistoryCommitment(
-		4,
-		4,
+	commit, err := NewHistoryCommitment(
+		12,
 		hashes,
 		WithLastElementProof(hashes),
+	)
+	require.NoError(t, err)
+
+	err = VerifyPrefixProof(
+		commit.LastLeafPrefix.Unwrap(),
+		commit.Normalized().Unwrap(),
+		commit.LastLeafProof,
 	)
 	require.NoError(t, err)
 }
 
 func TestHistoryCommitment(t *testing.T) {
 	hashes := []common.Hash{
-		common.BytesToHash([]byte{1}),
-		common.BytesToHash([]byte{2}),
-		common.BytesToHash([]byte{3}),
+		common.BytesToHash([]byte{10}),
+		common.BytesToHash([]byte{11}),
+		common.BytesToHash([]byte{12}),
 	}
 
 	hiHeight := uint64(3)
-	for _, h := range hashes {
-		t.Logf("%#x", h)
-	}
-	hi := ExpansionFromLeaves(hashes)
+	hiExp := ExpansionFromLeaves(hashes)
 	hiCommit := HistoryCommitment{
 		Height: hiHeight,
-		Merkle: hi.Root(),
+		Merkle: hiExp.Root(),
 	}
 
-	loHeight := uint64(2)
-	for _, h := range hashes[:len(hashes)-1] {
-		t.Logf("%#x", h)
-	}
-	lo := ExpansionFromLeaves(hashes[:len(hashes)-1])
+	lo := uint64(len(hashes) - 1)
+	lower := hashes[:lo]
+	loExp := ExpansionFromLeaves(lower)
 	loCommit := HistoryCommitment{
-		Height: loHeight,
-		Merkle: lo.Root(),
+		Height: lo,
+		Merkle: loExp.Root(),
 	}
 	lastElem := hashes[len(hashes)-1]
-	t.Logf("%#x", lastElem)
-	proof := GeneratePrefixProof(loHeight, lo, []common.Hash{lastElem})
+	proof := GeneratePrefixProof(lo, loExp, []common.Hash{lastElem})
 	err := VerifyPrefixProof(loCommit, hiCommit, proof)
 	require.NoError(t, err)
-
-	// constructedCommit, err := NewHistoryCommitment(
-	// 	hiHeight,
-	// 	hashes,
-	// 	WithLastElementProof(hashes),
-	// )
-	// require.NoError(t, err)
-	// require.False(t, constructedCommit.LastLeafPrefix.IsNone())
-	// err = VerifyPrefixProof(
-	// 	constructedCommit.LastLeafPrefix.Unwrap(),
-	// 	constructedCommit,
-	// 	constructedCommit.LastLeafProof,
-	// )
-	// require.NoError(t, err)
 }
