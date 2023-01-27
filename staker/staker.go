@@ -387,7 +387,6 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
-		stakerAmountStakedGauge.Update(rawInfo.AmountStaked.Int64())
 	}
 	info := OurStakerInfo{
 		CanProgress:          true,
@@ -636,7 +635,6 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		if err != nil {
 			return fmt.Errorf("error placing new stake on new node: %w", err)
 		}
-		stakerAmountStakedGauge.Update(stakeAmount.Int64())
 		info.StakeExists = true
 		return nil
 	case existingNodeAction:
@@ -678,7 +676,6 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		if err != nil {
 			return fmt.Errorf("error placing new stake on existing node: %w", err)
 		}
-		stakerAmountStakedGauge.Update(stakeAmount.Int64())
 		info.StakeExists = true
 		return nil
 	default:
