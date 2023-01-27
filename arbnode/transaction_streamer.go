@@ -575,46 +575,12 @@ func (s *TransactionStreamer) logReorg(pos arbutil.MessageIndex, dbMsg *arbstate
 
 }
 
-// skipDuplicateMessages removes any duplicate messages that are already in database and
-// triggers reorg if message doesn't match what is stored in database.
-// confirmedMessageCount is the number of messages that are from L1 starting at the beginning of messages array
-// Returns: feedReorg, confirmedReorg, prevDelayedRead, deduplicatedMessagesStartPos, deduplicatedMessages, err
-// Note that feedReorg and confirmedReorg will never both be set
-// If feedReorg or confirmedReorg are set, the returned deduplicatedMessages will start at the point of the reorg
-func (s *TransactionStreamer) skipDuplicateMessages(
-	prevDelayedRead uint64,
-	pos arbutil.MessageIndex,
-	messages []arbstate.MessageWithMetadata,
-	confirmedMessageCount int,
-	batch *ethdb.Batch,
-) (bool, bool, uint64, arbutil.MessageIndex, []arbstate.MessageWithMetadata, error) {
-	dups, confirmedReorg, oldMsg, err := s.countDuplicateMessages(pos, messages, batch)
-	if err != nil {
-		return false, false, 0, 0, nil, err
-	}
-	unconfirmedReorg := false
-	if dups == confirmedMessageCount {
-		var unconfDups int
-		unconfDups, unconfirmedReorg, oldMsg, err = s.countDuplicateMessages(pos+arbutil.MessageIndex(dups), messages[dups:], nil)
-		if err != nil {
-			return false, false, 0, 0, nil, err
-		}
-		dups += unconfDups
-	}
-	if dups > 0 {
-		prevDelayedRead = messages[dups-1].DelayedMessagesRead
-	}
-	if oldMsg != nil {
-		s.logReorg(pos+arbutil.MessageIndex(dups), oldMsg, &messages[dups], confirmedReorg)
-	}
-	return unconfirmedReorg, confirmedReorg, prevDelayedRead, pos + arbutil.MessageIndex(dups), messages[dups:], nil
-}
-
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
-	var confirmedMessageCount int
-	if messagesAreConfirmed {
-		confirmedMessageCount = len(messages)
-	}
+	var confirmedReorg bool
+	var oldMsg *arbstate.MessageWithMetadata
+	var lastDelayedRead uint64
+	var hasNewConfirmedMessages bool
+
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
 
@@ -625,9 +591,21 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	config := s.config()
 	shouldResequence := config.MaxReorgResequenceDepth < 0 || s.bc.CurrentBlock().Header().Number.Int64()+config.MaxReorgResequenceDepth >= startBlockNum
 
-	lastDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
-	if err != nil {
-		return err
+	if messagesAreConfirmed {
+		var duplicates int
+		var err error
+		duplicates, confirmedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, &batch)
+		if err != nil {
+			return err
+		}
+		if duplicates > 0 {
+			lastDelayedRead = messages[duplicates-1].DelayedMessagesRead
+			messages = messages[duplicates:]
+			messageStartPos += arbutil.MessageIndex(duplicates)
+		}
+		if len(messages) > 0 {
+			hasNewConfirmedMessages = true
+		}
 	}
 
 	clearQueueOnSuccess := false
@@ -648,26 +626,37 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	var feedReorg bool
-	var confirmedReorg bool
-	// Skip any duplicate messages already in the database
-	feedReorg, confirmedReorg, lastDelayedRead, messageStartPos, messages, err = s.skipDuplicateMessages(
-		lastDelayedRead,
-		messageStartPos,
-		messages,
-		confirmedMessageCount,
-		&batch,
-	)
-	if err != nil {
-		return err
+	if !hasNewConfirmedMessages {
+		var duplicates int
+		var err error
+		duplicates, feedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, nil)
+		if err != nil {
+			return err
+		}
+		if duplicates > 0 {
+			lastDelayedRead = messages[duplicates-1].DelayedMessagesRead
+			messages = messages[duplicates:]
+			messageStartPos += arbutil.MessageIndex(duplicates)
+		}
 	}
+	if oldMsg != nil {
+		s.logReorg(messageStartPos, oldMsg, &messages[0], confirmedReorg)
+	}
+
 	if feedReorg {
 		// Never allow feed to reorg confirmed messages
 		// Note that any remaining messages must be feed messages, so we're done here
-		// The feed reorg was already logged if necessary in skipDuplicateMessages
 		if batch == nil {
 			return nil
 		}
 		return batch.Write()
+	}
+
+	if lastDelayedRead == 0 {
+		lastDelayedRead, err = s.getPrevPrevDelayedRead(messageStartPos)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Validate delayed message counts of remaining messages
