@@ -137,9 +137,6 @@ func ProduceBlock(
 	)
 }
 
-// A marker for the sequencer that an ErrGasLimitReached is permanent
-var ErrMaxGasLimitReached = fmt.Errorf("%w", core.ErrGasLimitReached)
-
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *L1IncomingMessageHeader,
@@ -270,9 +267,6 @@ func ProduceBlockAdvanced(
 			}
 
 			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
-				if computeGas > initialBlockGasLeft {
-					return nil, nil, ErrMaxGasLimitReached
-				}
 				return nil, nil, core.ErrGasLimitReached
 			}
 
