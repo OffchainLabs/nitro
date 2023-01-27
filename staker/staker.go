@@ -202,9 +202,9 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	}
 	walletAddressOrZero := s.wallet.AddressOrZero()
 	if walletAddressOrZero != (common.Address{}) {
-		balance, balanceErr := s.client.BalanceAt(ctx, walletAddressOrZero, nil)
-		if balanceErr != nil {
-			log.Error("error getting wallet balance", "walletAddress", walletAddressOrZero, "err", err)
+		balance, err := s.client.BalanceAt(ctx, walletAddressOrZero, nil)
+		if err != nil {
+			return err
 		}
 		stakerBalanceGauge.Update(balance.Int64())
 	}
