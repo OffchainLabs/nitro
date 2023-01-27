@@ -47,6 +47,7 @@ pub struct Merkle {
     ty: MerkleType,
     layers: Vec<Vec<Bytes32>>,
     empty_layers: Vec<Bytes32>,
+    min_depth: usize,
 }
 
 fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
@@ -92,6 +93,7 @@ impl Merkle {
             ty,
             layers,
             empty_layers,
+            min_depth,
         }
     }
 
@@ -140,20 +142,22 @@ impl Merkle {
         proof
     }
 
-    /// O(n) in the number of leaves
+    /// Adds a new leaf to the merkle
+    /// Currently O(n) in the number of leaves (could be log(n))
     pub fn push_leaf(&mut self, leaf: Bytes32) {
         let mut leaves = self.layers.swap_remove(0);
         leaves.push(leaf);
         let empty = self.empty_layers[0];
-        *self = Self::new_advanced(self.ty, leaves, empty, 0);
+        *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
-    /// O(n) in the number of leaves
+    /// Removes the rightmost leaf from the merkle
+    /// Currently O(n) in the number of leaves (could be log(n))
     pub fn pop_leaf(&mut self) {
         let mut leaves = self.layers.swap_remove(0);
         leaves.pop();
         let empty = self.empty_layers[0];
-        *self = Self::new_advanced(self.ty, leaves, empty, 0);
+        *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {

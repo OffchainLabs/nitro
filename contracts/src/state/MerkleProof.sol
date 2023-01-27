@@ -104,7 +104,7 @@ library MerkleProofLib {
         bytes32 hash,
         bytes32 zero,
         string memory prefix
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         bytes32 h = hash;
         uint256 node = leaf;
         while (node > 1) {
