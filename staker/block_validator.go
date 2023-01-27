@@ -642,6 +642,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		msgCountInBatch, err := v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed to get batch message count", "err", err, "batch", v.globalPosNextSend.BatchNumber)
+			return
 		}
 		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
 		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
