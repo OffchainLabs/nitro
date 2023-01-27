@@ -87,6 +87,7 @@ COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/stylus arbitrator/stylus
 COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
@@ -118,6 +119,7 @@ RUN mkdir arbitrator/prover/src arbitrator/jit/src arbitrator/stylus/src && \
     rm arbitrator/jit/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/stylus arbitrator/stylus
 COPY --from=brotli-library-export / target/
