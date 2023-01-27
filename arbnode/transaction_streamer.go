@@ -358,27 +358,19 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
-	var batch ethdb.Batch
 	var feedReorg bool
 	var err error
 	// Skip any messages already in the database
 	// prevDelayedRead set to 0 because it's only used to compute the output prevDelayedRead which is not used here
 	// Messages from feed are not confirmed, so confirmedMessageCount is 0 and confirmedReorg can be ignored
-	feedReorg, _, _, broadcastStartPos, messages, err = s.skipDuplicateMessages(
-		0,
-		broadcastStartPos,
-		messages,
-		0,
-		&batch,
-	)
+	dups, feedReorg, oldMsg, err := s.countDuplicateMessages(broadcastStartPos, messages, nil)
 	if err != nil {
 		return err
 	}
-	if batch != nil {
-		// Write database updates made inside skipDuplicateMessages
-		if err := batch.Write(); err != nil {
-			return err
-		}
+	messages = messages[dups:]
+	broadcastStartPos += arbutil.MessageIndex(dups)
+	if oldMsg != nil {
+		s.logReorg(broadcastStartPos, oldMsg, &messages[0], false)
 	}
 	if len(messages) == 0 {
 		// No new messages received
@@ -486,6 +478,103 @@ func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (
 	return prevDelayedRead, nil
 }
 
+func (s *TransactionStreamer) countDuplicateMessages(
+	pos arbutil.MessageIndex,
+	messages []arbstate.MessageWithMetadata,
+	batch *ethdb.Batch,
+) (int, bool, *arbstate.MessageWithMetadata, error) {
+	curMsg := 0
+	for {
+		if len(messages) == curMsg {
+			break
+		}
+		key := dbKey(messagePrefix, uint64(pos))
+		hasMessage, err := s.db.Has(key)
+		if err != nil {
+			return 0, false, nil, err
+		}
+		if !hasMessage {
+			break
+		}
+		haveMessage, err := s.db.Get(key)
+		if err != nil {
+			return 0, false, nil, err
+		}
+		nextMessage := messages[curMsg]
+		wantMessage, err := rlp.EncodeToBytes(nextMessage)
+		if err != nil {
+			return 0, false, nil, err
+		}
+		if !bytes.Equal(haveMessage, wantMessage) {
+			// Current message does not exactly match message in database
+			var dbMessageParsed arbstate.MessageWithMetadata
+			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
+			if err != nil {
+				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)",
+					"pos", pos,
+					"err", err,
+				)
+				return curMsg, true, nil, nil
+			} else {
+				var duplicateMessage bool
+				if nextMessage.Message != nil {
+					if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+						// Remove both of the batch gas costs and see if the messages still differ
+						nextMessageCopy := nextMessage
+						nextMessageCopy.Message = new(arbos.L1IncomingMessage)
+						*nextMessageCopy.Message = *nextMessage.Message
+						batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
+						dbMessageParsed.Message.BatchGasCost = nil
+						nextMessageCopy.Message.BatchGasCost = nil
+						if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
+							// Actually this isn't a reorg; only the batch gas costs differed
+							duplicateMessage = true
+							// If possible - update the message in the database to add the gas cost cache.
+							if batch != nil && nextMessage.Message.BatchGasCost != nil {
+								if *batch == nil {
+									*batch = s.db.NewBatch()
+								}
+								err = s.writeMessage(pos, nextMessage, *batch)
+								if err != nil {
+									return 0, false, nil, err
+								}
+							}
+						}
+						dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
+					}
+				}
+
+				if !duplicateMessage {
+					return curMsg, true, &dbMessageParsed, nil
+				}
+			}
+		}
+
+		curMsg++
+		pos++
+	}
+
+	return curMsg, false, nil, nil
+}
+
+func (s *TransactionStreamer) logReorg(pos arbutil.MessageIndex, dbMsg *arbstate.MessageWithMetadata, newMsg *arbstate.MessageWithMetadata, force bool) {
+	sendLog := force
+	if time.Now().After(s.nextAllowedFeedReorgLog) {
+		sendLog = true
+	}
+	if sendLog {
+		s.nextAllowedFeedReorgLog = time.Now().Add(time.Minute)
+		log.Warn("TransactionStreamer: Reorg detected!",
+			"pos", pos,
+			"got-delayed", newMsg.DelayedMessagesRead,
+			"got-header", newMsg.Message.Header,
+			"db-delayed", dbMsg.DelayedMessagesRead,
+			"db-header", dbMsg.Message.Header,
+		)
+	}
+
+}
+
 // skipDuplicateMessages removes any duplicate messages that are already in database and
 // triggers reorg if message doesn't match what is stored in database.
 // confirmedMessageCount is the number of messages that are from L1 starting at the beginning of messages array
@@ -499,112 +588,26 @@ func (s *TransactionStreamer) skipDuplicateMessages(
 	confirmedMessageCount int,
 	batch *ethdb.Batch,
 ) (bool, bool, uint64, arbutil.MessageIndex, []arbstate.MessageWithMetadata, error) {
-	feedReorg := false
-	confirmedReorg := false
-	for {
-		if len(messages) == 0 {
-			break
-		}
-		key := dbKey(messagePrefix, uint64(pos))
-		hasMessage, err := s.db.Has(key)
-		if err != nil {
-			return false, false, 0, 0, nil, err
-		}
-		if !hasMessage {
-			break
-		}
-		haveMessage, err := s.db.Get(key)
-		if err != nil {
-			return false, false, 0, 0, nil, err
-		}
-		nextMessage := messages[0]
-		wantMessage, err := rlp.EncodeToBytes(nextMessage)
-		if err != nil {
-			return false, false, 0, 0, nil, err
-		}
-		if !bytes.Equal(haveMessage, wantMessage) {
-			// Current message does not exactly match message in database
-			var dbMessageParsed arbstate.MessageWithMetadata
-			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
-			if err != nil {
-				if confirmedMessageCount > 0 {
-					confirmedReorg = true
-				} else {
-					feedReorg = true
-				}
-				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)",
-					"pos", pos,
-					"err", err,
-					"confirmedMessageCount", confirmedMessageCount,
-				)
-				break
-			} else {
-				var duplicateMessage bool
-				var gotHeader *arbos.L1IncomingMessageHeader
-				if nextMessage.Message != nil {
-					gotHeader = nextMessage.Message.Header
-					if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
-						// Remove both of the batch gas costs and see if the messages still differ
-						nextMessageCopy := nextMessage
-						nextMessageCopy.Message = new(arbos.L1IncomingMessage)
-						*nextMessageCopy.Message = *nextMessage.Message
-						dbMessageParsed.Message.BatchGasCost = nil
-						nextMessageCopy.Message.BatchGasCost = nil
-						if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
-							// Actually this isn't a reorg; only the batch gas costs differed
-							if nextMessage.Message.BatchGasCost != nil && confirmedMessageCount > 0 {
-								// If our new message has a gas cost cached, but the old one didn't,
-								// update the message in the database to add the gas cost cache.
-								if batch == nil {
-									return false, false, 0, 0, nil, errors.New("skipDuplicateMessages missing pointer to batch")
-								}
-								if *batch == nil {
-									*batch = s.db.NewBatch()
-								}
-								err = s.writeMessage(pos, nextMessage, *batch)
-								if err != nil {
-									return false, false, 0, 0, nil, err
-								}
-							}
-							duplicateMessage = true
-						}
-					}
-				}
-
-				if !duplicateMessage {
-					var logFeedReorg bool
-					if confirmedMessageCount > 0 {
-						confirmedReorg = true
-					} else {
-						feedReorg = true
-						if time.Now().After(s.nextAllowedFeedReorgLog) {
-							s.nextAllowedFeedReorgLog = time.Now().Add(time.Minute)
-							logFeedReorg = true
-						}
-					}
-					if confirmedReorg || logFeedReorg {
-						log.Warn("TransactionStreamer: Reorg detected!",
-							"pos", pos,
-							"got-delayed", nextMessage.DelayedMessagesRead,
-							"got-header", gotHeader,
-							"db-delayed", dbMessageParsed.DelayedMessagesRead,
-							"db-header", dbMessageParsed.Message.Header,
-							"confirmedMessageCount", confirmedMessageCount,
-						)
-					}
-					break
-				}
-			}
-		}
-
-		// This message is a duplicate, skip it
-		prevDelayedRead = nextMessage.DelayedMessagesRead
-		messages = messages[1:]
-		confirmedMessageCount--
-		pos++
+	dups, confirmedReorg, oldMsg, err := s.countDuplicateMessages(pos, messages, batch)
+	if err != nil {
+		return false, false, 0, 0, nil, err
 	}
-
-	return feedReorg, confirmedReorg, prevDelayedRead, pos, messages, nil
+	unconfirmedReorg := false
+	if dups == confirmedMessageCount {
+		var unconfDups int
+		unconfDups, unconfirmedReorg, oldMsg, err = s.countDuplicateMessages(pos+arbutil.MessageIndex(dups), messages[dups:], nil)
+		if err != nil {
+			return false, false, 0, 0, nil, err
+		}
+		dups += unconfDups
+	}
+	if dups > 0 {
+		prevDelayedRead = messages[dups-1].DelayedMessagesRead
+	}
+	if oldMsg != nil {
+		s.logReorg(pos+arbutil.MessageIndex(dups), oldMsg, &messages[dups], confirmedReorg)
+	}
+	return unconfirmedReorg, confirmedReorg, prevDelayedRead, pos + arbutil.MessageIndex(dups), messages[dups:], nil
 }
 
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
