@@ -171,7 +171,6 @@ func ProduceBlockAdvanced(
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
-	initialBlockGasLeft := blockGasLeft
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
