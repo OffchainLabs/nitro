@@ -4,6 +4,7 @@
 use crate::color::Color;
 use std::time::Duration;
 
+#[must_use]
 pub fn time(span: Duration) -> String {
     use crate::color::{MINT, RED, YELLOW};
 

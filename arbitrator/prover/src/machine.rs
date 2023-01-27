@@ -17,7 +17,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{crypto, math, Color};
+use arbutil::{math, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -918,8 +918,8 @@ impl Machine {
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(&config)?;
 
-        let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
-        let forward = parse(&forward, Path::new("forward"))?;
+        let forward = include_bytes!("../../../target/machines/latest/forward.wasm");
+        let forward = parse(forward, Path::new("forward"))?;
         let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
         let user_host = parse(&user_host, Path::new(USER_HOST))?;
         let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
@@ -942,13 +942,18 @@ impl Machine {
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
-    pub fn add_program(&mut self, wasm: &[u8], version: u32, hash: Option<Bytes32>) -> Result<()> {
+    pub fn add_program(
+        &mut self,
+        wasm: &[u8],
+        version: u32,
+        hash: Option<Bytes32>,
+    ) -> Result<Bytes32> {
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let config = StylusConfig::version(version);
         let stylus_data = bin.instrument(&config)?;
 
-        let forward = std::fs::read("../target/machines/latest/forward_stub.wasm")?;
-        let forward = binary::parse(&forward, Path::new("forward")).unwrap();
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
 
         let mut machine = Self::from_binaries(
             &[forward],
@@ -965,7 +970,7 @@ impl Machine {
         let module = machine.modules.pop().unwrap();
         let hash = hash.unwrap_or_else(|| module.hash());
         self.stylus_modules.insert(hash, module);
-        Ok(())
+        Ok(hash)
     }
 
     pub fn from_binaries(
@@ -1516,8 +1521,8 @@ impl Machine {
         bail!("global {} not found", name.red())
     }
 
-    pub fn read_memory(&mut self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
-        let Some(module) = &mut self.modules.get(module as usize) else {
+    pub fn read_memory(&self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
+        let Some(module) = &self.modules.get(module as usize) else {
             bail!("no module at offset {}", module.red())
         };
         let memory = module.memory.get_range(ptr as usize, len as usize);
@@ -2147,17 +2152,23 @@ impl Machine {
                     };
                     let Some(module) = self.stylus_modules.get(&hash) else {
                         let keys: Vec<_> = self.stylus_modules.keys().map(hex::encode).collect();
-                        error!("no program for {} in {{{}}}", hash, keys.join(", "))
+                        bail!("no program for {} in {{{}}}", hex::encode(hash), keys.join(", "))
                     };
                     flush_module!();
                     let index = self.modules.len() as u32;
                     self.value_stack.push(index.into());
                     self.modules.push(module.clone());
+                    if let Some(cached) = &mut self.modules_merkle {
+                        cached.push_leaf(hash);
+                    }
                     reset_refs!();
                 }
                 Opcode::UnlinkModule => {
                     flush_module!();
                     self.modules.pop();
+                    if let Some(cached) = &mut self.modules_merkle {
+                        cached.pop_leaf();
+                    }
                     reset_refs!();
                 }
                 Opcode::HaltAndSetFinished => {
@@ -2320,6 +2331,13 @@ impl Machine {
             };
         }
 
+        macro_rules! fail {
+            ($format:expr $(,$message:expr)*) => {{
+                let text = format!($format, $($message.red()),*);
+                panic!("WASM validation failed: {text}");
+            }};
+        }
+
         out!(prove_stack(
             &self.value_stack,
             STACK_PROVING_DEPTH,
@@ -2422,7 +2440,7 @@ impl Machine {
                     .get(self.value_stack.len() - 1 - stack_idx_offset)
                 {
                     Some(Value::I32(x)) => *x,
-                    x => panic!("WASM validation failed: memory index type is {:?}", x),
+                    x => fail!("memory index type is {x:?}"),
                 };
                 if let Some(mut idx) = u64::from(base)
                     .checked_add(arg)
@@ -2455,10 +2473,7 @@ impl Machine {
                 let (table, ty) = crate::wavm::unpack_call_indirect(arg);
                 let idx = match self.value_stack.last() {
                     Some(Value::I32(i)) => *i,
-                    x => panic!(
-                        "WASM validation failed: top of stack before call_indirect is {:?}",
-                        x,
-                    ),
+                    x => fail!("top of stack before call_indirect is {x:?}"),
                 };
                 let ty = &module.types[usize::try_from(ty).unwrap()];
                 out!((table as u64).to_be_bytes());
@@ -2507,7 +2522,7 @@ impl Machine {
                     if op == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
                         let Some(preimage) = self.preimage_resolver.get_const(self.context, hash) else {
-                            panic!("Missing requested preimage for hash {}", hash)
+                            fail!("Missing requested preimage for hash {}", hash)
                         };
                         data.push(0); // preimage proof type
                         out!(preimage);
@@ -2528,21 +2543,28 @@ impl Machine {
                 }
             }
             LinkModule | UnlinkModule => {
+                if op == LinkModule {
+                    let leaf_index = match self.value_stack.get(self.value_stack.len() - 1) {
+                        Some(Value::I32(x)) => *x as usize / Memory::LEAF_SIZE,
+                        x => fail!("module pointer has invalid type {x:?}"),
+                    };
+                    out!(module.memory.get_leaf_data(leaf_index));
+                    out!(mem_merkle.prove(leaf_index).unwrap_or_default());
+                }
+
                 // prove that our proposed leaf x has a leaf-like hash
                 let module = self.modules.last().unwrap();
-                let leaves: Vec<_> = self.modules.iter().map(Module::hash).collect();
                 out!(module.serialize_for_proof(&module.memory.merkelize()));
 
                 // prove that leaf x is under the root at position p
                 let leaf = self.modules.len() - 1;
-                let merkle = Merkle::new(MerkleType::Module, leaves);
                 out!((leaf as u32).to_be_bytes());
-                out!(merkle.prove(leaf).unwrap());
+                out!(mod_merkle.prove(leaf).unwrap());
 
                 // if needed, prove that x is the last module by proving that leaf p + 1 is 0
-                let balanced = math::is_power_of_2(self.modules.len());
+                let balanced = math::is_power_of_2(leaf + 1);
                 if !balanced {
-                    out!(merkle.prove(leaf + 1).unwrap());
+                    out!(mod_merkle.prove_any(leaf + 1));
                 }
             }
             _ => {}

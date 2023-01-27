@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
+    convert::{TryFrom, TryInto},
     fmt,
     fs::File,
     io::Read,
@@ -70,6 +71,15 @@ impl From<usize> for Bytes32 {
         let mut b = [0u8; 32];
         b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
         Self(b)
+    }
+}
+
+impl TryFrom<&[u8]> for Bytes32 {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let value: [u8; 32] = value.try_into()?;
+        Ok(Self(value))
     }
 }
 

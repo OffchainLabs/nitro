@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -52,7 +52,7 @@ contract OneStepProverHostIo is IOneStepProver {
             mach.status = MachineStatus.ERRORED;
             return;
         }
-        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
+        if (!mod.moduleMemory.isValidLeaf(ptr)) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
@@ -294,40 +294,55 @@ contract OneStepProverHostIo is IOneStepProver {
     function executeLinkModule(
         ExecutionContext calldata,
         Machine memory mach,
-        Module memory,
+        Module memory mod,
         Instruction calldata,
         bytes calldata proof
     ) internal pure {
-        bytes32 userMod = bytes32(mach.valueStack.pop().contents);
+        uint256 pointer = mach.valueStack.pop().assumeI32();
+        if (!mod.moduleMemory.isValidLeaf(pointer)) {
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+        (bytes32 userMod, uint256 offset, ) = mod.moduleMemory.proveLeaf(
+            pointer / LEAF_SIZE,
+            proof,
+            0
+        );
+
+        MerkleProof memory leafProof;
         string memory prefix = "Module merkle tree:";
         bytes32 root = mach.modulesRoot;
-        uint256 offset = 0;
         uint32 leaf;
 
         {
             Module memory leafModule;
-            MerkleProof memory leafProof;
             (leafModule, offset) = Deserialize.module(proof, offset);
             (leaf, offset) = Deserialize.u32(proof, offset);
             (leafProof, offset) = Deserialize.merkleProof(proof, offset);
+
             bytes32 compRoot = leafProof.computeRootFromModule(uint256(leaf), leafModule);
-            require(compRoot == root, "WRONG_ROOT");
+            require(compRoot == root, "WRONG_ROOT_FOR_LEAF");
         }
 
-        // if tree is unbalanced, check that the next leaf is 0
-        bool grow = isPowerOfTwo(leaf);
-        if (grow) {
+        // leaf now represents the new one we're adding
+        leaf += 1;
+
+        if (isPowerOfTwo(leaf)) {
+            require(1 << leafProof.counterparts.length == leaf, "WRONG_LEAF");
             mach.modulesRoot = MerkleProofLib.growToNewRoot(root, leaf, userMod, 0, prefix);
         } else {
+            // the tree is unbalanced, so check that the leaf is 0
             MerkleProof memory zeroProof;
             (zeroProof, offset) = Deserialize.merkleProof(proof, offset);
-            uint256 zeroLeaf = uint256(leaf + 1);
+            uint256 zeroLeaf = uint256(leaf);
             bytes32 compRoot = zeroProof.computeRootUnsafe(zeroLeaf, 0, prefix);
             require(compRoot == root, "WRONG_ROOT_FOR_ZERO");
 
             // update the leaf
             mach.modulesRoot = zeroProof.computeRootUnsafe(zeroLeaf, userMod, prefix);
         }
+
+        mach.valueStack.push(ValueLib.newI32(leaf));
     }
 
     function executeUnlinkModule(
@@ -349,20 +364,22 @@ contract OneStepProverHostIo is IOneStepProver {
             (leaf, offset) = Deserialize.u32(proof, offset);
             (leafProof, offset) = Deserialize.merkleProof(proof, offset);
             bytes32 compRoot = leafProof.computeRootFromModule(uint256(leaf), leafModule);
-            require(compRoot == root, "WRONG_ROOT");
+            require(compRoot == root, "WRONG_ROOT_FOR_LEAF");
         }
 
         // if tree is unbalanced, check that the next leaf is 0
-        bool unbalanced = !isPowerOfTwo(leaf);
+        bool unbalanced = !isPowerOfTwo(leaf + 1);
         if (unbalanced) {
             MerkleProof memory zeroProof;
             (zeroProof, offset) = Deserialize.merkleProof(proof, offset);
             uint256 zeroLeaf = uint256(leaf + 1);
             bytes32 compRoot = zeroProof.computeRootUnsafe(zeroLeaf, 0, prefix);
             require(compRoot == root, "WRONG_ROOT_FOR_ZERO");
+        } else {
+            require(1 << leafProof.counterparts.length == leaf + 1, "WRONG_LEAF");
         }
 
-        bool shrink = isPowerOfTwo(leaf - 1);
+        bool shrink = isPowerOfTwo(leaf);
         if (shrink) {
             mach.modulesRoot = leafProof.counterparts[leafProof.counterparts.length - 1];
         } else {

@@ -64,6 +64,10 @@ arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
 
 arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/main
 
+arbitrator_tests_link_info = $(shell cat $(arbitrator_cases)/link.txt | xargs)
+arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info))
+
+
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
@@ -71,8 +75,9 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
 rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.toml)
 
+prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_src = arbitrator/prover/src
-rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files)
+rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) $(prover_direct_includes)
 
 jit_dir = arbitrator/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
@@ -165,6 +170,7 @@ test-go-redis: test-go-deps
 	@printf $(done)
 
 test-gen-proofs: \
+        $(arbitrator_test_wasms) \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
@@ -343,6 +349,9 @@ contracts/test/prover/proofs/read-inboxmsg-10.json:
 
 contracts/test/prover/proofs/global-state.json:
 	echo "[]" > $@
+
+contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_prover_bin) $(arbitrator_tests_link_deps)
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
 
 contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize

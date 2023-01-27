@@ -113,10 +113,16 @@ impl Merkle {
     }
 
     #[must_use]
-    pub fn prove(&self, mut idx: usize) -> Option<Vec<u8>> {
+    pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
         if idx >= self.leaves().len() {
             return None;
         }
+        Some(self.prove_any(idx))
+    }
+
+    /// creates a merkle proof regardless of if the leaf has content
+    #[must_use]
+    pub fn prove_any(&self, mut idx: usize) -> Vec<u8> {
         let mut proof = vec![u8::try_from(self.layers.len() - 1).unwrap()];
         for (layer_i, layer) in self.layers.iter().enumerate() {
             if layer_i == self.layers.len() - 1 {
@@ -131,7 +137,23 @@ impl Merkle {
             );
             idx >>= 1;
         }
-        Some(proof)
+        proof
+    }
+
+    /// O(n) in the number of leaves
+    pub fn push_leaf(&mut self, leaf: Bytes32) {
+        let mut leaves = self.layers.swap_remove(0);
+        leaves.push(leaf);
+        let empty = self.empty_layers[0];
+        *self = Self::new_advanced(self.ty, leaves, empty, 0);
+    }
+
+    /// O(n) in the number of leaves
+    pub fn pop_leaf(&mut self) {
+        let mut leaves = self.layers.swap_remove(0);
+        leaves.pop();
+        let empty = self.empty_layers[0];
+        *self = Self::new_advanced(self.ty, leaves, empty, 0);
     }
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
