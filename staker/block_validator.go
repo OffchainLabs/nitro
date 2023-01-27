@@ -29,7 +29,7 @@ var (
 	validatorPendingValidationsCounter = metrics.NewRegisteredCounter("arb/validator/pending_validations", nil)
 	validatorValidValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/valid_validations", nil)
 	validatorFailedValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/failed_validations", nil)
-	// TODO add last batch’s last block metric
+	validatorLastBlockInLastBatchGauge = metrics.NewRegisteredGauge("arb/validator/last_block_in_last_batch", nil)
 )
 
 type BlockValidator struct {
@@ -633,15 +633,21 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("inconsistent pos mapping", "msg", nextMsg, "expected", v.globalPosNextSend, "found", startPos)
 			return
 		}
-		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		validatorPendingValidationsCounter.Inc(1)
-
 		seqMsg, ok := seqBatchEntry.([]byte)
 		if !ok {
 			batchNum := validationStatus.Entry.StartPosition.BatchNumber
 			log.Error("sequencer message bad format", "blockNr", v.nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
+		msgCountInBatch, err := v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber)
+		if err != nil {
+			log.Error("failed to get batch message count", "err", err, "batch", v.globalPosNextSend.BatchNumber)
+		}
+		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
+		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
+		validatorPendingValidationsCounter.Inc(1)
+		atomic.AddInt32(&v.atomicValidationsRunning, 1)
+
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
