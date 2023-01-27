@@ -458,7 +458,30 @@ func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error
 	return s.GetMessageCount()
 }
 
+func endBatch(batch ethdb.Batch) error {
+	if batch == nil {
+		return nil
+	}
+	return batch.Write()
+}
+
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	if messagesAreConfirmed {
+		s.reorgMutex.RLock()
+		dups, _, _, err := s.countDuplicateMessages(pos, messages, nil)
+		s.reorgMutex.RUnlock()
+		if err != nil {
+			return err
+		}
+		if dups == len(messages) {
+			return endBatch(batch)
+		}
+		// cant keep reorg lock when catching insertionMutex.
+		// we have to re-evaluate all messages
+		// happy cases for confirmed messages:
+		// 1: were previously in feed. We saved work
+		// 2: are new (syncing). We wasted very little work.
+	}
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -646,10 +669,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	if feedReorg {
 		// Never allow feed to reorg confirmed messages
 		// Note that any remaining messages must be feed messages, so we're done here
-		if batch == nil {
-			return nil
-		}
-		return batch.Write()
+		return endBatch(batch)
 	}
 
 	if lastDelayedRead == 0 {
@@ -705,10 +725,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		}
 	}
 	if len(messages) == 0 {
-		if batch == nil {
-			return nil
-		}
-		return batch.Write()
+		return endBatch(batch)
 	}
 
 	err = s.writeMessages(messageStartPos, messages, batch)
