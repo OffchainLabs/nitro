@@ -68,20 +68,25 @@ func Test_onLeafCreation(t *testing.T) {
 			Height:    6,
 			StateRoot: stateRoots[6],
 		}).Return(true)
+
+		commit, err := util.NewHistoryCommitment(
+			6,
+			stateRoots[:7],
+			util.WithLastElementProof(stateRoots[:7]),
+		)
+		require.NoError(t, err)
+
 		manager.On(
 			"HistoryCommitmentUpTo",
 			ctx,
 			uint64(6),
-		).Return(util.HistoryCommitment{
-			Height: 6,
-			Merkle: common.BytesToHash([]byte{6}),
-		}, nil)
+		).Return(commit, nil)
 
 		leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
 
 		validator.stateManager = manager
 
-		err := validator.onLeafCreated(ctx, leaf1)
+		err = validator.onLeafCreated(ctx, leaf1)
 		require.NoError(t, err)
 		err = validator.onLeafCreated(ctx, leaf2)
 		require.NoError(t, err)
@@ -104,25 +109,35 @@ func Test_onChallengeStarted(t *testing.T) {
 		Height:    6,
 		StateRoot: stateRoots[6],
 	}).Return(true)
+
+	commit6, err := util.NewHistoryCommitment(
+		6,
+		stateRoots[:7],
+		util.WithLastElementProof(stateRoots[:7]),
+	)
+	require.NoError(t, err)
+
 	manager.On(
 		"HistoryCommitmentUpTo",
 		ctx,
 		uint64(6),
-	).Return(util.HistoryCommitment{
-		Height: 6,
-		Merkle: common.BytesToHash([]byte{6}),
-	}, nil)
+	).Return(commit6, nil)
+
+	commit4, err := util.NewHistoryCommitment(
+		4,
+		stateRoots[:5],
+		util.WithLastElementProof(stateRoots[:5]),
+	)
+	require.NoError(t, err)
+
 	manager.On(
 		"HistoryCommitmentUpTo",
 		ctx,
 		uint64(4),
-	).Return(util.HistoryCommitment{
-		Height: 4,
-		Merkle: common.BytesToHash([]byte{4}),
-	}, nil)
+	).Return(commit4, nil)
 	leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
 
-	err := validator.onLeafCreated(ctx, leaf1)
+	err = validator.onLeafCreated(ctx, leaf1)
 	require.NoError(t, err)
 	err = validator.onLeafCreated(ctx, leaf2)
 	require.NoError(t, err)
@@ -146,14 +161,11 @@ func Test_onChallengeStarted(t *testing.T) {
 	manager = &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
 	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
-	manager.On("HistoryCommitmentUpTo", ctx, uint64(6)).Return(util.HistoryCommitment{
-		Height: 6,
-		Merkle: common.BytesToHash([]byte("forked commitment")),
-	}, nil)
-	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(util.HistoryCommitment{
-		Height: 4,
-		Merkle: common.BytesToHash([]byte("forked commitment")),
-	}, nil)
+
+	commit6.Merkle = common.BytesToHash([]byte("forked commit"))
+	commit4.Merkle = common.BytesToHash([]byte("forked commit"))
+	manager.On("HistoryCommitmentUpTo", ctx, uint64(6)).Return(commit6, nil)
+	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(commit4, nil)
 	validator.stateManager = manager
 
 	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{

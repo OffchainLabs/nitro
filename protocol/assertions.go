@@ -34,6 +34,9 @@ var (
 	ErrPastDeadline           = errors.New("deadline has passed")
 	ErrInsufficientBalance    = errors.New("insufficient balance")
 	ErrNotImplemented         = errors.New("not yet implemented")
+	ErrNoLastLeafProof        = errors.New("history commitment must provide a last leaf proof")
+	ErrWrongLastLeaf          = errors.New("last leaf of history does not match required state root")
+	ErrProofFailsToVerify     = errors.New("Merkle proof fails to verify for last state of history commitment")
 )
 
 // ChallengeCommitHash returns the hash of the state commitment of the challenge.
@@ -695,7 +698,12 @@ func (c *Challenge) RootVertex() *ChallengeVertex {
 }
 
 // AddLeaf adds a new leaf to the challenge.
-func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address) (*ChallengeVertex, error) {
+func (c *Challenge) AddLeaf(
+	tx *ActiveTx,
+	assertion *Assertion,
+	history util.HistoryCommitment,
+	validator common.Address,
+) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {
 		return nil, ErrInvalidOp
@@ -717,6 +725,47 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		return nil, errors.Wrapf(ErrInsufficientBalance, err.Error())
 	}
 
+	// The last leaf claimed in the history commitment must be the
+	// state root of the assertion we are adding a leaf for.
+	if !historyProvidesLastLeafProof(history) {
+		return nil, ErrNoLastLeafProof
+	}
+
+	if assertion.StateCommitment.StateRoot != history.LastLeaf {
+		return nil, ErrWrongLastLeaf
+	}
+
+	// Assert the history commitment's height is equal to the
+	// assertion.height - assertion.prev.height
+	if prev.StateCommitment.Height >= assertion.StateCommitment.Height {
+		return nil, errors.Wrapf(
+			ErrInvalidHeight,
+			"previous assertion's height %d, must be less than %d",
+			prev.StateCommitment.Height,
+			assertion.StateCommitment.Height,
+		)
+	}
+	expectedHeight := assertion.StateCommitment.Height - prev.StateCommitment.Height
+	if history.Height != expectedHeight {
+		return nil, errors.Wrapf(
+			ErrInvalidHeight,
+			"history height does not match expected value %d != %d",
+			history.Height,
+			expectedHeight,
+		)
+	}
+
+	// The validator must provide a history commitment over
+	// a series of states where the last state must be proven to be
+	// one corresponding to the assertion specified.
+	if err := util.VerifyPrefixProof(
+		history.LastLeafPrefix.Unwrap(),
+		history.Normalized().Unwrap(),
+		history.LastLeafProof,
+	); err != nil {
+		return nil, ErrProofFailsToVerify
+	}
+
 	chain := assertion.chain
 	timer := util.NewCountUpTimer(chain.timeReference)
 	if assertion.isFirstChild {
@@ -725,7 +774,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	}
 	nextSeqNumber := c.currentVertexSeqNumber + 1
 	leaf := &ChallengeVertex{
-		Challenge:            util.Some[*Challenge](c),
+		Challenge:            util.Some(c),
 		SequenceNum:          nextSeqNumber,
 		Validator:            validator,
 		isLeaf:               true,
@@ -735,7 +784,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		PresumptiveSuccessor: util.None[*ChallengeVertex](),
 		PsTimer:              timer,
 		SubChallenge:         util.None[*Challenge](),
-		winnerIfConfirmed:    util.Some[*Assertion](assertion),
+		winnerIfConfirmed:    util.Some(assertion),
 	}
 	c.currentVertexSeqNumber = nextSeqNumber
 	c.rootVertex.Unwrap().maybeNewPresumptiveSuccessor(leaf)
@@ -1027,4 +1076,11 @@ func (v *ChallengeVertex) _confirm(tx *ActiveTx) {
 		v.Challenge.Unwrap().rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, refund)
 		v.Challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
 	}
+}
+
+func historyProvidesLastLeafProof(history util.HistoryCommitment) bool {
+	return history.LastLeaf != (common.Hash{}) &&
+		len(history.LastLeafProof) != 0 &&
+		!history.LastLeafPrefix.IsNone() &&
+		!history.Normalized().IsNone()
 }
