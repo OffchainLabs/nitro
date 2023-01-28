@@ -9,7 +9,7 @@ prover = { path = "../prover/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
 wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
 wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-cranelift" }
-wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm" }
+wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm", optional = true }
 ouroboros = "0.15.5"
 parking_lot = "0.12.1"
 thiserror = "1.0.33"
@@ -20,7 +20,7 @@ sha3 = "0.10.5"
 hex = "0.4.3"
 
 [features]
-benchmark = []
+benchmark = ["dep:wasmer-compiler-llvm"]
 
 [lib]
 crate-type = ["staticlib"]
