@@ -55,7 +55,7 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	))
 	result, err := status.output(output.read())
 	if err == nil {
-		db.AddUserModule(version, program, result)
+		db.SetCompiledWasmCode(program, result)
 	}
 	return err
 }

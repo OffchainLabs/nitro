@@ -704,29 +704,6 @@ func deployContract(
 	return crypto.CreateAddress(auth.From, nonce)
 }
 
-func sendContractTx(
-	t *testing.T, ctx context.Context, to common.Address, auth bind.TransactOpts, client *ethclient.Client, code []byte,
-) {
-	basefee := GetBaseFee(t, client, ctx)
-	nonce, err := client.NonceAt(ctx, auth.From, nil)
-	Require(t, err)
-	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
-		From:      auth.From,
-		To:        &to,
-		GasPrice:  basefee,
-		GasTipCap: auth.GasTipCap,
-		Value:     big.NewInt(0),
-		Data:      code,
-	})
-	Require(t, err)
-	tx := types.NewTransaction(nonce, to, big.NewInt(0), gas, basefee, code)
-	tx, err = auth.Signer(auth.From, tx)
-	Require(t, err)
-	Require(t, client.SendTransaction(ctx, tx))
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
-}
-
 func sendContractCall(
 	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
 ) []byte {
