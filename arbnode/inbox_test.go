@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -28,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
+func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*execution.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
@@ -51,7 +52,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := NewExecutionEngine(bc)
+	execEngine, err := execution.NewExecutionEngine(bc)
 	if err != nil {
 		Fail(t, err)
 	}

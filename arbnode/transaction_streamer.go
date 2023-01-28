@@ -21,12 +21,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -42,7 +42,7 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	chainConfig *params.ChainConfig
-	exec        *ExecutionEngine
+	exec        *execution.ExecutionEngine
 
 	db           ethdb.Database
 	fatalErrChan chan<- error
@@ -83,7 +83,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 func NewTransactionStreamer(
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
-	exec *ExecutionEngine,
+	exec *execution.ExecutionEngine,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
@@ -97,7 +97,7 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 	}
-	streamer.exec.streamer = streamer
+	streamer.exec.SetTransactionStreamer(streamer)
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func uint64ToKey(x uint64) []byte {
 
 // TODO: this is needed only for block validator
 func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
-	s.exec.setBlockValidator(validator)
+	s.exec.SetBlockValidator(validator)
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
@@ -716,48 +716,18 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	return nil
 }
 
-func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
-	var l2Message []byte
-	if len(txes) == 1 && txErrors[0] == nil {
-		txBytes, err := txes[0].MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	} else {
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for i, tx := range txes {
-			if txErrors[i] != nil {
-				continue
-			}
-			txBytes, err := tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
-		}
-	}
-	return &arbos.L1IncomingMessage{
-		Header: header,
-		L2msg:  l2Message,
-	}, nil
+func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
+	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
-
-var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbstate.MessageWithMetadata) error {
 	if s.coordinator != nil {
 		if !s.coordinator.CurrentlyChosen() {
-			return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
+			return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 		}
 	}
 	if !s.insertionMutex.TryLock() {
-		return ErrSequencerInsertLockTaken
+		return execution.ErrSequencerInsertLockTaken
 	}
 	defer s.insertionMutex.Unlock()
 
@@ -842,7 +812,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 }
 
 // return value: true if should be called again
-func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *ExecutionEngine) bool {
+func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *execution.ExecutionEngine) bool {
 	if ctx.Err() != nil {
 		return false
 	}

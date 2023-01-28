@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -40,7 +41,7 @@ type SeqCoordinator struct {
 
 	sync             *SyncMonitor
 	streamer         *TransactionStreamer
-	sequencer        *Sequencer
+	sequencer        *execution.Sequencer
 	delayedSequencer *DelayedSequencer
 	signer           *signature.SignVerify
 	config           SeqCoordinatorConfig
@@ -121,7 +122,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Signing:           signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *execution.Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err
@@ -266,7 +267,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return err
 		}
 		if !wasEmpty && (current != c.config.MyUrl()) {
-			return fmt.Errorf("%w: failed to catch lock. redis shows chosen: %s", ErrRetrySequencer, current)
+			return fmt.Errorf("%w: failed to catch lock. redis shows chosen: %s", execution.ErrRetrySequencer, current)
 		}
 		remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, tx)
 		if err != nil {
@@ -279,7 +280,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 				return nil
 			}
 			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
-			return fmt.Errorf("%w: failed to catch lock. expected msg %d found %d", ErrRetrySequencer, msgCountExpected, remoteMsgCount)
+			return fmt.Errorf("%w: failed to catch lock. expected msg %d found %d", execution.ErrRetrySequencer, msgCountExpected, remoteMsgCount)
 		}
 		pipe := tx.TxPipeline()
 		initialDuration := c.config.LockoutDuration
@@ -302,7 +303,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
-			return fmt.Errorf("%w: failed to catch sequencer lock", ErrRetrySequencer)
+			return fmt.Errorf("%w: failed to catch sequencer lock", execution.ErrRetrySequencer)
 		}
 		if err != nil {
 			return fmt.Errorf("chosen sequencer failed to update redis: %w", err)
@@ -737,7 +738,7 @@ func (c *SeqCoordinator) CurrentlyChosen() bool {
 
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
 	if !c.CurrentlyChosen() {
-		return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
+		return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 	}
 	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {
 		return err

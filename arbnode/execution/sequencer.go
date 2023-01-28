@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package execution
 
 import (
 	"context"
@@ -58,6 +58,22 @@ type SequencerConfig struct {
 	NonceFailureCacheSize       int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
+}
+
+type DangerousSequencerConfig struct {
+	NoCoordinator bool `koanf:"no-coordinator"`
+}
+
+var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: false,
+}
+
+var TestDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: true,
+}
+
+func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
 }
 
 func (c *SequencerConfig) Validate() error {

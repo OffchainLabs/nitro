@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -399,13 +400,13 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 type Config struct {
 	RPC                    arbitrum.Config             `koanf:"rpc"`
-	Sequencer              SequencerConfig             `koanf:"sequencer" reload:"hot"`
+	Sequencer              execution.SequencerConfig   `koanf:"sequencer" reload:"hot"`
 	L1Reader               headerreader.Config         `koanf:"l1-reader" reload:"hot"`
 	InboxReader            InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer       DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster            BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
 	ForwardingTargetImpl   string                      `koanf:"forwarding-target"`
-	Forwarder              ForwarderConfig             `koanf:"forwarder"`
+	Forwarder              execution.ForwarderConfig   `koanf:"forwarder"`
 	TxPreCheckerStrictness uint                        `koanf:"tx-pre-checker-strictness" reload:"hot"`
 	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
@@ -462,13 +463,13 @@ func (c *Config) ForwardingTarget() string {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
-	SequencerConfigAddOptions(prefix+".sequencer", f)
+	execution.SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".l1-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
-	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
+	execution.AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	txPreCheckerDescription := "how strict to be when checking txs before forwarding them. 0 = accept anything, " +
 		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
 		"30 = full validation which may reject txs that would succeed"
@@ -491,13 +492,13 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 
 var ConfigDefault = Config{
 	RPC:                    arbitrum.DefaultConfig,
-	Sequencer:              DefaultSequencerConfig,
+	Sequencer:              execution.DefaultSequencerConfig,
 	L1Reader:               headerreader.DefaultConfig,
 	InboxReader:            DefaultInboxReaderConfig,
 	DelayedSequencer:       DefaultDelayedSequencerConfig,
 	BatchPoster:            DefaultBatchPosterConfig,
 	ForwardingTargetImpl:   "",
-	TxPreCheckerStrictness: TxPreCheckerStrictnessNone,
+	TxPreCheckerStrictness: execution.TxPreCheckerStrictnessNone,
 	BlockValidator:         staker.DefaultBlockValidatorConfig,
 	Feed:                   broadcastclient.FeedConfigDefault,
 	Validator:              staker.DefaultL1ValidatorConfig,
@@ -514,7 +515,7 @@ var ConfigDefault = Config{
 
 func ConfigDefaultL1Test() *Config {
 	config := ConfigDefaultL1NonSequencerTest()
-	config.Sequencer = TestSequencerConfig
+	config.Sequencer = execution.TestSequencerConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
@@ -538,7 +539,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
-	config.Sequencer = TestSequencerConfig
+	config.Sequencer = execution.TestSequencerConfig
 	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
@@ -562,22 +563,6 @@ var DefaultDangerousConfig = DangerousConfig{
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
-}
-
-type DangerousSequencerConfig struct {
-	NoCoordinator bool `koanf:"no-coordinator"`
-}
-
-var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
-	NoCoordinator: false,
-}
-
-var TestDangerousSequencerConfig = DangerousSequencerConfig{
-	NoCoordinator: true,
-}
-
-func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
 }
 
 type WasmConfig struct {
@@ -670,11 +655,11 @@ type Node struct {
 	Stack                   *node.Node
 	Backend                 *arbitrum.Backend
 	FilterSystem            *filters.FilterSystem
-	ArbInterface            *ArbInterface
+	ArbInterface            *execution.ArbInterface
 	L1Reader                *headerreader.HeaderReader
-	ExecEngine              *ExecutionEngine
+	ExecEngine              *execution.ExecutionEngine
 	TxStreamer              *TransactionStreamer
-	TxPublisher             TransactionPublisher
+	TxPublisher             execution.TransactionPublisher
 	DeployInfo              *RollupAddresses
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
@@ -808,7 +793,7 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
 	}
 
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	execEngine, err := execution.NewExecutionEngine(l2BlockChain)
 	if err != nil {
 		return nil, err
 	}
@@ -818,9 +803,9 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	var txPublisher TransactionPublisher
+	var txPublisher execution.TransactionPublisher
 	var coordinator *SeqCoordinator
-	var sequencer *Sequencer
+	var sequencer *execution.Sequencer
 	var bpVerifier *contracts.BatchPosterVerifier
 	if deployInfo != nil && l1client != nil {
 		sequencerInboxAddr := deployInfo.SequencerInbox
@@ -839,14 +824,14 @@ func createNodeImpl(
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
-		sequencerConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
+		sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
 		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(execEngine, l1Reader, sequencerConfigFetcher)
+			sequencer, err = execution.NewSequencer(execEngine, l1Reader, sequencerConfigFetcher)
 		} else {
-			sequencer, err = NewSequencer(execEngine, nil, sequencerConfigFetcher)
+			sequencer, err = execution.NewSequencer(execEngine, nil, sequencerConfigFetcher)
 		}
 		if err != nil {
 			return nil, err
@@ -857,9 +842,9 @@ func createNodeImpl(
 			return nil, errors.New("cannot have delayedsequencer without sequencer")
 		}
 		if config.ForwardingTarget() == "" {
-			txPublisher = NewTxDropper()
+			txPublisher = execution.NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
+			txPublisher = execution.NewForwarder(config.ForwardingTarget(), &config.Forwarder)
 		}
 	}
 	if config.SeqCoordinator.Enable {
@@ -868,8 +853,8 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
-	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
+	txPublisher = execution.NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
+	arbInterface, err := execution.NewArbInterface(execEngine, txPublisher)
 	if err != nil {
 		return nil, err
 	}
@@ -1177,27 +1162,27 @@ func CreateNode(
 	apis = append(apis, rpc.API{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   &ArbAPI{currentNode.TxPublisher},
+		Service:   execution.NewArbAPI(currentNode.TxPublisher),
 		Public:    false,
 	})
 	config := configFetcher.Get()
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
-		Service: &ArbDebugAPI{
-			blockchain:        l2BlockChain,
-			blockRangeBound:   config.RPC.ArbDebug.BlockRangeBound,
-			timeoutQueueBound: config.RPC.ArbDebug.TimeoutQueueBound,
-		},
+		Service: execution.NewArbDebugAPI(
+			l2BlockChain,
+			config.RPC.ArbDebug.BlockRangeBound,
+			config.RPC.ArbDebug.TimeoutQueueBound,
+		),
 		Public: false,
 	})
 	apis = append(apis, rpc.API{
 		Namespace: "arbtrace",
 		Version:   "1.0",
-		Service: &ArbTraceForwarderAPI{
-			fallbackClientUrl:     config.RPC.ClassicRedirect,
-			fallbackClientTimeout: config.RPC.ClassicRedirectTimeout,
-		},
+		Service: execution.NewArbTraceForwarderAPI(
+			config.RPC.ClassicRedirect,
+			config.RPC.ClassicRedirectTimeout,
+		),
 		Public: false,
 	})
 	apis = append(apis, rpc.API{

@@ -1,7 +1,8 @@
-package arbnode
+package execution
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"testing"
@@ -23,12 +24,17 @@ import (
 	"github.com/pkg/errors"
 )
 
+type TransactionStreamerInterface interface {
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbstate.MessageWithMetadata) error
+	FetchBatch(batchNum uint64) ([]byte, error)
+}
+
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc        *core.BlockChain
 	validator *staker.BlockValidator
-	streamer  *TransactionStreamer
+	streamer  TransactionStreamerInterface
 
 	resequenceChan    chan []*arbstate.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -50,7 +56,7 @@ func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 	}, nil
 }
 
-func (s *ExecutionEngine) setBlockValidator(validator *staker.BlockValidator) {
+func (s *ExecutionEngine) SetBlockValidator(validator *staker.BlockValidator) {
 	if s.Started() {
 		panic("trying to set block validator after start")
 	}
@@ -68,6 +74,16 @@ func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos
 		panic("trying to set reorg sequencing policy when already set")
 	}
 	s.reorgSequencing = reorgSequencing
+}
+
+func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInterface) {
+	if s.Started() {
+		panic("trying to set reorg sequencing policy after start")
+	}
+	if s.reorgSequencing != nil {
+		panic("trying to set reorg sequencing policy when already set")
+	}
+	s.streamer = streamer
 }
 
 func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbstate.MessageWithMetadata, oldMessages []*arbstate.MessageWithMetadata) error {
@@ -181,6 +197,8 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbstate.Message
 	}
 }
 
+var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
+
 func (s *ExecutionEngine) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	for {
 		hooks.TxErrors = nil
@@ -192,6 +210,38 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbos.L1IncomingMessageHe
 		}
 		<-time.After(time.Millisecond * 100)
 	}
+}
+
+func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
+	var l2Message []byte
+	if len(txes) == 1 && txErrors[0] == nil {
+		txBytes, err := txes[0].MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	} else {
+		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+		sizeBuf := make([]byte, 8)
+		for i, tx := range txes {
+			if txErrors[i] != nil {
+				continue
+			}
+			txBytes, err := tx.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+			l2Message = append(l2Message, sizeBuf...)
+			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+			l2Message = append(l2Message, txBytes...)
+		}
+	}
+	return &arbos.L1IncomingMessage{
+		Header: header,
+		L2msg:  l2Message,
+	}, nil
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
@@ -361,10 +411,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbstate.MessageWithMe
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	batchFetcher := func(batchNum uint64) ([]byte, error) {
-		return s.streamer.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
-	}
-
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -372,7 +418,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbstate.MessageWithMe
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		batchFetcher,
+		s.streamer.FetchBatch,
 	)
 
 	return block, statedb, receipts, err
