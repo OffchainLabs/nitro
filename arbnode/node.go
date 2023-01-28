@@ -700,7 +700,6 @@ func createNodeImpl(
 	fatalErrChan chan error,
 ) (*Node, error) {
 	config := configFetcher.Get()
-	var reorgingToBlock *types.Block
 
 	err := checkArbDbSchemaVersion(arbDb)
 	if err != nil {
@@ -710,16 +709,9 @@ func createNodeImpl(
 	l2Config := l2BlockChain.Config()
 	l2ChainId := l2Config.ChainID.Uint64()
 
+	var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
-		blockNum := uint64(config.Dangerous.ReorgToBlock)
-		if blockNum < l2Config.ArbitrumChainParams.GenesisBlockNum {
-			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, l2Config.ArbitrumChainParams.GenesisBlockNum)
-		}
-		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
-		if reorgingToBlock == nil {
-			return nil, fmt.Errorf("didn't find reorg target block number %v", blockNum)
-		}
-		err := l2BlockChain.ReorgToOldBlock(reorgingToBlock)
+		reorgingToBlock, err = execution.ReorgToBlock(l2BlockChain, uint64(config.Dangerous.ReorgToBlock))
 		if err != nil {
 			return nil, err
 		}
@@ -743,7 +735,6 @@ func createNodeImpl(
 	}
 
 	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
-
 	txprecheckStrictFetcher := func() uint { return configFetcher.Get().TxPreCheckerStrictness }
 	exec, err := execution.CreateExecutionNode(stack, chainDb, l2BlockChain, l1Reader, syncMonitor,
 		config.ForwardingTarget(), &config.Forwarder, config.RPC,
@@ -765,7 +756,7 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain.Config(), exec.ExecEngine, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec.ExecEngine, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
