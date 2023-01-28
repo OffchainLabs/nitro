@@ -65,8 +65,10 @@ arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
 arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/main
 
 arbitrator_tests_link_info = $(shell cat $(arbitrator_cases)/link.txt | xargs)
-arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info))
+arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info)) $(arbitrator_prover_bin)
 
+arbitrator_tests_forward_wats = $(wildcard $(arbitrator_cases)/forward/*.wat)
+arbitrator_tests_forward_deps = $(arbitrator_tests_forward_wats:wat=wasm) $(arbitrator_prover_bin)
 
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
@@ -350,7 +352,11 @@ contracts/test/prover/proofs/read-inboxmsg-10.json:
 contracts/test/prover/proofs/global-state.json:
 	echo "[]" > $@
 
-contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_prover_bin) $(arbitrator_tests_link_deps)
+contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test.wasm $(arbitrator_tests_forward_deps)
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize \
+        $(patsubst %,-l %, $(arbitrator_tests_forward_wats:wat=wasm))
+
+contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
 
 contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_prover_bin)
