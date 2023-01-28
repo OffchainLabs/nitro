@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -617,16 +616,11 @@ func (w *WasmConfig) FindMachineDir() (string, bool) {
 }
 
 type Node struct {
-	ChainDB                 ethdb.Database
 	ArbDB                   ethdb.Database
 	Stack                   *node.Node
-	Backend                 *arbitrum.Backend
-	FilterSystem            *filters.FilterSystem
-	ArbInterface            *execution.ArbInterface
+	Execution               *execution.ExecutionNode
 	L1Reader                *headerreader.HeaderReader
-	ExecEngine              *execution.ExecutionEngine
 	TxStreamer              *TransactionStreamer
-	TxPublisher             execution.TransactionPublisher
 	DeployInfo              *RollupAddresses
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
@@ -743,6 +737,21 @@ func createNodeImpl(
 		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 	}
 
+	var l1Reader *headerreader.HeaderReader
+	if config.L1Reader.Enable {
+		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+	}
+
+	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
+
+	txprecheckStrictFetcher := func() uint { return configFetcher.Get().TxPreCheckerStrictness }
+	exec, err := execution.CreateExecutionNode(stack, chainDb, l2BlockChain, l1Reader, syncMonitor,
+		config.ForwardingTarget(), &config.Forwarder, config.RPC,
+		sequencerConfigFetcher, txprecheckStrictFetcher)
+	if err != nil {
+		return nil, err
+	}
+
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		var maybeDataSigner signature.DataSignerFunc
@@ -755,24 +764,12 @@ func createNodeImpl(
 		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
 	}
 
-	var l1Reader *headerreader.HeaderReader
-	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
-	}
-
-	execEngine, err := execution.NewExecutionEngine(l2BlockChain)
-	if err != nil {
-		return nil, err
-	}
-
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain.Config(), execEngine, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain.Config(), exec.ExecEngine, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
-	var txPublisher execution.TransactionPublisher
 	var coordinator *SeqCoordinator
-	var sequencer *execution.Sequencer
 	var bpVerifier *contracts.BatchPosterVerifier
 	if deployInfo != nil && l1client != nil {
 		sequencerInboxAddr := deployInfo.SequencerInbox
@@ -784,54 +781,17 @@ func createNodeImpl(
 		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
 
-	if config.Sequencer.Enable {
-		if config.ForwardingTarget() != "" {
-			return nil, errors.New("sequencer and forwarding target both set")
-		}
-		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
-			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
-		}
-		sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
-		if config.L1Reader.Enable {
-			if l1client == nil {
-				return nil, errors.New("l1client is nil")
-			}
-			sequencer, err = execution.NewSequencer(execEngine, l1Reader, sequencerConfigFetcher)
-		} else {
-			sequencer, err = execution.NewSequencer(execEngine, nil, sequencerConfigFetcher)
-		}
-		if err != nil {
-			return nil, err
-		}
-		txPublisher = sequencer
-	} else {
-		if config.DelayedSequencer.Enable {
-			return nil, errors.New("cannot have delayedsequencer without sequencer")
-		}
-		if config.ForwardingTarget() == "" {
-			txPublisher = execution.NewTxDropper()
-		} else {
-			txPublisher = execution.NewForwarder(config.ForwardingTarget(), &config.Forwarder)
-		}
+	if config.DelayedSequencer.Enable != (config.Sequencer.Enable && (l1Reader != nil)) {
+		return nil, errors.New("cannot have delayedsequencer without sequencer or vice versa")
 	}
+
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec.Sequencer, syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
-	}
-	txPublisher = execution.NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
-	arbInterface, err := execution.NewArbInterface(execEngine, txPublisher)
-	if err != nil {
-		return nil, err
-	}
-	filterConfig := filters.Config{
-		LogCacheSize: config.RPC.FilterLogCacheSize,
-		Timeout:      config.RPC.FilterTimeout,
-	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor, filterConfig)
-	if err != nil {
-		return nil, err
+	} else if config.Sequencer.Enable && (!config.Sequencer.Dangerous.NoCoordinator) {
+		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 	}
 
 	var broadcastClients *broadcastclients.BroadcastClients
@@ -854,18 +814,14 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
+
 	if !config.L1Reader.Enable {
 		return &Node{
-			chainDb,
 			arbDb,
 			stack,
-			backend,
-			filterSystem,
-			arbInterface,
+			exec,
 			nil,
-			execEngine,
 			txStreamer,
-			txPublisher,
 			nil,
 			nil,
 			nil,
@@ -1048,22 +1004,17 @@ func createNodeImpl(
 		}
 	}
 	// always create DelayedSequencer, it won't do anything if it is disabled
-	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, execEngine, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, exec.ExecEngine, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 	if err != nil {
 		return nil, err
 	}
 
 	return &Node{
-		chainDb,
 		arbDb,
 		stack,
-		backend,
-		filterSystem,
-		arbInterface,
+		exec,
 		l1Reader,
-		execEngine,
 		txStreamer,
-		txPublisher,
 		deployInfo,
 		inboxReader,
 		inboxTracker,
@@ -1129,7 +1080,7 @@ func CreateNode(
 	apis = append(apis, rpc.API{
 		Namespace: "arb",
 		Version:   "1.0",
-		Service:   execution.NewArbAPI(currentNode.TxPublisher),
+		Service:   execution.NewArbAPI(currentNode.Execution.TxPublisher),
 		Public:    false,
 	})
 	config := configFetcher.Get()
@@ -1164,16 +1115,16 @@ func CreateNode(
 
 func (n *Node) Start(ctx context.Context) error {
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
-	n.ArbInterface.Initialize(n)
+	n.Execution.ArbInterface.Initialize(n)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
-	err = n.Backend.Start()
+	err = n.Execution.Backend.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth backend: %w", err)
 	}
-	err = n.TxPublisher.Initialize(ctx)
+	err = n.Execution.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return fmt.Errorf("error initializing transaction publisher: %w", err)
 	}
@@ -1190,14 +1141,14 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	n.TxStreamer.Start(ctx)
-	n.ExecEngine.Start(ctx)
+	n.Execution.ExecEngine.Start(ctx)
 	if n.InboxReader != nil {
 		err = n.InboxReader.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
 	}
-	err = n.TxPublisher.Start(ctx)
+	err = n.Execution.TxPublisher.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
@@ -1266,8 +1217,8 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.PrepareForShutdown()
 	}
 	n.Stack.StopRPC() // does nothing if not running
-	if n.TxPublisher.Started() {
-		n.TxPublisher.StopAndWait()
+	if n.Execution.TxPublisher.Started() {
+		n.Execution.TxPublisher.StopAndWait()
 	}
 	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
 		n.DelayedSequencer.StopAndWait()
@@ -1299,15 +1250,15 @@ func (n *Node) StopAndWait() {
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
 	}
-	if n.ExecEngine.Started() {
-		n.ExecEngine.StopAndWait()
+	if n.Execution.ExecEngine.Started() {
+		n.Execution.ExecEngine.StopAndWait()
 	}
 	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		// Just stops the redis client (most other stuff was stopped earlier)
 		n.SeqCoordinator.StopAndWait()
 	}
-	n.ArbInterface.BlockChain().Stop() // does nothing if not running
-	if err := n.Backend.Stop(); err != nil {
+	n.Execution.ArbInterface.BlockChain().Stop() // does nothing if not running
+	if err := n.Execution.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
 	if n.DASLifecycleManager != nil {

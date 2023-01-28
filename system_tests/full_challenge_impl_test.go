@@ -285,13 +285,13 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		Fail(t, err)
 	}
 
-	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
-	challengerGenesis := challengerL2.ArbInterface.BlockChain().Genesis()
+	asserterGenesis := asserterL2.Execution.ArbInterface.BlockChain().Genesis()
+	challengerGenesis := challengerL2.Execution.ArbInterface.BlockChain().Genesis()
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
 		Fail(t, "asserter and challenger have different genesis hashes")
 	}
-	asserterLatestBlock := asserterL2.ArbInterface.BlockChain().CurrentBlock()
-	challengerLatestBlock := challengerL2.ArbInterface.BlockChain().CurrentBlock()
+	asserterLatestBlock := asserterL2.Execution.ArbInterface.BlockChain().CurrentBlock()
+	challengerLatestBlock := challengerL2.Execution.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
 		Fail(t, "asserter and challenger have the same end block")
 	}

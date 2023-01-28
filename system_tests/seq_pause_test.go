@@ -21,7 +21,7 @@ func TestSequencerPause(t *testing.T) {
 
 	const numUsers = 100
 
-	prechecker, ok := nodeA.TxPublisher.(*execution.TxPreChecker)
+	prechecker, ok := nodeA.Execution.TxPublisher.(*execution.TxPreChecker)
 	if !ok {
 		t.Error("prechecker not found on node")
 	}

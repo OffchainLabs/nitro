@@ -82,7 +82,7 @@ func TestBloom(t *testing.T) {
 	}
 
 	for {
-		sectionSize, sectionNum := node.Backend.APIBackend().BloomStatus()
+		sectionSize, sectionNum := node.Execution.Backend.APIBackend().BloomStatus()
 		if sectionSize != 256 {
 			Fail(t, "unexpected section size: ", sectionSize)
 		}

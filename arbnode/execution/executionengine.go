@@ -80,7 +80,7 @@ func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInt
 	if s.Started() {
 		panic("trying to set reorg sequencing policy after start")
 	}
-	if s.reorgSequencing != nil {
+	if s.streamer != nil {
 		panic("trying to set reorg sequencing policy when already set")
 	}
 	s.streamer = streamer
