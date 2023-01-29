@@ -143,7 +143,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(CallerModuleInternalCall, UserSetGas);
         }
         ("hostio", "link_module") => {
-            // λ(module_hash)
+            // λ(module_hash) -> module
             ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(LinkModule);
@@ -188,12 +188,6 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(LocalGet, 0); // module
             opcode!(LocalGet, 1); // main
             opcode!(CrossModuleDynamicCall) // consumes module and main, passing args_len
-        }
-        ("test", "cross_module_dynamic_call") => {
-            ty = FunctionType::new(vec![I32, I32], vec![I32, I32, I32]);
-            opcode!(LocalGet, 0); // module
-            opcode!(LocalGet, 1); // func
-            opcode!(CrossModuleDynamicCall)
         }
         _ => eyre::bail!("no such hostio {} in {}", name.red(), module.red()),
     }
