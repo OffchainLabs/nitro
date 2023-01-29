@@ -35,7 +35,7 @@ func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, wasmGasPrice, hostioCost u64) *rustConfig
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) error {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32, alreadyExists bool) error {
 	_, err := compileMachine(db, program, wasm, version)
 	return err
 }
