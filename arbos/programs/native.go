@@ -46,7 +46,7 @@ type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32) error {
+func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, previouslyExists bool) error {
 	output := rustVec()
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
@@ -55,7 +55,7 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	))
 	result, err := status.output(output.read())
 	if err == nil {
-		db.SetCompiledWasmCode(program, result)
+		db.SetCompiledWasmCode(program, result, previouslyExists)
 	}
 	return err
 }
@@ -69,7 +69,7 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
 	}
 
-	module := db.GetCompiledWasmCode(program)
+	module := db.GetCompiledWasmCode(program, true)
 
 	output := rustVec()
 	status := userStatus(C.stylus_call(

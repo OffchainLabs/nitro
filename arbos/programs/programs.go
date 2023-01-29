@@ -103,7 +103,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 	if err != nil {
 		return 0, err
 	}
-	if err := compileUserWasm(statedb, program, wasm, version); err != nil {
+	if err := compileUserWasm(statedb, program, wasm, version, latest > 0); err != nil {
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(program.Hash(), version)
