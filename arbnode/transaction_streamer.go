@@ -719,11 +719,18 @@ func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
 	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	if s.coordinator != nil {
 		if !s.coordinator.CurrentlyChosen() {
 			return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 		}
+	}
+	return nil
+}
+
+func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+	if err := s.ExpectChosenSequencer(); err != nil {
+		return err
 	}
 	if !s.insertionMutex.TryLock() {
 		return execution.ErrSequencerInsertLockTaken

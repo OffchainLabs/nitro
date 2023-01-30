@@ -258,7 +258,7 @@ func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	txStreamer      *ExecutionEngine
+	execEngine      *ExecutionEngine
 	txQueue         chan txQueueItem
 	txRetryQueue    containers.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
@@ -279,7 +279,7 @@ type Sequencer struct {
 	forwarder   *TxForwarder
 }
 
-func NewSequencer(txStreamer *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -293,7 +293,7 @@ func NewSequencer(txStreamer *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 	s := &Sequencer{
-		txStreamer:      txStreamer,
+		execEngine:      execEngine,
 		txQueue:         make(chan txQueueItem, config.QueueSize),
 		l1Reader:        l1Reader,
 		config:          configFetcher,
@@ -304,7 +304,7 @@ func NewSequencer(txStreamer *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		l1Timestamp:     0,
 		pauseChan:       nil,
 	}
-	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
+	execEngine.SetReorgSequencingPolicy(s.makeSequencingHooks)
 	return s, nil
 }
 
@@ -331,7 +331,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 
 	if len(s.senderWhitelist) > 0 {
-		signer := types.LatestSigner(s.txStreamer.bc.Config())
+		signer := types.LatestSigner(s.execEngine.bc.Config())
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
 			return err
@@ -413,11 +413,7 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	// TODO
-	// if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
-	// 	return ErrNoSequencer
-	// }
-	return nil
+	return s.execEngine.streamer.ExpectChosenSequencer()
 }
 
 func (s *Sequencer) ForwardTarget() string {
@@ -543,7 +539,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 
 // There's no guarantee that returned tx nonces will be correct
 func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
-	bc := s.txStreamer.bc
+	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock().Header()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
@@ -745,7 +741,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	hooks := s.makeSequencingHooks()
 	start := time.Now()
-	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
+	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
 	if elapsed >= time.Second*5 {

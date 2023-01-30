@@ -26,6 +26,7 @@ import (
 
 type TransactionStreamerInterface interface {
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
+	ExpectChosenSequencer() error
 	FetchBatch(batchNum uint64) ([]byte, error)
 }
 
