@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -26,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*execution.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
@@ -117,7 +117,7 @@ func TestTransactionStreamer(t *testing.T) {
 			}
 			state.balances = newBalances
 
-			var messages []arbstate.MessageWithMetadata
+			var messages []arbostypes.MessageWithMetadata
 			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
@@ -142,10 +142,10 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, math.U256Bytes(value)...)
 				var requestId common.Hash
 				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))
-				messages = append(messages, arbstate.MessageWithMetadata{
-					Message: &arbos.L1IncomingMessage{
-						Header: &arbos.L1IncomingMessageHeader{
-							Kind:      arbos.L1MessageType_L2Message,
+				messages = append(messages, arbostypes.MessageWithMetadata{
+					Message: &arbostypes.L1IncomingMessage{
+						Header: &arbostypes.L1IncomingMessageHeader{
+							Kind:      arbostypes.L1MessageType_L2Message,
 							Poster:    source,
 							RequestId: &requestId,
 						},

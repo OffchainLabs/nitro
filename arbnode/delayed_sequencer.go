@@ -16,7 +16,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -138,7 +138,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	// Retrieve all finalized delayed messages
 	pos := startPos
 	var lastDelayedAcc common.Hash
-	var messages []*arbos.L1IncomingMessage
+	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
 		msg, acc, err := d.inbox.GetDelayedMessageAndAccumulator(pos)
 		if err != nil {

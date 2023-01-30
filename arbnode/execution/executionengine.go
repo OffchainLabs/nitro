@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -25,7 +25,7 @@ import (
 )
 
 type TransactionStreamerInterface interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbstate.MessageWithMetadata) error
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
 	FetchBatch(batchNum uint64) ([]byte, error)
 }
 
@@ -36,7 +36,7 @@ type ExecutionEngine struct {
 	validator *staker.BlockValidator
 	streamer  TransactionStreamerInterface
 
-	resequenceChan    chan []*arbstate.MessageWithMetadata
+	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
 
 	newBlockNotifier chan struct{}
@@ -51,7 +51,7 @@ type ExecutionEngine struct {
 func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:               bc,
-		resequenceChan:   make(chan []*arbstate.MessageWithMetadata),
+		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
 	}, nil
 }
@@ -86,7 +86,7 @@ func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInt
 	s.streamer = streamer
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbstate.MessageWithMetadata, oldMessages []*arbstate.MessageWithMetadata) error {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
 	s.createBlocksMutex.Lock()
 	successful := false
 	defer func() {
@@ -145,7 +145,7 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 }
 
 // The caller must hold the createBlocksMutex
-func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbstate.MessageWithMetadata) {
+func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
 	if s.reorgSequencing == nil {
 		return
 	}
@@ -178,13 +178,13 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbstate.Message
 			nextDelayedSeqNum += 1
 			continue
 		}
-		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
+		if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
 			// This shouldn't exist?
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
 		// We don't need a batch fetcher as this is an L2 message
-		txes, err := msg.Message.ParseL2Transactions(s.bc.Config().ChainID, nil)
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, nil)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
@@ -199,7 +199,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbstate.Message
 
 var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	for {
 		hooks.TxErrors = nil
 		s.createBlocksMutex.Lock()
@@ -212,7 +212,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbos.L1IncomingMessageHe
 	}
 }
 
-func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
+func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
@@ -238,13 +238,13 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 			l2Message = append(l2Message, txBytes...)
 		}
 	}
-	return &arbos.L1IncomingMessage{
+	return &arbostypes.L1IncomingMessage{
 		Header: header,
 		L2msg:  l2Message,
 	}, nil
 }
 
-func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
 		return nil, errors.New("current block header not found")
@@ -296,7 +296,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbos.L1Inc
 		return nil, err
 	}
 
-	msgWithMeta := arbstate.MessageWithMetadata{
+	msgWithMeta := arbostypes.MessageWithMetadata{
 		Message:             msg,
 		DelayedMessagesRead: delayedMessagesRead,
 	}
@@ -345,7 +345,7 @@ func (s *ExecutionEngine) MessageCountToBlockNumber(messageNum arbutil.MessageIn
 	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbos.L1IncomingMessage, delayedSeqNum uint64) error {
+func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	for {
 		s.createBlocksMutex.Lock()
 		err := s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
@@ -357,7 +357,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbos.L1IncomingMessag
 	}
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbos.L1IncomingMessage, delayedSeqNum uint64) error {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	currentHeader := s.bc.CurrentBlock().Header()
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
@@ -371,7 +371,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbos.L1
 		return fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedSeqNum, expectedDelayed)
 	}
 
-	messageWithMeta := arbstate.MessageWithMetadata{
+	messageWithMeta := arbostypes.MessageWithMetadata{
 		Message:             message,
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
@@ -398,7 +398,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbos.L1
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbstate.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock().Header()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current header")
@@ -440,7 +440,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	return nil
 }
 
-func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
+func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	if !s.createBlocksMutex.TryLock() {
 		return errors.New("mutex held")
 	}
@@ -448,7 +448,7 @@ func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbstate.
 	return s.digestMessageWithBlockMutex(num, msg)
 }
 
-func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
+func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	currentHeader := s.bc.CurrentHeader()
 	expNum, err := s.BlockNumberToMessageCount(currentHeader.Number.Uint64())
 	if err != nil {

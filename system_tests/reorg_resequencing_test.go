@@ -11,8 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
 func TestReorgResequencing(t *testing.T) {
@@ -60,9 +59,9 @@ func TestReorgResequencing(t *testing.T) {
 	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
 	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
-	newMessage := &arbos.L1IncomingMessage{
-		Header: &arbos.L1IncomingMessageHeader{
-			Kind:        arbos.L1MessageType_EthDeposit,
+	newMessage := &arbostypes.L1IncomingMessage{
+		Header: &arbostypes.L1IncomingMessageHeader{
+			Kind:        arbostypes.L1MessageType_EthDeposit,
 			Poster:      [20]byte{},
 			BlockNumber: 0,
 			Timestamp:   0,
@@ -71,7 +70,7 @@ func TestReorgResequencing(t *testing.T) {
 		},
 		L2msg: append(l2info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
 	}
-	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbstate.MessageWithMetadata{{
+	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
 		Message:             newMessage,
 		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
 	}})

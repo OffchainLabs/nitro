@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -36,9 +36,9 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	userDelayed := &DelayedInboxMessage{
 		BlockHash:      [32]byte{},
 		BeforeInboxAcc: initMsgDelayed.AfterInboxAcc(),
-		Message: &arbos.L1IncomingMessage{
-			Header: &arbos.L1IncomingMessageHeader{
-				Kind:        arbos.L1MessageType_EndOfBlock,
+		Message: &arbostypes.L1IncomingMessage{
+			Header: &arbostypes.L1IncomingMessageHeader{
+				Kind:        arbostypes.L1MessageType_EndOfBlock,
 				Poster:      [20]byte{},
 				BlockNumber: 0,
 				Timestamp:   0,

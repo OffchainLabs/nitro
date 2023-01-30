@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
@@ -733,8 +734,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		return false
 	}
 
-	header := &arbos.L1IncomingMessageHeader{
-		Kind:        arbos.L1MessageType_L2Message,
+	header := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),

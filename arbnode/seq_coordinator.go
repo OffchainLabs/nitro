@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -227,7 +227,7 @@ func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte)
 	return arbutil.MessageIndex(binary.BigEndian.Uint64(msgCountBytes)), nil
 }
 
-func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
+func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbostypes.MessageWithMetadata) error {
 	var messageData *string
 	var messageSigData *string
 	if lastmsg != nil {
@@ -494,7 +494,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	if readUntil > localMsgCount+c.config.MaxMsgPerPoll {
 		readUntil = localMsgCount + c.config.MaxMsgPerPoll
 	}
-	var messages []arbstate.MessageWithMetadata
+	var messages []arbostypes.MessageWithMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
 	for msgToRead < readUntil {
@@ -530,7 +530,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr, "separate-key", sigSeparateKey)
 			break
 		}
-		var message arbstate.MessageWithMetadata
+		var message arbostypes.MessageWithMetadata
 		err = json.Unmarshal(rsBytes, &message)
 		if err != nil {
 			log.Warn("coordinator failed to parse message from redis", "pos", msgToRead, "err", err)
@@ -548,8 +548,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 				}
 				lastDelayedMsg = prevMsg.DelayedMessagesRead
 			}
-			message = arbstate.MessageWithMetadata{
-				Message:             arbstate.InvalidL1Message,
+			message = arbostypes.MessageWithMetadata{
+				Message:             arbostypes.InvalidL1Message,
 				DelayedMessagesRead: lastDelayedMsg,
 			}
 		}
@@ -736,7 +736,7 @@ func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
-func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
+func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	if !c.CurrentlyChosen() {
 		return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
 	}

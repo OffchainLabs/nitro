@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
@@ -74,7 +74,6 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 }
 
 func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, accountsPerSync uint) error {
-	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
@@ -194,4 +193,8 @@ func ReorgToBlock(chain *core.BlockChain, blockNum uint64) (*types.Block, error)
 		return nil, err
 	}
 	return reorgingToBlock, nil
+}
+
+func init() {
+	gethhook.RequireHookedGeth()
 }

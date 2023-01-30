@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -57,10 +58,10 @@ func retryableSetup(t *testing.T) (
 		}
 		var submissionTxs []*types.Transaction
 		for _, message := range messages {
-			if message.Message.Header.Kind != arbos.L1MessageType_SubmitRetryable {
+			if message.Message.Header.Kind != arbostypes.L1MessageType_SubmitRetryable {
 				continue
 			}
-			txs, err := message.Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, nil)
+			txs, err := arbos.ParseL2Transactions(message.Message, params.ArbitrumDevTestChainConfig().ChainID, nil)
 			Require(t, err)
 			for _, tx := range txs {
 				if tx.Type() == types.ArbitrumSubmitRetryableTxType {
