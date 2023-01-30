@@ -17,7 +17,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
-func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, batchFetcher arbostypes.InfallibleBatchFetcher) (types.Transactions, error) {
+type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
+
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -367,7 +369,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64, batchFetcher arbostypes.InfallibleBatchFetcher) (*types.Transaction, error) {
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
 	batchTimestamp, batchPosterAddr, batchHash, batchNum, l1BaseFee, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err

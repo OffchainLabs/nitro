@@ -234,8 +234,6 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 
 type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
 
-type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
-
 // ParseInitMessage returns the chain id on success
 func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
