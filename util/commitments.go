@@ -34,6 +34,7 @@ type HistoryCommitment struct {
 	Height         uint64
 	Range          uint64
 	Merkle         common.Hash
+	FirstLeaf      common.Hash
 	LastLeafProof  []common.Hash
 	LastLeaf       common.Hash
 	LastLeafPrefix Option[HistoryCommitment]
@@ -90,6 +91,7 @@ func WithLastElementProof(
 		if err := VerifyPrefixProof(loCommit, hiCommit, proof); err != nil {
 			return err
 		}
+		c.FirstLeaf = leaves[0]
 		c.LastLeafProof = proof
 		c.LastLeaf = lastLeaf
 		c.LastLeafPrefix = Some(loCommit)
