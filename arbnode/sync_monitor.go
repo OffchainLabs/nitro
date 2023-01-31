@@ -5,7 +5,6 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	flag "github.com/spf13/pflag"
 )
@@ -138,7 +137,6 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		return make(map[string]interface{})
 	}
 
-	log.Info("syncing", "syncmap", res)
 	return res
 }
 
