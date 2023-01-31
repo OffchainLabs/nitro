@@ -277,6 +277,126 @@ abstract contract AbsInboxTest is Test {
         inbox.sendL2Message(abi.encodePacked("some msg"));
     }
 
+    function test_sendUnsignedTransaction() public {
+        // L2 msg params
+        uint256 maxFeePerGas = 0;
+        uint256 gasLimit = 10;
+        uint256 nonce = 3;
+        uint256 value = 300;
+        bytes memory data = abi.encodePacked("test data");
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(
+            0,
+            abi.encodePacked(
+                L2MessageType_unsignedEOATx,
+                gasLimit,
+                maxFeePerGas,
+                nonce,
+                uint256(uint160(user)),
+                value,
+                data
+            )
+        );
+
+        // send TX
+        vm.prank(user, user);
+        uint256 msgNum = inbox.sendUnsignedTransaction(
+            gasLimit,
+            maxFeePerGas,
+            nonce,
+            user,
+            value,
+            data
+        );
+
+        //// checks
+        assertEq(msgNum, 0, "Invalid msgNum");
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_sendUnsignedTransaction_revert_WhenPaused() public {
+        vm.prank(rollup);
+        inbox.pause();
+
+        vm.expectRevert("Pausable: paused");
+        vm.prank(user);
+        inbox.sendUnsignedTransaction(10, 10, 10, user, 10, abi.encodePacked("test data"));
+    }
+
+    function test_sendUnsignedTransaction_revert_NotAllowed() public {
+        vm.prank(rollup);
+        inbox.setAllowListEnabled(true);
+
+        vm.expectRevert(abi.encodeWithSelector(NotAllowedOrigin.selector, user));
+        vm.prank(user, user);
+        inbox.sendUnsignedTransaction(10, 10, 10, user, 10, abi.encodePacked("test data"));
+    }
+
+    function test_sendUnsignedTransaction_revert_GasLimitTooLarge() public {
+        uint256 tooBigGasLimit = uint256(type(uint64).max) + 1;
+
+        vm.expectRevert(GasLimitTooLarge.selector);
+        vm.prank(user, user);
+        inbox.sendUnsignedTransaction(tooBigGasLimit, 10, 10, user, 10, abi.encodePacked("data"));
+    }
+
+    function test_sendContractTransaction() public {
+        // L2 msg params
+        uint256 maxFeePerGas = 0;
+        uint256 gasLimit = 10;
+        uint256 value = 300;
+        bytes memory data = abi.encodePacked("test data");
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(
+            0,
+            abi.encodePacked(
+                L2MessageType_unsignedContractTx,
+                gasLimit,
+                maxFeePerGas,
+                uint256(uint160(user)),
+                value,
+                data
+            )
+        );
+
+        // send TX
+        vm.prank(user);
+        uint256 msgNum = inbox.sendContractTransaction(gasLimit, maxFeePerGas, user, value, data);
+
+        //// checks
+        assertEq(msgNum, 0, "Invalid msgNum");
+        assertEq(bridge.delayedMessageCount(), 1, "Invalid delayed message count");
+    }
+
+    function test_sendContractTransaction_revert_WhenPaused() public {
+        vm.prank(rollup);
+        inbox.pause();
+
+        vm.expectRevert("Pausable: paused");
+        inbox.sendContractTransaction(10, 10, user, 10, abi.encodePacked("test data"));
+    }
+
+    function test_sendContractTransaction_revert_NotAllowed() public {
+        vm.prank(rollup);
+        inbox.setAllowListEnabled(true);
+
+        vm.expectRevert(abi.encodeWithSelector(NotAllowedOrigin.selector, user));
+        vm.prank(user, user);
+        inbox.sendContractTransaction(10, 10, user, 10, abi.encodePacked("test data"));
+    }
+
+    function test_sendContractTransaction_revert_GasLimitTooLarge() public {
+        uint256 tooBigGasLimit = uint256(type(uint64).max) + 1;
+
+        vm.expectRevert(GasLimitTooLarge.selector);
+        vm.prank(user);
+        inbox.sendContractTransaction(tooBigGasLimit, 10, user, 10, abi.encodePacked("data"));
+    }
+
     /****
      **** Event declarations
      ***/

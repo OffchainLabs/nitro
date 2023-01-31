@@ -24,23 +24,6 @@ interface IEthInbox is IInbox {
         bytes calldata data
     ) external payable returns (uint256);
 
-    function sendUnsignedTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        uint256 nonce,
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external returns (uint256);
-
-    function sendContractTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external returns (uint256);
-
     /**
      * @dev This method can only be called upon L1 fork and will not alias the caller
      *      This method will revert if not called from origin

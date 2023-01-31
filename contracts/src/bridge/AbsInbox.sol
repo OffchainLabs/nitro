@@ -20,7 +20,12 @@ import "./ISequencerInbox.sol";
 import "./IBridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import {L1MessageType_submitRetryableTx, L2_MSG} from "../libraries/MessageTypes.sol";
+import {
+    L1MessageType_submitRetryableTx,
+    L2MessageType_unsignedContractTx,
+    L2MessageType_unsignedEOATx,
+    L2_MSG
+} from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -142,6 +147,64 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
     {
         if (_chainIdChanged()) revert L1Forked();
         return _deliverMessage(L2_MSG, msg.sender, messageData, 0);
+    }
+
+    /// @inheritdoc IInbox
+    function sendUnsignedTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
+        return
+            _deliverMessage(
+                L2_MSG,
+                msg.sender,
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(to)),
+                    value,
+                    data
+                ),
+                0
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendContractTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
+        return
+            _deliverMessage(
+                L2_MSG,
+                msg.sender,
+                abi.encodePacked(
+                    L2MessageType_unsignedContractTx,
+                    gasLimit,
+                    maxFeePerGas,
+                    uint256(uint160(to)),
+                    value,
+                    data
+                ),
+                0
+            );
     }
 
     function _createRetryableTicket(

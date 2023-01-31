@@ -28,6 +28,23 @@ interface IInbox is IDelayedMessageProvider {
      */
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
+    function sendUnsignedTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external returns (uint256);
+
+    function sendContractTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external returns (uint256);
+
     /**
      * @notice Get the L1 fee for submitting a retryable
      * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
