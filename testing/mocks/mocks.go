@@ -35,19 +35,19 @@ func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]
 	return args.Get(0).([]common.Hash), args.Error(1)
 }
 
-func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit protocol.StateCommitment) bool {
+func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit util.StateCommitment) bool {
 	args := m.Called(ctx, commit)
 	return args.Bool(0)
 }
 
-func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (protocol.StateCommitment, error) {
+func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error) {
 	args := m.Called(ctx, height)
-	return args.Get(0).(protocol.StateCommitment), args.Error(1)
+	return args.Get(0).(util.StateCommitment), args.Error(1)
 }
 
-func (m *MockStateManager) LatestStateCommitment(ctx context.Context) (protocol.StateCommitment, error) {
+func (m *MockStateManager) LatestStateCommitment(ctx context.Context) (util.StateCommitment, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(protocol.StateCommitment), args.Error(1)
+	return args.Get(0).(util.StateCommitment), args.Error(1)
 }
 
 type MockProtocol struct {
@@ -118,7 +118,7 @@ func (m *MockProtocol) LatestConfirmed(tx *protocol.ActiveTx) *protocol.Assertio
 	return args.Get(0).(*protocol.Assertion)
 }
 
-func (m *MockProtocol) CreateLeaf(tx *protocol.ActiveTx, prev *protocol.Assertion, commitment protocol.StateCommitment, staker common.Address) (*protocol.Assertion, error) {
+func (m *MockProtocol) CreateLeaf(tx *protocol.ActiveTx, prev *protocol.Assertion, commitment util.StateCommitment, staker common.Address) (*protocol.Assertion, error) {
 	args := m.Called(tx, prev, commitment, staker)
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
