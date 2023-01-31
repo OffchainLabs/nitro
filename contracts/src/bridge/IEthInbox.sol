@@ -9,22 +9,6 @@ import "./IBridge.sol";
 import "./IInbox.sol";
 
 interface IEthInbox is IInbox {
-    /**
-     * @notice Send a generic L2 message to the chain
-     * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input
-     *      This method will be disabled upon L1 fork to prevent replay attacks on L2
-     * @param messageData Data of the message being sent
-     */
-    function sendL2MessageFromOrigin(bytes calldata messageData) external returns (uint256);
-
-    /**
-     * @notice Send a generic L2 message to the chain
-     * @dev This method can be used to send any type of message that doesn't require L1 validation
-     *      This method will be disabled upon L1 fork to prevent replay attacks on L2
-     * @param messageData Data of the message being sent
-     */
-    function sendL2Message(bytes calldata messageData) external returns (uint256);
-
     function sendL1FundedUnsignedTransaction(
         uint256 gasLimit,
         uint256 maxFeePerGas,
