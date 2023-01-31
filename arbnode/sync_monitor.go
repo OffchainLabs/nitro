@@ -64,13 +64,14 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
 
-	lastBuiltMessage, err := s.txStreamer.exec.HeadMessageNumber()
+	builtMessageCount, err := s.txStreamer.exec.HeadMessageNumber()
 	if err != nil {
 		res["blockMessageToMessageCountError"] = err.Error()
 		syncing = true
-		lastBuiltMessage = 0
+		builtMessageCount = 0
 	} else {
-		res["messageOfLastBlock"] = lastBuiltMessage
+		builtMessageCount++
+		res["messageOfLastBlock"] = builtMessageCount
 	}
 
 	msgCount, err := s.txStreamer.GetMessageCount()
@@ -79,7 +80,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		syncing = true
 	} else {
 		res["msgCount"] = msgCount
-		if lastBuiltMessage+arbutil.MessageIndex(s.config.BlockBuildLag) < msgCount {
+		if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildLag) < msgCount {
 			syncing = true
 		}
 	}
@@ -101,7 +102,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 			syncing = true
 		} else {
 			res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-			if lastBuiltMessage+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
+			if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
 				syncing = true
 			}
 		}
