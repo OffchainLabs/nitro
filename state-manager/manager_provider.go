@@ -2,13 +2,10 @@ package statemanager
 
 import (
 	"context"
-	statemanagerbackend "github.com/OffchainLabs/challenge-protocol-v2/state-manager/backend"
 	"math/bits"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-
+	statemanagerbackend "github.com/OffchainLabs/challenge-protocol-v2/state-manager/backend"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -27,7 +24,7 @@ func NewManagerProvider(stateRoots []common.Hash) *ManagerProvider {
 }
 
 // HasStateCommitment checks if a state commitment is found in manager backend.
-func (m *ManagerProvider) HasStateCommitment(ctx context.Context, commitment protocol.StateCommitment) bool {
+func (m *ManagerProvider) HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool {
 	root, err := m.ManagerBackend.GetStateRoot(ctx, commitment.Height)
 	if err != nil {
 		return false
@@ -36,28 +33,28 @@ func (m *ManagerProvider) HasStateCommitment(ctx context.Context, commitment pro
 }
 
 // StateCommitmentAtHeight gets the state commitment at a specified height from manager backend.
-func (m *ManagerProvider) StateCommitmentAtHeight(ctx context.Context, height uint64) (protocol.StateCommitment, error) {
+func (m *ManagerProvider) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error) {
 	root, err := m.ManagerBackend.GetStateRoot(ctx, height)
 	if err != nil {
-		return protocol.StateCommitment{}, err
+		return util.StateCommitment{}, err
 	}
-	return protocol.StateCommitment{
+	return util.StateCommitment{
 		Height:    height,
 		StateRoot: root,
 	}, nil
 }
 
 // LatestStateCommitment gets the state commitment corresponding to the last, manager backend has.
-func (m *ManagerProvider) LatestStateCommitment(ctx context.Context) (protocol.StateCommitment, error) {
+func (m *ManagerProvider) LatestStateCommitment(ctx context.Context) (util.StateCommitment, error) {
 	height, err := m.ManagerBackend.GetLatestStateHeight(ctx)
 	if err != nil {
-		return protocol.StateCommitment{}, err
+		return util.StateCommitment{}, err
 	}
 	root, err := m.ManagerBackend.GetStateRoot(ctx, height)
 	if err != nil {
-		return protocol.StateCommitment{}, err
+		return util.StateCommitment{}, err
 	}
-	return protocol.StateCommitment{
+	return util.StateCommitment{
 		Height:    height,
 		StateRoot: root,
 	}, nil

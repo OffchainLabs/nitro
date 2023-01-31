@@ -12,6 +12,17 @@ var (
 	emptyCommit = HistoryCommitment{}
 )
 
+// StateCommitment is a type used to represent the state commitment of an assertion.
+type StateCommitment struct {
+	Height    uint64      `json:"height"`
+	StateRoot common.Hash `json:"state_root"`
+}
+
+// Hash returns the hash of the state commitment.
+func (comm StateCommitment) Hash() common.Hash {
+	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.StateRoot.Bytes())
+}
+
 // HistoryCommitment defines a Merkle accumulator over a list of leaves, which
 // are understood to be state roots in the protocol. A history commitment contains
 // a "height" value, which can refer to a height of an assertion in the assertions

@@ -101,7 +101,7 @@ type (
 		) (bool, error)
 		ChallengePeriodLength(tx *ActiveTx) time.Duration
 		LatestConfirmed(*ActiveTx) *Assertion
-		CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
+		CreateLeaf(tx *ActiveTx, prev *Assertion, commitment util.StateCommitment, staker common.Address) (*Assertion, error)
 		TimeReference() util.TimeReference
 	}
 )
@@ -178,7 +178,7 @@ type AssertionState int
 // Assertion represents an assertion in the protocol.
 type Assertion struct {
 	SequenceNum             AssertionSequenceNumber `json:"sequence_num"`
-	StateCommitment         StateCommitment         `json:"state_commitment"`
+	StateCommitment         util.StateCommitment    `json:"state_commitment"`
 	Staker                  util.Option[common.Address]
 	Prev                    util.Option[*Assertion]
 	chain                   *AssertionChain
@@ -189,24 +189,13 @@ type Assertion struct {
 	challenge               util.Option[*Challenge]
 }
 
-// StateCommitment is a type used to represent the state commitment of an assertion.
-type StateCommitment struct {
-	Height    uint64      `json:"height"`
-	StateRoot common.Hash `json:"state_root"`
-}
-
-// Hash returns the hash of the state commitment.
-func (comm StateCommitment) Hash() common.Hash {
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.StateRoot.Bytes())
-}
-
 // NewAssertionChain creates a new AssertionChain.
 func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,
 		status:      ConfirmedAssertionState,
 		SequenceNum: 0,
-		StateCommitment: StateCommitment{
+		StateCommitment: util.StateCommitment{
 			Height:    0,
 			StateRoot: common.Hash{},
 		},
@@ -407,7 +396,7 @@ func (chain *AssertionChain) SubscribeChallengeEvents(ctx context.Context, ch ch
 }
 
 // CreateLeaf creates a new leaf assertion.
-func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitment util.StateCommitment, staker common.Address) (*Assertion, error) {
 	tx.verifyReadWrite()
 	if prev.chain != chain {
 		return nil, ErrWrongChain
@@ -675,10 +664,10 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 	return chal, nil
 }
 
-// ParentStateCommitment returns the state commitment of the parent assertion.
-func (c *Challenge) ParentStateCommitment() StateCommitment {
+// Parentutil.StateCommitment returns the state commitment of the parent assertion.
+func (c *Challenge) ParentStateCommitment() util.StateCommitment {
 	if c.rootAssertion.IsNone() {
-		return StateCommitment{}
+		return util.StateCommitment{}
 	}
 	return c.rootAssertion.Unwrap().StateCommitment
 }

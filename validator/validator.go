@@ -126,9 +126,9 @@ func New(
 	}
 	v.assertions[0] = &protocol.CreateLeafEvent{
 		PrevSeqNum:          0,
-		PrevStateCommitment: protocol.StateCommitment{},
+		PrevStateCommitment: util.StateCommitment{},
 		SeqNum:              0,
-		StateCommitment:     protocol.StateCommitment{},
+		StateCommitment:     util.StateCommitment{},
 		Validator:           common.Address{},
 	}
 	v.chain.SubscribeChainEvents(ctx, v.assertionEvents)
@@ -218,7 +218,7 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 	if err != nil {
 		return nil, err
 	}
-	stateCommit := protocol.StateCommitment{
+	stateCommit := util.StateCommitment{
 		Height:    currentCommit.Height,
 		StateRoot: currentCommit.StateRoot,
 	}

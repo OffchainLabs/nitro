@@ -58,7 +58,7 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 		challengeType: topLevelType,
 		rootAssertion: util.Some(&Assertion{
 			chain:           chain,
-			StateCommitment: StateCommitment{},
+			StateCommitment: util.StateCommitment{},
 		}),
 	}
 	v := &ChallengeVertex{
@@ -71,7 +71,7 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 		},
 	}
 
-	challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
+	challengeHash := ChallengeCommitHash((util.StateCommitment{}).Hash())
 	vertices := make(map[VertexCommitHash]*ChallengeVertex, 0)
 
 	// Create child vertices with unexpired chess clocks.
@@ -210,7 +210,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain:           chain,
-				StateCommitment: StateCommitment{},
+				StateCommitment: util.StateCommitment{},
 			}),
 		}
 		v := &ChallengeVertex{
@@ -231,7 +231,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			challengeVerticesByCommitHash: m,
 		}
 
-		challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
+		challengeHash := ChallengeCommitHash((util.StateCommitment{}).Hash())
 		vertices := make(map[VertexCommitHash]*ChallengeVertex, 0)
 		chain.challengeVerticesByCommitHash[challengeHash] = vertices
 
@@ -241,7 +241,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain:           chain,
-				StateCommitment: StateCommitment{},
+				StateCommitment: util.StateCommitment{},
 			}),
 		}
 		v := &ChallengeVertex{
@@ -268,7 +268,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			challengeType: BlockChallenge,
 			rootAssertion: util.Some(&Assertion{
 				chain:           chain,
-				StateCommitment: StateCommitment{},
+				StateCommitment: util.StateCommitment{},
 			}),
 		}
 		v := &ChallengeVertex{
@@ -277,7 +277,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			Status:       PendingAssertionState,
 		}
 
-		challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
+		challengeHash := ChallengeCommitHash((util.StateCommitment{}).Hash())
 		vertices := make(map[VertexCommitHash]*ChallengeVertex, 0)
 
 		// Create child vertices with unexpired chess clocks.
@@ -386,7 +386,7 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 					rootAssertion: util.None[*Assertion](),
 				}),
 			}
-			challengeHash := ChallengeCommitHash((StateCommitment{}).Hash())
+			challengeHash := ChallengeCommitHash((util.StateCommitment{}).Hash())
 
 			vertices := make(map[VertexCommitHash]*ChallengeVertex, testCase.numChildren)
 			for i := uint(0); i < testCase.numChildren; i++ {
