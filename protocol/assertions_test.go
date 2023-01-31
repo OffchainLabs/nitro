@@ -36,7 +36,7 @@ func TestAssertionChain_ConfirmAndRefund(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
 
-		comm = util.StateCommitment{2, correctBlockHashes[199]}
+		comm = util.StateCommitment{Height: 2, StateRoot: correctBlockHashes[199]}
 		a2, err := chain.CreateLeaf(tx, a1, comm, staker)
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), chain.GetBalance(tx, staker).Uint64())
@@ -107,17 +107,17 @@ func TestAssertionChain(t *testing.T) {
 		verifyConfirmEventInFeed(t, eventChan, AssertionSequenceNumber(1))
 
 		// try to create a duplicate assertion
-		_, err = chain.CreateLeaf(tx, genesis, util.StateCommitment{1, correctBlockHashes[0]}, staker1)
+		_, err = chain.CreateLeaf(tx, genesis, util.StateCommitment{Height: 1, StateRoot: correctBlockHashes[0]}, staker1)
 		require.ErrorIs(t, err, ErrVertexAlreadyExists)
 
 		// create a fork, let first branch win by timeout
-		comm = util.StateCommitment{4, correctBlockHashes[3]}
+		comm = util.StateCommitment{Height: 4, StateRoot: correctBlockHashes[3]}
 		branch1, err := chain.CreateLeaf(tx, newAssertion, comm, staker1)
 		require.NoError(t, err)
 
 		timeRef.Add(5 * time.Second)
 		verifyCreateLeafEventInFeed(t, eventChan, 2, 1, staker1, comm)
-		comm = util.StateCommitment{4, wrongBlockHashes[3]}
+		comm = util.StateCommitment{Height: 4, StateRoot: wrongBlockHashes[3]}
 		branch2, err := chain.CreateLeaf(tx, newAssertion, comm, staker2)
 		require.NoError(t, err)
 
@@ -991,9 +991,9 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		chain.SetBalance(tx, staker1, bigBalance)
 		chain.SetBalance(tx, staker2, bigBalance)
 
-		correctBranch, err := chain.CreateLeaf(tx, genesis, util.StateCommitment{6, correctBlockHashes[6]}, staker1)
+		correctBranch, err := chain.CreateLeaf(tx, genesis, util.StateCommitment{Height: 6, StateRoot: correctBlockHashes[6]}, staker1)
 		require.NoError(t, err)
-		wrongBranch, err := chain.CreateLeaf(tx, genesis, util.StateCommitment{6, wrongBlockHashes[6]}, staker2)
+		wrongBranch, err := chain.CreateLeaf(tx, genesis, util.StateCommitment{Height: 6, StateRoot: wrongBlockHashes[6]}, staker2)
 		require.NoError(t, err)
 
 		challenge, err := genesis.CreateChallenge(tx, ctx, staker2)
