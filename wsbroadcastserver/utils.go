@@ -18,6 +18,11 @@ import (
 	"github.com/gobwas/ws/wsutil"
 )
 
+func init() {
+	// We use a custom dictionary, so our compression isn't compatible with other websocket clients.
+	wsflate.ExtensionNameBytes = append([]byte("Arbitrum-"), wsflate.ExtensionNameBytes...)
+}
+
 type chainedReader struct {
 	readers []io.Reader
 }
