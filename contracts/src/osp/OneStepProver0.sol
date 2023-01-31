@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -175,6 +175,29 @@ contract OneStepProver0 is IOneStepProver {
         uint32 func = uint32(inst.argumentData);
         uint32 module = uint32(inst.argumentData >> 32);
         require(inst.argumentData >> 64 == 0, "BAD_CROSS_MODULE_CALL_DATA");
+        mach.moduleIdx = module;
+        mach.functionIdx = func;
+        mach.functionPc = 0;
+    }
+
+    function executeCrossModuleDynamicCall(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata
+    ) internal pure {
+        // Get the target from the stack
+        uint32 func = mach.valueStack.pop().assumeI32();
+        uint32 module = mach.valueStack.pop().assumeI32();
+
+        // Push the return pc to the stack
+        mach.valueStack.push(createReturnValue(mach));
+
+        // Push caller module info to the stack
+        mach.valueStack.push(ValueLib.newI32(mach.moduleIdx));
+        mach.valueStack.push(ValueLib.newI32(mod.internalsOffset));
+
+        // Jump to the target
         mach.moduleIdx = module;
         mach.functionIdx = func;
         mach.functionPc = 0;
@@ -479,6 +502,8 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeCrossModuleCall;
         } else if (opcode == Instructions.CROSS_MODULE_FORWARD) {
             impl = executeCrossModuleForward;
+        } else if (opcode == Instructions.CROSS_MODULE_DYNAMIC_CALL) {
+            impl = executeCrossModuleDynamicCall;
         } else if (opcode == Instructions.CALLER_MODULE_INTERNAL_CALL) {
             impl = executeCallerModuleInternalCall;
         } else if (opcode == Instructions.CALL_INDIRECT) {

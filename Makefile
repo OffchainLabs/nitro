@@ -54,7 +54,7 @@ arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float user_host forward)
 arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
-arbitrator_prover_bin=$(output_root)/bin/prover
+prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
 
 arbitrator_cases=arbitrator/prover/test-cases
@@ -64,6 +64,12 @@ arbitrator_tests_rust=$(wildcard $(arbitrator_cases)/rust/src/bin/*.rs)
 
 arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) $(arbitrator_cases)/go/main
 
+arbitrator_tests_link_info = $(shell cat $(arbitrator_cases)/link.txt | xargs)
+arbitrator_tests_link_deps = $(patsubst %,$(arbitrator_cases)/%.wasm, $(arbitrator_tests_link_info))
+
+arbitrator_tests_forward_wats = $(wildcard $(arbitrator_cases)/forward/*.wat)
+arbitrator_tests_forward_deps = $(arbitrator_tests_forward_wats:wat=wasm)
+
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
@@ -71,8 +77,9 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
 rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.toml)
 
+prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_src = arbitrator/prover/src
-rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files)
+rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) $(prover_direct_includes)
 
 jit_dir = arbitrator/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
@@ -128,11 +135,11 @@ build-prover-header: $(arbitrator_generated_header)
 
 build-prover-lib: $(arbitrator_stylus_lib)
 
-build-prover-bin: $(arbitrator_prover_bin)
+build-prover-bin: $(prover_bin)
 
 build-jit: $(arbitrator_jit)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
+build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -165,6 +172,7 @@ test-go-redis: test-go-deps
 	@printf $(done)
 
 test-gen-proofs: \
+        $(arbitrator_test_wasms) \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
@@ -218,8 +226,8 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
-$(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
-	mkdir -p `dirname $(arbitrator_prover_bin)`
+$(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
+	mkdir -p `dirname $(prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
@@ -307,8 +315,8 @@ $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward.wa
 $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib)/user-host/forward_stub.wat .make/machines
 	wat2wasm $(wasm_lib)/user-host/forward_stub.wat -o $@
 
-$(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
+$(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
 	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub go_stub host_io user_host brotli)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
@@ -325,17 +333,17 @@ $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
 	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
-contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_latest)/soft-float.wasm
-	$(arbitrator_prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
+contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(prover_bin) $(output_latest)/soft-float.wasm
+	$(prover_bin) $< -l $(output_latest)/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
-contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(arbitrator_prover_bin)
-	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
+contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
-contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
+contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(prover_bin) $(arbitrator_wasm_libs_nogo)
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
 
-contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success
+contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(prover_bin) $(arbitrator_wasm_libs)
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
@@ -344,8 +352,18 @@ contracts/test/prover/proofs/read-inboxmsg-10.json:
 contracts/test/prover/proofs/global-state.json:
 	echo "[]" > $@
 
-contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_prover_bin)
-	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
+contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test.wasm $(arbitrator_tests_forward_deps) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize \
+        $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
+
+contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
+
+contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic globals) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/globals.wasm
+
+contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 # strategic rules to minimize dependency building
 

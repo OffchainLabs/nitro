@@ -4,6 +4,7 @@
 pub mod color;
 pub mod crypto;
 pub mod format;
+pub mod math;
 pub mod operator;
 
 pub use color::Color;
