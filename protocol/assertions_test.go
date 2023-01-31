@@ -831,7 +831,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		c := &Challenge{
 			rootAssertion: util.Some(&Assertion{
 				SequenceNum: 1,
-				StateCommitment: StateCommitment{
+				StateCommitment: util.StateCommitment{
 					Height:    5,
 					StateRoot: hashes[0],
 				},
@@ -846,7 +846,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		c.rootVertex = util.Some(&ChallengeVertex{})
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
-			StateCommitment: StateCommitment{
+			StateCommitment: util.StateCommitment{
 				Height:    3,
 				StateRoot: hashes[5],
 			},
