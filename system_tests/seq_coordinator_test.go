@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -87,7 +88,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			DelayedMessagesRead: 1,
 		}
 		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
-		if errors.Is(err, arbnode.ErrRetrySequencer) {
+		if errors.Is(err, execution.ErrRetrySequencer) {
 			return false
 		}
 		Require(t, err)
@@ -142,7 +143,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	}
 
 	nodeForwardTarget := func(nodeNum int) int {
-		fwTarget := nodes[nodeNum].TxPublisher.(*arbnode.TxPreChecker).TransactionPublisher.(*arbnode.Sequencer).ForwardTarget()
+		fwTarget := nodes[nodeNum].Execution.TxPublisher.(*execution.TxPreChecker).TransactionPublisher.(*execution.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}
