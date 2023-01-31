@@ -320,13 +320,13 @@ contract OneStepProverHostIo is IOneStepProver {
         }
 
         // if tree is unbalanced, check that the next leaf is 0
-        bool unbalanced = !isPowerOfTwo(leaf + 1);
-        if (unbalanced) {
+        bool balanced = isPowerOfTwo(leaf + 1);
+        if (balanced) {
+            require(1 << leafProof.counterparts.length == leaf + 1, "WRONG_LEAF");
+        } else {
             (zeroProof, offset) = Deserialize.merkleProof(proof, offset);
             bytes32 compRoot = zeroProof.computeRootUnsafe(leaf + 1, 0, prefix);
             require(compRoot == root, "WRONG_ROOT_FOR_ZERO");
-        } else {
-            require(1 << leafProof.counterparts.length == leaf + 1, "WRONG_LEAF");
         }
 
         return (leaf, leafProof, zeroProof);
@@ -355,7 +355,8 @@ contract OneStepProverHostIo is IOneStepProver {
 
         (uint256 leaf, , MerkleProof memory zeroProof) = proveLastLeaf(mach, offset, proof);
 
-        if (isPowerOfTwo(leaf + 1)) {
+        bool balanced = isPowerOfTwo(leaf + 1);
+        if (balanced) {
             mach.modulesRoot = MerkleProofLib.growToNewRoot(root, leaf + 1, userMod, 0, prefix);
         } else {
             mach.modulesRoot = zeroProof.computeRootUnsafe(leaf + 1, userMod, prefix);
