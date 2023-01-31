@@ -63,6 +63,11 @@ func TestAssertionChain(t *testing.T) {
 	timeRef := util.NewArtificialTimeReference()
 	correctBlockHashes := correctBlockHashesForTest(200)
 	wrongBlockHashes := wrongBlockHashesForTest(200)
+
+	// Validators should agree at the 0th hash, but then
+	// they diverge.
+	wrongBlockHashes[0] = correctBlockHashes[0]
+
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
@@ -151,11 +156,10 @@ func TestAssertionChain(t *testing.T) {
 		chal1, err := challenge.AddLeaf(tx, branch1, historyCommit, staker1)
 		require.NoError(t, err)
 
-		hashes = wrongBlockHashes[:4]
 		badCommit, err := util.NewHistoryCommitment(
 			height,
-			hashes,
-			util.WithLastElementProof(hashes),
+			wrongBlockHashes[:height],
+			util.WithLastElementProof(wrongBlockHashes[:height+1]),
 		)
 		require.NoError(t, err)
 
@@ -770,7 +774,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		)
 		require.ErrorIs(t, err, ErrWrongLastLeaf)
 	})
-	t.Run("prev height must be less than current height", func(t *testing.T) {
+	t.Run("first leaf must be the previous assertions state root", func(t *testing.T) {
 		balances := util.NewMapWithDefaultAdvanced[common.Address](
 			common.Big0,
 			func(x *big.Int) bool { return x.Sign() == 0 },
@@ -784,6 +788,52 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 				StateCommitment: StateCommitment{
 					Height:    5,
 					StateRoot: hashes[5],
+				},
+				chain: &AssertionChain{
+					challengePeriod: time.Minute,
+					balances:        balances,
+					feed:            NewEventFeed[AssertionChainEvent](ctx),
+				},
+			}),
+			includedHistories: make(map[common.Hash]bool),
+		}
+		c.rootVertex = util.Some(&ChallengeVertex{})
+		assertion := &Assertion{
+			Prev: c.rootAssertion,
+			StateCommitment: StateCommitment{
+				Height:    3,
+				StateRoot: hashes[5],
+			},
+		}
+
+		history, err := util.NewHistoryCommitment(
+			5,
+			hashes[:5],
+			util.WithLastElementProof(hashes[:6]),
+		)
+		require.NoError(t, err)
+		_, err = c.AddLeaf(
+			tx,
+			assertion,
+			history,
+			validator,
+		)
+		require.ErrorIs(t, err, ErrWrongFirstLeaf)
+	})
+	t.Run("prev height must be less than current height", func(t *testing.T) {
+		balances := util.NewMapWithDefaultAdvanced[common.Address](
+			common.Big0,
+			func(x *big.Int) bool { return x.Sign() == 0 },
+		)
+		balances.Set(validator, ChallengeVertexStake)
+
+		hashes := correctBlockHashesForTest(10)
+		c := &Challenge{
+			rootAssertion: util.Some(&Assertion{
+				SequenceNum: 1,
+				StateCommitment: StateCommitment{
+					Height:    5,
+					StateRoot: hashes[0],
 				},
 				chain: &AssertionChain{
 					challengePeriod: time.Minute,
@@ -829,7 +879,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 				SequenceNum: 1,
 				StateCommitment: StateCommitment{
 					Height:    5,
-					StateRoot: hashes[5],
+					StateRoot: hashes[0],
 				},
 				chain: &AssertionChain{
 					challengePeriod: time.Minute,
@@ -896,8 +946,8 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 
 		history, err := util.NewHistoryCommitment(
 			3,
-			hashes[:8],
-			util.WithLastElementProof(hashes[:9]),
+			hashes[5:8],
+			util.WithLastElementProof(hashes[5:9]),
 		)
 		require.NoError(t, err)
 
@@ -957,8 +1007,8 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 
 		history, err := util.NewHistoryCommitment(
 			3,
-			hashes[:8],
-			util.WithLastElementProof(hashes[:9]),
+			hashes[5:8],
+			util.WithLastElementProof(hashes[5:9]),
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(

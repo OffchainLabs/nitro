@@ -35,6 +35,7 @@ var (
 	ErrInsufficientBalance    = errors.New("insufficient balance")
 	ErrNotImplemented         = errors.New("not yet implemented")
 	ErrNoLastLeafProof        = errors.New("history commitment must provide a last leaf proof")
+	ErrWrongFirstLeaf         = errors.New("first leaf of history does not match required state root")
 	ErrWrongLastLeaf          = errors.New("last leaf of history does not match required state root")
 	ErrProofFailsToVerify     = errors.New("Merkle proof fails to verify for last state of history commitment")
 )
@@ -725,12 +726,18 @@ func (c *Challenge) AddLeaf(
 		return nil, errors.Wrapf(ErrInsufficientBalance, err.Error())
 	}
 
-	// The last leaf claimed in the history commitment must be the
-	// state root of the assertion we are adding a leaf for.
 	if !historyProvidesLastLeafProof(history) {
 		return nil, ErrNoLastLeafProof
 	}
 
+	// The first leaf in the history commitment must be the
+	// same as the previous vertex's history state root.
+	if prev.StateCommitment.Height != 0 && prev.StateCommitment.StateRoot != history.FirstLeaf {
+		return nil, ErrWrongFirstLeaf
+	}
+
+	// The last leaf claimed in the history commitment must be the
+	// state root of the assertion we are adding a leaf for.
 	if assertion.StateCommitment.StateRoot != history.LastLeaf {
 		return nil, ErrWrongLastLeaf
 	}
