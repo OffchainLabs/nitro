@@ -64,6 +64,8 @@ func TestAssertionChain(t *testing.T) {
 	correctBlockHashes := correctBlockHashesForTest(200)
 	wrongBlockHashes := wrongBlockHashesForTest(200)
 
+	// Validators should agree at the 0th hash, but then
+	// they diverge.
 	wrongBlockHashes[0] = correctBlockHashes[0]
 
 	staker1 := common.BytesToAddress([]byte{1})
