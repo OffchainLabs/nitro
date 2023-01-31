@@ -63,6 +63,9 @@ func TestAssertionChain(t *testing.T) {
 	timeRef := util.NewArtificialTimeReference()
 	correctBlockHashes := correctBlockHashesForTest(200)
 	wrongBlockHashes := wrongBlockHashesForTest(200)
+
+	wrongBlockHashes[0] = correctBlockHashes[0]
+
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
@@ -151,11 +154,10 @@ func TestAssertionChain(t *testing.T) {
 		chal1, err := challenge.AddLeaf(tx, branch1, historyCommit, staker1)
 		require.NoError(t, err)
 
-		hashes = wrongBlockHashes[:4]
 		badCommit, err := util.NewHistoryCommitment(
 			height,
-			hashes,
-			util.WithLastElementProof(hashes),
+			wrongBlockHashes[:height],
+			util.WithLastElementProof(wrongBlockHashes[:height+1]),
 		)
 		require.NoError(t, err)
 
