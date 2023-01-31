@@ -39,6 +39,7 @@ type MachineInterface interface {
 
 // ArbitratorMachine holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
+	mutex     sync.Mutex // needed because go finalizers don't synchronize (meaning they aren't thread safe)
 	ptr       *C.struct_Machine
 	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
 	frozen    bool   // does not allow anything that changes machine state, not cloned with the machine
@@ -50,8 +51,17 @@ var _ MachineInterface = (*ArbitratorMachine)(nil)
 var preimageResolvers sync.Map
 var lastPreimageResolverId int64 // atomic
 
-func freeMachine(mach *ArbitratorMachine) {
-	C.arbitrator_free_machine(mach.ptr)
+// Any future calls to this machine will result in a panic
+func (m *ArbitratorMachine) Destroy() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.ptr != nil {
+		C.arbitrator_free_machine(m.ptr)
+		m.ptr = nil
+		// We no longer need a finalizer
+		runtime.SetFinalizer(m, nil)
+	}
+	m.contextId = nil
 }
 
 func freeContextId(context *int64) {
@@ -64,7 +74,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	}
 	mach := &ArbitratorMachine{ptr: ptr}
 	C.arbitrator_set_preimage_resolver(ptr, (*[0]byte)(C.preimageResolverC))
-	runtime.SetFinalizer(mach, freeMachine)
+	runtime.SetFinalizer(mach, (*ArbitratorMachine).Destroy)
 	return mach
 }
 
@@ -87,6 +97,8 @@ func (m *ArbitratorMachine) Freeze() {
 // Even if origin is frozen - clone is not
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
 	newMach.contextId = m.contextId
 	return newMach
@@ -98,6 +110,8 @@ func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
 
 func (m *ArbitratorMachine) SetGlobalState(globalState validator.GoGlobalState) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
@@ -108,33 +122,38 @@ func (m *ArbitratorMachine) SetGlobalState(globalState validator.GoGlobalState) 
 
 func (m *ArbitratorMachine) GetGlobalState() validator.GoGlobalState {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	cGlobalState := C.arbitrator_global_state(m.ptr)
 	return GlobalStateFromC(cGlobalState)
 }
 
 func (m *ArbitratorMachine) GetStepCount() uint64 {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	return uint64(C.arbitrator_get_num_steps(m.ptr))
 }
 
 func (m *ArbitratorMachine) IsRunning() bool {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_RUNNING
 }
 
 func (m *ArbitratorMachine) IsErrored() bool {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
 }
 
 func (m *ArbitratorMachine) Status() uint8 {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	return uint8(C.arbitrator_get_status(m.ptr))
-}
-
-func (m *ArbitratorMachine) Destroy() {
-	freeMachine(m)
-	runtime.SetFinalizer(m, nil)
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
@@ -174,6 +193,8 @@ func manageConditionByte(ctx context.Context) (*C.uint8_t, func()) {
 
 func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -193,6 +214,8 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 
 func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
@@ -207,6 +230,8 @@ func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
 
 func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	bytes := C.arbitrator_hash(m.ptr)
 	for i, b := range bytes.bytes {
 		hash[i] = byte(b)
@@ -216,6 +241,8 @@ func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 
 func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	bytes := C.arbitrator_module_root(m.ptr)
 	for i, b := range bytes.bytes {
 		hash[i] = byte(b)
@@ -224,6 +251,8 @@ func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
 }
 func (m *ArbitratorMachine) ProveNextStep() []byte {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	rustProof := C.arbitrator_gen_proof(m.ptr)
 	proofBytes := C.GoBytes(unsafe.Pointer(rustProof.ptr), C.int(rustProof.len))
@@ -234,6 +263,8 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 
 func (m *ArbitratorMachine) SerializeState(path string) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	cPath := C.CString(path)
 	status := C.arbitrator_serialize_state(m.ptr, cPath)
@@ -248,6 +279,8 @@ func (m *ArbitratorMachine) SerializeState(path string) error {
 
 func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -266,6 +299,8 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 
 func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -282,6 +317,8 @@ func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) 
 
 func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -331,6 +368,9 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 }
 
 func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) error {
+	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
