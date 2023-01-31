@@ -37,7 +37,7 @@ func Test_track(t *testing.T) {
 }
 
 func Test_actOnBlockChallenge(t *testing.T) {
-	challengeCommit := protocol.StateCommitment{
+	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
@@ -322,7 +322,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 }
 
 func Test_isAtOneStepFork(t *testing.T) {
-	challengeCommit := protocol.StateCommitment{
+	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
@@ -387,7 +387,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 }
 
 func Test_fetchVertexByHistoryCommit(t *testing.T) {
-	challengeCommit := protocol.StateCommitment{
+	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
@@ -466,7 +466,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
 	require.NoError(t, err)
 
-	genesisCommit := protocol.StateCommitment{
+	genesisCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}

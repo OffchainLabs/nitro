@@ -29,7 +29,7 @@ func Test_onLeafCreation(t *testing.T) {
 		parentSeqNum := protocol.AssertionSequenceNumber(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
 		parentAssertion := &protocol.Assertion{
-			StateCommitment: protocol.StateCommitment{
+			StateCommitment: util.StateCommitment{
 				StateRoot: prevRoot,
 				Height:    uint64(parentSeqNum),
 			},
@@ -38,7 +38,7 @@ func Test_onLeafCreation(t *testing.T) {
 		newlyCreatedAssertion := &protocol.Assertion{
 			Prev:            util.Some[*protocol.Assertion](parentAssertion),
 			SequenceNum:     seqNum,
-			StateCommitment: protocol.StateCommitment{},
+			StateCommitment: util.StateCommitment{},
 			Staker:          util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		ev := &protocol.CreateLeafEvent{
@@ -49,7 +49,7 @@ func Test_onLeafCreation(t *testing.T) {
 			Validator:           newlyCreatedAssertion.Staker.Unwrap(),
 		}
 
-		s.On("HasStateCommitment", ctx, protocol.StateCommitment{}).Return(false)
+		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
 
 		err := v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
@@ -60,11 +60,11 @@ func Test_onLeafCreation(t *testing.T) {
 		logsHook := test.NewGlobal()
 		stateRoots := generateStateRoots(10)
 		manager := &mocks.MockStateManager{}
-		manager.On("HasStateCommitment", ctx, protocol.StateCommitment{
+		manager.On("HasStateCommitment", ctx, util.StateCommitment{
 			Height:    5,
 			StateRoot: stateRoots[5],
 		}).Return(false)
-		manager.On("HasStateCommitment", ctx, protocol.StateCommitment{
+		manager.On("HasStateCommitment", ctx, util.StateCommitment{
 			Height:    6,
 			StateRoot: stateRoots[6],
 		}).Return(true)
@@ -101,11 +101,11 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	stateRoots := generateStateRoots(10)
 	manager := &mocks.MockStateManager{}
-	manager.On("HasStateCommitment", ctx, protocol.StateCommitment{
+	manager.On("HasStateCommitment", ctx, util.StateCommitment{
 		Height:    5,
 		StateRoot: stateRoots[5],
 	}).Return(false)
-	manager.On("HasStateCommitment", ctx, protocol.StateCommitment{
+	manager.On("HasStateCommitment", ctx, util.StateCommitment{
 		Height:    6,
 		StateRoot: stateRoots[6],
 	}).Return(true)
@@ -147,7 +147,7 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	var challenge *protocol.Challenge
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		commit := protocol.StateCommitment{}
+		commit := util.StateCommitment{}
 		id := protocol.ChallengeCommitHash(commit.Hash())
 		challenge, err = p.ChallengeByCommitHash(tx, id)
 		if err != nil {
@@ -232,11 +232,11 @@ func createTwoValidatorFork(
 	require.NoError(t, err)
 
 	// Create some commitments.
-	commit := protocol.StateCommitment{
+	commit := util.StateCommitment{
 		StateRoot: stateRoots[5],
 		Height:    5,
 	}
-	forkedCommit := protocol.StateCommitment{
+	forkedCommit := util.StateCommitment{
 		StateRoot: stateRoots[6],
 		Height:    6,
 	}
@@ -297,7 +297,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, _ := setupValidator(t)
 		genesis := &protocol.Assertion{
 			SequenceNum: 0,
-			StateCommitment: protocol.StateCommitment{
+			StateCommitment: util.StateCommitment{
 				Height:    0,
 				StateRoot: common.Hash{},
 			},
@@ -352,7 +352,7 @@ func setupAssertions(num int) []*protocol.Assertion {
 	}
 	genesis := &protocol.Assertion{
 		SequenceNum: 0,
-		StateCommitment: protocol.StateCommitment{
+		StateCommitment: util.StateCommitment{
 			Height:    0,
 			StateRoot: common.Hash{},
 		},
@@ -363,7 +363,7 @@ func setupAssertions(num int) []*protocol.Assertion {
 	for i := 1; i < num; i++ {
 		assertions = append(assertions, &protocol.Assertion{
 			SequenceNum: protocol.AssertionSequenceNumber(i),
-			StateCommitment: protocol.StateCommitment{
+			StateCommitment: util.StateCommitment{
 				Height:    uint64(i),
 				StateRoot: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
 			},

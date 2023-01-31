@@ -90,7 +90,7 @@ func Test_bisect(t *testing.T) {
 
 func Test_merge(t *testing.T) {
 	ctx := context.Background()
-	genesisCommit := protocol.StateCommitment{
+	genesisCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
@@ -196,7 +196,7 @@ func runBisectionTest(
 	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
 	require.NoError(t, err)
 
-	genesisCommit := protocol.StateCommitment{
+	genesisCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
