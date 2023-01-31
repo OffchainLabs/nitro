@@ -22,7 +22,9 @@ interface IAssertionChain {
 // CHRIS: TODO: timings shouldnt be checked all over the place - it's too weird to reason about
 // CHRIS: TODO: replace all requires with custom errors;
 // CHRIS: TODO: For all arguments implicit and explicit to every function, consider if there's a restriction
-// CHRIS: TODO: the way we handle flushing on the timers is weird and annoying. We always need to check that we've flushed before doing a get - which is dangerous and expensive
+
+// CHRIS: TODO: when winning a challenge you can claim back your ministake. Leaf stake
+// CHRIS: TODO: when your assertion is reject you lose you major stake. Assertion stake.
 
 // INVARIANTS
 // If an assertion exists, the previous assertion also exists
@@ -219,6 +221,14 @@ contract AssertionChain is IAssertionChain {
             block.timestamp < assertions[assertionId].firstChildCreationTime + (2 * challengePeriod),
             "Too late to challenge"
         );
+        // CHRIS: TODO: answer to the above^^
+        // CHRIS: TODO: if we put the challenge end time right at the start, then it will end very quickly after the pstimer
+        // CHRIS: TODO: condition has been reached. This is a good reason not to ensure there is always plenty of time
+        // CHRIS: TODO: but is there? Ok, so you do the following. You wait - honest person shouldnt wait
+        // CHRIS: TODO: so if you're honest then what? dont wait, start the challenge straight away, then
+        // CHRIS: TODO: you can be sure that you'll have plenty of time to clean up
+        // CHRIS: TODO: basically that's why we always have that extra end on the challenge period!
+        // CHRIS: TODO: write a big comment about this
 
         assertions[assertionId].successionChallenge = address(
             new BlockChallenge(
@@ -237,7 +247,7 @@ struct ChallengeVertex {
     uint256 height; // CHRIS: TODO: are heights zero indexed or from 1?
     bytes32 claimId; // CHRIS: TODO: aka tag; only on a leaf
     address staker; // CHRIS: TODO: only on a leaf
-        // CHRIS: TODO: use a different status for the vertices since they never transition to rejected?
+    // CHRIS: TODO: use a different status for the vertices since they never transition to rejected?
     Status status;
     // the presumptive successor to this vertex
     bytes32 presumptiveSuccessorId;
@@ -245,8 +255,25 @@ struct ChallengeVertex {
     // the last time the presumptive successor to this vertex changed
     uint256 presumptiveSuccessorLastUpdated;
     // the amount of time this vertex has spent as the presumptive successor
-    uint256 psTimer;
+    /// @notice DO NOT USE TO GET PS TIME! Instead use a getter function which takes into account unflushed ps time as well.
+    ///         This is the amount of time that this vertex is recorded to have been the presumptive successor
+    ///         However this may not be the total amount of time being the presumptive successor, as this vertex may currently
+    ///         be the ps, and so may have some time currently being record on the predecessor.
+    uint256 flushedPsTime;
+    // the id of the successor with the lowest height. Zero if this vertex has no successors.
+    bytes32 lowestHeightSucessorId;
 }
+// CHRIS: TODO:
+// 1. what do we do at the end if no-one has the necessary stuff?
+// 2. also, what about the exclusion stuff? is that necessary any more?
+
+// 3. merge timer changed, 
+    // ps logic changed, 
+    // confirmation logic changed - we just leave the challenge open - it doesnt have an end time
+    // how do confirmation times improve here? - I dont think they do
+    // The start point is now recorded (we already had this). 
+    // The end point is always the same height in the new protocol.
+// 4.
 
 library ChallengeVertexLib {
     function rootId() internal pure returns (bytes32) {
@@ -267,7 +294,8 @@ library ChallengeVertexLib {
             presumptiveSuccessorLastUpdated: 0, // CHRIS: TODO: maybe we wanna update this?
             // but when adding a new leaf if the presumptive successor is still 0, then we say that the
             // CHRIS: TODO: although this migh violate an invariant about lowest height
-            psTimer: 0 // always zero for the root
+            flushedPsTime: 0, // always zero for the root
+            lowestHeightSucessorId: 0
         });
     }
 
@@ -301,40 +329,154 @@ library ChallengeVertexMappingLib {
         return vertices[vId].historyCommitment != 0;
     }
 
-    function flushPsTimer(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public {
-        require(vertices[vId].exists(), "Vertex does not exist");
-
-        uint256 timeToAdd = block.timestamp - vertices[vId].presumptiveSuccessorLastUpdated;
-        vertices[vertices[vId].presumptiveSuccessorId].psTimer += timeToAdd;
-        vertices[vId].presumptiveSuccessorLastUpdated = block.timestamp;
-    }
-
     function hasConfirmablePsAt(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) public returns (bool) {
+    ) public view returns (bool) {
         require(has(vertices, vId), "Predecessor vertex does not exist");
-        flushPsTimer(vertices, vId);
-        return vertices[vertices[vId].presumptiveSuccessorId].psTimer > challengePeriod;
+
+        // CHRIS: TODO: rework this to question if we are confirmable
+        return getCurrentPsTimer(vertices, vertices[vId].presumptiveSuccessorId) > challengePeriod;
     }
 
-    function trySetAsPs(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId, uint256 challengePeriod)
-        public
+    function getCurrentPsTimer(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId)
+        internal
+        view
+        returns (uint256)
     {
+        // CHRIS: TODO: is it necessary to check exists everywhere? shoudlnt we just do that in the base? ideally we'd do it here, but it's expensive
         require(has(vertices, vId), "Vertex does not exist");
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(has(vertices, predecessorId), "Predecessor vertex does not exist");
 
         bytes32 presumptiveSuccessorId = vertices[predecessorId].presumptiveSuccessorId;
-        if (presumptiveSuccessorId == 0) {
-            vertices[predecessorId].presumptiveSuccessorId = vId;
-            vertices[predecessorId].presumptiveSuccessorLastUpdated = block.timestamp;
-        } else if (vertices[vId].height < vertices[presumptiveSuccessorId].height) {
-            require(!hasConfirmablePsAt(vertices, vId, challengePeriod), "Presumptive successor already confirmable");
+        uint256 flushedPsTimer = vertices[vId].flushedPsTime;
+        if (presumptiveSuccessorId == vId) {
+            return (block.timestamp - vertices[predecessorId].presumptiveSuccessorLastUpdated) + flushedPsTimer;
+        } else {
+            return flushedPsTimer;
+        }
+    }
 
-            vertices[predecessorId].presumptiveSuccessorId = vId;
-            vertices[predecessorId].presumptiveSuccessorLastUpdated = block.timestamp;
+    struct NewChallengeVertex {
+        bytes32 historyCommitment;
+        uint256 height;
+        bytes32 claimId;
+        address staker;
+        uint256 initialPsTime;
+    }
+
+    // // a. bisect
+    // // 1. is there a current presumptive successor - if so then it is the only vertex at this height. Update it and set the ps to 0. Set our own timer to be inherited from above
+    // // 2. there is no current ps - if there exists a sibling to us then we do nothing with ps. If there does not we set ourselves as the PS. We do this by setting.
+    // // 3. ok, include a lowest successor height. And if we are less than this then set ourselves to the ps, if we are = then update the pstimer of the ps if ps id is non zero, otherwise do nothing
+    // // b. merge
+    // // 1. Set the ps timer to be the max of the two - if we're merging we change nothing on the ps of the former
+    // // 2. for the second child a rival must exist right? Yes - so we update the latter if it has a ps id
+
+    function addNewSuccessor(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        bytes32 predecessorId,
+        NewChallengeVertex memory successor,
+        uint256 challengePeriod,
+        uint256 challengeEndTime
+    ) public {
+        bytes32 vId = ChallengeVertexLib.id(successor.historyCommitment, successor.height);
+        require(!has(vertices, vId), "Successor already exists exist");
+
+        vertices[vId] = ChallengeVertex({
+            predecessorId: ChallengeVertexLib.rootId(),
+            successionChallenge: address(0),
+            historyCommitment: successor.historyCommitment,
+            height: successor.height,
+            claimId: successor.claimId,
+            staker: successor.staker,
+            status: Status.Pending,
+            presumptiveSuccessorId: 0,
+            presumptiveSuccessorLastUpdated: 0,
+            flushedPsTime: successor.initialPsTime,
+            lowestHeightSucessorId: 0
+        });
+
+        updateSuccessor(vertices, predecessorId, vId, challengePeriod, challengeEndTime);
+    }
+
+    // CHRIS: TODO: is it always safe to call this?
+    function updateSuccessor(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        bytes32 newPredecessorId,
+        bytes32 vId,
+        uint256 challengePeriod,
+        uint256 challengeEndTime
+    ) public {
+        // CHRIS: TODO: this is a beast of a function - we should break it down
+
+        // CHRIS: TODO: this isnt important any more since we dont just confirm a ps
+        // it's important that the ps cannot be updated after the challenge end time, otherwise a vertex could be confirmed
+        // then the ps be updated, and another vertex get confirmed. So to ensure that only one child of a vertex is confirmed
+        // we cannot update the ps after the challenge end time
+        require(!ChallengeLib.challengeHasEnded(challengeEndTime), "Challenge end time has been reached");
+
+        require(has(vertices, newPredecessorId), "Predecessor vertex does not exist");
+        require(has(vertices, vId), "Successor already exists exist");
+
+        vertices[vId].predecessorId = newPredecessorId;
+
+        uint256 height = vertices[vId].height;
+        // is there a current lowest height - this is always the case unless we're adding a new node
+        if (vertices[newPredecessorId].lowestHeightSucessorId == 0) {
+            // no lowest height successor, means no successors at all, so we can set this vertex as the presumptive successor
+            vertices[newPredecessorId].presumptiveSuccessorLastUpdated = block.timestamp;
+
+            vertices[newPredecessorId].presumptiveSuccessorId = vId;
+            vertices[newPredecessorId].lowestHeightSucessorId = vId;
+        } else if (vertices[newPredecessorId].presumptiveSuccessorId == 0) {
+            if (height < vertices[vertices[newPredecessorId].lowestHeightSucessorId].height) {
+                // if we are lower than the lowest height then we set ourselves
+                vertices[newPredecessorId].presumptiveSuccessorLastUpdated = block.timestamp;
+
+                vertices[newPredecessorId].presumptiveSuccessorId = vId;
+                vertices[newPredecessorId].lowestHeightSucessorId = vId;
+            } else {
+                // if we are at the same height or above, then there's nothing to set
+            }
+        } else {
+            // there is a lowest height, but there is not a ps
+            // this means there are multiple vertices at the same lowest height, so none are the ps
+
+            // never set the ps if one is already confirmable
+            require(
+                !hasConfirmablePsAt(vertices, newPredecessorId, challengePeriod),
+                "Presumptive successor already confirmable"
+            );
+
+            if (height < vertices[vertices[newPredecessorId].lowestHeightSucessorId].height) {
+                // if we are lower than the lowest height, then flush the old ps and set ourselves
+                uint256 timeToAdd = block.timestamp - vertices[newPredecessorId].presumptiveSuccessorLastUpdated;
+                vertices[vertices[newPredecessorId].presumptiveSuccessorId].flushedPsTime += timeToAdd;
+                vertices[newPredecessorId].presumptiveSuccessorLastUpdated = block.timestamp;
+
+                vertices[newPredecessorId].presumptiveSuccessorId = vId;
+                vertices[newPredecessorId].lowestHeightSucessorId = vId;
+                // CHRIS: TODO: this doesnt take into account if we are the ps that we're updating
+            } else if (height == vertices[vertices[newPredecessorId].lowestHeightSucessorId].height) {
+                // if we are at the same height as the ps, then flush the ps and 0 the ps
+                uint256 timeToAdd = block.timestamp - vertices[newPredecessorId].presumptiveSuccessorLastUpdated;
+                vertices[vertices[newPredecessorId].presumptiveSuccessorId].flushedPsTime += timeToAdd;
+                vertices[newPredecessorId].presumptiveSuccessorLastUpdated = block.timestamp;
+
+                if (vertices[newPredecessorId].lowestHeightSucessorId == vId) {
+                    // in this case presumptive successor is equal to the lowest height successor // CHRIS: TODO: add asserts for things like that
+                    // so we just need to update the flush
+                } else {
+                    // CHRIS: TODO: no need to update twice here
+                    vertices[newPredecessorId].presumptiveSuccessorLastUpdated = 0;
+                    vertices[newPredecessorId].presumptiveSuccessorId = 0;
+                }
+            } else {
+                // otherwise we are higher than the lowest height, so nothing to set
+            }
         }
     }
 
@@ -350,7 +492,7 @@ library ChallengeVertexMappingLib {
         require(vertices[vId].height - vertices[predecessorId].height >= 2, "Height different not two or more");
         // CHRIS: TODO: look at the boundary conditions here
         // CHRIS: TODO: update this to use the correct formula from the paper
-        return 10;
+        return 10; // placeholder
     }
 }
 
@@ -373,6 +515,122 @@ library HistoryCommitmentLib {
         // prove that the sequence of states commited to by prefixHistoryCommitment is a prefix
         // of the sequence of state commited to by the historyCommitment
         return true;
+    }
+}
+
+library ChallengeLib {
+    using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
+
+    function confirmationPreChecks(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
+        // basic checks
+        require(vertices[vId].status == Status.Pending, "Vertex is not pending");
+        require(vertices.has(vId), "Vertex does not exist");
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertices.has(predecessorId), "Predecessor vertex does not exist");
+
+        // for a vertex to be confirmed its predecessor must be confirmed
+        // this ensures an unbroken chain of confirmation from the root eventually up to one the leaves
+        require(vertices[predecessorId].status == Status.Confirmed, "Predecessor not confirmed");
+    }
+
+    // CHRIS: TODO: is this the best place to put this?
+    function challengeHasEnded(uint256 endTime) internal view returns (bool) {
+        return block.timestamp > endTime;
+    }
+
+    enum ConfirmationType {
+        Challenge,
+        EndTime,
+        PsTimer
+    }
+
+    /// @notice What type of confirmation is currention valid for this vertex and all of it's siblings
+    /// @dev It's important that this vertex and all of it's siblings be valid for only one type of confirmation at any one time.
+    ///      A secondary check can complement this one to ensure that within a confirmation type, only one of the siblings can be confirmed.
+    ///      Together these checks ensure that only one child of a vertex will ever be confirmed
+    /// @param vertices The vertices containing the vId
+    /// @param vId The vertex to test the confirmation type on. The same value would be returned for any sibling
+    /// @param challengeEndTime The time the challenge ends. Will be ignnored if there is a succession challenge on the predecessor
+    function currentConfirmationType(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        bytes32 vId,
+        uint256 challengeEndTime
+    ) internal view returns (ConfirmationType) {
+        address successionChallenge = vertices[vertices[vId].predecessorId].successionChallenge;
+        if (successionChallenge != address(0)) {
+            return ConfirmationType.Challenge;
+        } else if (challengeHasEnded(challengeEndTime)) {
+            return ConfirmationType.EndTime;
+        } else {
+            return ConfirmationType.PsTimer;
+        }
+    }
+
+    /// @notice Checks if a vertex is eligible to be confirmed after the challenge has ended
+    /// @param vertices The tree of vertices
+    /// @param vId The vertex to be confirmed
+    /// @param challengeEndTime The time at which the challenge ends
+    function checkConfirmForChallengeDeadline(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        bytes32 vId,
+        uint256 challengeEndTime
+    ) internal view {
+        confirmationPreChecks(vertices, vId);
+
+        // ensure only one type of confirmation is valid on this node and all it's siblings
+        require(
+            currentConfirmationType(vertices, vId, challengeEndTime) == ConfirmationType.EndTime,
+            "Invalid confirmation type"
+        );
+
+        // now ensure that only one of the siblings is valid for this time of confirmation
+        // here we ensure that because only one vertex is the presumptive successor on a vertex at any one time
+        // and presumptive successor is never updated after challenge end time
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertices[predecessorId].presumptiveSuccessorId == vId, "Vertex is not the presumptive successor");
+    }
+
+    /// @notice Checks if the vertex is eligible to be confirmed because it has a high enought ps timer
+    /// @param vertices The tree of vertices
+    /// @param vId The vertex to be confirmed
+    /// @param challengePeriod One challenge period in seconds
+    /// @param challengeEndTime The time at which the challenge ends
+    function checkConfirmForPsTimer(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        bytes32 vId,
+        uint256 challengePeriod,
+        uint256 challengeEndTime
+    ) internal view {
+        confirmationPreChecks(vertices, vId);
+
+        // ensure only one type of confirmation is valid on this node and all it's siblings
+        require(
+            currentConfirmationType(vertices, vId, challengeEndTime) == ConfirmationType.PsTimer,
+            "Invalid confirmation type"
+        );
+
+        // now ensure that only one of the siblings is valid for this time of confirmation
+        // here we ensure that because only one vertex can ever have a ps timer greater than the challenge period, before the end time
+        require(vertices.getCurrentPsTimer(vId) > challengePeriod, "PsTimer not greater than challenge period");
+    }
+
+    /// @notice Checks if the vertex is eligible to be confirmed because it has been declared a winner in a succession challenge
+    function checkConfirmForSucessionChallengeWin(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId)
+        internal
+        view
+    {
+        confirmationPreChecks(vertices, vId);
+
+        // ensure only one type of confirmation is valid on this node and all it's siblings
+        require(currentConfirmationType(vertices, vId, 0) == ConfirmationType.Challenge, "Invalid confirmation type");
+
+        // now ensure that only one of the siblings is valid for this time of confirmation
+        // here we ensure that since a succession challenge only declares one winner
+        address successionChallenge = vertices[vertices[vId].predecessorId].successionChallenge;
+        require(
+            Challenge(successionChallenge).winningClaim() == vId,
+            "Succession challenge did not declare this vertex the winner"
+        );
     }
 }
 
@@ -410,6 +668,10 @@ abstract contract Challenge {
     function initialPSTime(bytes32 claimId) internal virtual returns (uint256);
     function instantiateSubChallenge(bytes32 predecessorId) internal virtual returns (address);
 
+    function getCurrentPsTimer(bytes32 vId) public view returns (uint256) {
+        return vertices.getCurrentPsTimer(vId);
+    }
+
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
     function addLeafImpl(
         bytes32 claimId,
@@ -435,28 +697,26 @@ abstract contract Challenge {
             HistoryCommitmentLib.hasState(historyCommitment, lastState, height, lastStatehistoryProof),
             "Last state not in history"
         );
+        // CHRIS: TODO: also check the root is in the history at height 0/1?
 
-        bytes32 vId = ChallengeVertexLib.id(historyCommitment, height);
-
-        require(!vertices.has(vId), "Vertex already exists");
-        vertices[vId] = ChallengeVertex({
-            predecessorId: ChallengeVertexLib.rootId(),
-            successionChallenge: address(0),
-            historyCommitment: historyCommitment,
-            height: height,
-            claimId: claimId,
-            staker: msg.sender,
-            status: Status.Pending,
-            presumptiveSuccessorId: 0,
-            presumptiveSuccessorLastUpdated: 0, // leaves never have presumptive successors
-            psTimer: initialPSTime(claimId)
-        });
-
-        vertices.trySetAsPs(vId, challengePeriod);
+        vertices.addNewSuccessor(
+            ChallengeVertexLib.rootId(),
+            // CHRIS: TODO: move this struct out
+            ChallengeVertexMappingLib.NewChallengeVertex({
+                historyCommitment: historyCommitment,
+                height: height,
+                claimId: claimId,
+                staker: msg.sender,
+                // CHRIS: TODO: the naming is bad here
+                initialPsTime: initialPSTime(claimId)
+            }),
+            challengePeriod,
+            endTime
+        );
     }
 
-    error CannotConfirmVertex();
-
+    /// @dev Confirms the vertex without doing any checks. Also sets the winning claim if the vertex
+    ///      is a leaf.
     function setConfirmed(bytes32 vId) internal {
         vertices[vId].status = Status.Confirmed;
         if (vertices[vId].isLeaf()) {
@@ -464,50 +724,24 @@ abstract contract Challenge {
         }
     }
 
-    function confirmationPreChecks(bytes32 vId) internal {
-        require(vertices.has(vId), "Vertex does not exist");
-        bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertices.has(predecessorId), "Predecessor vertex does not exist");
-
-        // CHRIS: TODO: the ways to confirm aren't mutually exclusive! so we need to make sure that parties have a chance to call them in
-        // CHRIS: TODO: the correct order. Check with other OR conditions to see if this is a case - we don't want race conditions
-
-        require(vertices[predecessorId].status == Status.Confirmed, "Predecessor not confirmed");
-    }
-
+    /// @notice Confirm a vertex if the challenge deadline has passed
+    /// @param vId The vertex id
     function confirmForChallengeDeadline(bytes32 vId) public {
-        confirmationPreChecks(vId);
-
-        require(hasEnded(), "Challenge end time not yet reached");
-
-        bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertices[predecessorId].presumptiveSuccessorId == vId, "Vertex is not the presumptive successor");
-
+        ChallengeLib.checkConfirmForChallengeDeadline(vertices, vId, endTime);
         setConfirmed(vId);
     }
 
+    /// @notice Confirm a vertex because it has been the presumptive successor for long enough
+    /// @param vId The vertex id
     function confirmForPsTimer(bytes32 vId) public {
-        confirmationPreChecks(vId);
-
-        bytes32 predecessorId = vertices[vId].predecessorId;
-        // we check the pstimer below, so we need to make sure to flush
-        vertices.flushPsTimer(predecessorId);
-        require(vertices[vId].psTimer > challengePeriod, "PsTimer not greater than challenge period");
-
+        ChallengeLib.checkConfirmForPsTimer(vertices, vId, challengePeriod, endTime);
         setConfirmed(vId);
     }
 
+    /// Confirm a vertex because it has won a succession challenge
+    /// @param vId The vertex id
     function confirmForSucessionChallengeWin(bytes32 vId) public {
-        confirmationPreChecks(vId);
-
-        address successionChallenge = vertices[vertices[vId].predecessorId].successionChallenge;
-        require(successionChallenge != address(0), "No succession challenge");
-
-        require(
-            Challenge(successionChallenge).winningClaim() == vId,
-            "Succession challenge did not declare this vertex the winner"
-        );
-
+        ChallengeLib.checkConfirmForSucessionChallengeWin(vertices, vId);
         setConfirmed(vId);
     }
 
@@ -560,46 +794,82 @@ abstract contract Challenge {
         return bHeight;
     }
 
+    function bisectOrMerge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public virtual {
+        uint256 bHeight = getBisectionVertex(vId, prefixHistoryCommitment, prefixProof);
+        bytes32 bVId = ChallengeVertexLib.id(prefixHistoryCommitment, bHeight);
+        if (vertices.has(bVId)) {
+            // CHRIS: TODO: include a long comment about this
+            require(!vertices[bVId].isLeaf(), "Cannot merge to a leaf");
+
+            vertices.updateSuccessor(bVId, vId, challengePeriod, endTime);
+            // update the merged vertex so that it has an up to date timer
+            vertices.updateSuccessor(vertices[bVId].predecessorId, bVId, challengePeriod, endTime);
+            // update the merge vertex if we have a higher ps time
+            if (vertices[bVId].flushedPsTime < vertices[vId].flushedPsTime) {
+                vertices[bVId].flushedPsTime = vertices[vId].flushedPsTime;
+            }
+        } else {
+            bytes32 predecessorId = vertices[vId].predecessorId;
+            vertices.addNewSuccessor(
+                predecessorId,
+                ChallengeVertexMappingLib.NewChallengeVertex({
+                    historyCommitment: prefixHistoryCommitment,
+                    height: bHeight,
+                    claimId: 0,
+                    staker: address(0),
+                    // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
+                    initialPsTime: vertices.getCurrentPsTimer(vId)
+                }),
+                challengePeriod,
+                endTime
+            );
+            // CHRIS: TODO: check these two successor updates really do conform to the spec
+            vertices.updateSuccessor(bVId, vId, challengePeriod, endTime);
+        }
+    }
+
     function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public virtual {
         uint256 bHeight = getBisectionVertex(vId, prefixHistoryCommitment, prefixProof);
-
-        bytes32 predecessorId = vertices[vId].predecessorId;
-
         bytes32 bVId = ChallengeVertexLib.id(prefixHistoryCommitment, bHeight);
-
+        // CHRIS: redundant check?
         require(!vertices.has(bVId), "Bisection vertex already exists");
-        vertices[bVId] = ChallengeVertex({
-            predecessorId: predecessorId,
-            successionChallenge: address(0),
-            historyCommitment: prefixHistoryCommitment,
-            height: bHeight,
-            claimId: 0,
-            staker: address(0),
-            status: Status.Pending,
-            presumptiveSuccessorId: vId,
-            presumptiveSuccessorLastUpdated: block.timestamp,
-            psTimer: vertices[vId].psTimer
-        });
 
-        vertices[vId].predecessorId = bVId;
         // CHRIS: TODO: the spec says we should stop the presumptive successor timer of the vId, but why?
         // CHRIS: TODO: is that because we only care about presumptive successors further down the chain?
 
-        vertices.trySetAsPs(bVId, challengePeriod);
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        vertices.addNewSuccessor(
+            predecessorId,
+            ChallengeVertexMappingLib.NewChallengeVertex({
+                historyCommitment: prefixHistoryCommitment,
+                height: bHeight,
+                claimId: 0,
+                staker: address(0),
+                // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
+                initialPsTime: vertices.getCurrentPsTimer(vId)
+            }),
+            challengePeriod,
+            endTime
+        );
+        // CHRIS: TODO: check these two successor updates really do conform to the spec
+        vertices.updateSuccessor(bVId, vId, challengePeriod, endTime);
     }
 
     function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public virtual {
         uint256 bHeight = getBisectionVertex(vId, prefixHistoryCommitment, prefixProof);
         bytes32 bVId = ChallengeVertexLib.id(prefixHistoryCommitment, bHeight);
+        // CHRIS: redundant check?
         require(vertices.has(bVId), "Bisection vertex does not already exist");
         // CHRIS: TODO: include a long comment about this
         require(!vertices[bVId].isLeaf(), "Cannot merge to a leaf");
 
-        vertices[vId].predecessorId = bVId;
-        // CHRIS: TODO: docs about this
-        vertices[bVId].psTimer += vertices[vId].psTimer;
-
-        vertices.trySetAsPs(vId, challengePeriod);
+        vertices.updateSuccessor(bVId, vId, challengePeriod, endTime);
+        // update the merged vertex so that it has an up to date timer
+        vertices.updateSuccessor(vertices[bVId].predecessorId, bVId, challengePeriod, endTime);
+        // update the merge vertex if we have a higher ps time
+        if (vertices[bVId].flushedPsTime < vertices[vId].flushedPsTime) {
+            vertices[bVId].flushedPsTime = vertices[vId].flushedPsTime;
+        }
     }
 }
 
@@ -730,8 +1000,7 @@ contract BigStepChallenge is Challenge {
     }
 
     function initialPSTime(bytes32 claimId) internal view override returns (uint256) {
-        // CHRIS: TODO: how do we ensure this has been flushed?
-        return parentChallenge.getVertex(claimId).psTimer;
+        return parentChallenge.getCurrentPsTimer(claimId);
     }
 
     // CHRIS: TODO: better naming on this and createchallenge
@@ -797,8 +1066,7 @@ contract SmallStepChallenge is Challenge {
     }
 
     function initialPSTime(bytes32 claimId) internal view override returns (uint256) {
-        // CHRIS: TODO: how do we ensure this has been flushed?
-        return parentChallenge.getVertex(claimId).psTimer;
+        return parentChallenge.getCurrentPsTimer(claimId);
     }
 
     function instantiateSubChallenge(bytes32 predecessor) internal override returns (address) {
