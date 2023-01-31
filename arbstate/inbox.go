@@ -18,14 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
-
-var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
 
 type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, error)
@@ -36,40 +33,7 @@ type InboxBackend interface {
 	GetPositionWithinMessage() uint64
 	SetPositionWithinMessage(pos uint64)
 
-	ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error)
-}
-
-type MessageWithMetadata struct {
-	Message             *arbos.L1IncomingMessage `json:"message"`
-	DelayedMessagesRead uint64                   `json:"delayedMessagesRead"`
-}
-
-var EmptyTestMessageWithMetadata = MessageWithMetadata{
-	Message: &arbos.EmptyTestIncomingMessage,
-}
-
-// TestMessageWithMetadataAndRequestId message signature is only verified if requestId defined
-var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
-	Message: &arbos.TestIncomingMessageWithRequestId,
-}
-
-func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId uint64) (common.Hash, error) {
-	serializedExtraData := make([]byte, 24)
-	binary.BigEndian.PutUint64(serializedExtraData[:8], uint64(sequenceNumber))
-	binary.BigEndian.PutUint64(serializedExtraData[8:16], chainId)
-	binary.BigEndian.PutUint64(serializedExtraData[16:], m.DelayedMessagesRead)
-
-	serializedMessage, err := rlp.EncodeToBytes(m.Message)
-	if err != nil {
-		return common.Hash{}, errors.Wrapf(err, "unable to serialize message %v", sequenceNumber)
-	}
-
-	return crypto.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
-}
-
-type InboxMultiplexer interface {
-	Pop(context.Context) (*MessageWithMetadata, error)
-	DelayedMessagesRead() uint64
+	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
 }
 
 type sequencerMessage struct {
@@ -280,20 +244,13 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
 		dasReader:            dasReader,
 		keysetValidationMode: keysetValidationMode,
 	}
-}
-
-var InvalidL1Message = &arbos.L1IncomingMessage{
-	Header: &arbos.L1IncomingMessageHeader{
-		Kind: arbos.L1MessageType_Invalid,
-	},
-	L2msg: []byte{},
 }
 
 const BatchSegmentKindL2Message uint8 = 0
@@ -304,7 +261,7 @@ const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
 // Pop returns the message from the top of the sequencer inbox and removes it from the queue.
 // Note: this does *not* return parse errors, those are transformed into invalid messages
-func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
+func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()
 		if realErr != nil {
@@ -326,8 +283,8 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 	}
 	// parsing error in getNextMsg
 	if msg == nil && err == nil {
-		msg = &MessageWithMetadata{
-			Message:             InvalidL1Message,
+		msg = &arbostypes.MessageWithMetadata{
+			Message:             arbostypes.InvalidL1Message,
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
 	}
@@ -376,7 +333,7 @@ func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 
 // Returns a message, the segment number that had this message, and real/backend errors
 // parsing errors will be reported to log, return nil msg and nil error
-func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
+func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error) {
 	targetSubMessage := r.backend.GetPositionWithinMessage()
 	seqMsg := r.cachedSequencerMessage
 	segmentNum := r.cachedSegmentNum
@@ -442,11 +399,11 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	}
 	kind := segment[0]
 	segment = segment[1:]
-	var msg *MessageWithMetadata
+	var msg *arbostypes.MessageWithMetadata
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
 
 		if kind == BatchSegmentKindL2MessageBrotli {
-			decompressed, err := arbcompress.Decompress(segment, arbos.MaxL2MessageSize)
+			decompressed, err := arbcompress.Decompress(segment, arbostypes.MaxL2MessageSize)
 			if err != nil {
 				log.Info("dropping compressed message", "err", err, "delayedMsg", r.delayedMessagesRead)
 				return nil, nil
@@ -454,10 +411,10 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			segment = decompressed
 		}
 
-		msg = &MessageWithMetadata{
-			Message: &arbos.L1IncomingMessage{
-				Header: &arbos.L1IncomingMessageHeader{
-					Kind:        arbos.L1MessageType_L2Message,
+		msg = &arbostypes.MessageWithMetadata{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
+					Kind:        arbostypes.L1MessageType_L2Message,
 					Poster:      l1pricing.BatchPosterAddress,
 					BlockNumber: blockNumber,
 					Timestamp:   timestamp,
@@ -477,8 +434,8 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					"batchAfterDelayedMessages", seqMsg.afterDelayedMessages,
 				)
 			}
-			msg = &MessageWithMetadata{
-				Message:             InvalidL1Message,
+			msg = &arbostypes.MessageWithMetadata{
+				Message:             arbostypes.InvalidL1Message,
 				DelayedMessagesRead: seqMsg.afterDelayedMessages,
 			}
 		} else {
@@ -487,7 +444,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				return nil, realErr
 			}
 			r.delayedMessagesRead += 1
-			msg = &MessageWithMetadata{
+			msg = &arbostypes.MessageWithMetadata{
 				Message:             delayed,
 				DelayedMessagesRead: r.delayedMessagesRead,
 			}

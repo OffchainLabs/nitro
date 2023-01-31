@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package execution
 
 import (
 	"context"
@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
@@ -58,6 +59,22 @@ type SequencerConfig struct {
 	NonceFailureCacheSize       int                      `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration            `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
+}
+
+type DangerousSequencerConfig struct {
+	NoCoordinator bool `koanf:"no-coordinator"`
+}
+
+var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: false,
+}
+
+var TestDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: true,
+}
+
+func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -241,7 +258,7 @@ func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	txStreamer      *TransactionStreamer
+	execEngine      *ExecutionEngine
 	txQueue         chan txQueueItem
 	txRetryQueue    containers.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
@@ -262,7 +279,7 @@ type Sequencer struct {
 	forwarder   *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -276,7 +293,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 	s := &Sequencer{
-		txStreamer:      txStreamer,
+		execEngine:      execEngine,
 		txQueue:         make(chan txQueueItem, config.QueueSize),
 		l1Reader:        l1Reader,
 		config:          configFetcher,
@@ -287,7 +304,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		l1Timestamp:     0,
 		pauseChan:       nil,
 	}
-	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
+	execEngine.SetReorgSequencingPolicy(s.makeSequencingHooks)
 	return s, nil
 }
 
@@ -314,7 +331,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 
 	if len(s.senderWhitelist) > 0 {
-		signer := types.LatestSigner(s.txStreamer.bc.Config())
+		signer := types.LatestSigner(s.execEngine.bc.Config())
 		sender, err := types.Sender(signer, tx)
 		if err != nil {
 			return err
@@ -396,10 +413,7 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
-		return ErrNoSequencer
-	}
-	return nil
+	return s.execEngine.streamer.ExpectChosenSequencer()
 }
 
 func (s *Sequencer) ForwardTarget() string {
@@ -525,7 +539,7 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 
 // There's no guarantee that returned tx nonces will be correct
 func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
-	bc := s.txStreamer.bc
+	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock().Header()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
@@ -716,8 +730,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		return false
 	}
 
-	header := &arbos.L1IncomingMessageHeader{
-		Kind:        arbos.L1MessageType_L2Message,
+	header := &arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
 		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),
@@ -727,7 +741,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	hooks := s.makeSequencingHooks()
 	start := time.Now()
-	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
+	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
 	if elapsed >= time.Second*5 {

@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -37,7 +37,7 @@ type BackendAPI = core.NodeInterfaceBackendAPI
 type ExecutionResult = core.ExecutionResult
 
 func init() {
-	arbstate.RequireHookedGeth()
+	gethhook.RequireHookedGeth()
 
 	nodeInterfaceImpl := &NodeInterface{Address: types.NodeInterfaceAddress}
 	nodeInterfaceMeta := node_interfacegen.NodeInterfaceMetaData

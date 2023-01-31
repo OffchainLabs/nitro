@@ -37,11 +37,11 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fail(t, "Failed to read batch from L1")
 		}
-		batchCount, err := arbNode.InboxTracker.GetBatchCount()
+		msgNum, err := arbNode.Execution.ExecEngine.HeadMessageNumber()
 		Require(t, err)
-		if batchCount == 2 {
+		if msgNum == 1 {
 			break
-		} else if batchCount > 2 {
+		} else if msgNum > 1 {
 			Fail(t, "More than two batches in test?")
 		}
 		time.Sleep(10 * time.Millisecond)

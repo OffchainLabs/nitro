@@ -186,7 +186,7 @@ func TestComponentEstimate(t *testing.T) {
 	l1BaseFeeEstimate, _ := outputs[3].(*big.Int)
 
 	tx := l2info.SignTxAs("User", &types.DynamicFeeTx{
-		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
+		ChainID:   node.Execution.ArbInterface.BlockChain().Config().ChainID,
 		Nonce:     0,
 		GasTipCap: maxPriorityFeePerGas,
 		GasFeeCap: maxFeePerGas,

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -70,13 +70,13 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1))
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 2))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 2))
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 3))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 3))
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 4))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 4))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
 
 	b.Confirm(1)
@@ -92,7 +92,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(2)
-	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 5))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 5))
 	waitUntilUpdated(t, expectMessageCount(3,
 		"after 5 messages, 2 cleared by confirm"))
 

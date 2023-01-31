@@ -64,9 +64,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
 
-	lastBlockNum := s.txStreamer.bc.CurrentHeader().Number.Uint64()
-	res["blockNum"] = lastBlockNum
-	lastBuiltMessage, err := s.txStreamer.BlockNumberToMessageCount(lastBlockNum)
+	lastBuiltMessage, err := s.txStreamer.exec.HeadMessageNumber()
 	if err != nil {
 		res["blockMessageToMessageCountError"] = err.Error()
 		syncing = true
@@ -149,7 +147,7 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
+	block, err := s.txStreamer.exec.MessageCountToBlockNumber(msg)
 	return uint64(block), err
 }
 
@@ -161,7 +159,7 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
-	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
+	block, err := s.txStreamer.exec.MessageCountToBlockNumber(msg)
 	return uint64(block), err
 }
 

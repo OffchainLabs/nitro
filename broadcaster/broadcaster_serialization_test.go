@@ -10,8 +10,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 )
 
 func ExampleBroadcastMessage_broadcastfeedmessage() {
@@ -21,9 +20,9 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 		Messages: []*BroadcastFeedMessage{
 			{
 				SequenceNumber: 12345,
-				Message: arbstate.MessageWithMetadata{
-					Message: &arbos.L1IncomingMessage{
-						Header: &arbos.L1IncomingMessageHeader{
+				Message: arbostypes.MessageWithMetadata{
+					Message: &arbostypes.L1IncomingMessage{
+						Header: &arbostypes.L1IncomingMessageHeader{
 							Kind:        0,
 							Poster:      [20]byte{},
 							BlockNumber: 0,

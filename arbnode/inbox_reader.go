@@ -144,7 +144,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			configChainId := r.tracker.txStreamer.bc.Config().ChainID
+			configChainId := r.tracker.txStreamer.chainConfig.ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
 			}
