@@ -23,21 +23,21 @@ import (
 )
 
 type ArbitratorSpawnerConfig struct {
-	ConcurrentRuns int                `koanf:"concurrent-runs-limit" reload:"hot"`
-	OutputPath     string             `koanf:"output-path" reload:"hot"`
-	Execution      MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	Workers    int                `koanf:"workers" reload:"hot"`
+	OutputPath string             `koanf:"output-path" reload:"hot"`
+	Execution  MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	ConcurrentRuns: 0,
-	OutputPath:     "./target/output",
-	Execution:      DefaultMachineCacheConfig,
+	Workers:    0,
+	OutputPath: "./target/output",
+	Execution:  DefaultMachineCacheConfig,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".concurrent-runs-limit", DefaultArbitratorSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
+	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of cuncurrent validation runs")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 }
@@ -179,14 +179,14 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	v.LaunchThread(func(ctx context.Context) {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(ctx, entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	})
 	return run
 }
 
 func (v *ArbitratorSpawner) Room() int {
-	avail := v.config().ConcurrentRuns
+	avail := v.config().Workers
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}

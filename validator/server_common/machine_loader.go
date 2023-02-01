@@ -19,19 +19,21 @@ func newMachineStatus[M any]() *MachineStatus[M] {
 }
 
 type MachineLoader[M any] struct {
-	mapMutex            sync.Mutex
-	machines            map[common.Hash]*MachineStatus[M]
-	locator             *MachineLocator
-	createMachineThread func(ctx context.Context, moduleRoot common.Hash) (*M, error)
+	mapMutex      sync.Mutex
+	machines      map[common.Hash]*MachineStatus[M]
+	locator       *MachineLocator
+	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error)
 }
 
-func NewMachineLoader[M any](locator *MachineLocator,
-	createMachineThread func(ctx context.Context, moduleRoot common.Hash) (*M, error)) *MachineLoader[M] {
+func NewMachineLoader[M any](
+	locator *MachineLocator,
+	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error),
+) *MachineLoader[M] {
 
 	return &MachineLoader[M]{
-		machines:            make(map[common.Hash]*MachineStatus[M]),
-		locator:             locator,
-		createMachineThread: createMachineThread,
+		machines:      make(map[common.Hash]*MachineStatus[M]),
+		locator:       locator,
+		createMachine: createMachine,
 	}
 }
 
@@ -48,7 +50,7 @@ func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Has
 		status = newMachineStatus[M]()
 		l.machines[moduleRoot] = status
 		go func() {
-			machine, err := l.createMachineThread(context.Background(), moduleRoot)
+			machine, err := l.createMachine(context.Background(), moduleRoot)
 			if err != nil {
 				status.ProduceError(err)
 				return
