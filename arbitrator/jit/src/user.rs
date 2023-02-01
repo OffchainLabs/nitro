@@ -67,13 +67,17 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
         Err(error) => error!("failed to instantiate program", error),
     };
     instance.set_gas(wasm_gas);
+    instance.set_stack(config.depth.max_depth);
 
     let (status, outs) = match instance.run_main(&calldata, &config) {
         Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
         Ok(outcome) => outcome.into_data(),
     };
     if pricing.wasm_gas_price != 0 {
-        let wasm_gas = instance.gas_left().into();
+        let wasm_gas = match status {
+            UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+            _ => instance.gas_left().into(),
+        };
         sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
     }
     sp.write_u8(status as u8).skip_space();

@@ -132,7 +132,10 @@ pub unsafe extern "C" fn stylus_call(
         Ok(outcome) => outcome.into_data(),
     };
     if pricing.wasm_gas_price != 0 {
-        let wasm_gas = instance.gas_left().into();
+        let wasm_gas = match status {
+            UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+            _ => instance.gas_left().into(),
+        };
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
     }
     output.write(outs);
