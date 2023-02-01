@@ -179,8 +179,8 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	v.LaunchThread(func(ctx context.Context) {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(ctx, entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	})
 	return run
 }
