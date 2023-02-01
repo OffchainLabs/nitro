@@ -2,10 +2,12 @@
 pragma solidity ^0.8.17;
 
 interface IAssertionChain {
-    function createNewAssertion(bytes32 stateHash, uint256 height, bytes32 predecessorId) external;
-    function rejectAssertion(bytes32 assertionId) external;
-    function confirmAssertion(bytes32 assertionId) external;
-    function createSuccessionChallenge(bytes32 assertionId) external;
+    function getPredecessorId(bytes32 assertionId) external view returns (bytes32);
+    function getHeight(bytes32 assertionId) external view returns (uint256);
+    function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256);
+    function getStateHash(bytes32 assertionId) external view returns (bytes32);
+    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32);
+    function isFirstChild(bytes32 assertionId) external view returns (bool);
 }
 
 // Questions
@@ -68,6 +70,36 @@ contract AssertionChain is IAssertionChain {
 
     function assertionExists(bytes32 assertionId) public view returns (bool) {
         return assertions[assertionId].stateHash != 0;
+    }
+
+    function getPredecessorId(bytes32 assertionId) public view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].predecessorId;
+    }
+
+    function getHeight(bytes32 assertionId) external view returns (uint256) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].height;
+    }
+
+    function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].inboxMsgCountSeen;
+    }
+
+    function getStateHash(bytes32 assertionId) external view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].stateHash;
+    }
+
+    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].successionChallenge;
+    }
+
+    function isFirstChild(bytes32 assertionId) external view returns (bool) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].isFirstChild;
     }
 
     function createNewAssertion(bytes32 stateHash, uint256 height, bytes32 predecessorId) external {
@@ -570,7 +602,7 @@ contract ChallengeManagers {
     BlockChallengeManager public blockChallengeManager;
     BigStepChallengeManager public bigStepChallengeManager;
     SmallStepChallengeManager public smallStepChallengeManager;
-    AssertionChain public assertionChain;
+    IAssertionChain public assertionChain;
     OneStepProofManager public oneStepProofManager;
 }
 
@@ -641,7 +673,7 @@ abstract contract ChallengeManager {
         require(height != 0, "Empty height");
 
         // could we have lib functions that operate on the same contract?
-        // 
+        //
 
         // CHRIS: TODO: comment on why we need the mini stake
         // CHRIS: TODO: also are we using this to refund moves in real-time? would be more expensive if so, but could be necessary?
@@ -841,24 +873,22 @@ contract BlockChallengeManager is ChallengeManager {
         bytes memory inboxMsgProcessedProof
     ) public {
         // check that the predecessor of this claim has registered this contract as it's succession challenge
-        Assertion memory assertionClaim = challengeManagers.assertionChain().getAssertion(claimId);
-        Assertion memory previousAssertion =
-            challengeManagers.assertionChain().getAssertion(assertionClaim.predecessorId);
-
-        require(challengeManagers.assertionChain().assertionExists(claimId), "Assertion claim does not exist");
-        bytes32 predecessorId = challengeManagers.assertionChain().getAssertion(claimId).predecessorId;
+        bytes32 predecessorId = challengeManagers.assertionChain().getPredecessorId(claimId);
         require(
-            challengeManagers.assertionChain().getAssertion(predecessorId).successionChallenge == challengeId,
+            challengeManagers.assertionChain().getSuccessionChallenge(predecessorId) == challengeId,
             "Claim predecessor not linked to this challenge"
         );
 
-        uint256 leafHeight = assertionClaim.height - previousAssertion.height;
+        uint256 assertionHeight = challengeManagers.assertionChain().getHeight(claimId);
+        uint256 predecessorAssertionHeight = challengeManagers.assertionChain().getHeight(predecessorId);
+
+        uint256 leafHeight = assertionHeight - predecessorAssertionHeight;
         require(leafHeight == height, "Invalid height");
 
-        bytes32 claimStateHash = challengeManagers.assertionChain().getAssertion(claimId).stateHash;
+        bytes32 claimStateHash = challengeManagers.assertionChain().getStateHash(claimId);
         require(
             getInboxMsgProcessedCount(claimStateHash, inboxMsgProcessedProof)
-                == challengeManagers.assertionChain().getAssertion(predecessorId).inboxMsgCountSeen,
+                == challengeManagers.assertionChain().getInboxMsgCountSeen(predecessorId),
             "Invalid inbox messages processed"
         );
 
@@ -876,8 +906,8 @@ contract BlockChallengeManager is ChallengeManager {
     }
 
     function initialPSTime(bytes32 challengeId, bytes32 claimId) internal view override returns (uint256) {
-        Assertion memory assertionClaim = challengeManagers.assertionChain().getAssertion(claimId);
-        if (assertionClaim.isFirstChild) {
+        bool isFirstChild = challengeManagers.assertionChain().isFirstChild(claimId);
+        if (isFirstChild) {
             // CHRIS: TODO: look into this more, it seems not right to use start time - we should use assertion creation times
             return block.timestamp - startTime;
         } else {
