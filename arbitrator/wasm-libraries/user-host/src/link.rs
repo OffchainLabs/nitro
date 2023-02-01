@@ -171,7 +171,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let vec: Box<Vec<u8>> = Box::from_raw(sp.read_ptr_mut());
+    let vec: Vec<u8> = *Box::from_raw(sp.read_ptr_mut());
     let ptr: *mut u8 = sp.read_ptr_mut();
     wavm::write_slice(&vec, ptr as u64);
     mem::drop(vec)

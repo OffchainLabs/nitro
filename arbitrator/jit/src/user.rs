@@ -97,7 +97,7 @@ pub fn read_rust_vec_len(env: WasmEnvMut, sp: u32) {
 /// go side: λ(vec *Vec<u8>, dest []byte)
 pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let vec: Box<Vec<u8>> = unsafe { Box::from_raw(sp.read_ptr_mut()) };
+    let vec: Vec<u8> = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
     let ptr: *mut u8 = sp.read_ptr_mut();
     sp.write_slice(ptr as u64, &vec);
     mem::drop(vec)
