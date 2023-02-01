@@ -4,8 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "../precompiles/ArbWasm.sol";
-
 contract ProgramTest {
     event Hash(bytes32 result);
 

@@ -13,16 +13,6 @@ func (con ArbWasm) CompileProgram(c ctx, evm mech, program addr) (uint32, error)
 	return c.State.Programs().CompileProgram(evm.StateDB, program)
 }
 
-// Calls a wasm program
-// TODO: move into geth
-func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, calldata []byte) ([]byte, error) {
-	// TODO: require some intrinsic amount of gas
-	programs := c.State.Programs()
-
-	// give all gas to the program
-	return programs.CallProgram(evm.StateDB, program, calldata, &c.gasLeft)
-}
-
 // Gets the latest stylus version
 func (con ArbWasm) StylusVersion(c ctx, evm mech) (uint32, error) {
 	return c.State.Programs().StylusVersion()
