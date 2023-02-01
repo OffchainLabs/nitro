@@ -4,6 +4,7 @@
 package wsbroadcastserver
 
 import (
+	"compress/flate"
 	"context"
 	"errors"
 	"io"
@@ -13,8 +14,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 )
+
+func init() {
+	// We use a custom dictionary, so our compression isn't compatible with other websocket clients.
+	wsflate.ExtensionNameBytes = append([]byte("Arbitrum-"), wsflate.ExtensionNameBytes...)
+}
 
 type chainedReader struct {
 	readers []io.Reader
@@ -62,33 +69,43 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 	return cr
 }
 
-func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State) ([]byte, ws.OpCode, error) {
+func NewFlateReader() *wsflate.Reader {
+	return wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
+		return flate.NewReaderDict(r, GetStaticCompressorDictionary())
+	})
+}
 
+func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, timeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, error) {
+	if compression {
+		state |= ws.StateExtended
+	}
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
+	var msg wsflate.MessageState
 	reader := wsutil.Reader{
 		Source:          (&chainedReader{}).add(earlyFrameData).add(conn),
 		State:           state,
-		CheckUTF8:       true,
+		CheckUTF8:       !compression,
 		SkipHeaderCheck: false,
 		OnIntermediate:  controlHandler,
+		Extensions:      []wsutil.RecvExtension{&msg},
+	}
+
+	err := conn.SetReadDeadline(time.Now().Add(timeout))
+	if err != nil {
+		return nil, 0, err
 	}
 
 	// Remove timeout when leaving this function
-	defer func(conn net.Conn) {
+	defer func() {
 		err := conn.SetReadDeadline(time.Time{})
 		logError(err, "error removing read deadline")
-	}(conn)
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, 0, nil
 		default:
-		}
-
-		err := conn.SetReadDeadline(time.Now().Add(idleTimeout))
-		if err != nil {
-			return nil, 0, err
 		}
 
 		// Control packet may be returned even if err set
@@ -117,8 +134,16 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 			}
 			continue
 		}
-
-		data, err := io.ReadAll(&reader)
+		var data []byte
+		if msg.IsCompressed() {
+			if !compression {
+				return nil, 0, errors.New("Received compressed frame even though compression is disabled")
+			}
+			flateReader.Reset(&reader)
+			data, err = io.ReadAll(flateReader)
+		} else {
+			data, err = io.ReadAll(&reader)
+		}
 
 		return data, header.OpCode, err
 	}
