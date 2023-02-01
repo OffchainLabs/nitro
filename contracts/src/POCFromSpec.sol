@@ -10,6 +10,30 @@ interface IAssertionChain {
     function isFirstChild(bytes32 assertionId) external view returns (bool);
 }
 
+interface IChallengeManager {
+    function createChallenge(bytes32 startId) external returns (bytes32);
+    function winningClaim(bytes32 challengeId) external view returns (bytes32);
+    function vertexExists(bytes32 challengeId, bytes32 vId) external view returns (bool);
+    function getCurrentPsTimer(bytes32 challengeId, bytes32 vId) external view returns (uint256);
+    function confirmForPsTimer(bytes32 challengeId, bytes32 vId) external;
+    function confirmForSucessionChallengeWin(bytes32 challengeId, bytes32 vId) external;
+    function createSubChallenge(bytes32 challengeId, bytes32 child1Id, bytes32 child2Id) external;
+    function bisect(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
+        external;
+    function merge(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
+        external;
+    function addLeaf(
+        bytes32 challengeId,
+        bytes32 claimId,
+        uint256 height,
+        bytes32 historyCommitment,
+        bytes32 lastState,
+        bytes memory lastStatehistoryProof,
+        bytes memory proof1,
+        bytes memory proof2
+    ) external;
+}
+
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
 //    not 2 challenge periods after the first child creation.
@@ -611,9 +635,9 @@ struct Challenge {
     uint256 startTime; // CHRIS: TODO: why do we need this?
 }
 
-abstract contract ChallengeManager {
+abstract contract ChallengeManager is IChallengeManager {
     // CHRIS: TODO: do this in a different way
-    ChallengeManagers challengeManagers;
+    ChallengeManagers internal challengeManagers;
 
     using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
     using ChallengeVertexLib for ChallengeVertex;
@@ -621,13 +645,19 @@ abstract contract ChallengeManager {
     mapping(bytes32 => mapping(bytes32 => ChallengeVertex)) public vertices;
     mapping(bytes32 => Challenge) public challenges;
 
-    uint256 public immutable startTime = block.timestamp;
     uint256 immutable miniStake = 1 ether; // CHRIS: TODO: fill with value
     uint256 immutable challengePeriod = 10; // CHRIS: TODO: how to set this, and compare to end time?
+
+    address challengeCreator;
+
+    constructor(address _challengeCreator) {
+        challengeCreator = _challengeCreator;
+    }
 
     // CHRIS: TODO: better name for that start
     // CHRIS: TODO: any access management here? we shouldnt allow the challenge to be created by anyone as this affects the start timer - so we should has the id with teh creating address?
     function createChallenge(bytes32 startId) public returns (bytes32) {
+        require(msg.sender == challengeCreator, "Only challenge creator can create challenges");
         challenges[startId] = Challenge({winningClaim: 0, startTime: block.timestamp});
         // CHRIS: TODO: pass the startId into the newroot and also use it as the root id
         vertices[startId][ChallengeVertexLib.rootId()] = ChallengeVertexLib.newRoot();
@@ -671,9 +701,6 @@ abstract contract ChallengeManager {
         require(historyCommitment != 0, "Empty historyCommitment");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
         require(height != 0, "Empty height");
-
-        // could we have lib functions that operate on the same contract?
-        //
 
         // CHRIS: TODO: comment on why we need the mini stake
         // CHRIS: TODO: also are we using this to refund moves in real-time? would be more expensive if so, but could be necessary?
@@ -849,7 +876,7 @@ abstract contract ChallengeManager {
 }
 
 contract BlockChallengeManager is ChallengeManager {
-    constructor() ChallengeManager() {}
+    constructor(address challengeCreator) ChallengeManager(challengeCreator) {}
 
     function getBlockHash(bytes32 assertionStateHash, bytes memory proof) internal returns (bytes32) {
         // CHRIS: TODO:
@@ -907,9 +934,11 @@ contract BlockChallengeManager is ChallengeManager {
 
     function initialPSTime(bytes32 challengeId, bytes32 claimId) internal view override returns (uint256) {
         bool isFirstChild = challengeManagers.assertionChain().isFirstChild(claimId);
+
         if (isFirstChild) {
             // CHRIS: TODO: look into this more, it seems not right to use start time - we should use assertion creation times
-            return block.timestamp - startTime;
+            // CHRIS: TODO: check exists whenever we access the challenges? also the vertices now have a challenge index
+            return block.timestamp - challenges[challengeId].startTime;
         } else {
             return 0;
         }
@@ -921,7 +950,7 @@ contract BlockChallengeManager is ChallengeManager {
 }
 
 contract BigStepChallengeManager is ChallengeManager {
-    constructor() ChallengeManager() {}
+    constructor(address challengeCreator) ChallengeManager(challengeCreator) {}
 
     // CHRIS: TODO: should we also check that the root is the first in the merkle history? we do that for the ends, why not for the start, would be nice for that invariant to hold
 
@@ -996,7 +1025,7 @@ contract BigStepChallengeManager is ChallengeManager {
 contract SmallStepChallengeManager is ChallengeManager {
     uint256 public constant MAX_STEPS = 2 << 19;
 
-    constructor() ChallengeManager() {}
+    constructor(address challengeCreator) ChallengeManager(challengeCreator) {}
 
     function getProgramCounter(bytes32 state, bytes memory proof) public returns (uint256) {
         // CHRIS: TODO:
