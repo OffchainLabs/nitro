@@ -13,6 +13,7 @@ pub use color::Color;
 pub mod wavm;
 
 /// Puts an arbitrary type on the heap.
+/// Note: the type must be later freed or the value will be leaked.
 pub fn heapify<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }

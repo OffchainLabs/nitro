@@ -73,7 +73,7 @@ impl GoStack {
     }
 
     pub unsafe fn write_nullptr(&mut self) -> &mut Self {
-        self.write_u64(std::ptr::null::<u8>() as u64)
+        self.write_ptr(std::ptr::null::<u8>())
     }
 
     pub fn skip_u8(&mut self) -> &mut Self {
