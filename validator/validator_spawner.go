@@ -274,8 +274,8 @@ func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Has
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	v.LaunchThread(func(ctx context.Context) {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(ctx, entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	})
 	return run
 }
@@ -471,8 +471,8 @@ func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) Vali
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	go func() {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(v.GetContext(), entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	}()
 	return run
 }
