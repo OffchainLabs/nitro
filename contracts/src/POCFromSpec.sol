@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import { Status, IAssertionChain, ChallengeManagers } from "./DataEntities.sol";
-
+import {Status, IAssertionChain, ChallengeManagers} from "./DataEntities.sol";
 
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
@@ -24,8 +23,6 @@ import { Status, IAssertionChain, ChallengeManagers } from "./DataEntities.sol";
 
 // INVARIANTS
 // If an assertion exists, the previous assertion also exists
-
-
 
 struct Assertion {
     bytes32 predecessorId;
@@ -92,11 +89,10 @@ contract AssertionChain is IAssertionChain {
         return assertions[assertionId].isFirstChild;
     }
 
-    function getFirstChildCreationTime(bytes32 assertionId) external view returns(uint256) {
+    function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256) {
         require(assertionExists(assertionId), "Assertion does not exist");
         return assertions[assertionId].firstChildCreationTime;
     }
-
 
     function createNewAssertion(bytes32 stateHash, uint256 height, bytes32 predecessorId) external {
         // CHRIS: TODO: library on the assertion

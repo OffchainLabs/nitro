@@ -13,13 +13,17 @@ interface IAssertionChain {
     function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256);
     function getStateHash(bytes32 assertionId) external view returns (bytes32);
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32);
-    function getFirstChildCreationTime(bytes32 assertionId) external view returns(uint256);
+    function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256);
     function isFirstChild(bytes32 assertionId) external view returns (bool);
 }
 
-interface IChallengeManager {
-    function createChallenge(bytes32 startId) external returns (bytes32);
+// CHRIS: TODO: remove this?
+interface IWinningClaim {
     function winningClaim(bytes32 challengeId) external view returns (bytes32);
+}
+
+interface IChallengeManager is IWinningClaim {
+    function createChallenge(bytes32 startId) external returns (bytes32);
     function vertexExists(bytes32 challengeId, bytes32 vId) external view returns (bool);
     function getVertex(bytes32 challengeId, bytes32 vId) external view returns (ChallengeVertex memory);
     function getCurrentPsTimer(bytes32 challengeId, bytes32 vId) external view returns (uint256);
@@ -41,7 +45,6 @@ interface IChallengeManager {
         bytes memory proof2
     ) external;
 }
-
 
 struct ChallengeVertex {
     bytes32 predecessorId;
@@ -68,7 +71,7 @@ struct ChallengeVertex {
 }
 
 // CHRIS: TODO: one step proof test just here for structure test
-contract OneStepProofManager {
+contract OneStepProofManager is IWinningClaim {
     mapping(bytes32 => bytes32) public winningClaims;
 
     function winningClaim(bytes32 challengeId) public view returns (bytes32) {
