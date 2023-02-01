@@ -274,8 +274,8 @@ func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Has
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	v.LaunchThread(func(ctx context.Context) {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(ctx, entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	})
 	return run
 }
@@ -446,11 +446,9 @@ func (v *JitSpawner) Start(ctx_in context.Context) {
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
 ) (GoGlobalState, error) {
-	empty := GoGlobalState{}
-
 	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
 	if err != nil {
-		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
+		return GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
 	resolver := func(hash common.Hash) ([]byte, error) {
@@ -475,8 +473,8 @@ func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) Vali
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	go func() {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(v.GetContext(), entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	}()
 	return run
 }
