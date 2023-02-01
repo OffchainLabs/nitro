@@ -22,6 +22,17 @@ interface IWinningClaim {
     function winningClaim(bytes32 challengeId) external view returns (bytes32);
 }
 
+struct AddLeafArgs {
+    bytes32 challengeId;
+    bytes32 claimId;
+    uint256 height;
+    bytes32 historyCommitment;
+    bytes32 firstState;
+    bytes firstStatehistoryProof;
+    bytes32 lastState;
+    bytes lastStatehistoryProof;
+}
+
 interface IChallengeManager is IWinningClaim {
     function createChallenge(bytes32 startId) external returns (bytes32);
     function vertexExists(bytes32 challengeId, bytes32 vId) external view returns (bool);
@@ -34,16 +45,7 @@ interface IChallengeManager is IWinningClaim {
         external;
     function merge(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
         external;
-    function addLeaf(
-        bytes32 challengeId,
-        bytes32 claimId,
-        uint256 height,
-        bytes32 historyCommitment,
-        bytes32 lastState,
-        bytes memory lastStatehistoryProof,
-        bytes memory proof1,
-        bytes memory proof2
-    ) external;
+    function addLeaf(AddLeafArgs memory leafData, bytes memory proof1, bytes memory proof2) external;
 }
 
 struct ChallengeVertex {
@@ -68,6 +70,12 @@ struct ChallengeVertex {
     uint256 flushedPsTime;
     // the id of the successor with the lowest height. Zero if this vertex has no successors.
     bytes32 lowestHeightSucessorId;
+}
+
+struct Challenge {
+    bytes32 rootId;
+    // CHRIS: TODO: we could the leaf id here instead and just lookup the claim from the leaf
+    bytes32 winningClaim;
 }
 
 // CHRIS: TODO: one step proof test just here for structure test
