@@ -98,18 +98,22 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 			newCache.ProduceError(err)
 			return
 		}
-		initial := closest.CloneMachineInterface()
-		initialStep := initial.GetStepCount()
-		if initialStep > start {
-			newCache.ProduceError(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
+		closestStep := closest.GetStepCount()
+		var initial MachineInterface
+		if closestStep > start {
+			newCache.ProduceError(fmt.Errorf("initial machine step too large %d > %d", closestStep, start))
 			return
 		}
-		if initialStep < start {
-			err := initial.Step(ctx, start-initialStep)
+		if closestStep < start {
+			initial = closest.CloneMachineInterface()
+			err := initial.Step(ctx, start-closestStep)
 			if err != nil {
 				newCache.ProduceError(err)
 				return
 			}
+			initial.Freeze()
+		} else {
+			initial = closest
 		}
 		newCache.machines = []MachineInterface{initial}
 		newCache.firstMachineStep = start
@@ -140,6 +144,8 @@ func (c *MachineCache) populateInitialCache(ctx context.Context, target_step uin
 				// If i%2 == 0, this machine is no longer on the step interval.
 				if i%2 == 1 {
 					pruned = append(pruned, mach)
+				} else {
+					mach.Destroy()
 				}
 			}
 			c.machines = pruned

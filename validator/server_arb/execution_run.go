@@ -28,10 +28,10 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		return
 	}
 	machineStep := machine.GetStepCount()
-	if s.reqPosition != machine.GetStepCount() {
+	if s.reqPosition != machineStep {
 		machineRunning := machine.IsRunning()
 		if (machineRunning && s.reqPosition != machineStep) || machineStep > s.reqPosition {
-			s.ProduceError(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.reqPosition, machine.GetStepCount()))
+			s.ProduceError(fmt.Errorf("machine is in wrong position want: %d, got: %d", s.reqPosition, machine.GetStepCount()))
 			return
 		}
 
