@@ -91,7 +91,7 @@ func (l MachineLocator) LatestWasmModuleRoot() common.Hash {
 	return l.latest
 }
 
-func createArbMachineThread(ctx context.Context, locator *MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash, status *machineStatus[arbMachines]) {
+func createArbMachine(ctx context.Context, locator *MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash, status *machineStatus[arbMachines]) {
 	binPath := filepath.Join(locator.getMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))

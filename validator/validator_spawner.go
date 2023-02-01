@@ -442,11 +442,9 @@ func (v *JitSpawner) Start(ctx_in context.Context) {
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
 ) (GoGlobalState, error) {
-	empty := GoGlobalState{}
-
 	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
 	if err != nil {
-		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
+		return GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
 	resolver := func(hash common.Hash) ([]byte, error) {
