@@ -2,15 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use eyre::Result;
-use prover::{
-    machine::GlobalState,
-    programs::{
-        config::{DepthParams, StylusConfig},
-        depth::DepthCheckedMachine,
-        meter::{MachineMeter, MeteredMachine},
-    },
-    Machine,
-};
+use prover::{machine::GlobalState, programs::prelude::*, Machine};
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {

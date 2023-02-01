@@ -97,14 +97,14 @@ pub fn get_random_data(mut env: WasmEnvMut, sp: u32) {
     let mut len = sp.read_u64();
     while len >= 4 {
         let next = env.go_state.rng.next_u32();
-        sp.write_u32_ptr(ptr, next);
+        sp.write_u32_raw(ptr, next);
         ptr += 4;
         len -= 4;
     }
     if len > 0 {
         let mut rem = env.go_state.rng.next_u32();
         for _ in 0..len {
-            sp.write_u8_ptr(ptr, rem as u8);
+            sp.write_u8_raw(ptr, rem as u8);
             ptr += 1;
             rem >>= 8;
         }

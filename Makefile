@@ -81,9 +81,6 @@ prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_s
 prover_src = arbitrator/prover/src
 rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) $(prover_direct_includes)
 
-jit_dir = arbitrator/jit
-jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
-
 wasm_lib = arbitrator/wasm-libraries
 wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
 wasm_lib_go_abi = $(call wasm_lib_deps,go-abi)
@@ -110,6 +107,9 @@ stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_siphash_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
+
+jit_dir = arbitrator/jit
+jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(stylus_files)
 
 # user targets
 
@@ -238,7 +238,7 @@ $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 
 $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit ${CARGOFLAGS}
+	cargo build --manifest-path arbitrator/Cargo.toml --release -p jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@
 
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs

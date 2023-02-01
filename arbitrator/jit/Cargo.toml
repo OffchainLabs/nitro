@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../arbutil/" }
+prover = { path = "../prover/", default-features = false, features = ["native"] }
+stylus = { path = "../stylus/", default-features = false }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
 wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm/", optional = true }
 wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-cranelift/" }

@@ -12,7 +12,7 @@ pub enum UserOutcome {
     OutOfStack,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum UserOutcomeKind {
     Success,

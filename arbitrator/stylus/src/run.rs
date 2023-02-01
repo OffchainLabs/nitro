@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{env::Escape, stylus::NativeInstance};
+use crate::{env::Escape, native::NativeInstance};
 use eyre::{ensure, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};

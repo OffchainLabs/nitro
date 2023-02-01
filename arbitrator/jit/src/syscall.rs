@@ -283,7 +283,8 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
     macro_rules! fail {
         ($text:expr $(,$args:expr)*) => {{
             eprintln!($text $(,$args)*);
-            return sp.write_u64(GoValue::Null.encode());
+            sp.write_u64(GoValue::Null.encode());
+            return
         }};
     }
 
@@ -408,8 +409,8 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
                     // the stack pointer has changed, so we'll need to write our return results elsewhere
                     let pointer = get_stack_pointer.call(&mut store)? as u32;
-                    sp.write_u64_ptr(pointer + saved, GoValue::Null.encode());
-                    sp.write_u8_ptr(pointer + saved + 8, 1);
+                    sp.write_u64_raw(pointer + saved, GoValue::Null.encode());
+                    sp.write_u8_raw(pointer + saved + 8, 1);
                     return Ok(());
                 }
                 _ => fail!("Go trying to call fs.write with bad args {:?}", args),
@@ -456,7 +457,7 @@ pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
     let pool = &mut env.js_state.pool;
 
     let class = sp.read_u32();
-    let (args_ptr, args_len) = sp.skip_u32().read_go_slice();
+    let (args_ptr, args_len) = sp.skip_space().read_go_slice();
     let args = sp.read_value_slice(args_ptr, args_len);
     match class {
         UINT8_ARRAY_ID => match args.get(0) {

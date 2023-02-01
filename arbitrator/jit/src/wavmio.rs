@@ -76,7 +76,7 @@ pub fn get_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     match env.small_globals.get(global) {
         Some(global) => sp.write_u64(*global),
         None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
-    }
+    };
     Ok(())
 }
 

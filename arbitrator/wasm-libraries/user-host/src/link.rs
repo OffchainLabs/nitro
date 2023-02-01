@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{Program, PROGRAMS};
-use arbutil::wavm;
+use arbutil::{heapify, wavm};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
@@ -90,9 +90,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let machine: Box<Machine> = Box::from_raw(sp.read_ptr_mut());
+    let machine: Machine = *Box::from_raw(sp.read_ptr_mut());
     let calldata = sp.read_go_slice_owned();
-    let config: Box<StylusConfig> = Box::from_raw(sp.read_ptr_mut());
+    let config: StylusConfig = *Box::from_raw(sp.read_ptr_mut());
 
     // buy wasm gas. If free, provide a virtually limitless amount
     let pricing = config.pricing;
@@ -191,9 +191,4 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     config.pricing.wasm_gas_price = sp.read_u64();
     config.pricing.hostio_cost = sp.read_u64();
     sp.write_ptr(heapify(config));
-}
-
-/// Puts an arbitrary type on the heap. The type must be later freed or the value will be leaked.
-unsafe fn heapify<T>(value: T) -> *mut T {
-    Box::into_raw(Box::new(value))
 }
