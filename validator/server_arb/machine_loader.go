@@ -27,11 +27,11 @@ type ArbMachineLoader struct {
 }
 
 func NewArbMachineLoader(config *ArbitratorMachineConfig, locator *server_common.MachineLocator) *ArbMachineLoader {
-	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash) (*arbMachines, error) {
-		return createArbMachineThread(ctx, locator, config, moduleRoot)
+	createMachineFunc := func(ctx context.Context, moduleRoot common.Hash) (*arbMachines, error) {
+		return createArbMachine(ctx, locator, config, moduleRoot)
 	}
 	return &ArbMachineLoader{
-		MachineLoader: *server_common.NewMachineLoader[arbMachines](locator, createMachineThreadFunc),
+		MachineLoader: *server_common.NewMachineLoader[arbMachines](locator, createMachineFunc),
 	}
 }
 

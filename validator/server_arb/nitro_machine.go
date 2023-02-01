@@ -22,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
-func createArbMachineThread(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash) (*arbMachines, error) {
+func createArbMachine(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash) (*arbMachines, error) {
 	binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
