@@ -222,7 +222,7 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 		newFeeCap = balanceFeeCap
 	}
 
-	if arbmath.BigGreaterThan(newFeeCap, newTipCap) {
+	if arbmath.BigGreaterThan(newTipCap, newFeeCap) {
 		log.Warn(
 			"reducing new tip cap to new fee cap",
 			"proposedTipCap", newTipCap,
