@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -76,7 +77,7 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
-func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, strictness uint) error {
+func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, strictness uint, options *arbitrum.ConditionalOptions) error {
 	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -127,7 +128,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	return nil
 }
 
-func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum.ConditionalOptions) error {
 	block := c.bc.CurrentBlock()
 	statedb, err := c.bc.StateAt(block.Root())
 	if err != nil {
@@ -137,9 +138,9 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc.Config(), block.Header(), statedb, arbos, tx, c.getStrictness())
+	err = PreCheckTx(c.bc.Config(), block.Header(), statedb, arbos, tx, c.getStrictness(), options)
 	if err != nil {
 		return err
 	}
-	return c.TransactionPublisher.PublishTransaction(ctx, tx)
+	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }

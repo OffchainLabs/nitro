@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -81,7 +82,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
+	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum.ConditionalOptions, common.Address) error
 	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
@@ -89,7 +90,7 @@ func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum.ConditionalOptions, common.Address) error {
 			return nil
 		},
 		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
@@ -133,7 +134,7 @@ func ProduceBlock(
 
 	hooks := noopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, nil, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -144,6 +145,7 @@ var ErrMaxGasLimitReached = fmt.Errorf("%w", core.ErrGasLimitReached)
 func ProduceBlockAdvanced(
 	l1Header *L1IncomingMessageHeader,
 	txes types.Transactions,
+	txesOptions []*arbitrum.ConditionalOptions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
@@ -180,6 +182,9 @@ func ProduceBlockAdvanced(
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
 	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
+	if txesOptions != nil {
+		txesOptions = append([]*arbitrum.ConditionalOptions{nil}, txesOptions...)
+	}
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -196,6 +201,7 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
+		var options *arbitrum.ConditionalOptions
 		hooks := noopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
@@ -214,6 +220,10 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
+			if txesOptions != nil {
+				options = txesOptions[0]
+				txesOptions = txesOptions[1:]
+			}
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
@@ -239,7 +249,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender); err != nil {
 				return nil, nil, err
 			}
 

@@ -57,7 +57,7 @@ func TestSequencerPause(t *testing.T) {
 
 	for _, tx := range txs {
 		go func(ptx *types.Transaction) {
-			err := sequencer.PublishTransaction(ctx, ptx)
+			err := sequencer.PublishTransaction(ctx, ptx, nil)
 			Require(t, err)
 		}(tx)
 	}
