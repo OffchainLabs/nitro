@@ -38,7 +38,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -56,24 +55,17 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	))
 	result, err := status.output(output.read())
 	if err == nil {
-		db.AddUserModule(version, program, result)
+		db.SetCompiledWasmCode(program, result, version)
 	}
 	return err
 }
 
 func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
-
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program, params.version)
 	}
-	if db.Deterministic() {
-		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
-	}
 
-	module, err := db.GetUserModule(1, program)
-	if err != nil {
-		log.Crit("instance module does not exist")
-	}
+	module := db.GetCompiledWasmCode(program, params.version)
 
 	output := rustVec()
 	status := userStatus(C.stylus_call(

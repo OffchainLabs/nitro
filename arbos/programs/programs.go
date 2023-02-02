@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -136,9 +137,13 @@ func (p Programs) CallProgram(
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
-	wasm := statedb.GetCode(program)
-	if wasm == nil {
+	prefixedWasm := statedb.GetCode(program)
+	if prefixedWasm == nil {
 		return nil, fmt.Errorf("missing wasm at address %v", program)
+	}
+	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	if err != nil {
+		return nil, err
 	}
 	return arbcompress.Decompress(wasm, MaxWasmSize)
 }

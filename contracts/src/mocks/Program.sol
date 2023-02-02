@@ -4,8 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "../precompiles/ArbWasm.sol";
-
 contract ProgramTest {
     event Hash(bytes32 result);
 
@@ -13,8 +11,8 @@ contract ProgramTest {
         // in keccak.rs
         //     the input is the # of hashings followed by a preimage
         //     the output is the iterated hash of the preimage
-
-        bytes memory result = ArbWasm(address(0x71)).callProgram(program, data);
+        (bool success, bytes memory result) = address(program).call(data);
+        require(success, "call failed");
         bytes32 hash = bytes32(result);
         emit Hash(hash);
         require(hash == keccak256(data[1:]));
