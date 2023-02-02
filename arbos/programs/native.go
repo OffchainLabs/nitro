@@ -61,12 +61,8 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 }
 
 func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
-
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program, params.version)
-	}
-	if db.Deterministic() {
-		_ = db.GetCode(program) // mirror the state access in wasm.go to collect the preimage(s)
 	}
 
 	module := db.GetCompiledWasmCode(program, params.version)
