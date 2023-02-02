@@ -23,6 +23,7 @@ interface IWinningClaim {
 }
 
 struct AddLeafArgs {
+    bytes32 parentChallengeId; // CHRIS: TODO: left 0 for assertion for now - but should be used!
     bytes32 challengeId;
     bytes32 claimId;
     uint256 height;
@@ -45,7 +46,7 @@ interface IChallengeManager is IWinningClaim {
         external;
     function merge(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
         external;
-    function addLeaf(AddLeafArgs memory leafData, bytes memory proof1, bytes memory proof2) external;
+    function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2) external;
 }
 
 struct ChallengeVertex {
@@ -72,10 +73,19 @@ struct ChallengeVertex {
     bytes32 lowestHeightSucessorId;
 }
 
+enum ChallengeType {
+    Block,
+    BigStep,
+    SmallStep,
+    OneStep
+}
+
 struct Challenge {
     bytes32 rootId;
     // CHRIS: TODO: we could the leaf id here instead and just lookup the claim from the leaf
     bytes32 winningClaim;
+    ChallengeType challengeType; // CHRIS: TODO: can use the keyword 'type' here?
+
 }
 
 // CHRIS: TODO: one step proof test just here for structure test
@@ -101,4 +111,18 @@ contract ChallengeManagers {
     IChallengeManager public smallStepChallengeManager;
     IAssertionChain public assertionChain;
     OneStepProofManager public oneStepProofManager;
+
+    constructor(
+IAssertionChain  _assertionChain,
+        IChallengeManager  _blockChallengeManager,
+IChallengeManager  _bigStepChallengeManager,
+IChallengeManager  _smallStepChallengeManager,
+OneStepProofManager  _oneStepProofManager) {
+    blockChallengeManager = _blockChallengeManager;
+    bigStepChallengeManager = _bigStepChallengeManager;
+    smallStepChallengeManager = _smallStepChallengeManager;
+    assertionChain = _assertionChain;
+    oneStepProofManager = _oneStepProofManager;
+
+    }
 }
