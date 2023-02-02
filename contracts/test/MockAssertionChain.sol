@@ -23,7 +23,6 @@ contract MockAssertionChain is IAssertionChain {
 
     function getPredecessorId(bytes32 assertionId) external view returns (bytes32) {
         require(assertionExists(assertionId), "Assertion does not exist");
-
         return assertions[assertionId].predecessorId;
     }
 
@@ -71,7 +70,7 @@ contract MockAssertionChain is IAssertionChain {
         uint256 inboxMsgCountSeen,
         bytes32 stateHash,
         bytes32 successionChallenge
-    ) public {
+    ) public returns (bytes32) {
         bytes32 assertionId = calculateAssertionId(predecessorId, height, stateHash);
         assertions[assertionId] = MockAssertion({
             predecessorId: predecessorId,
@@ -82,6 +81,7 @@ contract MockAssertionChain is IAssertionChain {
             firstChildCreationTime: 0,
             isFirstChild: assertions[predecessorId].firstChildCreationTime != 0
         });
+        return assertionId;
     }
 
     function addAssertion(
@@ -90,7 +90,7 @@ contract MockAssertionChain is IAssertionChain {
         uint256 inboxMsgCountSeen,
         bytes32 stateHash,
         bytes32 successionChallenge
-    ) public {
+    ) public returns (bytes32) {
         bytes32 assertionId = calculateAssertionId(predecessorId, height, stateHash);
         require(!assertionExists(assertionId), "Assertion already exists");
         require(assertionExists(predecessorId), "Predecessor does not exists");
@@ -98,6 +98,20 @@ contract MockAssertionChain is IAssertionChain {
         require(inboxMsgCountSeen >= assertions[predecessorId].inboxMsgCountSeen, "Inbox count seen too low");
         require(stateHash != 0, "Empty state hash");
 
-        addAssertionUnsafe(predecessorId, height, inboxMsgCountSeen, stateHash, successionChallenge);
+        return addAssertionUnsafe(predecessorId, height, inboxMsgCountSeen, stateHash, successionChallenge);
+    }
+
+    function createChallenge(bytes32 child1, bytes32 child2, IChallengeManager challengeManager)
+        public
+        returns (bytes32)
+    {
+        require(assertionExists(child1), "Child1 does not exist");
+        require(assertionExists(child2), "Child2 does not exist");
+        require(assertions[child1].predecessorId == assertions[child2].predecessorId, "Different predecessor");
+        require(assertionExists(assertions[child1].predecessorId), "Predecessor does not exist");
+
+        bytes32 challengeId = challengeManager.createChallenge(assertions[child1].predecessorId);
+        assertions[assertions[child1].predecessorId].successionChallenge = challengeId;
+        return challengeId;
     }
 }

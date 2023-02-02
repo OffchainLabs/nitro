@@ -37,10 +37,13 @@ interface IChallengeManager {
     function getCurrentPsTimer(bytes32 vId) external view returns (uint256);
     function confirmForPsTimer(bytes32 vId) external;
     function confirmForSucessionChallengeWin(bytes32 vId) external;
-    function createSubChallenge(bytes32 challengeId, bytes32 child1Id, bytes32 child2Id) external;
+    function createSubChallenge(bytes32 child1Id, bytes32 child2Id) external;
     function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
     function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
-    function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2) external;
+    function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2)
+        external
+        payable
+        returns (bytes32);
 }
 
 struct ChallengeVertex {
