@@ -26,9 +26,9 @@ import (
 )
 
 var (
-	validatorPendingValidationsCounter = metrics.NewRegisteredCounter("arb/validator/pending_validations", nil)
-	validatorValidValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/valid_validations", nil)
-	validatorFailedValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/failed_validations", nil)
+	validatorPendingValidationsGauge   = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
+	validatorValidValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
+	validatorFailedValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
 	validatorLastBlockInLastBatchGauge = metrics.NewRegisteredGauge("arb/validator/last_block_in_last_batch", nil)
 )
 
@@ -468,7 +468,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	entry := validationStatus.Entry
 	defer func() {
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
-		validatorPendingValidationsCounter.Dec(1)
+		validatorPendingValidationsGauge.Dec(1)
 		v.triggerSendValidations()
 	}()
 	entry.BatchInfo = append(entry.BatchInfo, validator.BatchInfo{
@@ -646,7 +646,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
 		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
-		validatorPendingValidationsCounter.Inc(1)
+		validatorPendingValidationsGauge.Inc(1)
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 
 		v.LaunchThread(func(ctx context.Context) {
