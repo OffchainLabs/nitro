@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestKeccakProgram(t *testing.T) {
@@ -57,17 +58,16 @@ func TestKeccakProgram(t *testing.T) {
 		return receipt
 	}
 
-	// Set WASM gas and hostio gas prices. We want the value
-	// of WASM gas to sometimes be over 10000, as that is the number
-	// at which EVM gas pricing and WASM gas pricing will be equivalent
-	// and therefore have a ratio of 1:1.
-	min := 8000
-	max := 20000
-	wasmGasPrice := uint64(rand.Intn(max-min) + min)
+	// Set random pricing params. Note that the WASM gas price is measured in bips,
+	// so a gas price of 10k means that 1 evm gas buys exactly 1 wasm gas.
+	// We choose a range on both sides of this value.
+	wasmGasPrice := testhelpers.RandomUint64(0, 20000)  // evm to wasm gas
+	wasmHostioCost := testhelpers.RandomUint64(0, 5000) // amount of wasm gas
 
-	// We randomly test either a 0 or full WASM gas price.
-	wasmGasPrice = wasmGasPrice * uint64(rand.Intn(2))
-	wasmHostioCost := uint64(rand.Intn(20000))
+	// Drop the gas price to 0 half the time
+	if testhelpers.RandomBool() {
+		wasmGasPrice = 0
+	}
 	colors.PrintMint(fmt.Sprintf("WASM gas price=%d, HostIO cost=%d", wasmGasPrice, wasmHostioCost))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
