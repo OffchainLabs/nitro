@@ -14,16 +14,6 @@ interface ArbWasm {
     // @return version the stylus version the program was compiled against
     function compileProgram(address program) external returns (uint32 version);
 
-    // @notice call a wasm program
-    // @param id the program to call
-    // @param data the calldata to pass to the wasm program
-    // @return status whether the call succeeded (0 means success, nonzero failure)
-    // @return result the output of the wasm program
-    function callProgram(address program, bytes calldata data)
-        external
-        view
-        returns (bytes memory result);
-
     // @notice gets the latest stylus version
     // @return version the stylus version
     function stylusVersion() external view returns (uint32 version);

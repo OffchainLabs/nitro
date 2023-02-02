@@ -704,6 +704,20 @@ func deployContract(
 	return crypto.CreateAddress(auth.From, nonce)
 }
 
+func sendContractCall(
+	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+) []byte {
+	t.Helper()
+	msg := ethereum.CallMsg{
+		To:    &to,
+		Value: big.NewInt(0),
+		Data:  data,
+	}
+	res, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	return res
+}
+
 func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
 	t.Helper()
 	for i := 0; i < max; i++ {

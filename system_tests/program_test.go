@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestKeccakProgram(t *testing.T) {
@@ -57,9 +58,18 @@ func TestKeccakProgram(t *testing.T) {
 		return receipt
 	}
 
-	// set non-zero costs
-	wasmGasPrice := uint64(rand.Intn(200) * rand.Intn(2))
-	wasmHostioCost := uint64(rand.Intn(2000))
+	// Set random pricing params. Note that the WASM gas price is measured in bips,
+	// so a gas price of 10k means that 1 evm gas buys exactly 1 wasm gas.
+	// We choose a range on both sides of this value.
+	wasmGasPrice := testhelpers.RandomUint64(0, 20000)  // evm to wasm gas
+	wasmHostioCost := testhelpers.RandomUint64(0, 5000) // amount of wasm gas
+
+	// Drop the gas price to 0 half the time
+	if testhelpers.RandomBool() {
+		wasmGasPrice = 0
+	}
+	colors.PrintMint(fmt.Sprintf("WASM gas price=%d, HostIO cost=%d", wasmGasPrice, wasmHostioCost))
+
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
 	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))
@@ -70,6 +80,8 @@ func TestKeccakProgram(t *testing.T) {
 	Require(t, err)
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
+
+	wasm = append(state.StylusPrefix, wasm...)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
@@ -96,13 +108,10 @@ func TestKeccakProgram(t *testing.T) {
 	args = append(args, preimage...)
 
 	timed("execute", func() {
-		result, err := arbWasm.CallProgram(&bind.CallOpts{}, programAddress, args)
-		Require(t, err)
-
+		result := sendContractCall(t, ctx, programAddress, l2client, args)
 		if len(result) != 32 {
 			Fail(t, "unexpected return result: ", "result", result)
 		}
-
 		hash := common.BytesToHash(result)
 		if hash != correct {
 			Fail(t, "computed hash mismatch", hash, correct)
