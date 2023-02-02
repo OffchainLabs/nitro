@@ -28,6 +28,7 @@ func TestGetEmptyCacheMessages(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     nil,
 		messageCount: 0,
+		limitCatchup: func() bool { return false },
 	}
 
 	// Get everything
@@ -58,6 +59,7 @@ func TestGetCacheMessages(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
+		limitCatchup: func() bool { return false },
 	}
 
 	// Get everything
@@ -107,6 +109,7 @@ func TestDeleteConfirmedNil(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     nil,
 		messageCount: 0,
+		limitCatchup: func() bool { return false },
 	}
 
 	buffer.deleteConfirmed(0)
@@ -120,6 +123,7 @@ func TestDeleteConfirmInvalidOrder(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
+		limitCatchup: func() bool { return false },
 	}
 
 	// Confirm before cache
@@ -134,6 +138,7 @@ func TestDeleteConfirmed(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
+		limitCatchup: func() bool { return false },
 	}
 
 	// Confirm older than cache
@@ -148,6 +153,7 @@ func TestDeleteFreeMem(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
+		limitCatchup: func() bool { return false },
 	}
 
 	// Confirm older than cache
@@ -162,6 +168,7 @@ func TestBroadcastBadMessage(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     nil,
 		messageCount: 0,
+		limitCatchup: func() bool { return false },
 	}
 
 	var foo int
@@ -179,6 +186,7 @@ func TestBroadcastPastSeqNum(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
 		messageCount: int32(len(indexes)),
+		limitCatchup: func() bool { return false },
 	}
 
 	bm := BroadcastMessage{
