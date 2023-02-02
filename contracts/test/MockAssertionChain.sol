@@ -65,6 +65,25 @@ contract MockAssertionChain is IAssertionChain {
         return keccak256(abi.encodePacked(predecessorId, height, stateHash));
     }
 
+    function addAssertionUnsafe(
+        bytes32 predecessorId,
+        uint256 height,
+        uint256 inboxMsgCountSeen,
+        bytes32 stateHash,
+        bytes32 successionChallenge
+    ) public {
+        bytes32 assertionId = calculateAssertionId(predecessorId, height, stateHash);
+        assertions[assertionId] = MockAssertion({
+            predecessorId: predecessorId,
+            height: height,
+            inboxMsgCountSeen: inboxMsgCountSeen,
+            stateHash: stateHash,
+            successionChallenge: successionChallenge,
+            firstChildCreationTime: 0,
+            isFirstChild: assertions[predecessorId].firstChildCreationTime != 0
+        });
+    }
+
     function addAssertion(
         bytes32 predecessorId,
         uint256 height,
@@ -79,14 +98,6 @@ contract MockAssertionChain is IAssertionChain {
         require(inboxMsgCountSeen >= assertions[predecessorId].inboxMsgCountSeen, "Inbox count seen too low");
         require(stateHash != 0, "Empty state hash");
 
-        assertions[assertionId] = MockAssertion({
-            predecessorId: predecessorId,
-            height: height,
-            inboxMsgCountSeen: inboxMsgCountSeen,
-            stateHash: stateHash,
-            successionChallenge: successionChallenge,
-            firstChildCreationTime: 0,
-            isFirstChild: assertions[predecessorId].firstChildCreationTime != 0
-        });
+        addAssertionUnsafe(predecessorId, height, inboxMsgCountSeen, stateHash, successionChallenge);
     }
 }

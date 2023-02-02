@@ -7,8 +7,7 @@ import "./MockAssertionChain.sol";
 import "../src/ChallengeManager.sol";
 
 contract AssertionChainTest is Test {
-    function setUp() public {
-    }
+    function setUp() public {}
 
     function testFace() public {
         MockAssertionChain assertionChain = new MockAssertionChain();
@@ -16,6 +15,5 @@ contract AssertionChainTest is Test {
         ChallengeManager blockChallengeManager = new ChallengeManager(assertionChain);
 
         OneStepProofManager oneStepProofManager = new OneStepProofManager();
-
     }
 }
