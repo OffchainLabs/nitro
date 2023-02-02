@@ -143,7 +143,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(CallerModuleInternalCall, UserSetGas);
         }
         ("hostio", "link_module") => {
-            // λ(module_hash)
+            // λ(module_hash) -> module
             ty = FunctionType::new(vec![I32], vec![I32]);
             opcode!(LocalGet, 0);
             opcode!(LinkModule);

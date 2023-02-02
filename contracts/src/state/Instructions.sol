@@ -133,8 +133,9 @@ library Instructions {
     uint16 internal constant MOVE_FROM_INTERNAL_TO_STACK = 0x8006;
     uint16 internal constant DUP = 0x8008;
     uint16 internal constant CROSS_MODULE_CALL = 0x8009;
-    uint16 internal constant CROSS_MODULE_FORWARD = 0x800B;
     uint16 internal constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
+    uint16 internal constant CROSS_MODULE_FORWARD = 0x800B;
+    uint16 internal constant CROSS_MODULE_DYNAMIC_CALL = 0x800C;
 
     uint16 internal constant GET_GLOBAL_STATE_BYTES32 = 0x8010;
     uint16 internal constant SET_GLOBAL_STATE_BYTES32 = 0x8011;
@@ -144,6 +145,8 @@ library Instructions {
     uint16 internal constant READ_PRE_IMAGE = 0x8020;
     uint16 internal constant READ_INBOX_MESSAGE = 0x8021;
     uint16 internal constant HALT_AND_SET_FINISHED = 0x8022;
+    uint16 internal constant LINK_MODULE = 0x8023;
+    uint16 internal constant UNLINK_MODULE = 0x8024;
 
     uint256 internal constant INBOX_INDEX_SEQUENCER = 0;
     uint256 internal constant INBOX_INDEX_DELAYED = 1;

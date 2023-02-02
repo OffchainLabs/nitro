@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -95,5 +95,23 @@ library MerkleProofLib {
             }
             index >>= 1;
         }
+        require(index == 0, "PROOF_TOO_SHORT");
+    }
+
+    function growToNewRoot(
+        bytes32 root,
+        uint256 leaf,
+        bytes32 hash,
+        bytes32 zero,
+        string memory prefix
+    ) internal pure returns (bytes32) {
+        bytes32 h = hash;
+        uint256 node = leaf;
+        while (node > 1) {
+            h = keccak256(abi.encodePacked(prefix, h, zero));
+            zero = keccak256(abi.encodePacked(prefix, zero, zero));
+            node >>= 1;
+        }
+        return keccak256(abi.encodePacked(prefix, root, h));
     }
 }
