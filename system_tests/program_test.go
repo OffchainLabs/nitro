@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -21,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 func TestKeccakProgram(t *testing.T) {
@@ -71,8 +71,8 @@ func TestKeccakProgram(t *testing.T) {
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
-	stylusWasmPrefix := hexutil.MustDecode("0xEF000000")
-	code := append(stylusWasmPrefix, wasm...)
+	code := hexutil.MustDecode("0xEF000000")
+	code = append(code, wasm...)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(code), toKb(wasmSource)))

@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/core/state"
 )
 
 var arbosAddress = types.ArbosAddress
@@ -98,27 +97,19 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 }
 
+func (p *TxProcessor) ExecuteWASM(contract *vm.Contract, input []byte, readOnly bool, txContext vm.TxContext, blockContext vm.BlockContext) ([]byte, error) {
+	// We recieve a number of extra args here to prepare for being stateful and context-aware execution
+	return p.state.Programs().CallProgram(
+		p.evm.StateDB,
+		contract.Address(),
+		input,
+		&contract.Gas,
+	)
+}
+
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
-
-	to := p.msg.To()
-	if to != nil {
-		rawCode := p.evm.StateDB.GetCode(*to)
-		if state.IsStylusProgram(rawCode) {
-			gas := p.msg.Gas()
-			result, err := p.state.Programs().CallProgram(
-				p.evm.StateDB,
-				*to,
-				p.msg.Data(),
-				&gas,
-			)
-			if err != nil {
-				return true, 0, err, nil
-			}
-			return true, 0, nil, result
-		}
-	}
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
