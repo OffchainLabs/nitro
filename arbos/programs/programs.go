@@ -137,11 +137,11 @@ func (p Programs) CallProgram(
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
-	rawWasm := statedb.GetCode(program)
-	if rawWasm == nil {
+	prefixedWasm := statedb.GetCode(program)
+	if prefixedWasm == nil {
 		return nil, fmt.Errorf("missing wasm at address %v", program)
 	}
-	wasm, err := state.StripStylusPrefix(rawWasm)
+	wasm, err := state.StripStylusPrefix(prefixedWasm)
 	if err != nil {
 		return nil, err
 	}

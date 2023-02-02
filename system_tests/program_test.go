@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -57,9 +57,19 @@ func TestKeccakProgram(t *testing.T) {
 		return receipt
 	}
 
-	// set non-zero costs
-	wasmGasPrice := uint64(rand.Intn(2000) * rand.Intn(1))
-	wasmHostioCost := uint64(rand.Intn(200))
+	// Set WASM gas and hostio gas prices. We want the value
+	// of WASM gas to sometimes be over 10000, as that is the number
+	// at which EVM gas pricing and WASM gas pricing will be equivalent
+	// and therefore have a ratio of 1:1.
+	min := 8000
+	max := 20000
+	wasmGasPrice := uint64(rand.Intn(max-min) + min)
+
+	// We randomly test either a 0 or full WASM gas price.
+	wasmGasPrice = wasmGasPrice * uint64(rand.Intn(2))
+	wasmHostioCost := uint64(rand.Intn(20000))
+	colors.PrintMint(fmt.Sprintf("WASM gas price=%d, HostIO cost=%d", wasmGasPrice, wasmHostioCost))
+
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
 	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))
@@ -71,11 +81,10 @@ func TestKeccakProgram(t *testing.T) {
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
-	code := hexutil.MustDecode("0xEF000000")
-	code = append(code, wasm...)
+	wasm = append(state.StylusPrefix, wasm...)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
-	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(code), toKb(wasmSource)))
+	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
 
 	timed := func(message string, lambda func()) {
 		t.Helper()
@@ -85,7 +94,7 @@ func TestKeccakProgram(t *testing.T) {
 		colors.PrintBlue("Time to ", message, ": ", passed.String())
 	}
 
-	programAddress := deployContract(t, ctx, auth, l2client, code)
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
 	timed("compile", func() {
