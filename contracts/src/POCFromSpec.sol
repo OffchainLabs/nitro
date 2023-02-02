@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {Status, IAssertionChain, ChallengeManagers} from "./DataEntities.sol";
+import {Status, IAssertionChain, IChallengeManager} from "./DataEntities.sol";
 
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
@@ -44,7 +44,7 @@ interface IInbox {
 }
 
 contract AssertionChain is IAssertionChain {
-    ChallengeManagers challengeManagers;
+    IChallengeManager challengeManager;
     mapping(bytes32 => Assertion) public assertions;
     uint256 public immutable stakeAmount = 100 ether; // CHRIS: TODO: update
     uint256 public immutable challengePeriod = 1000; // CHRIS: TODO: update in constructor
@@ -154,6 +154,11 @@ contract AssertionChain is IAssertionChain {
         return assertions[assertions[assertionId].predecessorId];
     }
 
+    function updateChallengeManager(IChallengeManager _challengeManager) external {
+        // CHRIS: TODO: this needs access control
+        challengeManager = _challengeManager;
+    }
+
     error NotRejectable(bytes32 assertionId);
 
     function rejectAssertion(bytes32 assertionId) external {
@@ -176,7 +181,7 @@ contract AssertionChain is IAssertionChain {
             }
 
             // CHRIS: TODO: external call, careful!
-            bytes32 winningClaim = challengeManagers.blockChallengeManager().winningClaim(successionChallenge);
+            bytes32 winningClaim = challengeManager.winningClaim(successionChallenge);
             // does the winner return 0
             if (winningClaim == bytes32(0)) {
                 revert NotRejectable(assertionId);
@@ -220,7 +225,7 @@ contract AssertionChain is IAssertionChain {
             }
 
             // CHRIS: TODO: external call, careful!
-            bytes32 winner = challengeManagers.blockChallengeManager().winningClaim(successionChallenge);
+            bytes32 winner = challengeManager.winningClaim(successionChallenge);
             if (winner != assertionId) {
                 revert NotRejectable(assertionId);
             }
@@ -256,7 +261,6 @@ contract AssertionChain is IAssertionChain {
         // CHRIS: TODO: basically that's why we always have that extra end on the challenge period!
         // CHRIS: TODO: write a big comment about this
 
-        assertions[assertionId].successionChallenge =
-            challengeManagers.blockChallengeManager().createChallenge(assertionId);
+        assertions[assertionId].successionChallenge = challengeManager.createChallenge(assertionId);
     }
 }

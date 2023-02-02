@@ -17,13 +17,7 @@ interface IAssertionChain {
     function isFirstChild(bytes32 assertionId) external view returns (bool);
 }
 
-// CHRIS: TODO: remove this?
-interface IWinningClaim {
-    function winningClaim(bytes32 challengeId) external view returns (bytes32);
-}
-
 struct AddLeafArgs {
-    bytes32 parentChallengeId; // CHRIS: TODO: left 0 for assertion for now - but should be used!
     bytes32 challengeId;
     bytes32 claimId;
     uint256 height;
@@ -34,27 +28,28 @@ struct AddLeafArgs {
     bytes lastStatehistoryProof;
 }
 
-interface IChallengeManager is IWinningClaim {
-    function createChallenge(bytes32 startId) external returns (bytes32);
-    function vertexExists(bytes32 challengeId, bytes32 vId) external view returns (bool);
-    function getVertex(bytes32 challengeId, bytes32 vId) external view returns (ChallengeVertex memory);
-    function getCurrentPsTimer(bytes32 challengeId, bytes32 vId) external view returns (uint256);
-    function confirmForPsTimer(bytes32 challengeId, bytes32 vId) external;
-    function confirmForSucessionChallengeWin(bytes32 challengeId, bytes32 vId) external;
+interface IChallengeManager {
+    function winningClaim(bytes32 challengeId) external view returns (bytes32);
+    function challengeExists(bytes32 challengeId) external view returns (bool);
+    function createChallenge(bytes32 assertionId) external returns (bytes32);
+    function vertexExists(bytes32 vId) external view returns (bool);
+    function getVertex(bytes32 vId) external view returns (ChallengeVertex memory);
+    function getCurrentPsTimer(bytes32 vId) external view returns (uint256);
+    function confirmForPsTimer(bytes32 vId) external;
+    function confirmForSucessionChallengeWin(bytes32 vId) external;
     function createSubChallenge(bytes32 challengeId, bytes32 child1Id, bytes32 child2Id) external;
-    function bisect(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
-        external;
-    function merge(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
-        external;
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
     function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2) external;
 }
 
 struct ChallengeVertex {
-    bytes32 predecessorId;
-    bytes32 successionChallenge;
+    bytes32 challengeId;
     bytes32 historyCommitment;
-    uint256 height; // CHRIS: TODO: are heights zero indexed or from 1?
-    bytes32 claimId; // CHRIS: TODO: aka tag; only on a leaf
+    uint256 height;
+    bytes32 successionChallenge;
+    bytes32 predecessorId;
+    bytes32 claimId; // CHRIS: TODO: aka tag; only on a leaf (could also go on a root if we wanted, would be consistent but unused)
     address staker; // CHRIS: TODO: only on a leaf
     // CHRIS: TODO: use a different status for the vertices since they never transition to rejected?
     Status status;
@@ -85,11 +80,10 @@ struct Challenge {
     // CHRIS: TODO: we could the leaf id here instead and just lookup the claim from the leaf
     bytes32 winningClaim;
     ChallengeType challengeType; // CHRIS: TODO: can use the keyword 'type' here?
-
 }
 
 // CHRIS: TODO: one step proof test just here for structure test
-contract OneStepProofManager is IWinningClaim {
+contract OneStepProofManager {
     mapping(bytes32 => bytes32) public winningClaims;
 
     function winningClaim(bytes32 challengeId) public view returns (bytes32) {
@@ -102,27 +96,5 @@ contract OneStepProofManager is IWinningClaim {
 
     function setWinningClaim(bytes32 startState, bytes32 _winner) public {
         winningClaims[startState] = _winner;
-    }
-}
-
-contract ChallengeManagers {
-    IChallengeManager public blockChallengeManager;
-    IChallengeManager public bigStepChallengeManager;
-    IChallengeManager public smallStepChallengeManager;
-    IAssertionChain public assertionChain;
-    OneStepProofManager public oneStepProofManager;
-
-    constructor(
-IAssertionChain  _assertionChain,
-        IChallengeManager  _blockChallengeManager,
-IChallengeManager  _bigStepChallengeManager,
-IChallengeManager  _smallStepChallengeManager,
-OneStepProofManager  _oneStepProofManager) {
-    blockChallengeManager = _blockChallengeManager;
-    bigStepChallengeManager = _bigStepChallengeManager;
-    smallStepChallengeManager = _smallStepChallengeManager;
-    assertionChain = _assertionChain;
-    oneStepProofManager = _oneStepProofManager;
-
     }
 }

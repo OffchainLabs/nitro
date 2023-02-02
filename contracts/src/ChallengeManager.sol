@@ -1,18 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {
-    ChallengeVertex,
-    Status,
-    IChallengeManager,
-    ChallengeManagers,
-    IWinningClaim,
-    Challenge,
-    AddLeafArgs
-} from "./DataEntities.sol";
+import "./DataEntities.sol";
 
 library ChallengeVertexLib {
-    function newRoot(bytes32 historyCommitment) internal pure returns (ChallengeVertex memory) {
+    function newRoot(bytes32 challengeId, bytes32 historyCommitment) internal pure returns (ChallengeVertex memory) {
         // CHRIS: TODO: the root should have a height 1 and should inherit the state commitment from above right?
         return ChallengeVertex({
             predecessorId: 0,
@@ -25,12 +17,13 @@ library ChallengeVertexLib {
             presumptiveSuccessorId: 0,
             presumptiveSuccessorLastUpdated: 0, // CHRIS: TODO: maybe we wanna update this? We should set it as the start time? or are we gonna do special stuff for root?
             flushedPsTime: 0, // always zero for the root
-            lowestHeightSucessorId: 0
+            lowestHeightSucessorId: 0,
+            challengeId: challengeId
         });
     }
 
-    function id(bytes32 historyCommitment, uint256 height) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(historyCommitment, height));
+    function id(bytes32 challengeId, bytes32 historyCommitment, uint256 height) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(challengeId, historyCommitment, height));
     }
 
     // CHRIS: TODO: duplication for storage/mem - we also dont need `has` AND vertexExists
@@ -91,6 +84,7 @@ library ChallengeVertexMappingLib {
 
     function addNewSuccessor(
         mapping(bytes32 => ChallengeVertex) storage vertices,
+        bytes32 challengeId,
         bytes32 predecessorId,
         bytes32 successorHistoryCommitment,
         uint256 successorHeight,
@@ -99,11 +93,12 @@ library ChallengeVertexMappingLib {
         uint256 successorInitialPsTime,
         uint256 challengePeriod
     ) public {
-        bytes32 vId = ChallengeVertexLib.id(successorHistoryCommitment, successorHeight);
+        bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryCommitment, successorHeight);
         require(!has(vertices, vId), "Successor already exists");
         require(has(vertices, predecessorId), "Predecessor does not already exist");
 
         vertices[vId] = ChallengeVertex({
+            challengeId: challengeId,
             predecessorId: predecessorId,
             successionChallenge: 0,
             historyCommitment: successorHistoryCommitment,
@@ -273,8 +268,8 @@ library ChallengeManagerLib {
     /// @notice Checks if the vertex is eligible to be confirmed because it has been declared a winner in a succession challenge
     function checkConfirmForSucessionChallengeWin(
         mapping(bytes32 => ChallengeVertex) storage vertices,
-        bytes32 vId,
-        IWinningClaim challengeManager
+        mapping(bytes32 => Challenge) storage challenges,
+        bytes32 vId
     ) internal view {
         confirmationPreChecks(vertices, vId);
 
@@ -285,124 +280,105 @@ library ChallengeManagerLib {
         // now ensure that only one of the siblings is valid for this time of confirmation
         // here we ensure that since a succession challenge only declares one winner
         require(
-            // CHRIS: TODO: handle this "sub" challenge manager thing differently
-            challengeManager.winningClaim(successionChallenge) == vId,
+            challenges[successionChallenge].winningClaim == vId,
             "Succession challenge did not declare this vertex the winner"
         );
     }
 
     // CHRIS: TODO: this func has too many args, cant we simplify it?
     function checkCreateSubChallenge(
-        mapping(bytes32 => mapping(bytes32 => ChallengeVertex)) storage vertices,
+        mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 challengeId,
         bytes32 child1Id,
         bytes32 child2Id,
         uint256 challengePeriod
     ) internal view {
-        require(vertices[challengeId].has(child1Id), "Child 1 does not exist");
-        require(vertices[challengeId].has(child2Id), "Child 2 does not exist");
+        // CHRIS: TODO: should also check the challenge exists?
+        require(vertices.has(child1Id), "Child 1 does not exist");
+        require(vertices.has(child2Id), "Child 2 does not exist");
 
         require(child1Id != child2Id, "Children are not different");
 
-        bytes32 predecessorId = vertices[challengeId][child1Id].predecessorId;
-        require(
-            predecessorId == vertices[challengeId][child2Id].predecessorId, "Children do not have the same predecessor"
-        );
+        bytes32 predecessorId = vertices[child1Id].predecessorId;
+        require(predecessorId == vertices[child2Id].predecessorId, "Children do not have the same predecessor");
 
-        uint256 predecessorHeight = vertices[challengeId][predecessorId].height;
-        require(
-            vertices[challengeId][child1Id].height - predecessorHeight == 1,
-            "Child 1 is not one step from it's predecessor"
-        );
-        require(
-            vertices[challengeId][child2Id].height - predecessorHeight == 1,
-            "Child 2 is not one step from it's predecessor"
-        );
+        uint256 predecessorHeight = vertices[predecessorId].height;
+        require(vertices[child1Id].height - predecessorHeight == 1, "Child 1 is not one step from it's predecessor");
+        require(vertices[child2Id].height - predecessorHeight == 1, "Child 2 is not one step from it's predecessor");
 
         require(challenges[predecessorId].winningClaim == 0, "Winner already declared");
 
         // CHRIS: TODO: we should check this in every move?
-        require(
-            !vertices[challengeId].hasConfirmablePsAt(predecessorId, challengePeriod),
-            "Presumptive successor confirmable"
-        );
-        require(vertices[challengeId][predecessorId].successionChallenge == 0, "Challenge already exists");
+        require(!vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor confirmable");
+        require(vertices[predecessorId].successionChallenge == 0, "Challenge already exists");
     }
 
-    // CHRIS: TODO: could use this? and pass it in, but then we may disconnect fron the challenge id
-    // mapping(bytes32 => ChallengeVertex) storage v = vertices[challengeId];
-
     function calculateBisectionVertex(
-        mapping(bytes32 => mapping(bytes32 => ChallengeVertex)) storage vertices,
+        mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
-        bytes32 challengeId,
         bytes32 vId,
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
+        require(vertices.has(vId), "Vertex does not exist");
         // CHRIS: TODO: put this together with the has confirmable ps check?
+        bytes32 challengeId = vertices[vId].challengeId;
         require(challenges[challengeId].winningClaim == 0, "Winner already declared");
 
-        require(vertices[challengeId].has(vId), "Vertex does not exist");
-        bytes32 predecessorId = vertices[challengeId][vId].predecessorId;
-        require(vertices[challengeId].has(predecessorId), "Predecessor vertex does not exist");
-        require(
-            vertices[challengeId][predecessorId].presumptiveSuccessorId != vId, "Cannot bisect presumptive successor"
-        );
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertices.has(predecessorId), "Predecessor vertex does not exist");
+        require(vertices[predecessorId].presumptiveSuccessorId != vId, "Cannot bisect presumptive successor");
 
         require(
-            !vertices[challengeId].hasConfirmablePsAt(predecessorId, challengePeriod),
-            "Presumptive successor already confirmable"
+            !vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor already confirmable"
         );
 
-        uint256 bHeight = vertices[challengeId].bisectionHeight(vId);
+        uint256 bHeight = vertices.bisectionHeight(vId);
         require(
             HistoryCommitmentLib.hasPrefix(
-                vertices[challengeId][vId].historyCommitment, prefixHistoryCommitment, bHeight, prefixProof
+                vertices[vId].historyCommitment, prefixHistoryCommitment, bHeight, prefixProof
             ),
             "Invalid prefix history"
         );
 
-        return (ChallengeVertexLib.id(prefixHistoryCommitment, bHeight), bHeight);
+        return (ChallengeVertexLib.id(challengeId, prefixHistoryCommitment, bHeight), bHeight);
     }
 
     function checkBisect(
-        mapping(bytes32 => mapping(bytes32 => ChallengeVertex)) storage vertices,
+        mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
-        bytes32 challengeId,
         bytes32 vId,
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, challengeId, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
         // CHRIS: redundant check?
-        require(!vertices[challengeId].has(bVId), "Bisection vertex already exists");
+        require(!vertices.has(bVId), "Bisection vertex already exists");
 
         return (bVId, bHeight);
     }
 
     function checkMerge(
-        mapping(bytes32 => mapping(bytes32 => ChallengeVertex)) storage vertices,
+        mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
-        bytes32 challengeId,
         bytes32 vId,
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, challengeId, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
-        require(vertices[challengeId].has(bVId), "Bisection vertex does not already exist");
+        require(vertices.has(bVId), "Bisection vertex does not already exist");
         // CHRIS: TODO: include a long comment about this
-        require(!vertices[challengeId][bVId].isLeaf(), "Cannot merge to a leaf");
+        require(!vertices[bVId].isLeaf(), "Cannot merge to a leaf");
 
         return (bVId, bHeight);
     }
@@ -410,20 +386,13 @@ library ChallengeManagerLib {
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
     function checkAddLeaf(
         mapping(bytes32 => Challenge) storage challenges,
-        bytes32 challengeId,
-        bytes32 claimId,
-        uint256 height,
-        bytes32 historyCommitment,
-        bytes32 firstState,
-        bytes memory firstStatehistoryProof,
-        bytes32 lastState,
-        bytes memory lastStatehistoryProof,
+        AddLeafArgs memory leafData,
         uint256 miniStake
     ) internal view {
-        require(claimId != 0, "Empty claimId");
-        require(historyCommitment != 0, "Empty historyCommitment");
+        require(leafData.claimId != 0, "Empty claimId");
+        require(leafData.historyCommitment != 0, "Empty historyCommitment");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
-        require(height != 0, "Empty height");
+        require(leafData.height != 0, "Empty height");
 
         // CHRIS: TODO: comment on why we need the mini stake
         // CHRIS: TODO: also are we using this to refund moves in real-time? would be more expensive if so, but could be necessary?
@@ -432,83 +401,110 @@ library ChallengeManagerLib {
         require(msg.value == miniStake, "Incorrect mini-stake amount");
 
         // CHRIS: TODO: require that this challenge hasnt declared a winner
-        require(challenges[challengeId].winningClaim == 0, "Winner already declared");
+        require(challenges[leafData.challengeId].winningClaim == 0, "Winner already declared");
 
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
-            HistoryCommitmentLib.hasState(historyCommitment, lastState, height, lastStatehistoryProof),
+            HistoryCommitmentLib.hasState(
+                leafData.historyCommitment, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
+            ),
             "Last state not in history"
         );
 
         require(
-            HistoryCommitmentLib.hasState(historyCommitment, firstState, 0, firstStatehistoryProof),
+            HistoryCommitmentLib.hasState(
+                leafData.historyCommitment, leafData.firstState, 0, leafData.firstStatehistoryProof
+            ),
             "First state not in history"
         );
 
         // CHRIS: TODO: check that this is how we form the history commitment for the root
 
         // we dont know the root id - this is in the challenge itself?
-        require(challenges[challengeId].rootId == ChallengeVertexLib.id(firstState, 0));
+        require(
+            challenges[leafData.challengeId].rootId
+                == ChallengeVertexLib.id(leafData.challengeId, leafData.firstState, 0)
+        );
     }
 }
 
-abstract contract ChallengeManager is IChallengeManager {
+struct AddLeafLibArgs {
+    uint256 miniStake;
+    uint256 challengePeriod;
+    AddLeafArgs leafData;
+    bytes proof1;
+    bytes proof2;
+}
+
+contract ChallengeManager is IChallengeManager {
     // CHRIS: TODO: do this in a different way
-    ChallengeManagers internal challengeManagers;
+    // ChallengeManagers internal challengeManagers;
 
     using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
     using ChallengeVertexLib for ChallengeVertex;
 
-    mapping(bytes32 => mapping(bytes32 => ChallengeVertex)) public vertices;
+    mapping(bytes32 => ChallengeVertex) public vertices;
     mapping(bytes32 => Challenge) public challenges;
-    address public challengeCreator;
+    IAssertionChain public assertionChain;
 
     uint256 public immutable miniStake = 1 ether; // CHRIS: TODO: fill with value
     uint256 public immutable challengePeriod = 10; // CHRIS: TODO: how to set this, and compare to end time?
 
-    constructor(address _challengeCreator) {
-        challengeCreator = _challengeCreator;
+    constructor(IAssertionChain _assertionChain) {
+        assertionChain = _assertionChain;
     }
 
-    function initialPSTime(bytes32 challengeId, bytes32 claimId) internal virtual returns (uint256);
-    function instantiateSubChallenge(bytes32 predecessorId) internal virtual returns (bytes32);
-    function subChallengeManager() internal view virtual returns (IWinningClaim);
-
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
-    // CHRIS: TODO: putting this in the lib doesnt look so nice
-    function addLeafImpl(AddLeafArgs memory leafData) internal {
-        ChallengeManagerLib.checkAddLeaf(
-            challenges,
-            leafData.challengeId,
-            leafData.claimId,
-            leafData.height,
-            leafData.historyCommitment,
-            leafData.firstState,
-            leafData.firstStatehistoryProof,
-            leafData.lastState,
-            leafData.lastStatehistoryProof,
-            miniStake
-        );
-
-        vertices[leafData.challengeId].addNewSuccessor(
-            challenges[leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
-            leafData.historyCommitment,
-            leafData.height,
-            leafData.claimId,
-            msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            initialPSTime(leafData.challengeId, leafData.claimId),
-            challengePeriod
-        );
+    function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2) external {
+        if (challenges[leafData.challengeId].challengeType == ChallengeType.Block) {
+            BlockLeafAdder.addLeaf(
+                vertices,
+                challenges,
+                AddLeafLibArgs({
+                    miniStake: miniStake,
+                    challengePeriod: challengePeriod,
+                    leafData: leafData,
+                    proof1: proof1,
+                    proof2: proof2
+                }),
+                assertionChain
+            );
+        } else if (challenges[leafData.challengeId].challengeType == ChallengeType.BigStep) {
+            BigStepLeafAdder.addLeaf(
+                vertices,
+                challenges,
+                AddLeafLibArgs({
+                    miniStake: miniStake,
+                    challengePeriod: challengePeriod,
+                    leafData: leafData,
+                    proof1: proof1,
+                    proof2: proof2
+                })
+            );
+        } else if (challenges[leafData.challengeId].challengeType == ChallengeType.SmallStep) {
+            SmallStepLeafAdder.addLeaf(
+                vertices,
+                challenges,
+                AddLeafLibArgs({
+                    miniStake: miniStake,
+                    challengePeriod: challengePeriod,
+                    leafData: leafData,
+                    proof1: proof1,
+                    proof2: proof2
+                })
+            );
+        } else {
+            revert("Unexpected challenge type");
+        }
     }
 
     /// @dev Confirms the vertex without doing any checks. Also sets the winning claim if the vertex
     ///      is a leaf.
-    function setConfirmed(bytes32 challengeId, bytes32 vId) internal {
-        vertices[challengeId][vId].status = Status.Confirmed;
-        if (vertices[challengeId][vId].isLeaf()) {
-            challenges[challengeId].winningClaim = vertices[challengeId][vId].claimId;
+    function setConfirmed(bytes32 vId) internal {
+        vertices[vId].status = Status.Confirmed;
+        bytes32 challengeId = vertices[vId].challengeId;
+        if (vertices[vId].isLeaf()) {
+            challenges[challengeId].winningClaim = vertices[vId].claimId;
         }
     }
 
@@ -517,74 +513,121 @@ abstract contract ChallengeManager is IChallengeManager {
         return challenges[challengeId].winningClaim;
     }
 
-    function vertexExists(bytes32 challengeId, bytes32 vId) public view returns (bool) {
-        return vertices[challengeId].has(vId);
+    function vertexExists(bytes32 vId) public view returns (bool) {
+        return vertices.has(vId);
     }
 
-    function getVertex(bytes32 challengeId, bytes32 vId) public view returns (ChallengeVertex memory) {
-        require(vertices[challengeId][vId].exists(), "Vertex does not exist");
-
-        return vertices[challengeId][vId];
+    function challengeExists(bytes32 challengeId) public view returns (bool) {
+        // CHRIS: TODO: move to lib
+        return challenges[challengeId].rootId != 0;
     }
 
-    function getCurrentPsTimer(bytes32 challengeId, bytes32 vId) public view returns (uint256) {
-        return vertices[challengeId].getCurrentPsTimer(vId);
+    function getVertex(bytes32 vId) public view returns (ChallengeVertex memory) {
+        require(vertices[vId].exists(), "Vertex does not exist");
+
+        return vertices[vId];
+    }
+
+    function getCurrentPsTimer(bytes32 vId) public view returns (uint256) {
+        return vertices.getCurrentPsTimer(vId);
+    }
+
+    // CHRIS: TODO: rename and move
+    function calculateChallengeId(bytes32 challengeOriginId, ChallengeType cType) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(challengeOriginId, cType));
     }
 
     // CHRIS: TODO: better name for that predcessor id
     // CHRIS: TODO: any access management here? we shouldnt allow the challenge to be created by anyone as this affects the start timer - so we should has the id with teh creating address?
-    function createChallenge(bytes32 predecessorId) public returns (bytes32) {
-        require(msg.sender == challengeCreator, "Only challenge creator can create challenges");
-        bytes32 rootId = ChallengeVertexLib.id(predecessorId, 0);
+    function createChallenge(bytes32 assertionId) public returns (bytes32) {
+        require(msg.sender == address(assertionChain), "Only assertion chain can create challenges");
+
+        // get the state hash of the challenge origin
+        bytes32 challengeId = calculateChallengeId(assertionId, ChallengeType.Block);
+        require(!challengeExists(challengeId), "Challenge already exists");
 
         // CHRIS: TODO: we could be more consistent with the root here - it cannot be the same as a vertex id?
-        
-        vertices[predecessorId][rootId] = ChallengeVertexLib.newRoot(predecessorId);
-        challenges[predecessorId].rootId = rootId;
-        return rootId;
+
+        // CHRIS: TODO: calling out to the assertion chain is weird because it makes us reliant on behaviour there, much better to not have to do that have the stuff injected here?
+
+        bytes32 originStateHash = assertionChain.getStateHash(assertionId);
+        bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
+        vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash);
+
+        challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0});
+        return challengeId;
     }
 
     /// @notice Confirm a vertex because it has been the presumptive successor for long enough
-    /// @param challengeId The challenge to confirm the vertex in
     /// @param vId The vertex id
-    function confirmForPsTimer(bytes32 challengeId, bytes32 vId) public {
-        ChallengeManagerLib.checkConfirmForPsTimer(vertices[challengeId], vId, challengePeriod);
-        setConfirmed(challengeId, vId);
+    function confirmForPsTimer(bytes32 vId) public {
+        ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriod);
+        setConfirmed(vId);
     }
 
     /// Confirm a vertex because it has won a succession challenge
-    /// @param challengeId The challenge to confirm the vertex in
     /// @param vId The vertex id
-    function confirmForSucessionChallengeWin(bytes32 challengeId, bytes32 vId) public {
-        ChallengeManagerLib.checkConfirmForSucessionChallengeWin(vertices[challengeId], vId, subChallengeManager());
-        setConfirmed(challengeId, vId);
+    function confirmForSucessionChallengeWin(bytes32 vId) public {
+        ChallengeManagerLib.checkConfirmForSucessionChallengeWin(vertices, challenges, vId);
+        setConfirmed(vId);
     }
+
+    function nextSubChallengeType(ChallengeType cType) internal pure returns (ChallengeType) {
+        if (cType == ChallengeType.Block) {
+            return ChallengeType.BigStep;
+        } else if (cType == ChallengeType.BigStep) {
+            return ChallengeType.SmallStep;
+            // CHRIS: TODO: everywhere we have a switch we should check we have a revert for everything else
+        } else if (cType == ChallengeType.SmallStep) {
+            return ChallengeType.OneStep;
+        } else {
+            revert("Cannot get sub challenge type for one step challenge");
+        }
+    }
+
+    // CHRIS: TODO: the challengeid is stored in the children..
 
     function createSubChallenge(bytes32 challengeId, bytes32 child1Id, bytes32 child2Id) public {
         ChallengeManagerLib.checkCreateSubChallenge(
             vertices, challenges, challengeId, child1Id, child2Id, challengePeriod
         );
 
-        bytes32 predecessorId = vertices[challengeId][child1Id].predecessorId;
-        vertices[challengeId][predecessorId].successionChallenge = instantiateSubChallenge(predecessorId);
+        // CHRIS: TODO: the stuff below should go in a lib or something?
+
+        bytes32 predecessorId = vertices[child1Id].predecessorId;
+        ChallengeType nextCType = nextSubChallengeType(challenges[challengeId].challengeType);
+
+        // CHRIS: TODO: it should be impossible for two vertices to have the same id, even in different challenges
+        // CHRIS: TODO: is this true for the root? no - the root can have the same id
+        bytes32 newChallengeId = calculateChallengeId(challengeId, nextCType);
+        require(!challengeExists(newChallengeId), "Challenge already exists");
+
+        require(vertices[predecessorId].exists(), "Origin Vertex does not exist");
+        bytes32 originHistoryCommitment = vertices[predecessorId].historyCommitment;
+
+        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryCommitment, 0);
+
+        // CHRIS: TODO: should we even add the root for the one step? probably not
+        vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryCommitment);
+        challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: nextCType, winningClaim: 0});
+        vertices[predecessorId].successionChallenge = newChallengeId;
 
         // CHRIS: TODO: opening a challenge and confirming a winner vertex should have mutually exlusive checks
         // CHRIS: TODO: these should ensure this internally
     }
 
-    function bisect(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
-        public
-    {
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
-            vertices, challenges, challengeId, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
         // CHRIS: TODO: the spec says we should stop the presumptive successor timer of the vId, but why?
         // CHRIS: TODO: is that because we only care about presumptive successors further down the chain?
 
-        bytes32 predecessorId = vertices[challengeId][vId].predecessorId;
-        uint256 currentPsTimer = vertices[challengeId].getCurrentPsTimer(vId);
-        vertices[challengeId].addNewSuccessor(
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        uint256 currentPsTimer = vertices.getCurrentPsTimer(vId);
+        vertices.addNewSuccessor(
+            vertices[vId].challengeId,
             predecessorId,
             prefixHistoryCommitment,
             bHeight,
@@ -595,28 +638,41 @@ abstract contract ChallengeManager is IChallengeManager {
             challengePeriod
         );
         // CHRIS: TODO: check these two successor updates really do conform to the spec
-        vertices[challengeId].connectVertices(bVId, vId, challengePeriod);
+        vertices.connectVertices(bVId, vId, challengePeriod);
     }
 
-    function merge(bytes32 challengeId, bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
-        public
-    {
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public {
         (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
-            vertices, challenges, challengeId, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
-        vertices[challengeId].connectVertices(bVId, vId, challengePeriod);
+        vertices.connectVertices(bVId, vId, challengePeriod);
         // setting the presumptive successor to itself will just cause the ps timer to be flushed
-        vertices[challengeId].setPresumptiveSuccessor(vertices[challengeId][bVId].predecessorId, bVId, challengePeriod);
+        vertices.setPresumptiveSuccessor(vertices[bVId].predecessorId, bVId, challengePeriod);
         // update the merge vertex if we have a higher ps time
-        if (vertices[challengeId][bVId].flushedPsTime < vertices[challengeId][vId].flushedPsTime) {
-            vertices[challengeId][bVId].flushedPsTime = vertices[challengeId][vId].flushedPsTime;
+        if (vertices[bVId].flushedPsTime < vertices[vId].flushedPsTime) {
+            vertices[bVId].flushedPsTime = vertices[vId].flushedPsTime;
         }
     }
 }
 
-contract BlockChallengeManager is ChallengeManager {
-    constructor(address challengeCreator) ChallengeManager(challengeCreator) {}
+library BlockLeafAdder {
+    // CHRIS: TODO: not all these libs are used
+    using ChallengeVertexLib for ChallengeVertex;
+    using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
+
+    function initialPsTime(bytes32 claimId, IAssertionChain assertionChain) internal view returns (uint256) {
+        bool isFirstChild = assertionChain.isFirstChild(claimId);
+
+        if (isFirstChild) {
+            bytes32 predecessorId = assertionChain.getPredecessorId(claimId);
+            uint256 firstChildCreationTime = assertionChain.getFirstChildCreationTime(predecessorId);
+
+            return block.timestamp - firstChildCreationTime;
+        } else {
+            return 0;
+        }
+    }
 
     function getBlockHash(bytes32 assertionStateHash, bytes memory proof) internal returns (bytes32) {
         // CHRIS: TODO:
@@ -629,65 +685,62 @@ contract BlockChallengeManager is ChallengeManager {
         // 1. Unwrap the assertion state hash to find the number of inbox messages it processed
     }
 
-    function addLeaf(AddLeafArgs memory leafData, bytes memory blockHashProof, bytes memory inboxMsgProcessedProof)
-        public
-    {
-        // check that the predecessor of this claim has registered this contract as it's succession challenge
-        bytes32 predecessorId = challengeManagers.assertionChain().getPredecessorId(leafData.claimId);
-        require(
-            challengeManagers.assertionChain().getSuccessionChallenge(predecessorId) == leafData.challengeId,
-            "Claim predecessor not linked to this challenge"
-        );
+    function addLeaf(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        mapping(bytes32 => Challenge) storage challenges,
+        AddLeafLibArgs memory leafLibArgs, // CHRIS: TODO: better name
+        IAssertionChain assertionChain
+    ) public {
+        {
+            // check that the predecessor of this claim has registered this contract as it's succession challenge
+            bytes32 predecessorId = assertionChain.getPredecessorId(leafLibArgs.leafData.claimId);
+            require(
+                assertionChain.getSuccessionChallenge(predecessorId) == leafLibArgs.leafData.challengeId,
+                "Claim predecessor not linked to this challenge"
+            );
 
-        uint256 assertionHeight = challengeManagers.assertionChain().getHeight(leafData.claimId);
-        uint256 predecessorAssertionHeight = challengeManagers.assertionChain().getHeight(predecessorId);
+            uint256 assertionHeight = assertionChain.getHeight(leafLibArgs.leafData.claimId);
+            uint256 predecessorAssertionHeight = assertionChain.getHeight(predecessorId);
 
-        uint256 leafHeight = assertionHeight - predecessorAssertionHeight;
-        require(leafHeight == leafData.height, "Invalid height");
+            uint256 leafHeight = assertionHeight - predecessorAssertionHeight;
+            require(leafHeight == leafLibArgs.leafData.height, "Invalid height");
 
-        bytes32 claimStateHash = challengeManagers.assertionChain().getStateHash(leafData.claimId);
-        require(
-            getInboxMsgProcessedCount(claimStateHash, inboxMsgProcessedProof)
-                == challengeManagers.assertionChain().getInboxMsgCountSeen(predecessorId),
-            "Invalid inbox messages processed"
-        );
+            bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
+            require(
+                getInboxMsgProcessedCount(claimStateHash, leafLibArgs.proof2)
+                    == assertionChain.getInboxMsgCountSeen(predecessorId),
+                "Invalid inbox messages processed"
+            );
 
-        require(
-            getBlockHash(claimStateHash, blockHashProof) == leafData.lastState,
-            "Last state is not the assertion claim block hash"
-        );
+            require(
+                getBlockHash(claimStateHash, leafLibArgs.proof1) == leafLibArgs.leafData.lastState,
+                "Last state is not the assertion claim block hash"
+            );
 
-        addLeafImpl(leafData);
-    }
-
-    // CHRIS: TODO: rethink this - it isnt so nice
-    function subChallengeManager() internal view override returns (IWinningClaim) {
-        return challengeManagers.bigStepChallengeManager();
-    }
-    // CHRIS: TODO: check exists whenever we access the challenges? also the vertices now have a challenge index
-
-    function initialPSTime(bytes32 challengeId, bytes32 claimId) internal view override returns (uint256) {
-        bool isFirstChild = challengeManagers.assertionChain().isFirstChild(claimId);
-
-        if (isFirstChild) {
-            bytes32 predecessorId = challengeManagers.assertionChain().getPredecessorId(claimId);
-            uint256 firstChildCreationTime = challengeManagers.assertionChain().getFirstChildCreationTime(predecessorId);
-
-            return block.timestamp - firstChildCreationTime;
-        } else {
-            return 0;
+            ChallengeManagerLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
+
+        vertices.addNewSuccessor(
+            leafLibArgs.leafData.challengeId,
+            challenges[leafLibArgs.leafData.challengeId].rootId,
+            // CHRIS: TODO: move this struct out
+            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.height,
+            leafLibArgs.leafData.claimId,
+            msg.sender,
+            // CHRIS: TODO: the naming is bad here
+            // CHRIS: TODO: this has a nicer pattern by encapsulating the args, could we do the same?
+            initialPsTime(leafLibArgs.leafData.claimId, assertionChain),
+            leafLibArgs.challengePeriod
+        );
     }
 
-    function instantiateSubChallenge(bytes32 predecessorId) internal override returns (bytes32) {
-        return challengeManagers.bigStepChallengeManager().createChallenge(predecessorId);
-    }
+    // CHRIS: TODO: check exists whenever we access the challenges? also the vertices now have a challenge index
 }
 
-contract BigStepChallengeManager is ChallengeManager {
-    constructor(address challengeCreator) ChallengeManager(challengeCreator) {}
-
-    // CHRIS: TODO: should we also check that the root is the first in the merkle history? we do that for the ends, why not for the start, would be nice for that invariant to hold
+library BigStepLeafAdder {
+    using ChallengeVertexLib for ChallengeVertex;
+    using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
 
     function getBlockHashFromClaim(bytes32 claimId, bytes memory claimProof) internal returns (bytes32) {
         // CHRIS: TODO:
@@ -703,60 +756,60 @@ contract BigStepChallengeManager is ChallengeManager {
         // 3. Extract the block hash that is being produced by this terminal state
     }
 
-    function addLeaf(AddLeafArgs memory leafData, bytes memory claimBlockHashProof, bytes memory stateBlockHashProof)
-        public
-    {
-        // CHRIS: TODO: rename challenge to challenge manager
-        require(
-            challengeManagers.blockChallengeManager().vertexExists(leafData.challengeId, leafData.claimId),
-            "Claim does not exist in parent"
+    function addLeaf(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        mapping(bytes32 => Challenge) storage challenges,
+        AddLeafLibArgs memory leafLibArgs // CHRIS: TODO: better name
+    ) internal {
+        {
+            // CHRIS: TODO: we should only have the special stuff in here, we can pass in the initial ps timer or something
+            // CHRIS: TODO: rename challenge to challenge manager
+            require(vertices[leafLibArgs.leafData.claimId].exists(), "Claim does not exist");
+            bytes32 predecessorId = vertices[leafLibArgs.leafData.claimId].predecessorId;
+            require(vertices[predecessorId].exists(), "Claim predecessor does not exist");
+            require(
+                vertices[leafLibArgs.leafData.claimId].height - vertices[predecessorId].height == 1,
+                "Claim not height one above predecessor"
+            );
+            require(
+                vertices[predecessorId].successionChallenge == leafLibArgs.leafData.challengeId,
+                "Claim has invalid succession challenge"
+            );
+
+            // CHRIS: TODO: check challenge also exists
+
+            // CHRIS: TODO: also check that the claim is a block hash?
+
+            // in a bigstep challenge the states are wasm states, and the claims are block challenge vertices
+            // check that the wasm state is a terminal state, and that it produces the blockhash that's in the claim
+            bytes32 lastStateBlockHash =
+                getBlockHashProducedByTerminalState(leafLibArgs.leafData.lastState, leafLibArgs.proof1);
+            bytes32 claimBlockHash = getBlockHashFromClaim(leafLibArgs.leafData.claimId, leafLibArgs.proof2);
+
+            require(claimBlockHash == lastStateBlockHash, "Claim inconsistent with state");
+
+            ChallengeManagerLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
+        }
+        vertices.addNewSuccessor(
+            leafLibArgs.leafData.challengeId,
+            challenges[leafLibArgs.leafData.challengeId].rootId,
+            // CHRIS: TODO: move this struct out
+            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.height,
+            leafLibArgs.leafData.claimId,
+            msg.sender,
+            // CHRIS: TODO: the naming is bad here
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
+            leafLibArgs.challengePeriod
         );
-        ChallengeVertex memory claimVertex =
-            challengeManagers.blockChallengeManager().getVertex(leafData.challengeId, leafData.claimId);
-        require(
-            challengeManagers.blockChallengeManager().vertexExists(leafData.challengeId, claimVertex.predecessorId),
-            "Claim predecessor does not exist in parent"
-        );
-        ChallengeVertex memory claimPrevVertex =
-            challengeManagers.blockChallengeManager().getVertex(leafData.challengeId, claimVertex.predecessorId);
-
-        require(claimVertex.height - claimPrevVertex.height == 1, "Claim is not one step above it's predecessor");
-
-        require(
-            claimPrevVertex.successionChallenge == leafData.challengeId,
-            "Claim predecessor challenge is not this challenge"
-        );
-
-        // CHRIS: TODO: also check that the claim is a block hash?
-
-        // in a bigstep challenge the states are wasm states, and the claims are block challenge vertices
-        // check that the wasm state is a terminal state, and that it produces the blockhash that's in the claim
-        bytes32 lastStateBlockHash = getBlockHashProducedByTerminalState(leafData.lastState, stateBlockHashProof);
-        bytes32 claimBlockHash = getBlockHashFromClaim(leafData.claimId, claimBlockHashProof);
-
-        require(claimBlockHash == lastStateBlockHash, "Claim inconsistent with state");
-
-        addLeafImpl(leafData);
-    }
-
-    function subChallengeManager() internal view override returns (IWinningClaim) {
-        return challengeManagers.smallStepChallengeManager();
-    }
-
-    function initialPSTime(bytes32 challengeId, bytes32 claimId) internal view override returns (uint256) {
-        return challengeManagers.blockChallengeManager().getCurrentPsTimer(challengeId, claimId);
-    }
-
-    // CHRIS: TODO: better naming on this and createchallenge
-    function instantiateSubChallenge(bytes32 predecessorId) internal override returns (bytes32) {
-        return challengeManagers.smallStepChallengeManager().createChallenge(predecessorId);
     }
 }
 
-contract SmallStepChallengeManager is ChallengeManager {
-    uint256 public constant MAX_STEPS = 2 << 19;
+library SmallStepLeafAdder {
+    using ChallengeVertexLib for ChallengeVertex;
+    using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
 
-    constructor(address challengeCreator) ChallengeManager(challengeCreator) {}
+    uint256 public constant MAX_STEPS = 2 << 19;
 
     function getProgramCounter(bytes32 state, bytes memory proof) public returns (uint256) {
         // CHRIS: TODO:
@@ -764,59 +817,66 @@ contract SmallStepChallengeManager is ChallengeManager {
         // 2. find the program counter and return it
     }
 
-    function addLeaf(AddLeafArgs memory leafData, bytes memory claimHistoryProof, bytes memory programCounterProof)
-        public
-    {
-        require(
-            challengeManagers.bigStepChallengeManager().vertexExists(leafData.challengeId, leafData.claimId),
-            "Claim does not exist in parent"
-        );
-        ChallengeVertex memory claimVertex =
-            challengeManagers.bigStepChallengeManager().getVertex(leafData.challengeId, leafData.claimId);
-        require(
-            challengeManagers.bigStepChallengeManager().vertexExists(leafData.challengeId, claimVertex.predecessorId),
-            "Claim predecessor does not exist in parent"
-        );
-        ChallengeVertex memory claimPrevVertex =
-            challengeManagers.bigStepChallengeManager().getVertex(leafData.challengeId, claimVertex.predecessorId);
+    function addLeaf(
+        mapping(bytes32 => ChallengeVertex) storage vertices,
+        mapping(bytes32 => Challenge) storage challenges,
+        AddLeafLibArgs memory leafLibArgs
+    ) internal {
+        {
+            require(vertices[leafLibArgs.leafData.claimId].exists(), "Claim does not exist");
+            bytes32 predecessorId = vertices[leafLibArgs.leafData.claimId].predecessorId;
+            require(vertices[predecessorId].exists(), "Claim predecessor does not exist");
+            require(
+                vertices[leafLibArgs.leafData.claimId].height - vertices[predecessorId].height == 1,
+                "Claim not height one above predecessor"
+            );
+            require(
+                vertices[predecessorId].successionChallenge == leafLibArgs.leafData.challengeId,
+                "Claim has invalid succession challenge"
+            );
 
-        require(claimVertex.height - claimPrevVertex.height == 1, "Claim is not one step above it's predecessor");
+            // CHRIS: TODO: should call it "claimChallengeId";
 
-        require(
-            claimPrevVertex.successionChallenge == leafData.challengeId,
-            "Claim predecessor challenge is not this challenge"
-        );
+            // the wavm state of the last state should always be exactly the same as the wavm state of the claim
+            // regardless of the height
+            require(
+                HistoryCommitmentLib.hasState(
+                    vertices[leafLibArgs.leafData.claimId].historyCommitment,
+                    leafLibArgs.leafData.lastState,
+                    1,
+                    leafLibArgs.proof1
+                ),
+                "Invalid claim state"
+            );
 
-        // the wavm state of the last state should always be exactly the same as the wavm state of the claim
-        // regardless of the height
-        require(
-            HistoryCommitmentLib.hasState(claimVertex.historyCommitment, leafData.lastState, 1, claimHistoryProof),
-            "Invalid claim state"
-        );
+            // CHRIS: TODO: document and align the proogs
+            uint256 lastStateProgramCounter = getProgramCounter(leafLibArgs.leafData.lastState, leafLibArgs.proof2);
+            uint256 predecessorSteps = vertices[predecessorId].height * MAX_STEPS;
 
-        uint256 lastStateProgramCounter = getProgramCounter(leafData.lastState, programCounterProof);
-        uint256 predecessorSteps = claimPrevVertex.height * MAX_STEPS;
+            require(
+                predecessorSteps + leafLibArgs.leafData.height == lastStateProgramCounter,
+                "Inconsistent program counter"
+            );
 
-        require(predecessorSteps + leafData.height == lastStateProgramCounter, "Inconsistent program counter");
+            if (ChallengeVertexLib.isLeaf(vertices[predecessorId])) {
+                require(leafLibArgs.leafData.height == MAX_STEPS, "Invalid non-leaf steps");
+            } else {
+                require(leafLibArgs.leafData.height <= MAX_STEPS, "Invalid leaf steps");
+            }
 
-        if (ChallengeVertexLib.isLeafMem(claimVertex)) {
-            require(leafData.height == MAX_STEPS, "Invalid non-leaf steps");
-        } else {
-            require(leafData.height <= MAX_STEPS, "Invalid leaf steps");
+            ChallengeManagerLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
-
-        addLeafImpl(leafData);
-    }
-
-    function subChallengeManager() internal view override returns (IWinningClaim) {
-        return challengeManagers.oneStepProofManager();
-    }
-
-    function initialPSTime(bytes32 challengeId, bytes32 claimId) internal view override returns (uint256) {
-        return challengeManagers.bigStepChallengeManager().getCurrentPsTimer(challengeId, claimId);
-    }
-
-    function instantiateSubChallenge(bytes32 predecessorId) internal override returns (bytes32) {
-        return challengeManagers.oneStepProofManager().createOneStepProof(predecessorId);
+        vertices.addNewSuccessor(
+            leafLibArgs.leafData.challengeId,
+            challenges[leafLibArgs.leafData.challengeId].rootId,
+            // CHRIS: TODO: move this struct out
+            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.height,
+            leafLibArgs.leafData.claimId,
+            msg.sender,
+            // CHRIS: TODO: the naming is bad here
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
+            leafLibArgs.challengePeriod
+        );
     }
 }

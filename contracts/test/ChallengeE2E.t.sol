@@ -13,14 +13,9 @@ contract AssertionChainTest is Test {
     function testFace() public {
         MockAssertionChain assertionChain = new MockAssertionChain();
 
-        BlockChallengeManager blockChallengeManager = new BlockChallengeManager(address(assertionChain));
-        BigStepChallengeManager bigStepChallengeManager = new BigStepChallengeManager(address(blockChallengeManager));
-        SmallStepChallengeManager smallStepChallengeManager = new SmallStepChallengeManager(address(bigStepChallengeManager));
+        ChallengeManager blockChallengeManager = new ChallengeManager(assertionChain);
 
         OneStepProofManager oneStepProofManager = new OneStepProofManager();
-
-        // ChallengeManagers challengeManagers = new ChallengeManagers();
-        
 
     }
 }
