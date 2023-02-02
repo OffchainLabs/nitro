@@ -6,7 +6,7 @@ import "../src/DataEntities.sol";
 import "./MockAssertionChain.sol";
 import "../src/ChallengeManager.sol";
 
-contract AssertionChainTest is Test {
+contract ChallengeManagerE2ETest is Test {
     function generateHash(uint256 iterations) internal pure returns (bytes32 h) {
         // seed
         h = 0xf19f64ef5b8c788ff3f087b4f75bc6596a6aaa3c9048bbbbe990fa0870261385;
