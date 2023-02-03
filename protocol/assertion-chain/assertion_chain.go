@@ -93,7 +93,6 @@ func NewAssertionChain(
 	assertionChainBinding, err := outgen.NewAssertionChain(
 		contractAddr, chain.backend,
 	)
-
 	if err != nil {
 		return nil, err
 	}
