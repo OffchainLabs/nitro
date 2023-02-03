@@ -3,33 +3,46 @@ package assertionchain
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"math/big"
+	"testing"
+
+	"context"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/big"
-	"testing"
+	"github.com/stretchr/testify/require"
+	"time"
 )
 
-func TestDoSomething(t *testing.T) {
-	if 1 == 1 {
-		t.Error("failed")
-	}
+func TestChallengePeriodLength(t *testing.T) {
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+	addr, _, _, err := outgen.DeployAssertionChain(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+
+	acc.backend.Commit()
+
+	chain, err := NewAssertionChain(
+		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
+	require.NoError(t, err)
+	chalPeriod, err := chain.ChalengePeriodLength()
+	require.NoError(t, err)
+	require.Equal(t, time.Second*1000, chalPeriod)
 }
 
 // Represents a test EOA account in the simulated backend,
 type testAccount struct {
 	accountAddr common.Address
-	Backend     *backends.SimulatedBackend
-	TxOpts      *bind.TransactOpts
+	backend     *backends.SimulatedBackend
+	txOpts      *bind.TransactOpts
 }
 
-func setupAccount() {
-	_ = backends.SimulatedBackend{}
-}
-
-func setup() (*testAccount, error) {
+func setupAccount() (*testAccount, error) {
 	genesis := make(core.GenesisAlloc)
 	privKey, err := crypto.GenerateKey()
 	if err != nil {
@@ -59,16 +72,9 @@ func setup() (*testAccount, error) {
 	genesis[addr] = core.GenesisAccount{Balance: startingBalance}
 	gasLimit := uint64(2100000000000)
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
-
-	// contractAddr, _, contract, err := DeployDepositContract(txOpts, backend)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// backend.Commit()
-
 	return &testAccount{
 		accountAddr: addr,
-		Backend:     backend,
-		TxOpts:      txOpts,
+		backend:     backend,
+		txOpts:      txOpts,
 	}, nil
 }
