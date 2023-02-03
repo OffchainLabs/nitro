@@ -22,11 +22,12 @@ import (
 )
 
 var (
-	stakerBalanceGauge         = metrics.NewRegisteredGauge("arb/staker/balance", nil)
-	stakerAmountStakedGauge    = metrics.NewRegisteredGauge("arb/staker/staked", nil)
-	stakerLastSuccessfulAction = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
-	stakerActionSuccessCounter = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
-	stakerActionFailureCounter = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
+	stakerBalanceGauge              = metrics.NewRegisteredGauge("arb/staker/balance", nil)
+	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
+	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
+	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
+	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
 )
 
 type StakerStrategy uint8
@@ -181,7 +182,7 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
-	stakerLastSuccessfulAction.Update(time.Now().Unix())
+	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -202,19 +203,14 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	}
 	walletAddressOrZero := s.wallet.AddressOrZero()
 	if walletAddressOrZero != (common.Address{}) {
-		balance, err := s.client.BalanceAt(ctx, walletAddressOrZero, nil)
-		if err != nil {
-			return err
-		}
-		stakerBalanceGauge.Update(balance.Int64())
+		s.updateStakerBalanceMetric(ctx)
 	}
-
 	if s.blockValidator != nil && s.config.StartFromStaked {
 		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
-		stakerAmountStakedGauge.Update(int64(latestStaked))
+		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
 		}
@@ -244,30 +240,11 @@ func (s *Staker) Start(ctxIn context.Context) {
 			err = errors.Wrap(err, "error waiting for tx receipt")
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
-				walletAddressOrZero := s.wallet.AddressOrZero()
-				var rawInfo *StakerInfo
-				var infoErr error
-				if walletAddressOrZero != (common.Address{}) {
-					balance, balanceErr := s.client.BalanceAt(ctx, walletAddressOrZero, nil)
-					if balanceErr == nil {
-						stakerBalanceGauge.Update(balance.Int64())
-					} else {
-						log.Error("error getting wallet balance", "walletAddress", walletAddressOrZero, "err", err)
-					}
-					rawInfo, infoErr = s.rollup.StakerInfo(ctx, walletAddressOrZero)
-				}
-				if infoErr != nil {
-					log.Error("error getting own staker info", "walletAddress", walletAddressOrZero, "err", err)
-				} else if rawInfo == nil {
-					stakerAmountStakedGauge.Update(0)
-				} else {
-					stakerAmountStakedGauge.Update(rawInfo.AmountStaked.Int64())
-				}
 			}
 		}
 		if err == nil {
 			backoff = time.Second
-			stakerLastSuccessfulAction.Update(time.Now().Unix())
+			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 			stakerActionSuccessCounter.Inc(1)
 			if arbTx != nil && !s.wallet.CanBatchTxs() {
 				// Try to create another tx
@@ -376,6 +353,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error getting own staker (%v) info: %w", walletAddressOrZero, err)
 		}
+		if rawInfo != nil {
+			stakerAmountStakedGauge.Update(rawInfo.AmountStaked.Int64())
+		} else {
+			stakerAmountStakedGauge.Update(0)
+		}
+		s.updateStakerBalanceMetric(ctx)
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
@@ -385,6 +368,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
 	}
@@ -763,4 +747,14 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 
 func (s *Staker) Strategy() StakerStrategy {
 	return s.strategy
+}
+
+func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
+	walletAddressOrZero := s.wallet.AddressOrZero()
+	balance, err := s.client.BalanceAt(ctx, walletAddressOrZero, nil)
+	if err == nil {
+		stakerBalanceGauge.Update(balance.Int64())
+	} else {
+		log.Error("error getting wallet balance", "walletAddress", walletAddressOrZero, "err", err)
+	}
 }
