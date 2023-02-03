@@ -29,15 +29,19 @@ struct AddLeafArgs {
 }
 
 interface IChallengeManager {
-    function winningClaim(bytes32 challengeId) external view returns (bytes32);
     function challengeExists(bytes32 challengeId) external view returns (bool);
-    function createChallenge(bytes32 assertionId) external returns (bytes32);
+    function getChallenge(bytes32 challengeId) external view returns (Challenge memory);
+    function winningClaim(bytes32 challengeId) external view returns (bytes32);
     function vertexExists(bytes32 vId) external view returns (bool);
     function getVertex(bytes32 vId) external view returns (ChallengeVertex memory);
     function getCurrentPsTimer(bytes32 vId) external view returns (uint256);
     function confirmForPsTimer(bytes32 vId) external;
     function confirmForSucessionChallengeWin(bytes32 vId) external;
-    function createSubChallenge(bytes32 child1Id, bytes32 child2Id) external;
+    function hasConfirmedSibling(bytes32 vId) external view returns (bool);
+    function isAtOneStepFork(bytes32 vId) external view returns (bool);
+    function isPresumptive(bytes32 vId) external view returns(bool);
+    function createChallenge(bytes32 assertionId) external returns (bytes32);
+    function createSubChallenge(bytes32 vId) external;
     function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
     function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
     function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2)

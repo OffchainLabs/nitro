@@ -157,11 +157,22 @@ library ChallengeVertexMappingLib {
         }
     }
 
-    // update a successor by
-    // 1. flush the ps if required
+    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view {
+        require(has(vertices, vId), "Vertex does not exist");
 
-    // 2. setting a new predecessor
-    // 3. setting new lowest height
+        // CHRIS: TODO: do we want to include this?
+        // require(!vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor confirmable");
+
+        require(has(vertices, vertices[vId].lowestHeightSucessorId), "No successors");
+
+        uint256 lowestHeightSuccessorHeight = vertices[vertices[vId].lowestHeightSucessorId].height;
+        require(
+            lowestHeightSuccessorHeight - vertices[vId].height == 1, "Lowest height not one above the current height"
+        );
+
+        require(vertices[vId].presumptiveSuccessorId == 0, "Has presumptive successor");
+    }
+
     // dont allow updates if the challenge has a winner?
     // CHRIS: TODO: require winning claim == 0
 
@@ -299,30 +310,16 @@ library ChallengeManagerLib {
     function checkCreateSubChallenge(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
-        bytes32 child1Id,
-        bytes32 child2Id,
+        bytes32 vId,
         uint256 challengePeriod
     ) internal view {
-        // CHRIS: TODO: should also check the challenge exists?
-        require(vertices.has(child1Id), "Child 1 does not exist");
-        require(vertices.has(child2Id), "Child 2 does not exist");
+        vertices.checkAtOneStepFork(vId);
 
-        require(child1Id != child2Id, "Children are not different");
-
-        bytes32 predecessorId = vertices[child1Id].predecessorId;
-        require(predecessorId == vertices[child2Id].predecessorId, "Children do not have the same predecessor");
-
-        require(vertices[child1Id].challengeId == vertices[child2Id].challengeId, "Different children");
-
-        uint256 predecessorHeight = vertices[predecessorId].height;
-        require(vertices[child1Id].height - predecessorHeight == 1, "Child 1 is not one step from it's predecessor");
-        require(vertices[child2Id].height - predecessorHeight == 1, "Child 2 is not one step from it's predecessor");
-
-        require(challenges[predecessorId].winningClaim == 0, "Winner already declared");
+        require(challenges[vId].winningClaim == 0, "Winner already declared");
 
         // CHRIS: TODO: we should check this in every move?
-        require(!vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor confirmable");
-        require(vertices[predecessorId].successionChallenge == 0, "Challenge already exists");
+        require(!vertices.hasConfirmablePsAt(vId, challengePeriod), "Presumptive successor confirmable");
+        require(vertices[vId].successionChallenge == 0, "Challenge already exists");
     }
 
     function calculateBisectionVertex(
@@ -527,6 +524,57 @@ contract ChallengeManager is IChallengeManager {
         }
     }
 
+    function isPresumptive(bytes32 vId) public view returns(bool){
+        // CHRIS: TODO: can remove as this is easy to do in golang
+        require(vertexExists(vId), "Vertex does not exist");
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertexExists(predecessorId), "Predecessor does not exist");
+
+        return vertices[predecessorId].presumptiveSuccessorId == vId;
+    }
+
+    function hasConfirmedSibling(bytes32 vId) public view returns (bool) {
+        // CHRIS: TODO: consider removal - or put in a lib. COuld be a nice chec in the confirms?
+
+        require(vertexExists(vId), "Vertex does not exist");
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertexExists(predecessorId), "Predecessor does not exist");
+
+
+        // sub challenge check
+        bytes32 challengeId = vertices[predecessorId].successionChallenge;
+        if (challengeId != 0) {
+            bytes32 wClaim = challenges[challengeId].winningClaim;
+            if (wClaim != 0) {
+                // CHRIS: TODO: this should be an assert?
+                require(vertexExists(wClaim), "Winning claim does not exist");
+                if (wClaim == vId) return false;
+
+                return vertices[wClaim].status == Status.Confirmed;
+            }
+        }
+
+        // ps check
+        bytes32 psId = vertices[predecessorId].presumptiveSuccessorId;
+        if (psId != 0) {
+            require(vertexExists(psId), "Presumptive successor does not exist");
+
+            if (psId == vId) return false;
+            return vertices[psId].status == Status.Confirmed;
+        }
+
+        return false;
+    }
+
+    function isAtOneStepFork(bytes32 vId) public view returns (bool) {
+        // CHRIS: TODO: remove this function - it hides error messages
+        try vertices.checkAtOneStepFork(vId) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     function winningClaim(bytes32 challengeId) public view returns (bytes32) {
         // CHRIS: TODO: check exists? or return the full struct?
         return challenges[challengeId].winningClaim;
@@ -611,29 +659,26 @@ contract ChallengeManager is IChallengeManager {
 
     // CHRIS: TODO: the challengeid is stored in the children..
 
-    function createSubChallenge(bytes32 child1Id, bytes32 child2Id) public {
-        ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, child1Id, child2Id, challengePeriod);
+    function createSubChallenge(bytes32 vId) public {
+        ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriod);
 
         // CHRIS: TODO: the stuff below should go in a lib or something?
 
-        bytes32 predecessorId = vertices[child1Id].predecessorId;
-        bytes32 challengeId = vertices[child1Id].challengeId;
+        bytes32 challengeId = vertices[vId].challengeId;
         ChallengeType nextCType = nextSubChallengeType(challenges[challengeId].challengeType);
 
         // CHRIS: TODO: it should be impossible for two vertices to have the same id, even in different challenges
         // CHRIS: TODO: is this true for the root? no - the root can have the same id
         bytes32 newChallengeId = calculateChallengeId(challengeId, nextCType);
         require(!challengeExists(newChallengeId), "Challenge already exists");
-
-        require(vertices[predecessorId].exists(), "Origin Vertex does not exist");
-        bytes32 originHistoryCommitment = vertices[predecessorId].historyCommitment;
+        bytes32 originHistoryCommitment = vertices[vId].historyCommitment;
 
         bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryCommitment, 0);
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
         vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryCommitment);
         challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: nextCType, winningClaim: 0});
-        vertices[predecessorId].successionChallenge = newChallengeId;
+        vertices[vId].successionChallenge = newChallengeId;
 
         // CHRIS: TODO: opening a challenge and confirming a winner vertex should have mutually exlusive checks
         // CHRIS: TODO: these should ensure this internally
