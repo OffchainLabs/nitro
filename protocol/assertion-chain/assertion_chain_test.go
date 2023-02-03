@@ -23,7 +23,14 @@ func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
-	addr, _, _, err := outgen.DeployAssertionChain(acc.txOpts, acc.backend)
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	addr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(10), // 10 second challenge period.
+	)
 	require.NoError(t, err)
 
 	acc.backend.Commit()
@@ -32,12 +39,6 @@ func TestCreateAssertion(t *testing.T) {
 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	_, err = chain.writer.SetupGenesis(acc.txOpts, genesisStateRoot)
-	require.NoError(t, err)
-
-	acc.backend.Commit()
 
 	commit := util.StateCommitment{
 		Height:    1,
@@ -57,7 +58,7 @@ func TestCreateAssertion(t *testing.T) {
 		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
 	t.Run("already exists", func(t *testing.T) {
-		_, err = chain.CreateAssertion(commit, genesisId)
+		err = chain.createAssertion(commit, genesisId)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 	t.Run("previous assertion does not exist", func(t *testing.T) {
@@ -65,7 +66,7 @@ func TestCreateAssertion(t *testing.T) {
 			Height:    2,
 			StateRoot: common.BytesToHash([]byte{2}),
 		}
-		_, err = chain.CreateAssertion(commit, common.BytesToHash([]byte("nyan")))
+		err = chain.createAssertion(commit, common.BytesToHash([]byte("nyan")))
 		require.ErrorIs(t, err, ErrPrevDoesNotExist)
 	})
 	t.Run("invalid height", func(t *testing.T) {
@@ -73,8 +74,18 @@ func TestCreateAssertion(t *testing.T) {
 			Height:    0,
 			StateRoot: common.BytesToHash([]byte{3}),
 		}
-		_, err = chain.CreateAssertion(commit, genesisId)
+		err = chain.createAssertion(commit, genesisId)
 		require.ErrorIs(t, err, ErrInvalidHeight)
+	})
+	t.Run("too late to create sibling", func(t *testing.T) {
+		// Adds two challenge periods to the chain timestamp.
+		acc.backend.AdjustTime(time.Second * 20)
+		commit := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte("forked")),
+		}
+		err = chain.createAssertion(commit, genesisId)
+		require.ErrorIs(t, err, ErrTooLate)
 	})
 }
 
@@ -82,7 +93,13 @@ func TestAssertionByID(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
-	addr, _, _, err := outgen.DeployAssertionChain(acc.txOpts, acc.backend)
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	addr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(1), // 1 second challenge period.
+	)
 	require.NoError(t, err)
 
 	acc.backend.Commit()
@@ -91,12 +108,6 @@ func TestAssertionByID(t *testing.T) {
 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	_, err = chain.writer.SetupGenesis(acc.txOpts, genesisStateRoot)
-	require.NoError(t, err)
-
-	acc.backend.Commit()
 
 	genesisId := common.Hash{}
 	resp, err := chain.AssertionByID(genesisId)
@@ -108,11 +119,17 @@ func TestAssertionByID(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestChallengePeriodLength(t *testing.T) {
+func TestChallengePeriodSeconds(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
-	addr, _, _, err := outgen.DeployAssertionChain(acc.txOpts, acc.backend)
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	addr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(1), // 1 second challenge period.
+	)
 	require.NoError(t, err)
 
 	acc.backend.Commit()
@@ -121,7 +138,7 @@ func TestChallengePeriodLength(t *testing.T) {
 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-	chalPeriod, err := chain.ChallengePeriodLength()
+	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
 	require.Equal(t, time.Second*1000, chalPeriod)
 }
