@@ -531,7 +531,6 @@ contract ChallengeManager is IChallengeManager {
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertexExists(predecessorId), "Predecessor does not exist");
 
-
         // sub challenge check
         bytes32 challengeId = vertices[predecessorId].successionChallenge;
         if (challengeId != 0) {
