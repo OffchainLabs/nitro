@@ -41,8 +41,11 @@ interface IAssertionChain {
 
     // Read-only calls.
     function numAssertions() external view returns (uint256);
+
     function challengePeriodSeconds() external view returns (uint256);
+
     function latestConfirmedAssertion() external view returns (Assertion memory assertion);
+
     function getAssertion(uint256 seqNum) external view returns (Assertion memory assertion);
     function getChallenge(bytes32 parentStateCommitHash) external view returns (Challenge memory challenge);
     function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash)
@@ -51,7 +54,9 @@ interface IAssertionChain {
         returns (ChallengeVertex memory vertex);
     function challengeWinner(Challenge memory challenge) external returns (Assertion memory assertion);
     function challengeCompleted(Challenge memory challenge) external returns (bool);
+
     function eligibleForNewSuccessor(ChallengeVertex memory vertex) external returns (bool);
+
     function isPresumptiveSuccessor(ChallengeVertex memory vertex) external returns (bool);
 
     // Mutating calls.
@@ -60,11 +65,17 @@ interface IAssertionChain {
         payable
         returns (Assertion memory assertion);
     function confirmForWin(Assertion calldata assertion) external payable;
+
     function confirmNoRival(Assertion calldata assertion) external payable;
+
     function rejectForLoss(Assertion calldata assertion) external payable;
+
     function rejectForPrev(Assertion calldata assertion) external payable;
+
     function confirmForPSTimer(ChallengeVertex calldata vertex) external payable;
+
     function confirmForChallengeDeadline(ChallengeVertex calldata vertex) external payable;
+
     function confirmForSubchallengeWin(ChallengeVertex calldata vertex) external payable;
 
     function createChallenge(Assertion calldata prev) external payable returns (Challenge memory challenge);
