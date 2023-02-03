@@ -40,9 +40,11 @@ interface IChallengeManager {
     function hasConfirmedSibling(bytes32 vId) external view returns (bool);
     function isAtOneStepFork(bytes32 vId) external view returns (bool);
     function createChallenge(bytes32 assertionId) external returns (bytes32);
-    function createSubChallenge(bytes32 vId) external;
-    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
-    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;
+    function createSubChallenge(bytes32 vId) external returns (bytes32);
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
+        external
+        returns (bytes32);
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32);
     function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2)
         external
         payable

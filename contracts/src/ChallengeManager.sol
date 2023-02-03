@@ -158,7 +158,7 @@ library ChallengeVertexMappingLib {
     }
 
     function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view {
-        require(has(vertices, vId), "Vertex does not exist");
+        require(has(vertices, vId), "Fork candidate vertex does not exist");
 
         // CHRIS: TODO: do we want to include this?
         // require(!vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor confirmable");
@@ -211,6 +211,60 @@ library ChallengeVertexMappingLib {
         }
     }
 
+    // take from https://solidity-by-example.org/bitwise/
+    // Find most significant bit using binary search
+    function mostSignificantBit(uint256 x) internal pure returns (uint256 msb) {
+        // x >= 2 ** 128
+        if (x >= 0x100000000000000000000000000000000) {
+            x >>= 128;
+            msb += 128;
+        }
+        // x >= 2 ** 64
+        if (x >= 0x10000000000000000) {
+            x >>= 64;
+            msb += 64;
+        }
+        // x >= 2 ** 32
+        if (x >= 0x100000000) {
+            x >>= 32;
+            msb += 32;
+        }
+        // x >= 2 ** 16
+        if (x >= 0x10000) {
+            x >>= 16;
+            msb += 16;
+        }
+        // x >= 2 ** 8
+        if (x >= 0x100) {
+            x >>= 8;
+            msb += 8;
+        }
+        // x >= 2 ** 4
+        if (x >= 0x10) {
+            x >>= 4;
+            msb += 4;
+        }
+        // x >= 2 ** 2
+        if (x >= 0x4) {
+            x >>= 2;
+            msb += 2;
+        }
+        // x >= 2 ** 1
+        if (x >= 0x2) msb += 1;
+    }
+
+    // CHRIS: TODO: move this and the above out of here
+    function mandatoryBisectionHeight(uint256 start, uint256 end) internal pure returns (uint256) {
+        require(end - start >= 2, "Height different not two or more");
+        if (end - start == 2) {
+            return start + 1;
+        }
+
+        uint256 mostSignificantSharedBit = mostSignificantBit((end - 1) ^ start);
+        uint256 mask = type(uint256).max << mostSignificantSharedBit;
+        return (end - 1) & mask;
+    }
+
     function bisectionHeight(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId)
         internal
         view
@@ -220,10 +274,8 @@ library ChallengeVertexMappingLib {
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(has(vertices, predecessorId), "Predecessor vertex does not exist");
 
-        require(vertices[vId].height - vertices[predecessorId].height >= 2, "Height different not two or more");
         // CHRIS: TODO: look at the boundary conditions here
-        // CHRIS: TODO: update this to use the correct formula from the paper
-        return 10; // placeholder
+        return mandatoryBisectionHeight(vertices[predecessorId].height, vertices[vId].height);
     }
 }
 
@@ -649,7 +701,7 @@ contract ChallengeManager is IChallengeManager {
 
     // CHRIS: TODO: the challengeid is stored in the children..
 
-    function createSubChallenge(bytes32 vId) public {
+    function createSubChallenge(bytes32 vId) public returns (bytes32) {
         ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriod);
 
         // CHRIS: TODO: the stuff below should go in a lib or something?
@@ -672,9 +724,10 @@ contract ChallengeManager is IChallengeManager {
 
         // CHRIS: TODO: opening a challenge and confirming a winner vertex should have mutually exlusive checks
         // CHRIS: TODO: these should ensure this internally
+        return newChallengeId;
     }
 
-    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public {
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public returns (bytes32) {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
@@ -698,9 +751,11 @@ contract ChallengeManager is IChallengeManager {
         );
         // CHRIS: TODO: check these two successor updates really do conform to the spec
         vertices.connectVertices(bVId, vId, challengePeriod);
+
+        return bVId;
     }
 
-    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public {
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public returns (bytes32) {
         (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -712,6 +767,8 @@ contract ChallengeManager is IChallengeManager {
         if (vertices[bVId].flushedPsTime < vertices[vId].flushedPsTime) {
             vertices[bVId].flushedPsTime = vertices[vId].flushedPsTime;
         }
+
+        return bVId;
     }
 }
 
