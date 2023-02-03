@@ -141,7 +141,7 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	require.NoError(t, err)
 	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
-	require.Equal(t, time.Second*1000, chalPeriod)
+	require.Equal(t, time.Second, chalPeriod)
 }
 
 // Represents a test EOA account in the simulated backend,
