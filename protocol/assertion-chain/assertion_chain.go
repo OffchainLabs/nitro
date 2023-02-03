@@ -23,8 +23,8 @@ type Assertion struct {
 // that implements the protocol interface.
 type AssertionChain struct {
 	backend    bind.ContractBackend
-	caller     *outgen.AssertionChainV2Caller
-	writer     *outgen.AssertionChainV2Transactor
+	caller     *outgen.AssertionChainCaller
+	writer     *outgen.AssertionChainTransactor
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
 	stakerAddr common.Address
@@ -46,15 +46,15 @@ func NewAssertionChain(
 		txOpts:     txOpts,
 		stakerAddr: stakerAddr,
 	}
-	assertionChainBinding, err := outgen.NewAssertionChainV2(
+	assertionChainBinding, err := outgen.NewAssertionChain(
 		contractAddr, chain.backend,
 	)
 
 	if err != nil {
 		return nil, err
 	}
-	chain.caller = &assertionChainBinding.AssertionChainV2Caller
-	chain.writer = &assertionChainBinding.AssertionChainV2Transactor
+	chain.caller = &assertionChainBinding.AssertionChainCaller
+	chain.writer = &assertionChainBinding.AssertionChainTransactor
 	return chain, nil
 }
 
