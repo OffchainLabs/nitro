@@ -18,9 +18,9 @@ func (ev *genericAssertionChainEvent) IsAssertionChainEvent() bool { return true
 type CreateLeafEvent struct {
 	genericAssertionChainEvent
 	PrevSeqNum          AssertionSequenceNumber
-	PrevStateCommitment StateCommitment
+	PrevStateCommitment util.StateCommitment
 	SeqNum              AssertionSequenceNumber
-	StateCommitment     StateCommitment
+	StateCommitment     util.StateCommitment
 	Validator           common.Address
 }
 
@@ -37,7 +37,7 @@ type RejectEvent struct {
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
 	ParentSeqNum          AssertionSequenceNumber
-	ParentStateCommitment StateCommitment
+	ParentStateCommitment util.StateCommitment
 	ParentStaker          common.Address
 	Validator             common.Address
 }
@@ -64,7 +64,7 @@ type ChallengeLeafEvent struct {
 	ParentSeqNum      VertexSequenceNumber
 	SequenceNum       VertexSequenceNumber
 	WinnerIfConfirmed AssertionSequenceNumber
-	ParentStateCommit StateCommitment
+	ParentStateCommit util.StateCommitment
 	History           util.HistoryCommitment
 	BecomesPS         bool
 	Validator         common.Address
@@ -74,7 +74,7 @@ type ChallengeBisectEvent struct {
 	genericChallengeEvent
 	FromSequenceNum   VertexSequenceNumber // previously existing vertex
 	SequenceNum       VertexSequenceNumber // newly created vertex
-	ParentStateCommit StateCommitment
+	ParentStateCommit util.StateCommitment
 	ToHistory         util.HistoryCommitment
 	FromHistory       util.HistoryCommitment
 	BecomesPS         bool
@@ -85,7 +85,7 @@ type ChallengeMergeEvent struct {
 	genericChallengeEvent
 	ToHistory            util.HistoryCommitment
 	FromHistory          util.HistoryCommitment
-	ParentStateCommit    StateCommitment
+	ParentStateCommit    util.StateCommitment
 	DeeperSequenceNum    VertexSequenceNumber
 	ShallowerSequenceNum VertexSequenceNumber
 	BecomesPS            bool

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -201,7 +202,7 @@ func (v *Validator) submitProtocolChallenge(
 func (v *Validator) fetchProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.AssertionSequenceNumber,
-	parentAssertionCommit protocol.StateCommitment,
+	parentAssertionCommit util.StateCommitment,
 ) (*protocol.Challenge, error) {
 	var err error
 	var challenge *protocol.Challenge

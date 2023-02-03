@@ -3,7 +3,6 @@ package statemanager
 import (
 	"context"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -11,9 +10,9 @@ import (
 // Manager defines a struct that can provide local state data and historical
 // Merkle commitments to L2 state for the validator.
 type Manager interface {
-	HasStateCommitment(ctx context.Context, commitment protocol.StateCommitment) bool
-	StateCommitmentAtHeight(ctx context.Context, height uint64) (protocol.StateCommitment, error)
-	LatestStateCommitment(ctx context.Context) (protocol.StateCommitment, error)
+	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
+	StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error)
+	LatestStateCommitment(ctx context.Context) (util.StateCommitment, error)
 	HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error)
 	PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error)
 	HasHistoryCommitment(ctx context.Context, commitment util.HistoryCommitment) bool
@@ -35,7 +34,7 @@ func New(stateRoots []common.Hash) *Simulated {
 }
 
 // HasStateCommitment checks if a state commitment is found in our local list of state roots.
-func (s *Simulated) HasStateCommitment(ctx context.Context, commitment protocol.StateCommitment) bool {
+func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool {
 	if commitment.Height >= uint64(len(s.stateRoots)) {
 		return false
 	}
@@ -43,19 +42,19 @@ func (s *Simulated) HasStateCommitment(ctx context.Context, commitment protocol.
 }
 
 // StateCommitmentAtHeight gets the state commitment at a specified height from our local list of state roots.
-func (s *Simulated) StateCommitmentAtHeight(ctx context.Context, height uint64) (protocol.StateCommitment, error) {
+func (s *Simulated) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error) {
 	if height >= uint64(len(s.stateRoots)) {
 		panic("commitment height out of range")
 	}
-	return protocol.StateCommitment{
+	return util.StateCommitment{
 		Height:    height,
 		StateRoot: s.stateRoots[height],
 	}, nil
 }
 
 // LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has.
-func (s *Simulated) LatestStateCommitment(ctx context.Context) (protocol.StateCommitment, error) {
-	return protocol.StateCommitment{
+func (s *Simulated) LatestStateCommitment(ctx context.Context) (util.StateCommitment, error) {
+	return util.StateCommitment{
 		Height:    uint64(len(s.stateRoots)) - 1,
 		StateRoot: s.stateRoots[len(s.stateRoots)-1],
 	}, nil
@@ -63,11 +62,11 @@ func (s *Simulated) LatestStateCommitment(ctx context.Context) (protocol.StateCo
 
 // HistoryCommitmentUpTo gets the history commitment for the merkle expansion up to a height.
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
-	exp := util.ExpansionFromLeaves(s.stateRoots[:height])
-	return util.HistoryCommitment{
-		Height: height,
-		Merkle: exp.Root(),
-	}, nil
+	return util.NewHistoryCommitment(
+		height,
+		s.stateRoots[:height],
+		util.WithLastElementProof(s.stateRoots[:height+1]),
+	)
 }
 
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
@@ -93,8 +92,9 @@ func (s *Simulated) HasHistoryCommitment(ctx context.Context, commitment util.Hi
 // LatestHistoryCommitment gets the history commitment up to and including the last, local state root the manager has.
 func (s *Simulated) LatestHistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
 	height := uint64(len(s.stateRoots)) - 1
-	return util.HistoryCommitment{
-		Height: height,
-		Merkle: util.ExpansionFromLeaves(s.stateRoots[:height]).Root(),
-	}, nil
+	return util.NewHistoryCommitment(
+		height,
+		s.stateRoots[:height],
+		util.WithLastElementProof(s.stateRoots[:height+1]),
+	)
 }

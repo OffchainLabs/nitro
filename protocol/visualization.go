@@ -80,8 +80,8 @@ type challengeVertexNode struct {
 }
 
 type ChallengeVisualization struct {
-	RootAssertionCommit StateCommitment `json:"root_assertion_commit"`
-	Graph               string          `json:"graph"`
+	RootAssertionCommit util.StateCommitment `json:"root_assertion_commit"`
+	Graph               string               `json:"graph"`
 }
 
 func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
@@ -146,7 +146,7 @@ func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
 				}
 			}
 		}
-		var rootAssertionCommit StateCommitment
+		var rootAssertionCommit util.StateCommitment
 		if !challenge.rootAssertion.IsNone() {
 			rootAssertionCommit = challenge.rootAssertion.Unwrap().StateCommitment
 		}

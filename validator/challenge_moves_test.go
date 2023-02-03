@@ -12,6 +12,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_computePrefixProof(t *testing.T) {
+	ctx := context.Background()
+	stateRoots := generateStateRoots(10)
+	manager := statemanager.New(stateRoots)
+	commit, err := manager.HistoryCommitmentUpTo(ctx, 6)
+	require.NoError(t, err)
+
+	v := &Validator{
+		stateManager: manager,
+	}
+
+	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
+	require.NoError(t, err)
+
+	bisectToHeight := bisectToCommit.Height
+	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	require.NoError(t, err)
+
+	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
+	require.NoError(t, err)
+}
+
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
@@ -68,7 +90,7 @@ func Test_bisect(t *testing.T) {
 
 func Test_merge(t *testing.T) {
 	ctx := context.Background()
-	genesisCommit := protocol.StateCommitment{
+	genesisCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
@@ -174,7 +196,7 @@ func runBisectionTest(
 	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
 	require.NoError(t, err)
 
-	genesisCommit := protocol.StateCommitment{
+	genesisCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
@@ -216,11 +238,12 @@ func runBisectionTest(
 
 	bisectionHeight := uint64(4)
 	loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
+
 	bisectionCommit := util.HistoryCommitment{
 		Height: bisectionHeight,
 		Merkle: loExp.Root(),
 	}
-	require.Equal(t, bisectedVertex.Commitment, bisectionCommit)
+	require.Equal(t, bisectedVertex.Commitment.Hash(), bisectionCommit.Hash())
 
 	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
 	return bisectedVertex

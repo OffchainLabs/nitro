@@ -477,12 +477,12 @@ func TestValidator_verifyAddLeafConditions(t *testing.T) {
 		rootAssertion, err = chain.AssertionBySequenceNum(tx, 0)
 		require.NoError(t, err)
 		chain.SetBalance(tx, common.Address{}, new(big.Int).Mul(protocol.AssertionStake, big.NewInt(1000)))
-		_, err = chain.CreateLeaf(tx, rootAssertion, protocol.StateCommitment{
+		_, err = chain.CreateLeaf(tx, rootAssertion, util.StateCommitment{
 			Height:    1,
 			StateRoot: common.Hash{'a'},
 		}, common.Address{})
 		require.NoError(t, err)
-		_, err = chain.CreateLeaf(tx, rootAssertion, protocol.StateCommitment{
+		_, err = chain.CreateLeaf(tx, rootAssertion, util.StateCommitment{
 			Height:    2,
 			StateRoot: common.Hash{'b'},
 		}, common.Address{})
