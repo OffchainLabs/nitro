@@ -55,6 +55,7 @@ type BroadcasterConfig struct {
 	LogDisconnect      bool          `koanf:"log-disconnect"`
 	EnableCompression  bool          `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
 	RequireCompression bool          `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
+	LimitCatchup       bool          `koanf:"limit-catchup" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -85,6 +86,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".log-disconnect", DefaultBroadcasterConfig.LogDisconnect, "log every client disconnect")
 	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
+	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -106,6 +108,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	LogDisconnect:      false,
 	EnableCompression:  true,
 	RequireCompression: false,
+	LimitCatchup:       false,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -127,6 +130,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	LogDisconnect:      false,
 	EnableCompression:  true,
 	RequireCompression: false,
+	LimitCatchup:       false,
 }
 
 type WSBroadcastServer struct {
