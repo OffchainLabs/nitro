@@ -10,8 +10,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//solgen/go/outgen",
+        "//util",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_pkg_errors//:errors",
     ],
 )
 
@@ -21,6 +25,7 @@ go_test(
     embed = [":assertion-chain"],
     deps = [
         "//solgen/go/outgen",
+        "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",
