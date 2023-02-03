@@ -9,12 +9,20 @@ import (
 
 	"math/big"
 
+	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pkg/errors"
+	"strings"
+)
+
+var (
+	ErrNotFound      = errors.New("item not found on-chain")
+	ErrAlreadyExists = errors.New("item already exists on-chain")
 )
 
 // Assertion is a wrapper around the binding to the type
@@ -42,16 +50,41 @@ func (ac *AssertionChain) CreateAssertion(
 	commitment util.StateCommitment,
 	prevAssertionId common.Hash,
 ) (*Assertion, error) {
-	if _, err := ac.writer.CreateNewAssertion(
-		ac.txOpts,
-		commitment.StateRoot,
-		big.NewInt(int64(commitment.Height)),
+	if err := ac.createAssertion(
+		commitment,
 		prevAssertionId,
 	); err != nil {
 		return nil, err
 	}
 	assertionId := getAssertionId(commitment, prevAssertionId)
 	return ac.AssertionByID(assertionId)
+}
+
+func (ac *AssertionChain) createAssertion(
+	commitment util.StateCommitment,
+	prevAssertionId common.Hash,
+) error {
+	_, err := ac.writer.CreateNewAssertion(
+		ac.txOpts,
+		commitment.StateRoot,
+		big.NewInt(int64(commitment.Height)),
+		prevAssertionId,
+	)
+	if err != nil {
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "Assertion already exists"):
+			return errors.Wrapf(
+				ErrAlreadyExists,
+				"commit state root %#x and height %d",
+				commitment.StateRoot,
+				commitment.Height,
+			)
+		default:
+			return err
+		}
+	}
+	return nil
 }
 
 // ChallengePeriod length in seconds.
@@ -68,6 +101,13 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 	res, err := ac.caller.GetAssertion(ac.callOpts, assertionId)
 	if err != nil {
 		return nil, err
+	}
+	if bytes.Equal(res.StateHash[:], make([]byte, 32)) {
+		return nil, errors.Wrapf(
+			ErrNotFound,
+			"assertion with id %#x",
+			assertionId,
+		)
 	}
 	return &Assertion{
 		inner: res,

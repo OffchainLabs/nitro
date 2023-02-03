@@ -50,7 +50,37 @@ func TestCreateAssertion(t *testing.T) {
 	acc.backend.Commit()
 
 	_, err = chain.CreateAssertion(commit, genesisId)
+	require.ErrorIs(t, err, ErrAlreadyExists)
+}
+
+func TestAssertionByID(t *testing.T) {
+	ctx := context.Background()
+	acc, err := setupAccount()
 	require.NoError(t, err)
+	addr, _, _, err := outgen.DeployAssertionChain(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+
+	acc.backend.Commit()
+
+	chain, err := NewAssertionChain(
+		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
+	require.NoError(t, err)
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	_, err = chain.writer.SetupGenesis(acc.txOpts, genesisStateRoot)
+	require.NoError(t, err)
+
+	acc.backend.Commit()
+
+	genesisId := common.Hash{}
+	resp, err := chain.AssertionByID(genesisId)
+	require.NoError(t, err)
+
+	require.Equal(t, genesisStateRoot[:], resp.inner.StateHash[:])
+
+	_, err = chain.AssertionByID(common.BytesToHash([]byte("bar")))
+	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestChallengePeriodLength(t *testing.T) {
