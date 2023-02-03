@@ -79,7 +79,8 @@ func TestCreateAssertion(t *testing.T) {
 	})
 	t.Run("too late to create sibling", func(t *testing.T) {
 		// Adds two challenge periods to the chain timestamp.
-		acc.backend.AdjustTime(time.Second * 20)
+		err = acc.backend.AdjustTime(time.Second * 20)
+		require.NoError(t, err)
 		commit := util.StateCommitment{
 			Height:    1,
 			StateRoot: common.BytesToHash([]byte("forked")),
