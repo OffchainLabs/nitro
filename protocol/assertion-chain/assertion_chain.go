@@ -1,3 +1,6 @@
+// Package assertionchain includes an easy-to-use abstraction
+// around the challenge protocol contracts using their Go
+// bindings and exposes minimal details of Ethereum's internals.
 package assertionchain
 
 import (
@@ -8,115 +11,40 @@ import (
 	"time"
 )
 
-//	type AssertionManager interface {
-//		Inbox() *Inbox
-//		NumAssertions(tx *ActiveTx) uint64
-//		AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
-//		ChallengeByCommitHash(tx *ActiveTx, commitHash ChallengeCommitHash) (*Challenge, error)
-//		ChallengeVertexByCommitHash(tx *ActiveTx, challenge ChallengeCommitHash, vertex VertexCommitHash) (*ChallengeVertex, error)
-//		IsAtOneStepFork(
-//			tx *ActiveTx,
-//			challengeCommitHash ChallengeCommitHash,
-//			vertexCommit util.HistoryCommitment,
-//			vertexParentCommit util.HistoryCommitment,
-//		) (bool, error)
-//		ChallengePeriodLength(tx *ActiveTx) time.Duration
-//		LatestConfirmed(*ActiveTx) *Assertion
-//		CreateLeaf(tx *ActiveTx, prev *Assertion, commitment util.StateCommitment, staker common.Address) (*Assertion, error)
-//		TimeReference() util.TimeReference
-//	}
-type Opt func(chain *AssertionChain) error
-
-func WithBackend(b bind.ContractBackend) Opt {
-	return func(chain *AssertionChain) error {
-		chain.backend = b
-		return nil
-	}
-}
-
+// Assertion is a wrapper around the binding to the type
+// of the same name in the protocol contracts. This allows us
+// to have a smaller API surface area and attach useful
+// methods that callers can use directly.
 type Assertion struct {
 	inner outgen.Assertion
 }
 
+// AssertionChain is a wrapper around solgen bindings
+// that implements the protocol interface.
 type AssertionChain struct {
-	backend  bind.ContractBackend
-	caller   *outgen.AssertionChainV2Caller
-	writer   *outgen.AssertionChainV2Transactor
-	callOpts *bind.CallOpts
+	backend    bind.ContractBackend
+	caller     *outgen.AssertionChainV2Caller
+	writer     *outgen.AssertionChainV2Transactor
+	callOpts   *bind.CallOpts
+	txOpts     *bind.TransactOpts
+	stakerAddr common.Address
 }
 
-type ChallengeManager struct {
-	assertionChain *AssertionChain
-	caller         *outgen.ChallengeManagerCaller
-	writer         *outgen.ChallengeManagerTransactor
-	callOpts       *bind.CallOpts
-}
-
-type Challenge struct {
-	inner outgen.Challenge
-}
-
-func (m *ChallengeManager) ChallengeByID(challengeId common.Hash) (*Challenge, error) {
-	res, err := m.caller.GetChallenge(m.callOpts, challengeId)
-	if err != nil {
-		return nil, err
-	}
-	return &Challenge{
-		inner: res,
-	}, nil
-}
-
-// Returns a challenge manager instance.
-func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
-	addr, err := ac.caller.ChallengeManagerAddr(ac.callOpts)
-	if err != nil {
-		return nil, err
-	}
-	managerBinding, err := outgen.NewChallengeManager(addr, ac.backend)
-	if err != nil {
-		return nil, err
-	}
-	return &ChallengeManager{
-		assertionChain: ac,
-		caller:         &managerBinding.ChallengeManagerCaller,
-		writer:         &managerBinding.ChallengeManagerTransactor,
-		callOpts:       ac.callOpts,
-	}, nil
-}
-
-func (ac *AssertionChain) ChalengePeriodLength() (time.Duration, error) {
-	res, err := ac.caller.ChallengePeriod(ac.callOpts)
-	if err != nil {
-		return time.Second, err
-	}
-	return time.Second * time.Duration(res.Uint64()), nil
-}
-
-func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, error) {
-	res, err := ac.caller.GetAssertion(ac.callOpts, assertionId)
-	if err != nil {
-		return nil, err
-	}
-	return &Assertion{
-		inner: res,
-	}, nil
-}
-
+// NewAssertionChain instantiates an assertion chain
+// instance from a chain backend and provided options.
 func NewAssertionChain(
 	ctx context.Context,
 	contractAddr common.Address,
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
-	opts ...Opt,
+	backend bind.ContractBackend,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
-		callOpts: callOpts,
-	}
-	for _, o := range opts {
-		if err := o(chain); err != nil {
-			return nil, err
-		}
+		backend:    backend,
+		callOpts:   callOpts,
+		txOpts:     txOpts,
+		stakerAddr: stakerAddr,
 	}
 	assertionChainBinding, err := outgen.NewAssertionChainV2(
 		contractAddr, chain.backend,
@@ -128,16 +56,24 @@ func NewAssertionChain(
 	chain.caller = &assertionChainBinding.AssertionChainV2Caller
 	chain.writer = &assertionChainBinding.AssertionChainV2Transactor
 	return chain, nil
+}
 
-	// // Attach the clients to the service struct.
-	// fetcher := ethclient.NewClient(client)
-	// s.rpcClient = client
-	// s.httpLogger = fetcher
+// ChallengePeriod length in seconds.
+func (ac *AssertionChain) ChalengePeriodLength() (time.Duration, error) {
+	res, err := ac.caller.ChallengePeriod(ac.callOpts)
+	if err != nil {
+		return time.Second, err
+	}
+	return time.Second * time.Duration(res.Uint64()), nil
+}
 
-	// depositContractCaller, err := contracts.NewDepositContractCaller(s.cfg.depositContractAddr, fetcher)
-	// if err != nil {
-	// 	client.Close()
-	// 	return errors.Wrap(err, "could not initialize deposit contract caller")
-	// }
-	// s.depositContractCaller = depositContractCaller
+// AssertionByID --
+func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, error) {
+	res, err := ac.caller.GetAssertion(ac.callOpts, assertionId)
+	if err != nil {
+		return nil, err
+	}
+	return &Assertion{
+		inner: res,
+	}, nil
 }
