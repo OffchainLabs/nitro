@@ -31,7 +31,7 @@ interface IEthBridgeCreator is IBridgeCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         );
 }
@@ -48,7 +48,7 @@ interface IERC20BridgeCreator is IBridgeCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         );
 }

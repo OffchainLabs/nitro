@@ -35,7 +35,7 @@ contract RollupCreator is AbsRollupCreator, IEthRollupCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         )
     {

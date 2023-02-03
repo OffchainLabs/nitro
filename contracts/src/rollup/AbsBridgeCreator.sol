@@ -6,13 +6,10 @@ pragma solidity ^0.8.0;
 
 import "../bridge/IBridge.sol";
 import "../bridge/SequencerInbox.sol";
-import "../bridge/ISequencerInbox.sol";
 import "../bridge/IInbox.sol";
 import "../bridge/Outbox.sol";
 import "../rollup/IBridgeCreator.sol";
-import "./RollupEventInbox.sol";
-
-import "../bridge/IBridge.sol";
+import "./IRollupEventInbox.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
@@ -20,14 +17,13 @@ abstract contract AbsBridgeCreator is Ownable, IBridgeCreator {
     IBridge public bridgeTemplate;
     SequencerInbox public sequencerInboxTemplate;
     IInbox public inboxTemplate;
-    RollupEventInbox public rollupEventInboxTemplate;
+    IRollupEventInbox public rollupEventInboxTemplate;
     Outbox public outboxTemplate;
 
     event TemplatesUpdated();
 
     constructor() Ownable() {
         sequencerInboxTemplate = new SequencerInbox();
-        rollupEventInboxTemplate = new RollupEventInbox();
         outboxTemplate = new Outbox();
     }
 
@@ -41,7 +37,7 @@ abstract contract AbsBridgeCreator is Ownable, IBridgeCreator {
         bridgeTemplate = IBridge(_bridgeTemplate);
         sequencerInboxTemplate = SequencerInbox(_sequencerInboxTemplate);
         inboxTemplate = IInbox(_inboxTemplate);
-        rollupEventInboxTemplate = RollupEventInbox(_rollupEventInboxTemplate);
+        rollupEventInboxTemplate = IRollupEventInbox(_rollupEventInboxTemplate);
         outboxTemplate = Outbox(_outboxTemplate);
 
         emit TemplatesUpdated();
@@ -52,7 +48,7 @@ abstract contract AbsBridgeCreator is Ownable, IBridgeCreator {
         IBridge bridge;
         SequencerInbox sequencerInbox;
         IInbox inbox;
-        RollupEventInbox rollupEventInbox;
+        IRollupEventInbox rollupEventInbox;
         Outbox outbox;
     }
 
@@ -67,7 +63,7 @@ abstract contract AbsBridgeCreator is Ownable, IBridgeCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         )
     {
@@ -84,7 +80,7 @@ abstract contract AbsBridgeCreator is Ownable, IBridgeCreator {
             frame.inbox = IInbox(
                 address(new TransparentUpgradeableProxy(address(inboxTemplate), adminProxy, ""))
             );
-            frame.rollupEventInbox = RollupEventInbox(
+            frame.rollupEventInbox = IRollupEventInbox(
                 address(
                     new TransparentUpgradeableProxy(
                         address(rollupEventInboxTemplate),

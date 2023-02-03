@@ -9,11 +9,13 @@ import "../bridge/ERC20Bridge.sol";
 import "../bridge/IERC20Bridge.sol";
 import "../bridge/ERC20Inbox.sol";
 import "../rollup/IBridgeCreator.sol";
+import "../rollup/ERC20RollupEventInbox.sol";
 
 contract ERC20BridgeCreator is AbsBridgeCreator, IERC20BridgeCreator {
     constructor() AbsBridgeCreator() {
         bridgeTemplate = new ERC20Bridge();
         inboxTemplate = new ERC20Inbox();
+        rollupEventInboxTemplate = new ERC20RollupEventInbox();
     }
 
     function createBridge(
@@ -27,7 +29,7 @@ contract ERC20BridgeCreator is AbsBridgeCreator, IERC20BridgeCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         )
     {

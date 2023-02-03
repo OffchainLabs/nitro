@@ -36,7 +36,7 @@ contract ERC20RollupCreator is AbsRollupCreator, IERC20RollupCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         )
     {

@@ -4,16 +4,17 @@
 
 pragma solidity ^0.8.0;
 
-import "../rollup/AbsBridgeCreator.sol";
 import "../bridge/Bridge.sol";
 import "../bridge/IEthBridge.sol";
 import "../bridge/Inbox.sol";
-import "../rollup/IBridgeCreator.sol";
+import "../rollup/AbsBridgeCreator.sol";
+import "../rollup/RollupEventInbox.sol";
 
 contract BridgeCreator is AbsBridgeCreator, IEthBridgeCreator {
     constructor() AbsBridgeCreator() {
         bridgeTemplate = new Bridge();
         inboxTemplate = new Inbox();
+        rollupEventInboxTemplate = new RollupEventInbox();
     }
 
     function createBridge(
@@ -26,7 +27,7 @@ contract BridgeCreator is AbsBridgeCreator, IEthBridgeCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         )
     {

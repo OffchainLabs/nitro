@@ -144,7 +144,7 @@ abstract contract AbsRollupCreator is Ownable, IRollupCreator {
             IBridge,
             SequencerInbox,
             IInbox,
-            RollupEventInbox,
+            IRollupEventInbox,
             Outbox
         );
 }
