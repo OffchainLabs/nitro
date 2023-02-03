@@ -44,13 +44,38 @@ func TestCreateAssertion(t *testing.T) {
 		StateRoot: common.BytesToHash([]byte{1}),
 	}
 	genesisId := common.Hash{}
-	_, err = chain.CreateAssertion(commit, genesisId)
-	require.NoError(t, err)
 
-	acc.backend.Commit()
+	t.Run("OK", func(t *testing.T) {
+		err = chain.createAssertion(commit, genesisId)
+		require.NoError(t, err)
 
-	_, err = chain.CreateAssertion(commit, genesisId)
-	require.ErrorIs(t, err, ErrAlreadyExists)
+		acc.backend.Commit()
+
+		id := getAssertionId(commit, genesisId)
+		created, err := chain.AssertionByID(id)
+		require.NoError(t, err)
+		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
+	})
+	t.Run("already exists", func(t *testing.T) {
+		_, err = chain.CreateAssertion(commit, genesisId)
+		require.ErrorIs(t, err, ErrAlreadyExists)
+	})
+	t.Run("previous assertion does not exist", func(t *testing.T) {
+		commit := util.StateCommitment{
+			Height:    2,
+			StateRoot: common.BytesToHash([]byte{2}),
+		}
+		_, err = chain.CreateAssertion(commit, common.BytesToHash([]byte("nyan")))
+		require.ErrorIs(t, err, ErrPrevDoesNotExist)
+	})
+	t.Run("invalid height", func(t *testing.T) {
+		commit := util.StateCommitment{
+			Height:    0,
+			StateRoot: common.BytesToHash([]byte{3}),
+		}
+		_, err = chain.CreateAssertion(commit, genesisId)
+		require.ErrorIs(t, err, ErrInvalidHeight)
+	})
 }
 
 func TestAssertionByID(t *testing.T) {
