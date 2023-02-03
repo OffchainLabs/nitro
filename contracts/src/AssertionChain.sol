@@ -1,206 +1,289 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
-interface IAssertionChain {
-    struct Assertion {
-        uint256 seqNum;
-        StateCommitment stateCommitment;
-        uint256 status;
-        bool isFirstChild;
-        uint256 firstChildCreationTimestamp;
-        uint256 secondChildCreationTimestamp;
-        address actor;
-    }
+import {Status, IAssertionChain, IChallengeManager} from "./DataEntities.sol";
 
-    struct Challenge {
-        uint256 seqNum;
-        uint256 nextSeqNum;
-        ChallengeVertex root;
-        ChallengeVertex latestConfirmed;
-        uint256 creationTimestamp;
-        address actor;
-    }
+// Questions
+// 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
+//    not 2 challenge periods after the first child creation.
+// 3. Should we restructure the challenges into a single contract?
+// 4. use timestamps or block numbers? always timestamps atm
+// 5. We dont allow a challenge to be created if the ps has a pstimer > challengeperiod, but it may not be
+// on a confirmed branch so this would be meaningless?
 
-    struct ChallengeVertex {
-        uint256 seqNum;
-        bytes32 challengeParentStateCommitHash;
-        bool actor;
-        bool isLeaf;
-        uint256 psTimer;
-    }
+// CHRIS: TODO: check non zeros in all  functions and constructors
+// CHRIS: TODO: draw timings somehow, at least try it
+// CHRIS: TODO: wherever we check that an assertion of vertex exists, should we also be checking the status?
+// CHRIS: TODO: timings shouldnt be checked all over the place - it's too weird to reason about
+// CHRIS: TODO: replace all requires with custom errors;
+// CHRIS: TODO: For all arguments implicit and explicit to every function, consider if there's a restriction
 
-    struct StateCommitment {
-        uint256 height;
-        bytes32 stateRoot;
-    }
+// CHRIS: TODO: when winning a challenge you can claim back your ministake. Leaf stake
+// CHRIS: TODO: when your assertion is reject you lose you major stake. Assertion stake.
 
-    struct HistoryCommitment {
-        uint256 height;
-        bytes32 merkleRoot;
-    }
+// INVARIANTS
+// If an assertion exists, the previous assertion also exists
 
-    // Read-only calls.
-    function numAssertions() external view returns (uint256);
+struct Assertion {
+    bytes32 predecessorId;
+    bytes32 successionChallenge;
+    bool isFirstChild;
+    uint256 secondChildCreationTime;
+    uint256 firstChildCreationTime;
+    // CHRIS: TODO: where is this in the spec?
+    // CHRIS: TODO: we can remove these from the contents? - and the prev+height? -
+    // CHRIS: TODO: since we're always using the id to look them up
+    bytes32 stateHash; // CHRIS: TODO: this is a general state hash, not the same as the state root in an ethereum block. This hash contains everything, including inboxmessage count, the block hash and the send root
+    uint256 height;
+    Status status;
+    uint256 inboxMsgCountSeen;
+}
 
-    function challengePeriodSeconds() external view returns (uint256);
-
-    function latestConfirmedAssertion() external view returns (Assertion memory assertion);
-
-    function getAssertion(uint256 seqNum) external view returns (Assertion memory assertion);
-    function getChallenge(bytes32 parentStateCommitHash) external view returns (Challenge memory challenge);
-    function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash)
-        external
-        view
-        returns (ChallengeVertex memory vertex);
-    function challengeWinner(Challenge memory challenge) external returns (Assertion memory assertion);
-    function challengeCompleted(Challenge memory challenge) external returns (bool);
-
-    function eligibleForNewSuccessor(ChallengeVertex memory vertex) external returns (bool);
-
-    function isPresumptiveSuccessor(ChallengeVertex memory vertex) external returns (bool);
-
-    // Mutating calls.
-    function createAssertion(Assertion calldata prev, StateCommitment calldata commit)
-        external
-        payable
-        returns (Assertion memory assertion);
-    function confirmForWin(Assertion calldata assertion) external payable;
-
-    function confirmNoRival(Assertion calldata assertion) external payable;
-
-    function rejectForLoss(Assertion calldata assertion) external payable;
-
-    function rejectForPrev(Assertion calldata assertion) external payable;
-
-    function confirmForPSTimer(ChallengeVertex calldata vertex) external payable;
-
-    function confirmForChallengeDeadline(ChallengeVertex calldata vertex) external payable;
-
-    function confirmForSubchallengeWin(ChallengeVertex calldata vertex) external payable;
-
-    function createChallenge(Assertion calldata prev) external payable returns (Challenge memory challenge);
-    function addChallengeVertex(Assertion calldata assertion, HistoryCommitment calldata history)
-        external
-        payable
-        returns (ChallengeVertex memory vertex);
-    function bisect(ChallengeVertex calldata vertex, HistoryCommitment calldata history, bytes32[] calldata proof)
-        external
-        payable
-        returns (ChallengeVertex memory bisectedVertex);
-    function merge(ChallengeVertex calldata mergingFrom, ChallengeVertex calldata mergingTo, bytes32[] calldata proof)
-        external
-        payable
-        returns (ChallengeVertex memory mergedToVertex);
+interface IInbox {
+    function msgCount() external returns (uint256);
 }
 
 contract AssertionChain is IAssertionChain {
-    // Read-only calls.
-    function numAssertions() external view returns (uint256) {
-        return 0;
+    IChallengeManager challengeManager;
+    mapping(bytes32 => Assertion) public assertions;
+    uint256 public immutable stakeAmount = 100 ether; // CHRIS: TODO: update
+    uint256 public immutable challengePeriod = 1000; // CHRIS: TODO: update in constructor
+    IInbox inbox;
+
+    function challengeManagerAddr() public view returns (address) {
+        return address(0);
     }
 
-    function challengePeriodSeconds() external view returns (uint256) {
-        return 0;
+    // CHRIS: TODO: expensive to do from the challenge contract - could just ask for specific properties?
+    function getAssertion(bytes32 id) public view returns (Assertion memory) {
+        return assertions[id];
     }
 
-    function latestConfirmedAssertion() external view returns (Assertion memory assertion) {
-        revert("unimplemented");
+    function assertionExists(bytes32 assertionId) public view returns (bool) {
+        return assertions[assertionId].stateHash != 0;
     }
 
-    function getAssertion(uint256 seqNum) external view returns (Assertion memory assertion) {
-        revert("unimplemented");
+    function getPredecessorId(bytes32 assertionId) public view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].predecessorId;
     }
 
-    function getChallenge(bytes32 parentStateCommitHash) external view returns (Challenge memory challenge) {
-        revert("unimplemented");
+    function getHeight(bytes32 assertionId) external view returns (uint256) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].height;
     }
 
-    function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash)
-        external
-        view
-        returns (ChallengeVertex memory vertex)
-    {
-        revert("unimplemented");
+    function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].inboxMsgCountSeen;
     }
 
-    function challengeWinner(Challenge memory challenge) external returns (Assertion memory assertion) {
-        revert("unimplemented");
+    function getStateHash(bytes32 assertionId) external view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].stateHash;
     }
 
-    function challengeCompleted(Challenge memory challenge) external returns (bool) {
-        return false;
+    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].successionChallenge;
     }
 
-    function eligibleForNewSuccessor(ChallengeVertex memory vertex) external returns (bool) {
-        return false;
+    function isFirstChild(bytes32 assertionId) external view returns (bool) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].isFirstChild;
     }
 
-    function isPresumptiveSuccessor(ChallengeVertex memory vertex) external returns (bool) {
-        return false;
+    function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].firstChildCreationTime;
     }
 
-    // Mutating calls.
-    function createAssertion(Assertion calldata prev, StateCommitment calldata commit)
-        external
-        payable
-        returns (Assertion memory assertion)
-    {
-        revert("unimplemented");
+    function createNewAssertion(
+        bytes32 stateHash,
+        uint256 height,
+        bytes32 predecessorId
+    ) external {
+        // CHRIS: TODO: library on the assertion
+        // CHRIS: TODO: consider if we should include the prev here? we need to right? but the reference below should be to the state hash
+        bytes32 assertionId = keccak256(abi.encodePacked(stateHash, height, predecessorId));
+
+        // assertions are always unique as they consume a deterministic number of inbox messages
+        // so two different correct assertions do not exist.
+        require(!assertionExists(assertionId), "Assertion already exists");
+
+        // CHRIS: TODO: staker checks here - msg.sender has put down stake and is not staked elsewhere, then update the staker location
+
+        require(assertionExists(predecessorId), "Previous assertion does not exist");
+        require(
+            previousAssertion(assertionId).status != Status.Rejected,
+            "Previous assertion rejected"
+        );
+        require(
+            previousAssertion(assertionId).height < height,
+            "Height not greater than predecessor"
+        );
+
+        bool hasFirstChild = assertions[predecessorId].firstChildCreationTime != 0;
+        if (!hasFirstChild) {
+            // if this is the first child then we update the prev
+            assertions[predecessorId].firstChildCreationTime = block.timestamp;
+        } else {
+            require(
+                block.timestamp <
+                    previousAssertion(assertionId).firstChildCreationTime + challengePeriod,
+                "Too late to create sibling"
+            );
+
+            if (assertions[predecessorId].secondChildCreationTime == 0) {
+                // has the first child creation time passed a certain point?
+                // do we allow siblings to be created after then since in a challenge they should have no time right
+
+                // if this is the second child then we update the prev
+                assertions[predecessorId].secondChildCreationTime = block.timestamp;
+            }
+        }
+
+        assertions[assertionId] = Assertion({
+            predecessorId: predecessorId,
+            successionChallenge: 0,
+            isFirstChild: !hasFirstChild,
+            firstChildCreationTime: 0,
+            secondChildCreationTime: 0,
+            stateHash: stateHash,
+            height: height,
+            status: Status.Pending,
+            inboxMsgCountSeen: inbox.msgCount()
+        });
     }
 
-    function confirmForWin(Assertion calldata assertion) external payable {
-        revert("unimplemented");
+    function addStake() external payable {
+        // CHRIS: TODO: moving stake around is tricky
+        // CHRIS: TODO: can you stake on more than one assertion, even they are direct ancestor?
+        // CHRIS: TODO: do we really allow "any validator" at the top level to take part in any sub challenge
+        require(msg.value == stakeAmount, "Correct stake not provided");
     }
 
-    function confirmNoRival(Assertion calldata assertion) external payable {
-        revert("unimplemented");
+    // CHRIS: TODO: initialisation with an empty assertion - what's the genesis state?
+
+    function previousAssertion(bytes32 assertionId) internal view returns (Assertion storage) {
+        return assertions[assertions[assertionId].predecessorId];
     }
 
-    function rejectForLoss(Assertion calldata assertion) external payable {
-        revert("unimplemented");
+    function updateChallengeManager(IChallengeManager _challengeManager) external {
+        // CHRIS: TODO: this needs access control
+        challengeManager = _challengeManager;
     }
 
-    function rejectForPrev(Assertion calldata assertion) external payable {
-        revert("unimplemented");
+    error NotRejectable(bytes32 assertionId);
+
+    function rejectAssertion(bytes32 assertionId) external {
+        require(assertionExists(assertionId), "Assertion does not exist");
+
+        // we can only reject pending assertions
+        require(assertions[assertionId].status == Status.Pending, "Assertion is not pending");
+
+        // CHRIS: TODO: what happens to stake when we reject a assertion, or confirm it?
+
+        if (previousAssertion(assertionId).status == Status.Rejected) {
+            // the previous assertion was rejected
+            assertions[assertionId].status = Status.Rejected;
+        } else {
+            // CHRIS: TODO: re-arrange this block, it's ugly
+
+            bytes32 successionChallenge = previousAssertion(assertionId).successionChallenge;
+            if (successionChallenge == 0) {
+                revert NotRejectable(assertionId);
+            }
+
+            // CHRIS: TODO: external call, careful!
+            bytes32 winningClaim = challengeManager.winningClaim(successionChallenge);
+            // does the winner return 0
+            if (winningClaim == bytes32(0)) {
+                revert NotRejectable(assertionId);
+            }
+
+            if (winningClaim == assertionId) {
+                revert NotRejectable(assertionId);
+            }
+
+            assertions[assertionId].status = Status.Rejected;
+        }
     }
 
-    function confirmForPSTimer(ChallengeVertex calldata vertex) external payable {
-        revert("unimplemented");
+    // CHRIS: TODO: create assertion lib
+
+    // CHRIS: TODO: better confirm/rejcet errors
+    error NotConfirmable(bytes32 assertionId);
+
+    function confirmAssertion(bytes32 assertionId) external {
+        require(assertionExists(assertionId), "Assertion does not exist");
+
+        require(
+            previousAssertion(assertionId).status == Status.Confirmed,
+            "Previous assertion not confirmed"
+        );
+
+        // CHRIS: TODO: add a test for this:
+        // bad pattern here - create a test case for it, shouldnt be possible now
+        // 1. create child
+        // 2. confirm child by waiting for timeout
+        // 3. create second child
+        // 4. create challenge
+
+        // CHRIS: TODO: this pattern and above in reject isnt nice
+        if (
+            previousAssertion(assertionId).secondChildCreationTime == 0 &&
+            block.timestamp >
+            previousAssertion(assertionId).firstChildCreationTime + challengePeriod
+        ) {
+            assertions[assertionId].status = Status.Confirmed;
+        } else {
+            bytes32 successionChallenge = previousAssertion(assertionId).successionChallenge;
+            if (successionChallenge == 0) {
+                revert NotConfirmable(assertionId);
+            }
+
+            // CHRIS: TODO: external call, careful!
+            bytes32 winner = challengeManager.winningClaim(successionChallenge);
+            if (winner != assertionId) {
+                revert NotRejectable(assertionId);
+            }
+
+            assertions[assertionId].status = Status.Confirmed;
+        }
     }
 
-    function confirmForChallengeDeadline(ChallengeVertex calldata vertex) external payable {
-        revert("unimplemented");
-    }
+    function createSuccessionChallenge(bytes32 assertionId) external {
+        require(assertionExists(assertionId), "Assertion does not exist");
 
-    function confirmForSubchallengeWin(ChallengeVertex calldata vertex) external payable {
-        revert("unimplemented");
-    }
+        // CHRIS: TODO: but what if a much further parent is rejectable
+        // we could get rejected later
+        // from that point of view, why does it matter then if we start on a rejected branch? it will just be immediately rejectable?
+        require(assertions[assertionId].status != Status.Rejected, "Assertion already rejected");
 
-    function createChallenge(Assertion calldata prev) external payable returns (Challenge memory challenge) {
-        revert("unimplemented");
-    }
+        require(assertions[assertionId].successionChallenge == 0, "Challenge already created");
 
-    function addChallengeVertex(Assertion calldata assertion, HistoryCommitment calldata history)
-        external
-        payable
-        returns (ChallengeVertex memory vertex)
-    {
-        revert("unimplemented");
-    }
+        require(
+            assertions[assertionId].secondChildCreationTime != 0,
+            "At least two children not created"
+        );
 
-    function bisect(ChallengeVertex calldata vertex, HistoryCommitment calldata history, bytes32[] calldata proof)
-        external
-        payable
-        returns (ChallengeVertex memory bisectedVertex)
-    {
-        revert("unimplemented");
-    }
+        // CHRIS: TODO: I think this should be secondChildTime + 1 challenge period, and in the endTime of BlockChallenge below
+        // CHRIS: TODO: do we have this requirement in the new paper?
+        require(
+            block.timestamp <
+                assertions[assertionId].firstChildCreationTime + (2 * challengePeriod),
+            "Too late to challenge"
+        );
+        // CHRIS: TODO: answer to the above^^
+        // CHRIS: TODO: if we put the challenge end time right at the start, then it will end very quickly after the pstimer
+        // CHRIS: TODO: condition has been reached. This is a good reason not to ensure there is always plenty of time
+        // CHRIS: TODO: but is there? Ok, so you do the following. You wait - honest person shouldnt wait
+        // CHRIS: TODO: so if you're honest then what? dont wait, start the challenge straight away, then
+        // CHRIS: TODO: you can be sure that you'll have plenty of time to clean up
+        // CHRIS: TODO: basically that's why we always have that extra end on the challenge period!
+        // CHRIS: TODO: write a big comment about this
 
-    function merge(ChallengeVertex calldata mergingFrom, ChallengeVertex calldata mergingTo, bytes32[] calldata proof)
-        external
-        payable
-        returns (ChallengeVertex memory mergedToVertex)
-    {
-        revert("unimplemented");
+        assertions[assertionId].successionChallenge = challengeManager.createChallenge(assertionId);
     }
 }
