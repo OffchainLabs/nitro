@@ -53,8 +53,8 @@ func TestCreateAssertion(t *testing.T) {
 		acc.backend.Commit()
 
 		id := getAssertionId(commit, genesisId)
-		created, err := chain.AssertionByID(id)
-		require.NoError(t, err)
+		created, err2 := chain.AssertionByID(id)
+		require.NoError(t, err2)
 		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
 	t.Run("already exists", func(t *testing.T) {
