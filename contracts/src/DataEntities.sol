@@ -39,7 +39,6 @@ interface IChallengeManager {
     function confirmForSucessionChallengeWin(bytes32 vId) external;
     function hasConfirmedSibling(bytes32 vId) external view returns (bool);
     function isAtOneStepFork(bytes32 vId) external view returns (bool);
-    function isPresumptive(bytes32 vId) external view returns(bool);
     function createChallenge(bytes32 assertionId) external returns (bytes32);
     function createSubChallenge(bytes32 vId) external;
     function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external;

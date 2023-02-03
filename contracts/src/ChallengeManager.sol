@@ -524,15 +524,6 @@ contract ChallengeManager is IChallengeManager {
         }
     }
 
-    function isPresumptive(bytes32 vId) public view returns(bool){
-        // CHRIS: TODO: can remove as this is easy to do in golang
-        require(vertexExists(vId), "Vertex does not exist");
-        bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertexExists(predecessorId), "Predecessor does not exist");
-
-        return vertices[predecessorId].presumptiveSuccessorId == vId;
-    }
-
     function hasConfirmedSibling(bytes32 vId) public view returns (bool) {
         // CHRIS: TODO: consider removal - or put in a lib. COuld be a nice chec in the confirms?
 
