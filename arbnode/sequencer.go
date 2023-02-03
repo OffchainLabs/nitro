@@ -384,7 +384,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 					}
 				}
 			} else {
-				//TODO
+				// TODO
 				return errors.New("Invalid")
 			}
 		}
