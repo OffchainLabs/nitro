@@ -7,7 +7,7 @@ enum Status {
     Rejected
 }
 
-interface IAssertionChainV2 {
+interface IAssertionChain {
     function getPredecessorId(bytes32 assertionId) external view returns (bytes32);
 
     function getHeight(bytes32 assertionId) external view returns (uint256);

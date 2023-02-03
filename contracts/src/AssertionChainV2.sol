@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {Status, IAssertionChainV2, IChallengeManager} from "./DataEntities.sol";
+import {Status, IAssertionChain, IChallengeManager} from "./DataEntities.sol";
 
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
@@ -43,7 +43,7 @@ interface IInbox {
     function msgCount() external returns (uint256);
 }
 
-contract AssertionChainV2 is IAssertionChainV2 {
+contract AssertionChain is IAssertionChain {
     IChallengeManager challengeManager;
     mapping(bytes32 => Assertion) public assertions;
     uint256 public immutable stakeAmount = 100 ether; // CHRIS: TODO: update
