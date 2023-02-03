@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {Status, IAssertionChain, IChallengeManager} from "./DataEntities.sol";
+import {Status, IAssertionChainV2, IChallengeManager} from "./DataEntities.sol";
 
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
@@ -43,12 +43,16 @@ interface IInbox {
     function msgCount() external returns (uint256);
 }
 
-contract AssertionChain is IAssertionChain {
+contract AssertionChainV2 is IAssertionChainV2 {
     IChallengeManager challengeManager;
     mapping(bytes32 => Assertion) public assertions;
     uint256 public immutable stakeAmount = 100 ether; // CHRIS: TODO: update
     uint256 public immutable challengePeriod = 1000; // CHRIS: TODO: update in constructor
     IInbox inbox;
+
+    function challengeManagerAddr() public view returns (address) {
+        return address(0);
+    }
 
     // CHRIS: TODO: expensive to do from the challenge contract - could just ask for specific properties?
     function getAssertion(bytes32 id) public view returns (Assertion memory) {
@@ -94,7 +98,11 @@ contract AssertionChain is IAssertionChain {
         return assertions[assertionId].firstChildCreationTime;
     }
 
-    function createNewAssertion(bytes32 stateHash, uint256 height, bytes32 predecessorId) external {
+    function createNewAssertion(
+        bytes32 stateHash,
+        uint256 height,
+        bytes32 predecessorId
+    ) external {
         // CHRIS: TODO: library on the assertion
         // CHRIS: TODO: consider if we should include the prev here? we need to right? but the reference below should be to the state hash
         bytes32 assertionId = keccak256(abi.encodePacked(stateHash, height, predecessorId));
@@ -106,8 +114,14 @@ contract AssertionChain is IAssertionChain {
         // CHRIS: TODO: staker checks here - msg.sender has put down stake and is not staked elsewhere, then update the staker location
 
         require(assertionExists(predecessorId), "Previous assertion does not exist");
-        require(previousAssertion(assertionId).status != Status.Rejected, "Previous assertion rejected");
-        require(previousAssertion(assertionId).height < height, "Height not greater than predecessor");
+        require(
+            previousAssertion(assertionId).status != Status.Rejected,
+            "Previous assertion rejected"
+        );
+        require(
+            previousAssertion(assertionId).height < height,
+            "Height not greater than predecessor"
+        );
 
         bool hasFirstChild = assertions[predecessorId].firstChildCreationTime != 0;
         if (!hasFirstChild) {
@@ -115,7 +129,8 @@ contract AssertionChain is IAssertionChain {
             assertions[predecessorId].firstChildCreationTime = block.timestamp;
         } else {
             require(
-                block.timestamp < previousAssertion(assertionId).firstChildCreationTime + challengePeriod,
+                block.timestamp <
+                    previousAssertion(assertionId).firstChildCreationTime + challengePeriod,
                 "Too late to create sibling"
             );
 
@@ -203,7 +218,10 @@ contract AssertionChain is IAssertionChain {
     function confirmAssertion(bytes32 assertionId) external {
         require(assertionExists(assertionId), "Assertion does not exist");
 
-        require(previousAssertion(assertionId).status == Status.Confirmed, "Previous assertion not confirmed");
+        require(
+            previousAssertion(assertionId).status == Status.Confirmed,
+            "Previous assertion not confirmed"
+        );
 
         // CHRIS: TODO: add a test for this:
         // bad pattern here - create a test case for it, shouldnt be possible now
@@ -214,8 +232,9 @@ contract AssertionChain is IAssertionChain {
 
         // CHRIS: TODO: this pattern and above in reject isnt nice
         if (
-            previousAssertion(assertionId).secondChildCreationTime == 0
-                && block.timestamp > previousAssertion(assertionId).firstChildCreationTime + challengePeriod
+            previousAssertion(assertionId).secondChildCreationTime == 0 &&
+            block.timestamp >
+            previousAssertion(assertionId).firstChildCreationTime + challengePeriod
         ) {
             assertions[assertionId].status = Status.Confirmed;
         } else {
@@ -244,12 +263,16 @@ contract AssertionChain is IAssertionChain {
 
         require(assertions[assertionId].successionChallenge == 0, "Challenge already created");
 
-        require(assertions[assertionId].secondChildCreationTime != 0, "At least two children not created");
+        require(
+            assertions[assertionId].secondChildCreationTime != 0,
+            "At least two children not created"
+        );
 
         // CHRIS: TODO: I think this should be secondChildTime + 1 challenge period, and in the endTime of BlockChallenge below
         // CHRIS: TODO: do we have this requirement in the new paper?
         require(
-            block.timestamp < assertions[assertionId].firstChildCreationTime + (2 * challengePeriod),
+            block.timestamp <
+                assertions[assertionId].firstChildCreationTime + (2 * challengePeriod),
             "Too late to challenge"
         );
         // CHRIS: TODO: answer to the above^^
