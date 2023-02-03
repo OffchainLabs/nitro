@@ -9,13 +9,14 @@ import "../bridge/SequencerInbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IInbox.sol";
 import "../bridge/Outbox.sol";
+import "../rollup/IBridgeCreator.sol";
 import "./RollupEventInbox.sol";
 
 import "../bridge/IBridge.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
-abstract contract AbsBridgeCreator is Ownable {
+abstract contract AbsBridgeCreator is Ownable, IBridgeCreator {
     IBridge public bridgeTemplate;
     SequencerInbox public sequencerInboxTemplate;
     IInbox public inboxTemplate;

@@ -8,8 +8,9 @@ import "../rollup/AbsBridgeCreator.sol";
 import "../bridge/Bridge.sol";
 import "../bridge/IEthBridge.sol";
 import "../bridge/Inbox.sol";
+import "../rollup/IBridgeCreator.sol";
 
-contract BridgeCreator is AbsBridgeCreator {
+contract BridgeCreator is AbsBridgeCreator, IEthBridgeCreator {
     constructor() AbsBridgeCreator() {
         bridgeTemplate = new Bridge();
         inboxTemplate = new Inbox();

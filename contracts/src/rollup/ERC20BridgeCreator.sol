@@ -8,8 +8,9 @@ import "../rollup/AbsBridgeCreator.sol";
 import "../bridge/ERC20Bridge.sol";
 import "../bridge/IERC20Bridge.sol";
 import "../bridge/ERC20Inbox.sol";
+import "../rollup/IBridgeCreator.sol";
 
-contract ERC20BridgeCreator is AbsBridgeCreator {
+contract ERC20BridgeCreator is AbsBridgeCreator, IERC20BridgeCreator {
     constructor() AbsBridgeCreator() {
         bridgeTemplate = new ERC20Bridge();
         inboxTemplate = new ERC20Inbox();
