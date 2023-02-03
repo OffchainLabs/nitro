@@ -105,6 +105,10 @@ func main() {
 		modInfo.addArtifact(artifact)
 	}
 
+	for module := range modules {
+		fmt.Println(module)
+	}
+
 	for module, info := range modules {
 
 		code, err := bind.Bind(
