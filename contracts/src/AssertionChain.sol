@@ -5,7 +5,7 @@ interface IAssertionChain {
     struct Assertion {
         uint256 seqNum;
         StateCommitment stateCommitment;
-        uint status;
+        uint256 status;
         bool isFirstChild;
         uint256 firstChildCreationTimestamp;
         uint256 secondChildCreationTimestamp;
@@ -37,39 +37,69 @@ interface IAssertionChain {
 
     // Read-only calls.
     function numAssertions() external view returns (uint256);
+
     function challengePeriodSeconds() external view returns (uint256);
+
     function latestConfirmedAssertion() external view returns (Assertion memory assertion);
+
     function getAssertion(uint256 seqNum) external view returns (Assertion memory assertion);
-    function getChallenge(bytes32 parentStateCommitHash) external view returns (Challenge memory challenge);
-    function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash) external view returns (ChallengeVertex memory vertex);
-    function challengeWinner(Challenge memory challenge) external returns (Assertion memory assertion);
+
+    function getChallenge(bytes32 parentStateCommitHash)
+        external
+        view
+        returns (Challenge memory challenge);
+
+    function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash)
+        external
+        view
+        returns (ChallengeVertex memory vertex);
+
+    function challengeWinner(Challenge memory challenge)
+        external
+        returns (Assertion memory assertion);
+
     function challengeCompleted(Challenge memory challenge) external returns (bool);
+
     function eligibleForNewSuccessor(ChallengeVertex memory vertex) external returns (bool);
+
     function isPresumptiveSuccessor(ChallengeVertex memory vertex) external returns (bool);
 
     // Mutating calls.
-    function createAssertion(
-        Assertion calldata prev,
-        StateCommitment calldata commit
-    ) external payable returns (Assertion memory assertion);
+    function createAssertion(Assertion calldata prev, StateCommitment calldata commit)
+        external
+        payable
+        returns (Assertion memory assertion);
+
     function confirmForWin(Assertion calldata assertion) external payable;
+
     function confirmNoRival(Assertion calldata assertion) external payable;
+
     function rejectForLoss(Assertion calldata assertion) external payable;
+
     function rejectForPrev(Assertion calldata assertion) external payable;
+
     function confirmForPSTimer(ChallengeVertex calldata vertex) external payable;
+
     function confirmForChallengeDeadline(ChallengeVertex calldata vertex) external payable;
+
     function confirmForSubchallengeWin(ChallengeVertex calldata vertex) external payable;
 
-    function createChallenge(Assertion calldata prev) external payable returns (Challenge memory challenge);
-    function addChallengeVertex(
-        Assertion calldata assertion,
-        HistoryCommitment calldata history
-    ) external payable returns (ChallengeVertex memory vertex);
+    function createChallenge(Assertion calldata prev)
+        external
+        payable
+        returns (Challenge memory challenge);
+
+    function addChallengeVertex(Assertion calldata assertion, HistoryCommitment calldata history)
+        external
+        payable
+        returns (ChallengeVertex memory vertex);
+
     function bisect(
         ChallengeVertex calldata vertex,
         HistoryCommitment calldata history,
         bytes32[] calldata proof
     ) external payable returns (ChallengeVertex memory bisectedVertex);
+
     function merge(
         ChallengeVertex calldata mergingFrom,
         ChallengeVertex calldata mergingTo,
@@ -82,71 +112,107 @@ contract AssertionChain is IAssertionChain {
     function numAssertions() external view returns (uint256) {
         return 0;
     }
+
     function challengePeriodSeconds() external view returns (uint256) {
         return 0;
     }
+
     function latestConfirmedAssertion() external view returns (Assertion memory assertion) {
         revert("unimplemented");
     }
+
     function getAssertion(uint256 seqNum) external view returns (Assertion memory assertion) {
         revert("unimplemented");
     }
-    function getChallenge(bytes32 parentStateCommitHash) external view returns (Challenge memory challenge) {
+
+    function getChallenge(bytes32 parentStateCommitHash)
+        external
+        view
+        returns (Challenge memory challenge)
+    {
         revert("unimplemented");
     }
-    function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash) external view returns (ChallengeVertex memory vertex) {
+
+    function getChallengeVertex(uint256 seqNum, bytes32 parentStateCommitHash)
+        external
+        view
+        returns (ChallengeVertex memory vertex)
+    {
         revert("unimplemented");
     }
-    function challengeWinner(Challenge memory challenge) external returns (Assertion memory assertion) {
+
+    function challengeWinner(Challenge memory challenge)
+        external
+        returns (Assertion memory assertion)
+    {
         revert("unimplemented");
     }
+
     function challengeCompleted(Challenge memory challenge) external returns (bool) {
         return false;
     }
+
     function eligibleForNewSuccessor(ChallengeVertex memory vertex) external returns (bool) {
         return false;
     }
+
     function isPresumptiveSuccessor(ChallengeVertex memory vertex) external returns (bool) {
         return false;
     }
 
     // Mutating calls.
-    function createAssertion(
-        Assertion calldata prev,
-        StateCommitment calldata commit
-    ) external payable returns (Assertion memory assertion) {
+    function createAssertion(Assertion calldata prev, StateCommitment calldata commit)
+        external
+        payable
+        returns (Assertion memory assertion)
+    {
         revert("unimplemented");
     }
+
     function confirmForWin(Assertion calldata assertion) external payable {
         revert("unimplemented");
     }
+
     function confirmNoRival(Assertion calldata assertion) external payable {
         revert("unimplemented");
     }
+
     function rejectForLoss(Assertion calldata assertion) external payable {
         revert("unimplemented");
     }
+
     function rejectForPrev(Assertion calldata assertion) external payable {
         revert("unimplemented");
     }
+
     function confirmForPSTimer(ChallengeVertex calldata vertex) external payable {
         revert("unimplemented");
     }
+
     function confirmForChallengeDeadline(ChallengeVertex calldata vertex) external payable {
         revert("unimplemented");
     }
+
     function confirmForSubchallengeWin(ChallengeVertex calldata vertex) external payable {
         revert("unimplemented");
     }
-    function createChallenge(Assertion calldata prev) external payable returns (Challenge memory challenge) {
+
+    function createChallenge(Assertion calldata prev)
+        external
+        payable
+        returns (Challenge memory challenge)
+    {
         revert("unimplemented");
     }
-    function addChallengeVertex(
-        Assertion calldata assertion,
-        HistoryCommitment calldata history
-    ) external payable returns (ChallengeVertex memory vertex) {
+
+    function addChallengeVertex(Assertion calldata assertion, HistoryCommitment calldata history)
+        external
+        payable
+        returns (ChallengeVertex memory vertex)
+    {
         revert("unimplemented");
     }
+
     function bisect(
         ChallengeVertex calldata vertex,
         HistoryCommitment calldata history,
@@ -154,6 +220,7 @@ contract AssertionChain is IAssertionChain {
     ) external payable returns (ChallengeVertex memory bisectedVertex) {
         revert("unimplemented");
     }
+
     function merge(
         ChallengeVertex calldata mergingFrom,
         ChallengeVertex calldata mergingTo,
