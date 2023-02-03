@@ -28,4 +28,3 @@ tmp/*
 node_modules/
 contracts/cache
 contracts/out
-solgen/go/
