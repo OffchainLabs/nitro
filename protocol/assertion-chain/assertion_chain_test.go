@@ -7,15 +7,51 @@ import (
 	"testing"
 
 	"context"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	"time"
 )
+
+func TestCreateAssertion(t *testing.T) {
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+	addr, _, _, err := outgen.DeployAssertionChain(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+
+	acc.backend.Commit()
+
+	chain, err := NewAssertionChain(
+		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
+	require.NoError(t, err)
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	_, err = chain.writer.SetupGenesis(acc.txOpts, genesisStateRoot)
+	require.NoError(t, err)
+
+	acc.backend.Commit()
+
+	commit := util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{1}),
+	}
+	genesisId := common.Hash{}
+	_, err = chain.CreateAssertion(commit, genesisId)
+	require.NoError(t, err)
+
+	acc.backend.Commit()
+
+	_, err = chain.CreateAssertion(commit, genesisId)
+	require.NoError(t, err)
+}
 
 func TestChallengePeriodLength(t *testing.T) {
 	ctx := context.Background()

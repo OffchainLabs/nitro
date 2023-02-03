@@ -50,6 +50,21 @@ contract AssertionChain is IAssertionChain {
     uint256 public immutable challengePeriod = 1000; // CHRIS: TODO: update in constructor
     IInbox inbox;
 
+    function setupGenesis(bytes32 stateHash) public {
+        bytes32 assertionId = bytes32(0);
+        assertions[assertionId] = Assertion({
+            predecessorId: assertionId,
+            successionChallenge: 0,
+            isFirstChild: false,
+            firstChildCreationTime: 0,
+            secondChildCreationTime: 0,
+            stateHash: stateHash,
+            height: 0,
+            status: Status.Pending,
+            inboxMsgCountSeen: 0
+        });
+    }
+
     function challengeManagerAddr() public view returns (address) {
         return address(0);
     }
@@ -152,7 +167,8 @@ contract AssertionChain is IAssertionChain {
             stateHash: stateHash,
             height: height,
             status: Status.Pending,
-            inboxMsgCountSeen: inbox.msgCount()
+            // inboxMsgCountSeen: inbox.msgCount()
+            inboxMsgCountSeen: 0
         });
     }
 
