@@ -59,7 +59,7 @@ func NewAssertionChain(
 }
 
 // ChallengePeriod length in seconds.
-func (ac *AssertionChain) ChalengePeriodLength() (time.Duration, error) {
+func (ac *AssertionChain) ChallengePeriodLength() (time.Duration, error) {
 	res, err := ac.caller.ChallengePeriod(ac.callOpts)
 	if err != nil {
 		return time.Second, err

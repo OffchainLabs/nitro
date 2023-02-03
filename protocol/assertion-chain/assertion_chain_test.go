@@ -30,7 +30,7 @@ func TestChallengePeriodLength(t *testing.T) {
 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-	chalPeriod, err := chain.ChalengePeriodLength()
+	chalPeriod, err := chain.ChallengePeriodLength()
 	require.NoError(t, err)
 	require.Equal(t, time.Second*1000, chalPeriod)
 }
