@@ -359,8 +359,8 @@ contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
 
-contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic globals) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/globals.wasm
+contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm
 
 contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize

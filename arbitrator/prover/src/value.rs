@@ -13,6 +13,7 @@ use sha3::Keccak256;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
+    ops::Add,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
@@ -153,6 +154,16 @@ impl ProgramCounter {
 
     pub fn inst(self) -> usize {
         self.inst as usize
+    }
+}
+
+impl Add<u32> for ProgramCounter {
+    type Output = ProgramCounter;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        let mut counter = self;
+        counter.inst += rhs;
+        counter
     }
 }
 

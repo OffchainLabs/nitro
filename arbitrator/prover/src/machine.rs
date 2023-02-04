@@ -17,7 +17,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Color};
+use arbutil::{crypto, math, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -723,12 +723,20 @@ impl PreimageResolverWrapper {
 }
 
 #[derive(Clone, Debug)]
+struct ErrorContext {
+    frame_stack: usize,
+    value_stack: usize,
+    on_error: ProgramCounter,
+}
+
+#[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
     frame_stack: Vec<StackFrame>,
+    gaurds: Vec<ErrorContext>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -747,15 +755,34 @@ where
     I: IntoIterator<Item = D>,
     D: AsRef<[u8]>,
 {
+    hash_stack_with_heights(stack, &[], prefix).0
+}
+
+fn hash_stack_with_heights<I, D>(
+    stack: I,
+    mut heights: &[usize],
+    prefix: &str,
+) -> (Bytes32, Vec<Bytes32>)
+where
+    I: IntoIterator<Item = D>,
+    D: AsRef<[u8]>,
+{
+    let mut parts = vec![];
     let mut hash = Bytes32::default();
-    for item in stack.into_iter() {
-        let mut h = Keccak256::new();
-        h.update(prefix);
-        h.update(item.as_ref());
-        h.update(hash);
-        hash = h.finalize().into();
+    for (index, item) in stack.into_iter().enumerate() {
+        let mut preimage = prefix.as_bytes().to_vec();
+        preimage.extend(item.as_ref());
+        preimage.extend(hash.0);
+        hash = crypto::keccak(&preimage).into();
+
+        if let Some(&height) = heights.first() {
+            if height == index {
+                parts.push(hash);
+                heights = &heights[1..];
+            }
+        }
     }
-    hash
+    (hash, parts)
 }
 
 fn hash_value_stack(stack: &[Value]) -> Bytes32 {
@@ -1252,6 +1279,7 @@ impl Machine {
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
+            gaurds: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
         };
@@ -1305,6 +1333,7 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
+            gaurds: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
         };
@@ -1601,11 +1630,21 @@ impl Machine {
                 error!("")
             };
             ($format:expr $(,$message:expr)*) => {{
-                println!("error on line {}", line!());
-                println!($format, $($message.red()),*);
-                self.status = MachineStatus::Errored;
-                println!("Backtrace:");
+                println!("\n{} {}", "error on line".grey(), line!().pink());
+                println!($format, $($message.pink()),*);
+                println!("{}", "Backtrace:".grey());
                 self.print_backtrace(true);
+                if let Some(context) = self.gaurds.pop() {
+                    println!("{}", "Recovering...".pink());
+                    assert!(self.frame_stack.len() >= context.frame_stack);
+                    assert!(self.value_stack.len() >= context.value_stack);
+                    self.frame_stack.truncate(context.frame_stack);
+                    self.value_stack.truncate(context.value_stack);
+                    self.pc = context.on_error;
+                    reset_refs!();
+                    continue;
+                }
+                self.status = MachineStatus::Errored;
                 module = &mut self.modules[self.pc.module()];
                 break;
             }};
@@ -1805,7 +1844,7 @@ impl Machine {
                         error!()
                     };
                     let Some(value) = module.memory.get_value(index, ty, bytes, signed) else {
-                        error!()
+                        error!("failed to read offset {}", index)
                     };
                     self.value_stack.push(value);
                 }
@@ -2171,6 +2210,18 @@ impl Machine {
                     }
                     reset_refs!();
                 }
+                Opcode::PushErrorGaurd => {
+                    let context = ErrorContext {
+                        frame_stack: self.frame_stack.len(),
+                        value_stack: self.value_stack.len(),
+                        on_error: self.pc + 1,
+                    };
+                    self.gaurds.push(context);
+                    self.value_stack.push(1_u32.into());
+                }
+                Opcode::PopErrorGaurd => {
+                    self.gaurds.pop();
+                }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
                     break;
@@ -2291,19 +2342,48 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
+    fn stack_hashes(&self) -> (Bytes32, Bytes32, Option<Bytes32>) {
+        let heights: Vec<_> = self.gaurds.iter().map(|x| x.value_stack).collect();
+        let values = self.value_stack.iter().map(|v| v.hash());
+        let (value_stack, values) = hash_stack_with_heights(values, &heights, "Value stack:");
+
+        let heights: Vec<_> = self.gaurds.iter().map(|x| x.frame_stack).collect();
+        let frames = self.frame_stack.iter().map(|v| v.hash());
+        let (frame_stack, frames) = hash_stack_with_heights(frames, &heights, "Stack frame stack:");
+
+        let pcs = self.gaurds.iter().map(|x| x.on_error);
+        let mut gaurd: Vec<Bytes32> = vec![];
+
+        for (value, (frame, pc)) in values.iter().zip(frames.iter().zip(pcs)) {
+            let mut preimage = value.to_vec();
+            preimage.extend(frame.0);
+            preimage.extend(pc.serialize());
+            gaurd.push(crypto::keccak(&preimage).into());
+        }
+        let contexts = (!gaurd.is_empty()).then(|| hash_stack(gaurd, "Error guard:"));
+        (value_stack, frame_stack, contexts)
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
+                let (value_stack, frame_stack, guards) = self.stack_hashes();
+
                 h.update(b"Machine running:");
-                h.update(hash_value_stack(&self.value_stack));
+                h.update(value_stack);
                 h.update(hash_value_stack(&self.internal_stack));
-                h.update(hash_stack_frame_stack(&self.frame_stack));
+                h.update(frame_stack);
                 h.update(self.global_state.hash());
                 h.update(self.pc.module.to_be_bytes());
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
+
+                if let Some(guards) = guards {
+                    h.update(b"Error gaurds:");
+                    h.update(guards);
+                }
             }
             MachineStatus::Finished => {
                 h.update("Machine finished:");
