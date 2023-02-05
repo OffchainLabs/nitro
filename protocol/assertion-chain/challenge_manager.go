@@ -27,7 +27,6 @@ type ChallengeManager struct {
 
 // Challenge is a wrapper around solgen bindings.
 type Challenge struct {
-	inner outgen.Challenge
 }
 
 // ChallengeVertex is a wrapper around solgen bindings.

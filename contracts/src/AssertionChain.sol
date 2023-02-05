@@ -47,8 +47,24 @@ contract AssertionChain is IAssertionChain {
     IChallengeManager challengeManager;
     mapping(bytes32 => Assertion) public assertions;
     uint256 public immutable stakeAmount = 100 ether; // CHRIS: TODO: update
-    uint256 public immutable challengePeriod = 1000; // CHRIS: TODO: update in constructor
+    uint256 public challengePeriodSeconds;
     IInbox inbox;
+
+    constructor(bytes32 stateHash, uint256 _challengePeriodSeconds) public {
+        challengePeriodSeconds = _challengePeriodSeconds;
+        bytes32 assertionId = bytes32(0);
+        assertions[assertionId] = Assertion({
+            predecessorId: assertionId,
+            successionChallenge: 0,
+            isFirstChild: false,
+            firstChildCreationTime: 0,
+            secondChildCreationTime: 0,
+            stateHash: stateHash,
+            height: 0,
+            status: Status.Pending,
+            inboxMsgCountSeen: 0
+        });
+    }
 
     function challengeManagerAddr() public view returns (address) {
         return address(0);
@@ -130,7 +146,7 @@ contract AssertionChain is IAssertionChain {
         } else {
             require(
                 block.timestamp <
-                    previousAssertion(assertionId).firstChildCreationTime + challengePeriod,
+                    previousAssertion(assertionId).firstChildCreationTime + challengePeriodSeconds,
                 "Too late to create sibling"
             );
 
@@ -152,7 +168,8 @@ contract AssertionChain is IAssertionChain {
             stateHash: stateHash,
             height: height,
             status: Status.Pending,
-            inboxMsgCountSeen: inbox.msgCount()
+            // TODO: Initialize inbox in constructor.
+            inboxMsgCountSeen: 0
         });
     }
 
@@ -234,7 +251,7 @@ contract AssertionChain is IAssertionChain {
         if (
             previousAssertion(assertionId).secondChildCreationTime == 0 &&
             block.timestamp >
-            previousAssertion(assertionId).firstChildCreationTime + challengePeriod
+            previousAssertion(assertionId).firstChildCreationTime + challengePeriodSeconds
         ) {
             assertions[assertionId].status = Status.Confirmed;
         } else {
@@ -272,7 +289,7 @@ contract AssertionChain is IAssertionChain {
         // CHRIS: TODO: do we have this requirement in the new paper?
         require(
             block.timestamp <
-                assertions[assertionId].firstChildCreationTime + (2 * challengePeriod),
+                assertions[assertionId].firstChildCreationTime + (2 * challengePeriodSeconds),
             "Too late to challenge"
         );
         // CHRIS: TODO: answer to the above^^
