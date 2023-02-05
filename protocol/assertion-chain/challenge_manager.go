@@ -15,7 +15,6 @@ type ChallengeManager struct {
 
 // Challenge is a wrapper around solgen bindings.
 type Challenge struct {
-	inner outgen.Challenge
 }
 
 // ChallengeManager returns an instance of the current challenge manager
