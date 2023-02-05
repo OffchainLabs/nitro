@@ -1,12 +1,11 @@
 package assertionchain
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"testing"
-
-	"context"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
@@ -142,6 +141,48 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
 	require.Equal(t, time.Second, chalPeriod)
+}
+
+func TestCreateSuccessionChallenge(t *testing.T) {
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	addr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(30),
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	chain, err := NewAssertionChain(
+		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
+	require.NoError(t, err)
+
+	commit1 := util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{1}),
+	}
+	genesisId := common.Hash{}
+
+	err = chain.createAssertion(commit1, genesisId)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	commit2 := util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{2}),
+	}
+	err = chain.createAssertion(commit2, genesisId)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	require.NoError(t, chain.CreateSuccessionChallenge(genesisId))
+	chain.CreateSuccessionChallenge(genesisId)
 }
 
 // Represents a test EOA account in the simulated backend,
