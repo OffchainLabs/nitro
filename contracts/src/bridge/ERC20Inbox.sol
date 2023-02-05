@@ -95,6 +95,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         override(AbsInbox, IInbox)
         returns (uint256)
     {
+        // submission cost is set to 0 because we use AnyTrust protocol in which batches are not posted to L1
         return 0;
     }
 

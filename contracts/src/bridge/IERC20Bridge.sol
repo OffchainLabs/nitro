@@ -10,7 +10,10 @@ import "./IBridge.sol";
 
 interface IERC20Bridge is IBridge {
     /**
-     * @dev token that is escrowed in bridge on L1 side and minted on L2 as native currency
+     * @dev token that is escrowed in bridge on L1 side and minted on L2 as native currency.
+     * Also fees are paid in this token. ERC777, fee on transfer tokens and rebasing tokens
+     * are not supported to be used as chain's native token, as they can break collateralization
+     * invariants.
      */
     function nativeToken() external returns (address);
 
