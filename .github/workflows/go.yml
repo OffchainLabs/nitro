@@ -105,16 +105,16 @@ jobs:
         run: cd contracts
       
       - name: Install Foundry
-          uses: foundry-rs/foundry-toolchain@v1
-          with:
-            version: nightly
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
       
       - name: Setup node/yarn
-          uses: actions/setup-node@v3
-          with:
-            node-version: 16
-            cache: 'yarn'
-            cache-dependency-path: '**/yarn.lock'
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
         
       - name: Install packages
         run: yarn
