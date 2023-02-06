@@ -202,48 +202,11 @@ func TestCreateSuccessionChallenge_Fails(t *testing.T) {
 }
 
 func TestCreateSuccessionChallenge(t *testing.T) {
-	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriodSeconds := big.NewInt(30)
-	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		challengePeriodSeconds,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	// Chain contract should be deployed.
-	code, err := acc.backend.CodeAt(ctx, assertionChainAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
-
-	// miniStakeValue := big.NewInt(1)
-	// chalManagerAddr, _, _, err := outgen.DeployChallengeManager(
-	// 	acc.txOpts,
-	// 	acc.backend,
-	// 	assertionChainAddr,
-	// 	miniStakeValue,
-	// 	challengePeriodSeconds,
-	// 	common.Address{}, // OSP entry contract.
-	// )
-	// require.NoError(t, err)
-	// acc.backend.Commit()
-	// _ = chalManagerAddr
-
-	chain, err := NewAssertionChain(
-		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
-
 	genesisId := common.Hash{}
 
 	t.Run("assertion does not exist", func(t *testing.T) {
-		err = chain.CreateSuccessionChallenge([32]byte{9})
+		chain, _ := setupAssertionChainWithChallengeManager(t)
+		err := chain.CreateSuccessionChallenge([32]byte{9})
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 	t.Run("assertion already rejected", func(t *testing.T) {
@@ -252,7 +215,8 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 	})
 	t.Run("at least two children required", func(t *testing.T) {
-		err = chain.CreateSuccessionChallenge(genesisId)
+		chain, acc := setupAssertionChainWithChallengeManager(t)
+		err := chain.CreateSuccessionChallenge(genesisId)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 
 		commit1 := util.StateCommitment{
@@ -267,15 +231,108 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		err = chain.CreateSuccessionChallenge(genesisId)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
+
 	t.Run("too late to challenge", func(t *testing.T) {
-		t.Skip("Advance the backend's time reference")
+		chain, acc := setupAssertionChainWithChallengeManager(t)
+		commit1 := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte{1}),
+		}
+
+		err := chain.createAssertion(commit1, genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		commit2 := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte{2}),
+		}
+
+		err = chain.createAssertion(commit2, genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		challengePeriod, err := chain.ChallengePeriodSeconds()
+		require.NoError(t, err)
+
+		// Adds two challenge periods to the chain timestamp.
+		err = acc.backend.AdjustTime(challengePeriod * 2)
+		require.NoError(t, err)
+
+		err = chain.CreateSuccessionChallenge(genesisId)
+		require.ErrorIs(t, err, ErrTooLate)
 	})
 	t.Run("OK", func(t *testing.T) {
-		t.Skip("Advance the backend's time reference")
+		t.Skip("Deploy chal manager")
+		chain, acc := setupAssertionChainWithChallengeManager(t)
+		commit1 := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte{1}),
+		}
+
+		err := chain.createAssertion(commit1, genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		commit2 := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte{2}),
+		}
+
+		err = chain.createAssertion(commit2, genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		err = chain.CreateSuccessionChallenge(genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
 	})
 	t.Run("challenge already exists", func(t *testing.T) {
 		t.Skip("Create a fork and successful challenge first")
 	})
+}
+
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
+	t.Helper()
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	challengePeriod := uint64(30)
+	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(int64(challengePeriod)),
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	// Chain contract should be deployed.
+	code, err := acc.backend.CodeAt(ctx, assertionChainAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, true, len(code) > 0)
+
+	chain, err := NewAssertionChain(
+		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
+	require.NoError(t, err)
+
+	// miniStakeValue := big.NewInt(1)
+	// chalManagerAddr, _, _, err := outgen.DeployChallengeManager(
+	// 	acc.txOpts,
+	// 	acc.backend,
+	// 	assertionChainAddr,
+	// 	miniStakeValue,
+	// 	challengePeriodSeconds,
+	// 	common.Address{}, // OSP entry contract.
+	// )
+	// require.NoError(t, err)
+	// acc.backend.Commit()
+	// _ = chalManagerAddr
+
+	return chain, acc
 }
 
 // Represents a test EOA account in the simulated backend,
