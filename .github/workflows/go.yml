@@ -92,3 +92,36 @@ jobs:
       run: bazel build //...
     - name: test 
       run: bazel test //... --build_manual_tests
+  
+  sol-test:
+    name: Solidity tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      # - name: Change directory to contracts
+      #   run: cd contracts
+      
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      
+      - name: Setup node/yarn
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+        
+      - name: Install packages
+        run: yarn
+
+      - name: Run tests
+        run: forge test
+
