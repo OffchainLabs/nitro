@@ -96,13 +96,16 @@ jobs:
   sol-test:
     name: Solidity tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
 
-      - name: Change directory to contracts
-        run: cd contracts
+      # - name: Change directory to contracts
+      #   run: cd contracts
       
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
