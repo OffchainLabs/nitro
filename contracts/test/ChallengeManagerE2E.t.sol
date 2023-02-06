@@ -5,18 +5,6 @@ import "forge-std/Test.sol";
 import "../src/DataEntities.sol";
 import "./MockAssertionChain.sol";
 import "../src/ChallengeManager.sol";
-import "../src/osp/IOneStepProofEntry.sol";
-
-contract MockOneStepProofEntry is IOneStepProofEntry {
-    function proveOneStep(
-        ExecutionContext calldata,
-        uint256,
-        bytes32,
-        bytes calldata proof
-    ) external view returns (bytes32 afterHash) {
-        return bytes32(proof);
-    }
-}
 
 contract ChallengeManagerE2ETest is Test {
     function generateHash(uint256 iterations) internal pure returns (bytes32 h) {
@@ -38,8 +26,7 @@ contract ChallengeManagerE2ETest is Test {
 
     function deploy() internal returns (MockAssertionChain, ChallengeManager, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
-        ChallengeManager challengeManager =
-            new ChallengeManager(uint256(1));
+        ChallengeManager challengeManager = new ChallengeManager(assertionChain, miniStakeVal, challengePeriod);
         bytes32 genesis = assertionChain.addAssertionUnsafe(0, 0, 0, genesisHash, 0);
 
         return (assertionChain, challengeManager, genesis);
@@ -171,139 +158,6 @@ contract ChallengeManagerE2ETest is Test {
         challengeManager.confirmForPsTimer(b14);
         challengeManager.confirmForPsTimer(b18);
         challengeManager.confirmForPsTimer(v1Id);
-
-        assertEq(challengeManager.winningClaim(blockChallengeId), a1);
-    }
-
-    function bisectToRoot(IChallengeManager challengeManager, bytes32 winningLeaf, bytes32 losingLeaf)
-        internal
-        returns (bytes32[5] memory, bytes32[5] memory)
-    {
-        bytes32[5] memory winningVertices;
-        bytes32[5] memory losingVertices;
-
-        winningVertices[4] = winningLeaf;
-        losingVertices[4] = losingLeaf;
-
-        // height 8
-        winningVertices[3] = challengeManager.bisect(winningVertices[4], h1, "");
-        losingVertices[3] = challengeManager.bisect(losingVertices[4], h2, "");
-
-        // height 4
-        winningVertices[2] = challengeManager.bisect(winningVertices[3], h1, "");
-        losingVertices[2] = challengeManager.bisect(losingVertices[3], h2, "");
-
-        // height 2
-        winningVertices[1] = challengeManager.bisect(winningVertices[2], h1, "");
-        losingVertices[1] = challengeManager.bisect(losingVertices[2], h2, "");
-
-        // height 1
-        winningVertices[0] = challengeManager.bisect(winningVertices[1], h1, "");
-        losingVertices[0] = challengeManager.bisect(losingVertices[1], h2, "");
-
-        return (winningVertices, losingVertices);
-    }
-
-    function addLeaf(
-        IChallengeManager challengeManager,
-        bytes32 challengeId,
-        bytes32 claimId,
-        bytes32 historyCommitment,
-        bytes memory proof2
-    ) internal returns (bytes32) {
-        return challengeManager.addLeaf{value: miniStakeVal}(
-            AddLeafArgs({
-                challengeId: challengeId,
-                claimId: claimId,
-                height: height1,
-                historyCommitment: historyCommitment,
-                firstState: genesisHash,
-                firstStatehistoryProof: "",
-                lastState: historyCommitment,
-                lastStatehistoryProof: ""
-            }),
-            abi.encodePacked(historyCommitment),
-            proof2
-        );
-    }
-
-    function addLeafsAndBisectToSubChallenge(
-        IChallengeManager challengeManager,
-        bytes32 challengeId,
-        bytes32 claimId1,
-        bytes32 historyCommitment1,
-        bytes32 claimId2,
-        bytes32 historyCommitment2,
-        bytes memory addLeafProof2
-    ) internal returns (bytes32[5] memory, bytes32[5] memory) {
-        bytes32 blockLeaf1Id = addLeaf(challengeManager, challengeId, claimId1, historyCommitment1, addLeafProof2);
-        bytes32 blockLeaf2Id = addLeaf(challengeManager, challengeId, claimId2, historyCommitment2, addLeafProof2);
-        (bytes32[5] memory challengeWinningVertices, bytes32[5] memory challengeLosingVertices) =
-            bisectToRoot(challengeManager, blockLeaf1Id, blockLeaf2Id);
-
-        return (challengeWinningVertices, challengeLosingVertices);
-    }
-
-    function testCanConfirmFromOneStep() public {
-        (, ChallengeManager challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
-            deployAndInitChallenge();
-
-        (bytes32[5] memory blockWinners, bytes32[5] memory blockLosers) = addLeafsAndBisectToSubChallenge(
-            challengeManager, blockChallengeId, a1, h1, a2, h2, abi.encodePacked(uint256(0))
-        );
-
-        bytes32 bigStepChallengeId =
-            challengeManager.createSubChallenge(challengeManager.getVertex(blockWinners[0]).predecessorId);
-        (bytes32[5] memory bigStepWinners, bytes32[5] memory bigStepLosers) = addLeafsAndBisectToSubChallenge(
-            challengeManager, bigStepChallengeId, blockWinners[0], h1, blockLosers[0], h2, abi.encodePacked(uint256(0))
-        );
-
-        bytes32 smallStepChallengeId =
-            challengeManager.createSubChallenge(challengeManager.getVertex(bigStepWinners[0]).predecessorId);
-
-        (bytes32[5] memory smallStepWinners, ) = addLeafsAndBisectToSubChallenge(
-            challengeManager, smallStepChallengeId, bigStepWinners[0], h1, bigStepLosers[0], h2, abi.encodePacked(height1)
-        );
-
-
-        challengeManager.createSubChallenge(challengeManager.getVertex(smallStepWinners[0]).predecessorId);
-        uint256 height = challengeManager.getVertex(smallStepWinners[0]).height - 1;
-
-        challengeManager.executeOneStep(
-            smallStepWinners[0],
-            ChallengeManager.OneStepData({
-                execCtx: ExecutionContext({
-                    maxInboxMessagesRead: 0,
-                    bridge: IBridge(address(0))
-                }),
-                machineStep: height,
-                beforeHash: genesisHash,
-                proof: abi.encodePacked(bytes32(smallStepWinners[0]))
-            }),
-            "",
-            ""
-        );
-
-        challengeManager.confirmForSucessionChallengeWin(smallStepWinners[0]);
-        
-        vm.warp(challengePeriod + 2);
-        challengeManager.confirmForPsTimer(smallStepWinners[1]);
-        challengeManager.confirmForPsTimer(smallStepWinners[2]);
-        challengeManager.confirmForPsTimer(smallStepWinners[3]);
-        challengeManager.confirmForPsTimer(smallStepWinners[4]);
-        
-
-        challengeManager.confirmForSucessionChallengeWin(bigStepWinners[0]);
-        challengeManager.confirmForPsTimer(bigStepWinners[1]);
-        challengeManager.confirmForPsTimer(bigStepWinners[2]);
-        challengeManager.confirmForPsTimer(bigStepWinners[3]);
-        challengeManager.confirmForPsTimer(bigStepWinners[4]);
-
-        challengeManager.confirmForSucessionChallengeWin(blockWinners[0]);
-        challengeManager.confirmForPsTimer(blockWinners[1]);
-        challengeManager.confirmForPsTimer(blockWinners[2]);
-        challengeManager.confirmForPsTimer(blockWinners[3]);
-        challengeManager.confirmForPsTimer(blockWinners[4]);
 
         assertEq(challengeManager.winningClaim(blockChallengeId), a1);
     }
