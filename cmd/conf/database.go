@@ -15,16 +15,19 @@ import (
 type PersistentConfig struct {
 	GlobalConfig string `koanf:"global-config"`
 	Chain        string `koanf:"chain"`
+	Handles      int    `koanf:"handles"`
 }
 
 var PersistentConfigDefault = PersistentConfig{
 	GlobalConfig: ".arbitrum",
 	Chain:        "",
+	Handles:      512,
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
+	f.Int(prefix+".handles", PersistentConfigDefault.Handles, "number of file descriptor handles to use for the database")
 }
 
 func (c *PersistentConfig) ResolveDirectoryNames() error {
