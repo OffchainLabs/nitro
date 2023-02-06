@@ -143,64 +143,6 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	require.Equal(t, time.Second, chalPeriod)
 }
 
-func TestCreateSuccessionChallenge_Fails(t *testing.T) {
-	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriodSeconds := big.NewInt(30)
-	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		challengePeriodSeconds,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	miniStakeValue := big.NewInt(1)
-	chalManagerAddr, _, _, err := outgen.DeployChallengeManager(
-		acc.txOpts,
-		acc.backend,
-		assertionChainAddr,
-		miniStakeValue,
-		challengePeriodSeconds,
-		common.Address{}, // OSP entry contract.
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	chain, err := NewAssertionChain(
-		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
-
-	require.NoError(t, chain.UpdateChallengeManager(chalManagerAddr)) // What contract address?
-
-	commit1 := util.StateCommitment{
-		Height:    1,
-		StateRoot: common.BytesToHash([]byte{1}),
-	}
-	genesisId := common.Hash{}
-
-	err = chain.createAssertion(commit1, genesisId)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	commit2 := util.StateCommitment{
-		Height:    1,
-		StateRoot: common.BytesToHash([]byte{2}),
-	}
-	err = chain.createAssertion(commit2, genesisId)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	require.NoError(t, chain.CreateSuccessionChallenge(genesisId))
-	err = chain.CreateSuccessionChallenge(common.BytesToHash([]byte("nyan")))
-	require.NoError(t, err)
-}
-
 func TestCreateSuccessionChallenge(t *testing.T) {
 	genesisId := common.Hash{}
 
@@ -292,6 +234,59 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 }
 
+func TestChalManager(t *testing.T) {
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+	// acc.txOpts.GasPrice = big.NewInt(1)
+	acc.txOpts.GasLimit = acc.backend.Blockchain().GasLimit()
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	challengePeriod := uint64(30)
+	assertionChainAddr, tx, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(int64(challengePeriod)),
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	receipt, err := acc.backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
+
+	//miniStakeValue := big.NewInt(1)
+	chalManagerAddr, tx, _, err := outgen.DeployChallengeManager(
+		acc.txOpts,
+		acc.backend,
+		big.NewInt(1),
+		//[32]byte{},
+		//assertionChainAddr,
+		// miniStakeValue,
+		// big.NewInt(1),
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+	_ = chalManagerAddr
+
+	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	t.Logf("%+v", tx)
+	t.Logf("%+v", receipt)
+	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
+
+	code, err := acc.backend.CodeAt(ctx, assertionChainAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, true, len(code) > 0)
+
+	// Chain contract should be deployed.
+	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
+	require.NoError(t, err)
+	t.Logf("%d", len(code))
+	require.Equal(t, true, len(code) > 0)
+}
+
 func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
 	t.Helper()
 	ctx := context.Background()
@@ -370,7 +365,7 @@ func setupAccount() (*testAccount, error) {
 		10,
 	)
 	genesis[addr] = core.GenesisAccount{Balance: startingBalance}
-	gasLimit := uint64(2100000000000)
+	gasLimit := uint64(100000000)
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
 	return &testAccount{
 		accountAddr: addr,

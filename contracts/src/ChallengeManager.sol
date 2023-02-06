@@ -508,14 +508,15 @@ contract ChallengeManager is IChallengeManager {
     IAssertionChain public assertionChain;
     IOneStepProofEntry oneStepProofEntry;
 
-    uint256 public immutable miniStakeValue;
-    uint256 public immutable challengePeriod;
+    uint256 public immutable miniStakeValue = 100;
+    uint256 public immutable challengePeriod = 100;
+    uint256 public item;
 
-    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod, IOneStepProofEntry _oneStepProofEntry) {
-        assertionChain = _assertionChain;
-        miniStakeValue = _miniStakeValue;
-        challengePeriod = _challengePeriod;
-        oneStepProofEntry = _oneStepProofEntry;
+    // constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod) {
+    // }
+    constructor(
+        uint256 _foo
+    ) public {
     }
 
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent

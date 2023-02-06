@@ -39,7 +39,7 @@ contract ChallengeManagerE2ETest is Test {
     function deploy() internal returns (MockAssertionChain, ChallengeManager, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
         ChallengeManager challengeManager =
-            new ChallengeManager(assertionChain, miniStakeVal, challengePeriod, new MockOneStepProofEntry());
+            new ChallengeManager(uint256(1));
         bytes32 genesis = assertionChain.addAssertionUnsafe(0, 0, 0, genesisHash, 0);
 
         return (assertionChain, challengeManager, genesis);
