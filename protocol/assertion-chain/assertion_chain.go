@@ -145,6 +145,8 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) err
 	switch {
 	case err == nil:
 		return nil
+	case strings.Contains(err.Error(), "Assertion does not exist"):
+		return errors.Wrapf(ErrNotFound, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "Assertion already rejected"):
 		return errors.Wrapf(ErrRejectedAssertion, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "Challenge already created"):
