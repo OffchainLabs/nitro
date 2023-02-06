@@ -157,6 +157,11 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) err
 	return err
 }
 
+func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
+	_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
+	return err
+}
+
 func handleCreateAssertionError(err error, commitment util.StateCommitment) error {
 	if err == nil {
 		return nil

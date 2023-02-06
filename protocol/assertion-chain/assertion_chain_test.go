@@ -163,6 +163,8 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	require.NoError(t, chain.UpdateChallengeManager(common.Address{})) // What contract address?
+
 	commit1 := util.StateCommitment{
 		Height:    1,
 		StateRoot: common.BytesToHash([]byte{1}),
