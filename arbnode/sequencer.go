@@ -527,10 +527,11 @@ var sequencerInternalError = errors.New("sequencer internal error")
 
 func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
 	return &arbos.SequencingHooks{
-		PreTxFilter:            s.preTxFilter,
-		PostTxFilter:           s.postTxFilter,
-		DiscardInvalidTxsEarly: true,
-		TxErrors:               []error{},
+		PreTxFilter:             s.preTxFilter,
+		PostTxFilter:            s.postTxFilter,
+		DiscardInvalidTxsEarly:  true,
+		TxErrors:                []error{},
+		ConditionalOptionsForTx: nil,
 	}
 }
 
@@ -717,10 +718,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
 	txes := make([]*types.Transaction, len(queueItems))
-	options := make([]*arbitrum_types.ConditionalOptions, len(queueItems))
+	hooks := s.makeSequencingHooks()
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
-		options[i] = queueItem.options
+		if queueItem.options != nil {
+			hooks.ConditionalOptionsForTx[queueItem.tx.Hash()] = queueItem.options
+		}
 	}
 
 	if s.handleInactive(ctx, queueItems) {
@@ -752,9 +755,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
-	hooks := s.makeSequencingHooks()
 	start := time.Now()
-	block, err := s.txStreamer.SequenceTransactions(header, txes, options, hooks)
+	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
 	if elapsed >= time.Second*5 {

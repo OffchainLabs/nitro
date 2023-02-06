@@ -18,7 +18,6 @@ import (
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
-	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
@@ -830,7 +829,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, nil, s.reorgSequencing())
+		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing())
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
@@ -838,13 +837,13 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 	}
 }
 
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, options []*arbitrum_types.ConditionalOptions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	return s.sequenceTransactionsWithInsertionMutex(header, txes, options, hooks)
+	return s.sequenceTransactionsWithInsertionMutex(header, txes, hooks)
 }
 
-func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, options []*arbitrum_types.ConditionalOptions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	s.reorgMutex.RLock()
@@ -884,7 +883,6 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		txes,
-		options,
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,

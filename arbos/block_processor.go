@@ -80,10 +80,11 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 }
 
 type SequencingHooks struct {
-	TxErrors               []error
-	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address) error
-	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	TxErrors                []error
+	DiscardInvalidTxsEarly  bool
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address) error
+	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	ConditionalOptionsForTx map[common.Hash]*arbitrum_types.ConditionalOptions
 }
 
 func noopSequencingHooks() *SequencingHooks {
@@ -96,6 +97,7 @@ func noopSequencingHooks() *SequencingHooks {
 		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
+		nil,
 	}
 }
 
@@ -134,7 +136,7 @@ func ProduceBlock(
 
 	hooks := noopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, nil, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -145,7 +147,6 @@ var ErrMaxGasLimitReached = fmt.Errorf("%w", core.ErrGasLimitReached)
 func ProduceBlockAdvanced(
 	l1Header *L1IncomingMessageHeader,
 	txes types.Transactions,
-	txesOptions []*arbitrum_types.ConditionalOptions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
@@ -182,9 +183,6 @@ func ProduceBlockAdvanced(
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
 	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
-	if txesOptions != nil {
-		txesOptions = append([]*arbitrum_types.ConditionalOptions{nil}, txesOptions...)
-	}
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -220,13 +218,14 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			if txesOptions != nil {
-				options = txesOptions[0]
-				txesOptions = txesOptions[1:]
-			}
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
+				var ok bool
+				options, ok = hooks.ConditionalOptionsForTx[tx.Hash()]
+				if !ok {
+					options = nil
+				}
 			}
 		}
 
