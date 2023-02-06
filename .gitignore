@@ -28,3 +28,4 @@ tmp/*
 node_modules/
 contracts/cache
 contracts/out
+contracts/formatter.sh
