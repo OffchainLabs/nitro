@@ -6,7 +6,6 @@ pragma solidity ^0.8.0;
 
 import "./AbsRollupCreator.sol";
 import "./ERC20BridgeCreator.sol";
-import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
 contract ERC20RollupCreator is AbsRollupCreator, IERC20RollupCreator {
     constructor() AbsRollupCreator() {}

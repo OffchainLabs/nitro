@@ -18,6 +18,16 @@ interface IBridgeCreator {
         address _rollupEventInboxTemplate,
         address _outboxTemplate
     ) external;
+
+    function bridgeTemplate() external view returns (IBridge);
+
+    function sequencerInboxTemplate() external view returns (SequencerInbox);
+
+    function inboxTemplate() external view returns (IInbox);
+
+    function rollupEventInboxTemplate() external view returns (IRollupEventInbox);
+
+    function outboxTemplate() external view returns (Outbox);
 }
 
 interface IEthBridgeCreator is IBridgeCreator {
