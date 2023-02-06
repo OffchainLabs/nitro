@@ -123,7 +123,5 @@ jobs:
         run: yarn
 
       - name: Run tests
-        run: |
-          ls -al
-          forge test
+        run: forge test
 
