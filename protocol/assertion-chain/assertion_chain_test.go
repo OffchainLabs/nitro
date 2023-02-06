@@ -149,21 +149,34 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	challengePeriodSeconds := big.NewInt(30)
+	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
-		big.NewInt(30),
+		challengePeriodSeconds,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	miniStakeValue := big.NewInt(1)
+	chalManagerAddr, _, _, err := outgen.DeployChallengeManager(
+		acc.txOpts,
+		acc.backend,
+		assertionChainAddr,
+		miniStakeValue,
+		challengePeriodSeconds,
+		common.Address{}, // OSP entry contract.
 	)
 	require.NoError(t, err)
 	acc.backend.Commit()
 
 	chain, err := NewAssertionChain(
-		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
 
-	require.NoError(t, chain.UpdateChallengeManager(common.Address{})) // What contract address?
+	require.NoError(t, chain.UpdateChallengeManager(chalManagerAddr)) // What contract address?
 
 	commit1 := util.StateCommitment{
 		Height:    1,
@@ -184,7 +197,8 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	acc.backend.Commit()
 
 	require.NoError(t, chain.CreateSuccessionChallenge(genesisId))
-	chain.CreateSuccessionChallenge(genesisId)
+	err = chain.CreateSuccessionChallenge(common.BytesToHash([]byte("nyan")))
+	require.NoError(t, err)
 }
 
 // Represents a test EOA account in the simulated backend,
@@ -223,6 +237,7 @@ func setupAccount() (*testAccount, error) {
 	)
 	genesis[addr] = core.GenesisAccount{Balance: startingBalance}
 	gasLimit := uint64(2100000000000)
+	txOpts.GasLimit = uint64(200000)
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
 	return &testAccount{
 		accountAddr: addr,
