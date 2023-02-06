@@ -4,6 +4,7 @@
 package arbnode
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -370,21 +371,24 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 			if rootHashOrSlots.RootHash != nil {
 				trie := statedb.StorageTrie(address)
 				if trie == nil {
-					// TODO
-					return errors.New("Trie not found for address")
+					return fmt.Errorf("Storage trie not found for address key in knownAccounts option, address: %s", address.String())
 				}
 				if trie.Hash() != *rootHashOrSlots.RootHash {
-					// TODO
-					return errors.New("Rejected")
+					return fmt.Errorf("Storage root hash condition not met for address: %s", address.String())
 				}
 			} else if len(rootHashOrSlots.SlotValue) > 0 {
+				trie := statedb.StorageTrie(address)
 				for slot, value := range rootHashOrSlots.SlotValue {
-					if statedb.GetState(address, slot) != value {
-						// TODO
-						return errors.New("Rejected")
+					stored, err := trie.TryGet(slot.Bytes())
+					if err != nil {
+						return errors.Wrap(err, fmt.Sprintf("Storage slot not found, address: %s, slot: %s, error", address.String(), slot.String()))
+					}
+
+					if !bytes.Equal(stored, value.Bytes()) {
+						return fmt.Errorf("Storage slot value condition not met for address: %s, slot: %s", address.String(), slot.String())
 					}
 				}
-			} // else if rootHashOrSlots.SlotValue is empty, ignore it and check the rest of conditions
+			} // else rootHashOrSlots.SlotValue is empty - ignore it and check the rest of conditions
 		}
 	}
 	return nil
