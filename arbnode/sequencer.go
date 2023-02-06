@@ -384,10 +384,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 						return errors.New("Rejected")
 					}
 				}
-			} else {
-				// TODO
-				return errors.New("Invalid")
-			}
+			} // else if rootHashOrSlots.SlotValue is empty, ignore it and check the rest of conditions
 		}
 	}
 	return nil
