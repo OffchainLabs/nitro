@@ -20,6 +20,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -125,7 +126,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type txQueueItem struct {
 	tx             *types.Transaction
-	options        *arbitrum.ConditionalOptions
+	options        *arbitrum_types.ConditionalOptions
 	resultChan     chan<- error
 	returnedResult bool
 	ctx            context.Context
@@ -302,7 +303,7 @@ func (s *Sequencer) ctxWithQueueTimeout(inctx context.Context) (context.Context,
 	return context.WithTimeout(inctx, timeout)
 }
 
-func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum.ConditionalOptions) error {
+func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
@@ -355,7 +356,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum.ConditionalOptions, sender common.Address) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -719,7 +720,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
 	txes := make([]*types.Transaction, len(queueItems))
-	options := make([]*arbitrum.ConditionalOptions, len(queueItems))
+	options := make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
 		options[i] = queueItem.options

@@ -18,7 +18,7 @@ import (
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
-	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
@@ -838,13 +838,13 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 	}
 }
 
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, options []*arbitrum.ConditionalOptions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, options []*arbitrum_types.ConditionalOptions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	return s.sequenceTransactionsWithInsertionMutex(header, txes, options, hooks)
 }
 
-func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, options []*arbitrum.ConditionalOptions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, options []*arbitrum_types.ConditionalOptions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	s.reorgMutex.RLock()

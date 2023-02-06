@@ -15,6 +15,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -97,7 +98,7 @@ func (f *TxForwarder) ctxWithTimeout(inctx context.Context) (context.Context, co
 	return context.WithTimeout(inctx, f.timeout)
 }
 
-func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transaction, options *arbitrum.ConditionalOptions) error {
+func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	if atomic.LoadInt32(&f.enabled) == 0 {
 		return ErrNoSequencer
 	}
@@ -173,7 +174,7 @@ func NewTxDropper() *TxDropper {
 
 var txDropperErr = errors.New("publishing transactions not supported by this endpoint")
 
-func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum.ConditionalOptions) error {
+func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	return txDropperErr
 }
 

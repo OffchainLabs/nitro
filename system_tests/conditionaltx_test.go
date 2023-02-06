@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -34,13 +35,10 @@ func TestSendRawTransactionConditional(t *testing.T) {
 	}
 
 	tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-	options := arbitrum.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum.RootHashOrSlots{l2info.GetAddress("User2"): {RootHash: &common.Hash{0}}}}
+	options := arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{l2info.GetAddress("User2"): {RootHash: &common.Hash{0}}}}
 
 	err = arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, &options)
-	testhelpers.RequireImpl(t, err)
-	receipt, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
-	testhelpers.RequireImpl(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		testhelpers.FailImpl(t)
+	if err == nil {
+		testhelpers.FailImpl(t, "SendConditionalTransactionRPC didn't fail")
 	}
 }
