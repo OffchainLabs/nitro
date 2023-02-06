@@ -60,7 +60,6 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmPs() public {
-        assertEqUint(1, 2);
         (, ChallengeManager challengeManager,, bytes32 a1,, bytes32 challengeId) = deployAndInitChallenge();
 
         bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
