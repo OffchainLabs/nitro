@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
+import "./osp/IOneStepProofEntry.sol";
+
 enum Status {
     Pending,
     Confirmed,
@@ -23,6 +25,14 @@ interface IAssertionChain {
     function isFirstChild(bytes32 assertionId) external view returns (bool);
 }
 
+// CHRIS: TODO: move this to data entities?
+struct OneStepData {
+    ExecutionContext execCtx;
+    uint256 machineStep;
+    bytes32 beforeHash;
+    bytes proof;
+}
+
 struct AddLeafArgs {
     bytes32 challengeId;
     bytes32 claimId;
@@ -32,6 +42,14 @@ struct AddLeafArgs {
     bytes firstStatehistoryProof;
     bytes32 lastState;
     bytes lastStatehistoryProof;
+}
+
+struct AddLeafLibArgs {
+    uint256 miniStake;
+    uint256 challengePeriod;
+    AddLeafArgs leafData;
+    bytes proof1;
+    bytes proof2;
 }
 
 interface IChallengeManager {
@@ -59,23 +77,16 @@ interface IChallengeManager {
 
     function createSubChallenge(bytes32 vId) external returns (bytes32);
 
-    function bisect(
-        bytes32 vId,
-        bytes32 prefixHistoryCommitment,
-        bytes memory prefixProof
-    ) external returns (bytes32);
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
+        external
+        returns (bytes32);
 
-    function merge(
-        bytes32 vId,
-        bytes32 prefixHistoryCommitment,
-        bytes memory prefixProof
-    ) external returns (bytes32);
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32);
 
-    function addLeaf(
-        AddLeafArgs calldata leafData,
-        bytes calldata proof1,
-        bytes calldata proof2
-    ) external payable returns (bytes32);
+    function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2)
+        external
+        payable
+        returns (bytes32);
 }
 
 struct ChallengeVertex {
