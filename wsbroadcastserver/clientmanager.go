@@ -91,7 +91,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	}()
 
 	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
-		return fmt.Errorf("Rate limited %s", clientConnection.clientIp)
+		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
 	}
 
 	clientsCurrentGauge.Inc(1)

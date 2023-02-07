@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	clientsLimitedGauge = metrics.NewRegisteredGauge("arb/feed/clients/limited", nil)
+	clientsLimitedCounter = metrics.NewRegisteredCounter("arb/feed/clients/limited", nil)
 )
 
 type ConnectionLimiterConfig struct {
@@ -103,7 +103,7 @@ func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit 
 func (l *ConnectionLimiter) isAllowedImpl(ip net.IP) bool {
 	for _, item := range l.getIpStringsAndLimits(ip) {
 		if res := l.ipConnectionCounts[item.ipString]; res >= item.limit {
-			clientsLimitedGauge.Inc(1)
+			clientsLimitedCounter.Inc(1)
 			return false
 		}
 	}
