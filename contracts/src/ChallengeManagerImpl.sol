@@ -31,18 +31,15 @@ library ChallengeVertexLib {
     function exists(ChallengeVertex storage vertex) internal view returns (bool) {
         return vertex.historyCommitment != 0;
     }
-
-    function existsMem(ChallengeVertex memory vertex) internal pure returns (bool) {
-        return vertex.historyCommitment != 0;
-    }
-
+    
     function isLeaf(ChallengeVertex storage vertex) internal view returns (bool) {
         return exists(vertex) && vertex.staker != address(0);
     }
+}
 
-    function isLeafMem(ChallengeVertex memory vertex) internal pure returns (bool) {
-        return existsMem(vertex) && vertex.staker != address(0);
-    }
+// CHRIS: TODO: rename later
+library ChallengeStructLib {
+
 }
 
 library ChallengeVertexMappingLib {
@@ -157,12 +154,12 @@ library ChallengeVertexMappingLib {
     }
 
     function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view {
-        require(has(vertices, vId), "Fork candidate vertex does not exist");
+        require(vertices[vId].exists(), "Fork candidate vertex does not exist")
 
         // CHRIS: TODO: do we want to include this?
         // require(!vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor confirmable");
 
-        require(has(vertices, vertices[vId].lowestHeightSucessorId), "No successors");
+        require(vertices[vertices[vId].lowestHeightSucessorId].exists(), "No successors");
 
         uint256 lowestHeightSuccessorHeight = vertices[vertices[vId].lowestHeightSucessorId].height;
         require(
@@ -181,9 +178,9 @@ library ChallengeVertexMappingLib {
         bytes32 endVertexId,
         uint256 challengePeriod
     ) public {
-        require(has(vertices, startVertexId), "Predecessor vertex does not exist");
-        require(has(vertices, endVertexId), "Successor already exists exist");
-
+        require(vertices[startVertexId].exists(), "Predecessor vertex does not exist")
+        require(vertices[endVertexId].exists(), "Successor does not exist")
+        
         require(vertices[endVertexId].predecessorId != startVertexId, "Vertices already connected");
 
         // CHRIS: TODO comments and assertions in here
@@ -269,17 +266,23 @@ library ChallengeVertexMappingLib {
         view
         returns (uint256)
     {
-        require(has(vertices, vId), "Vertex does not exist");
+        require(vertices[vId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[vId].predecessorId;
-        require(has(vertices, predecessorId), "Predecessor vertex does not exist");
+        require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
 
         // CHRIS: TODO: look at the boundary conditions here
         return mandatoryBisectionHeight(vertices[predecessorId].height, vertices[vId].height);
     }
 }
 
+library ChallengeLib {
+    function id(bytes32 challengeOriginId, ChallengeType cType) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(challengeOriginId, cType));
+    }
+}
+
 library ChallengeMappingLib {
-    function has(mapping(bytes32 => Challenge) storage challenges, bytes32 challengeId) public view returns (bool) {
+    function has(mapping(bytes32 => Challenge) storage challenges, bytes32 challengeId) external view returns (bool) {
         // CHRIS: TODO: this doesnt work for root atm
         return challenges[challengeId].rootId != 0;
     }
@@ -316,10 +319,11 @@ library ChallengeManagerLib {
 
     function confirmationPreChecks(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
         // basic checks
-        require(vertices.has(vId), "Vertex does not exist");
+        
+        require(vertices[vId].exists(), "Vertex does not exist");
         require(vertices[vId].status == Status.Pending, "Vertex is not pending");
         bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertices.has(predecessorId), "Predecessor vertex does not exist");
+        require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
 
         // for a vertex to be confirmed its predecessor must be confirmed
         // this ensures an unbroken chain of confirmation from the root eventually up to one the leaves
@@ -419,13 +423,13 @@ library ChallengeManagerLib {
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
-        require(vertices.has(vId), "Vertex does not exist");
+        require(vertices[vId].exists(), "Vertex does not exist");
         // CHRIS: TODO: put this together with the has confirmable ps check?
         bytes32 challengeId = vertices[vId].challengeId;
         require(challenges[challengeId].winningClaim == 0, "Winner already declared");
 
         bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertices.has(predecessorId), "Predecessor vertex does not exist");
+        require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
         require(vertices[predecessorId].presumptiveSuccessorId != vId, "Cannot bisect presumptive successor");
 
         require(
@@ -456,7 +460,7 @@ library ChallengeManagerLib {
         );
 
         // CHRIS: redundant check?
-        require(!vertices.has(bVId), "Bisection vertex already exists");
+        require(!vertices[bVId].exists(), "Bisection vertex already exists");
 
         return (bVId, bHeight);
     }
@@ -473,7 +477,7 @@ library ChallengeManagerLib {
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
-        require(vertices.has(bVId), "Bisection vertex does not already exist");
+        require(vertices[bVId].exists(), "Bisection vertex does not already exist");
         // CHRIS: TODO: include a long comment about this
         require(!vertices[bVId].isLeaf(), "Cannot merge to a leaf");
 
@@ -534,9 +538,9 @@ library ChallengeManagerLib {
         bytes calldata beforeHistoryInclusionProof,
         bytes calldata afterHistoryInclusionProof
     ) external returns (bytes32) {
-        require(vertices.has(winnerVId), "Vertex does not exist");
+        require(vertices[winnerVId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[winnerVId].predecessorId;
-        require(vertices.has(predecessorId), "Predecessor does not exist");
+        require(vertices[predecessorId].exists(), "Predecessor does not exist");
 
         bytes32 challengeId = vertices[predecessorId].successionChallenge;
         require(challengeId != 0, "Succession challenge does not exist");
@@ -1031,12 +1035,12 @@ contract ChallengeManagerImpl is IChallengeManager {
         setConfirmed(vId);
     }
 
-    // EXTERNAL FUNCTIONS
+    // EXTERNAL VIEW FUNCTIONS
     // --------------------
-    // Functions that are not required internally but may be useful for external
-    // callers.
-    // All functions below this point should be external, not just public, and not called within
-    // this contract.
+    // Functions that are not required internally, and do not update state, but may be useful
+    // for external callers.
+    // All functions below this point should be external, not just public, and view and not
+    // called within this contract.
 
     function winningClaim(bytes32 challengeId) external view returns (bytes32) {
         // CHRIS: TODO: check exists? or return the full struct?
@@ -1055,11 +1059,11 @@ contract ChallengeManagerImpl is IChallengeManager {
     }
 
     function vertexExists(bytes32 vId) external view returns (bool) {
-        return vertices.has(vId);
+        return vertices[vId].exists();
     }
 
     function getVertex(bytes32 vId) external view returns (ChallengeVertex memory) {
-        require(vertices.has(vId), "Vertex does not exist");
+        require(vertices[vId].exists(), "Vertex does not exist");
         return vertices[vId];
     }
 
@@ -1070,9 +1074,9 @@ contract ChallengeManagerImpl is IChallengeManager {
     function hasConfirmedSibling(bytes32 vId) external view returns (bool) {
         // CHRIS: TODO: consider removal - or put in a lib. COuld be a nice chec in the confirms?
 
-        require(vertices.has(vId), "Vertex does not exist");
+        require(vertices[vId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertices.has(predecessorId), "Predecessor does not exist");
+        require(vertices[predecessorId].exists(), "Predecessor does not exist");
 
         // sub challenge check
         bytes32 challengeId = vertices[predecessorId].successionChallenge;
@@ -1080,7 +1084,7 @@ contract ChallengeManagerImpl is IChallengeManager {
             bytes32 wClaim = challenges[challengeId].winningClaim;
             if (wClaim != 0) {
                 // CHRIS: TODO: this should be an assert?
-                require(vertices.has(wClaim), "Winning claim does not exist");
+                require(vertices[wClaim].exists(), "Winning claim does not exist");
                 if (wClaim == vId) return false;
 
                 return vertices[wClaim].status == Status.Confirmed;
@@ -1090,7 +1094,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         // ps check
         bytes32 psId = vertices[predecessorId].presumptiveSuccessorId;
         if (psId != 0) {
-            require(vertices.has(psId), "Presumptive successor does not exist");
+            require(vertices[psId].exists(), "Presumptive successor does not exist");
 
             if (psId == vId) return false;
             return vertices[psId].status == Status.Confirmed;

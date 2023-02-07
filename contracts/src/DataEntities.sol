@@ -52,7 +52,7 @@ struct AddLeafLibArgs {
     bytes proof2;
 }
 
-interface IChallengeManager {
+interface IChallengeManagerExternalView {
     function challengeExists(bytes32 challengeId) external view returns (bool);
 
     function getChallenge(bytes32 challengeId) external view returns (Challenge memory);
@@ -65,13 +65,15 @@ interface IChallengeManager {
 
     function getCurrentPsTimer(bytes32 vId) external view returns (uint256);
 
-    function confirmForPsTimer(bytes32 vId) external;
-
-    function confirmForSucessionChallengeWin(bytes32 vId) external;
-
     function hasConfirmedSibling(bytes32 vId) external view returns (bool);
 
     function isAtOneStepFork(bytes32 vId) external view returns (bool);
+}
+
+interface IChallengeManagerCore {
+    function confirmForPsTimer(bytes32 vId) external;
+
+    function confirmForSucessionChallengeWin(bytes32 vId) external;
 
     function createChallenge(bytes32 assertionId) external returns (bytes32);
 
@@ -88,6 +90,8 @@ interface IChallengeManager {
         payable
         returns (bytes32);
 }
+
+interface IChallengeManager is IChallengeManagerCore, IChallengeManagerExternalView {}
 
 struct ChallengeVertex {
     bytes32 challengeId;

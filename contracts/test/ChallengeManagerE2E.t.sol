@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 import "../src/DataEntities.sol";
 import "./MockAssertionChain.sol";
-import "../src/ChallengeManager.sol";
+import "../src/ChallengeManagerImpl.sol";
 import "../src/osp/IOneStepProofEntry.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
