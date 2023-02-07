@@ -238,9 +238,23 @@ func TestChalManager(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
-	// acc.txOpts.GasPrice = big.NewInt(1)
 	acc.txOpts.GasLimit = acc.backend.Blockchain().GasLimit()
 
+	// VERTEX MANAGER.
+	vertexManagerAddr, tx, _, err := outgen.DeployVertexManager(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	receipt, err := acc.backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
+
+	code, err := acc.backend.CodeAt(ctx, vertexManagerAddr, nil)
+	require.NoError(t, err)
+	t.Logf("Vertex manager code size = %d", len(code))
+	require.Equal(t, true, len(code) > 0)
+
+	// ASSERTION CHAIN.
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
 	challengePeriod := uint64(30)
 	assertionChainAddr, tx, _, err := outgen.DeployAssertionChain(
@@ -252,38 +266,35 @@ func TestChalManager(t *testing.T) {
 	require.NoError(t, err)
 	acc.backend.Commit()
 
-	receipt, err := acc.backend.TransactionReceipt(ctx, tx.Hash())
+	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
 	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
 
-	//miniStakeValue := big.NewInt(1)
+	code, err = acc.backend.CodeAt(ctx, assertionChainAddr, nil)
+	require.NoError(t, err)
+	t.Logf("Assertion chain code size = %d", len(code))
+	require.Equal(t, true, len(code) > 0)
+
+	// CHALLENGE MANAGER.
+	miniStakeValue := big.NewInt(1)
 	chalManagerAddr, tx, _, err := outgen.DeployChallengeManager(
 		acc.txOpts,
 		acc.backend,
-		big.NewInt(1),
-		//[32]byte{},
-		//assertionChainAddr,
-		// miniStakeValue,
-		// big.NewInt(1),
+		assertionChainAddr,
+		vertexManagerAddr,
+		miniStakeValue,
+		big.NewInt(int64(challengePeriod)),
 	)
 	require.NoError(t, err)
 	acc.backend.Commit()
-	_ = chalManagerAddr
 
 	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
-	t.Logf("%+v", tx)
-	t.Logf("%+v", receipt)
 	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	code, err := acc.backend.CodeAt(ctx, assertionChainAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
 
 	// Chain contract should be deployed.
 	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
 	require.NoError(t, err)
-	t.Logf("%d", len(code))
 	require.Equal(t, true, len(code) > 0)
 }
 
