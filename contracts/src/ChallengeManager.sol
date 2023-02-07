@@ -573,27 +573,17 @@ struct AddLeafLibArgs {
     bytes proof2;
 }
 
-contract VertexManager {
-    using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
-    mapping(bytes32 => ChallengeVertex) public vertices;
-
-    function getVertexById(bytes32 vId) external returns (ChallengeVertex memory) {
-        require(vertices.has(vId), "Vertex does not exist");
-        return vertices[vId];
-    }
-
-    function confirmVertex(bytes32 vId) external {
-        vertices[vId].status = Status.Confirmed;
-    }
-}
-
 interface IVertexManager {
     function getVertexById(bytes32 vId) external view returns (ChallengeVertex memory);
     function exists(bytes32 vId) external view returns (bool);
-    function confirmVertex(bytes32 vId) external;
     function checkAtOneStepFork(bytes32 vId) external view returns (bool);
     function getCurrentPsTimer(bytes32 vId) external view returns (uint256);
+    function isLeaf(bytes32 vId) external view returns (bool);
+    function hasConfirmablePsAt(bytes32 vId, uint256 challengePeriod) external view returns (bool);
+    function bisectionHeight(bytes32 vId) external view returns (uint256);
+
     function updateSuccessionChallenge(bytes32 vId, bytes32 newChallengeId) external;
+    function confirmVertex(bytes32 vId) external;
     function setVertex(bytes32 rootId, ChallengeVertex calldata v) external;
     function addNewSuccessor(
         bytes32 prevChallengeId,
@@ -608,16 +598,79 @@ interface IVertexManager {
     ) external returns (bytes32);
     function connectVertices(bytes32 bVId, bytes32 vId, uint256 challengePeriod) external;
     function setFlushedPsTime(bytes32 bVId, uint256 flushedPsTime) external;
-    function isLeaf(bytes32 vId) external view returns (bool);
-    function hasConfirmablePsAt(bytes32 vId, uint256 challengePeriod) external view returns (bool);
-    function bisectionHeight(bytes32 vId) external view returns (uint256);
     function setPresumptiveSuccessor(bytes32 prevPredecessorId, bytes32 bVId, uint256 challengePeriod) external;
+}
+
+contract VertexManager is IVertexManager {
+    using ChallengeVertexMappingLib for mapping(bytes32 => ChallengeVertex);
+    using ChallengeVertexLib for ChallengeVertex;
+    mapping(bytes32 => ChallengeVertex) public vertices;
+
+    function getVertexById(bytes32 vId) external view returns (ChallengeVertex memory) {
+        require(vertices.has(vId), "Vertex does not exist");
+        return vertices[vId];
+    }
+    function exists(bytes32 vId) external view returns (bool) {
+        return vertices.has(vId);
+    }
+    function checkAtOneStepFork(bytes32 vId) external view returns (bool) {
+        try vertices.checkAtOneStepFork(vId) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
+    function getCurrentPsTimer(bytes32 vId) external view returns (uint256) {
+        return vertices.getCurrentPsTimer(vId);
+    }
+    function isLeaf(bytes32 vId) external view returns (bool) {
+        return vertices[vId].isLeaf();
+    }
+    function hasConfirmablePsAt(bytes32 vId, uint256 challengePeriod) external view returns (bool) {
+        return vertices.hasConfirmablePsAt(vId, challengePeriod);
+    }
+    function bisectionHeight(bytes32 vId) external view returns (uint256) {
+        return vertices.bisectionHeight(vId);
+    }
+
+    // Mutaing calls.
+    function updateSuccessionChallenge(bytes32 vId, bytes32 newChallengeId) external {
+        vertices[vId].successionChallenge = newChallengeId;
+    }
+    function confirmVertex(bytes32 vId) external {
+        vertices[vId].status = Status.Confirmed;
+    }
+    function setVertex(bytes32 rootId, ChallengeVertex calldata v) external {
+        vertices[rootId] = v;
+    }
+    function addNewSuccessor(
+        bytes32 prevChallengeId,
+        bytes32 predecessorId,
+        bytes32 prefixHistoryCommitment,
+        uint256 bHeight,
+        bytes32 claimId,
+        address staker,
+        // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
+        uint256 currentPsTimer,
+        uint256 challengePeriod
+    ) external returns (bytes32) {
+        return vertices.addNewSuccessor(prevChallengeId, predecessorId, prefixHistoryCommitment, bHeight, claimId, staker, currentPsTimer, challengePeriod);
+    }
+    function connectVertices(bytes32 bVId, bytes32 vId, uint256 challengePeriod) external {
+        vertices.connectVertices(bVId, vId, challengePeriod);
+    }
+    function setFlushedPsTime(bytes32 bVId, uint256 flushedPsTime) external {
+        vertices[bVId].flushedPsTime = flushedPsTime;
+    }
+    function setPresumptiveSuccessor(bytes32 prevPredecessorId, bytes32 bVId, uint256 challengePeriod) external {
+        vertices.setPresumptiveSuccessor(prevPredecessorId, bVId, challengePeriod);
+    }
 }
 
 contract ChallengeManager is IChallengeManager {
     // CHRIS: TODO: do this in a different way
     // ChallengeManagers internal challengeManagers;
-    using ChallengeVertexLib for ChallengeVertex;
+    //using ChallengeVertexLib for ChallengeVertex;
 
     mapping(bytes32 => Challenge) public challenges;
     IAssertionChain public assertionChain;
