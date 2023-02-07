@@ -5,6 +5,7 @@ import (
 	"fmt"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/ethereum/go-ethereum/common"
+	"reflect"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -220,7 +221,7 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(hash protocol.VertexCommitHas
 	}); err != nil {
 		return nil, err
 	}
-	if mergingTo == nil {
+	if mergingTo == nil || (reflect.ValueOf(mergingTo).Kind() == reflect.Ptr && reflect.ValueOf(mergingTo).IsNil()) {
 		return nil, errors.New("fetched nil challenge vertex from protocol")
 	}
 	return mergingTo, nil
