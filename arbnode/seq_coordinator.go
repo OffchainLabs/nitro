@@ -675,19 +675,19 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	}
 }
 
-// Calls check() on retryInterval until it returns a non-default value, which is then returned.
-// On context timeout, this returns the default value.
-func waitFor[T comparable](ctx context.Context, retryInterval time.Duration, check func() T) T {
-	var empty T
+// Calls check() every c.config.RetryInterval until it returns true, or the context times out.
+func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) {
 	for {
 		result := check()
-		if result != empty {
-			return result
+		if result {
+			return
 		}
 		select {
 		case <-ctx.Done():
-			return empty
-		case <-time.After(retryInterval):
+			// The caller should've already logged an info line with context about what it's waiting on
+			log.Warn("timed out waiting")
+			return
+		case <-time.After(c.config.RetryInterval):
 		}
 	}
 }
@@ -697,17 +697,17 @@ func (c *SeqCoordinator) PrepareForShutdown() {
 	parentCtx := c.StopWaiter.GetParentContext()
 	handoffCtx, cancel := context.WithTimeout(c.StopWaiter.GetContext(), c.config.ShutdownHandoffTimeout)
 	defer cancel()
-	if c.config.ShutdownHandoffTimeout != time.Duration(0) {
+	if c.CurrentlyChosen() && c.config.ShutdownHandoffTimeout != time.Duration(0) {
 		log.Info("Waiting for an alternative sequencer in the priorities to acquire liveliness...", "timeout", c.config.ShutdownHandoffTimeout)
-		alternativeSequencer := waitFor(handoffCtx, c.config.RetryInterval, func() string {
+		c.waitFor(handoffCtx, func() bool {
 			otherSeq, err := c.RecommendLiveSequencerIgnoring(handoffCtx, c.config.MyUrl())
 			if err != nil {
 				log.Warn("failed to find alternative sequencer", "err", err)
-				return ""
+				return false
 			}
-			return otherSeq
+			log.Info("found an alternative sequencer", "url", otherSeq)
+			return true
 		})
-		log.Info("found an alternative sequencer (or timed out)", "url", alternativeSequencer)
 	}
 	wasChosen := c.CurrentlyChosen()
 	c.StopWaiter.StopAndWait()
@@ -727,16 +727,20 @@ func (c *SeqCoordinator) PrepareForShutdown() {
 		}
 		if c.config.ShutdownHandoffTimeout != time.Duration(0) {
 			log.Info("Waiting for someone else to become the chosen sequencer...", "timeout", c.config.ShutdownHandoffTimeout)
-			newTarget := waitFor(handoffCtx, c.config.RetryInterval, func() string {
-				nextChosen, err := c.CurrentChosenSequencer(handoffCtx)
+			var newTarget string
+			c.waitFor(handoffCtx, func() bool {
+				chosen, err := c.CurrentChosenSequencer(handoffCtx)
 				if err != nil {
 					log.Warn("failed to get chosen sequencer", "err", err)
-				} else if nextChosen != "" && nextChosen != c.config.MyUrl() {
-					return nextChosen
+					return false
 				}
-				return ""
+				if chosen != "" && chosen != c.config.MyUrl() {
+					log.Info("got new chosen sequencer", "url", chosen)
+					newTarget = chosen
+					return true
+				}
+				return false
 			})
-			log.Info("got new chosen sequencer (or timed out)", "url", newTarget)
 			if newTarget != "" {
 				err := c.sequencer.ForwardTo(newTarget)
 				if err != nil {
