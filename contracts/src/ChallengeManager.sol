@@ -984,7 +984,7 @@ contract ChallengeManager is IChallengeManager {
         challenges[challengeId].winningClaim = winnerVId;
     }
 
-    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public returns (bytes32) {
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32) {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
@@ -1012,7 +1012,7 @@ contract ChallengeManager is IChallengeManager {
         return bVId;
     }
 
-    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public returns (bytes32) {
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32) {
         (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -1031,7 +1031,8 @@ contract ChallengeManager is IChallengeManager {
     // EXTERNAL FUNCTIONS
     // --------------------
     // Functions that are not required internally but may be useful for external
-    // callers. All functions below this point should be external, not just public.
+    // callers. 
+    // All functions below this point should be external, not just public.
 
     function winningClaim(bytes32 challengeId) external view returns (bytes32) {
         // CHRIS: TODO: check exists? or return the full struct?
