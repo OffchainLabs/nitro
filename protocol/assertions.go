@@ -106,6 +106,39 @@ type (
 	}
 )
 
+type ChallengeInterface interface {
+	RootAssertion() *Assertion
+	Completed(tx *ActiveTx) bool
+	HasConfirmedSibling(tx *ActiveTx, vertex ChallengeVertexInterface) bool
+	RootVertex() ChallengeVertexInterface
+	ParentStateCommitment() util.StateCommitment
+	Winner(tx *ActiveTx) (*Assertion, error)
+	AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address, ) (ChallengeVertexInterface, error)
+	GetWinnerVertex() util.Option[ChallengeVertexInterface]
+	HasEnded(chain *AssertionChain) bool
+	GetChallengeType() ChallengeType
+	GetCreationTime() time.Time
+}
+
+type ChallengeVertexInterface interface {
+	ConfirmForPsTimer(tx *ActiveTx) error
+	ConfirmForChallengeDeadline(tx *ActiveTx) error
+	ConfirmForSubChallengeWin(tx *ActiveTx) error
+	IsPresumptiveSuccessor() bool
+	Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, validator common.Address) (ChallengeVertexInterface, error)
+	Merge(tx *ActiveTx, mergingTo ChallengeVertexInterface, proof []common.Hash, validator common.Address) error
+	ChessClockExpired(challengePeriod time.Duration) bool
+	EligibleForNewSuccessor() bool
+	GetPrev() util.Option[ChallengeVertexInterface]
+	GetStatus() AssertionState
+	GetSubChallenge() util.Option[ChallengeInterface]
+	GetPsTimer() *util.CountUpTimer
+	GetCommitment() util.HistoryCommitment
+	GetValidator() common.Address
+	GetSequenceNum() VertexSequenceNumber
+	GetChallenge() util.Option[ChallengeInterface]
+	GetPresumptiveSuccessor() util.Option[ChallengeVertexInterface]
+}
 type AssertionChain struct {
 	mutex                         sync.RWMutex
 	timeReference                 util.TimeReference
@@ -336,7 +369,7 @@ func verticesContainOneStepFork(vertices map[VertexCommitHash]*ChallengeVertex, 
 			continue
 		}
 		// We only check vertices that have a matching parent commit hash.
-		vParentHash := VertexCommitHash(v.Prev.Unwrap().Commitment.Hash())
+		vParentHash := VertexCommitHash(v.Prev.Unwrap().GetCommitment().Hash())
 		if vParentHash == parentCommitHash {
 			childVertices = append(childVertices, v)
 		}
@@ -356,7 +389,7 @@ func isOneStepAwayFromParent(vertex *ChallengeVertex) bool {
 	if vertex.Prev.IsNone() {
 		return false
 	}
-	return vertex.Commitment.Height == vertex.Prev.Unwrap().Commitment.Height+1
+	return vertex.Commitment.Height == vertex.Prev.Unwrap().GetCommitment().Height+1
 }
 
 // ChallengeVertexByCommitHash returns the challenge vertex with the given commit hash.
@@ -595,8 +628,8 @@ const (
 type Challenge struct {
 	rootAssertion          util.Option[*Assertion]
 	WinnerAssertion        util.Option[*Assertion]
-	WinnerVertex           util.Option[*ChallengeVertex]
-	rootVertex             util.Option[*ChallengeVertex]
+	WinnerVertex           util.Option[ChallengeVertexInterface]
+	rootVertex             util.Option[ChallengeVertexInterface]
 	leafVertexCount        uint64
 	creationTime           time.Time
 	includedHistories      map[common.Hash]bool
@@ -606,7 +639,7 @@ type Challenge struct {
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
-func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator common.Address) (*Challenge, error) {
+func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator common.Address) (ChallengeInterface, error) {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState && a.chain.LatestConfirmed(tx) != a {
 		return nil, errors.Wrapf(ErrWrongState, fmt.Sprintf("State: %d, Confirmed status: %v", a.status, a.chain.LatestConfirmed(tx) != a))
@@ -619,7 +652,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 	}
 	currSeqNumber := VertexSequenceNumber(0)
 	rootVertex := &ChallengeVertex{
-		Challenge:   util.None[*Challenge](),
+		Challenge:   util.None[ChallengeInterface](),
 		SequenceNum: currSeqNumber,
 		isLeaf:      false,
 		Status:      ConfirmedAssertionState,
@@ -627,23 +660,23 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 			Height: 0,
 			Merkle: common.Hash{},
 		},
-		Prev:                 util.None[*ChallengeVertex](),
-		PresumptiveSuccessor: util.None[*ChallengeVertex](),
+		Prev:                 util.None[ChallengeVertexInterface](),
+		PresumptiveSuccessor: util.None[ChallengeVertexInterface](),
 		PsTimer:              util.NewCountUpTimer(a.chain.timeReference),
-		SubChallenge:         util.None[*Challenge](),
+		SubChallenge:         util.None[ChallengeInterface](),
 	}
 
 	chal := &Challenge{
 		rootAssertion:     util.Some(a),
 		WinnerAssertion:   util.None[*Assertion](),
-		WinnerVertex:      util.None[*ChallengeVertex](),
-		rootVertex:        util.Some(rootVertex),
+		WinnerVertex:      util.None[ChallengeVertexInterface](),
+		rootVertex:        util.Some(ChallengeVertexInterface(rootVertex)),
 		creationTime:      a.chain.timeReference.Get(),
 		includedHistories: make(map[common.Hash]bool),
 		challengePeriod:   a.chain.challengePeriod,
 		challengeType:     BlockChallenge,
 	}
-	rootVertex.Challenge = util.Some(chal)
+	rootVertex.Challenge = util.Some(ChallengeInterface(chal))
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
 	a.challenge = util.Some(chal)
 	parentStaker := common.Address{}
@@ -682,8 +715,20 @@ func (c *Challenge) RootAssertion() *Assertion {
 	return c.rootAssertion.Unwrap()
 }
 
+func (c *Challenge) GetWinnerVertex() util.Option[ChallengeVertexInterface] {
+	return c.WinnerVertex
+}
+
+func (c *Challenge) GetChallengeType() ChallengeType {
+	return c.challengeType
+}
+
+func (c *Challenge) GetCreationTime() time.Time {
+	return c.creationTime
+}
+
 // RootVertex returns the root vertex of challenge
-func (c *Challenge) RootVertex() *ChallengeVertex {
+func (c *Challenge) RootVertex() ChallengeVertexInterface {
 	return c.rootVertex.Unwrap()
 }
 
@@ -693,7 +738,7 @@ func (c *Challenge) AddLeaf(
 	assertion *Assertion,
 	history util.HistoryCommitment,
 	validator common.Address,
-) (*ChallengeVertex, error) {
+) (ChallengeVertexInterface, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {
 		return nil, ErrInvalidOp
@@ -770,26 +815,26 @@ func (c *Challenge) AddLeaf(
 	}
 	nextSeqNumber := c.currentVertexSeqNumber + 1
 	leaf := &ChallengeVertex{
-		Challenge:            util.Some(c),
+		Challenge:            util.Some(ChallengeInterface(c)),
 		SequenceNum:          nextSeqNumber,
 		Validator:            validator,
 		isLeaf:               true,
 		Status:               PendingAssertionState,
 		Commitment:           history,
 		Prev:                 c.rootVertex,
-		PresumptiveSuccessor: util.None[*ChallengeVertex](),
+		PresumptiveSuccessor: util.None[ChallengeVertexInterface](),
 		PsTimer:              timer,
-		SubChallenge:         util.None[*Challenge](),
+		SubChallenge:         util.None[ChallengeInterface](),
 		winnerIfConfirmed:    util.Some(assertion),
 	}
 	c.currentVertexSeqNumber = nextSeqNumber
-	c.rootVertex.Unwrap().maybeNewPresumptiveSuccessor(leaf)
+	c.rootVertex.Unwrap().(*ChallengeVertex).maybeNewPresumptiveSuccessor(leaf)
 	c.rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeLeafEvent{
-		ParentSeqNum:      leaf.Prev.Unwrap().SequenceNum,
+		ParentSeqNum:      leaf.Prev.Unwrap().GetSequenceNum(),
 		SequenceNum:       leaf.SequenceNum,
 		WinnerIfConfirmed: assertion.SequenceNum,
 		History:           history,
-		BecomesPS:         leaf.Prev.Unwrap().PresumptiveSuccessor.Unwrap() == leaf,
+		BecomesPS:         leaf.Prev.Unwrap().(*ChallengeVertex).PresumptiveSuccessor.Unwrap() == leaf,
 		Validator:         validator,
 	})
 	c.includedHistories[history.Hash()] = true
@@ -823,7 +868,7 @@ func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 }
 
 // HasConfirmedSibling returns true if another sibling vertex is confirmed.
-func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex *ChallengeVertex) bool {
+func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex ChallengeVertexInterface) bool {
 	tx.verifyRead()
 
 	if c.rootAssertion.IsNone() {
@@ -834,16 +879,16 @@ func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex *ChallengeVertex) b
 		return false
 	}
 
-	if vertex.Prev.IsNone() {
+	if vertex.GetPrev().IsNone() {
 		return false
 	}
-	parentHash := vertex.Prev.Unwrap().Commitment.Hash()
+	parentHash := vertex.GetPrev().Unwrap().GetCommitment().Hash()
 	for _, v := range vertices {
 		if v.Prev.IsNone() {
 			continue
 		}
 		// We only check vertices that have a matching parent commit hash.
-		if v.Prev.Unwrap().Commitment.Hash() == parentHash {
+		if v.Prev.Unwrap().GetCommitment().Hash() == parentHash {
 			if vertex != v && v.Status == ConfirmedAssertionState {
 				return true
 			}
@@ -855,50 +900,50 @@ func (c *Challenge) HasConfirmedSibling(tx *ActiveTx, vertex *ChallengeVertex) b
 
 type ChallengeVertex struct {
 	Commitment           util.HistoryCommitment
-	Challenge            util.Option[*Challenge]
+	Challenge            util.Option[ChallengeInterface]
 	SequenceNum          VertexSequenceNumber // unique within the challenge
 	Validator            common.Address
 	isLeaf               bool
 	Status               AssertionState
-	Prev                 util.Option[*ChallengeVertex]
-	PresumptiveSuccessor util.Option[*ChallengeVertex]
+	Prev                 util.Option[ChallengeVertexInterface]
+	PresumptiveSuccessor util.Option[ChallengeVertexInterface]
 	PsTimer              *util.CountUpTimer
-	SubChallenge         util.Option[*Challenge]
+	SubChallenge         util.Option[ChallengeInterface]
 	winnerIfConfirmed    util.Option[*Assertion]
 }
 
 // EligibleForNewSuccessor returns true if the vertex is eligible to have a new successor.
 func (v *ChallengeVertex) EligibleForNewSuccessor() bool {
 	return v.PresumptiveSuccessor.IsNone() ||
-		v.PresumptiveSuccessor.Unwrap().PsTimer.Get() <= v.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod
+		v.PresumptiveSuccessor.Unwrap().GetPsTimer().Get() <= v.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.challengePeriod
 }
 
 // maybeNewPresumptiveSuccessor updates the presumptive successor if the given vertex is eligible.
-func (v *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
+func (v *ChallengeVertex) maybeNewPresumptiveSuccessor(succ ChallengeVertexInterface) {
 	if !v.PresumptiveSuccessor.IsNone() &&
-		succ.Commitment.Height < v.PresumptiveSuccessor.Unwrap().Commitment.Height {
-		v.PresumptiveSuccessor.Unwrap().PsTimer.Stop()
-		v.PresumptiveSuccessor = util.None[*ChallengeVertex]()
+		succ.GetCommitment().Height < v.PresumptiveSuccessor.Unwrap().GetCommitment().Height {
+		v.PresumptiveSuccessor.Unwrap().GetPsTimer().Stop()
+		v.PresumptiveSuccessor = util.None[ChallengeVertexInterface]()
 	}
 
 	if v.PresumptiveSuccessor.IsNone() {
 		v.PresumptiveSuccessor = util.Some(succ)
-		succ.PsTimer.Start()
+		succ.GetPsTimer().Start()
 	}
 }
 
 // IsPresumptiveSuccessor returns true if the vertex is the presumptive successor of its parent.
 func (v *ChallengeVertex) IsPresumptiveSuccessor() bool {
-	return v.Prev.IsNone() || v.Prev.Unwrap().PresumptiveSuccessor.Unwrap() == v
+	return v.Prev.IsNone() || v.Prev.Unwrap().GetPresumptiveSuccessor().Unwrap() == v
 }
 
 // requiredBisectionHeight returns the height of the history commitment that must be bisectioned to prove the vertex.
 func (v *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
-	return util.BisectionPoint(v.Prev.Unwrap().Commitment.Height, v.Commitment.Height)
+	return util.BisectionPoint(v.Prev.Unwrap().GetCommitment().Height, v.Commitment.Height)
 }
 
 // Bisect returns the bisection proof for the vertex.
-func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, validator common.Address) (*ChallengeVertex, error) {
+func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, validator common.Address) (ChallengeVertexInterface, error) {
 	tx.verifyReadWrite()
 	if v.IsPresumptiveSuccessor() {
 		return nil, ErrWrongState
@@ -906,7 +951,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	if !v.Prev.Unwrap().EligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
-	if v.Challenge.Unwrap().includedHistories[history.Hash()] {
+	if v.Challenge.Unwrap().(*Challenge).includedHistories[history.Hash()] {
 		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
 	}
 	bisectionHeight, err := v.requiredBisectionHeight()
@@ -929,57 +974,57 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		isLeaf:               false,
 		Commitment:           history,
 		Prev:                 v.Prev,
-		PresumptiveSuccessor: util.None[*ChallengeVertex](),
+		PresumptiveSuccessor: util.None[ChallengeVertexInterface](),
 		PsTimer:              v.PsTimer.Clone(),
 	}
 	v.SequenceNum = nextSeqNum
 	newVertex.maybeNewPresumptiveSuccessor(v)
-	newVertex.Prev.Unwrap().maybeNewPresumptiveSuccessor(newVertex)
-	newVertex.Challenge.Unwrap().includedHistories[history.Hash()] = true
+	newVertex.Prev.Unwrap().(*ChallengeVertex).maybeNewPresumptiveSuccessor(newVertex)
+	newVertex.Challenge.Unwrap().(*Challenge).includedHistories[history.Hash()] = true
 
-	v.Prev = util.Some[*ChallengeVertex](newVertex)
+	v.Prev = util.Some[ChallengeVertexInterface](newVertex)
 
-	newVertex.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeBisectEvent{
+	newVertex.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeBisectEvent{
 		FromSequenceNum: v.SequenceNum,
 		SequenceNum:     newVertex.SequenceNum,
 		ToHistory:       newVertex.Commitment,
 		FromHistory:     v.Commitment,
-		BecomesPS:       newVertex.Prev.Unwrap().PresumptiveSuccessor.Unwrap() == newVertex,
+		BecomesPS:       newVertex.Prev.Unwrap().(*ChallengeVertex).PresumptiveSuccessor.Unwrap() == newVertex,
 		Validator:       validator,
 	})
-	commitHash := ChallengeCommitHash(newVertex.Challenge.Unwrap().rootAssertion.Unwrap().StateCommitment.Hash())
-	newVertex.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[commitHash][VertexCommitHash(newVertex.Commitment.Hash())] = newVertex
+	commitHash := ChallengeCommitHash(newVertex.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().StateCommitment.Hash())
+	newVertex.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[commitHash][VertexCommitHash(newVertex.Commitment.Hash())] = newVertex
 
 	return newVertex, nil
 }
 
 // Merge merges the vertex with its presumptive successor.
-func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof []common.Hash, validator common.Address) error {
+func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo ChallengeVertexInterface, proof []common.Hash, validator common.Address) error {
 	tx.verifyReadWrite()
 	if !mergingTo.EligibleForNewSuccessor() {
 		return ErrPastDeadline
 	}
 	// The vertex we are merging to should be the mandatory bisection point
 	// of the current vertex's height and its parent's height.
-	bisectionPoint, err := util.BisectionPoint(v.Prev.Unwrap().Commitment.Height, v.Commitment.Height)
+	bisectionPoint, err := util.BisectionPoint(v.Prev.Unwrap().GetCommitment().Height, v.Commitment.Height)
 	if err != nil {
 		return err
 	}
-	if mergingTo.Commitment.Height != bisectionPoint {
-		return errors.Wrapf(ErrInvalidHeight, "%d != %d", mergingTo.Commitment.Height, bisectionPoint)
+	if mergingTo.GetCommitment().Height != bisectionPoint {
+		return errors.Wrapf(ErrInvalidHeight, "%d != %d", mergingTo.GetCommitment().Height, bisectionPoint)
 	}
-	if err := util.VerifyPrefixProof(mergingTo.Commitment, v.Commitment, proof); err != nil {
+	if err := util.VerifyPrefixProof(mergingTo.GetCommitment(), v.Commitment, proof); err != nil {
 		return err
 	}
 
 	v.Prev = util.Some(mergingTo)
-	mergingTo.PsTimer.Add(v.PsTimer.Get())
-	mergingTo.maybeNewPresumptiveSuccessor(v)
-	v.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeMergeEvent{
+	mergingTo.GetPsTimer().Add(v.PsTimer.Get())
+	mergingTo.(*ChallengeVertex).maybeNewPresumptiveSuccessor(v)
+	v.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeMergeEvent{
 		DeeperSequenceNum:    v.SequenceNum,
-		ShallowerSequenceNum: mergingTo.SequenceNum,
-		BecomesPS:            mergingTo.PresumptiveSuccessor.Unwrap() == v,
-		ToHistory:            mergingTo.Commitment,
+		ShallowerSequenceNum: mergingTo.(*ChallengeVertex).SequenceNum,
+		BecomesPS:            mergingTo.(*ChallengeVertex).PresumptiveSuccessor.Unwrap() == v,
+		ToHistory:            mergingTo.(*ChallengeVertex).Commitment,
 		FromHistory:          v.Commitment,
 		Validator:            validator,
 	})
@@ -992,14 +1037,14 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 	if v.Status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
-	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
+	if v.Prev.Unwrap().GetStatus() != ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().GetStatus()))
 	}
-	subChal := v.Prev.Unwrap().SubChallenge
-	if subChal.IsNone() || subChal.Unwrap().WinnerVertex.IsNone() {
+	subChal := v.Prev.Unwrap().GetSubChallenge()
+	if subChal.IsNone() || subChal.Unwrap().GetWinnerVertex().IsNone() {
 		return ErrInvalidOp
 	}
-	winnerVertex := subChal.Unwrap().WinnerVertex.Unwrap()
+	winnerVertex := subChal.Unwrap().GetWinnerVertex().Unwrap()
 	if winnerVertex != v {
 		return ErrInvalidOp
 	}
@@ -1013,19 +1058,19 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 	if v.Status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
-	if !v.Prev.Unwrap().SubChallenge.IsNone() {
+	if !v.Prev.Unwrap().GetSubChallenge().IsNone() {
 		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
 	}
-	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
+	if v.Prev.Unwrap().GetStatus() != ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().GetStatus()))
 	}
-	if v.PsTimer.Get() <= v.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod {
+	if v.PsTimer.Get() <= v.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.challengePeriod {
 		return errors.Wrapf(
 			ErrNotYet,
 			fmt.Sprintf(
 				"%d <= %d",
 				v.PsTimer.Get(),
-				v.Challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod),
+				v.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.challengePeriod),
 		)
 	}
 	v._confirm(tx)
@@ -1038,23 +1083,23 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	if v.Status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.Status))
 	}
-	if !v.Prev.Unwrap().SubChallenge.IsNone() {
+	if !v.Prev.Unwrap().(*ChallengeVertex).SubChallenge.IsNone() {
 		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
 	}
-	if v.Prev.Unwrap().Status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().Status))
+	if v.Prev.Unwrap().(*ChallengeVertex).Status != ConfirmedAssertionState {
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().(*ChallengeVertex).Status))
 	}
-	if v != v.Prev.Unwrap().PresumptiveSuccessor.Unwrap() {
+	if v != v.Prev.Unwrap().(*ChallengeVertex).PresumptiveSuccessor.Unwrap() {
 		return errors.Wrap(ErrInvalidOp, "Vertex is not the presumptive successor")
 	}
-	chain := v.Challenge.Unwrap().rootAssertion.Unwrap().chain
+	chain := v.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain
 	chalPeriod := chain.challengePeriod
-	if !chain.timeReference.Get().After(v.Challenge.Unwrap().creationTime.Add(2 * chalPeriod)) {
+	if !chain.timeReference.Get().After(v.Challenge.Unwrap().(*Challenge).creationTime.Add(2 * chalPeriod)) {
 		return errors.Wrapf(
 			ErrNotYet, fmt.Sprintf(
 				"%d <= %d",
 				chain.timeReference.Get().Unix(),
-				v.Challenge.Unwrap().creationTime.Add(2*chalPeriod).Unix(),
+				v.Challenge.Unwrap().(*Challenge).creationTime.Add(2*chalPeriod).Unix(),
 			),
 		)
 	}
@@ -1066,12 +1111,40 @@ func (v *ChallengeVertex) _confirm(tx *ActiveTx) {
 	v.Status = ConfirmedAssertionState
 	if v.isLeaf {
 		refund := big.NewInt(0)
-		leafCount := int64(v.Challenge.Unwrap().leafVertexCount)
+		leafCount := int64(v.Challenge.Unwrap().(*Challenge).leafVertexCount)
 		refund.Mul(ChallengeVertexStake, big.NewInt(leafCount+1))
 		refund.Div(refund, big.NewInt(2))
-		v.Challenge.Unwrap().rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, refund)
-		v.Challenge.Unwrap().WinnerAssertion = v.winnerIfConfirmed
+		v.Challenge.Unwrap().(*Challenge).rootAssertion.Unwrap().chain.AddToBalance(tx, v.Validator, refund)
+		v.Challenge.Unwrap().(*Challenge).WinnerAssertion = v.winnerIfConfirmed
 	}
+}
+
+func (v *ChallengeVertex) GetPrev() util.Option[ChallengeVertexInterface] {
+	return v.Prev
+}
+func (v *ChallengeVertex) GetStatus() AssertionState {
+	return v.Status
+}
+func (v *ChallengeVertex) GetSubChallenge() util.Option[ChallengeInterface] {
+	return v.SubChallenge
+}
+func (v *ChallengeVertex) GetPsTimer() *util.CountUpTimer {
+	return v.PsTimer
+}
+func (v *ChallengeVertex) GetCommitment() util.HistoryCommitment {
+	return v.Commitment
+}
+func (v *ChallengeVertex) GetValidator() common.Address {
+	return v.Validator
+}
+func (v *ChallengeVertex) GetSequenceNum() VertexSequenceNumber {
+	return v.SequenceNum
+}
+func (v *ChallengeVertex) GetChallenge() util.Option[ChallengeInterface] {
+	return v.Challenge
+}
+func (v *ChallengeVertex) GetPresumptiveSuccessor() util.Option[ChallengeVertexInterface] {
+	return v.PresumptiveSuccessor
 }
 
 func historyProvidesLastLeafProof(history util.HistoryCommitment) bool {

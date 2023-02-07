@@ -469,7 +469,7 @@ func TestValidator_verifyAddLeafConditions(t *testing.T) {
 	require.ErrorIs(t, v.verifyAddLeafConditions(badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
 
 	chain := protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)
-	var chal *protocol.Challenge
+	var chal protocol.ChallengeInterface
 	var rootAssertion *protocol.Assertion
 	var err error
 	err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {

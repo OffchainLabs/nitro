@@ -74,7 +74,7 @@ func (chain *AssertionChain) visualizeAssertionChain() string {
 }
 
 type challengeVertexNode struct {
-	parent  util.Option[*ChallengeVertex]
+	parent  util.Option[ChallengeVertexInterface]
 	vertex  *ChallengeVertex
 	dotNode dot.Node
 }
@@ -117,13 +117,13 @@ func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
 			)
 
 			if !v.Prev.IsNone() {
-				childCount[VertexCommitHash(v.Prev.Unwrap().Commitment.Hash())]++
+				childCount[VertexCommitHash(v.Prev.Unwrap().GetCommitment().Hash())]++
 			}
 
 			dotN := graph.Node(rStr).Box().Attr("label", label)
 
 			m[commit.Hash()] = &challengeVertexNode{
-				parent:  v.Prev,
+				parent:  v.GetPrev(),
 				vertex:  v,
 				dotNode: dotN,
 			}
@@ -132,7 +132,7 @@ func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
 		// Construct an edge only if block's parent exist in the tree.
 		for _, n := range m {
 			if !n.parent.IsNone() {
-				parentHash := n.parent.Unwrap().Commitment.Hash()
+				parentHash := n.parent.Unwrap().GetCommitment().Hash()
 				if _, ok := m[parentHash]; ok {
 
 					if childCount[VertexCommitHash(parentHash)] > 1 && n.vertex.IsPresumptiveSuccessor() {

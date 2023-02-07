@@ -49,7 +49,7 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker := challengeVertex.Validator
+	staker := challengeVertex.GetValidator()
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
@@ -61,7 +61,7 @@ func (v *Validator) onChallengeStarted(
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v).track(ctx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
 
 	return nil
 }
@@ -70,7 +70,7 @@ func (v *Validator) onChallengeStarted(
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	var challenge *protocol.Challenge
+	var challenge protocol.ChallengeInterface
 	var err error
 	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum)
 	if err != nil {
@@ -101,7 +101,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	}
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v).track(ctx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
@@ -113,7 +113,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	return nil
 }
 
-func (v *Validator) verifyAddLeafConditions(a *protocol.Assertion, c *protocol.Challenge) error {
+func (v *Validator) verifyAddLeafConditions(a *protocol.Assertion, c protocol.ChallengeInterface) error {
 	if a.Prev.IsNone() {
 		return errors.Wrap(protocol.ErrInvalidOp, "Can not add leaf on root assertion")
 	}
@@ -136,8 +136,8 @@ func (v *Validator) verifyAddLeafConditions(a *protocol.Assertion, c *protocol.C
 
 func (v *Validator) addChallengeVertex(
 	ctx context.Context,
-	challenge *protocol.Challenge,
-) (*protocol.ChallengeVertex, error) {
+	challenge protocol.ChallengeInterface,
+) (protocol.ChallengeVertexInterface, error) {
 	latestValidAssertionSeq := v.findLatestValidAssertion(ctx)
 
 	var assertion *protocol.Assertion
@@ -157,7 +157,7 @@ func (v *Validator) addChallengeVertex(
 		return nil, err
 	}
 
-	var challengeVertex *protocol.ChallengeVertex
+	var challengeVertex protocol.ChallengeVertexInterface
 	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		challengeVertex, err = challenge.AddLeaf(tx, assertion, historyCommit, v.address)
 		if err != nil {
@@ -178,8 +178,8 @@ func (v *Validator) addChallengeVertex(
 func (v *Validator) submitProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.AssertionSequenceNumber,
-) (*protocol.Challenge, error) {
-	var challenge *protocol.Challenge
+) (protocol.ChallengeInterface, error) {
+	var challenge protocol.ChallengeInterface
 	var err error
 	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		parentAssertion, readErr := p.AssertionBySequenceNum(tx, parentAssertionSeqNum)

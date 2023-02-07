@@ -176,7 +176,7 @@ func TestAssertionChain(t *testing.T) {
 
 		half := big.NewInt(0).Div(ChallengeVertexStake, big.NewInt(2))
 		want := big.NewInt(0).Add(half, ChallengeVertexStake)
-		require.Equal(t, want, chain.GetBalance(tx, chal1.Validator)) // Should receive own mini stake plus half of others.
+		require.Equal(t, want, chain.GetBalance(tx, chal1.GetValidator())) // Should receive own mini stake plus half of others.
 		require.NoError(t, branch1.ConfirmForWin(tx))
 		require.Equal(t, branch1, chain.LatestConfirmed(tx))
 
@@ -364,9 +364,9 @@ func TestIsAtOneStepFork(t *testing.T) {
 			want:         false,
 			vertices: map[VertexCommitHash]*ChallengeVertex{
 				VertexCommitHash{1}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{1}),
@@ -381,12 +381,12 @@ func TestIsAtOneStepFork(t *testing.T) {
 			want:         false,
 			vertices: map[VertexCommitHash]*ChallengeVertex{
 				VertexCommitHash{1}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{
 							Height: 5,
 							Merkle: common.BytesToHash([]byte{5}),
 						},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 6,
 						Merkle: common.BytesToHash([]byte{6}),
@@ -401,18 +401,18 @@ func TestIsAtOneStepFork(t *testing.T) {
 			want:         false,
 			vertices: map[VertexCommitHash]*ChallengeVertex{
 				VertexCommitHash{1}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
 				VertexCommitHash{2}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 2,
 						Merkle: common.BytesToHash([]byte{1}),
@@ -427,18 +427,18 @@ func TestIsAtOneStepFork(t *testing.T) {
 			want:         true,
 			vertices: map[VertexCommitHash]*ChallengeVertex{
 				VertexCommitHash{1}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
 				VertexCommitHash{2}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{2}),
@@ -453,27 +453,27 @@ func TestIsAtOneStepFork(t *testing.T) {
 			want:         false,
 			vertices: map[VertexCommitHash]*ChallengeVertex{
 				VertexCommitHash{1}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
 				VertexCommitHash{2}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{2}),
 					},
 				},
 				VertexCommitHash{3}: {
-					Prev: util.Some(&ChallengeVertex{
+					Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					}),
+					})),
 					Commitment: util.HistoryCommitment{
 						Height: 2,
 						Merkle: common.BytesToHash([]byte{3}),
@@ -636,12 +636,12 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		timer := util.NewCountUpTimer(ref)
 		timer.Add(2 * time.Minute)
 		rootVertex := &ChallengeVertex{
-			PresumptiveSuccessor: util.Some(&ChallengeVertex{
+			PresumptiveSuccessor: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 				PsTimer: timer,
-			}),
-			Challenge: util.Some(c),
+			})),
+			Challenge: util.Some(ChallengeInterface(c)),
 		}
-		c.rootVertex = util.Some(rootVertex)
+		c.rootVertex = util.Some(ChallengeVertexInterface(rootVertex))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 		}
@@ -666,7 +666,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 				history.Hash(): true,
 			},
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 		}
@@ -693,7 +693,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 		}
@@ -724,7 +724,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 		}
@@ -754,7 +754,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 		}
@@ -797,7 +797,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 			StateCommitment: util.StateCommitment{
@@ -843,7 +843,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 			StateCommitment: util.StateCommitment{
@@ -889,7 +889,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 			StateCommitment: util.StateCommitment{
@@ -935,7 +935,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 			includedHistories: make(map[common.Hash]bool),
 		}
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev: c.rootAssertion,
 			StateCommitment: util.StateCommitment{
@@ -995,7 +995,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		chalHash := ChallengeCommitHash(c.rootAssertion.Unwrap().StateCommitment.Hash())
 		chain.challengeVerticesByCommitHash[chalHash] = make(map[VertexCommitHash]*ChallengeVertex)
 
-		c.rootVertex = util.Some(&ChallengeVertex{})
+		c.rootVertex = util.Some(ChallengeVertexInterface(&ChallengeVertex{}))
 		assertion := &Assertion{
 			Prev:  c.rootAssertion,
 			chain: chain,
@@ -1089,7 +1089,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.Equal(t, false, goodLeaf.IsPresumptiveSuccessor())
 
 		// Next, only the vertex that is not the presumptive successor can start a bisection move.
-		bisectionHeight, err := goodLeaf.requiredBisectionHeight()
+		bisectionHeight, err := goodLeaf.(*ChallengeVertex).requiredBisectionHeight()
 		require.NoError(t, err)
 		require.Equal(t, expectedBisectionHeight, bisectionHeight)
 
@@ -1121,12 +1121,12 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
-		require.Equal(t, bisection, goodLeaf.Prev.Unwrap())
+		require.Equal(t, bisection, goodLeaf.GetPrev().Unwrap())
 
 		// The rootAssertion of the bisectoin should be the rootVertex of this challenge and the bisection
 		// should be the new presumptive successor.
-		require.Equal(t, challenge.rootVertex.Unwrap().Commitment.Merkle, bisection.Prev.Unwrap().Commitment.Merkle)
-		require.Equal(t, true, bisection.Prev.Unwrap().IsPresumptiveSuccessor())
+		require.Equal(t, challenge.(*Challenge).rootVertex.Unwrap().(*ChallengeVertex).Commitment.Merkle, bisection.GetPrev().Unwrap().GetCommitment().Merkle)
+		require.Equal(t, true, bisection.GetPrev().Unwrap().IsPresumptiveSuccessor())
 		return nil
 	})
 
@@ -1144,16 +1144,16 @@ func TestAssertionChain_Merge(t *testing.T) {
 				challengePeriod: time.Minute,
 			},
 		})
-		ps := util.Some(&ChallengeVertex{
+		ps := util.Some(ChallengeVertexInterface(&ChallengeVertex{
 			PsTimer: counter,
 			Commitment: util.HistoryCommitment{
 				Height: 1,
 			},
-		})
+		}))
 		mergingTo := &ChallengeVertex{
-			Challenge: util.Some(&Challenge{
+			Challenge: util.Some(ChallengeInterface(&Challenge{
 				rootAssertion: rootAssertion,
-			}),
+			})),
 			PresumptiveSuccessor: ps,
 		}
 		mergingFrom := &ChallengeVertex{}
@@ -1168,11 +1168,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 	t.Run("invalid bisection point", func(t *testing.T) {
 		mergingTo := &ChallengeVertex{}
 		mergingFrom := &ChallengeVertex{
-			Prev: util.Some(&ChallengeVertex{
+			Prev: util.Some(ChallengeVertexInterface(&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 3,
 				},
-			}),
+			})),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -1192,7 +1192,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		mergingFrom := &ChallengeVertex{
-			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
+			Prev: util.Some[ChallengeVertexInterface](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
@@ -1216,7 +1216,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		mergingFrom := &ChallengeVertex{
-			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
+			Prev: util.Some[ChallengeVertexInterface](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
@@ -1262,14 +1262,14 @@ func TestAssertionChain_Merge(t *testing.T) {
 		}
 		mergingFrom := &ChallengeVertex{
 			PsTimer: counter,
-			Challenge: util.Some[*Challenge](&Challenge{
+			Challenge: util.Some[ChallengeInterface](&Challenge{
 				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
 					},
 				}),
 			}),
-			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
+			Prev: util.Some[ChallengeVertexInterface](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
@@ -1421,10 +1421,10 @@ func TestAssertion_HasConfirmedSibling(t *testing.T) {
 	h := c.ParentStateCommitment().Hash()
 	parent := &ChallengeVertex{}
 	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[ChallengeCommitHash(h)] = map[VertexCommitHash]*ChallengeVertex{
-		VertexCommitHash(h): {SequenceNum: 100, Status: ConfirmedAssertionState, Prev: util.Some(parent)},
+		VertexCommitHash(h): {SequenceNum: 100, Status: ConfirmedAssertionState, Prev: util.Some(ChallengeVertexInterface(parent))},
 	}
 
-	child := &ChallengeVertex{SequenceNum: 101, Prev: util.Some(parent)}
+	child := &ChallengeVertex{SequenceNum: 101, Prev: util.Some(ChallengeVertexInterface(parent))}
 
 	require.True(t, c.HasConfirmedSibling(tx, child))
 }

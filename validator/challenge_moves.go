@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (v *Validator) determineBisectionPointWithHistory(
+func (v *vertexTracker) determineBisectionPointWithHistory(
 	ctx context.Context,
 	parentHeight,
 	toHeight uint64,
@@ -29,12 +29,12 @@ func (v *Validator) determineBisectionPointWithHistory(
 // Performs a bisection move during a BlockChallenge in the assertion protocol given
 // a validator challenge vertex. It will create a historical commitment for the vertex
 // the validator wants to bisect to and an associated proof for submitting to the protocol.
-func (v *Validator) bisect(
+func (v *vertexTracker) bisect(
 	ctx context.Context,
-	validatorChallengeVertex *protocol.ChallengeVertex,
-) (*protocol.ChallengeVertex, error) {
-	toHeight := validatorChallengeVertex.Commitment.Height
-	parentHeight := validatorChallengeVertex.Prev.Unwrap().Commitment.Height
+	validatorChallengeVertex protocol.ChallengeVertexInterface,
+) (protocol.ChallengeVertexInterface, error) {
+	toHeight := validatorChallengeVertex.GetCommitment().Height
+	parentHeight := validatorChallengeVertex.GetPrev().Unwrap().GetCommitment().Height
 
 	historyCommit, err := v.determineBisectionPointWithHistory(ctx, parentHeight, toHeight)
 	if err != nil {
@@ -47,17 +47,17 @@ func (v *Validator) bisect(
 	}
 	// Perform an extra safety check to ensure our proof verifies against the specified commitment
 	// before we make an on-chain transaction.
-	if err = util.VerifyPrefixProof(historyCommit, validatorChallengeVertex.Commitment, proof); err != nil {
+	if err = util.VerifyPrefixProof(historyCommit, validatorChallengeVertex.GetCommitment(), proof); err != nil {
 		return nil, errors.Wrapf(
 			err,
 			"prefix proof failed to verify for commit %+v to commit %+v",
 			historyCommit,
-			validatorChallengeVertex.Commitment,
+			validatorChallengeVertex.GetCommitment(),
 		)
 	}
-	var bisectedVertex *protocol.ChallengeVertex
+	var bisectedVertex protocol.ChallengeVertexInterface
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		bisectedVertex, err = validatorChallengeVertex.Bisect(tx, historyCommit, proof, v.address)
+		bisectedVertex, err = validatorChallengeVertex.Bisect(tx, historyCommit, proof, v.validatorAddress)
 		if err != nil {
 			return err
 		}
@@ -67,18 +67,18 @@ func (v *Validator) bisect(
 		return nil, errors.Wrapf(
 			err,
 			"could not bisect vertex with sequence %d and validator %#x to height %d with history %d and %#x",
-			validatorChallengeVertex.SequenceNum,
-			validatorChallengeVertex.Validator,
+			validatorChallengeVertex.GetSequenceNum(),
+			validatorChallengeVertex.GetValidator(),
 			bisectTo,
 			historyCommit.Height,
 			historyCommit.Merkle,
 		)
 	}
 	log.WithFields(logrus.Fields{
-		"name":                   v.name,
+		"name":                   v.validatorName,
 		"isPresumptiveSuccessor": bisectedVertex.IsPresumptiveSuccessor(),
-		"historyCommitHeight":    bisectedVertex.Commitment.Height,
-		"historyCommitMerkle":    fmt.Sprintf("%#x", bisectedVertex.Commitment.Merkle),
+		"historyCommitHeight":    bisectedVertex.GetCommitment().Height,
+		"historyCommitMerkle":    fmt.Sprintf("%#x", bisectedVertex.GetCommitment().Merkle),
 	}).Info("Successfully bisected to vertex")
 	return bisectedVertex, nil
 }
@@ -86,18 +86,18 @@ func (v *Validator) bisect(
 // Performs a merge move during a BlockChallenge in the assertion protocol given
 // a challenge vertex and the sequence number we should be merging into. To do this, we
 // also need to fetch vertex we are merging to by reading it from the protocol.
-func (v *Validator) merge(
+func (v *vertexTracker) merge(
 	ctx context.Context,
 	challengeCommitHash protocol.ChallengeCommitHash,
-	mergingTo *protocol.ChallengeVertex,
-	mergingFrom *protocol.ChallengeVertex,
-) (*protocol.ChallengeVertex, error) {
-	mergingToHeight := mergingTo.Commitment.Height
+	mergingTo protocol.ChallengeVertexInterface,
+	mergingFrom protocol.ChallengeVertexInterface,
+) (protocol.ChallengeVertexInterface, error) {
+	mergingToHeight := mergingTo.GetCommitment().Height
 	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
 	if err != nil {
 		return nil, err
 	}
-	currentCommit := mergingFrom.Commitment
+	currentCommit := mergingFrom.GetCommitment()
 	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {
 		return nil, err
@@ -106,12 +106,12 @@ func (v *Validator) merge(
 		return nil, err
 	}
 	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		if err = mergingFrom.Merge(tx, mergingTo, proof, v.address); err != nil {
+		if err = mergingFrom.Merge(tx, mergingTo, proof, v.validatorAddress); err != nil {
 			return err
 		}
 		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
 		// changed after we made the merge transaction above.
-		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.Commitment.Hash()))
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.GetCommitment().Hash()))
 		if err != nil {
 			return err
 		}
@@ -123,15 +123,15 @@ func (v *Validator) merge(
 			currentCommit.Height,
 			currentCommit.Merkle,
 			mergingToHeight,
-			mergingTo.Commitment.Merkle,
+			mergingTo.GetCommitment().Merkle,
 		)
 	}
 	log.WithFields(logrus.Fields{
-		"name": v.name,
+		"name": v.validatorName,
 	}).Infof(
 		"Successfully merged to vertex with height %d and commit %#x",
-		mergingTo.Commitment.Height,
-		mergingTo.Commitment.Merkle,
+		mergingTo.GetCommitment().Height,
+		mergingTo.GetCommitment().Merkle,
 	)
 	return mergingTo, nil
 }
