@@ -62,30 +62,42 @@ func isIpv6(ip net.IP) bool {
 	return ip.To4() == nil
 }
 
-func (l *ConnectionLimiter) isAllowedImpl(ip net.IP) bool {
+type ipStringAndLimit struct {
+	ipString string
+	limit    int
+}
+
+func (l *ConnectionLimiter) getIpStringsAndLimits(ip net.IP) []ipStringAndLimit {
+	var result []ipStringAndLimit
 	if ip == nil || ip.IsPrivate() || ip.IsLoopback() {
 		log.Warn("Ignoring private, looback, or unparseable IP. Please check relay and network configuration to ensure client IP addresses are detected correctly", "ip", ip)
-		return true
+		return result
 	}
 
 	config := l.config()
-
-	if res := l.ipConnectionCounts[string(ip)]; res >= config.PerIpLimit {
-		return false
-	}
+	result = append(result, ipStringAndLimit{string(ip), config.PerIpLimit})
 
 	if isIpv6(ip) {
 		ipv6Slash48 := ip.Mask(net.CIDRMask(48, 128))
 		if ipv6Slash48 == nil {
 			log.Warn("Error taking /48 mask of ipv6 client address", "ip", ip)
-		} else if res := l.ipConnectionCounts[string(ipv6Slash48)+"/48"]; res >= config.PerIpv6Cidr48Limit {
-			return false
+		} else {
+			result = append(result, ipStringAndLimit{string(ipv6Slash48) + "/48", config.PerIpv6Cidr48Limit})
 		}
 
 		ipv6Slash64 := ip.Mask(net.CIDRMask(64, 128))
 		if ipv6Slash64 == nil {
 			log.Warn("Error taking /64 mask of ipv6 client address", "ip", ip)
-		} else if res := l.ipConnectionCounts[string(ipv6Slash64)+"/64"]; res >= config.PerIpv6Cidr64Limit {
+		} else {
+			result = append(result, ipStringAndLimit{string(ipv6Slash64) + "/64", config.PerIpv6Cidr64Limit})
+		}
+	}
+	return result
+}
+
+func (l *ConnectionLimiter) isAllowedImpl(ip net.IP) bool {
+	for _, item := range l.getIpStringsAndLimits(ip) {
+		if res := l.ipConnectionCounts[item.ipString]; res >= item.limit {
 			return false
 		}
 	}
@@ -103,29 +115,14 @@ func (l *ConnectionLimiter) updateUsage(ip net.IP, increment bool) {
 		updateAmount = 1
 	}
 
-	config := l.config()
-	updateAndCheckBounds := func(ipString string, bound int) {
-		l.ipConnectionCounts[ipString] += updateAmount
-		if l.ipConnectionCounts[ipString] < 0 {
-			log.Error("BUG: Unbalanced ConnectionLimiter.updateUsage(..., false) calls")
-			l.ipConnectionCounts[ipString] = 0
-		} else if l.ipConnectionCounts[ipString] > bound {
-			log.Error("BUG: Unbalanced ConnectionLimiter.updateUsage(..., true) calls")
-			l.ipConnectionCounts[ipString] = bound
-		}
-	}
-
-	updateAndCheckBounds(string(ip), config.PerIpLimit)
-
-	if isIpv6(ip) {
-		ipv6Slash48 := ip.Mask(net.CIDRMask(48, 128))
-		if ipv6Slash48 != nil {
-			updateAndCheckBounds(string(ipv6Slash48)+"/48", config.PerIpv6Cidr48Limit)
-		}
-
-		ipv6Slash64 := ip.Mask(net.CIDRMask(64, 128))
-		if ipv6Slash64 != nil {
-			updateAndCheckBounds(string(ipv6Slash64)+"/64", config.PerIpv6Cidr64Limit)
+	for _, item := range l.getIpStringsAndLimits(ip) {
+		l.ipConnectionCounts[item.ipString] += updateAmount
+		if l.ipConnectionCounts[item.ipString] < 0 {
+			log.Error("BUG: Unbalanced ConnectionLimiter.updateUsage(..., false) calls", "ip", item.ipString)
+			l.ipConnectionCounts[item.ipString] = 0
+		} else if l.ipConnectionCounts[item.ipString] > item.limit {
+			log.Error("BUG: Unbalanced ConnectionLimiter.updateUsage(..., true) calls", "ip", item.ipString)
+			l.ipConnectionCounts[item.ipString] = item.limit
 		}
 	}
 }

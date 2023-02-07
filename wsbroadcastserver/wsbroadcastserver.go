@@ -247,7 +247,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				return nil
 			},
 			OnHeader: func(key []byte, value []byte) error {
-				headerName := string(key)
+				headerName := textproto.CanonicalMIMEHeaderKey(string(key))
 				if headerName == HTTPHeaderFeedClientVersion {
 					feedClientVersion, err := strconv.ParseUint(string(value), 0, 64)
 					if err != nil {
@@ -294,7 +294,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				if config.ConnectionLimits.Enable && !s.clientManager.connectionLimiter.IsAllowed(connectingIP) {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusTooManyRequests),
-						ws.RejectionReason("Too many open websocket connections."),
+						ws.RejectionReason("Too many open feed connections."),
 					)
 				}
 
