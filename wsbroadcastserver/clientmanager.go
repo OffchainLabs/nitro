@@ -29,7 +29,9 @@ import (
 )
 
 var (
-	clientsConnectedGauge             = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
+	clientsCurrentGauge               = metrics.NewRegisteredGauge("arb/feed/clients/current", nil)
+	clientsConnectCount               = metrics.NewRegisteredCounter("arb/feed/clients/connect", nil)
+	clientsDisconnectCount            = metrics.NewRegisteredCounter("arb/feed/clients/disconnect", nil)
 	clientsTotalSuccessCounter        = metrics.NewRegisteredCounter("arb/feed/clients/success", nil)
 	clientsTotalFailedRegisterCounter = metrics.NewRegisteredCounter("arb/feed/clients/failed/register", nil)
 	clientsTotalFailedUpgradeCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
@@ -84,7 +86,8 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 		}
 	}()
 
-	clientsConnectedGauge.Inc(1)
+	clientsCurrentGauge.Inc(1)
+	clientsConnectCount.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
 	err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
 	if err != nil {
@@ -144,7 +147,8 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
 	}
 	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
-	clientsConnectedGauge.Dec(1)
+	clientsCurrentGauge.Dec(1)
+	clientsDisconnectCount.Inc(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
 
