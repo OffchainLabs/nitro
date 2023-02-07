@@ -726,6 +726,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
 		if queueItem.options != nil {
+			if hooks.ConditionalOptionsForTx == nil {
+				hooks.ConditionalOptionsForTx = make(arbos.ConditionalOptionsForTxMap)
+			}
 			hooks.ConditionalOptionsForTx[queueItem.tx.Hash()] = queueItem.options
 		}
 	}

@@ -79,12 +79,14 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 }
 
+type ConditionalOptionsForTxMap map[common.Hash]*arbitrum_types.ConditionalOptions
+
 type SequencingHooks struct {
 	TxErrors                []error
 	DiscardInvalidTxsEarly  bool
 	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address) error
 	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
-	ConditionalOptionsForTx map[common.Hash]*arbitrum_types.ConditionalOptions
+	ConditionalOptionsForTx ConditionalOptionsForTxMap
 }
 
 func noopSequencingHooks() *SequencingHooks {
