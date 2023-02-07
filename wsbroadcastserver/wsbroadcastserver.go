@@ -294,7 +294,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				if config.ConnectionLimits.Enable && !s.clientManager.connectionLimiter.IsAllowed(connectingIP) {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusTooManyRequests),
-						ws.RejectionReason(fmt.Sprintf("Too many open websocket connections.")),
+						ws.RejectionReason("Too many open websocket connections."),
 					)
 				}
 
