@@ -208,6 +208,9 @@ func (t *InboxTracker) populateFeedBacklog(broadcastServer *broadcaster.Broadcas
 	}
 	var startMessage arbutil.MessageIndex
 	if batchCount >= 2 {
+		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
+		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
+		// `batchCount - 2` is the index of the batch before the last batch.
 		batchIndex := batchCount - 2
 		startMessage, err = t.GetBatchMessageCount(batchIndex)
 		if err != nil {
