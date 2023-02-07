@@ -281,8 +281,8 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		var vertex *protocol.ChallengeVertex
 		v, err := trk.stateManager.HistoryCommitmentUpTo(ctx, 5)
 		require.NoError(t, err)
-		err = trk.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertex, err = p.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(trk.challenge.ParentStateCommitment().Hash()), protocol.VertexCommitHash(v.Hash()))
+		err = trk.chain.Call(func(tx *protocol.ActiveTx) error {
+			vertex, err = trk.chain.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(trk.challenge.ParentStateCommitment().Hash()), protocol.VertexCommitHash(v.Hash()))
 			if err != nil {
 				return err
 			}
@@ -437,12 +437,12 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 
 	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
 	var challenge *protocol.Challenge
-	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+	err = validator.chain.Tx(func(tx *protocol.ActiveTx) error {
+		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
 		if fetchErr != nil {
 			return fetchErr
 		}
-		challenge, err = p.ChallengeByCommitHash(tx, id)
+		challenge, err = validator.chain.ChallengeByCommitHash(tx, id)
 		if err != nil {
 			return err
 		}
@@ -458,8 +458,8 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	require.NoError(t, err)
 
 	var vertex *protocol.ChallengeVertex
-	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertex, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
+	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+		vertex, err = validator.chain.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
 		if err != nil {
 			return err
 		}

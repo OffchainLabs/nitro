@@ -126,8 +126,8 @@ func Test_merge(t *testing.T) {
 		require.NoError(t, err)
 
 		var mergingTo protocol.ChallengeVertexInterface
-		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
+		err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+			mergingTo, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
 			if err != nil {
 				return err
 			}
@@ -176,8 +176,8 @@ func Test_merge(t *testing.T) {
 
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom *protocol.ChallengeVertex
-		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToMergeFrom, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
+		err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+			vertexToMergeFrom, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
 			if err != nil {
 				return err
 			}
@@ -226,12 +226,12 @@ func runBisectionTest(
 	}
 
 	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
-	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+	err = validator.chain.Tx(func(tx *protocol.ActiveTx) error {
+		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
 		if fetchErr != nil {
 			return fetchErr
 		}
-		challenge, challErr := p.ChallengeByCommitHash(tx, id)
+		challenge, challErr := validator.chain.ChallengeByCommitHash(tx, id)
 		if challErr != nil {
 			return challErr
 		}
@@ -247,8 +247,8 @@ func runBisectionTest(
 
 	// Get the challenge from the chain itself.
 	var vertexToBisect protocol.ChallengeVertexInterface
-	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
+	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+		vertexToBisect, err = validator.chain.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
 		if err != nil {
 			return err
 		}

@@ -71,12 +71,12 @@ type ChainReadWriter interface {
 
 // ChainReader can make non-mutating calls to the on-chain protocol.
 type ChainReader interface {
-	Call(clo func(*ActiveTx, OnChainProtocol) error) error
+	Call(clo func(*ActiveTx) error) error
 }
 
 // ChainWriter can make mutating calls to the on-chain protocol.
 type ChainWriter interface {
-	Tx(clo func(*ActiveTx, OnChainProtocol) error) error
+	Tx(clo func(*ActiveTx) error) error
 }
 
 // EventProvider allows subscribing to chain events for the on-chain protocol.
@@ -180,21 +180,21 @@ func (tx *ActiveTx) verifyReadWrite() {
 }
 
 // Tx enables a mutating call to the on-chain protocol.
-func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
+func (chain *AssertionChain) Tx(clo func(tx *ActiveTx) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
-	err := clo(tx, chain)
+	err := clo(tx)
 	tx.TxStatus = DeadTxStatus
 	return err
 }
 
 // Call enables a non-mutating call to the on-chain protocol.
-func (chain *AssertionChain) Call(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
+func (chain *AssertionChain) Call(clo func(tx *ActiveTx) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
 	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
-	err := clo(tx, chain)
+	err := clo(tx)
 	tx.TxStatus = DeadTxStatus
 	return err
 }
@@ -222,7 +222,7 @@ type Assertion struct {
 	challenge               util.Option[*Challenge]
 }
 
-// NewAssertionChain creates a new AssertionChain.
+// NewAssertiSubscribeChainEventsonChain creates a new AssertionChain.
 func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,

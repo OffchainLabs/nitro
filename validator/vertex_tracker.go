@@ -28,7 +28,7 @@ type vertexTracker struct {
 	challengePeriodLength time.Duration
 	challengeCreationTime time.Time
 	vertex                protocol.ChallengeVertexInterface
-	chain                 protocol.ChainReadWriter
+	chain                 protocol.OnChainProtocol
 	stateManager          statemanager.Manager
 	awaitingOneStepFork   bool
 	validatorName         string
@@ -40,7 +40,7 @@ func newVertexTracker(
 	actEveryNSeconds time.Duration,
 	challenge protocol.ChallengeInterface,
 	vertex protocol.ChallengeVertexInterface,
-	chain protocol.ChainReadWriter,
+	chain protocol.OnChainProtocol,
 	stateManager statemanager.Manager,
 	validatorName string,
 	validatorAddress common.Address,
@@ -112,7 +112,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	}
 	var challengeCompleted bool
 	var siblingConfirmed bool
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
 		challengeCompleted = v.challenge.Completed(tx)
 		siblingConfirmed = v.challenge.HasConfirmedSibling(tx, v.vertex)
 		return nil
@@ -189,8 +189,8 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 	var atOneStepFork bool
 	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		atOneStepFork, err = p.IsAtOneStepFork(
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		atOneStepFork, err = v.chain.IsAtOneStepFork(
 			tx,
 			protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()),
 			v.vertex.GetCommitment(),
@@ -211,8 +211,8 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 func (v *vertexTracker) fetchVertexByHistoryCommit(hash protocol.VertexCommitHash) (protocol.ChallengeVertexInterface, error) {
 	var mergingTo protocol.ChallengeVertexInterface
 	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		mergingTo, err = p.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()), hash)
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()), hash)
 		if err != nil {
 			return err
 		}
@@ -268,7 +268,7 @@ func (v *vertexTracker) confirmed() (bool, error) {
 	if !subChallenge.IsNone() && !subChallenge.Unwrap().GetWinnerVertex().IsNone() {
 		winner := subChallenge.Unwrap().GetWinnerVertex().Unwrap()
 		if winner == v.vertex {
-			if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
 				return v.vertex.ConfirmForSubChallengeWin(tx)
 			}); err != nil {
 				return false, err
@@ -280,7 +280,7 @@ func (v *vertexTracker) confirmed() (bool, error) {
 
 	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
 	if v.vertex.GetPsTimer().Get() > v.challengePeriodLength {
-		if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
 			return v.vertex.ConfirmForPsTimer(tx)
 		}); err != nil {
 			return false, err
@@ -290,7 +290,7 @@ func (v *vertexTracker) confirmed() (bool, error) {
 
 	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
 	if v.timeRef.Get().After(v.challengeCreationTime.Add(2 * v.challengePeriodLength)) {
-		if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
 			return v.vertex.ConfirmForChallengeDeadline(tx)
 		}); err != nil {
 			return false, err

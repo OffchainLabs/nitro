@@ -120,7 +120,7 @@ func (v *Validator) verifyAddLeafConditions(a *protocol.Assertion, c protocol.Ch
 	if a.Prev.Unwrap() != c.RootAssertion() {
 		return errors.Wrap(protocol.ErrInvalidOp, "Challenge and assertion parent mismatch")
 	}
-	if err := v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err := v.chain.Call(func(tx *protocol.ActiveTx) error {
 		if c.Completed(tx) {
 			return errors.New("Challenge has been completed")
 		}
@@ -142,8 +142,8 @@ func (v *Validator) addChallengeVertex(
 
 	var assertion *protocol.Assertion
 	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		assertion, err = p.AssertionBySequenceNum(tx, latestValidAssertionSeq)
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		assertion, err = v.chain.AssertionBySequenceNum(tx, latestValidAssertionSeq)
 		if err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func (v *Validator) addChallengeVertex(
 	}
 
 	var challengeVertex protocol.ChallengeVertexInterface
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
 		challengeVertex, err = challenge.AddLeaf(tx, assertion, historyCommit, v.address)
 		if err != nil {
 			return err
@@ -181,8 +181,8 @@ func (v *Validator) submitProtocolChallenge(
 ) (protocol.ChallengeInterface, error) {
 	var challenge protocol.ChallengeInterface
 	var err error
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		parentAssertion, readErr := p.AssertionBySequenceNum(tx, parentAssertionSeqNum)
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
+		parentAssertion, readErr := v.chain.AssertionBySequenceNum(tx, parentAssertionSeqNum)
 		if readErr != nil {
 			return readErr
 		}
@@ -206,8 +206,8 @@ func (v *Validator) fetchProtocolChallenge(
 ) (*protocol.Challenge, error) {
 	var err error
 	var challenge *protocol.Challenge
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		challenge, err = p.ChallengeByCommitHash(
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		challenge, err = v.chain.ChallengeByCommitHash(
 			tx,
 			protocol.ChallengeCommitHash(parentAssertionCommit.Hash()),
 		)

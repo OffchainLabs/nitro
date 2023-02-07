@@ -56,7 +56,7 @@ func (v *vertexTracker) bisect(
 		)
 	}
 	var bisectedVertex protocol.ChallengeVertexInterface
-	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
 		bisectedVertex, err = validatorChallengeVertex.Bisect(tx, historyCommit, proof, v.validatorAddress)
 		if err != nil {
 			return err
@@ -105,13 +105,13 @@ func (v *vertexTracker) merge(
 	if err = util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
 		return nil, err
 	}
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
 		if err = mergingFrom.Merge(tx, mergingTo, proof, v.validatorAddress); err != nil {
 			return err
 		}
 		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
 		// changed after we made the merge transaction above.
-		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.GetCommitment().Hash()))
+		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.GetCommitment().Hash()))
 		if err != nil {
 			return err
 		}
