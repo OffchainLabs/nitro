@@ -254,6 +254,46 @@ func TestChalManager(t *testing.T) {
 	t.Logf("Vertex manager code size = %d", len(code))
 	require.Equal(t, true, len(code) > 0)
 
+	// CHALLENGE LEAF ADDERS.
+	blockLeafAdderAddr, tx, _, err := outgen.DeployBlockLeafAdder(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
+
+	code, err = acc.backend.CodeAt(ctx, blockLeafAdderAddr, nil)
+	require.NoError(t, err)
+	t.Logf("BlockChallengeLeafAdder code size = %d", len(code))
+	require.Equal(t, true, len(code) > 0)
+
+	bigStepLeafAdderAddr, tx, _, err := outgen.DeployBigStepLeafAdder(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
+
+	code, err = acc.backend.CodeAt(ctx, bigStepLeafAdderAddr, nil)
+	require.NoError(t, err)
+	t.Logf("BigStepChallengeLeafAdder code size = %d", len(code))
+	require.Equal(t, true, len(code) > 0)
+
+	smallStepLeafAdderAddr, tx, _, err := outgen.DeploySmallStepLeafAdder(acc.txOpts, acc.backend)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
+
+	code, err = acc.backend.CodeAt(ctx, smallStepLeafAdderAddr, nil)
+	require.NoError(t, err)
+	t.Logf("SmallStepChallengeLeafAdder code size = %d", len(code))
+	require.Equal(t, true, len(code) > 0)
+
 	// ASSERTION CHAIN.
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
 	challengePeriod := uint64(30)
@@ -295,6 +335,7 @@ func TestChalManager(t *testing.T) {
 	// Chain contract should be deployed.
 	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
 	require.NoError(t, err)
+	t.Logf("Challenge manager code size = %d", len(code))
 	require.Equal(t, true, len(code) > 0)
 }
 
