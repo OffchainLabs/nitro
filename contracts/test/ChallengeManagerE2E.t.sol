@@ -35,10 +35,10 @@ contract ChallengeManagerE2ETest is Test {
     uint256 miniStakeVal = 1 ether;
     uint256 challengePeriod = 1000;
 
-    function deploy() internal returns (MockAssertionChain, ChallengeManager, bytes32) {
+    function deploy() internal returns (MockAssertionChain, ChallengeManagerImpl, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
-        ChallengeManager challengeManager =
-            new ChallengeManager(assertionChain, miniStakeVal, challengePeriod, new MockOneStepProofEntry());
+        ChallengeManagerImpl challengeManager =
+            new ChallengeManagerImpl(assertionChain, miniStakeVal, challengePeriod, new MockOneStepProofEntry());
         bytes32 genesis = assertionChain.addAssertionUnsafe(0, 0, 0, genesisHash, 0);
 
         return (assertionChain, challengeManager, genesis);
@@ -46,9 +46,9 @@ contract ChallengeManagerE2ETest is Test {
 
     function deployAndInitChallenge()
         internal
-        returns (MockAssertionChain, ChallengeManager, bytes32, bytes32, bytes32, bytes32)
+        returns (MockAssertionChain, ChallengeManagerImpl, bytes32, bytes32, bytes32, bytes32)
     {
-        (MockAssertionChain assertionChain, ChallengeManager challengeManager, bytes32 genesis) = deploy();
+        (MockAssertionChain assertionChain, ChallengeManagerImpl challengeManager, bytes32 genesis) = deploy();
 
         bytes32 a1 = assertionChain.addAssertion(genesis, height1, inboxSeenCount1, h1, 0);
         bytes32 a2 = assertionChain.addAssertion(genesis, height1, inboxSeenCount1, h2, 0);
@@ -59,7 +59,7 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmPs() public {
-        (, ChallengeManager challengeManager,, bytes32 a1,, bytes32 challengeId) = deployAndInitChallenge();
+        (, ChallengeManagerImpl challengeManager,, bytes32 a1,, bytes32 challengeId) = deployAndInitChallenge();
 
         bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
@@ -84,7 +84,7 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmSubChallenge() public {
-        (, ChallengeManager challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
+        (, ChallengeManagerImpl challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
             deployAndInitChallenge();
 
         bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
@@ -244,7 +244,7 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmFromOneStep() public {
-        (, ChallengeManager challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
+        (, ChallengeManagerImpl challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
             deployAndInitChallenge();
 
         (bytes32[5] memory blockWinners, bytes32[5] memory blockLosers) = addLeafsAndBisectToSubChallenge(

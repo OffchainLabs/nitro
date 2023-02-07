@@ -335,7 +335,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) internal view {
+    ) external view {
         confirmationPreChecks(vertices, vId);
 
         // ensure only one type of confirmation is valid on this node and all it's siblings
@@ -351,7 +351,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId
-    ) internal view {
+    ) external view {
         confirmationPreChecks(vertices, vId);
 
         // ensure only one type of confirmation is valid on this node and all it's siblings
@@ -375,7 +375,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 assertionId,
         address assertionChain
-    ) internal view returns (bytes32) {
+    ) external view returns (bytes32) {
         // CHRIS: TODO: use pre-existing rights model contracts
         require(msg.sender == address(assertionChain), "Only assertion chain can create challenges");
 
@@ -391,7 +391,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
         uint256 challengePeriod
-    ) internal view returns (bytes32, ChallengeType) {
+    ) external view returns (bytes32, ChallengeType) {
         vertices.checkAtOneStepFork(vId);
 
         require(challenges[vId].winningClaim == 0, "Winner already declared");
@@ -450,7 +450,7 @@ library ChallengeManagerLib {
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
-    ) internal view returns (bytes32, uint256) {
+    ) external view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -468,7 +468,7 @@ library ChallengeManagerLib {
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
-    ) internal view returns (bytes32, uint256) {
+    ) external view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -485,7 +485,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafArgs memory leafData,
         uint256 miniStake
-    ) internal view {
+    ) public view {
         require(leafData.claimId != 0, "Empty claimId");
         require(leafData.historyCommitment != 0, "Empty historyCommitment");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
@@ -533,7 +533,7 @@ library ChallengeManagerLib {
         OneStepData calldata oneStepData,
         bytes calldata beforeHistoryInclusionProof,
         bytes calldata afterHistoryInclusionProof
-    ) internal returns (bytes32) {
+    ) external returns (bytes32) {
         require(vertices.has(winnerVId), "Vertex does not exist");
         bytes32 predecessorId = vertices[winnerVId].predecessorId;
         require(vertices.has(predecessorId), "Predecessor does not exist");
@@ -613,7 +613,7 @@ library BlockLeafAdder {
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs, // CHRIS: TODO: better name
         IAssertionChain assertionChain
-    ) public returns (bytes32) {
+    ) external returns (bytes32) {
         {
             // check that the predecessor of this claim has registered this contract as it's succession challenge
             bytes32 predecessorId = assertionChain.getPredecessorId(leafLibArgs.leafData.claimId);
@@ -683,7 +683,7 @@ library BigStepLeafAdder {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs // CHRIS: TODO: better name
-    ) internal returns (bytes32) {
+    ) external returns (bytes32) {
         {
             // CHRIS: TODO: we should only have the special stuff in here, we can pass in the initial ps timer or something
             // CHRIS: TODO: rename challenge to challenge manager
@@ -745,7 +745,7 @@ library SmallStepLeafAdder {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs
-    ) internal returns (bytes32) {
+    ) external returns (bytes32) {
         {
             require(vertices[leafLibArgs.leafData.claimId].exists(), "Claim does not exist");
             bytes32 predecessorId = vertices[leafLibArgs.leafData.claimId].predecessorId;
@@ -809,7 +809,7 @@ library SmallStepLeafAdder {
 // CHRIS: TODO: check that all the lib functions have the correct visibility
 
 library ChallengeTypeLib {
-    function nextType(ChallengeType cType) internal pure returns (ChallengeType) {
+    function nextType(ChallengeType cType) external pure returns (ChallengeType) {
         if (cType == ChallengeType.Block) {
             return ChallengeType.BigStep;
         } else if (cType == ChallengeType.BigStep) {
@@ -823,7 +823,7 @@ library ChallengeTypeLib {
     }
 }
 
-contract ChallengeManager is IChallengeManager {
+contract ChallengeManagerImpl is IChallengeManager {
     // CHRIS: TODO: do this in a different way
     // ChallengeManagers internal challengeManagers;
 
@@ -901,16 +901,6 @@ contract ChallengeManager is IChallengeManager {
         }
     }
 
-    /// @dev Confirms the vertex without doing any checks. Also sets the winning claim if the vertex
-    ///      is a leaf.
-    function setConfirmed(bytes32 vId) internal {
-        vertices[vId].status = Status.Confirmed;
-        bytes32 challengeId = vertices[vId].challengeId;
-        if (vertices[vId].isLeaf()) {
-            challenges[challengeId].winningClaim = vertices[vId].claimId;
-        }
-    }
-
     // CHRIS: TODO: better name for that predcessor id
     // CHRIS: TODO: any access management here? we shouldnt allow the challenge to be created by anyone as this affects the start timer - so we should has the id with teh creating address?
     function createChallenge(bytes32 assertionId) public returns (bytes32) {
@@ -929,20 +919,6 @@ contract ChallengeManager is IChallengeManager {
         challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0});
 
         return challengeId;
-    }
-
-    /// @notice Confirm a vertex because it has been the presumptive successor for long enough
-    /// @param vId The vertex id
-    function confirmForPsTimer(bytes32 vId) public {
-        ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriod);
-        setConfirmed(vId);
-    }
-
-    /// Confirm a vertex because it has won a succession challenge
-    /// @param vId The vertex id
-    function confirmForSucessionChallengeWin(bytes32 vId) public {
-        ChallengeManagerLib.checkConfirmForSucessionChallengeWin(vertices, challenges, vId);
-        setConfirmed(vId);
     }
 
     // CHRIS: TODO: the challengeid is stored in the children..
@@ -1031,11 +1007,36 @@ contract ChallengeManager is IChallengeManager {
         return bVId;
     }
 
+    /// @dev Confirms the vertex without doing any checks. Also sets the winning claim if the vertex
+    ///      is a leaf.
+    function setConfirmed(bytes32 vId) internal {
+        vertices[vId].status = Status.Confirmed;
+        bytes32 challengeId = vertices[vId].challengeId;
+        if (vertices[vId].isLeaf()) {
+            challenges[challengeId].winningClaim = vertices[vId].claimId;
+        }
+    }
+
+    /// @notice Confirm a vertex because it has been the presumptive successor for long enough
+    /// @param vId The vertex id
+    function confirmForPsTimer(bytes32 vId) public {
+        ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriod);
+        setConfirmed(vId);
+    }
+
+    /// Confirm a vertex because it has won a succession challenge
+    /// @param vId The vertex id
+    function confirmForSucessionChallengeWin(bytes32 vId) public {
+        ChallengeManagerLib.checkConfirmForSucessionChallengeWin(vertices, challenges, vId);
+        setConfirmed(vId);
+    }
+
     // EXTERNAL FUNCTIONS
     // --------------------
     // Functions that are not required internally but may be useful for external
     // callers.
-    // All functions below this point should be external, not just public.
+    // All functions below this point should be external, not just public, and not called within
+    // this contract.
 
     function winningClaim(bytes32 challengeId) external view returns (bytes32) {
         // CHRIS: TODO: check exists? or return the full struct?
