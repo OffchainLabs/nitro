@@ -107,7 +107,7 @@ struct ChallengeVertex {
     bytes32 presumptiveSuccessorId;
     // CHRIS: TODO: we should have a staker in here to decide what do in the event of a win/loss?
     // the last time the presumptive successor to this vertex changed
-    uint256 presumptiveSuccessorLastUpdated;
+    uint256 pSLastUpdated;
     // the amount of time this vertex has spent as the presumptive successor
     /// @notice DO NOT USE TO GET PS TIME! Instead use a getter function which takes into account unflushed ps time as well.
     ///         This is the amount of time that this vertex is recorded to have been the presumptive successor

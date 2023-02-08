@@ -4,7 +4,7 @@ pragma solidity ^0.8.17;
 import "./DataEntities.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "./libraries/ChallengeVertexLib.sol";
-import "./libraries/PSVerticesLib.sol";
+import "./libraries/PsVerticesLib.sol";
 import "./libraries/ChallengeStructLib.sol";
 import "./libraries/HistoryCommitmentLib.sol";
 import "./libraries/ChallengeTypeLib.sol";
@@ -12,7 +12,7 @@ import "./libraries/LeafAdderLib.sol";
 
 library ChallengeManagerLib {
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
     using ChallengeTypeLib for ChallengeType;
     using ChallengeStructLib for Challenge;
 
@@ -95,15 +95,27 @@ library ChallengeManagerLib {
         require(challenges[vId].winningClaim == 0, "Winner already declared");
 
         // CHRIS: TODO: we should check this in every move?
+        // CHRIS: TODO: in every move we should check confirmable behaviour - not just ps
         require(!vertices.hasConfirmablePsAt(vId, challengePeriod), "Presumptive successor confirmable");
         require(vertices[vId].successionChallenge == 0, "Challenge already exists");
+
+        // we never want to update a vertex if it's already confirmable?
+        // we can update it's successor stuff, but not the rest
+        // we can but does this mean we can't merge to it? yes, we should be able to
+        // but not if the merged node has a confirmable sibling or is confirmable itself?
+        // no, we should be able to merge to it, but then what happens if we update
+
+
+        // if it has a sibling that is confirmable, then we dont allow merge to it
+        // if is confirmable itself, we do allow merge to it, and we do allow it to be updated
 
         bytes32 challengeId = vertices[vId].challengeId;
         ChallengeType nextCType = challenges[challengeId].challengeType.nextType();
 
         // CHRIS: TODO: it should be impossible for two vertices to have the same id, even in different challenges
         // CHRIS: TODO: is this true for the root? no - the root can have the same id
-        bytes32 newChallengeId = ChallengeStructLib.id(challengeId, nextCType);
+        // CHRIS: TODO: check that this is the correct challenge origin passing in - we need to better define this
+        bytes32 newChallengeId = ChallengeStructLib.id(vId, nextCType);
         require(!challenges[newChallengeId].exists(), "Challenge already exists");
 
         return (newChallengeId, nextCType);
@@ -172,55 +184,13 @@ library ChallengeManagerLib {
         );
 
         require(vertices[bVId].exists(), "Bisection vertex does not already exist");
-        // CHRIS: TODO: include a long comment about this
+        require(
+            !vertices.hasConfirmablePsAt(bVId, challengePeriod), "Merge end already has confirmable successor"
+        );
+        // CHRIS: TODO: include a long comment about this - it's actually covered by the connect vertices I think
         require(!vertices[bVId].isLeaf(), "Cannot merge to a leaf");
 
         return (bVId, bHeight);
-    }
-
-    // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
-    function checkAddLeaf(
-        mapping(bytes32 => Challenge) storage challenges,
-        AddLeafArgs memory leafData,
-        uint256 miniStake
-    ) public view {
-        require(leafData.claimId != 0, "Empty claimId");
-        require(leafData.historyCommitment != 0, "Empty historyCommitment");
-        // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
-        require(leafData.height != 0, "Empty height");
-
-        // CHRIS: TODO: comment on why we need the mini stake
-        // CHRIS: TODO: also are we using this to refund moves in real-time? would be more expensive if so, but could be necessary?
-        // CHRIS: TODO: this can apparently be moved directly to the public goods fund
-        // CHRIS: TODO: we need to record who was on the winning leaf
-        require(msg.value == miniStake, "Incorrect mini-stake amount");
-
-        // CHRIS: TODO: require that this challenge hasnt declared a winner
-        require(challenges[leafData.challengeId].winningClaim == 0, "Winner already declared");
-
-        // CHRIS: TODO: also check the root is in the history at height 0/1?
-        require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
-            ),
-            "Last state not in history"
-        );
-
-        // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
-        require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.firstState, 0, leafData.firstStatehistoryProof
-            ),
-            "First state not in history"
-        );
-
-        // CHRIS: TODO: we dont know the root id - this is in the challenge itself?
-
-        require(
-            challenges[leafData.challengeId].rootId
-                == ChallengeVertexLib.id(leafData.challengeId, leafData.firstState, 0),
-            "First state is not the challenge root"
-        );
     }
 
     // CHRIS: TODO: this should be view really?
@@ -346,7 +316,7 @@ library ChallengeManagerLib {
 
 
 contract ChallengeManagerImpl is IChallengeManager {
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
     using ChallengeVertexLib for ChallengeVertex;
     using ChallengeTypeLib for ChallengeType;
     using ChallengeStructLib for Challenge;
@@ -501,12 +471,11 @@ contract ChallengeManagerImpl is IChallengeManager {
             0,
             address(0),
             // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
-            currentPsTimer,
-            challengePeriod
+            currentPsTimer
         );
         // CHRIS: TODO: check these two successor updates really do conform to the spec
         // CHRIS: TODO: rename to just `connect`
-        vertices.connectVertices(bVId, vId, challengePeriod);
+        vertices.connectVertices(bVId, vId);
 
         return bVId;
     }
@@ -516,10 +485,12 @@ contract ChallengeManagerImpl is IChallengeManager {
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
-        vertices.connectVertices(bVId, vId, challengePeriod);
-        // setting the presumptive successor to itself will just cause the ps timer to be flushed
-        vertices.setPresumptiveSuccessor(vertices[bVId].predecessorId, bVId, challengePeriod);
+        vertices.connectVertices(bVId, vId);
+        vertices.flushPs(vertices[bVId].predecessorId);
         // update the merge vertex if we have a higher ps time
+        // CHRIS: TODO: should we allow flushed time to be updated whenever we want like this? or have a lib for this that compares and updates max
+        // CHRIS: TODO: we're updating flushed time here! this could accidentally take us above the expected amount
+        // CHRIS: TODO: we should check that it's not confirmable
         if (vertices[bVId].flushedPsTime < vertices[vId].flushedPsTime) {
             vertices[bVId].flushedPsTime = vertices[vId].flushedPsTime;
         }

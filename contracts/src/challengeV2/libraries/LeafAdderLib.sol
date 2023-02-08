@@ -4,9 +4,11 @@ pragma solidity ^0.8.17;
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
 import "./HistoryCommitmentLib.sol";
-import "./PSVerticesLib.sol";
+import "./PsVerticesLib.sol";
 
 library LeafAdderLib {
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
+
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
     function checkAddLeaf(
         mapping(bytes32 => Challenge) storage challenges,
@@ -56,7 +58,7 @@ library LeafAdderLib {
 library BlockLeafAdder {
     // CHRIS: TODO: not all these libs are used
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
     function initialPsTime(bytes32 claimId, IAssertionChain assertionChain) internal view returns (uint256) {
         bool isFirstChild = assertionChain.isFirstChild(claimId);
@@ -119,6 +121,13 @@ library BlockLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
+        bytes32 rootId = challenges[leafLibArgs.leafData.challengeId].rootId;
+        require(
+            // CHRIS: TODO: we have the confirmable info in the challenge lib!!!
+            // CHRIS: TODO: but we refuse to use it there? seems weird tbh, we should revisit that collection
+            !vertices.hasConfirmablePsAt(rootId, leafLibArgs.challengePeriod), "Root already has confirmable successor"
+        );
+
         return vertices.addNewSuccessor(
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
@@ -129,8 +138,7 @@ library BlockLeafAdder {
             msg.sender,
             // CHRIS: TODO: the naming is bad here
             // CHRIS: TODO: this has a nicer pattern by encapsulating the args, could we do the same?
-            initialPsTime(leafLibArgs.leafData.claimId, assertionChain),
-            leafLibArgs.challengePeriod
+            initialPsTime(leafLibArgs.leafData.claimId, assertionChain)
         );
     }
 
@@ -139,7 +147,7 @@ library BlockLeafAdder {
 
 library BigStepLeafAdder {
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
     function getBlockHashFromClaim(bytes32 claimId, bytes memory claimProof) internal returns (bytes32) {
         // CHRIS: TODO:
@@ -189,6 +197,14 @@ library BigStepLeafAdder {
 
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
+
+        bytes32 rootId = challenges[leafLibArgs.leafData.challengeId].rootId;
+        require(
+            // CHRIS: TODO: we have the confirmable info in the challenge lib!!!
+            // CHRIS: TODO: but we refuse to use it there? seems weird tbh, we should revisit that collection
+            !vertices.hasConfirmablePsAt(rootId, leafLibArgs.challengePeriod), "Root already has confirmable successor"
+        );
+
         return vertices.addNewSuccessor(
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
@@ -198,15 +214,14 @@ library BigStepLeafAdder {
             leafLibArgs.leafData.claimId,
             msg.sender,
             // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
-            leafLibArgs.challengePeriod
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
         );
     }
 }
 
 library SmallStepLeafAdder {
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
     uint256 public constant MAX_STEPS = 2 << 19;
 
@@ -267,6 +282,14 @@ library SmallStepLeafAdder {
 
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
+
+        bytes32 rootId = challenges[leafLibArgs.leafData.challengeId].rootId;
+        require(
+            // CHRIS: TODO: we have the confirmable info in the challenge lib!!!
+            // CHRIS: TODO: but we refuse to use it there? seems weird tbh, we should revisit that collection
+            !vertices.hasConfirmablePsAt(rootId, leafLibArgs.challengePeriod), "Root already has confirmable successor"
+        );
+
         return vertices.addNewSuccessor(
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
@@ -276,8 +299,7 @@ library SmallStepLeafAdder {
             leafLibArgs.leafData.claimId,
             msg.sender,
             // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
-            leafLibArgs.challengePeriod
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
         );
     }
 }
