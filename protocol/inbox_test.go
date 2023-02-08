@@ -13,7 +13,7 @@ func TestInbox(t *testing.T) {
 	defer cancel()
 
 	inbox := NewInbox(ctx)
-	tx := &ActiveTx{ReadWriteTxStatus}
+	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	messages := [][]byte{
 		[]byte("a message"),
 		[]byte("second message"),
