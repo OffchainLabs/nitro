@@ -1,6 +1,6 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "author": "Offchain Labs, Inc.",
   "license": "BUSL-1.1",
