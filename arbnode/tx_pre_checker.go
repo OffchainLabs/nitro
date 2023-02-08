@@ -117,6 +117,9 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if arbmath.BigLessThan(balance, cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
+	if err := options.Check(statedb); err != nil {
+		return err
+	}
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
