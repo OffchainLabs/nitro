@@ -28,6 +28,7 @@ var (
 	ErrTooLate           = errors.New("too late to create assertion sibling")
 	ErrInvalidHeight     = errors.New("invalid assertion height")
 	uint256Ty, _         = abi.NewType("uint256", "", nil)
+	uint8Ty, _           = abi.NewType("uint8", "", nil)
 	hashTy, _            = abi.NewType("bytes32", "", nil)
 )
 
@@ -159,12 +160,11 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 		return nil, err
 	}
 	challengeId := getChallengeId(assertionId, BlockChallenge)
-	managerAddr, err := ac.ChallengeManager()
+	manager, err := ac.ChallengeManager()
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Replace.
-	return (&ChallengeManager{}).ChallengeByID(challengeId)
+	return manager.ChallengeByID(challengeId)
 }
 
 func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) error {
@@ -173,15 +173,15 @@ func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) er
 	}
 	errS := err.Error()
 	switch {
-	case strings.Contains(err.Error(), "Assertion does not exist"):
+	case strings.Contains(errS, "Assertion does not exist"):
 		return errors.Wrapf(ErrNotFound, "assertion id %#x", assertionId)
-	case strings.Contains(err.Error(), "Assertion already rejected"):
+	case strings.Contains(errS, "Assertion already rejected"):
 		return errors.Wrapf(ErrRejectedAssertion, "assertion id %#x", assertionId)
-	case strings.Contains(err.Error(), "Challenge already created"):
+	case strings.Contains(errS, "Challenge already created"):
 		return errors.Wrapf(ErrAlreadyExists, "assertion id %#x", assertionId)
-	case strings.Contains(err.Error(), "At least two children not created"):
+	case strings.Contains(errS, "At least two children not created"):
 		return errors.Wrapf(ErrInvalidChildren, "assertion id %#x", assertionId)
-	case strings.Contains(err.Error(), "Too late to challenge"):
+	case strings.Contains(errS, "Too late to challenge"):
 		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
 	default:
 		return nil

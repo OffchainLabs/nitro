@@ -91,7 +91,7 @@ func getChallengeId(
 			Type: hashTy,
 		},
 		{
-			Type: uint256Ty,
+			Type: uint8Ty,
 		},
 	}
 	packed, _ := arguments.Pack(

@@ -142,7 +142,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 
 	t.Run("assertion does not exist", func(t *testing.T) {
 		chain, _ := setupAssertionChainWithChallengeManager(t)
-		err := chain.CreateSuccessionChallenge([32]byte{9})
+		_, err := chain.CreateSuccessionChallenge([32]byte{9})
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 	t.Run("assertion already rejected", func(t *testing.T) {
@@ -152,7 +152,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 	t.Run("at least two children required", func(t *testing.T) {
 		chain, _ := setupAssertionChainWithChallengeManager(t)
-		err := chain.CreateSuccessionChallenge(genesisId)
+		_, err := chain.CreateSuccessionChallenge(genesisId)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 
 		commit1 := util.StateCommitment{
@@ -163,7 +163,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		_, err = chain.CreateAssertion(commit1, genesisId)
 		require.NoError(t, err)
 
-		err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(genesisId)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 
@@ -192,7 +192,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		err = acc.backend.AdjustTime(challengePeriod * 2)
 		require.NoError(t, err)
 
-		err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(genesisId)
 		require.ErrorIs(t, err, ErrTooLate)
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -213,7 +213,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		_, err = chain.CreateAssertion(commit2, genesisId)
 		require.NoError(t, err)
 
-		err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(genesisId)
 		require.NoError(t, err)
 	})
 	t.Run("challenge already exists", func(t *testing.T) {
@@ -234,10 +234,10 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		_, err = chain.CreateAssertion(commit2, genesisId)
 		require.NoError(t, err)
 
-		err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(genesisId)
 		require.NoError(t, err)
 
-		err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(genesisId)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 }
