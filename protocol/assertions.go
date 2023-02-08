@@ -112,7 +112,6 @@ type ChallengeInterface interface {
 	HasConfirmedSibling(tx *ActiveTx, vertex ChallengeVertexInterface) bool
 	RootVertex() ChallengeVertexInterface
 	ParentStateCommitment() util.StateCommitment
-	Winner(tx *ActiveTx) (*Assertion, error)
 	AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address, ) (ChallengeVertexInterface, error)
 	GetWinnerVertex() util.Option[ChallengeVertexInterface]
 	HasEnded(chain *AssertionChain) bool
@@ -127,7 +126,6 @@ type ChallengeVertexInterface interface {
 	IsPresumptiveSuccessor() bool
 	Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, validator common.Address) (ChallengeVertexInterface, error)
 	Merge(tx *ActiveTx, mergingTo ChallengeVertexInterface, proof []common.Hash, validator common.Address) error
-	ChessClockExpired(challengePeriod time.Duration) bool
 	EligibleForNewSuccessor() bool
 	GetPrev() util.Option[ChallengeVertexInterface]
 	GetStatus() AssertionState
@@ -136,7 +134,6 @@ type ChallengeVertexInterface interface {
 	GetCommitment() util.HistoryCommitment
 	GetValidator() common.Address
 	GetSequenceNum() VertexSequenceNumber
-	GetChallenge() util.Option[ChallengeInterface]
 	GetPresumptiveSuccessor() util.Option[ChallengeVertexInterface]
 }
 type AssertionChain struct {
@@ -1139,9 +1136,6 @@ func (v *ChallengeVertex) GetValidator() common.Address {
 }
 func (v *ChallengeVertex) GetSequenceNum() VertexSequenceNumber {
 	return v.SequenceNum
-}
-func (v *ChallengeVertex) GetChallenge() util.Option[ChallengeInterface] {
-	return v.Challenge
 }
 func (v *ChallengeVertex) GetPresumptiveSuccessor() util.Option[ChallengeVertexInterface] {
 	return v.PresumptiveSuccessor
