@@ -31,12 +31,20 @@ var (
 	hashTy, _            = abi.NewType("bytes32", "", nil)
 )
 
+// ChainCommitter defines a type of chain backend that supports
+// committing changes via a direct method, such as a simulated backend
+// for testing purposes.
+type ChainCommiter interface {
+	Commit() common.Hash
+}
+
 // Assertion is a wrapper around the binding to the type
 // of the same name in the protocol contracts. This allows us
 // to have a smaller API surface area and attach useful
 // methods that callers can use directly.
 type Assertion struct {
-	inner outgen.Assertion
+	StateCommitment util.StateCommitment
+	inner           outgen.Assertion
 }
 
 // AssertionChain is a wrapper around solgen bindings
@@ -101,6 +109,10 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 	}
 	return &Assertion{
 		inner: res,
+		StateCommitment: util.StateCommitment{
+			Height:    res.Height.Uint64(),
+			StateRoot: res.StateHash,
+		},
 	}, nil
 }
 
@@ -111,39 +123,56 @@ func (ac *AssertionChain) CreateAssertion(
 	commitment util.StateCommitment,
 	prevAssertionId common.Hash,
 ) (*Assertion, error) {
-	if err := ac.createAssertion(
-		commitment,
-		prevAssertionId,
-	); err != nil {
+	err := withChainCommitment(ac.backend, func() error {
+		_, err := ac.writer.CreateNewAssertion(
+			ac.txOpts,
+			commitment.StateRoot,
+			big.NewInt(int64(commitment.Height)),
+			prevAssertionId,
+		)
+		return err
+	})
+	if err := handleCreateAssertionError(err, commitment); err != nil {
 		return nil, err
 	}
 	assertionId := getAssertionId(commitment, prevAssertionId)
 	return ac.AssertionByID(assertionId)
 }
 
-// Triggers an assertion creation transaction.
-func (ac *AssertionChain) createAssertion(
-	commitment util.StateCommitment,
-	prevAssertionId common.Hash,
-) error {
-	_, err := ac.writer.CreateNewAssertion(
-		ac.txOpts,
-		commitment.StateRoot,
-		big.NewInt(int64(commitment.Height)),
-		prevAssertionId,
-	)
-	return handleCreateAssertionError(err, commitment)
+func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
+	return withChainCommitment(ac.backend, func() error {
+		_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
+		return err
+	})
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) error {
-	_, err := ac.writer.CreateSuccessionChallenge(
-		ac.txOpts,
-		assertionId,
-	)
-	switch {
-	case err == nil:
+func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
+	err := withChainCommitment(ac.backend, func() error {
+		_, err := ac.writer.CreateSuccessionChallenge(
+			ac.txOpts,
+			assertionId,
+		)
+		return err
+	})
+	if err := handleCreateSuccessionChallengeError(err, assertionId); err != nil {
+		return nil, err
+	}
+	challengeId := getChallengeId(assertionId, BlockChallenge)
+	managerAddr, err := ac.ChallengeManager()
+	if err != nil {
+		return nil, err
+	}
+	// TODO: Replace.
+	return (&ChallengeManager{}).ChallengeByID(challengeId)
+}
+
+func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) error {
+	if err == nil {
 		return nil
+	}
+	errS := err.Error()
+	switch {
 	case strings.Contains(err.Error(), "Assertion does not exist"):
 		return errors.Wrapf(ErrNotFound, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "Assertion already rejected"):
@@ -154,13 +183,9 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) err
 		return errors.Wrapf(ErrInvalidChildren, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "Too late to challenge"):
 		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
+	default:
+		return nil
 	}
-	return err
-}
-
-func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
-	_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
-	return err
 }
 
 func handleCreateAssertionError(err error, commitment util.StateCommitment) error {
@@ -190,6 +215,19 @@ func handleCreateAssertionError(err error, commitment util.StateCommitment) erro
 	default:
 		return nil
 	}
+}
+
+// Runs a callback function meant to write to a contract backend, and if the
+// chain backend supports committing directly, we call the commit function before
+// returning.
+func withChainCommitment(backend bind.ContractBackend, fn func() error) error {
+	if err := fn(); err != nil {
+		return err
+	}
+	if commiter, ok := backend.(ChainCommiter); ok {
+		commiter.Commit()
+	}
+	return nil
 }
 
 // Constructs and assertion ID which is built as

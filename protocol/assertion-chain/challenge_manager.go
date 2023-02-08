@@ -1,20 +1,21 @@
 package assertionchain
 
 import (
+	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 )
 
 // ChallengeManager --
 type ChallengeManager struct {
 	assertionChain *AssertionChain
-	caller         *outgen.ChallengeManagerCaller
-	writer         *outgen.ChallengeManagerTransactor
-	callOpts       *bind.CallOpts
+	caller         *outgen.ChallengeManagerImplCaller
+	writer         *outgen.ChallengeManagerImplTransactor
 }
 
-// Challenge is a wrapper around solgen bindings.
-type Challenge struct {
+func newChallengeManager() (*ChallengeManager, error) {
+	return nil, nil
 }
 
 // ChallengeManager returns an instance of the current challenge manager
@@ -24,14 +25,32 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	managerBinding, err := outgen.NewChallengeManager(addr, ac.backend)
+	managerBinding, err := outgen.NewChallengeManagerImpl(addr, ac.backend)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeManager{
 		assertionChain: ac,
-		caller:         &managerBinding.ChallengeManagerCaller,
-		writer:         &managerBinding.ChallengeManagerTransactor,
-		callOpts:       ac.callOpts,
+		caller:         &managerBinding.ChallengeManagerImplCaller,
+		writer:         &managerBinding.ChallengeManagerImplTransactor,
+	}, nil
+}
+
+// ChallengeByID --
+func (cm *ChallengeManager) ChallengeByID(challengeId common.Hash) (*Challenge, error) {
+	res, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(res.RootId[:], make([]byte, 32)) {
+		return nil, errors.Wrapf(
+			ErrNotFound,
+			"challenge with id %#x",
+			challengeId,
+		)
+	}
+	return &Challenge{
+		inner:   res,
+		manager: cm,
 	}, nil
 }
