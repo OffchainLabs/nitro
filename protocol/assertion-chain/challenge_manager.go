@@ -54,27 +54,34 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	}, nil
 }
 
+// CalculateChallengeId calculates the challenge ID for a given assertion and challenge type.
+func (cm *ChallengeManager) CalculateChallengeId(assertionId common.Hash, cType uint8) (common.Hash, error) {
+	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, assertionId, cType)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return c, nil
+}
+
 // ChallengeByID returns a challenge by its challenge ID.
 func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, error) {
 	c, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeID)
-	if err != nil {
-		return nil, err
-	}
 	switch {
 	case bytes.Equal(c.RootId[:], make([]byte, 32)):
 		return nil, errors.Wrapf(
-			ErrNotFound,
+			ErrChallengeNotFound,
 			"challenge with id %#x",
 			challengeID,
 		)
+	case err == nil:
+		return &Challenge{inner: c}, nil
 	case strings.Contains(err.Error(), "Vertex does not exist"):
 		return nil, errors.Wrapf(
 			ErrChallengeNotFound,
 			"challenge id %#x",
 			challengeID,
 		)
-	case err != nil:
+	default:
 		return nil, err
 	}
-	return &Challenge{inner: c}, nil
 }
