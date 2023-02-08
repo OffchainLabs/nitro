@@ -14,10 +14,6 @@ type ChallengeManager struct {
 	writer         *outgen.ChallengeManagerImplTransactor
 }
 
-func newChallengeManager() (*ChallengeManager, error) {
-	return nil, nil
-}
-
 // ChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
 func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
