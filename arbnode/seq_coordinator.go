@@ -697,7 +697,8 @@ func (c *SeqCoordinator) PrepareForShutdown() {
 	parentCtx := c.StopWaiter.GetParentContext()
 	handoffCtx, cancel := context.WithTimeout(c.StopWaiter.GetContext(), c.config.ShutdownHandoffTimeout)
 	defer cancel()
-	if c.CurrentlyChosen() && c.config.ShutdownHandoffTimeout != time.Duration(0) {
+	wasChosen := c.CurrentlyChosen()
+	if wasChosen && c.config.ShutdownHandoffTimeout != time.Duration(0) {
 		log.Info("Waiting for an alternative sequencer in the priorities to acquire liveliness...", "timeout", c.config.ShutdownHandoffTimeout)
 		c.waitFor(handoffCtx, func() bool {
 			otherSeq, err := c.RecommendLiveSequencerIgnoring(handoffCtx, c.config.MyUrl())
@@ -709,7 +710,6 @@ func (c *SeqCoordinator) PrepareForShutdown() {
 			return true
 		})
 	}
-	wasChosen := c.CurrentlyChosen()
 	c.StopWaiter.StopAndWait()
 	if c.CurrentlyChosen() {
 		wasChosen = true
