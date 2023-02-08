@@ -8,6 +8,7 @@ import (
 	"compress/flate"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -59,6 +60,8 @@ type ClientManager struct {
 	config        BroadcasterConfigFetcher
 	catchupBuffer CatchupBuffer
 	flateWriter   *flate.Writer
+
+	connectionLimiter *ConnectionLimiter
 }
 
 type ClientConnectionAction struct {
@@ -69,13 +72,14 @@ type ClientConnectionAction struct {
 func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, catchupBuffer CatchupBuffer) *ClientManager {
 	config := configFetcher()
 	return &ClientManager{
-		poller:        poller,
-		pool:          gopool.NewPool(config.Workers, config.Queue, 1),
-		clientPtrMap:  make(map[*ClientConnection]bool),
-		broadcastChan: make(chan interface{}, 1),
-		clientAction:  make(chan ClientConnectionAction, 128),
-		config:        configFetcher,
-		catchupBuffer: catchupBuffer,
+		poller:            poller,
+		pool:              gopool.NewPool(config.Workers, config.Queue, 1),
+		clientPtrMap:      make(map[*ClientConnection]bool),
+		broadcastChan:     make(chan interface{}, 1),
+		clientAction:      make(chan ClientConnectionAction, 128),
+		config:            configFetcher,
+		catchupBuffer:     catchupBuffer,
+		connectionLimiter: NewConnectionLimiter(func() *ConnectionLimiterConfig { return &configFetcher().ConnectionLimits }),
 	}
 }
 
@@ -86,12 +90,20 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 		}
 	}()
 
+	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
+		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
+	}
+
 	clientsCurrentGauge.Inc(1)
 	clientsConnectCount.Inc(1)
+
 	atomic.AddInt32(&cm.clientCount, 1)
 	err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
 	if err != nil {
 		clientsTotalFailedRegisterCounter.Inc(1)
+		if cm.config().ConnectionLimits.Enable {
+			cm.connectionLimiter.Release(clientConnection.clientIp)
+		}
 		return err
 	}
 	if cm.config().LogConnect {
@@ -110,7 +122,7 @@ func (cm *ClientManager) Register(
 	conn net.Conn,
 	desc *netpoll.Desc,
 	requestedSeqNum arbutil.MessageIndex,
-	connectingIP string,
+	connectingIP net.IP,
 	compression bool,
 ) *ClientConnection {
 	createClient := ClientConnectionAction{
@@ -146,6 +158,7 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 	if cm.config().LogDisconnect {
 		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
 	}
+
 	clientsDurationHistogram.Update(clientConnection.Age().Microseconds())
 	clientsCurrentGauge.Dec(1)
 	clientsDisconnectCount.Inc(1)
@@ -158,6 +171,9 @@ func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
 	}
 
 	cm.removeClientImpl(clientConnection)
+	if cm.config().ConnectionLimits.Enable {
+		cm.connectionLimiter.Release(clientConnection.clientIp)
+	}
 
 	delete(cm.clientPtrMap, clientConnection)
 }

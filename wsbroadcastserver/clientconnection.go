@@ -33,6 +33,7 @@ type ClientConnection struct {
 	ioMutex  sync.Mutex
 	conn     net.Conn
 	creation time.Time
+	clientIp net.IP
 
 	desc            *netpoll.Desc
 	Name            string
@@ -51,14 +52,15 @@ func NewClientConnection(
 	desc *netpoll.Desc,
 	clientManager *ClientManager,
 	requestedSeqNum arbutil.MessageIndex,
-	connectingIP string,
+	connectingIP net.IP,
 	compression bool,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
+		clientIp:        connectingIP,
 		desc:            desc,
 		creation:        time.Now(),
-		Name:            connectingIP + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		Name:            string(connectingIP) + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
