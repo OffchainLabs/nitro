@@ -21,8 +21,8 @@ func TestInboxFeeder(t *testing.T) {
 	getNumMsgs := func() uint64 {
 		t.Helper()
 		var numMsgs uint64
-		err := chain.Call(func(tx *protocol.ActiveTx, innerChain protocol.OnChainProtocol) error {
-			numMsgs = innerChain.Inbox().NumMessages(tx)
+		err := chain.Call(func(tx *protocol.ActiveTx) error {
+			numMsgs = chain.Inbox().NumMessages(tx)
 			return nil
 		})
 		require.NoError(t, err)

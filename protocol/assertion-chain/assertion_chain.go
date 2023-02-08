@@ -4,12 +4,12 @@
 package assertionchain
 
 import (
+	"bytes"
 	"context"
+	"math/big"
+	"strings"
 	"time"
 
-	"math/big"
-
-	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -17,17 +17,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 var (
-	ErrNotFound         = errors.New("item not found on-chain")
-	ErrAlreadyExists    = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist = errors.New("assertion predecessor does not exist")
-	ErrTooLate          = errors.New("too late to create assertion sibling")
-	ErrInvalidHeight    = errors.New("invalid assertion height")
-	uint256Ty, _        = abi.NewType("uint256", "", nil)
-	hashTy, _           = abi.NewType("bytes32", "", nil)
+	ErrRejectedAssertion = errors.New("assertion already rejected")
+	ErrInvalidChildren   = errors.New("invalid children")
+	ErrNotFound          = errors.New("item not found on-chain")
+	ErrAlreadyExists     = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
+	ErrTooLate           = errors.New("too late to create assertion sibling")
+	ErrInvalidHeight     = errors.New("invalid assertion height")
+	uint256Ty, _         = abi.NewType("uint256", "", nil)
+	hashTy, _            = abi.NewType("bytes32", "", nil)
 )
 
 // Assertion is a wrapper around the binding to the type
@@ -132,6 +133,34 @@ func (ac *AssertionChain) createAssertion(
 		prevAssertionId,
 	)
 	return handleCreateAssertionError(err, commitment)
+}
+
+// CreateSuccessionChallenge creates a succession challenge
+func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) error {
+	_, err := ac.writer.CreateSuccessionChallenge(
+		ac.txOpts,
+		assertionId,
+	)
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "Assertion does not exist"):
+		return errors.Wrapf(ErrNotFound, "assertion id %#x", assertionId)
+	case strings.Contains(err.Error(), "Assertion already rejected"):
+		return errors.Wrapf(ErrRejectedAssertion, "assertion id %#x", assertionId)
+	case strings.Contains(err.Error(), "Challenge already created"):
+		return errors.Wrapf(ErrAlreadyExists, "assertion id %#x", assertionId)
+	case strings.Contains(err.Error(), "At least two children not created"):
+		return errors.Wrapf(ErrInvalidChildren, "assertion id %#x", assertionId)
+	case strings.Contains(err.Error(), "Too late to challenge"):
+		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
+	}
+	return err
+}
+
+func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
+	_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
+	return err
 }
 
 func handleCreateAssertionError(err error, commitment util.StateCommitment) error {

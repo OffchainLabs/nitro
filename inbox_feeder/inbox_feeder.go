@@ -18,8 +18,8 @@ func StartInboxFeeder(ctx context.Context, chain *protocol.AssertionChain, messa
 			select {
 			case <-ticker.C():
 				message := crypto.Keccak256(binary.BigEndian.AppendUint64(randomSeed, msgNum))
-				_ = chain.Tx(func(tx *protocol.ActiveTx, innerChain protocol.OnChainProtocol) error {
-					innerChain.Inbox().Append(tx, message)
+				_ = chain.Tx(func(tx *protocol.ActiveTx) error {
+					chain.Inbox().Append(tx, message)
 					return nil
 				})
 			case <-ctx.Done():

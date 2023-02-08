@@ -2,8 +2,7 @@
 pragma solidity ^0.8.17;
 
 import "./DataEntities.sol";
-// CHRIS: TODO: remove this
-import "forge-std/Test.sol";
+import "./osp/IOneStepProofEntry.sol";
 
 library ChallengeVertexLib {
     function newRoot(bytes32 challengeId, bytes32 historyCommitment) internal pure returns (ChallengeVertex memory) {
@@ -49,7 +48,7 @@ library ChallengeVertexLib {
 library ChallengeVertexMappingLib {
     using ChallengeVertexLib for ChallengeVertex;
 
-    function has(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view returns (bool) {
+    function has(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view returns (bool) {
         // CHRIS: TODO: this doesnt work for root atm
         return vertices[vId].historyCommitment != 0;
     }
@@ -58,7 +57,7 @@ library ChallengeVertexMappingLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) public view returns (bool) {
+    ) internal view returns (bool) {
         require(has(vertices, vId), "Predecessor vertex does not exist");
 
         // we dont allow presumptive successor to be set to 0 if one is confirmable
@@ -101,7 +100,7 @@ library ChallengeVertexMappingLib {
         address successorStaker,
         uint256 successorInitialPsTime,
         uint256 challengePeriod
-    ) public returns (bytes32) {
+    ) internal returns (bytes32) {
         bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryCommitment, successorHeight);
         require(!has(vertices, vId), "Successor already exists");
         require(has(vertices, predecessorId), "Predecessor does not already exist");
@@ -135,7 +134,7 @@ library ChallengeVertexMappingLib {
         bytes32 vId,
         bytes32 presumptiveSuccessorId,
         uint256 challengePeriod
-    ) public {
+    ) internal {
         // CHRIS: TODO: check that this is not a leaf - we cant set the presumptive successor on a leaf
         require(!hasConfirmablePsAt(vertices, vId, challengePeriod), "Presumptive successor already confirmable");
 
@@ -157,7 +156,7 @@ library ChallengeVertexMappingLib {
         }
     }
 
-    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view {
+    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
         require(has(vertices, vId), "Fork candidate vertex does not exist");
 
         // CHRIS: TODO: do we want to include this?
@@ -181,7 +180,7 @@ library ChallengeVertexMappingLib {
         bytes32 startVertexId,
         bytes32 endVertexId,
         uint256 challengePeriod
-    ) public {
+    ) internal {
         require(has(vertices, startVertexId), "Predecessor vertex does not exist");
         require(has(vertices, endVertexId), "Successor already exists exist");
 
@@ -497,7 +496,7 @@ struct AddLeafLibArgs {
     bytes proof2;
 }
 
-contract ChallengeManager is IChallengeManager {
+contract ChallengeManagerImpl is IChallengeManager {
     // CHRIS: TODO: do this in a different way
     // ChallengeManagers internal challengeManagers;
 
@@ -507,14 +506,16 @@ contract ChallengeManager is IChallengeManager {
     mapping(bytes32 => ChallengeVertex) public vertices;
     mapping(bytes32 => Challenge) public challenges;
     IAssertionChain public assertionChain;
+    IOneStepProofEntry oneStepProofEntry;
 
     uint256 public immutable miniStakeValue;
     uint256 public immutable challengePeriod;
 
-    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod) {
+    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod, IOneStepProofEntry _oneStepProofEntry) {
         assertionChain = _assertionChain;
         miniStakeValue = _miniStakeValue;
         challengePeriod = _challengePeriod;
+        oneStepProofEntry = _oneStepProofEntry;
     }
 
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
@@ -609,12 +610,9 @@ contract ChallengeManager is IChallengeManager {
     }
 
     function isAtOneStepFork(bytes32 vId) public view returns (bool) {
-        // CHRIS: TODO: remove this function - it hides error messages
-        try vertices.checkAtOneStepFork(vId) {
-            return true;
-        } catch {
-            return false;
-        }
+        // CHRIS: TODO: we cant make the lib external 
+        vertices.checkAtOneStepFork(vId);
+        return true;
     }
 
     function winningClaim(bytes32 challengeId) public view returns (bytes32) {
@@ -727,6 +725,49 @@ contract ChallengeManager is IChallengeManager {
         return newChallengeId;
     }
 
+    // CHRIS: TODO: everywhere change commitment to root
+
+    // CHRIS: TODO: move this to data entities?
+    struct OneStepData {
+        ExecutionContext execCtx;
+        uint256 machineStep;
+        bytes32 beforeHash;
+        bytes proof;
+    }
+
+    function executeOneStep(
+            bytes32 winnerVId,
+            OneStepData calldata oneStepData,
+            bytes calldata beforeHistoryInclusionProof,
+            bytes calldata afterHistoryInclusionProof
+        ) public returns(bytes32) {
+
+        require(vertexExists(winnerVId), "Vertex does not exist");
+        bytes32 predecessorId = vertices[winnerVId].predecessorId;
+        require(vertexExists(predecessorId), "Predecessor does not exist");
+
+        bytes32 challengeId = vertices[predecessorId].successionChallenge;
+        require(challengeId != 0, "Succession challenge does not exist");
+        require(challenges[challengeId].challengeType == ChallengeType.OneStep, "Challenge is not at one step execution point");
+        
+        // check that the before hash is the state has of the root id
+        // the root id is challenge id combined with the history commitment and the height
+        // bytes32 historyCommitment, bytes32 state, uint256 stateHeight, bytes memory proof
+        require(HistoryCommitmentLib.hasState(vertices[predecessorId].historyCommitment, oneStepData.beforeHash, oneStepData.machineStep, beforeHistoryInclusionProof), "Before state not in history");
+        
+        // CHRIS: TODO: validate the execCtx?
+        bytes32 afterHash = oneStepProofEntry.proveOneStep(
+            oneStepData.execCtx,
+            oneStepData.machineStep,
+            oneStepData.beforeHash,
+            oneStepData.proof
+        );
+
+        require(HistoryCommitmentLib.hasState(vertices[winnerVId].historyCommitment, afterHash, oneStepData.machineStep + 1, afterHistoryInclusionProof), "After state not in history");
+
+        challenges[challengeId].winningClaim = winnerVId;
+    }
+
     function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) public returns (bytes32) {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
@@ -808,7 +849,7 @@ library BlockLeafAdder {
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs, // CHRIS: TODO: better name
         IAssertionChain assertionChain
-    ) public returns (bytes32) {
+    ) internal returns (bytes32) {
         {
             // check that the predecessor of this claim has registered this contract as it's succession challenge
             bytes32 predecessorId = assertionChain.getPredecessorId(leafLibArgs.leafData.claimId);
@@ -929,10 +970,11 @@ library SmallStepLeafAdder {
 
     uint256 public constant MAX_STEPS = 2 << 19;
 
-    function getProgramCounter(bytes32 state, bytes memory proof) public returns (uint256) {
+    function getProgramCounter(bytes32 state, bytes memory proof) internal returns (uint256) {
         // CHRIS: TODO:
         // 1. hydrate the wavm state with the proof
         // 2. find the program counter and return it
+        return uint256(bytes32(proof));
     }
 
     function addLeaf(
@@ -976,11 +1018,12 @@ library SmallStepLeafAdder {
                 "Inconsistent program counter"
             );
 
-            if (ChallengeVertexLib.isLeaf(vertices[predecessorId])) {
-                require(leafLibArgs.leafData.height == MAX_STEPS, "Invalid non-leaf steps");
-            } else {
-                require(leafLibArgs.leafData.height <= MAX_STEPS, "Invalid leaf steps");
-            }
+            // CHRIS: TODO: re-enable this leaf check
+            // if (!ChallengeVertexLib.isLeaf(vertices[leafLibArgs.leafData.claimId])) {
+            //     require(leafLibArgs.leafData.height == MAX_STEPS, "Invalid non-leaf steps");
+            // } else {
+            //     require(leafLibArgs.leafData.height <= MAX_STEPS, "Invalid leaf steps");
+            // }
 
             ChallengeManagerLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
