@@ -20,8 +20,8 @@ var (
 // ChallengeManager --
 type ChallengeManager struct {
 	assertionChain *AssertionChain
-	caller         *outgen.ChallengeManagerCaller
-	writer         *outgen.ChallengeManagerTransactor
+	caller         *outgen.ChallengeManagerImplCaller
+	writer         *outgen.ChallengeManagerImplTransactor
 	txOpts         *bind.TransactOpts
 }
 
@@ -42,14 +42,14 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	managerBinding, err := outgen.NewChallengeManager(addr, ac.backend)
+	managerBinding, err := outgen.NewChallengeManagerImpl(addr, ac.backend)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeManager{
 		assertionChain: ac,
-		caller:         &managerBinding.ChallengeManagerCaller,
-		writer:         &managerBinding.ChallengeManagerTransactor,
+		caller:         &managerBinding.ChallengeManagerImplCaller,
+		writer:         &managerBinding.ChallengeManagerImplTransactor,
 		txOpts:         ac.txOpts,
 	}, nil
 }
