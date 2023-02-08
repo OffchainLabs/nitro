@@ -69,7 +69,8 @@ type ChainReadWriter interface {
 	EventProvider
 }
 
-// ChainReader can make non-mutating calls to the on-chain protocol.
+// ChainReader can make non-mutating calls to the on-chain protocol. It provides
+// an ActiveTx type which has the block number to use when making chain calls.
 type ChainReader interface {
 	Call(clo func(*ActiveTx) error) error
 }
@@ -112,7 +113,7 @@ type ChallengeInterface interface {
 	HasConfirmedSibling(tx *ActiveTx, vertex ChallengeVertexInterface) bool
 	RootVertex() ChallengeVertexInterface
 	ParentStateCommitment() util.StateCommitment
-	AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address, ) (ChallengeVertexInterface, error)
+	AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address) (ChallengeVertexInterface, error)
 	GetWinnerVertex() util.Option[ChallengeVertexInterface]
 	HasEnded(chain *AssertionChain) bool
 	GetChallengeType() ChallengeType
@@ -159,7 +160,8 @@ const (
 
 // ActiveTx is a transaction that is currently being processed.
 type ActiveTx struct {
-	TxStatus int
+	TxStatus    int
+	BlockNumber *big.Int // If nil, uses the latest block in the chain.
 }
 
 // verifyRead is a helper function to verify that the transaction is read-only.
