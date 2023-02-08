@@ -300,7 +300,7 @@ func initializeSystem(
 
 	// Increase the balance for each validator in the test.
 	bal := big.NewInt(0).Add(protocol.AssertionStake, protocol.ChallengeVertexStake)
-	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err := chain.Tx(func(tx *protocol.ActiveTx) error {
 		for _, addr := range validatorAddrs {
 			chain.AddToBalance(tx, addr, bal)
 		}

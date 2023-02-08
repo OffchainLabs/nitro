@@ -327,7 +327,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 
 	// Increase the balance for each validator in the test.
 	bal := big.NewInt(0).Mul(protocol.AssertionStake, big.NewInt(100))
-	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err := chain.Tx(func(tx *protocol.ActiveTx) error {
 		for addr := range cfg.validatorNamesByAddress {
 			chain.AddToBalance(tx, addr, bal)
 		}
@@ -469,10 +469,10 @@ func TestValidator_verifyAddLeafConditions(t *testing.T) {
 	require.ErrorIs(t, v.verifyAddLeafConditions(badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
 
 	chain := protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)
-	var chal *protocol.Challenge
+	var chal protocol.ChallengeInterface
 	var rootAssertion *protocol.Assertion
 	var err error
-	err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err = chain.Tx(func(tx *protocol.ActiveTx) error {
 		require.Equal(t, uint64(1), chain.NumAssertions(tx))
 		rootAssertion, err = chain.AssertionBySequenceNum(tx, 0)
 		require.NoError(t, err)
