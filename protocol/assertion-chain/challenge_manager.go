@@ -2,9 +2,15 @@ package assertionchain
 
 import (
 	"bytes"
+	"strings"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
+)
+
+var (
+	ErrChallengeNotFound = errors.New("challenge not found")
 )
 
 // ChallengeManager --
@@ -32,21 +38,34 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	}, nil
 }
 
-// ChallengeByID --
-func (cm *ChallengeManager) ChallengeByID(challengeId common.Hash) (*Challenge, error) {
-	res, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
+// CalculateChallengeId calculates the challenge ID for a given assertion and challenge type.
+func (cm *ChallengeManager) CalculateChallengeId(assertionId common.Hash, cType uint8) (common.Hash, error) {
+	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, assertionId, cType)
 	if err != nil {
+		return common.Hash{}, err
+	}
+	return c, nil
+}
+
+// ChallengeByID returns a challenge by its challenge ID.
+func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, error) {
+	c, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeID)
+	switch {
+	case bytes.Equal(c.RootId[:], make([]byte, 32)):
+		return nil, errors.Wrapf(
+			ErrChallengeNotFound,
+			"challenge with id %#x",
+			challengeID,
+		)
+	case err == nil:
+		return &Challenge{inner: c}, nil
+	case strings.Contains(err.Error(), "Vertex does not exist"):
+		return nil, errors.Wrapf(
+			ErrChallengeNotFound,
+			"challenge id %#x",
+			challengeID,
+		)
+	default:
 		return nil, err
 	}
-	if bytes.Equal(res.RootId[:], make([]byte, 32)) {
-		return nil, errors.Wrapf(
-			ErrNotFound,
-			"challenge with id %#x",
-			challengeId,
-		)
-	}
-	return &Challenge{
-		inner:   res,
-		manager: cm,
-	}, nil
 }
