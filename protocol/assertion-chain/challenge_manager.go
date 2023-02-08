@@ -11,10 +11,7 @@ import (
 )
 
 var (
-	ErrChallengeNotFound       = errors.New("challenge not found")
-	ErrChallengeExists         = errors.New("challenge already exists")
-	ErrInvalidCaller           = errors.New("invalid caller")
-	ErrChallengeVertexNotFound = errors.New("challenge vertex not found")
+	ErrChallengeNotFound = errors.New("challenge not found")
 )
 
 // ChallengeManager --
@@ -28,11 +25,6 @@ type ChallengeManager struct {
 // Challenge is a wrapper around solgen bindings.
 type Challenge struct {
 	inner outgen.Challenge
-}
-
-// ChallengeVertex is a wrapper around solgen bindings.
-type ChallengeVertex struct {
-	inner outgen.ChallengeVertex
 }
 
 // ChallengeManager returns an instance of the current challenge manager
