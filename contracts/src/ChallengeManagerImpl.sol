@@ -48,7 +48,7 @@ library ChallengeVertexLib {
 library ChallengeVertexMappingLib {
     using ChallengeVertexLib for ChallengeVertex;
 
-    function has(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view returns (bool) {
+    function has(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view returns (bool) {
         // CHRIS: TODO: this doesnt work for root atm
         return vertices[vId].historyCommitment != 0;
     }
@@ -57,7 +57,7 @@ library ChallengeVertexMappingLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) public view returns (bool) {
+    ) internal view returns (bool) {
         require(has(vertices, vId), "Predecessor vertex does not exist");
 
         // we dont allow presumptive successor to be set to 0 if one is confirmable
@@ -100,7 +100,7 @@ library ChallengeVertexMappingLib {
         address successorStaker,
         uint256 successorInitialPsTime,
         uint256 challengePeriod
-    ) public returns (bytes32) {
+    ) internal returns (bytes32) {
         bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryCommitment, successorHeight);
         require(!has(vertices, vId), "Successor already exists");
         require(has(vertices, predecessorId), "Predecessor does not already exist");
@@ -134,7 +134,7 @@ library ChallengeVertexMappingLib {
         bytes32 vId,
         bytes32 presumptiveSuccessorId,
         uint256 challengePeriod
-    ) public {
+    ) internal {
         // CHRIS: TODO: check that this is not a leaf - we cant set the presumptive successor on a leaf
         require(!hasConfirmablePsAt(vertices, vId, challengePeriod), "Presumptive successor already confirmable");
 
@@ -156,7 +156,7 @@ library ChallengeVertexMappingLib {
         }
     }
 
-    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view {
+    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
         require(has(vertices, vId), "Fork candidate vertex does not exist");
 
         // CHRIS: TODO: do we want to include this?
@@ -180,7 +180,7 @@ library ChallengeVertexMappingLib {
         bytes32 startVertexId,
         bytes32 endVertexId,
         uint256 challengePeriod
-    ) public {
+    ) internal {
         require(has(vertices, startVertexId), "Predecessor vertex does not exist");
         require(has(vertices, endVertexId), "Successor already exists exist");
 
@@ -496,7 +496,7 @@ struct AddLeafLibArgs {
     bytes proof2;
 }
 
-contract ChallengeManager is IChallengeManager {
+contract ChallengeManagerImpl is IChallengeManager {
     // CHRIS: TODO: do this in a different way
     // ChallengeManagers internal challengeManagers;
 
@@ -610,12 +610,9 @@ contract ChallengeManager is IChallengeManager {
     }
 
     function isAtOneStepFork(bytes32 vId) public view returns (bool) {
-        // CHRIS: TODO: remove this function - it hides error messages
-        try vertices.checkAtOneStepFork(vId) {
-            return true;
-        } catch {
-            return false;
-        }
+        // CHRIS: TODO: we cant make the lib external 
+        vertices.checkAtOneStepFork(vId);
+        return true;
     }
 
     function winningClaim(bytes32 challengeId) public view returns (bytes32) {
@@ -852,7 +849,7 @@ library BlockLeafAdder {
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs, // CHRIS: TODO: better name
         IAssertionChain assertionChain
-    ) public returns (bytes32) {
+    ) internal returns (bytes32) {
         {
             // check that the predecessor of this claim has registered this contract as it's succession challenge
             bytes32 predecessorId = assertionChain.getPredecessorId(leafLibArgs.leafData.claimId);
@@ -973,7 +970,7 @@ library SmallStepLeafAdder {
 
     uint256 public constant MAX_STEPS = 2 << 19;
 
-    function getProgramCounter(bytes32 state, bytes memory proof) public returns (uint256) {
+    function getProgramCounter(bytes32 state, bytes memory proof) internal returns (uint256) {
         // CHRIS: TODO:
         // 1. hydrate the wavm state with the proof
         // 2. find the program counter and return it
