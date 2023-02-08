@@ -163,7 +163,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(assertionId, uint8(BlockChallenge))
+	challengeId, err := manager.CalculateChallengeId(assertionId, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}

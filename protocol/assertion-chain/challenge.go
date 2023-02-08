@@ -5,9 +5,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // Challenge is a developer-friendly wrapper around
@@ -35,7 +33,10 @@ func (c *Challenge) AddLeaf(
 	validator common.Address,
 ) (*ChallengeVertex, error) {
 	assertionId := getAssertionId(assertion.StateCommitment, assertion.inner.PredecessorId)
-	challengeId := getChallengeId(assertionId, BlockChallenge)
+	challengeId, err := c.manager.CalculateChallengeId(assertionId, BlockChallenge)
+	if err != nil {
+		return nil, err
+	}
 
 	// Flatten the last leaf proof for submission to the chain.
 	lastLeafProof := make([]byte, 0)
@@ -66,8 +67,16 @@ func (c *Challenge) AddLeaf(
 	if err != nil {
 		return nil, err
 	}
-	vertexId := [32]byte{}
-	inner, err := c.manager.caller.GetVertex(
+	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
+		c.manager.assertionChain.callOpts,
+		challengeId,
+		history.Merkle,
+		big.NewInt(int64(history.Height)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	vertex, err := c.manager.caller.GetVertex(
 		c.manager.assertionChain.callOpts,
 		vertexId,
 	)
@@ -75,28 +84,7 @@ func (c *Challenge) AddLeaf(
 		return nil, err
 	}
 	return &ChallengeVertex{
-		inner:   inner,
+		inner:   vertex,
 		manager: c.manager,
 	}, nil
-}
-
-// Constructs a challenge ID which is built as
-// keccak256(abi.encodePacked(assertionId,challengeType)).
-func getChallengeId(
-	assertionId common.Hash,
-	challengeType ChallengeType,
-) common.Hash {
-	arguments := abi.Arguments{
-		{
-			Type: hashTy,
-		},
-		{
-			Type: uint8Ty,
-		},
-	}
-	packed, _ := arguments.Pack(
-		assertionId,
-		challengeType,
-	)
-	return crypto.Keccak256Hash(packed)
 }

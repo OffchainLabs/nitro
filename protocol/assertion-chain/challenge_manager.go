@@ -39,8 +39,8 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 }
 
 // CalculateChallengeId calculates the challenge ID for a given assertion and challenge type.
-func (cm *ChallengeManager) CalculateChallengeId(assertionId common.Hash, cType uint8) (common.Hash, error) {
-	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, assertionId, cType)
+func (cm *ChallengeManager) CalculateChallengeId(assertionId common.Hash, cType ChallengeType) (common.Hash, error) {
+	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, assertionId, uint8(cType))
 	if err != nil {
 		return common.Hash{}, err
 	}
