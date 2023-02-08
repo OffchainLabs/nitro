@@ -67,7 +67,7 @@ contract AssertionChain is IAssertionChain {
     }
 
     function challengeManagerAddr() public view returns (address) {
-        return address(0);
+        return address(challengeManager);
     }
 
     // CHRIS: TODO: expensive to do from the challenge contract - could just ask for specific properties?
