@@ -21,7 +21,8 @@ hex = "0.4.3"
 
 [features]
 default = ["singlepass_rayon"]
-benchmark = ["dep:wasmer-compiler-llvm"]
+llvm = ["dep:wasmer-compiler-llvm"]
+benchmark = []
 singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
 
 [lib]
