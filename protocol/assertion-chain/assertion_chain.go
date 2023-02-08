@@ -20,16 +20,15 @@ import (
 )
 
 var (
-	ErrRejectedAssertion       = errors.New("assertion already rejected")
-	ErrChallengeAlreadyCreated = errors.New("challenge already created")
-	ErrInvalidChildren         = errors.New("invalid children")
-	ErrNotFound                = errors.New("item not found on-chain")
-	ErrAlreadyExists           = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist        = errors.New("assertion predecessor does not exist")
-	ErrTooLate                 = errors.New("too late to create assertion sibling")
-	ErrInvalidHeight           = errors.New("invalid assertion height")
-	uint256Ty, _               = abi.NewType("uint256", "", nil)
-	hashTy, _                  = abi.NewType("bytes32", "", nil)
+	ErrRejectedAssertion = errors.New("assertion already rejected")
+	ErrInvalidChildren   = errors.New("invalid children")
+	ErrNotFound          = errors.New("item not found on-chain")
+	ErrAlreadyExists     = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
+	ErrTooLate           = errors.New("too late to create assertion sibling")
+	ErrInvalidHeight     = errors.New("invalid assertion height")
+	uint256Ty, _         = abi.NewType("uint256", "", nil)
+	hashTy, _            = abi.NewType("bytes32", "", nil)
 )
 
 // Assertion is a wrapper around the binding to the type
@@ -150,7 +149,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) err
 	case strings.Contains(err.Error(), "Assertion already rejected"):
 		return errors.Wrapf(ErrRejectedAssertion, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "Challenge already created"):
-		return errors.Wrapf(ErrChallengeAlreadyCreated, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrAlreadyExists, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "At least two children not created"):
 		return errors.Wrapf(ErrInvalidChildren, "assertion id %#x", assertionId)
 	case strings.Contains(err.Error(), "Too late to challenge"):

@@ -205,7 +205,6 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		require.ErrorIs(t, err, ErrTooLate)
 	})
 	t.Run("OK", func(t *testing.T) {
-		t.Skip("Deploy chal manager")
 		chain, acc := setupAssertionChainWithChallengeManager(t)
 		commit1 := util.StateCommitment{
 			Height:    1,
@@ -230,113 +229,32 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		acc.backend.Commit()
 	})
 	t.Run("challenge already exists", func(t *testing.T) {
-		t.Skip("Create a fork and successful challenge first")
+		chain, acc := setupAssertionChainWithChallengeManager(t)
+		commit1 := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte{1}),
+		}
+
+		err := chain.createAssertion(commit1, genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		commit2 := util.StateCommitment{
+			Height:    1,
+			StateRoot: common.BytesToHash([]byte{2}),
+		}
+
+		err = chain.createAssertion(commit2, genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		err = chain.CreateSuccessionChallenge(genesisId)
+		require.NoError(t, err)
+		acc.backend.Commit()
+
+		err = chain.CreateSuccessionChallenge(genesisId)
+		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
-}
-
-func TestChalManager(t *testing.T) {
-	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-	acc.txOpts.GasLimit = acc.backend.Blockchain().GasLimit()
-
-	// VERTEX MANAGER.
-	vertexManagerAddr, tx, _, err := outgen.DeployVertexManager(acc.txOpts, acc.backend)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	receipt, err := acc.backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	code, err := acc.backend.CodeAt(ctx, vertexManagerAddr, nil)
-	require.NoError(t, err)
-	t.Logf("Vertex manager code size = %d", len(code))
-	require.Equal(t, true, len(code) > 0)
-
-	// CHALLENGE LEAF ADDERS.
-	blockLeafAdderAddr, tx, _, err := outgen.DeployBlockLeafAdder(acc.txOpts, acc.backend)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	code, err = acc.backend.CodeAt(ctx, blockLeafAdderAddr, nil)
-	require.NoError(t, err)
-	t.Logf("BlockChallengeLeafAdder code size = %d", len(code))
-	require.Equal(t, true, len(code) > 0)
-
-	bigStepLeafAdderAddr, tx, _, err := outgen.DeployBigStepLeafAdder(acc.txOpts, acc.backend)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	code, err = acc.backend.CodeAt(ctx, bigStepLeafAdderAddr, nil)
-	require.NoError(t, err)
-	t.Logf("BigStepChallengeLeafAdder code size = %d", len(code))
-	require.Equal(t, true, len(code) > 0)
-
-	smallStepLeafAdderAddr, tx, _, err := outgen.DeploySmallStepLeafAdder(acc.txOpts, acc.backend)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	code, err = acc.backend.CodeAt(ctx, smallStepLeafAdderAddr, nil)
-	require.NoError(t, err)
-	t.Logf("SmallStepChallengeLeafAdder code size = %d", len(code))
-	require.Equal(t, true, len(code) > 0)
-
-	// ASSERTION CHAIN.
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriod := uint64(30)
-	assertionChainAddr, tx, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		big.NewInt(int64(challengePeriod)),
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	code, err = acc.backend.CodeAt(ctx, assertionChainAddr, nil)
-	require.NoError(t, err)
-	t.Logf("Assertion chain code size = %d", len(code))
-	require.Equal(t, true, len(code) > 0)
-
-	// CHALLENGE MANAGER.
-	miniStakeValue := big.NewInt(1)
-	chalManagerAddr, tx, _, err := outgen.DeployChallengeManager(
-		acc.txOpts,
-		acc.backend,
-		assertionChainAddr,
-		vertexManagerAddr,
-		miniStakeValue,
-		big.NewInt(int64(challengePeriod)),
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	receipt, err = acc.backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, true, receipt.Status == 1, "Receipt says tx failed")
-
-	// Chain contract should be deployed.
-	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
-	require.NoError(t, err)
-	t.Logf("Challenge manager code size = %d", len(code))
-	require.Equal(t, true, len(code) > 0)
 }
 
 func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
@@ -346,12 +264,12 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriod := uint64(30)
+	challengePeriodSeconds := big.NewInt(30)
 	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
-		big.NewInt(int64(challengePeriod)),
+		challengePeriodSeconds,
 	)
 	require.NoError(t, err)
 	acc.backend.Commit()
@@ -361,23 +279,40 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	require.NoError(t, err)
 	require.Equal(t, true, len(code) > 0)
 
+	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
+		acc.txOpts,
+		acc.backend,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	code, err = acc.backend.CodeAt(ctx, ospAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, true, len(code) > 0)
+
+	miniStakeValue := big.NewInt(1)
+	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
+		acc.txOpts,
+		acc.backend,
+		assertionChainAddr,
+		miniStakeValue,
+		challengePeriodSeconds,
+		ospAddr,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
+	require.NoError(t, err)
+	require.Equal(t, true, len(code) > 0)
+
 	chain, err := NewAssertionChain(
 		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-
-	// miniStakeValue := big.NewInt(1)
-	// chalManagerAddr, _, _, err := outgen.DeployChallengeManager(
-	// 	acc.txOpts,
-	// 	acc.backend,
-	// 	assertionChainAddr,
-	// 	miniStakeValue,
-	// 	challengePeriodSeconds,
-	// 	common.Address{}, // OSP entry contract.
-	// )
-	// require.NoError(t, err)
-	// acc.backend.Commit()
-	// _ = chalManagerAddr
+	err = chain.UpdateChallengeManager(chalManagerAddr)
+	require.NoError(t, err)
+	acc.backend.Commit()
 
 	return chain, acc
 }
