@@ -167,6 +167,21 @@ impl Add<u32> for ProgramCounter {
     }
 }
 
+impl Display for ProgramCounter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}{}{}",
+            "inst".grey(),
+            self.inst.pink(),
+            "in".grey(),
+            self.module.pink(),
+            ":".grey(),
+            self.func.pink()
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
@@ -308,7 +323,7 @@ impl Value {
             Value::F64(value) => single!("f64", *value),
             Value::RefNull => "null".into(),
             Value::FuncRef(func) => format!("func {}", func),
-            Value::InternalRef(pc) => format!("inst {} in {}-{}", pc.inst, pc.module, pc.func),
+            Value::InternalRef(pc) => format!("{}", pc),
         }
     }
 }
@@ -347,6 +362,12 @@ impl From<f32> for Value {
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
         Value::F64(value)
+    }
+}
+
+impl From<ProgramCounter> for Value {
+    fn from(value: ProgramCounter) -> Self {
+        Value::InternalRef(value)
     }
 }
 

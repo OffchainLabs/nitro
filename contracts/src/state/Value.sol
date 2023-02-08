@@ -61,4 +61,16 @@ library ValueLib {
             return newI32(uint32(0));
         }
     }
+
+    function newPc(
+        uint32 funcPc,
+        uint32 func,
+        uint32 module
+    ) internal pure returns (Value memory) {
+        uint256 data = 0;
+        data |= funcPc;
+        data |= uint256(func) << 32;
+        data |= uint256(module) << 64;
+        return Value({valueType: ValueType.INTERNAL_REF, contents: data});
+    }
 }

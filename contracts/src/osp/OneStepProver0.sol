@@ -11,6 +11,7 @@ import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
+    using MachineLib for Machine;
     using MerkleProofLib for MerkleProof;
     using StackFrameLib for StackFrameWindow;
     using ValueLib for Value;
@@ -90,28 +91,11 @@ contract OneStepProver0 is IOneStepProver {
         bytes calldata
     ) internal pure {
         StackFrame memory frame = mach.frameStack.pop();
-        if (frame.returnPc.valueType == ValueType.REF_NULL) {
-            mach.status = MachineStatus.ERRORED;
-            return;
-        } else if (frame.returnPc.valueType != ValueType.INTERNAL_REF) {
-            revert("INVALID_RETURN_PC_TYPE");
-        }
-        uint256 data = frame.returnPc.contents;
-        uint32 pc = uint32(data);
-        uint32 func = uint32(data >> 32);
-        uint32 mod = uint32(data >> 64);
-        require(data >> 96 == 0, "INVALID_RETURN_PC_DATA");
-        mach.functionPc = pc;
-        mach.functionIdx = func;
-        mach.moduleIdx = mod;
+        mach.setPc(frame.returnPc);
     }
 
     function createReturnValue(Machine memory mach) internal pure returns (Value memory) {
-        uint256 returnData = 0;
-        returnData |= mach.functionPc;
-        returnData |= uint256(mach.functionIdx) << 32;
-        returnData |= uint256(mach.moduleIdx) << 64;
-        return Value({valueType: ValueType.INTERNAL_REF, contents: returnData});
+        return ValueLib.newPc(mach.functionPc, mach.functionIdx, mach.moduleIdx);
     }
 
     function executeCall(

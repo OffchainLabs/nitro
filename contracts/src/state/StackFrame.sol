@@ -60,4 +60,10 @@ library StackFrameLib {
         newProved[window.proved.length] = frame;
         window.proved = newProved;
     }
+
+    function overwrite(StackFrameWindow memory window, bytes32 root) internal pure {
+        StackFrame[] memory zero;
+        window.proved = zero;
+        window.remainingHash = root;
+    }
 }

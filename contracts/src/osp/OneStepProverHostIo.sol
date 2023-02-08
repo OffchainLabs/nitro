@@ -18,6 +18,8 @@ contract OneStepProverHostIo is IOneStepProver {
     using ModuleMemoryLib for ModuleMemory;
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
+    using StackFrameLib for StackFrameWindow;
+    using GuardStackLib for GuardStack;
 
     uint256 private constant LEAF_SIZE = 32;
     uint256 private constant INBOX_NUM = 2;
@@ -385,6 +387,30 @@ contract OneStepProverHostIo is IOneStepProver {
         }
     }
 
+    function executePushErrorGuard(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata proof
+    ) internal view {
+        bytes32 frames = mach.frameStack.hash();
+        bytes32 values = mach.valueStack.hash();
+        Value memory onError = ValueLib.newPc(mach.functionPc, mach.functionIdx, mach.moduleIdx);
+        mach.guardStack.push(GuardStackLib.newErrorGuard(frames, values, onError));
+        mach.valueStack.push(ValueLib.newI32(1));
+    }
+
+    function executePopErrorGuard(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata proof
+    ) internal pure {
+        mach.guardStack.pop();
+    }
+
     function executeGlobalStateAccess(
         ExecutionContext calldata,
         Machine memory mach,
@@ -450,6 +476,10 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeLinkModule;
         } else if (opcode == Instructions.UNLINK_MODULE) {
             impl = executeUnlinkModule;
+        } else if (opcode == Instructions.PUSH_ERROR_GUARD) {
+            impl = executePushErrorGuard;
+        } else if (opcode == Instructions.POP_ERROR_GUARD) {
+            impl = executePopErrorGuard;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }

@@ -200,7 +200,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             }
             ("hostio", "program_call_main") => {
                 // λ(module, main, args_len) -> status
-                opcode!(PushErrorGaurd);
+                opcode!(PushErrorGuard);
                 opcode!(ArbitraryJumpIf, code.len() + 3);
                 opcode!(I32Const, 1);
                 opcode!(Return);
@@ -210,7 +210,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
                 opcode!(LocalGet, 0); // module
                 opcode!(LocalGet, 1); // main
                 opcode!(CrossModuleDynamicCall); // consumes module and main, passing args_len
-                opcode!(PopErrorGaurd);
+                opcode!(PopErrorGuard);
             }
             _ => bail!("no such hostio {} in {}", name.red(), module.red()),
         }

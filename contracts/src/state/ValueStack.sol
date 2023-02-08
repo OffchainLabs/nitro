@@ -36,4 +36,10 @@ library ValueStackLib {
     function push(ValueStack memory stack, Value memory val) internal pure {
         return stack.proved.push(val);
     }
+
+    function overwrite(ValueStack memory stack, bytes32 root) internal pure {
+        ValueArray memory zero;
+        stack.proved = zero;
+        stack.remainingHash = root;
+    }
 }

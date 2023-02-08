@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
     binary::{
@@ -17,7 +17,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{crypto, math, Color};
+use arbutil::{math, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -31,6 +31,7 @@ use std::{
     convert::{TryFrom, TryInto},
     fmt::{self, Display},
     fs::File,
+    hash::Hash,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
     path::{Path, PathBuf},
@@ -723,10 +724,66 @@ impl PreimageResolverWrapper {
 }
 
 #[derive(Clone, Debug)]
-struct ErrorContext {
+pub struct ErrorGuard {
     frame_stack: usize,
     value_stack: usize,
     on_error: ProgramCounter,
+}
+
+impl Display for ErrorGuard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{} {} {} {}{}",
+            "ErrorGuard(".grey(),
+            self.frame_stack.mint(),
+            self.value_stack.mint(),
+            "→".grey(),
+            self.on_error,
+            ")".grey(),
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ErrorGuardProof {
+    frame_stack: Bytes32,
+    value_stack: Bytes32,
+    on_error: ProgramCounter,
+}
+
+impl ErrorGuardProof {
+    const STACK_PREFIX: &str = "Guard stack:";
+    const GUARD_PREFIX: &str = "Error guard:";
+
+    fn new(frame_stack: Bytes32, value_stack: Bytes32, on_error: ProgramCounter) -> Self {
+        Self {
+            frame_stack,
+            value_stack,
+            on_error,
+        }
+    }
+
+    fn serialize_for_proof(&self) -> Vec<u8> {
+        let mut data = self.frame_stack.to_vec();
+        data.extend(self.value_stack.0);
+        data.extend(Value::from(self.on_error).serialize_for_proof());
+        data
+    }
+
+    fn hash(&self) -> Bytes32 {
+        Keccak256::new()
+            .chain(Self::GUARD_PREFIX)
+            .chain(self.frame_stack)
+            .chain(self.value_stack)
+            .chain(Value::InternalRef(self.on_error).hash())
+            .finalize()
+            .into()
+    }
+
+    fn hash_guards(guards: &[Self]) -> Bytes32 {
+        hash_stack(guards.iter().map(|g| g.hash()), Self::STACK_PREFIX)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -736,7 +793,7 @@ pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
     frame_stack: Vec<StackFrame>,
-    gaurds: Vec<ErrorContext>,
+    guards: Vec<ErrorGuard>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -769,18 +826,26 @@ where
 {
     let mut parts = vec![];
     let mut hash = Bytes32::default();
-    for (index, item) in stack.into_iter().enumerate() {
-        let mut preimage = prefix.as_bytes().to_vec();
-        preimage.extend(item.as_ref());
-        preimage.extend(hash.0);
-        hash = crypto::keccak(&preimage).into();
-
-        if let Some(&height) = heights.first() {
-            if height == index {
-                parts.push(hash);
-                heights = &heights[1..];
-            }
+    let mut count = 0;
+    for item in stack.into_iter() {
+        while heights.first() == Some(&count) {
+            parts.push(hash);
+            heights = &heights[1..];
         }
+
+        hash = Keccak256::new()
+            .chain(prefix)
+            .chain(item.as_ref())
+            .chain(hash)
+            .finalize()
+            .into();
+
+        count += 1;
+    }
+    while !heights.is_empty() {
+        assert_eq!(heights[0], count);
+        parts.push(hash);
+        heights = &heights[1..];
     }
     (hash, parts)
 }
@@ -1279,7 +1344,7 @@ impl Machine {
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
-            gaurds: vec![],
+            guards: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
         };
@@ -1333,7 +1398,7 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
-            gaurds: vec![],
+            guards: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
         };
@@ -1630,17 +1695,24 @@ impl Machine {
                 error!("")
             };
             ($format:expr $(,$message:expr)*) => {{
+                flush_module!();
                 println!("\n{} {}", "error on line".grey(), line!().pink());
                 println!($format, $($message.pink()),*);
                 println!("{}", "Backtrace:".grey());
                 self.print_backtrace(true);
-                if let Some(context) = self.gaurds.pop() {
+
+                if let Some(context) = self.guards.pop() {
                     println!("{}", "Recovering...".pink());
+
+                    // recover at the previous stack heights
                     assert!(self.frame_stack.len() >= context.frame_stack);
                     assert!(self.value_stack.len() >= context.value_stack);
                     self.frame_stack.truncate(context.frame_stack);
                     self.value_stack.truncate(context.value_stack);
                     self.pc = context.on_error;
+
+                    // indicate an error has occured
+                    self.value_stack.push(0_u32.into());
                     reset_refs!();
                     continue;
                 }
@@ -2210,17 +2282,17 @@ impl Machine {
                     }
                     reset_refs!();
                 }
-                Opcode::PushErrorGaurd => {
-                    let context = ErrorContext {
+                Opcode::PushErrorGuard => {
+                    self.guards.push(ErrorGuard {
                         frame_stack: self.frame_stack.len(),
                         value_stack: self.value_stack.len(),
-                        on_error: self.pc + 1,
-                    };
-                    self.gaurds.push(context);
+                        on_error: self.pc,
+                    });
                     self.value_stack.push(1_u32.into());
+                    reset_refs!();
                 }
-                Opcode::PopErrorGaurd => {
-                    self.gaurds.pop();
+                Opcode::PopErrorGuard => {
+                    self.guards.pop();
                 }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
@@ -2342,26 +2414,24 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
-    fn stack_hashes(&self) -> (Bytes32, Bytes32, Option<Bytes32>) {
-        let heights: Vec<_> = self.gaurds.iter().map(|x| x.value_stack).collect();
+    fn stack_hashes(&self) -> (Bytes32, Bytes32, Vec<ErrorGuardProof>) {
+        let heights: Vec<_> = self.guards.iter().map(|x| x.value_stack).collect();
         let values = self.value_stack.iter().map(|v| v.hash());
         let (value_stack, values) = hash_stack_with_heights(values, &heights, "Value stack:");
 
-        let heights: Vec<_> = self.gaurds.iter().map(|x| x.frame_stack).collect();
+        let heights: Vec<_> = self.guards.iter().map(|x| x.frame_stack).collect();
         let frames = self.frame_stack.iter().map(|v| v.hash());
         let (frame_stack, frames) = hash_stack_with_heights(frames, &heights, "Stack frame stack:");
 
-        let pcs = self.gaurds.iter().map(|x| x.on_error);
-        let mut gaurd: Vec<Bytes32> = vec![];
+        let pcs = self.guards.iter().map(|x| x.on_error);
+        let mut guards: Vec<ErrorGuardProof> = vec![];
+        assert_eq!(values.len(), frames.len());
+        assert_eq!(values.len(), pcs.len());
 
-        for (value, (frame, pc)) in values.iter().zip(frames.iter().zip(pcs)) {
-            let mut preimage = value.to_vec();
-            preimage.extend(frame.0);
-            preimage.extend(pc.serialize());
-            gaurd.push(crypto::keccak(&preimage).into());
+        for (frames, (values, pc)) in frames.into_iter().zip(values.into_iter().zip(pcs)) {
+            guards.push(ErrorGuardProof::new(frames, values, pc));
         }
-        let contexts = (!gaurd.is_empty()).then(|| hash_stack(gaurd, "Error guard:"));
-        (value_stack, frame_stack, contexts)
+        (value_stack, frame_stack, guards)
     }
 
     pub fn hash(&self) -> Bytes32 {
@@ -2380,9 +2450,9 @@ impl Machine {
                 h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
 
-                if let Some(guards) = guards {
-                    h.update(b"Error gaurds:");
-                    h.update(guards);
+                if !guards.is_empty() {
+                    h.update(b"With guards:");
+                    h.update(ErrorGuardProof::hash_guards(&guards));
                 }
             }
             MachineStatus::Finished => {
@@ -2410,7 +2480,6 @@ impl Machine {
                 data.extend($bytes);
             };
         }
-
         macro_rules! fail {
             ($format:expr $(,$message:expr)*) => {{
                 let text = format!($format, $($message.red()),*);
@@ -2437,6 +2506,8 @@ impl Machine {
             hash_stack_frame_stack,
             StackFrame::serialize_for_proof,
         ));
+
+        out!(self.prove_guards());
 
         out!(self.global_state.hash());
 
@@ -2652,8 +2723,27 @@ impl Machine {
         data
     }
 
+    fn prove_guards(&self) -> Vec<u8> {
+        let mut data = Vec::with_capacity(33);
+        let guards = self.stack_hashes().2;
+        if guards.is_empty() {
+            data.extend(Bytes32::default());
+            data.push(0);
+        } else {
+            let last_idx = guards.len() - 1;
+            data.extend(ErrorGuardProof::hash_guards(&guards[..last_idx]));
+            data.push(1);
+            data.extend(guards[last_idx].serialize_for_proof());
+        }
+        data
+    }
+
     pub fn get_data_stack(&self) -> &[Value] {
         &self.value_stack
+    }
+
+    pub fn get_guards(&self) -> &[ErrorGuard] {
+        &self.guards
     }
 
     pub fn get_global_state(&self) -> GlobalState {

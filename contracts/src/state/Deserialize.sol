@@ -9,6 +9,7 @@ import "./ValueStack.sol";
 import "./Machine.sol";
 import "./Instructions.sol";
 import "./StackFrame.sol";
+import "./GuardStack.sol";
 import "./MerkleProof.sol";
 import "./ModuleMemory.sol";
 import "./Module.sol";
@@ -174,6 +175,41 @@ library Deserialize {
         window = StackFrameWindow({proved: proved, remainingHash: remainingHash});
     }
 
+    function errorGuard(bytes calldata proof, uint256 startOffset)
+        internal
+        pure
+        returns (ErrorGuard memory guard, uint256 offset)
+    {
+        offset = startOffset;
+        Value memory onErrorPc;
+        bytes32 frameStack;
+        bytes32 valueStack;
+        (frameStack, offset) = b32(proof, offset);
+        (valueStack, offset) = b32(proof, offset);
+        (onErrorPc, offset) = value(proof, offset);
+        guard = ErrorGuard({frameStack: frameStack, valueStack: valueStack, onErrorPc: onErrorPc});
+    }
+
+    function guardStack(bytes calldata proof, uint256 startOffset)
+        internal
+        pure
+        returns (GuardStack memory window, uint256 offset)
+    {
+        offset = startOffset;
+        bytes32 remainingHash;
+        (remainingHash, offset) = b32(proof, offset);
+        ErrorGuard[] memory proved;
+        if (proof[offset] != 0) {
+            offset++;
+            proved = new ErrorGuard[](1);
+            (proved[0], offset) = errorGuard(proof, offset);
+        } else {
+            offset++;
+            proved = new ErrorGuard[](0);
+        }
+        window = GuardStack({proved: proved, remainingHash: remainingHash});
+    }
+
     function moduleMemory(bytes calldata proof, uint256 startOffset)
         internal
         pure
@@ -263,10 +299,12 @@ library Deserialize {
         uint32 functionIdx;
         uint32 functionPc;
         StackFrameWindow memory frameStack;
+        GuardStack memory guards;
         bytes32 modulesRoot;
         (values, offset) = valueStack(proof, offset);
         (internalStack, offset) = valueStack(proof, offset);
         (frameStack, offset) = stackFrameWindow(proof, offset);
+        (guards, offset) = guardStack(proof, offset);
         (globalStateHash, offset) = b32(proof, offset);
         (moduleIdx, offset) = u32(proof, offset);
         (functionIdx, offset) = u32(proof, offset);
@@ -277,6 +315,7 @@ library Deserialize {
             valueStack: values,
             internalStack: internalStack,
             frameStack: frameStack,
+            guardStack: guards,
             globalStateHash: globalStateHash,
             moduleIdx: moduleIdx,
             functionIdx: functionIdx,
