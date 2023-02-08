@@ -383,8 +383,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 					if err != nil {
 						return errors.Wrap(err, fmt.Sprintf("Storage slot not found, address: %s, slot: %s, error", address.String(), slot.String()))
 					}
-
-					if !bytes.Equal(stored, value.Bytes()) {
+					if !bytes.Equal(common.BytesToHash(stored).Bytes(), value.Bytes()) {
 						return fmt.Errorf("Storage slot value condition not met for address: %s, slot: %s", address.String(), slot.String())
 					}
 				}
