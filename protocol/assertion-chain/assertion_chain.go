@@ -28,7 +28,6 @@ var (
 	ErrTooLate           = errors.New("too late to create assertion sibling")
 	ErrInvalidHeight     = errors.New("invalid assertion height")
 	uint256Ty, _         = abi.NewType("uint256", "", nil)
-	uint8Ty, _           = abi.NewType("uint8", "", nil)
 	hashTy, _            = abi.NewType("bytes32", "", nil)
 )
 
@@ -126,8 +125,8 @@ func (ac *AssertionChain) CreateAssertion(
 		)
 		return err
 	})
-	if err := handleCreateAssertionError(err, commitment); err != nil {
-		return nil, err
+	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
+		return nil, err2
 	}
 	assertionId := getAssertionId(commitment, prevAssertionId)
 	return ac.AssertionByID(assertionId)
@@ -149,8 +148,8 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 		)
 		return err
 	})
-	if err := handleCreateSuccessionChallengeError(err, assertionId); err != nil {
-		return nil, err
+	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
+		return nil, err2
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
