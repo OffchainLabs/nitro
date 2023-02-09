@@ -15,7 +15,7 @@ library ChallengeVertexLib {
             status: Status.Confirmed,
             staker: address(0),
             presumptiveSuccessorId: 0,
-            pSLastUpdated: 0, // CHRIS: TODO: maybe we wanna update this? We should set it as the start time? or are we gonna do special stuff for root?
+            psLastUpdated: 0, // CHRIS: TODO: maybe we wanna update this? We should set it as the start time? or are we gonna do special stuff for root?
             flushedPsTime: 0, // always zero for the root
             lowestHeightSucessorId: 0,
             challengeId: challengeId

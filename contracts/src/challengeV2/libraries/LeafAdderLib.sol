@@ -121,13 +121,6 @@ library BlockLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        bytes32 rootId = challenges[leafLibArgs.leafData.challengeId].rootId;
-        require(
-            // CHRIS: TODO: we have the confirmable info in the challenge lib!!!
-            // CHRIS: TODO: but we refuse to use it there? seems weird tbh, we should revisit that collection
-            !vertices.hasConfirmablePsAt(rootId, leafLibArgs.challengePeriod), "Root already has confirmable successor"
-        );
-
         return vertices.addNewSuccessor(
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
@@ -138,7 +131,8 @@ library BlockLeafAdder {
             msg.sender,
             // CHRIS: TODO: the naming is bad here
             // CHRIS: TODO: this has a nicer pattern by encapsulating the args, could we do the same?
-            initialPsTime(leafLibArgs.leafData.claimId, assertionChain)
+            initialPsTime(leafLibArgs.leafData.claimId, assertionChain),
+            leafLibArgs.challengePeriod
         );
     }
 
@@ -198,13 +192,6 @@ library BigStepLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        bytes32 rootId = challenges[leafLibArgs.leafData.challengeId].rootId;
-        require(
-            // CHRIS: TODO: we have the confirmable info in the challenge lib!!!
-            // CHRIS: TODO: but we refuse to use it there? seems weird tbh, we should revisit that collection
-            !vertices.hasConfirmablePsAt(rootId, leafLibArgs.challengePeriod), "Root already has confirmable successor"
-        );
-
         return vertices.addNewSuccessor(
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
@@ -214,7 +201,8 @@ library BigStepLeafAdder {
             leafLibArgs.leafData.claimId,
             msg.sender,
             // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
+            leafLibArgs.challengePeriod
         );
     }
 }
@@ -283,13 +271,6 @@ library SmallStepLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        bytes32 rootId = challenges[leafLibArgs.leafData.challengeId].rootId;
-        require(
-            // CHRIS: TODO: we have the confirmable info in the challenge lib!!!
-            // CHRIS: TODO: but we refuse to use it there? seems weird tbh, we should revisit that collection
-            !vertices.hasConfirmablePsAt(rootId, leafLibArgs.challengePeriod), "Root already has confirmable successor"
-        );
-
         return vertices.addNewSuccessor(
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
@@ -299,7 +280,8 @@ library SmallStepLeafAdder {
             leafLibArgs.leafData.claimId,
             msg.sender,
             // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
+            leafLibArgs.challengePeriod
         );
     }
 }

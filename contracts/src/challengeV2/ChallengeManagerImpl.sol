@@ -96,7 +96,7 @@ library ChallengeManagerLib {
 
         // CHRIS: TODO: we should check this in every move?
         // CHRIS: TODO: in every move we should check confirmable behaviour - not just ps
-        require(!vertices.hasConfirmablePsAt(vId, challengePeriod), "Presumptive successor confirmable");
+        require(!vertices.psExceedsChallengePeriod(vId, challengePeriod), "Presumptive successor confirmable");
         require(vertices[vId].successionChallenge == 0, "Challenge already exists");
 
         // we never want to update a vertex if it's already confirmable?
@@ -137,10 +137,6 @@ library ChallengeManagerLib {
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
         require(vertices[predecessorId].presumptiveSuccessorId != vId, "Cannot bisect presumptive successor");
-
-        require(
-            !vertices.hasConfirmablePsAt(predecessorId, challengePeriod), "Presumptive successor already confirmable"
-        );
 
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
         require(
@@ -184,9 +180,7 @@ library ChallengeManagerLib {
         );
 
         require(vertices[bVId].exists(), "Bisection vertex does not already exist");
-        require(
-            !vertices.hasConfirmablePsAt(bVId, challengePeriod), "Merge end already has confirmable successor"
-        );
+
         // CHRIS: TODO: include a long comment about this - it's actually covered by the connect vertices I think
         require(!vertices[bVId].isLeaf(), "Cannot merge to a leaf");
 
@@ -471,11 +465,12 @@ contract ChallengeManagerImpl is IChallengeManager {
             0,
             address(0),
             // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
-            currentPsTimer
+            currentPsTimer,
+            challengePeriod
         );
         // CHRIS: TODO: check these two successor updates really do conform to the spec
         // CHRIS: TODO: rename to just `connect`
-        vertices.connectVertices(bVId, vId);
+        vertices.connectVertices(bVId, vId, challengePeriod);
 
         return bVId;
     }
@@ -485,7 +480,7 @@ contract ChallengeManagerImpl is IChallengeManager {
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
 
-        vertices.connectVertices(bVId, vId);
+        vertices.connectVertices(bVId, vId, challengePeriod);
         vertices.flushPs(vertices[bVId].predecessorId);
         // update the merge vertex if we have a higher ps time
         // CHRIS: TODO: should we allow flushed time to be updated whenever we want like this? or have a lib for this that compares and updates max
@@ -593,10 +588,7 @@ contract ChallengeManagerImpl is IChallengeManager {
 
     function isAtOneStepFork(bytes32 vId) external view returns (bool) {
         // CHRIS: TODO: remove this function - it hides error messages
-        try vertices.checkAtOneStepFork(vId) {
-            return true;
-        } catch {
-            return false;
-        }
+        vertices.checkAtOneStepFork(vId);
+        return true;   
     }
 }
