@@ -75,6 +75,7 @@ func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, 
 	}
 }
 
+//nolint:unused
 func (cm *ChallengeManager) miniStakeAmount() (*big.Int, error) {
 	return cm.caller.MiniStakeValue(cm.assertionChain.callOpts)
 }
