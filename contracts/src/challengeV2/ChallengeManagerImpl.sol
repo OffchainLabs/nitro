@@ -6,7 +6,7 @@ import "../osp/IOneStepProofEntry.sol";
 import "./libraries/ChallengeVertexLib.sol";
 import "./libraries/PsVerticesLib.sol";
 import "./libraries/ChallengeStructLib.sol";
-import "./libraries/HistoryCommitmentLib.sol";
+import "./libraries/HistoryRootLib.sol";
 import "./libraries/ChallengeTypeLib.sol";
 import "./libraries/LeafAdderLib.sol";
 
@@ -18,15 +18,14 @@ library ChallengeManagerLib {
 
     function confirmationPreChecks(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
         // basic checks
-        
         require(vertices[vId].exists(), "Vertex does not exist");
-        require(vertices[vId].status == Status.Pending, "Vertex is not pending");
+        require(vertices[vId].status == VertexStatus.Pending, "Vertex is not pending");
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
 
         // for a vertex to be confirmed its predecessor must be confirmed
         // this ensures an unbroken chain of confirmation from the root eventually up to one the leaves
-        require(vertices[predecessorId].status == Status.Confirmed, "Predecessor not confirmed");
+        require(vertices[predecessorId].status == VertexStatus.Confirmed, "Predecessor not confirmed");
     }
 
     // CHRIS: TODO: consider moving this and the other check to the challenge lib
@@ -125,7 +124,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
-        bytes32 prefixHistoryCommitment,
+        bytes32 prefixHistoryRoot,
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
@@ -136,29 +135,29 @@ library ChallengeManagerLib {
 
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
-        require(vertices[predecessorId].presumptiveSuccessorId != vId, "Cannot bisect presumptive successor");
+        require(vertices[predecessorId].psId != vId, "Cannot bisect presumptive successor");
 
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
         require(
-            HistoryCommitmentLib.hasPrefix(
-                vertices[vId].historyCommitment, prefixHistoryCommitment, bHeight, prefixProof
+            HistoryRootLib.hasPrefix(
+                vertices[vId].historyRoot, prefixHistoryRoot, bHeight, prefixProof
             ),
             "Invalid prefix history"
         );
 
-        return (ChallengeVertexLib.id(challengeId, prefixHistoryCommitment, bHeight), bHeight);
+        return (ChallengeVertexLib.id(challengeId, prefixHistoryRoot, bHeight), bHeight);
     }
 
     function checkBisect(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
-        bytes32 prefixHistoryCommitment,
+        bytes32 prefixHistoryRoot,
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
         );
 
         // CHRIS: redundant check?
@@ -171,12 +170,12 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
-        bytes32 prefixHistoryCommitment,
+        bytes32 prefixHistoryRoot,
         bytes memory prefixProof,
         uint256 challengePeriod
     ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
         );
 
         require(vertices[bVId].exists(), "Bisection vertex does not already exist");
@@ -210,10 +209,10 @@ library ChallengeManagerLib {
 
         // check that the before hash is the state has of the root id
         // the root id is challenge id combined with the history commitment and the height
-        // bytes32 historyCommitment, bytes32 state, uint256 stateHeight, bytes memory proof
+        // bytes32 historyRoot, bytes32 state, uint256 stateHeight, bytes memory proof
         require(
-            HistoryCommitmentLib.hasState(
-                vertices[predecessorId].historyCommitment,
+            HistoryRootLib.hasState(
+                vertices[predecessorId].historyRoot,
                 oneStepData.beforeHash,
                 oneStepData.machineStep,
                 beforeHistoryInclusionProof
@@ -227,8 +226,8 @@ library ChallengeManagerLib {
         );
 
         require(
-            HistoryCommitmentLib.hasState(
-                vertices[winnerVId].historyCommitment,
+            HistoryRootLib.hasState(
+                vertices[winnerVId].historyRoot,
                 afterHash,
                 oneStepData.machineStep + 1,
                 afterHistoryInclusionProof
@@ -410,11 +409,11 @@ contract ChallengeManagerImpl is IChallengeManager {
         (bytes32 newChallengeId, ChallengeType newChallengeType) =
             ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriod);
 
-        bytes32 originHistoryCommitment = vertices[vId].historyCommitment;
-        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryCommitment, 0);
+        bytes32 originHistoryRoot = vertices[vId].historyRoot;
+        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 0);
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
-        vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryCommitment);
+        vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot);
         challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0});
         vertices[vId].successionChallenge = newChallengeId;
 
@@ -443,13 +442,13 @@ contract ChallengeManagerImpl is IChallengeManager {
         challenges[challengeId].winningClaim = winnerVId;
     }
 
-    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
+    function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof)
         external
         returns (bytes32)
     {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
-            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
         );
 
         // CHRIS: TODO: the spec says we should stop the presumptive successor timer of the vId, but why?
@@ -460,7 +459,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         vertices.addNewSuccessor(
             vertices[vId].challengeId,
             predecessorId,
-            prefixHistoryCommitment,
+            prefixHistoryRoot,
             bHeight,
             0,
             address(0),
@@ -475,9 +474,9 @@ contract ChallengeManagerImpl is IChallengeManager {
         return bVId;
     }
 
-    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32) {
+    function merge(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
         (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
-            vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
         );
 
         vertices.connectVertices(bVId, vId, challengePeriod);
@@ -496,7 +495,7 @@ contract ChallengeManagerImpl is IChallengeManager {
     /// @dev Confirms the vertex without doing any checks. Also sets the winning claim if the vertex
     ///      is a leaf.
     function setConfirmed(bytes32 vId) internal {
-        vertices[vId].status = Status.Confirmed;
+        vertices[vId].status = VertexStatus.Confirmed;
         bytes32 challengeId = vertices[vId].challengeId;
         if (vertices[vId].isLeaf()) {
             challenges[challengeId].winningClaim = vertices[vId].claimId;
@@ -570,17 +569,17 @@ contract ChallengeManagerImpl is IChallengeManager {
                 require(vertices[wClaim].exists(), "Winning claim does not exist");
                 if (wClaim == vId) return false;
 
-                return vertices[wClaim].status == Status.Confirmed;
+                return vertices[wClaim].status == VertexStatus.Confirmed;
             }
         }
 
         // ps check
-        bytes32 psId = vertices[predecessorId].presumptiveSuccessorId;
+        bytes32 psId = vertices[predecessorId].psId;
         if (psId != 0) {
             require(vertices[psId].exists(), "Presumptive successor does not exist");
 
             if (psId == vId) return false;
-            return vertices[psId].status == Status.Confirmed;
+            return vertices[psId].status == VertexStatus.Confirmed;
         }
 
         return false;

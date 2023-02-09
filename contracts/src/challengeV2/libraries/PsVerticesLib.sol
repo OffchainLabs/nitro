@@ -45,7 +45,7 @@ import "./ChallengeVertexLib.sol";
 // CHRIS: TODO: check all the places we do existance checks - it doesnt seem necessary every where
 // CHRIS: TODO: use unique messages if we're checking vertex exists in multiple places
 // CHRIS: TODO: check isLeaf when trying to set a predecessor
-// CHRIS: TODO: invariants testing here lowest height successor = presumptiveSuccessorId, or presumptiveSuccessorId = 0
+// CHRIS: TODO: invariants testing here lowest height successor = psId, or psId = 0
 // CHRIS: TODO: we could have getters and setters on the vertex props - that we know
 // CHRIS: TODO:
 
@@ -62,6 +62,23 @@ import "./ChallengeVertexLib.sol";
 
 // CHRIS: TODO: we can never be made presumptive successor again
 // CHRIS: TODO: this is an invariant we should try to test / assert
+
+// CHRIS: TODO: should we also not allow connection if another vertex is confirmed, or if this start vertex 
+// has a chosen winner of a succession challenge?
+
+// CHRIS: TODO: think about what happens if we add a new vertex with a high initial ps
+
+// CHRIS: TODO: some docs to put somewhere
+// include this in a doc - on the struct
+// a set of ps vertices has the following rules
+// a vertex may have 0 or 1 presumptive successor
+// if the ps exists it is also the lowest height successor
+// if no successors exist there is no ps
+// if only one successor exists at the lowest height, then it is the ps
+// if more than one successor exists at the lowest height, then there is no ps
+
+// if a vertex is a leaf it will never have a ps
+
 
 /// @title Presumptive Successor Vertices library
 /// @author Offchain Labs
@@ -90,7 +107,7 @@ library PsVerticesLib {
         // if 2 ore more successors are at the lowest height then the presumptive successor id is 0
         // therefore if the lowest height is 1 greater, and the presumptive successor id is 0 then we have
         // 2 or more successors at a height 1 greater than the root - so the root is a one step fork
-        require(vertices[vId].presumptiveSuccessorId == 0, "Has presumptive successor");
+        require(vertices[vId].psId == 0, "Has presumptive successor");
     }
 
     /// @notice Does the presumptive successor of the supplied vertex have a ps timer greater than the provided time
@@ -106,12 +123,12 @@ library PsVerticesLib {
 
         // we dont allow presumptive successor to be updated if the ps has a timer that exceeds the challenge period
         // therefore if it is at 0 we must non of the successor must have a high enough timer,
-        // or this is a new vertex, so also no confirmable ps
-        if (vertices[vId].presumptiveSuccessorId == 0) {
+        // or this is a new vertex so it doesnt have any successors, and therefore no high enough ps
+        if (vertices[vId].psId == 0) {
             return false;
         }
 
-        return getCurrentPsTimer(vertices, vertices[vId].presumptiveSuccessorId) > challengePeriod;
+        return getCurrentPsTimer(vertices, vertices[vId].psId) > challengePeriod;
     }
 
     /// @notice The amount of time this vertex has spent as the presumptive successor.
@@ -129,41 +146,40 @@ library PsVerticesLib {
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
 
-        if (vertices[predecessorId].presumptiveSuccessorId == vId) {
+        if (vertices[predecessorId].psId == vId) {
+            // if the vertex is currently the presumptive one we add the flushed time and the unflushed time
             return (block.timestamp - vertices[predecessorId].psLastUpdated) + vertices[vId].flushedPsTime;
         } else {
             return vertices[vId].flushedPsTime;
         }
     }
 
-    // include this in a doc
-    // a set of ps vertices has the following rules
-    // a vertex may have 0 or 1 presumptive successor
-    // if the ps exists it is also the lowest height successor
-    // if no successors exist there is no ps
-    // if only one successor exists at the lowest height, then it is the ps
-    // if more than one successor exists at the lowest height, then there is no ps
 
-    // if a vertex is a leaf it will never have a ps
 
-    // CHRIS: TODO: decide on a natspec style
-
-    /// @notice Flush the psLastUpdated time on a node, and record that this occurred
-    /// @param vertices The PS vertices
+    /// @notice Flush the psLastUpdated of a vertex onto the current ps, and record that this occurred
+    /// @param vertices The ps vertices
     /// @param vId The id of the vertex on which to update psLastUpdated
     function flushPs(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal {
         require(vertices[vId].exists(), "Vertex does not exist");
+        // leaves should never have a ps, so we cant flush here
         require(!vertices[vId].isLeaf(), "Cannot flush leaf as it will never have a PS");
 
         // if a presumptive successor already exists we flush it
-        if (vertices[vId].presumptiveSuccessorId != 0) {
+        if (vertices[vId].psId != 0) {
             uint256 timeToAdd = block.timestamp - vertices[vId].psLastUpdated;
-            vertices[vertices[vId].presumptiveSuccessorId].flushedPsTime += timeToAdd;
+            vertices[vertices[vId].psId].flushedPsTime += timeToAdd;
         }
         // every time we update the ps we record when it happened so that we can flush in the future
         vertices[vId].psLastUpdated = block.timestamp;
     }
 
+    /// @notice Connect two existing vertices. The connection is made by setting the predecessor of the end vertex to
+    ///         be the start vertex. When the connection is made ps timers, and lowest heigh successor, are updated
+    ///         if relevant.
+    /// @param vertices The collection of vertices
+    /// @param startVertexId The start vertex to connect to
+    /// @param endVertexId The end vertex to connect from
+    /// @param challengePeriod The challenge period - used for checking valid ps timers
     function connectVertices(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 startVertexId,
@@ -171,21 +187,29 @@ library PsVerticesLib {
         uint256 challengePeriod
     ) internal {
         require(vertices[startVertexId].exists(), "Start vertex does not exist");
+        // by definition of a leaf no connection can occur if the leaf is a start vertex
         require(!vertices[startVertexId].isLeaf(), "Cannot connect a successor to a leaf");
         require(vertices[endVertexId].exists(), "End vertex does not exist");
         require(vertices[endVertexId].predecessorId != startVertexId, "Vertices already connected");
+        // cannot connect vertices that are in different challenges
+        require(vertices[startVertexId].challengeId == vertices[endVertexId].challengeId, "Predecessor and successor are in different challenges");
 
+        // if the start vertex has a ps that exceeds the challenge period then we dont allow any connection
+        // if that vertex as the start. This is because any connected vertex would be rejectable by default
         require(
             !psExceedsChallengePeriod(vertices, startVertexId, challengePeriod),
             "The start vertex has a presumptive successor whose ps time has exceeded the challenge period"
         );
 
+        // first make the connection
         vertices[endVertexId].predecessorId = startVertexId;
+
+        // now we may need to update ps and the lowest height successor
         if (vertices[startVertexId].lowestHeightSucessorId == 0) {
             // no lowest height successor, means no successors at all,
-            // so we can set this vertex as the PS and as the lowest height successor
+            // so we can set this vertex as the ps and as the lowest height successor
             flushPs(vertices, startVertexId);
-            vertices[startVertexId].presumptiveSuccessorId = endVertexId;
+            vertices[startVertexId].psId = endVertexId;
             vertices[startVertexId].lowestHeightSucessorId = endVertexId;
             return;
         }
@@ -196,7 +220,7 @@ library PsVerticesLib {
             // new successor has height lower than the current lowest height
             // so we can set the PS and the lowest height successor
             flushPs(vertices, startVertexId);
-            vertices[startVertexId].presumptiveSuccessorId = endVertexId;
+            vertices[startVertexId].psId = endVertexId;
             vertices[startVertexId].lowestHeightSucessorId = endVertexId;
             return;
         }
@@ -205,37 +229,47 @@ library PsVerticesLib {
             // same height as the lowest height successor, we should zero out the PS
             // no update to lowest height successor required
             flushPs(vertices, startVertexId);
-            vertices[startVertexId].presumptiveSuccessorId = 0;
+            vertices[startVertexId].psId = 0;
             return;
         }
     }
 
+    /// @notice Creates a new vertex and adds it as a successor to existing vertex
+    /// @param vertices The collection of vertices
+    /// @param challengeId The challenge that this new vertex is part of
+    /// @param predecessorId The existing vertex to make the predecessor of the newly added one
+    /// @param successorHistoryRoot The history commitment of the newly added vertex
+    /// @param successorHeight The height of the newly added vertex
+    /// @param successorClaimId The claim of the newly added vertex
+    /// @param successorStaker The staker of the newly added vertex
+    /// @param successorInitialPsTime The ps time that this vertex starts with
+    /// @param challengePeriod The challenge period - used for checking ps timers
     function addNewSuccessor(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 challengeId,
         bytes32 predecessorId,
-        bytes32 successorHistoryCommitment,
+        bytes32 successorHistoryRoot,
         uint256 successorHeight,
         bytes32 successorClaimId,
         address successorStaker,
         uint256 successorInitialPsTime,
         uint256 challengePeriod
     ) internal returns (bytes32) {
-        bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryCommitment, successorHeight);
+        bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryRoot, successorHeight);
 
         require(!vertices[vId].exists(), "Successor already exists");
         require(vertices[predecessorId].exists(), "Predecessor does not already exist");
 
         vertices[vId] = ChallengeVertex({
             challengeId: challengeId,
-            predecessorId: 0, // CHRIS: TODO: this is a bit weird - it will get set when we connect the vertices below
+            predecessorId: 0, // we set the initial predecessor to 0, it will be updated when we make a connection below
             successionChallenge: 0,
-            historyCommitment: successorHistoryCommitment,
+            historyRoot: successorHistoryRoot,
             height: successorHeight,
             claimId: successorClaimId,
             staker: successorStaker,
-            status: Status.Pending,
-            presumptiveSuccessorId: 0,
+            status: VertexStatus.Pending,
+            psId: 0,
             psLastUpdated: 0,
             flushedPsTime: successorInitialPsTime,
             lowestHeightSucessorId: 0

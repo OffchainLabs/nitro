@@ -3,7 +3,7 @@ pragma solidity ^0.8.17;
 
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
-import "./HistoryCommitmentLib.sol";
+import "./HistoryRootLib.sol";
 import "./PsVerticesLib.sol";
 
 library LeafAdderLib {
@@ -16,7 +16,7 @@ library LeafAdderLib {
         uint256 miniStake
     ) internal view {
         require(leafData.claimId != 0, "Empty claimId");
-        require(leafData.historyCommitment != 0, "Empty historyCommitment");
+        require(leafData.historyRoot != 0, "Empty historyRoot");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
         require(leafData.height != 0, "Empty height");
 
@@ -31,16 +31,16 @@ library LeafAdderLib {
 
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
+            HistoryRootLib.hasState(
+                leafData.historyRoot, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
             ),
             "Last state not in history"
         );
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.firstState, 0, leafData.firstStatehistoryProof
+            HistoryRootLib.hasState(
+                leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof
             ),
             "First state not in history"
         );
@@ -125,7 +125,7 @@ library BlockLeafAdder {
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
             // CHRIS: TODO: move this struct out
-            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
@@ -196,7 +196,7 @@ library BigStepLeafAdder {
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
             // CHRIS: TODO: move this struct out
-            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
@@ -243,8 +243,8 @@ library SmallStepLeafAdder {
             // the wavm state of the last state should always be exactly the same as the wavm state of the claim
             // regardless of the height
             require(
-                HistoryCommitmentLib.hasState(
-                    vertices[leafLibArgs.leafData.claimId].historyCommitment,
+                HistoryRootLib.hasState(
+                    vertices[leafLibArgs.leafData.claimId].historyRoot,
                     leafLibArgs.leafData.lastState,
                     1,
                     leafLibArgs.proof1
@@ -275,7 +275,7 @@ library SmallStepLeafAdder {
             leafLibArgs.leafData.challengeId,
             challenges[leafLibArgs.leafData.challengeId].rootId,
             // CHRIS: TODO: move this struct out
-            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
