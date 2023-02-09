@@ -101,10 +101,12 @@ stylus_test_keccak_wasm     = $(call get_stylus_test_wasm,keccak)
 stylus_test_keccak_src      = $(call get_stylus_test_rust,keccak)
 stylus_test_keccak-100_wasm = $(call get_stylus_test_wasm,keccak-100)
 stylus_test_keccak-100_src  = $(call get_stylus_test_rust,keccak-100)
+stylus_test_fallible_wasm   = $(call get_stylus_test_wasm,fallible)
+stylus_test_fallible_src    = $(call get_stylus_test_rust,fallible)
 stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_siphash_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_siphash_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -327,6 +329,10 @@ $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 

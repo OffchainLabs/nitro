@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{env::Escape, native::NativeInstance};
-use eyre::{ensure, Result};
+use eyre::{ensure, eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};
 
@@ -63,23 +63,28 @@ impl RunProgram for Machine {
 
 impl RunProgram for NativeInstance {
     fn run_main(&mut self, args: &[u8], _config: &StylusConfig) -> Result<UserOutcome> {
+        use UserOutcome::*;
+
         let store = &mut self.store;
         let exports = &self.instance.exports;
         let main = exports.get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)?;
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
-                let escape = outcome.downcast()?;
+                let escape = match outcome.downcast() {
+                    Ok(escape) => escape,
+                    Err(error) => return Ok(Failure(eyre!(error).wrap_err("hard user error"))),
+                };
 
                 if self.stack_left() == 0 {
-                    return Ok(UserOutcome::OutOfStack);
+                    return Ok(OutOfStack);
                 }
                 if self.gas_left() == MachineMeter::Exhausted {
-                    return Ok(UserOutcome::OutOfGas);
+                    return Ok(OutOfGas);
                 }
 
                 return Ok(match escape {
-                    Escape::OutOfGas => UserOutcome::OutOfGas,
+                    Escape::OutOfGas => OutOfGas,
                     Escape::Memory(error) => UserOutcome::revert(error.into()),
                     Escape::Internal(error) => UserOutcome::revert(error),
                 });

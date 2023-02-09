@@ -6,15 +6,18 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -25,9 +28,82 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestKeccakProgram(t *testing.T) {
+func TestProgramKeccak(t *testing.T) {
+	file := "../arbitrator/stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm"
+	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, file)
+	defer cleanup()
+
+	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
+	correct := crypto.Keccak256Hash(preimage)
+
+	args := []byte{0x01} // keccak the preimage once
+	args = append(args, preimage...)
+
+	timed(t, "execute", func() {
+		result := sendContractCall(t, ctx, programAddress, l2client, args)
+		if len(result) != 32 {
+			Fail(t, "unexpected return result: ", "result", result)
+		}
+		hash := common.BytesToHash(result)
+		if hash != correct {
+			Fail(t, "computed hash mismatch", hash, correct)
+		}
+		colors.PrintGrey("keccak(x) = ", hash)
+	})
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	// do a mutating call for proving's sake
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+	ensure(mock.CallKeccak(&auth, programAddress, args))
+
+	doUntil(t, 20*time.Millisecond, 50, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
+		Require(t, err)
+		return meta.MessageCount == messageCount
+	})
+
+	validateBlocks(t, ctx, node, l2client)
+}
+
+func TestProgramError(t *testing.T) {
+	file := "../arbitrator/stylus/tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm"
+	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file)
+	defer cleanup()
+
+	// ensure tx passes
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// ensure tx fails
+	tx = l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x00})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		Fail(t, "call should have failed")
+	}
+
+	validateBlocks(t, ctx, node, l2client)
+}
+
+func setupProgramTest(t *testing.T, file string) (
+	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
+) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
@@ -38,8 +114,12 @@ func TestKeccakProgram(t *testing.T) {
 	l2config.L1Reader.Enable = true
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
-	defer requireClose(t, l1stack)
-	defer node.StopAndWait()
+
+	cleanup := func() {
+		requireClose(t, l1stack)
+		node.StopAndWait()
+		cancel()
+	}
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -73,9 +153,7 @@ func TestKeccakProgram(t *testing.T) {
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
 	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))
-	colors.PrintBlue("Wasm pricing ", wasmGasPrice, wasmHostioCost)
 
-	file := "../arbitrator/stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm"
 	wasmSource, err := os.ReadFile(file)
 	Require(t, err)
 	wasm, err := arbcompress.CompressWell(wasmSource)
@@ -86,54 +164,17 @@ func TestKeccakProgram(t *testing.T) {
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
 
-	timed := func(message string, lambda func()) {
-		t.Helper()
-		now := time.Now()
-		lambda()
-		passed := time.Since(now)
-		colors.PrintBlue("Time to ", message, ": ", passed.String())
-	}
-
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
-	timed("compile", func() {
+	timed(t, "compile", func() {
 		ensure(arbWasm.CompileProgram(&auth, programAddress))
 	})
 
-	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
-	correct := crypto.Keccak256Hash(preimage)
+	return ctx, node, l2info, l2client, auth, programAddress, cleanup
+}
 
-	args := []byte{0x01} // keccak the preimage once
-	args = append(args, preimage...)
-
-	timed("execute", func() {
-		result := sendContractCall(t, ctx, programAddress, l2client, args)
-		if len(result) != 32 {
-			Fail(t, "unexpected return result: ", "result", result)
-		}
-		hash := common.BytesToHash(result)
-		if hash != correct {
-			Fail(t, "computed hash mismatch", hash, correct)
-		}
-		colors.PrintGrey("keccak(x) = ", hash)
-	})
-
-	// do a mutating call for proving's sake
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
-	ensure(tx, err)
-	ensure(mock.CallKeccak(&auth, programAddress, args))
-
-	doUntil(t, 20*time.Millisecond, 50, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
-	})
-
+func validateBlocks(t *testing.T, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
@@ -161,6 +202,14 @@ func TestKeccakProgram(t *testing.T) {
 	if !success {
 		Fail(t)
 	}
+}
+
+func timed(t *testing.T, message string, lambda func()) {
+	t.Helper()
+	now := time.Now()
+	lambda()
+	passed := time.Since(now)
+	colors.PrintBlue("Time to ", message, ": ", passed.String())
 }
 
 func formatTime(duration time.Duration) string {

@@ -375,7 +375,6 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes calldata proof
     ) internal pure {
         string memory prefix = "Module merkle tree:";
-        bytes32 root = mach.modulesRoot;
 
         (uint256 leaf, MerkleProof memory leafProof, ) = proveLastLeaf(mach, 0, proof);
 
@@ -390,8 +389,8 @@ contract OneStepProverHostIo is IOneStepProver {
     function executePushErrorGuard(
         ExecutionContext calldata,
         Machine memory mach,
-        Module memory mod,
-        Instruction calldata inst,
+        Module memory,
+        Instruction calldata,
         bytes calldata proof
     ) internal view {
         bytes32 frames = mach.frameStack.hash();
@@ -404,9 +403,9 @@ contract OneStepProverHostIo is IOneStepProver {
     function executePopErrorGuard(
         ExecutionContext calldata,
         Machine memory mach,
-        Module memory mod,
-        Instruction calldata inst,
-        bytes calldata proof
+        Module memory,
+        Instruction calldata,
+        bytes calldata
     ) internal pure {
         mach.guardStack.pop();
     }

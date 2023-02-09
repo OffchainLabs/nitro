@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -194,7 +195,8 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userRevert:
 		return data, errors.New("program reverted")
 	case userFailure:
-		return nil, errors.New(string(data))
+		log.Debug(string(data))
+		return nil, errors.New("program failure")
 	case userOutOfGas:
 		return nil, vm.ErrOutOfGas
 	case userOutOfStack:

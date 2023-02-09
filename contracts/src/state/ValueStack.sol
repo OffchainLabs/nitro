@@ -38,8 +38,7 @@ library ValueStackLib {
     }
 
     function overwrite(ValueStack memory stack, bytes32 root) internal pure {
-        ValueArray memory zero;
-        stack.proved = zero;
         stack.remainingHash = root;
+        delete stack.proved;
     }
 }

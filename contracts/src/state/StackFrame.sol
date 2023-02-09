@@ -62,8 +62,7 @@ library StackFrameLib {
     }
 
     function overwrite(StackFrameWindow memory window, bytes32 root) internal pure {
-        StackFrame[] memory zero;
-        window.proved = zero;
         window.remainingHash = root;
+        delete window.proved;
     }
 }

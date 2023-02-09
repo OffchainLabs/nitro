@@ -1,0 +1,18 @@
+[package]
+name = "fallible"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arbitrum = { path = "../../../langs/rust/" }
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+
+# uncomment to optimize for size
+#   opt-level = "z"
+
+[workspace]
