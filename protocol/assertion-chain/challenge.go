@@ -43,17 +43,17 @@ func (c *Challenge) AddLeaf(
 	}
 	c.manager.assertionChain.txOpts.Value = miniStake
 
-	if err := withChainCommitment(c.manager.assertionChain.backend, func() error {
-		_, err := c.manager.writer.AddLeaf(
+	if err2 := withChainCommitment(c.manager.assertionChain.backend, func() error {
+		_, err3 := c.manager.writer.AddLeaf(
 			c.manager.assertionChain.txOpts,
 			leafData,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
-		return err
-	}); err != nil {
+		return err3
+	}); err2 != nil {
 		c.manager.assertionChain.txOpts.Value = big.NewInt(0)
-		return nil, err
+		return nil, err2
 	}
 	c.manager.assertionChain.txOpts.Value = big.NewInt(0)
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
