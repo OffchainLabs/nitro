@@ -234,47 +234,21 @@ library PsVerticesLib {
         }
     }
 
-    /// @notice Creates a new vertex and adds it as a successor to existing vertex
-    /// @param vertices The collection of vertices
-    /// @param challengeId The challenge that this new vertex is part of
-    /// @param predecessorId The existing vertex to make the predecessor of the newly added one
-    /// @param successorHistoryRoot The history commitment of the newly added vertex
-    /// @param successorHeight The height of the newly added vertex
-    /// @param successorClaimId The claim of the newly added vertex
-    /// @param successorStaker The staker of the newly added vertex
-    /// @param successorInitialPsTime The ps time that this vertex starts with
+    /// @notice Adds a vertex to the collection, and connects it to the provided predecessor
+    /// @param vertices The vertex collection
+    /// @param vertex The vertex to add
+    /// @param predecessorId The predecessor this vertex will become a successor to
     /// @param challengePeriod The challenge period - used for checking ps timers
-    function addNewSuccessor(
+    function addVertex(
         mapping(bytes32 => ChallengeVertex) storage vertices,
-        bytes32 challengeId,
+        ChallengeVertex memory vertex,
         bytes32 predecessorId,
-        bytes32 successorHistoryRoot,
-        uint256 successorHeight,
-        bytes32 successorClaimId,
-        address successorStaker,
-        uint256 successorInitialPsTime,
         uint256 challengePeriod
     ) internal returns (bytes32) {
-        bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryRoot, successorHeight);
+        bytes32 vId = ChallengeVertexLib.id(vertex.challengeId, vertex.historyRoot, vertex.height);
+        require(!vertices[vId].exists(), "Vertex already exists");
 
-        require(!vertices[vId].exists(), "Successor already exists");
-        require(vertices[predecessorId].exists(), "Predecessor does not already exist");
-
-        vertices[vId] = ChallengeVertex({
-            challengeId: challengeId,
-            predecessorId: 0, // we set the initial predecessor to 0, it will be updated when we make a connection below
-            successionChallenge: 0,
-            historyRoot: successorHistoryRoot,
-            height: successorHeight,
-            claimId: successorClaimId,
-            staker: successorStaker,
-            status: VertexStatus.Pending,
-            psId: 0,
-            psLastUpdated: 0,
-            flushedPsTime: successorInitialPsTime,
-            lowestHeightSucessorId: 0
-        });
-
+        vertices[vId] = vertex;
         connectVertices(vertices, predecessorId, vId, challengePeriod);
 
         return vId;

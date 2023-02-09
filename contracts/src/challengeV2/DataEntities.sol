@@ -114,7 +114,7 @@ struct ChallengeVertex {
     uint256 height;
     /// @notice Is there a challenge open to decide the successor to this vertex. The winner of that challenge will be a leaf
     ///         vertex whose claim decides which vertex succeeds this one.
-    /// @dev    Leaf vertices cannot have a succession challenge as they have no successors.
+    /// @dev    Always zero for leaf vertices as they have no successors.
     bytes32 successionChallenge;
     /// @notice The predecessor vertex of this challenge. Predecessors always contain a history root which is a root of a sub-history
     ///         of the history root of this vertex. That is in order to connect two vertices, it must be proven

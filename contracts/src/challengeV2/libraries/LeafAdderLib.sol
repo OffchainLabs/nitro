@@ -39,9 +39,7 @@ library LeafAdderLib {
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            HistoryRootLib.hasState(
-                leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof
-            ),
+            HistoryRootLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
             "First state not in history"
         );
 
@@ -121,19 +119,17 @@ library BlockLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        return vertices.addNewSuccessor(
+        ChallengeVertex memory leaf = ChallengeVertexLib.newLeaf(
             leafLibArgs.leafData.challengeId,
-            challenges[leafLibArgs.leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
             leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            // CHRIS: TODO: this has a nicer pattern by encapsulating the args, could we do the same?
-            initialPsTime(leafLibArgs.leafData.claimId, assertionChain),
-            leafLibArgs.challengePeriod
+            initialPsTime(leafLibArgs.leafData.claimId, assertionChain)
         );
+
+        return
+            vertices.addVertex(leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriod);
     }
 
     // CHRIS: TODO: check exists whenever we access the challenges? also the vertices now have a challenge index
@@ -192,18 +188,17 @@ library BigStepLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        return vertices.addNewSuccessor(
+        ChallengeVertex memory leaf = ChallengeVertexLib.newLeaf(
             leafLibArgs.leafData.challengeId,
-            challenges[leafLibArgs.leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
             leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
-            leafLibArgs.challengePeriod
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
         );
+
+        return
+            vertices.addVertex(leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriod);
     }
 }
 
@@ -271,17 +266,16 @@ library SmallStepLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        return vertices.addNewSuccessor(
+        ChallengeVertex memory leaf = ChallengeVertexLib.newLeaf(
             leafLibArgs.leafData.challengeId,
-            challenges[leafLibArgs.leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
             leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
-            leafLibArgs.challengePeriod
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
         );
+
+        return
+            vertices.addVertex(leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriod);
     }
 }

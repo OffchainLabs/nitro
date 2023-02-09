@@ -456,15 +456,15 @@ contract ChallengeManagerImpl is IChallengeManager {
 
         bytes32 predecessorId = vertices[vId].predecessorId;
         uint256 currentPsTimer = vertices.getCurrentPsTimer(vId);
-        vertices.addNewSuccessor(
-            vertices[vId].challengeId,
-            predecessorId,
+        ChallengeVertex memory bVertex = ChallengeVertexLib.newVertex(vertices[vId].challengeId, 
             prefixHistoryRoot,
-            bHeight,
-            0,
-            address(0),
+            bHeight, 
             // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
-            currentPsTimer,
+            currentPsTimer
+        );
+        vertices.addVertex(
+            bVertex,
+            predecessorId,
             challengePeriod
         );
         // CHRIS: TODO: check these two successor updates really do conform to the spec
