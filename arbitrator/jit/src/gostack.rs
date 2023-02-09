@@ -277,3 +277,22 @@ pub struct TimeoutState {
     pub pending_ids: BTreeSet<u32>,
     pub next_id: u32,
 }
+
+#[test]
+fn test_sp() -> eyre::Result<()> {
+    use prover::programs::config::StylusConfig;
+    use wasmer::{FunctionEnv, MemoryType};
+
+    let mut store = StylusConfig::default().store();
+    let mut env = WasmEnv::default();
+    env.memory = Some(Memory::new(&mut store, MemoryType::new(0, None, false))?);
+    let env = FunctionEnv::new(&mut store, env);
+
+    let mut sp = GoStack::simple(0, &mut env.into_mut(&mut store));
+    assert_eq!(sp.advance(3), 8 + 0);
+    assert_eq!(sp.advance(2), 8 + 3);
+    assert_eq!(sp.skip_space().top, 8 + 8);
+    assert_eq!(sp.skip_space().top, 8 + 16);
+    assert_eq!(sp.skip_u32().skip_space().top, 8 + 24);
+    Ok(())
+}

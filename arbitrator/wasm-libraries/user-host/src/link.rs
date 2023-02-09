@@ -122,8 +122,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     /// cleans up and writes the output
     macro_rules! finish {
-        ($status:expr) => {
-            finish!($status, std::ptr::null::<u8>(), 0);
+        ($status:expr, $gas_left:expr) => {
+            finish!($status, std::ptr::null::<u8>(), $gas_left);
         };
         ($status:expr, $outs:expr, $gas_left:expr) => {{
             sp.write_u8($status as u8).skip_space();
@@ -139,10 +139,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     // check if instrumentation stopped the program
     use UserOutcomeKind::*;
     if program_gas_status(module, internals) != 0 {
-        finish!(OutOfGas);
+        finish!(OutOfGas, 0);
     }
     if program_stack_left(module, internals) == 0 {
-        finish!(OutOfStack);
+        finish!(OutOfStack, 0);
     }
 
     // the program computed a final result
