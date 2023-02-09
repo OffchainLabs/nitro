@@ -10,7 +10,9 @@ import (
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	chain, _ := setupAssertionChainWithChallengeManager(t)
-	a1, _, challenge := setupTopLevelFork(t, chain)
+	height1 := uint64(1)
+	height2 := uint64(1)
+	a1, _, challenge := setupTopLevelFork(t, chain, height1, height2)
 
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
 		// Pass in a junk assertion that has no predecessor.
@@ -19,7 +21,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				chain: chain,
 				id:    common.BytesToHash([]byte("junk")),
 				StateCommitment: util.StateCommitment{
-					Height:    1,
+					Height:    height1,
 					StateRoot: common.BytesToHash([]byte("foo")),
 				},
 				inner: outgen.Assertion{
@@ -27,7 +29,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				},
 			},
 			util.HistoryCommitment{
-				Height: 1,
+				Height: height1,
 				Merkle: common.BytesToHash([]byte("bar")),
 			},
 		)
@@ -50,7 +52,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		_, err := challenge.AddLeaf(
 			a1,
 			util.HistoryCommitment{
-				Height: 1,
+				Height: height1,
 				Merkle: common.Hash{},
 			},
 		)
@@ -69,7 +71,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		_, err := challenge.AddLeaf(
 			a1,
 			util.HistoryCommitment{
-				Height: 1,
+				Height: height1,
 				Merkle: common.BytesToHash([]byte("nyan")),
 			},
 		)
@@ -81,7 +83,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		_, err = challenge.AddLeaf(
 			a1,
 			util.HistoryCommitment{
-				Height:    1,
+				Height:    height1,
 				Merkle:    common.BytesToHash([]byte("nyan")),
 				FirstLeaf: genesis.inner.StateHash,
 			},
@@ -94,7 +96,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		_, err = challenge.AddLeaf(
 			a1,
 			util.HistoryCommitment{
-				Height:    1,
+				Height:    height1,
 				Merkle:    common.BytesToHash([]byte("nyan")),
 				FirstLeaf: genesis.inner.StateHash,
 			},
@@ -106,20 +108,22 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 func setupTopLevelFork(
 	t *testing.T,
 	chain *AssertionChain,
+	height1,
+	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge) {
 	t.Helper()
 	genesisId := common.Hash{}
 
 	// Creates a simple assertion chain fork.
 	commit1 := util.StateCommitment{
-		Height:    1,
+		Height:    height1,
 		StateRoot: common.BytesToHash([]byte{1}),
 	}
 	a1, err := chain.CreateAssertion(commit1, genesisId)
 	require.NoError(t, err)
 
 	commit2 := util.StateCommitment{
-		Height:    1,
+		Height:    height2,
 		StateRoot: common.BytesToHash([]byte{2}),
 	}
 	a2, err := chain.CreateAssertion(commit2, genesisId)
