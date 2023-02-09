@@ -113,6 +113,52 @@ func TestAssertionByID(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestAssertion_Confirm(t *testing.T) {
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	addr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		big.NewInt(10), // 10 second challenge period.
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	chain, err := NewAssertionChain(
+		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
+	require.NoError(t, err)
+
+	commit := util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{1}),
+	}
+	genesisId := common.Hash{}
+
+	created, err := chain.CreateAssertion(commit, genesisId)
+	require.NoError(t, err)
+	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
+	acc.backend.Commit()
+
+	t.Run("Can confirm assertion", func(t *testing.T) {
+		require.Equal(t, uint8(0), created.inner.Status) // Pending.
+		require.NoError(t, created.Confirm())
+		acc.backend.Commit()
+		created, err = chain.AssertionByID(created.id)
+		require.NoError(t, err)
+		require.Equal(t, uint8(1), created.inner.Status) // Confirmed.
+	})
+
+	t.Run("Unknown assertion", func(t *testing.T) {
+		created.id = common.BytesToHash([]byte("meow"))
+		require.ErrorIs(t, created.Confirm(), ErrNotFound)
+	})
+}
+
 func TestChallengePeriodSeconds(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()

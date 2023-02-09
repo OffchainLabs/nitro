@@ -20,6 +20,7 @@ import (
 )
 
 var (
+	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
 	ErrRejectedAssertion = errors.New("assertion already rejected")
 	ErrInvalidChildren   = errors.New("invalid children")
 	ErrNotFound          = errors.New("item not found on-chain")
@@ -142,14 +143,14 @@ func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
 	err := withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.CreateSuccessionChallenge(
+		_, err2 := ac.writer.CreateSuccessionChallenge(
 			ac.txOpts,
 			assertionId,
 		)
-		return err
+		return err2
 	})
-	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
-		return nil, err2
+	if err3 := handleCreateSuccessionChallengeError(err, assertionId); err3 != nil {
+		return nil, err3
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
@@ -160,6 +161,21 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 		return nil, err
 	}
 	return manager.ChallengeByID(challengeId)
+}
+
+// Confirm creates a confirmation for the given assertion.
+func (a *Assertion) Confirm() error {
+	_, err := a.chain.writer.ConfirmAssertion(a.chain.txOpts, a.id)
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "Assertion does not exist"):
+		return errors.Wrapf(ErrNotFound, "assertion with id %#x", a.id)
+	case strings.Contains(err.Error(), "Previous assertion not confirmed"):
+		return errors.Wrapf(ErrUnconfirmedParent, "previous assertion not confirmed")
+	default:
+		return err
+	}
 }
 
 func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) error {
