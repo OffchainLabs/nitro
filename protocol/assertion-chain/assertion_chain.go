@@ -39,15 +39,6 @@ type ChainCommiter interface {
 	Commit() common.Hash
 }
 
-// Assertion is a wrapper around the binding to the type
-// of the same name in the protocol contracts. This allows us
-// to have a smaller API surface area and attach useful
-// methods that callers can use directly.
-type Assertion struct {
-	StateCommitment util.StateCommitment
-	inner           outgen.Assertion
-}
-
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
@@ -109,6 +100,8 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 		)
 	}
 	return &Assertion{
+		id:    assertionId,
+		chain: ac,
 		inner: res,
 		StateCommitment: util.StateCommitment{
 			Height:    res.Height.Uint64(),

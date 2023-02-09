@@ -713,7 +713,7 @@ contract ChallengeManagerImpl is IChallengeManager {
     }
 
     function getChallenge(bytes32 challengeId) public view returns (Challenge memory) {
-        require(challengeExists(challengeId), "Vertex does not exist");
+        require(challengeExists(challengeId), "Challenge does not exist");
         return challenges[challengeId];
     }
 

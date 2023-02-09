@@ -7,6 +7,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
+	"math/big"
 )
 
 var (
@@ -58,7 +59,11 @@ func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, 
 			challengeID,
 		)
 	case err == nil:
-		return &Challenge{inner: c}, nil
+		return &Challenge{
+			id:      challengeID,
+			inner:   c,
+			manager: cm,
+		}, nil
 	case strings.Contains(err.Error(), "Vertex does not exist"):
 		return nil, errors.Wrapf(
 			ErrChallengeNotFound,
@@ -68,4 +73,8 @@ func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, 
 	default:
 		return nil, err
 	}
+}
+
+func (cm *ChallengeManager) miniStakeAmount() (*big.Int, error) {
+	return cm.caller.MiniStakeValue(cm.assertionChain.callOpts)
 }

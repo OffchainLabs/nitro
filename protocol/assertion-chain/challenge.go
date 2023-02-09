@@ -5,36 +5,18 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/common"
-)
-
-// Challenge is a developer-friendly wrapper around
-// the protocol struct with the same name.
-type Challenge struct {
-	manager *ChallengeManager
-	inner   outgen.Challenge
-}
-
-// ChallengeType defines an enum of the same name
-// from the protocol.
-type ChallengeType uint
-
-const (
-	BlockChallenge ChallengeType = iota
-	BigStepChallenge
-	SmallStepChallenge
-	OneStepChallenge
 )
 
 // AddLeaf vertex to a BlockChallenge using an assertion and a history commitment.
 func (c *Challenge) AddLeaf(
 	assertion *Assertion,
 	history util.HistoryCommitment,
-	validator common.Address,
 ) (*ChallengeVertex, error) {
-	assertionId := getAssertionId(assertion.StateCommitment, assertion.inner.PredecessorId)
-	challengeId, err := c.manager.CalculateChallengeId(assertionId, BlockChallenge)
-	if err != nil {
+	// Refresh the inner fields of our before making on-chain calls.
+	if err := assertion.invalidate(); err != nil {
+		return nil, err
+	}
+	if err := c.invalidate(); err != nil {
 		return nil, err
 	}
 
@@ -44,8 +26,8 @@ func (c *Challenge) AddLeaf(
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
 	leafData := outgen.AddLeafArgs{
-		ChallengeId:            challengeId,
-		ClaimId:                assertionId,
+		ChallengeId:            c.id,
+		ClaimId:                assertion.id,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryCommitment:      history.Merkle,
 		FirstState:             history.FirstLeaf,
@@ -53,9 +35,15 @@ func (c *Challenge) AddLeaf(
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
 	}
-	c.manager.assertionChain.txOpts.From = validator
 
-	err := withChainCommitment(c.manager.assertionChain.backend, func() error {
+	// Check the current mini-stake amount and transact using that as the value.
+	miniStake, err := c.manager.miniStakeAmount()
+	if err != nil {
+		return nil, err
+	}
+	c.manager.assertionChain.txOpts.Value = miniStake
+
+	if err := withChainCommitment(c.manager.assertionChain.backend, func() error {
 		_, err := c.manager.writer.AddLeaf(
 			c.manager.assertionChain.txOpts,
 			leafData,
@@ -63,13 +51,14 @@ func (c *Challenge) AddLeaf(
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
 		return err
-	})
-	if err != nil {
+	}); err != nil {
+		c.manager.assertionChain.txOpts.Value = big.NewInt(0)
 		return nil, err
 	}
+	c.manager.assertionChain.txOpts.Value = big.NewInt(0)
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
 		c.manager.assertionChain.callOpts,
-		challengeId,
+		c.id,
 		history.Merkle,
 		big.NewInt(int64(history.Height)),
 	)
