@@ -61,13 +61,13 @@ contract AssertionChain is IAssertionChain {
             secondChildCreationTime: 0,
             stateHash: stateHash,
             height: 0,
-            status: Status.Pending,
+            status: Status.Confirmed,
             inboxMsgCountSeen: 0
         });
     }
 
     function challengeManagerAddr() public view returns (address) {
-        return address(0);
+        return address(challengeManager);
     }
 
     // CHRIS: TODO: expensive to do from the challenge contract - could just ask for specific properties?

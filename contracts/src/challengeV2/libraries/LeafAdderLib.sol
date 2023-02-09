@@ -12,7 +12,7 @@ library LeafAdderLib {
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafArgs memory leafData,
         uint256 miniStake
-    ) public view {
+    ) internal view {
         require(leafData.claimId != 0, "Empty claimId");
         require(leafData.historyCommitment != 0, "Empty historyCommitment");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
@@ -89,7 +89,7 @@ library BlockLeafAdder {
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs, // CHRIS: TODO: better name
         IAssertionChain assertionChain
-    ) external returns (bytes32) {
+    ) internal returns (bytes32) {
         {
             // check that the predecessor of this claim has registered this contract as it's succession challenge
             bytes32 predecessorId = assertionChain.getPredecessorId(leafLibArgs.leafData.claimId);
@@ -159,7 +159,7 @@ library BigStepLeafAdder {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs // CHRIS: TODO: better name
-    ) external returns (bytes32) {
+    ) internal returns (bytes32) {
         {
             // CHRIS: TODO: we should only have the special stuff in here, we can pass in the initial ps timer or something
             // CHRIS: TODO: rename challenge to challenge manager
@@ -210,7 +210,7 @@ library SmallStepLeafAdder {
 
     uint256 public constant MAX_STEPS = 2 << 19;
 
-    function getProgramCounter(bytes32 state, bytes memory proof) public returns (uint256) {
+    function getProgramCounter(bytes32 state, bytes memory proof) internal returns (uint256) {
         // CHRIS: TODO:
         // 1. hydrate the wavm state with the proof
         // 2. find the program counter and return it
@@ -221,7 +221,7 @@ library SmallStepLeafAdder {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         AddLeafLibArgs memory leafLibArgs
-    ) external returns (bytes32) {
+    ) internal returns (bytes32) {
         {
             require(vertices[leafLibArgs.leafData.claimId].exists(), "Claim does not exist");
             bytes32 predecessorId = vertices[leafLibArgs.leafData.claimId].predecessorId;

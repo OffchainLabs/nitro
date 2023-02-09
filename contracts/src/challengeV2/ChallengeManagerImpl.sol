@@ -38,7 +38,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) external view {
+    ) internal view {
         confirmationPreChecks(vertices, vId);
 
         // ensure only one type of confirmation is valid on this node and all it's siblings
@@ -54,7 +54,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId
-    ) external view {
+    ) internal view {
         confirmationPreChecks(vertices, vId);
 
         // ensure only one type of confirmation is valid on this node and all it's siblings
@@ -73,7 +73,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 assertionId,
         address assertionChain
-    ) external view returns (bytes32) {
+    ) internal view returns (bytes32) {
         // CHRIS: TODO: use pre-existing rights model contracts
         require(msg.sender == address(assertionChain), "Only assertion chain can create challenges");
 
@@ -89,7 +89,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
         uint256 challengePeriod
-    ) external view returns (bytes32, ChallengeType) {
+    ) internal view returns (bytes32, ChallengeType) {
         vertices.checkAtOneStepFork(vId);
 
         require(challenges[vId].winningClaim == 0, "Winner already declared");
@@ -148,7 +148,7 @@ library ChallengeManagerLib {
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
-    ) external view returns (bytes32, uint256) {
+    ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -166,7 +166,7 @@ library ChallengeManagerLib {
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
-    ) external view returns (bytes32, uint256) {
+    ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -178,51 +178,6 @@ library ChallengeManagerLib {
         return (bVId, bHeight);
     }
 
-    // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
-    function checkAddLeaf(
-        mapping(bytes32 => Challenge) storage challenges,
-        AddLeafArgs memory leafData,
-        uint256 miniStake
-    ) public view {
-        require(leafData.claimId != 0, "Empty claimId");
-        require(leafData.historyCommitment != 0, "Empty historyCommitment");
-        // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
-        require(leafData.height != 0, "Empty height");
-
-        // CHRIS: TODO: comment on why we need the mini stake
-        // CHRIS: TODO: also are we using this to refund moves in real-time? would be more expensive if so, but could be necessary?
-        // CHRIS: TODO: this can apparently be moved directly to the public goods fund
-        // CHRIS: TODO: we need to record who was on the winning leaf
-        require(msg.value == miniStake, "Incorrect mini-stake amount");
-
-        // CHRIS: TODO: require that this challenge hasnt declared a winner
-        require(challenges[leafData.challengeId].winningClaim == 0, "Winner already declared");
-
-        // CHRIS: TODO: also check the root is in the history at height 0/1?
-        require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
-            ),
-            "Last state not in history"
-        );
-
-        // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
-        require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.firstState, 0, leafData.firstStatehistoryProof
-            ),
-            "First state not in history"
-        );
-
-        // CHRIS: TODO: we dont know the root id - this is in the challenge itself?
-
-        require(
-            challenges[leafData.challengeId].rootId
-                == ChallengeVertexLib.id(leafData.challengeId, leafData.firstState, 0),
-            "First state is not the challenge root"
-        );
-    }
-
     // CHRIS: TODO: this should be view really?
     function checkExecuteOneStep(
         mapping(bytes32 => ChallengeVertex) storage vertices,
@@ -232,7 +187,7 @@ library ChallengeManagerLib {
         OneStepData calldata oneStepData,
         bytes calldata beforeHistoryInclusionProof,
         bytes calldata afterHistoryInclusionProof
-    ) external returns (bytes32) {
+    ) internal returns (bytes32) {
         require(vertices[winnerVId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[winnerVId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor does not exist");

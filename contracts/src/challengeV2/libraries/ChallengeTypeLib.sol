@@ -6,7 +6,7 @@ import "../DataEntities.sol";
 // CHRIS: TODO: check that all the lib functions have the correct visibility
 
 library ChallengeTypeLib {
-    function nextType(ChallengeType cType) external pure returns (ChallengeType) {
+    function nextType(ChallengeType cType) internal pure returns (ChallengeType) {
         if (cType == ChallengeType.Block) {
             return ChallengeType.BigStep;
         } else if (cType == ChallengeType.BigStep) {

@@ -146,10 +146,10 @@ func Test_onChallengeStarted(t *testing.T) {
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 	var challenge *protocol.Challenge
-	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
 		commit := util.StateCommitment{}
 		id := protocol.ChallengeCommitHash(commit.Hash())
-		challenge, err = p.ChallengeByCommitHash(tx, id)
+		challenge, err = validator.chain.ChallengeByCommitHash(tx, id)
 		if err != nil {
 			return err
 		}
@@ -193,8 +193,8 @@ func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 	_, _, validator := createTwoValidatorFork(t, ctx, &mocks.MockStateManager{}, stateRoots)
 	var genesis *protocol.Assertion
 	var err error
-	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		genesis = p.LatestConfirmed(tx)
+	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+		genesis = validator.chain.LatestConfirmed(tx)
 		return nil
 	})
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ func createTwoValidatorFork(
 
 	// Add balances to the stakers.
 	bal := big.NewInt(0).Mul(protocol.AssertionStake, big.NewInt(100))
-	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err := chain.Tx(func(tx *protocol.ActiveTx) error {
 		chain.AddToBalance(tx, staker1, bal)
 		chain.AddToBalance(tx, staker2, bal)
 		chain.AddToBalance(tx, staker3, bal)
@@ -244,13 +244,13 @@ func createTwoValidatorFork(
 	var genesis *protocol.Assertion
 	var assertion *protocol.Assertion
 	var forkedAssertion *protocol.Assertion
-	err = chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err = chain.Call(func(tx *protocol.ActiveTx) error {
 		genesis = chain.LatestConfirmed(tx)
 		return nil
 	})
 	require.NoError(t, err)
 
-	err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err = chain.Tx(func(tx *protocol.ActiveTx) error {
 		assertion, err = chain.CreateLeaf(
 			tx,
 			genesis,
@@ -375,7 +375,7 @@ func setupAssertions(num int) []*protocol.Assertion {
 }
 
 func setupValidatorWithChain(
-	t testing.TB, chain protocol.ChainReadWriter, manager statemanager.Manager, staker common.Address,
+	t testing.TB, chain protocol.OnChainProtocol, manager statemanager.Manager, staker common.Address,
 ) *Validator {
 	v, err := New(context.Background(), chain, manager, WithAddress(staker))
 	require.NoError(t, err)

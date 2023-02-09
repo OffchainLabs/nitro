@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
-	"time"
 )
 
 var (
@@ -23,13 +23,13 @@ func (v *ChallengeVertex) CreateBigStepChallenge(tx *ActiveTx) error {
 		return err
 	}
 	// TODO: Add all other required challenge fields.
-	v.SubChallenge = util.Some(&Challenge{
+	v.SubChallenge = util.Some(ChallengeInterface(&Challenge{
 		// Set the creation time of the subchallenge to be
 		// the same as the top-level challenge, as they should
 		// expire at the same timestamp.
-		creationTime:  v.Challenge.Unwrap().creationTime,
+		creationTime:  v.Challenge.Unwrap().GetCreationTime(),
 		challengeType: BigStepChallenge,
-	})
+	}))
 	// TODO: Add the challenge to the chain under a key that does not
 	// collide with top-level challenges and fire events.
 	return nil
@@ -42,10 +42,10 @@ func (v *ChallengeVertex) CreateSmallStepChallenge(tx *ActiveTx) error {
 		return err
 	}
 	// TODO: Add all other required challenge fields.
-	v.SubChallenge = util.Some(&Challenge{
-		creationTime:  v.Challenge.Unwrap().creationTime,
+	v.SubChallenge = util.Some(ChallengeInterface(&Challenge{
+		creationTime:  v.Challenge.Unwrap().GetCreationTime(),
 		challengeType: SmallStepChallenge,
-	})
+	}))
 	// TODO: Add the challenge to the chain under a key that does not
 	// collide with top-level challenges and fire events.
 	return nil
@@ -73,17 +73,17 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	case BlockChallenge:
 		return ErrWrongChallengeKind
 	case BigStepChallenge:
-		if chal.challengeType != BlockChallenge {
+		if chal.GetChallengeType() != BlockChallenge {
 			return ErrWrongChallengeKind
 		}
 	case SmallStepChallenge:
-		if chal.challengeType != BigStepChallenge {
+		if chal.GetChallengeType() != BigStepChallenge {
 			return ErrWrongChallengeKind
 		}
 	}
 	// The challenge must be ongoing.
-	chain := chal.rootAssertion.Unwrap().chain
-	if chal.hasEnded(chain) {
+	chain := chal.RootAssertion().chain
+	if chal.HasEnded(chain) {
 		return ErrChallengeNotRunning
 	}
 	// There must not exist a subchallenge.
@@ -128,10 +128,10 @@ func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, erro
 			continue
 		}
 		prev := otherVertex.Prev.Unwrap()
-		parentCommitHash := prev.Commitment.Hash()
-		isOneStepAway := otherVertex.Commitment.Height == prev.Commitment.Height+1
+		parentCommitHash := prev.GetCommitment().Hash()
+		isOneStepAway := otherVertex.Commitment.Height == prev.GetCommitment().Height+1
 		isChild := parentCommitHash == vertexCommitHash
-		if isOneStepAway && isChild && !otherVertex.chessClockExpired(chain.challengePeriod) {
+		if isOneStepAway && isChild && !otherVertex.ChessClockExpired(chain.challengePeriod) {
 			unexpiredChildrenTotal++
 			if unexpiredChildrenTotal > 1 {
 				return true, nil
@@ -143,7 +143,7 @@ func hasUnexpiredChildren(chain *AssertionChain, v *ChallengeVertex) (bool, erro
 
 // Checks if a challenge is still ongoing by making sure the current
 // timestamp is within the challenge's creation time + challenge period.
-func (c *Challenge) hasEnded(chain *AssertionChain) bool {
+func (c *Challenge) HasEnded(chain *AssertionChain) bool {
 	challengeEndTime := c.creationTime.Add(chain.challengePeriod).Unix()
 	now := chain.timeReference.Get().Unix()
 	return now > challengeEndTime
@@ -151,6 +151,6 @@ func (c *Challenge) hasEnded(chain *AssertionChain) bool {
 
 // Checks if a vertex's chess-clock has expired according
 // to the challenge period length.
-func (v *ChallengeVertex) chessClockExpired(challengePeriod time.Duration) bool {
+func (v *ChallengeVertex) ChessClockExpired(challengePeriod time.Duration) bool {
 	return v.PsTimer.Get() > challengePeriod
 }

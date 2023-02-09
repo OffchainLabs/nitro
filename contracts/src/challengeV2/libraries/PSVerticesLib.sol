@@ -16,7 +16,7 @@ library PSVerticesLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) public view returns (bool) {
+    ) internal view returns (bool) {
         require(vertices[vId].exists(), "Predecessor vertex does not exist");
 
         // we dont allow presumptive successor to be set to 0 if one is confirmable
@@ -59,7 +59,7 @@ library PSVerticesLib {
         address successorStaker,
         uint256 successorInitialPsTime,
         uint256 challengePeriod
-    ) public returns (bytes32) {
+    ) internal returns (bytes32) {
         bytes32 vId = ChallengeVertexLib.id(challengeId, successorHistoryCommitment, successorHeight);
         
         require(!vertices[vId].exists(), "Successor already exists");
@@ -94,7 +94,7 @@ library PSVerticesLib {
         bytes32 vId,
         bytes32 presumptiveSuccessorId,
         uint256 challengePeriod
-    ) public {
+    ) internal {
         // CHRIS: TODO: check that this is not a leaf - we cant set the presumptive successor on a leaf
         require(!hasConfirmablePsAt(vertices, vId, challengePeriod), "Presumptive successor already confirmable");
 
@@ -116,7 +116,7 @@ library PSVerticesLib {
         }
     }
 
-    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) public view {
+    function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
         require(vertices[vId].exists(), "Fork candidate vertex does not exist");
 
         // CHRIS: TODO: do we want to include this?
@@ -140,7 +140,7 @@ library PSVerticesLib {
         bytes32 startVertexId,
         bytes32 endVertexId,
         uint256 challengePeriod
-    ) public {
+    ) internal {
         require(vertices[startVertexId].exists(), "Predecessor vertex does not exist");
         require(vertices[endVertexId].exists(), "Successor does not exist");
         

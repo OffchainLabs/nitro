@@ -22,7 +22,7 @@ func TestChallengeVertex_CreateBigStepChallenge(t *testing.T) {
 		err := v.CreateBigStepChallenge(tx)
 		require.NoError(t, err)
 		sub := v.SubChallenge.Unwrap()
-		require.Equal(t, ChallengeType(BigStepChallenge), sub.challengeType)
+		require.Equal(t, ChallengeType(BigStepChallenge), sub.GetChallengeType())
 	})
 }
 
@@ -38,7 +38,7 @@ func TestChallengeVertex_CreateSmallStepChallenge(t *testing.T) {
 		err := v.CreateSmallStepChallenge(tx)
 		require.NoError(t, err)
 		sub := v.SubChallenge.Unwrap()
-		require.Equal(t, ChallengeType(SmallStepChallenge), sub.challengeType)
+		require.Equal(t, ChallengeType(SmallStepChallenge), sub.GetChallengeType())
 	})
 }
 
@@ -62,8 +62,8 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 		}),
 	}
 	v := &ChallengeVertex{
-		Challenge:    util.Some(chal),
-		SubChallenge: util.None[*Challenge](),
+		Challenge:    util.Some(ChallengeInterface(chal)),
+		SubChallenge: util.None[ChallengeInterface](),
 		Status:       PendingAssertionState,
 		Commitment: util.HistoryCommitment{
 			Height: 0,
@@ -78,7 +78,7 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 	for i := uint(0); i < 3; i++ {
 		timer := util.NewCountUpTimer(ref)
 		child := &ChallengeVertex{
-			Prev: util.Some(v),
+			Prev: util.Some(ChallengeVertexInterface(v)),
 			Commitment: util.HistoryCommitment{
 				Height: v.Commitment.Height + 1,
 				Merkle: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
@@ -87,7 +87,7 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 		}
 		vHash := VertexCommitHash(child.Commitment.Hash())
 		if i == 0 {
-			v.Prev = util.None[*ChallengeVertex]()
+			v.Prev = util.None[ChallengeVertexInterface]()
 		}
 		vertices[vHash] = child
 	}
@@ -98,32 +98,32 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 func Test_canCreateSubChallenge(t *testing.T) {
 	t.Run("no challenge for vertex", func(t *testing.T) {
 		v := &ChallengeVertex{
-			Challenge: util.None[*Challenge](),
+			Challenge: util.None[ChallengeInterface](),
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
 		require.ErrorIs(t, err, ErrNoChallenge)
 	})
 	t.Run("block challenge cannot be a subchallenge", func(t *testing.T) {
 		v := &ChallengeVertex{
-			Challenge: util.Some(&Challenge{}),
+			Challenge: util.Some(ChallengeInterface(&Challenge{})),
 		}
 		err := v.canCreateSubChallenge(BlockChallenge)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("parent of big step challenge must be block challenge", func(t *testing.T) {
 		v := &ChallengeVertex{
-			Challenge: util.Some(&Challenge{
+			Challenge: util.Some(ChallengeInterface(&Challenge{
 				challengeType: SmallStepChallenge,
-			}),
+			})),
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("parent of small step challenge must be big step challenge", func(t *testing.T) {
 		v := &ChallengeVertex{
-			Challenge: util.Some(&Challenge{
+			Challenge: util.Some(ChallengeInterface(&Challenge{
 				challengeType: SmallStepChallenge,
-			}),
+			})),
 		}
 		err := v.canCreateSubChallenge(SmallStepChallenge)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
@@ -145,7 +145,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}),
 		}
 		v := &ChallengeVertex{
-			Challenge: util.Some(chal),
+			Challenge: util.Some(ChallengeInterface(chal)),
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
 		require.ErrorIs(t, err, ErrChallengeNotRunning)
@@ -166,8 +166,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}),
 		}
 		v := &ChallengeVertex{
-			Challenge:    util.Some(chal),
-			SubChallenge: util.Some(&Challenge{}),
+			Challenge:    util.Some(ChallengeInterface(chal)),
+			SubChallenge: util.Some(ChallengeInterface(&Challenge{})),
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
 		require.ErrorIs(t, err, ErrSubchallengeAlreadyExists)
@@ -188,8 +188,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}),
 		}
 		v := &ChallengeVertex{
-			Challenge:    util.Some(chal),
-			SubChallenge: util.None[*Challenge](),
+			Challenge:    util.Some(ChallengeInterface(chal)),
+			SubChallenge: util.None[ChallengeInterface](),
 			Status:       ConfirmedAssertionState,
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
@@ -214,8 +214,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}),
 		}
 		v := &ChallengeVertex{
-			Challenge:    util.Some(chal),
-			SubChallenge: util.None[*Challenge](),
+			Challenge:    util.Some(ChallengeInterface(chal)),
+			SubChallenge: util.None[ChallengeInterface](),
 			Status:       PendingAssertionState,
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
@@ -245,8 +245,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}),
 		}
 		v := &ChallengeVertex{
-			Challenge:    util.Some(chal),
-			SubChallenge: util.None[*Challenge](),
+			Challenge:    util.Some(ChallengeInterface(chal)),
+			SubChallenge: util.None[ChallengeInterface](),
 			Status:       PendingAssertionState,
 		}
 		err := v.canCreateSubChallenge(BigStepChallenge)
@@ -272,8 +272,8 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}),
 		}
 		v := &ChallengeVertex{
-			Challenge:    util.Some(chal),
-			SubChallenge: util.None[*Challenge](),
+			Challenge:    util.Some(ChallengeInterface(chal)),
+			SubChallenge: util.None[ChallengeInterface](),
 			Status:       PendingAssertionState,
 		}
 
@@ -284,7 +284,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		for i := uint(0); i < 3; i++ {
 			timer := util.NewCountUpTimer(ref)
 			child := &ChallengeVertex{
-				Prev: util.Some(v),
+				Prev: util.Some(ChallengeVertexInterface(v)),
 				Commitment: util.HistoryCommitment{
 					Height: v.Commitment.Height + 1,
 					Merkle: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
@@ -293,7 +293,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			}
 			vHash := VertexCommitHash(child.Commitment.Hash())
 			if i == 0 {
-				child.Prev = util.None[*ChallengeVertex]()
+				child.Prev = util.None[ChallengeVertexInterface]()
 			}
 			vertices[vHash] = child
 		}
@@ -308,7 +308,7 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 	t.Run("no challenge for vertex", func(t *testing.T) {
 		chain := &AssertionChain{}
 		v := &ChallengeVertex{
-			Challenge: util.None[*Challenge](),
+			Challenge: util.None[ChallengeInterface](),
 		}
 		_, err := hasUnexpiredChildren(chain, v)
 		require.ErrorIs(t, err, ErrNoChallenge)
@@ -319,9 +319,9 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 			challengeVerticesByCommitHash: m,
 		}
 		v := &ChallengeVertex{
-			Challenge: util.Some(&Challenge{
+			Challenge: util.Some(ChallengeInterface(&Challenge{
 				rootAssertion: util.None[*Assertion](),
-			}),
+			})),
 		}
 		_, err := hasUnexpiredChildren(chain, v)
 		require.ErrorContains(t, err, "vertices not found")
@@ -382,9 +382,9 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 				timeReference:                 timeRef,
 			}
 			parent := &ChallengeVertex{
-				Challenge: util.Some(&Challenge{
+				Challenge: util.Some(ChallengeInterface(&Challenge{
 					rootAssertion: util.None[*Assertion](),
-				}),
+				})),
 			}
 			challengeHash := ChallengeCommitHash((util.StateCommitment{}).Hash())
 
@@ -396,7 +396,7 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 				timer.Add(2 * chain.challengePeriod)
 
 				v := &ChallengeVertex{
-					Prev: util.Some(parent),
+					Prev: util.Some(ChallengeVertexInterface(parent)),
 					Commitment: util.HistoryCommitment{
 						Height: parent.Commitment.Height + 1,
 						Merkle: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
@@ -440,7 +440,7 @@ func TestChallenge_hasEnded(t *testing.T) {
 			challengePeriod: challengePeriod,
 			timeReference:   ref,
 		}
-		got := chal.hasEnded(chain)
+		got := chal.HasEnded(chain)
 		require.Equal(t, tt.want, got)
 	}
 
@@ -463,7 +463,7 @@ func TestChallengeVertex_chessClockExpired(t *testing.T) {
 		v := &ChallengeVertex{
 			PsTimer: timer,
 		}
-		got := v.chessClockExpired(challengePeriod)
+		got := v.ChessClockExpired(challengePeriod)
 		require.Equal(t, tt.want, got)
 	}
 }
