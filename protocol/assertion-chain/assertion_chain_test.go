@@ -46,8 +46,8 @@ func TestCreateAssertion(t *testing.T) {
 	genesisId := common.Hash{}
 
 	t.Run("OK", func(t *testing.T) {
-		created, err := chain.CreateAssertion(commit, genesisId)
-		require.NoError(t, err)
+		created, err2 := chain.CreateAssertion(commit, genesisId)
+		require.NoError(t, err2)
 		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
 	t.Run("already exists", func(t *testing.T) {
