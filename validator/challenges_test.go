@@ -461,12 +461,13 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 }
 
 func TestValidator_verifyAddLeafConditions(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	badAssertion := &protocol.Assertion{}
 	ctx := context.Background()
 	timeRef := util.NewArtificialTimeReference()
 	v := &Validator{chain: protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)}
 	// Can not add leaf on root assertion
-	require.ErrorIs(t, v.verifyAddLeafConditions(badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
+	require.ErrorIs(t, v.verifyAddLeafConditions(ctx, tx, badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
 
 	chain := protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)
 	var chal protocol.ChallengeInterface
@@ -490,10 +491,10 @@ func TestValidator_verifyAddLeafConditions(t *testing.T) {
 		chal, err = rootAssertion.CreateChallenge(tx, ctx, common.Address{})
 		require.NoError(t, err)
 		// Parent missmatch between challenge and assertion's parent
-		require.ErrorIs(t, v.verifyAddLeafConditions(&protocol.Assertion{Prev: util.Some[*protocol.Assertion](badAssertion)}, chal), protocol.ErrInvalidOp)
+		require.ErrorIs(t, v.verifyAddLeafConditions(ctx, tx, &protocol.Assertion{Prev: util.Some[*protocol.Assertion](badAssertion)}, chal), protocol.ErrInvalidOp)
 
 		// Happy case
-		require.NoError(t, v.verifyAddLeafConditions(&protocol.Assertion{Prev: util.Some[*protocol.Assertion](rootAssertion)}, chal), protocol.ErrInvalidOp)
+		require.NoError(t, v.verifyAddLeafConditions(ctx, tx, &protocol.Assertion{Prev: util.Some[*protocol.Assertion](rootAssertion)}, chal), protocol.ErrInvalidOp)
 		return nil
 	})
 	require.NoError(t, err)

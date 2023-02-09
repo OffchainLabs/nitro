@@ -166,18 +166,19 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 
 func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 	for {
+		tx := &protocol.ActiveTx{}
 		select {
 		case genericEvent := <-v.assertionEvents:
 			switch ev := genericEvent.(type) {
 			case *protocol.CreateLeafEvent:
 				go func() {
-					if err := v.onLeafCreated(ctx, ev); err != nil {
+					if err := v.onLeafCreated(ctx, tx, ev); err != nil {
 						log.WithError(err).Error("Could not process leaf creation event")
 					}
 				}()
 			case *protocol.StartChallengeEvent:
 				go func() {
-					if err := v.onChallengeStarted(ctx, ev); err != nil {
+					if err := v.onChallengeStarted(ctx, tx, ev); err != nil {
 						log.WithError(err).Error("Could not process challenge start event")
 					}
 				}()
@@ -320,7 +321,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
-func (v *Validator) onLeafCreated(ctx context.Context, ev *protocol.CreateLeafEvent) error {
+func (v *Validator) onLeafCreated(ctx context.Context, tx *protocol.ActiveTx, ev *protocol.CreateLeafEvent) error {
 	if ev == nil {
 		return nil
 	}
@@ -356,7 +357,7 @@ func (v *Validator) onLeafCreated(ctx context.Context, ev *protocol.CreateLeafEv
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, ev)
+	return v.challengeAssertion(ctx, tx, ev)
 }
 
 func isFromSelf(self, staker common.Address) bool {

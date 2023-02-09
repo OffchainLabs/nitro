@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -15,10 +16,10 @@ type Visualization struct {
 	Challenges     []*ChallengeVisualization `json:"challenges"`
 }
 
-func (chain *AssertionChain) Visualize() *Visualization {
+func (chain *AssertionChain) Visualize(ctx context.Context, tx *ActiveTx) *Visualization {
 	return &Visualization{
 		AssertionChain: chain.visualizeAssertionChain(),
-		Challenges:     chain.visualizeChallenges(),
+		Challenges:     chain.visualizeChallenges(ctx, tx),
 	}
 }
 
@@ -84,14 +85,15 @@ type ChallengeVisualization struct {
 	Graph               string               `json:"graph"`
 }
 
-func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
+func (chain *AssertionChain) visualizeChallenges(ctx context.Context, tx *ActiveTx) []*ChallengeVisualization {
 	res := make([]*ChallengeVisualization, 0, len(chain.challengeVerticesByCommitHash))
 	for cHash, challenge := range chain.challengesByCommitHash {
 		// Ignore challenges with no root assertion or completed status.
 		if challenge.rootAssertion.IsNone() {
 			continue
 		}
-		if challenge.Completed(&ActiveTx{TxStatus: ReadOnlyTxStatus}) {
+		completed, _ := challenge.Completed(ctx, tx)
+		if completed {
 			continue
 		}
 
@@ -117,13 +119,15 @@ func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
 			)
 
 			if !v.Prev.IsNone() {
-				childCount[VertexCommitHash(v.Prev.Unwrap().GetCommitment().Hash())]++
+				prevCommitment, _ := v.Prev.Unwrap().GetCommitment(ctx, tx)
+				childCount[VertexCommitHash(prevCommitment.Hash())]++
 			}
 
 			dotN := graph.Node(rStr).Box().Attr("label", label)
 
+			prev, _ := v.GetPrev(ctx, tx)
 			m[commit.Hash()] = &challengeVertexNode{
-				parent:  v.GetPrev(),
+				parent:  prev,
 				vertex:  v,
 				dotNode: dotN,
 			}
@@ -132,10 +136,12 @@ func (chain *AssertionChain) visualizeChallenges() []*ChallengeVisualization {
 		// Construct an edge only if block's parent exist in the tree.
 		for _, n := range m {
 			if !n.parent.IsNone() {
-				parentHash := n.parent.Unwrap().GetCommitment().Hash()
+				parentCommitment, _ := n.parent.Unwrap().GetCommitment(ctx, tx)
+				parentHash := parentCommitment.Hash()
 				if _, ok := m[parentHash]; ok {
 
-					if childCount[VertexCommitHash(parentHash)] > 1 && n.vertex.IsPresumptiveSuccessor() {
+					vertexIsPresumptiveSuccessor, _ := n.vertex.IsPresumptiveSuccessor(ctx, tx)
+					if childCount[VertexCommitHash(parentHash)] > 1 && vertexIsPresumptiveSuccessor {
 						graph.Edge(n.dotNode, m[parentHash].dotNode).
 							Bold().
 							Label("ps").

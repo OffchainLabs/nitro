@@ -99,6 +99,7 @@ func (m *MockProtocol) HasConfirmedAboveSeqNumber(tx *protocol.ActiveTx, seqNum 
 }
 
 func (m *MockProtocol) IsAtOneStepFork(
+	ctx context.Context,
 	tx *protocol.ActiveTx,
 	challengeCommitHash protocol.ChallengeCommitHash,
 	vertexCommit util.HistoryCommitment,
