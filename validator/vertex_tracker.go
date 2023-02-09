@@ -3,10 +3,11 @@ package validator
 import (
 	"context"
 	"fmt"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/ethereum/go-ethereum/common"
 	"reflect"
 	"time"
+
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -360,7 +361,7 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 		if !subChallengeWinnerVertex.IsNone() {
 			winner := subChallengeWinnerVertex.Unwrap()
 			if winner == v.vertex {
-				if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
+				if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
 					return v.vertex.ConfirmForSubChallengeWin(ctx, tx)
 				}); err != nil {
 					return false, err

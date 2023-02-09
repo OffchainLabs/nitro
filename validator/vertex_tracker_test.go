@@ -284,7 +284,8 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		v, err := trk.stateManager.HistoryCommitmentUpTo(ctx, 5)
 		require.NoError(t, err)
 		err = trk.chain.Call(func(tx *protocol.ActiveTx) error {
-			parentStateCommitment, err := trk.challenge.ParentStateCommitment(ctx, tx)
+			var parentStateCommitment util.StateCommitment
+			parentStateCommitment, err = trk.challenge.ParentStateCommitment(ctx, tx)
 			if err != nil {
 				return err
 			}
