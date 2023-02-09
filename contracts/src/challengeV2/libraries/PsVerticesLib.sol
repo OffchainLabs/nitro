@@ -63,7 +63,7 @@ import "./ChallengeVertexLib.sol";
 // CHRIS: TODO: we can never be made presumptive successor again
 // CHRIS: TODO: this is an invariant we should try to test / assert
 
-// CHRIS: TODO: should we also not allow connection if another vertex is confirmed, or if this start vertex 
+// CHRIS: TODO: should we also not allow connection if another vertex is confirmed, or if this start vertex
 // has a chosen winner of a succession challenge?
 
 // CHRIS: TODO: think about what happens if we add a new vertex with a high initial ps
@@ -78,7 +78,6 @@ import "./ChallengeVertexLib.sol";
 // if more than one successor exists at the lowest height, then there is no ps
 
 // if a vertex is a leaf it will never have a ps
-
 
 /// @title Presumptive Successor Vertices library
 /// @author Offchain Labs
@@ -154,8 +153,6 @@ library PsVerticesLib {
         }
     }
 
-
-
     /// @notice Flush the psLastUpdated of a vertex onto the current ps, and record that this occurred
     /// @param vertices The ps vertices
     /// @param vId The id of the vertex on which to update psLastUpdated
@@ -192,7 +189,10 @@ library PsVerticesLib {
         require(vertices[endVertexId].exists(), "End vertex does not exist");
         require(vertices[endVertexId].predecessorId != startVertexId, "Vertices already connected");
         // cannot connect vertices that are in different challenges
-        require(vertices[startVertexId].challengeId == vertices[endVertexId].challengeId, "Predecessor and successor are in different challenges");
+        require(
+            vertices[startVertexId].challengeId == vertices[endVertexId].challengeId,
+            "Predecessor and successor are in different challenges"
+        );
 
         // if the start vertex has a ps that exceeds the challenge period then we dont allow any connection
         // if that vertex as the start. This is because any connected vertex would be rejectable by default
