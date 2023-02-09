@@ -30,7 +30,7 @@ struct ChallengeVertex {
     bytes32 predecessorId;
     /// @notice When a leaf is created it makes contains a reference to a vertex in a higher level, or a top level assertion,
     ///         that can be confirmed if this leaf is confirmed - the claim id is that reference.
-    /// @dev    Only leaf vertices have claim ids. CHRIS: TODO: also put this on the root for consistency?
+    /// @dev    Only leaf vertices have claim ids. CHRIS: TODO: also put this on the root for consistency? The we would be able to tell is root, by doing checking if it has a claim id but no staker
     bytes32 claimId;
     /// @notice In order to create a leaf a mini-stake must be placed. The placer of this stake is record so that they can be refunded
     ///         in the event that they win the challenge.
@@ -57,14 +57,19 @@ struct ChallengeVertex {
     ///         property to get the amount of time this vertex has been ps, instead use the PsVertexLib.getPsTimer function
     /// @dev    Always zero on the root vertex as it is not the successor to anything.
     uint256 flushedPsTime;
-    /// @notice The id of the of successor with the lowest height. Zero if this vertex has no successors
+    /// @notice The id of the of successor with the lowest height. Zero if this vertex has no successors.
+    ///         Equal to the psId if the psId is non zero.
     /// @dev    This is used to decide whether the ps is at the unique lowest height.
     ///         Always zero for leaf vertices as they have no successors.
-    bytes32 lowestHeightSucessorId;
+    bytes32 lowestHeightSuccessorId;
 }
 
 library ChallengeVertexLib {
-    function newRoot(bytes32 challengeId, bytes32 historyRoot) internal pure returns (ChallengeVertex memory) {
+    function newRoot(bytes32 challengeId, bytes32 historyRoot, bytes32 claimId) internal pure returns (ChallengeVertex memory) {
+        require(challengeId != 0, "Zero challenge id");
+        require(historyRoot != 0, "Zero history root");
+        require(claimId != 0, "Zero claim id");
+    
         // CHRIS: TODO: the root should have a height 1 and should inherit the state commitment from above right?
         return ChallengeVertex({
             challengeId: challengeId,
@@ -72,13 +77,13 @@ library ChallengeVertexLib {
             successionChallenge: 0,
             historyRoot: historyRoot,
             height: 0,
-            claimId: 0, // CHRIS: TODO: should this be a reference to the assertion on which this challenge is based? 2-way link?
+            claimId: claimId,
             status: VertexStatus.Confirmed, // root starts off as confirmed
             staker: address(0), // always zero for non leaf
             psId: 0, // initially 0 - updated during connection
             psLastUpdated: 0, // initially 0 - updated during connection
             flushedPsTime: 0, // always zero for the root
-            lowestHeightSucessorId: 0 // initially 0 - updated during connection
+            lowestHeightSuccessorId: 0 // initially 0 - updated during connection
         });
     }
 
@@ -108,7 +113,7 @@ library ChallengeVertexLib {
             psId: 0, // always zero for leaf
             psLastUpdated: 0, // always zero for leaf
             flushedPsTime: initialPsTime,
-            lowestHeightSucessorId: 0 // always zero for leaf
+            lowestHeightSuccessorId: 0 // always zero for leaf
         });
     }
 
@@ -134,7 +139,7 @@ library ChallengeVertexLib {
             psId: 0, // initially 0 - updated during connection
             psLastUpdated: 0, // initially 0 - updated during connection
             flushedPsTime: initialPsTime,
-            lowestHeightSucessorId: 0 // initially 0 - updated during connection
+            lowestHeightSuccessorId: 0 // initially 0 - updated during connection
         });
     }
 
@@ -147,6 +152,51 @@ library ChallengeVertexLib {
     }
 
     function isLeaf(ChallengeVertex storage vertex) internal view returns (bool) {
+        // CHRIS: TODO: throw for non existant leaves and roots?
         return exists(vertex) && vertex.staker != address(0);
+    }
+
+    function isRoot(ChallengeVertex storage vertex) internal view returns(bool) {
+        return exists(vertex) && vertex.staker == address(0) && claimId != 0;
+    }
+
+    function setPredecessor(ChallengeVertex storage vertex, bytes32 predecessorId) internal {
+        require(exists(vertex), "Vertex does not exist");
+        require(vertex.predecessorId != predecessorId, "Predecessor already set");
+        require(!isRoot(vertex), "Cannot set predecessor on root");
+        
+        vertex.predecessorId = predecessorId;
+    }
+
+    function setPsId(ChallengeVertex storage vertex, bytes32 psId) internal {
+        require(exists(vertex), "Vertex does not exist");
+        require(vertex.psId != psId, "Ps already set");
+        require(!isLeaf(vertex), "Cannot set ps id on a leaf");
+
+        vertex.psId = psId;
+        if(psId != 0) {
+            vertex.lowestHeightSuccessorId = psId;
+        }
+    }
+
+    function setPsLastUpdated(ChallengeVertex storage vertex, uint256 psLastUpdated) internal {
+        require(exists(vertex), "Vertex does not exist");
+        require(!isLeaf(vertex), "Cannot set ps last updated on a leaf");
+
+        vertex.psLastUpdated = psLastUpdated;
+    }
+
+    function setFlushedPsTime(ChallengeVertex storage vertex, uint256 flushedPsTime) internal {
+        require(exists(vertex), "Vertex does not exist");
+        require(!isRoot(vertex), "Cannot set ps flushed time on a root");
+
+        vertex.flushedPsTime = flushedPsTime;
+    }
+
+    function setSuccessionChallenge(ChallengeVertex storage vertex, bytes32 successionChallengeId) internal {
+        require(exists(vertex), "Vertex does not exist");
+        require(!isLeaf(vertex), "Cannot set ps last updated on a leaf");
+
+        vertex.successionChallenge = successionChallengeId;
     }
 }

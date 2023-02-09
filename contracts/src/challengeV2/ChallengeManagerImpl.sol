@@ -389,7 +389,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
         bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
 
-        vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash);
+        vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
         challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0});
 
         return challengeId;
@@ -405,9 +405,9 @@ contract ChallengeManagerImpl is IChallengeManager {
         bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 0);
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
-        vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot);
+        vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);
         challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0});
-        vertices[vId].successionChallenge = newChallengeId;
+        vertices[vId].setSuccessionChallenge(newChallengeId);
 
         // CHRIS: TODO: opening a challenge and confirming a winner vertex should have mutually exlusive checks
         // CHRIS: TODO: these should ensure this internally

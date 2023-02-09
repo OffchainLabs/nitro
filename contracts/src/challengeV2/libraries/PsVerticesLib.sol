@@ -95,10 +95,10 @@ library PsVerticesLib {
         require(vertices[vId].exists(), "Fork candidate vertex does not exist");
 
         // if this vertex has no successor at all, it cannot be the root of a one step fork
-        require(vertices[vertices[vId].lowestHeightSucessorId].exists(), "No successors");
+        require(vertices[vertices[vId].lowestHeightSuccessorId].exists(), "No successors");
 
         // the lowest height must be the root height + 1 at a one step fork
-        uint256 lowestHeightSuccessorHeight = vertices[vertices[vId].lowestHeightSucessorId].height;
+        uint256 lowestHeightSuccessorHeight = vertices[vertices[vId].lowestHeightSuccessorId].height;
         require(
             lowestHeightSuccessorHeight - vertices[vId].height == 1, "Lowest height not one above the current height"
         );
@@ -168,16 +168,18 @@ library PsVerticesLib {
         // if a presumptive successor already exists we flush it
         if (vertices[vId].psId != 0) {
             uint256 timeToAdd = block.timestamp - vertices[vId].psLastUpdated;
-            vertices[vertices[vId].psId].flushedPsTime += timeToAdd;
+            uint256 timeToSet = vertices[vertices[vId].psId].flushedPsTime + timeToAdd;
 
             // CHRIS: TODO: we're updating flushed time here! this could accidentally take us above the expected amount
             // CHRIS: TODO: we should check that it's not confirmable
-            if (vertices[vertices[vId].psId].flushedPsTime < minFlushedTime) {
-                vertices[vertices[vId].psId].flushedPsTime = minFlushedTime;
+            if (timeToSet < minFlushedTime) {
+                timeToSet = minFlushedTime;
             }
+
+            vertices[vertices[vId].psId].setFlushedPsTime(timeToSet);
         }
         // every time we update the ps we record when it happened so that we can flush in the future
-        vertices[vId].psLastUpdated = block.timestamp;
+        vertices[vId].setPsLastUpdated(block.timestamp);
     }
 
     /// @notice Connect two existing vertices. The connection is made by setting the predecessor of the end vertex to
@@ -212,26 +214,24 @@ library PsVerticesLib {
         );
 
         // first make the connection
-        vertices[endVertexId].predecessorId = startVertexId;
+        vertices[endVertexId].setPredecessor(startVertexId);
 
         // now we may need to update ps and the lowest height successor
-        if (vertices[startVertexId].lowestHeightSucessorId == 0) {
+        if (vertices[startVertexId].lowestHeightSuccessorId == 0) {
             // no lowest height successor, means no successors at all,
             // so we can set this vertex as the ps and as the lowest height successor
             flushPs(vertices, startVertexId, 0);
-            vertices[startVertexId].psId = endVertexId;
-            vertices[startVertexId].lowestHeightSucessorId = endVertexId;
+            vertices[startVertexId].setPsId(endVertexId);
             return;
         }
 
         uint256 height = vertices[endVertexId].height;
-        uint256 lowestHeightSuccessorHeight = vertices[vertices[startVertexId].lowestHeightSucessorId].height;
+        uint256 lowestHeightSuccessorHeight = vertices[vertices[startVertexId].lowestHeightSuccessorId].height;
         if (height < lowestHeightSuccessorHeight) {
             // new successor has height lower than the current lowest height
             // so we can set the PS and the lowest height successor
             flushPs(vertices, startVertexId, 0);
-            vertices[startVertexId].psId = endVertexId;
-            vertices[startVertexId].lowestHeightSucessorId = endVertexId;
+            vertices[startVertexId].setPsId(endVertexId);
             return;
         }
 
@@ -239,7 +239,7 @@ library PsVerticesLib {
             // same height as the lowest height successor, we should zero out the PS
             // no update to lowest height successor required
             flushPs(vertices, startVertexId, 0);
-            vertices[startVertexId].psId = 0;
+            vertices[startVertexId].setPsId(0);
             return;
         }
     }
