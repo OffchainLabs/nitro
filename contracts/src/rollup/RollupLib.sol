@@ -4,8 +4,8 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IChallengeManager.sol";
-import "../challenge/ChallengeLib.sol";
+import "../challenge/IOldChallengeManager.sol";
+import "../challenge/OldChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
 
@@ -45,7 +45,7 @@ struct ContractDependencies {
     IInbox inbox;
     IOutbox outbox;
     IRollupEventInbox rollupEventInbox;
-    IChallengeManager challengeManager;
+    IOldChallengeManager oldChallengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
     // misc contracts that are useful when interacting with the rollup
@@ -104,9 +104,9 @@ library RollupLib {
         uint64 numBlocks
     ) internal pure returns (bytes32) {
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(statuses[0], globalStates[0].hash());
-        segments[1] = ChallengeLib.blockStateHash(statuses[1], globalStates[1].hash());
-        return ChallengeLib.hashChallengeState(0, numBlocks, segments);
+        segments[0] = OldChallengeLib.blockStateHash(statuses[0], globalStates[0].hash());
+        segments[1] = OldChallengeLib.blockStateHash(statuses[1], globalStates[1].hash());
+        return OldChallengeLib.hashChallengeState(0, numBlocks, segments);
     }
 
     function challengeRootHash(

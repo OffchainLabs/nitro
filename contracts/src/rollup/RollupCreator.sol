@@ -24,7 +24,7 @@ contract RollupCreator is Ownable {
 
     BridgeCreator public bridgeCreator;
     IOneStepProofEntry public osp;
-    IChallengeManager public challengeManagerTemplate;
+    IOldChallengeManager public oldChallengeManagerTemplate;
     IRollupAdmin public rollupAdminLogic;
     IRollupUser public rollupUserLogic;
 
@@ -36,7 +36,7 @@ contract RollupCreator is Ownable {
     function setTemplates(
         BridgeCreator _bridgeCreator,
         IOneStepProofEntry _osp,
-        IChallengeManager _challengeManagerLogic,
+        IOldChallengeManager _oldChallengeManagerLogic,
         IRollupAdmin _rollupAdminLogic,
         IRollupUser _rollupUserLogic,
         address _validatorUtils,
@@ -44,7 +44,7 @@ contract RollupCreator is Ownable {
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         osp = _osp;
-        challengeManagerTemplate = _challengeManagerLogic;
+        oldChallengeManagerTemplate = _oldChallengeManagerLogic;
         rollupAdminLogic = _rollupAdminLogic;
         rollupUserLogic = _rollupUserLogic;
         validatorUtils = _validatorUtils;
@@ -88,17 +88,17 @@ contract RollupCreator is Ownable {
 
         frame.admin.transferOwnership(config.owner);
 
-        IChallengeManager challengeManager = IChallengeManager(
+        IOldChallengeManager oldChallengeManager = IOldChallengeManager(
             address(
                 new TransparentUpgradeableProxy(
-                    address(challengeManagerTemplate),
+                    address(oldChallengeManagerTemplate),
                     address(frame.admin),
                     ""
                 )
             )
         );
-        challengeManager.initialize(
-            IChallengeResultReceiver(expectedRollupAddr),
+        oldChallengeManager.initialize(
+            IOldChallengeResultReceiver(expectedRollupAddr),
             frame.sequencerInbox,
             frame.bridge,
             osp
@@ -112,7 +112,7 @@ contract RollupCreator is Ownable {
                 inbox: frame.inbox,
                 outbox: frame.outbox,
                 rollupEventInbox: frame.rollupEventInbox,
-                challengeManager: challengeManager,
+                oldChallengeManager: oldChallengeManager,
                 rollupAdminLogic: rollupAdminLogic,
                 rollupUserLogic: rollupUserLogic,
                 validatorUtils: validatorUtils,

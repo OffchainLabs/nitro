@@ -15,7 +15,7 @@ abstract contract AbsRollupUserLogic is
     RollupCore,
     UUPSNotUpgradeable,
     IRollupUserAbs,
-    IChallengeResultReceiver
+    IOldChallengeResultReceiver
 {
     using AssertionLib for Assertion;
     using GlobalStateLib for GlobalState;
@@ -361,7 +361,7 @@ abstract contract AbsRollupUserLogic is
         uint256 challengerTimeLeft
     ) internal returns (uint64) {
         return
-            challengeManager.createChallenge(
+            oldChallengeManager.createChallenge(
                 wasmModuleRoots[0],
                 machineStatuses,
                 globalStates,
@@ -384,7 +384,7 @@ abstract contract AbsRollupUserLogic is
         address losingStaker
     ) external override whenNotPaused {
         // Only the challenge manager contract can call this to declare the winner and loser
-        require(msg.sender == address(challengeManager), "WRONG_SENDER");
+        require(msg.sender == address(oldChallengeManager), "WRONG_SENDER");
         require(challengeIndex == inChallenge(winningStaker, losingStaker), "NOT_IN_CHAL");
         completeChallengeImpl(winningStaker, losingStaker);
     }

@@ -67,7 +67,7 @@ interface IRollupCore {
 
     function rollupEventInbox() external view returns (IRollupEventInbox);
 
-    function challengeManager() external view returns (IChallengeManager);
+    function oldChallengeManager() external view returns (IOldChallengeManager);
 
     function loserStakeEscrow() external view returns (address);
 

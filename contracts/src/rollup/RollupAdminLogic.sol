@@ -8,7 +8,7 @@ import {IRollupAdmin, IRollupUser} from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
-import "../challenge/IChallengeManager.sol";
+import "../challenge/IOldChallengeManager.sol";
 import "../libraries/DoubleLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
@@ -48,7 +48,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         validatorUtils = connectedContracts.validatorUtils;
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
-        challengeManager = connectedContracts.challengeManager;
+        oldChallengeManager = connectedContracts.oldChallengeManager;
 
         Assertion memory assertion = createInitialAssertion();
         initializeCore(assertion);
@@ -130,7 +130,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
      * The time spent paused is not incremented in the rollup's timing for assertion validation.
      * @dev this function may be frontrun by a validator (ie to create a assertion before the system is paused).
      * The pause should be called atomically with required checks to be sure the system is paused in a consistent state.
-     * The RollupAdmin may execute a check against the Rollup's latest assertion num or the ChallengeManager, then execute this function atomically with it.
+     * The RollupAdmin may execute a check against the Rollup's latest assertion num or the OldChallengeManager, then execute this function atomically with it.
      */
     function pause() external override {
         _pause();
@@ -267,7 +267,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             require(chall != NO_CHAL_INDEX, "NOT_IN_CHALL");
             clearChallenge(stakerA[i]);
             clearChallenge(stakerB[i]);
-            challengeManager.clearChallenge(chall);
+            oldChallengeManager.clearChallenge(chall);
         }
         emit OwnerFunctionCalled(21);
     }

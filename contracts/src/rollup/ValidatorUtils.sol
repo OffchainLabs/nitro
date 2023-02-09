@@ -7,7 +7,7 @@ pragma solidity ^0.8.0;
 pragma experimental ABIEncoderV2;
 
 import "../rollup/IRollupCore.sol";
-import "../challenge/IChallengeManager.sol";
+import "../challenge/IOldChallengeManager.sol";
 
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
@@ -210,14 +210,14 @@ contract ValidatorUtils {
         (address[] memory stakers, bool hasMoreStakers) = getStakers(rollup, startIndex, max);
         uint64[] memory challenges = new uint64[](stakers.length);
         uint256 index = 0;
-        IChallengeManager challengeManager = rollup.challengeManager();
+        IOldChallengeManager oldChallengeManager = rollup.oldChallengeManager();
         for (uint256 i = 0; i < stakers.length; i++) {
             address staker = stakers[i];
             uint64 challengeIndex = rollup.currentChallenge(staker);
             if (
                 challengeIndex != NO_CHAL_INDEX &&
-                challengeManager.isTimedOut(challengeIndex) &&
-                challengeManager.currentResponder(challengeIndex) == staker
+                oldChallengeManager.isTimedOut(challengeIndex) &&
+                oldChallengeManager.currentResponder(challengeIndex) == staker
             ) {
                 challenges[index++] = challengeIndex;
             }

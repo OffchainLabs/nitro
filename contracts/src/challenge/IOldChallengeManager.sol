@@ -9,11 +9,11 @@ import "../bridge/IBridge.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../osp/IOneStepProofEntry.sol";
 
-import "./IChallengeResultReceiver.sol";
+import "./IOldChallengeResultReceiver.sol";
 
-import "./ChallengeLib.sol";
+import "./OldChallengeLib.sol";
 
-interface IChallengeManager {
+interface IOldChallengeManager {
     enum ChallengeTerminationType {
         TIMEOUT,
         BLOCK_PROOF,
@@ -41,7 +41,7 @@ interface IChallengeManager {
     event ChallengeEnded(uint64 indexed challengeIndex, ChallengeTerminationType kind);
 
     function initialize(
-        IChallengeResultReceiver resultReceiver_,
+        IOldChallengeResultReceiver resultReceiver_,
         ISequencerInbox sequencerInbox_,
         IBridge bridge_,
         IOneStepProofEntry osp_
@@ -61,7 +61,7 @@ interface IChallengeManager {
     function challengeInfo(uint64 challengeIndex_)
         external
         view
-        returns (ChallengeLib.Challenge memory);
+        returns (OldChallengeLib.Challenge memory);
 
     function currentResponder(uint64 challengeIndex) external view returns (address);
 

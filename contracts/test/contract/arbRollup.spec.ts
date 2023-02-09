@@ -25,8 +25,8 @@ import {
   Bridge,
   BridgeCreator__factory,
   Bridge__factory,
-  ChallengeManager,
-  ChallengeManager__factory,
+  OldChallengeManager,
+  OldChallengeManager__factory,
   Inbox,
   Inbox__factory,
   OneStepProofEntry__factory,
@@ -82,7 +82,7 @@ let validators: Signer[]
 let sequencerInbox: SequencerInbox
 let admin: Signer
 let sequencer: Signer
-let challengeManager: ChallengeManager
+let oldChallengeManager: OldChallengeManager
 let delayedInbox: Inbox
 let bridge: Bridge
 
@@ -147,10 +147,10 @@ const setup = async () => {
     oneStepHostIo.address
   )
 
-  const challengeManagerTemplateFac = (await ethers.getContractFactory(
+  const oldChallengeManagerTemplateFac = (await ethers.getContractFactory(
     'ChallengeManager'
-  )) as ChallengeManager__factory
-  const challengeManagerTemplate = await challengeManagerTemplateFac.deploy()
+  )) as OldChallengeManager__factory
+  const oldChallengeManagerTemplate = await oldChallengeManagerTemplateFac.deploy()
 
   const rollupAdminLogicFac = (await ethers.getContractFactory(
     'RollupAdminLogic'
@@ -175,7 +175,7 @@ const setup = async () => {
   await rollupCreator.setTemplates(
     bridgeCreator.address,
     oneStepProofEntry.address,
-    challengeManagerTemplate.address,
+    oldChallengeManagerTemplate.address,
     rollupAdminLogicTemplate.address,
     rollupUserLogicTemplate.address,
     ethers.constants.AddressZero,
@@ -220,11 +220,11 @@ const setup = async () => {
 
   await sequencerInbox.setIsBatchPoster(await sequencer.getAddress(), true)
 
-  challengeManager = (
+  oldChallengeManager = (
     (await ethers.getContractFactory(
       'ChallengeManager'
-    )) as ChallengeManager__factory
-  ).attach(await rollupUser.challengeManager())
+    )) as OldChallengeManager__factory
+  ).attach(await rollupUser.oldChallengeManager())
 
   delayedInbox = (
     (await ethers.getContractFactory('Inbox')) as Inbox__factory
@@ -245,7 +245,7 @@ const setup = async () => {
 
     rollupAdminLogicTemplate,
     rollupUserLogicTemplate,
-    blockChallengeFactory: challengeManagerTemplateFac,
+    blockChallengeFactory: oldChallengeManagerTemplateFac,
     rollupEventBridge: await rollupAdmin.rollupEventInbox(),
     outbox: await rollupAdmin.outbox(),
     sequencerInbox: rollupCreatedEvent.sequencerInbox,
@@ -429,7 +429,7 @@ describe('ArbRollup', () => {
   it('should only initialize once', async function () {
     await expect(
       rollupAdmin.initialize(await getDefaultConfig(), {
-        challengeManager: constants.AddressZero,
+        oldChallengeManager: constants.AddressZero,
         bridge: constants.AddressZero,
         inbox: constants.AddressZero,
         outbox: constants.AddressZero,
@@ -597,7 +597,7 @@ describe('ArbRollup', () => {
       (await ethers.provider.getBlock('latest')).timestamp -
       challengeCreatedAtTime
     await tryAdvanceChain(1, notQuiteChallengeDuration - elapsedTime)
-    const isTimedOut = await challengeManager
+    const isTimedOut = await oldChallengeManager
       .connect(validators[0])
       .isTimedOut(challengeIndex)
     expect(isTimedOut).to.be.false
@@ -605,7 +605,7 @@ describe('ArbRollup', () => {
 
   it('asserter should win via timeout', async function () {
     await tryAdvanceChain(extraChallengeTimeBlocks)
-    await challengeManager.connect(validators[0]).timeout(challengeIndex)
+    await oldChallengeManager.connect(validators[0]).timeout(challengeIndex)
   })
 
   it('confirm first staker assertion', async function () {
@@ -650,7 +650,7 @@ describe('ArbRollup', () => {
       BigNumber.from(challengedAssertion.assertion.afterState.machineStatus),
       globalStateLib.hash(challengedAssertion.assertion.afterState.globalState)
     )
-    await challengeManager.connect(validators[1]).bisectExecution(
+    await oldChallengeManager.connect(validators[1]).bisectExecution(
       challengeIndex,
       {
         challengePosition: BigNumber.from(0),
@@ -680,7 +680,7 @@ describe('ArbRollup', () => {
       extraChallengeTimeBlocks +
       (challengerAssertion.proposedBlock - validAssertion.proposedBlock)
     await advancePastAssertion(challengerAssertion.proposedBlock, challengeDuration)
-    await challengeManager.timeout(challengeIndex)
+    await oldChallengeManager.timeout(challengeIndex)
   })
 
   it('should reject out of order second assertion', async function () {
@@ -828,7 +828,7 @@ describe('ArbRollup', () => {
     challengeIndex = parsedEv.challengeIndex.toNumber()
 
     expect(
-      await challengeManager.currentResponder(challengeIndex),
+      await oldChallengeManager.currentResponder(challengeIndex),
       'turn challenger'
     ).to.eq(await validators[2].getAddress())
 
@@ -859,7 +859,7 @@ describe('ArbRollup', () => {
 
     // challenge should have been destroyed
     expect(
-      await challengeManager.currentResponder(challengeIndex),
+      await oldChallengeManager.currentResponder(challengeIndex),
       'turn reset'
     ).to.equal(constants.AddressZero)
 
@@ -1171,7 +1171,7 @@ describe('ArbRollup', () => {
     const proxyPrimaryImpl = rollupAdminLogicFac.attach(proxyPrimaryTarget)
     await expect(
       proxyPrimaryImpl.initialize(await getDefaultConfig(), {
-        challengeManager: constants.AddressZero,
+        oldChallengeManager: constants.AddressZero,
         bridge: constants.AddressZero,
         inbox: constants.AddressZero,
         outbox: constants.AddressZero,

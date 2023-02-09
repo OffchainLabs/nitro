@@ -12,12 +12,12 @@ import "./RollupLib.sol";
 import "./IRollupEventInbox.sol";
 import "./IRollupCore.sol";
 
-import "../challenge/IChallengeManager.sol";
+import "../challenge/IOldChallengeManager.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-
+import "../ChallengeManagerImpl.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
@@ -36,7 +36,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     IOutbox public outbox;
     ISequencerInbox public sequencerInbox;
     IRollupEventInbox public rollupEventInbox;
-    IChallengeManager public override challengeManager;
+    IOldChallengeManager public override oldChallengeManager;
 
     // misc useful contracts when interacting with the rollup
     address public validatorUtils;
@@ -421,9 +421,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         if (assertionNum > GENESIS_NODE) {
             Assertion storage parent = getAssertionStorage(assertion.prevNum);
             parent.childStakerCount++;
-            if (prevCount == 0) {
-                parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
-            }
+            // if (prevCount == 0) {
+            //     parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
+            // }
         }
     }
 
@@ -620,7 +620,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around
             Assertion storage prevAssertion = getAssertionStorage(prevAssertionNum);
-            prevAssertion.childCreated(assertionNum);
+            prevAssertion.childCreated(assertionNum, confirmPeriodBlocks);
 
             assertionCreated(memoryFrame.assertion);
         }
