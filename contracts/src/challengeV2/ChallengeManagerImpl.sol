@@ -10,6 +10,16 @@ import "./libraries/HistoryRootLib.sol";
 import "./libraries/ChallengeTypeLib.sol";
 import "./libraries/LeafAdderLib.sol";
 
+// CHRIS: TODO: we dont need to put lib in the names of all the libs?
+
+// CHRIS: TODO: rather than checking if prev exists we could explicitly disallow root? Yes, if it's not root then prev must exist
+
+// CHRIS: TODO: check all the places we do existance checks - it doesnt seem necessary every where
+
+// CHRIS: TODO: use unique messages if we're checking vertex exists in multiple places
+
+// CHRIS: TODO: wherever we compare two vertices should we check the challenge ids? not for predecessor since we know they must be the same
+
 library ChallengeManagerLib {
     using ChallengeVertexLib for ChallengeVertex;
     using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
@@ -32,11 +42,11 @@ library ChallengeManagerLib {
     /// @notice Checks if the vertex is eligible to be confirmed because it has a high enought ps timer
     /// @param vertices The tree of vertices
     /// @param vId The vertex to be confirmed
-    /// @param challengePeriod One challenge period in seconds
+    /// @param challengePeriodSec The challenge period in seconds
     function checkConfirmForPsTimer(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal view {
         confirmationPreChecks(vertices, vId);
 
@@ -45,7 +55,7 @@ library ChallengeManagerLib {
 
         // now ensure that only one of the siblings is valid for this time of confirmation
         // here we ensure that because only one vertex can ever have a ps timer greater than the challenge period, before the end time
-        require(vertices.getCurrentPsTimer(vId) > challengePeriod, "PsTimer not greater than challenge period");
+        require(vertices.getCurrentPsTimer(vId) > challengePeriodSec, "PsTimer not greater than challenge period");
     }
 
     /// @notice Checks if the vertex is eligible to be confirmed because it has been declared a winner in a succession challenge
@@ -87,7 +97,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal view returns (bytes32, ChallengeType) {
         vertices.checkAtOneStepFork(vId);
 
@@ -95,17 +105,8 @@ library ChallengeManagerLib {
 
         // CHRIS: TODO: we should check this in every move?
         // CHRIS: TODO: in every move we should check confirmable behaviour - not just ps
-        require(!vertices.psExceedsChallengePeriod(vId, challengePeriod), "Presumptive successor confirmable");
+        require(!vertices.psExceedsChallengePeriod(vId, challengePeriodSec), "Presumptive successor confirmable");
         require(vertices[vId].successionChallenge == 0, "Challenge already exists");
-
-        // we never want to update a vertex if it's already confirmable?
-        // we can update it's successor stuff, but not the rest
-        // we can but does this mean we can't merge to it? yes, we should be able to
-        // but not if the merged node has a confirmable sibling or is confirmable itself?
-        // no, we should be able to merge to it, but then what happens if we update
-
-        // if it has a sibling that is confirmable, then we dont allow merge to it
-        // if is confirmable itself, we do allow merge to it, and we do allow it to be updated
 
         bytes32 challengeId = vertices[vId].challengeId;
         ChallengeType nextCType = challenges[challengeId].challengeType.nextType();
@@ -125,7 +126,7 @@ library ChallengeManagerLib {
         bytes32 vId,
         bytes32 prefixHistoryRoot,
         bytes memory prefixProof,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal view returns (bytes32, uint256) {
         require(vertices[vId].exists(), "Vertex does not exist");
         // CHRIS: TODO: put this together with the has confirmable ps check?
@@ -151,10 +152,10 @@ library ChallengeManagerLib {
         bytes32 vId,
         bytes32 prefixHistoryRoot,
         bytes memory prefixProof,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
         );
 
         // CHRIS: redundant check?
@@ -169,10 +170,10 @@ library ChallengeManagerLib {
         bytes32 vId,
         bytes32 prefixHistoryRoot,
         bytes memory prefixProof,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
         );
 
         require(vertices[bVId].exists(), "Bisection vertex does not already exist");
@@ -312,17 +313,17 @@ contract ChallengeManagerImpl is IChallengeManager {
     IOneStepProofEntry oneStepProofEntry;
 
     uint256 public immutable miniStakeValue;
-    uint256 public immutable challengePeriod;
+    uint256 public immutable challengePeriodSec;
 
     constructor(
         IAssertionChain _assertionChain,
         uint256 _miniStakeValue,
-        uint256 _challengePeriod,
+        uint256 _challengePeriodSec,
         IOneStepProofEntry _oneStepProofEntry
     ) {
         assertionChain = _assertionChain;
         miniStakeValue = _miniStakeValue;
-        challengePeriod = _challengePeriod;
+        challengePeriodSec = _challengePeriodSec;
         oneStepProofEntry = _oneStepProofEntry;
     }
 
@@ -339,7 +340,7 @@ contract ChallengeManagerImpl is IChallengeManager {
                 challenges,
                 AddLeafLibArgs({
                     miniStake: miniStakeValue,
-                    challengePeriod: challengePeriod,
+                    challengePeriodSec: challengePeriodSec,
                     leafData: leafData,
                     proof1: proof1,
                     proof2: proof2
@@ -352,7 +353,7 @@ contract ChallengeManagerImpl is IChallengeManager {
                 challenges,
                 AddLeafLibArgs({
                     miniStake: miniStakeValue,
-                    challengePeriod: challengePeriod,
+                    challengePeriodSec: challengePeriodSec,
                     leafData: leafData,
                     proof1: proof1,
                     proof2: proof2
@@ -364,7 +365,7 @@ contract ChallengeManagerImpl is IChallengeManager {
                 challenges,
                 AddLeafLibArgs({
                     miniStake: miniStakeValue,
-                    challengePeriod: challengePeriod,
+                    challengePeriodSec: challengePeriodSec,
                     leafData: leafData,
                     proof1: proof1,
                     proof2: proof2
@@ -388,7 +389,6 @@ contract ChallengeManagerImpl is IChallengeManager {
         // CHRIS: TODO: we should have an existance check
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
         bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
-
         vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
         challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0});
 
@@ -399,7 +399,7 @@ contract ChallengeManagerImpl is IChallengeManager {
 
     function createSubChallenge(bytes32 vId) public returns (bytes32) {
         (bytes32 newChallengeId, ChallengeType newChallengeType) =
-            ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriod);
+            ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriodSec);
 
         bytes32 originHistoryRoot = vertices[vId].historyRoot;
         bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 0);
@@ -436,8 +436,9 @@ contract ChallengeManagerImpl is IChallengeManager {
 
     function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
-        (bytes32 bVId, uint256 bHeight) =
-            ChallengeManagerLib.checkBisect(vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod);
+        (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
+        );
 
         // CHRIS: TODO: the spec says we should stop the presumptive successor timer of the vId, but why?
         // CHRIS: TODO: is that because we only care about presumptive successors further down the chain?
@@ -451,29 +452,30 @@ contract ChallengeManagerImpl is IChallengeManager {
             // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
             currentPsTimer
         );
-        vertices.addVertex(bVertex, predecessorId, challengePeriod);
+        vertices.addVertex(bVertex, predecessorId, challengePeriodSec);
         // CHRIS: TODO: check these two successor updates really do conform to the spec
         // CHRIS: TODO: rename to just `connect`
-        vertices.connectVertices(bVId, vId, challengePeriod);
+        vertices.connectVertices(bVId, vId, challengePeriodSec);
 
         return bVId;
     }
 
     function merge(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
-        (bytes32 bVId,) =
-            ChallengeManagerLib.checkMerge(vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod);
+        (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
+            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
+        );
 
-        vertices.connectVertices(bVId, vId, challengePeriod);
+        vertices.connectVertices(bVId, vId, challengePeriodSec);
         // flush the ps time on the merged vertex, and increase it if has a time lower
         // than the vertex we're merging from
-        vertices.flushPs(vertices[bVId].predecessorId, vertices[vId].flushedPsTime);
+        vertices.flushPs(vertices[bVId].predecessorId, vertices[vId].flushedPsTimeSec);
         return bVId;
     }
 
     /// @dev Confirms the vertex without doing any checks. Also sets the winning claim if the vertex
     ///      is a leaf.
     function setConfirmed(bytes32 vId) internal {
-        vertices[vId].status = VertexStatus.Confirmed;
+        vertices[vId].setConfirmed();
         bytes32 challengeId = vertices[vId].challengeId;
         if (vertices[vId].isLeaf()) {
             challenges[challengeId].winningClaim = vertices[vId].claimId;
@@ -483,7 +485,7 @@ contract ChallengeManagerImpl is IChallengeManager {
     /// @notice Confirm a vertex because it has been the presumptive successor for long enough
     /// @param vId The vertex id
     function confirmForPsTimer(bytes32 vId) public {
-        ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriod);
+        ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriodSec);
         setConfirmed(vId);
     }
 

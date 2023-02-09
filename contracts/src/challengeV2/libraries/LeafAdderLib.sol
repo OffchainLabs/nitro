@@ -58,7 +58,7 @@ library BlockLeafAdder {
     using ChallengeVertexLib for ChallengeVertex;
     using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
-    function initialPsTime(bytes32 claimId, IAssertionChain assertionChain) internal view returns (uint256) {
+    function initialPsTimeSec(bytes32 claimId, IAssertionChain assertionChain) internal view returns (uint256) {
         bool isFirstChild = assertionChain.isFirstChild(claimId);
 
         if (isFirstChild) {
@@ -125,11 +125,12 @@ library BlockLeafAdder {
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            initialPsTime(leafLibArgs.leafData.claimId, assertionChain)
+            initialPsTimeSec(leafLibArgs.leafData.claimId, assertionChain)
         );
 
-        return
-            vertices.addVertex(leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriod);
+        return vertices.addVertex(
+            leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriodSec
+        );
     }
 
     // CHRIS: TODO: check exists whenever we access the challenges? also the vertices now have a challenge index
@@ -197,8 +198,9 @@ library BigStepLeafAdder {
             vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
         );
 
-        return
-            vertices.addVertex(leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriod);
+        return vertices.addVertex(
+            leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriodSec
+        );
     }
 }
 
@@ -275,7 +277,8 @@ library SmallStepLeafAdder {
             vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
         );
 
-        return
-            vertices.addVertex(leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriod);
+        return vertices.addVertex(
+            leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriodSec
+        );
     }
 }

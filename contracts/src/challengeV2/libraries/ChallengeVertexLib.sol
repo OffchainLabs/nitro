@@ -4,6 +4,10 @@ pragma solidity ^0.8.17;
 // CHRIS: TODO: set the licence everywhere
 // CHRIS: TODO: the invariants in the dev natspec should be tested to hold
 
+// CHRIS: TODO: can we create a test that looks for the following regex: vertices\[.*\]\..* = .* and if it finds something it fails.
+// CHRIS: TODO: could also look for the setting of each property and fail if it happens anywhere except in this file, or at all
+// CHRIS: TODO: remove the challenge id, history root and the height from the properties so that we know they'll never change
+
 enum VertexStatus {
     Pending, // This vertex is vertex is pending, it has yet to be confirmed
     Confirmed // This vertex has been confirmed, once confirmed it cannot be unconfirmed
@@ -50,16 +54,16 @@ struct ChallengeVertex {
     ///         then this vertex can be confirmed
     /// @dev    Always zero on leaf vertices as have no successors
     bytes32 psId;
-    /// @notice The last time the psId was updated, or the flushedPsTime of the ps was updated.
+    /// @notice The last time the psId was updated, or the flushedPsTimeSec of the ps was updated.
     ///         Used to record the amount of time the current ps has spent as ps, when the ps is changed
     ///         this time is then flushed onto the ps before updating the ps id.
     /// @dev    Always zero on leaf vertices as have no successors
-    uint256 psLastUpdated;
+    uint256 psLastUpdatedTimestamp;
     /// @notice The flushed amount of time this vertex has spent as ps. This may not be the total amount
     ///         of time if this vertex is current the ps on its predecessor. For this reason do not use this
     ///         property to get the amount of time this vertex has been ps, instead use the PsVertexLib.getPsTimer function
     /// @dev    Always zero on the root vertex as it is not the successor to anything.
-    uint256 flushedPsTime;
+    uint256 flushedPsTimeSec;
     /// @notice The id of the of successor with the lowest height. Zero if this vertex has no successors.
     ///         Equal to the psId if the psId is non zero.
     /// @dev    This is used to decide whether the ps is at the unique lowest height.
@@ -67,14 +71,18 @@ struct ChallengeVertex {
     bytes32 lowestHeightSuccessorId;
 }
 
-/// @title Challenge vertex library 
+/// @title Challenge vertex library
 /// @notice Extension functionality for the challenge vertex struct
 library ChallengeVertexLib {
-    function newRoot(bytes32 challengeId, bytes32 historyRoot, bytes32 claimId) internal pure returns (ChallengeVertex memory) {
+    function newRoot(bytes32 challengeId, bytes32 historyRoot, bytes32 claimId)
+        internal
+        pure
+        returns (ChallengeVertex memory)
+    {
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
         require(claimId != 0, "Zero claim id");
-    
+
         return ChallengeVertex({
             challengeId: challengeId,
             predecessorId: 0, // always zero for root
@@ -85,8 +93,8 @@ library ChallengeVertexLib {
             status: VertexStatus.Confirmed, // root starts off as confirmed
             staker: address(0), // always zero for non leaf
             psId: 0, // initially 0 - updated during connection
-            psLastUpdated: 0, // initially 0 - updated during connection
-            flushedPsTime: 0, // always zero for the root
+            psLastUpdatedTimestamp: 0, // initially 0 - updated during connection
+            flushedPsTimeSec: 0, // always zero for the root
             lowestHeightSuccessorId: 0 // initially 0 - updated during connection
         });
     }
@@ -97,14 +105,14 @@ library ChallengeVertexLib {
         uint256 height,
         bytes32 claimId,
         address staker,
-        uint256 initialPsTime
+        uint256 initialPsTimeSec
     ) internal pure returns (ChallengeVertex memory) {
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
         require(height != 0, "Zero height");
         require(claimId != 0, "Zero claim id");
         require(staker != address(0), "Zero staker address");
-        // initialPsTime can be zero
+        // initialPsTimeSec can be zero
 
         return ChallengeVertex({
             challengeId: challengeId,
@@ -116,13 +124,13 @@ library ChallengeVertexLib {
             status: VertexStatus.Pending,
             staker: staker,
             psId: 0, // always zero for leaf
-            psLastUpdated: 0, // always zero for leaf
-            flushedPsTime: initialPsTime,
+            psLastUpdatedTimestamp: 0, // always zero for leaf
+            flushedPsTimeSec: initialPsTimeSec,
             lowestHeightSuccessorId: 0 // always zero for leaf
         });
     }
 
-    function newVertex(bytes32 challengeId, bytes32 historyRoot, uint256 height, uint256 initialPsTime)
+    function newVertex(bytes32 challengeId, bytes32 historyRoot, uint256 height, uint256 initialPsTimeSec)
         internal
         pure
         returns (ChallengeVertex memory)
@@ -130,7 +138,7 @@ library ChallengeVertexLib {
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
         require(height != 0, "Zero height");
-        // initialPsTime can be zero
+        // initialPsTimeSec can be zero
 
         return ChallengeVertex({
             challengeId: challengeId,
@@ -142,14 +150,18 @@ library ChallengeVertexLib {
             status: VertexStatus.Pending,
             staker: address(0), // non leaves have no staker
             psId: 0, // initially 0 - updated during connection
-            psLastUpdated: 0, // initially 0 - updated during connection
-            flushedPsTime: initialPsTime,
+            psLastUpdatedTimestamp: 0, // initially 0 - updated during connection
+            flushedPsTimeSec: initialPsTimeSec,
             lowestHeightSuccessorId: 0 // initially 0 - updated during connection
         });
     }
 
     function id(bytes32 challengeId, bytes32 historyRoot, uint256 height) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(challengeId, historyRoot, height));
+    }
+
+    function id(ChallengeVertex memory vertex) internal pure returns (bytes32) {
+        return id(vertex.challengeId, vertex.historyRoot, vertex.height);
     }
 
     function exists(ChallengeVertex storage vertex) internal view returns (bool) {
@@ -162,7 +174,7 @@ library ChallengeVertexLib {
         return exists(vertex) && vertex.staker != address(0);
     }
 
-    function isRoot(ChallengeVertex storage vertex) internal view returns(bool) {
+    function isRoot(ChallengeVertex storage vertex) internal view returns (bool) {
         require(exists(vertex), "Potential root vertex does not exist");
         return vertex.staker == address(0) && vertex.claimId != 0;
     }
@@ -171,7 +183,7 @@ library ChallengeVertexLib {
         require(exists(vertex), "Vertex does not exist");
         require(vertex.predecessorId != predecessorId, "Predecessor already set");
         require(!isRoot(vertex), "Cannot set predecessor on root");
-        
+
         vertex.predecessorId = predecessorId;
     }
 
@@ -181,23 +193,23 @@ library ChallengeVertexLib {
         require(!isLeaf(vertex), "Cannot set ps id on a leaf");
 
         vertex.psId = psId;
-        if(psId != 0) {
+        if (psId != 0) {
             vertex.lowestHeightSuccessorId = psId;
         }
     }
 
-    function setPsLastUpdated(ChallengeVertex storage vertex, uint256 psLastUpdated) internal {
+    function setPsLastUpdatedTimestamp(ChallengeVertex storage vertex, uint256 psLastUpdatedTimestamp) internal {
         require(exists(vertex), "Vertex does not exist");
         require(!isLeaf(vertex), "Cannot set ps last updated on a leaf");
 
-        vertex.psLastUpdated = psLastUpdated;
+        vertex.psLastUpdatedTimestamp = psLastUpdatedTimestamp;
     }
 
-    function setFlushedPsTime(ChallengeVertex storage vertex, uint256 flushedPsTime) internal {
+    function setFlushedPsTimeSec(ChallengeVertex storage vertex, uint256 flushedPsTimeSec) internal {
         require(exists(vertex), "Vertex does not exist");
         require(!isRoot(vertex), "Cannot set ps flushed time on a root");
 
-        vertex.flushedPsTime = flushedPsTime;
+        vertex.flushedPsTimeSec = flushedPsTimeSec;
     }
 
     function setSuccessionChallenge(ChallengeVertex storage vertex, bytes32 successionChallengeId) internal {
@@ -205,5 +217,12 @@ library ChallengeVertexLib {
         require(!isLeaf(vertex), "Cannot set ps last updated on a leaf");
 
         vertex.successionChallenge = successionChallengeId;
+    }
+
+    function setConfirmed(ChallengeVertex storage vertex) internal {
+        require(exists(vertex), "Vertex does not exist");
+        require(vertex.status == VertexStatus.Pending, "Vertex must be Pending before being set Confirmed");
+
+        vertex.status = VertexStatus.Confirmed;
     }
 }

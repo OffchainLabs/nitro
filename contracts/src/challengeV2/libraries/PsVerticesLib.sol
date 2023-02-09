@@ -4,28 +4,6 @@ pragma solidity ^0.8.17;
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
 
-// CHRIS: TODO: we dont need to put lib in the name here?
-
-// CHRIS: TODO: rather than checking if prev exists we could explicitly disallow root? Yes, if it's not root then prev must exist
-
-// CHRIS: TODO: check all the places we do existance checks - it doesnt seem necessary every where
-
-// CHRIS: TODO: use unique messages if we're checking vertex exists in multiple places
-
-// CHRIS: TODO: wherever we talk about time we should include the word seconds for clarity
-
-
-// CHRIS: TODO: should we also disallow connection if another vertex is confirmed, or if this start vertex
-// has a chosen winner of a succession challenge?
-
-// CHRIS: TODO: think about what happens if we add a new vertex with a high initial ps!
-
-// CHRIS: TODO: wherever we compare two vertices should we check the challenge ids? not for predecessor since we know they must be the same
-
-// CHRIS: TODO: invariant: once a ps timer goes above challenge period, it will always remain ps
-// CHRIS: TODO: invariant: once a vertex is no longer the ps, it can never be ps again
-// CHRIS: TODO: invariant: all the things stated in the challenge vertex struct eg lowest height = ps if ps != 0, or ps = 0 if lowest heigh == 0
-
 /// @title Presumptive Successor Vertices library
 /// @author Offchain Labs
 /// @notice A collection of challenge vertices linked by: predecessorId, psId and lowestHeightSuccessorId
@@ -59,11 +37,11 @@ library PsVerticesLib {
     /// @notice Does the presumptive successor of the supplied vertex have a ps timer greater than the provided time
     /// @param vertices The vertices collection
     /// @param vId The vertex whose presumptive successor we are checking
-    /// @param challengePeriod The challenge period that the ps timer must exceed
+    /// @param challengePeriodSec The challenge period that the ps timer must exceed
     function psExceedsChallengePeriod(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal view returns (bool) {
         require(vertices[vId].exists(), "Predecessor vertex does not exist");
 
@@ -74,12 +52,12 @@ library PsVerticesLib {
             return false;
         }
 
-        return getCurrentPsTimer(vertices, vertices[vId].psId) > challengePeriod;
+        return getCurrentPsTimer(vertices, vertices[vId].psId) > challengePeriodSec;
     }
 
-    /// @notice The amount of time this vertex has spent as the presumptive successor.
+    /// @notice The amount of time (seconds) this vertex has spent as the presumptive successor.
     ///         Use this function instead of the flushPsTime since this function also takes into account unflushed time
-    /// @dev    We record ps time using the psLastUpdated on the predecessor vertex, and flush it onto the target it vertex
+    /// @dev    We record ps time using the psLastUpdatedTimestamp on the predecessor vertex, and flush it onto the target it vertex
     ///         This means that the flushPsTime does not represent the total ps time where the vertex in question is currently the ps
     /// @param vertices The collection of vertices
     /// @param vId The vertex whose ps timer we want to get
@@ -94,18 +72,18 @@ library PsVerticesLib {
 
         if (vertices[predecessorId].psId == vId) {
             // if the vertex is currently the presumptive one we add the flushed time and the unflushed time
-            return (block.timestamp - vertices[predecessorId].psLastUpdated) + vertices[vId].flushedPsTime;
+            return (block.timestamp - vertices[predecessorId].psLastUpdatedTimestamp) + vertices[vId].flushedPsTimeSec;
         } else {
-            return vertices[vId].flushedPsTime;
+            return vertices[vId].flushedPsTimeSec;
         }
     }
 
-    /// @notice Flush the psLastUpdated of a vertex onto the current ps, and record that this occurred.
+    /// @notice Flush the psLastUpdatedTimestamp of a vertex onto the current ps, and record that this occurred.
     ///         Once flushed will also check that the final flushed time is at least the provided minimum
     /// @param vertices The ps vertices
-    /// @param vId The id of the vertex on which to update psLastUpdated
-    /// @param minFlushedTime A minimum amount to set the flushed ps time to.
-    function flushPs(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId, uint256 minFlushedTime)
+    /// @param vId The id of the vertex on which to update psLastUpdatedTimestamp
+    /// @param minFlushedTimeSec A minimum amount to set the flushed ps time to.
+    function flushPs(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId, uint256 minFlushedTimeSec)
         internal
     {
         require(vertices[vId].exists(), "Vertex does not exist");
@@ -114,19 +92,19 @@ library PsVerticesLib {
 
         // if a presumptive successor already exists we flush it
         if (vertices[vId].psId != 0) {
-            uint256 timeToAdd = block.timestamp - vertices[vId].psLastUpdated;
-            uint256 timeToSet = vertices[vertices[vId].psId].flushedPsTime + timeToAdd;
+            uint256 timeToAdd = block.timestamp - vertices[vId].psLastUpdatedTimestamp;
+            uint256 timeToSet = vertices[vertices[vId].psId].flushedPsTimeSec + timeToAdd;
 
             // CHRIS: TODO: we're updating flushed time here! this could accidentally take us above the expected amount
             // CHRIS: TODO: we should check that it's not confirmable
-            if (timeToSet < minFlushedTime) {
-                timeToSet = minFlushedTime;
+            if (timeToSet < minFlushedTimeSec) {
+                timeToSet = minFlushedTimeSec;
             }
 
-            vertices[vertices[vId].psId].setFlushedPsTime(timeToSet);
+            vertices[vertices[vId].psId].setFlushedPsTimeSec(timeToSet);
         }
         // every time we update the ps we record when it happened so that we can flush in the future
-        vertices[vId].setPsLastUpdated(block.timestamp);
+        vertices[vId].setPsLastUpdatedTimestamp(block.timestamp);
     }
 
     /// @notice Connect two existing vertices. The connection is made by setting the predecessor of the end vertex to
@@ -135,12 +113,12 @@ library PsVerticesLib {
     /// @param vertices The collection of vertices
     /// @param startVertexId The start vertex to connect to
     /// @param endVertexId The end vertex to connect from
-    /// @param challengePeriod The challenge period - used for checking valid ps timers
+    /// @param challengePeriodSec The challenge period - used for checking valid ps timers
     function connectVertices(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 startVertexId,
         bytes32 endVertexId,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal {
         require(vertices[startVertexId].exists(), "Start vertex does not exist");
         // by definition of a leaf no connection can occur if the leaf is a start vertex
@@ -171,7 +149,7 @@ library PsVerticesLib {
         if (height < lowestHeightSuccessorHeight) {
             // never allow a ps with a timer greater than the challenge period to be replaced
             require(
-                !psExceedsChallengePeriod(vertices, startVertexId, challengePeriod),
+                !psExceedsChallengePeriod(vertices, startVertexId, challengePeriodSec),
                 "Start vertex has ps with timer greater than challenge period, cannot set lower ps"
             );
 
@@ -185,7 +163,7 @@ library PsVerticesLib {
         if (height == lowestHeightSuccessorHeight) {
             // never allow a ps with a timer greater than the challenge period to be replaced
             require(
-                !psExceedsChallengePeriod(vertices, startVertexId, challengePeriod),
+                !psExceedsChallengePeriod(vertices, startVertexId, challengePeriodSec),
                 "Start vertex has ps with timer greater than challenge period, cannot set same height ps"
             );
 
@@ -199,19 +177,19 @@ library PsVerticesLib {
     /// @param vertices The vertex collection
     /// @param vertex The vertex to add
     /// @param predecessorId The predecessor this vertex will become a successor to
-    /// @param challengePeriod The challenge period - used for checking ps timers
+    /// @param challengePeriodSec The challenge period - used for checking ps timers
     function addVertex(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         ChallengeVertex memory vertex,
         bytes32 predecessorId,
-        uint256 challengePeriod
+        uint256 challengePeriodSec
     ) internal returns (bytes32) {
         bytes32 vId = ChallengeVertexLib.id(vertex.challengeId, vertex.historyRoot, vertex.height);
         require(!vertices[vId].exists(), "Vertex already exists");
         vertices[vId] = vertex;
 
         // connect the newly stored vertex to an existing vertex
-        connectVertices(vertices, predecessorId, vId, challengePeriod);
+        connectVertices(vertices, predecessorId, vId, challengePeriodSec);
 
         return vId;
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../src/challengeV2/DataEntities.sol";
@@ -33,12 +33,12 @@ contract ChallengeManagerE2ETest is Test {
     uint256 inboxSeenCount1 = 5;
 
     uint256 miniStakeVal = 1 ether;
-    uint256 challengePeriod = 1000;
+    uint256 challengePeriodSec = 1000;
 
     function deploy() internal returns (MockAssertionChain, ChallengeManagerImpl, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
         ChallengeManagerImpl challengeManager =
-            new ChallengeManagerImpl(assertionChain, miniStakeVal, challengePeriod, new MockOneStepProofEntry());
+            new ChallengeManagerImpl(assertionChain, miniStakeVal, challengePeriodSec, new MockOneStepProofEntry());
         bytes32 genesis = assertionChain.addAssertionUnsafe(0, 0, 0, genesisHash, 0);
 
         return (assertionChain, challengeManager, genesis);
@@ -76,7 +76,7 @@ contract ChallengeManagerE2ETest is Test {
             abi.encodePacked(uint256(0))
         );
 
-        vm.warp(challengePeriod + 2);
+        vm.warp(challengePeriodSec + 2);
 
         challengeManager.confirmForPsTimer(v1Id);
 
@@ -159,7 +159,7 @@ contract ChallengeManagerE2ETest is Test {
             abi.encodePacked(uint256(0))
         );
 
-        vm.warp(challengePeriod + 2);
+        vm.warp(challengePeriodSec + 2);
 
         // confirm in the sub challenge by ps
         challengeManager.confirmForPsTimer(bsLeaf1);
@@ -287,7 +287,7 @@ contract ChallengeManagerE2ETest is Test {
 
         challengeManager.confirmForSucessionChallengeWin(smallStepWinners[0]);
 
-        vm.warp(challengePeriod + 2);
+        vm.warp(challengePeriodSec + 2);
         challengeManager.confirmForPsTimer(smallStepWinners[1]);
         challengeManager.confirmForPsTimer(smallStepWinners[2]);
         challengeManager.confirmForPsTimer(smallStepWinners[3]);
