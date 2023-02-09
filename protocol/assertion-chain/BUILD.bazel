@@ -26,10 +26,7 @@ go_test(
     srcs = [
         "assertion_chain_test.go",
         "challenge_manager_test.go",
-<<<<<<< HEAD
         "challenge_test.go",
-=======
->>>>>>> main
         "types_test.go",
     ],
     embed = [":assertion-chain"],
