@@ -29,8 +29,8 @@ contract ValidatorUtils {
 
     struct AssertionConflict {
         AssertionConflictType ty;
-        uint64 node1;
-        uint64 node2;
+        uint64 assertion1;
+        uint64 assertion2;
     }
 
     function findStakerConflict(
@@ -59,15 +59,15 @@ contract ValidatorUtils {
     function requireRejectable(IRollupCore rollup) external view {
         IRollupUser(address(rollup)).requireUnresolvedExists();
         uint64 firstUnresolvedAssertion = rollup.firstUnresolvedAssertion();
-        Assertion memory node = rollup.getAssertion(firstUnresolvedAssertion);
-        if (node.prevNum == rollup.latestConfirmed()) {
+        Assertion memory assertion = rollup.getAssertion(firstUnresolvedAssertion);
+        if (assertion.prevNum == rollup.latestConfirmed()) {
             // Verify the block's deadline has passed
-            require(block.number >= node.deadlineBlock, "BEFORE_DEADLINE");
-            rollup.getAssertion(node.prevNum).requirePastChildConfirmDeadline();
+            require(block.number >= assertion.deadlineBlock, "BEFORE_DEADLINE");
+            rollup.getAssertion(assertion.prevNum).requirePastChildConfirmDeadline();
 
-            // Verify that no staker is staked on this node
+            // Verify that no staker is staked on this assertion
             require(
-                node.stakerCount ==
+                assertion.stakerCount ==
                     IRollupUser(address(rollup)).countStakedZombies(firstUnresolvedAssertion),
                 "HAS_STAKERS"
             );
@@ -82,21 +82,21 @@ contract ValidatorUtils {
         require(stakerCount > 0, "NO_STAKERS");
 
         uint64 firstUnresolved = rollup.firstUnresolvedAssertion();
-        Assertion memory node = rollup.getAssertion(firstUnresolved);
+        Assertion memory assertion = rollup.getAssertion(firstUnresolved);
 
         // Verify the block's deadline has passed
-        node.requirePastDeadline();
+        assertion.requirePastDeadline();
 
         // Check that prev is latest confirmed
-        assert(node.prevNum == rollup.latestConfirmed());
+        assert(assertion.prevNum == rollup.latestConfirmed());
 
-        Assertion memory prevAssertion = rollup.getAssertion(node.prevNum);
+        Assertion memory prevAssertion = rollup.getAssertion(assertion.prevNum);
         prevAssertion.requirePastChildConfirmDeadline();
 
-        uint256 zombiesStakedOnOtherChildren = rollup.countZombiesStakedOnChildren(node.prevNum) -
+        uint256 zombiesStakedOnOtherChildren = rollup.countZombiesStakedOnChildren(assertion.prevNum) -
             rollup.countStakedZombies(firstUnresolved);
         require(
-            prevAssertion.childStakerCount == node.stakerCount + zombiesStakedOnOtherChildren,
+            prevAssertion.childStakerCount == assertion.stakerCount + zombiesStakedOnOtherChildren,
             "NOT_ALL_STAKED"
         );
     }
@@ -129,8 +129,8 @@ contract ValidatorUtils {
         if (num == 0) {
             num = rollup.latestConfirmed();
         }
-        Assertion memory node = rollup.getAssertion(num);
-        return (num, node);
+        Assertion memory assertion = rollup.getAssertion(num);
+        return (num, assertion);
     }
 
     function stakedAssertions(IRollupCore rollup, address staker)
@@ -138,47 +138,47 @@ contract ValidatorUtils {
         view
         returns (uint64[] memory)
     {
-        uint64[] memory nodes = new uint64[](100000);
+        uint64[] memory assertions = new uint64[](100000);
         uint256 index = 0;
         for (uint64 i = rollup.latestConfirmed(); i <= rollup.latestAssertionCreated(); i++) {
-            if (rollup.nodeHasStaker(i, staker)) {
-                nodes[index] = i;
+            if (rollup.assertionHasStaker(i, staker)) {
+                assertions[index] = i;
                 index++;
             }
         }
         // Shrink array down to real size
         assembly {
-            mstore(nodes, index)
+            mstore(assertions, index)
         }
-        return nodes;
+        return assertions;
     }
 
     function findAssertionConflict(
         IRollupCore rollup,
-        uint64 node1,
-        uint64 node2,
+        uint64 assertion1,
+        uint64 assertion2,
         uint256 maxDepth
     ) public view returns (AssertionConflict memory) {
         uint64 firstUnresolvedAssertion = rollup.firstUnresolvedAssertion();
-        uint64 node1Prev = rollup.getAssertion(node1).prevNum;
-        uint64 node2Prev = rollup.getAssertion(node2).prevNum;
+        uint64 assertion1Prev = rollup.getAssertion(assertion1).prevNum;
+        uint64 assertion2Prev = rollup.getAssertion(assertion2).prevNum;
 
         for (uint256 i = 0; i < maxDepth; i++) {
-            if (node1 == node2) {
-                return AssertionConflict(AssertionConflictType.NONE, node1, node2);
+            if (assertion1 == assertion2) {
+                return AssertionConflict(AssertionConflictType.NONE, assertion1, assertion2);
             }
-            if (node1Prev == node2Prev) {
-                return AssertionConflict(AssertionConflictType.FOUND, node1, node2);
+            if (assertion1Prev == assertion2Prev) {
+                return AssertionConflict(AssertionConflictType.FOUND, assertion1, assertion2);
             }
-            if (node1Prev < firstUnresolvedAssertion && node2Prev < firstUnresolvedAssertion) {
+            if (assertion1Prev < firstUnresolvedAssertion && assertion2Prev < firstUnresolvedAssertion) {
                 return AssertionConflict(AssertionConflictType.INDETERMINATE, 0, 0);
             }
-            if (node1Prev < node2Prev) {
-                node2 = node2Prev;
-                node2Prev = rollup.getAssertion(node2).prevNum;
+            if (assertion1Prev < assertion2Prev) {
+                assertion2 = assertion2Prev;
+                assertion2Prev = rollup.getAssertion(assertion2).prevNum;
             } else {
-                node1 = node1Prev;
-                node1Prev = rollup.getAssertion(node1).prevNum;
+                assertion1 = assertion1Prev;
+                assertion1Prev = rollup.getAssertion(assertion1).prevNum;
             }
         }
         return AssertionConflict(AssertionConflictType.INCOMPLETE, 0, 0);

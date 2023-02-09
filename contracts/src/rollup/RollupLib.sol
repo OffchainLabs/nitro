@@ -129,7 +129,7 @@ library RollupLib {
         return keccak256(abi.encodePacked(blockHash, sendRoot));
     }
 
-    function nodeHash(
+    function assertionHash(
         bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,

@@ -25,7 +25,7 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot) external;
 
-    function stakeOnExistingAssertion(uint64 nodeNum, bytes32 nodeHash) external;
+    function stakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) external;
 
     function stakeOnNewAssertion(
         AssertionInputs memory assertion,
@@ -49,19 +49,19 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function currentRequiredStake() external view returns (uint256);
 
-    function countStakedZombies(uint64 nodeNum) external view returns (uint256);
+    function countStakedZombies(uint64 assertionNum) external view returns (uint256);
 
-    function countZombiesStakedOnChildren(uint64 nodeNum) external view returns (uint256);
+    function countZombiesStakedOnChildren(uint64 assertionNum) external view returns (uint256);
 
     function requireUnresolvedExists() external view;
 
-    function requireUnresolved(uint256 nodeNum) external view;
+    function requireUnresolved(uint256 assertionNum) external view;
 
     function withdrawStakerFunds() external returns (uint256);
 
     function createChallenge(
         address[2] calldata stakers,
-        uint64[2] calldata nodeNums,
+        uint64[2] calldata assertionNums,
         MachineStatus[2] calldata machineStatuses,
         GlobalState[2] calldata globalStates,
         uint64 numBlocks,
@@ -72,7 +72,7 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 }
 
 interface IRollupUser is IRollupUserAbs {
-    function newStakeOnExistingAssertion(uint64 nodeNum, bytes32 nodeHash) external payable;
+    function newStakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) external payable;
 
     function newStakeOnNewAssertion(
         AssertionInputs calldata assertion,
@@ -86,8 +86,8 @@ interface IRollupUser is IRollupUserAbs {
 interface IRollupUserERC20 is IRollupUserAbs {
     function newStakeOnExistingAssertion(
         uint256 tokenAmount,
-        uint64 nodeNum,
-        bytes32 nodeHash
+        uint64 assertionNum,
+        bytes32 assertionHash
     ) external;
 
     function newStakeOnNewAssertion(
@@ -157,8 +157,8 @@ interface IRollupAdmin {
     function setMinimumAssertionPeriod(uint256 newPeriod) external;
 
     /**
-     * @notice Set number of blocks until a node is considered confirmed
-     * @param newConfirmPeriod new number of blocks until a node is confirmed
+     * @notice Set number of blocks until a assertion is considered confirmed
+     * @param newConfirmPeriod new number of blocks until a assertion is confirmed
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external;
 
@@ -201,7 +201,7 @@ interface IRollupAdmin {
     ) external;
 
     function forceConfirmAssertion(
-        uint64 nodeNum,
+        uint64 assertionNum,
         bytes32 blockHash,
         bytes32 sendRoot
     ) external;

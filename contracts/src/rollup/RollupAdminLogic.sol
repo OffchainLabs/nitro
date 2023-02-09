@@ -50,8 +50,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
         challengeManager = connectedContracts.challengeManager;
 
-        Assertion memory node = createInitialAssertion();
-        initializeCore(node);
+        Assertion memory assertion = createInitialAssertion();
+        initializeCore(assertion);
 
         confirmPeriodBlocks = config.confirmPeriodBlocks;
         extraChallengeTimeBlocks = config.extraChallengeTimeBlocks;
@@ -84,9 +84,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
                 state,
                 0, // challenge hash (not challengeable)
                 0, // confirm data
-                0, // prev node
+                0, // prev assertion
                 uint64(block.number), // deadline block (not challengeable)
-                0 // initial node has a node hash of 0
+                0 // initial assertion has a assertion hash of 0
             );
     }
 
@@ -127,10 +127,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
     /**
      * @notice Pause interaction with the rollup contract.
-     * The time spent paused is not incremented in the rollup's timing for node validation.
-     * @dev this function may be frontrun by a validator (ie to create a node before the system is paused).
+     * The time spent paused is not incremented in the rollup's timing for assertion validation.
+     * @dev this function may be frontrun by a validator (ie to create a assertion before the system is paused).
      * The pause should be called atomically with required checks to be sure the system is paused in a consistent state.
-     * The RollupAdmin may execute a check against the Rollup's latest node num or the ChallengeManager, then execute this function atomically with it.
+     * The RollupAdmin may execute a check against the Rollup's latest assertion num or the ChallengeManager, then execute this function atomically with it.
      */
     function pause() external override {
         _pause();
@@ -192,7 +192,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     }
 
     /**
-     * @notice Set number of blocks until a node is considered confirmed
+     * @notice Set number of blocks until a assertion is considered confirmed
      * @param newConfirmPeriod new number of blocks
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external override {
@@ -296,12 +296,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     }
 
     function forceConfirmAssertion(
-        uint64 nodeNum,
+        uint64 assertionNum,
         bytes32 blockHash,
         bytes32 sendRoot
     ) external override whenPaused {
         // this skips deadline, staker and zombie validation
-        confirmAssertion(nodeNum, blockHash, sendRoot);
+        confirmAssertion(assertionNum, blockHash, sendRoot);
         emit OwnerFunctionCalled(24);
     }
 

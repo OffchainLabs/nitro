@@ -5,27 +5,27 @@
 pragma solidity ^0.8.0;
 
 struct Assertion {
-    // Hash of the state of the chain as of this node
+    // Hash of the state of the chain as of this assertion
     bytes32 stateHash;
     // Hash of the data that can be challenged
     bytes32 challengeHash;
-    // Hash of the data that will be committed if this node is confirmed
+    // Hash of the data that will be committed if this assertion is confirmed
     bytes32 confirmData;
-    // Index of the node previous to this one
+    // Index of the assertion previous to this one
     uint64 prevNum;
-    // Deadline at which this node can be confirmed
+    // Deadline at which this assertion can be confirmed
     uint64 deadlineBlock;
-    // Deadline at which a child of this node can be confirmed
+    // Deadline at which a child of this assertion can be confirmed
     uint64 noChildConfirmedBeforeBlock;
-    // Number of stakers staked on this node. This includes real stakers and zombies
+    // Number of stakers staked on this assertion. This includes real stakers and zombies
     uint64 stakerCount;
-    // Number of stakers staked on a child node. This includes real stakers and zombies
+    // Number of stakers staked on a child assertion. This includes real stakers and zombies
     uint64 childStakerCount;
-    // This value starts at zero and is set to a value when the first child is created. After that it is constant until the node is destroyed or the owner destroys pending nodes
+    // This value starts at zero and is set to a value when the first child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
     uint64 firstChildBlock;
-    // The number of the latest child of this node to be created
+    // The number of the latest child of this assertion to be created
     uint64 latestChildNumber;
-    // The block number when this node was created
+    // The block number when this assertion was created
     uint64 createdAtBlock;
     // A hash of all the data needed to determine this node's validity, to protect against reorgs
     bytes32 nodeHash;
@@ -42,7 +42,7 @@ library AssertionLib {
      * @param _confirmData Initial value of confirmData
      * @param _prevNum Initial value of prevNum
      * @param _deadlineBlock Initial value of deadlineBlock
-     * @param _nodeHash Initial value of nodeHash
+     * @param _assertionHash Initial value of assertionHash
      */
     function createAssertion(
         bytes32 _stateHash,
@@ -50,18 +50,18 @@ library AssertionLib {
         bytes32 _confirmData,
         uint64 _prevNum,
         uint64 _deadlineBlock,
-        bytes32 _nodeHash
+        bytes32 _assertionHash
     ) internal view returns (Assertion memory) {
-        Assertion memory node;
-        node.stateHash = _stateHash;
-        node.challengeHash = _challengeHash;
-        node.confirmData = _confirmData;
-        node.prevNum = _prevNum;
-        node.deadlineBlock = _deadlineBlock;
-        node.noChildConfirmedBeforeBlock = _deadlineBlock;
-        node.createdAtBlock = uint64(block.number);
-        node.nodeHash = _nodeHash;
-        return node;
+        Assertion memory assertion;
+        assertion.stateHash = _stateHash;
+        assertion.challengeHash = _challengeHash;
+        assertion.confirmData = _confirmData;
+        assertion.prevNum = _prevNum;
+        assertion.deadlineBlock = _deadlineBlock;
+        assertion.noChildConfirmedBeforeBlock = _deadlineBlock;
+        assertion.createdAtBlock = uint64(block.number);
+        assertion.assertionHash = _assertionHash;
+        return assertion;
     }
 
     /**
@@ -84,14 +84,14 @@ library AssertionLib {
     }
 
     /**
-     * @notice Check whether the current block number has met or passed the node's deadline
+     * @notice Check whether the current block number has met or passed the assertion's deadline
      */
     function requirePastDeadline(Assertion memory self) internal view {
         require(block.number >= self.deadlineBlock, "BEFORE_DEADLINE");
     }
 
     /**
-     * @notice Check whether the current block number has met or passed deadline for children of this node to be confirmed
+     * @notice Check whether the current block number has met or passed deadline for children of this assertion to be confirmed
      */
     function requirePastChildConfirmDeadline(Assertion memory self) internal view {
         require(block.number >= self.noChildConfirmedBeforeBlock, "CHILD_TOO_RECENT");

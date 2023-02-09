@@ -26,24 +26,24 @@ library MerkleLib {
     }
 
     function calculateRoot(
-        bytes32[] memory nodes,
+        bytes32[] memory assertions,
         uint256 route,
         bytes32 item
     ) internal pure returns (bytes32) {
-        uint256 proofItems = nodes.length;
+        uint256 proofItems = assertions.length;
         if (proofItems > 256) revert MerkleProofTooLong(proofItems, 256);
         bytes32 h = item;
         for (uint256 i = 0; i < proofItems; ) {
-            bytes32 node = nodes[i];
+            bytes32 assertion = assertions[i];
             if ((route & (1 << i)) == 0) {
                 assembly {
                     mstore(0x00, h)
-                    mstore(0x20, node)
+                    mstore(0x20, assertion)
                     h := keccak256(0x00, 0x40)
                 }
             } else {
                 assembly {
-                    mstore(0x00, node)
+                    mstore(0x00, assertion)
                     mstore(0x20, h)
                     h := keccak256(0x00, 0x40)
                 }
