@@ -136,8 +136,9 @@ func (v *Validator) verifyAddLeafConditions(ctx context.Context, tx *protocol.Ac
 	if a.Prev.Unwrap() != rootAssertion {
 		return errors.Wrap(protocol.ErrInvalidOp, "Challenge and assertion parent mismatch")
 	}
-	if err := v.chain.Call(func(tx *protocol.ActiveTx) error {
-		completed, err := c.Completed(ctx, tx)
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		var completed bool
+		completed, err = c.Completed(ctx, tx)
 		if err != nil {
 			return nil
 		}

@@ -262,7 +262,8 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash pro
 	var mergingTo protocol.ChallengeVertexInterface
 	var err error
 	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
-		parentStateCommitment, err := v.challenge.ParentStateCommitment(ctx, tx)
+		var parentStateCommitment util.StateCommitment
+		parentStateCommitment, err = v.challenge.ParentStateCommitment(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -351,7 +352,8 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 		return false, err
 	}
 	if !subChallenge.IsNone() {
-		subChallengeWinnerVertex, err := subChallenge.Unwrap().GetWinnerVertex(ctx, tx)
+		var subChallengeWinnerVertex util.Option[protocol.ChallengeVertexInterface]
+		subChallengeWinnerVertex, err = subChallenge.Unwrap().GetWinnerVertex(ctx, tx)
 		if err != nil {
 			return false, err
 		}
