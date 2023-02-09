@@ -988,7 +988,7 @@ func (v *ChallengeVertex) Bisect(ctx context.Context, tx *ActiveTx, history util
 	if bisectionHeight != history.Height {
 		return nil, errors.Wrapf(ErrInvalidHeight, fmt.Sprintf("%d != %v", bisectionHeight, history))
 	}
-	if err := util.VerifyPrefixProof(history, v.Commitment, proof); err != nil {
+	if err = util.VerifyPrefixProof(history, v.Commitment, proof); err != nil {
 		return nil, err
 	}
 
@@ -1049,7 +1049,7 @@ func (v *ChallengeVertex) Merge(ctx context.Context, tx *ActiveTx, mergingTo Cha
 	if mergingToCommitment.Height != bisectionPoint {
 		return errors.Wrapf(ErrInvalidHeight, "%d != %d", mergingToCommitment.Height, bisectionPoint)
 	}
-	if err := util.VerifyPrefixProof(mergingToCommitment, v.Commitment, proof); err != nil {
+	if err = util.VerifyPrefixProof(mergingToCommitment, v.Commitment, proof); err != nil {
 		return err
 	}
 
