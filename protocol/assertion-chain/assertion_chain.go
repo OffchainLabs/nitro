@@ -126,7 +126,7 @@ func (ac *AssertionChain) CreateAssertion(
 		return err
 	})
 	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
-		return nil, err
+		return nil, err2
 	}
 	assertionId := getAssertionId(commitment, prevAssertionId)
 	return ac.AssertionByID(assertionId)
@@ -149,7 +149,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 		return err
 	})
 	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
-		return nil, err
+		return nil, err2
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
