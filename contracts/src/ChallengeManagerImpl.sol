@@ -624,13 +624,21 @@ contract ChallengeManagerImpl is IChallengeManager {
         return vertices.has(vId);
     }
 
+    function calculateChallengeVertexId(
+        bytes32 challengeId,
+        bytes32 historyCommitment,
+        uint256 height
+    ) public pure returns (bytes32) {
+        return ChallengeVertexLib.id(challengeId, historyCommitment, height);
+    }
+
     function challengeExists(bytes32 challengeId) public view returns (bool) {
         // CHRIS: TODO: move to lib
         return challenges[challengeId].rootId != 0;
     }
 
     function getChallenge(bytes32 challengeId) public view returns (Challenge memory) {
-        require(challengeExists(challengeId), "Vertex does not exist");
+        require(challengeExists(challengeId), "Challenge does not exist");
         return challenges[challengeId];
     }
 

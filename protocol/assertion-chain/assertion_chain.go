@@ -33,34 +33,11 @@ var (
 	hashTy, _            = abi.NewType("bytes32", "", nil)
 )
 
-// ChallengeType defines an enum of the same name
-// from the protocol.
-type ChallengeType uint8
-
-const (
-	BlockChallenge ChallengeType = iota
-	BigStepChallenge
-	SmallStepChallenge
-	OneStepChallenge
-)
-
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
 // for testing purposes.
 type ChainCommiter interface {
 	Commit() common.Hash
-}
-
-// Assertion is a wrapper around the binding to the type
-// of the same name in the protocol contracts. This allows us
-// to have a smaller API surface area and attach useful
-// methods that callers can use directly.
-type Assertion struct {
-	id              common.Hash
-	StateCommitment util.StateCommitment
-	inner           outgen.Assertion
-	txOpts          *bind.TransactOpts
-	write           *outgen.AssertionChainTransactor
 }
 
 // AssertionChain is a wrapper around solgen bindings
@@ -125,13 +102,12 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 	}
 	return &Assertion{
 		id:    assertionId,
+		chain: ac,
 		inner: res,
 		StateCommitment: util.StateCommitment{
 			Height:    res.Height.Uint64(),
 			StateRoot: res.StateHash,
 		},
-		txOpts: ac.txOpts,
-		write:  ac.writer,
 	}, nil
 }
 
@@ -181,7 +157,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(assertionId, uint8(BlockChallenge))
+	challengeId, err := manager.CalculateChallengeId(assertionId, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +166,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 
 // Confirm creates a confirmation for the given assertion.
 func (a *Assertion) Confirm() error {
-	_, err := a.write.ConfirmAssertion(a.txOpts, a.id)
+	_, err := a.chain.writer.ConfirmAssertion(a.chain.txOpts, a.id)
 	switch {
 	case err == nil:
 		return nil

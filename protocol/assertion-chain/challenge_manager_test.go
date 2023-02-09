@@ -10,7 +10,7 @@ import (
 
 func TestGetChallengeByID(t *testing.T) {
 	genesisId := common.Hash{}
-	chain, acc := setupAssertionChainWithChallengeManager(t)
+	chain, _ := setupAssertionChainWithChallengeManager(t)
 
 	commit1 := util.StateCommitment{
 		Height:    1,
@@ -18,7 +18,7 @@ func TestGetChallengeByID(t *testing.T) {
 	}
 	_, err := chain.CreateAssertion(commit1, genesisId)
 	require.NoError(t, err)
-	acc.backend.Commit()
+
 	commit2 := util.StateCommitment{
 		Height:    1,
 		StateRoot: common.BytesToHash([]byte{2}),
@@ -26,11 +26,9 @@ func TestGetChallengeByID(t *testing.T) {
 
 	_, err = chain.CreateAssertion(commit2, genesisId)
 	require.NoError(t, err)
-	acc.backend.Commit()
 
 	_, err = chain.CreateSuccessionChallenge(genesisId)
 	require.NoError(t, err)
-	acc.backend.Commit()
 
 	cm, err := chain.ChallengeManager()
 	require.NoError(t, err)
