@@ -126,8 +126,8 @@ func (ac *AssertionChain) CreateAssertion(
 		)
 		return err
 	})
-	if err := handleCreateAssertionError(err, commitment); err != nil {
-		return nil, err
+	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
+		return nil, err2
 	}
 	assertionId := getAssertionId(commitment, prevAssertionId)
 	return ac.AssertionByID(assertionId)
@@ -143,14 +143,14 @@ func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
 	err := withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.CreateSuccessionChallenge(
+		_, err2 := ac.writer.CreateSuccessionChallenge(
 			ac.txOpts,
 			assertionId,
 		)
-		return err
+		return err2
 	})
-	if err := handleCreateSuccessionChallengeError(err, assertionId); err != nil {
-		return nil, err
+	if err3 := handleCreateSuccessionChallengeError(err, assertionId); err3 != nil {
+		return nil, err3
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
