@@ -14,10 +14,10 @@ pub fn time(span: Duration) -> String {
         "ns", "μs", "ms", "s", "min", "h", "d", "w", "mo", "yr", "dec", "cent", "mill", "eon",
     ];
     let scale = vec![
-        1000., 1000., 1000., 60., 60., 24., 7., 4.34, 12., 10., 10., 10., 1000_000.,
+        1000., 1000., 1000., 60., 60., 24., 7., 4.34, 12., 10., 10., 10., 1_000_000.,
     ];
     let colors = vec![MINT, MINT, YELLOW, RED, RED, RED];
-    while span >= scale[unit] {
+    while span >= scale[unit] && unit < scale.len() {
         span /= scale[unit];
         unit += 1;
     }
