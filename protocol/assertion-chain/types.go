@@ -3,6 +3,7 @@ package assertionchain
 import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"sync"
 )
 
 // Self invalidator is an internal interface implemented by common
@@ -22,6 +23,7 @@ type Assertion struct {
 	chain           *AssertionChain
 	id              [32]byte
 	inner           outgen.Assertion
+	lock            sync.Mutex
 }
 
 // Challenge is a developer-friendly wrapper around
@@ -30,6 +32,7 @@ type Challenge struct {
 	manager *ChallengeManager
 	id      [32]byte
 	inner   outgen.Challenge
+	lock    sync.Mutex
 }
 
 // ChallengeType defines an enum of the same name
@@ -49,9 +52,12 @@ type ChallengeVertex struct {
 	manager *ChallengeManager
 	id      [32]byte
 	inner   outgen.ChallengeVertex
+	lock    sync.Mutex
 }
 
 func (a *Assertion) invalidate() error {
+	a.lock.Lock()
+	defer a.lock.Unlock()
 	inner, err := a.chain.caller.GetAssertion(a.chain.callOpts, a.id)
 	if err != nil {
 		return err
@@ -60,17 +66,21 @@ func (a *Assertion) invalidate() error {
 	return nil
 }
 
-func (a *Challenge) invalidate() error {
-	inner, err := a.manager.caller.GetChallenge(a.manager.assertionChain.callOpts, a.id)
+func (c *Challenge) invalidate() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	inner, err := c.manager.caller.GetChallenge(c.manager.assertionChain.callOpts, c.id)
 	if err != nil {
 		return err
 	}
-	a.inner = inner
+	c.inner = inner
 	return nil
 }
 
-func (a *ChallengeVertex) invalidate() error {
-	inner, err := a.manager.caller.GetVertex(a.manager.assertionChain.callOpts, a.id)
+func (v *ChallengeVertex) invalidate() error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	inner, err := v.manager.caller.GetVertex(v.manager.assertionChain.callOpts, v.id)
 	if err != nil {
 		return err
 	}
