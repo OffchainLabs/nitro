@@ -153,10 +153,14 @@ library PsVerticesLib {
         }
     }
 
-    /// @notice Flush the psLastUpdated of a vertex onto the current ps, and record that this occurred
+    /// @notice Flush the psLastUpdated of a vertex onto the current ps, and record that this occurred.
+    ///         Once flushed will also check that the final flushed time is at least the provided minimum
     /// @param vertices The ps vertices
     /// @param vId The id of the vertex on which to update psLastUpdated
-    function flushPs(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal {
+    /// @param minFlushedTime A minimum amount to set the flushed ps time to.
+    function flushPs(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId, uint256 minFlushedTime)
+        internal
+    {
         require(vertices[vId].exists(), "Vertex does not exist");
         // leaves should never have a ps, so we cant flush here
         require(!vertices[vId].isLeaf(), "Cannot flush leaf as it will never have a PS");
@@ -165,6 +169,12 @@ library PsVerticesLib {
         if (vertices[vId].psId != 0) {
             uint256 timeToAdd = block.timestamp - vertices[vId].psLastUpdated;
             vertices[vertices[vId].psId].flushedPsTime += timeToAdd;
+
+            // CHRIS: TODO: we're updating flushed time here! this could accidentally take us above the expected amount
+            // CHRIS: TODO: we should check that it's not confirmable
+            if (vertices[vertices[vId].psId].flushedPsTime < minFlushedTime) {
+                vertices[vertices[vId].psId].flushedPsTime = minFlushedTime;
+            }
         }
         // every time we update the ps we record when it happened so that we can flush in the future
         vertices[vId].psLastUpdated = block.timestamp;
@@ -208,7 +218,7 @@ library PsVerticesLib {
         if (vertices[startVertexId].lowestHeightSucessorId == 0) {
             // no lowest height successor, means no successors at all,
             // so we can set this vertex as the ps and as the lowest height successor
-            flushPs(vertices, startVertexId);
+            flushPs(vertices, startVertexId, 0);
             vertices[startVertexId].psId = endVertexId;
             vertices[startVertexId].lowestHeightSucessorId = endVertexId;
             return;
@@ -219,7 +229,7 @@ library PsVerticesLib {
         if (height < lowestHeightSuccessorHeight) {
             // new successor has height lower than the current lowest height
             // so we can set the PS and the lowest height successor
-            flushPs(vertices, startVertexId);
+            flushPs(vertices, startVertexId, 0);
             vertices[startVertexId].psId = endVertexId;
             vertices[startVertexId].lowestHeightSucessorId = endVertexId;
             return;
@@ -228,7 +238,7 @@ library PsVerticesLib {
         if (height == lowestHeightSuccessorHeight) {
             // same height as the lowest height successor, we should zero out the PS
             // no update to lowest height successor required
-            flushPs(vertices, startVertexId);
+            flushPs(vertices, startVertexId, 0);
             vertices[startVertexId].psId = 0;
             return;
         }

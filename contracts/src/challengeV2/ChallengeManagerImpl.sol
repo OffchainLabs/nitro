@@ -104,7 +104,6 @@ library ChallengeManagerLib {
         // but not if the merged node has a confirmable sibling or is confirmable itself?
         // no, we should be able to merge to it, but then what happens if we update
 
-
         // if it has a sibling that is confirmable, then we dont allow merge to it
         // if is confirmable itself, we do allow merge to it, and we do allow it to be updated
 
@@ -139,9 +138,7 @@ library ChallengeManagerLib {
 
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
         require(
-            HistoryRootLib.hasPrefix(
-                vertices[vId].historyRoot, prefixHistoryRoot, bHeight, prefixProof
-            ),
+            HistoryRootLib.hasPrefix(vertices[vId].historyRoot, prefixHistoryRoot, bHeight, prefixProof),
             "Invalid prefix history"
         );
 
@@ -227,17 +224,13 @@ library ChallengeManagerLib {
 
         require(
             HistoryRootLib.hasState(
-                vertices[winnerVId].historyRoot,
-                afterHash,
-                oneStepData.machineStep + 1,
-                afterHistoryInclusionProof
+                vertices[winnerVId].historyRoot, afterHash, oneStepData.machineStep + 1, afterHistoryInclusionProof
             ),
             "After state not in history"
         );
 
         return challengeId;
     }
-
 
     // take from https://solidity-by-example.org/bitwise/
     // Find most significant bit using binary search
@@ -306,7 +299,6 @@ library ChallengeManagerLib {
         return mandatoryBisectionHeight(vertices[predecessorId].height, vertices[vId].height);
     }
 }
-
 
 contract ChallengeManagerImpl is IChallengeManager {
     using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
@@ -442,31 +434,24 @@ contract ChallengeManagerImpl is IChallengeManager {
         challenges[challengeId].winningClaim = winnerVId;
     }
 
-    function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof)
-        external
-        returns (bytes32)
-    {
+    function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
-        (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
-        );
+        (bytes32 bVId, uint256 bHeight) =
+            ChallengeManagerLib.checkBisect(vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod);
 
         // CHRIS: TODO: the spec says we should stop the presumptive successor timer of the vId, but why?
         // CHRIS: TODO: is that because we only care about presumptive successors further down the chain?
 
         bytes32 predecessorId = vertices[vId].predecessorId;
         uint256 currentPsTimer = vertices.getCurrentPsTimer(vId);
-        ChallengeVertex memory bVertex = ChallengeVertexLib.newVertex(vertices[vId].challengeId, 
+        ChallengeVertex memory bVertex = ChallengeVertexLib.newVertex(
+            vertices[vId].challengeId,
             prefixHistoryRoot,
-            bHeight, 
+            bHeight,
             // CHRIS: TODO: double check the timer updates in here and merge - they're a bit tricky to reason about
             currentPsTimer
         );
-        vertices.addVertex(
-            bVertex,
-            predecessorId,
-            challengePeriod
-        );
+        vertices.addVertex(bVertex, predecessorId, challengePeriod);
         // CHRIS: TODO: check these two successor updates really do conform to the spec
         // CHRIS: TODO: rename to just `connect`
         vertices.connectVertices(bVId, vId, challengePeriod);
@@ -475,20 +460,13 @@ contract ChallengeManagerImpl is IChallengeManager {
     }
 
     function merge(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
-        (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod
-        );
+        (bytes32 bVId,) =
+            ChallengeManagerLib.checkMerge(vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriod);
 
         vertices.connectVertices(bVId, vId, challengePeriod);
-        vertices.flushPs(vertices[bVId].predecessorId);
-        // update the merge vertex if we have a higher ps time
-        // CHRIS: TODO: should we allow flushed time to be updated whenever we want like this? or have a lib for this that compares and updates max
-        // CHRIS: TODO: we're updating flushed time here! this could accidentally take us above the expected amount
-        // CHRIS: TODO: we should check that it's not confirmable
-        if (vertices[bVId].flushedPsTime < vertices[vId].flushedPsTime) {
-            vertices[bVId].flushedPsTime = vertices[vId].flushedPsTime;
-        }
-
+        // flush the ps time on the merged vertex, and increase it if has a time lower
+        // than the vertex we're merging from
+        vertices.flushPs(vertices[bVId].predecessorId, vertices[vId].flushedPsTime);
         return bVId;
     }
 
@@ -588,6 +566,6 @@ contract ChallengeManagerImpl is IChallengeManager {
     function isAtOneStepFork(bytes32 vId) external view returns (bool) {
         // CHRIS: TODO: remove this function - it hides error messages
         vertices.checkAtOneStepFork(vId);
-        return true;   
+        return true;
     }
 }
