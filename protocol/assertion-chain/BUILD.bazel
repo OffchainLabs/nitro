@@ -4,7 +4,9 @@ go_library(
     name = "assertion-chain",
     srcs = [
         "assertion_chain.go",
+        "challenge.go",
         "challenge_manager.go",
+        "types.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/assertion-chain",
     visibility = ["//visibility:public"],
@@ -21,7 +23,12 @@ go_library(
 
 go_test(
     name = "assertion-chain_test",
-    srcs = ["assertion_chain_test.go"],
+    srcs = [
+        "assertion_chain_test.go",
+        "challenge_manager_test.go",
+        "challenge_test.go",
+        "types_test.go",
+    ],
     embed = [":assertion-chain"],
     deps = [
         "//solgen/go/outgen",
