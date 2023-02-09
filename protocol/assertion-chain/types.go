@@ -84,6 +84,6 @@ func (v *ChallengeVertex) invalidate() error {
 	if err != nil {
 		return err
 	}
-	a.inner = inner
+	v.inner = inner
 	return nil
 }
