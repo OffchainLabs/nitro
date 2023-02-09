@@ -61,7 +61,7 @@ contract AssertionChain is IAssertionChain {
             secondChildCreationTime: 0,
             stateHash: stateHash,
             height: 0,
-            status: Status.Pending,
+            status: Status.Confirmed,
             inboxMsgCountSeen: 0
         });
     }
