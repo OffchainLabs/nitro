@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
+// CHRIS: TODO: set the licence everywhere
+// CHRIS: TODO: the invariants in the dev natspec should be tested to hold
+
 enum VertexStatus {
     Pending, // This vertex is vertex is pending, it has yet to be confirmed
     Confirmed // This vertex has been confirmed, once confirmed it cannot be unconfirmed
@@ -64,13 +67,14 @@ struct ChallengeVertex {
     bytes32 lowestHeightSuccessorId;
 }
 
+/// @title Challenge vertex library 
+/// @notice Extension functionality for the challenge vertex struct
 library ChallengeVertexLib {
     function newRoot(bytes32 challengeId, bytes32 historyRoot, bytes32 claimId) internal pure returns (ChallengeVertex memory) {
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
         require(claimId != 0, "Zero claim id");
     
-        // CHRIS: TODO: the root should have a height 1 and should inherit the state commitment from above right?
         return ChallengeVertex({
             challengeId: challengeId,
             predecessorId: 0, // always zero for root
@@ -100,6 +104,7 @@ library ChallengeVertexLib {
         require(height != 0, "Zero height");
         require(claimId != 0, "Zero claim id");
         require(staker != address(0), "Zero staker address");
+        // initialPsTime can be zero
 
         return ChallengeVertex({
             challengeId: challengeId,
@@ -122,10 +127,10 @@ library ChallengeVertexLib {
         pure
         returns (ChallengeVertex memory)
     {
-        // CHRIS: TODO: check non-zero in all these things
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
         require(height != 0, "Zero height");
+        // initialPsTime can be zero
 
         return ChallengeVertex({
             challengeId: challengeId,
@@ -152,12 +157,14 @@ library ChallengeVertexLib {
     }
 
     function isLeaf(ChallengeVertex storage vertex) internal view returns (bool) {
-        // CHRIS: TODO: throw for non existant leaves and roots?
+        // CHRIS: TODO: throw for non existant leaves and roots instead of returning false? that way dont have to do require exist everywhere as well as checking root
+        require(exists(vertex), "Potential leaf vertex does not exist");
         return exists(vertex) && vertex.staker != address(0);
     }
 
     function isRoot(ChallengeVertex storage vertex) internal view returns(bool) {
-        return exists(vertex) && vertex.staker == address(0) && claimId != 0;
+        require(exists(vertex), "Potential root vertex does not exist");
+        return vertex.staker == address(0) && vertex.claimId != 0;
     }
 
     function setPredecessor(ChallengeVertex storage vertex, bytes32 predecessorId) internal {

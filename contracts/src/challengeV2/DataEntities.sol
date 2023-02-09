@@ -4,6 +4,17 @@ pragma solidity ^0.8.17;
 import "../osp/IOneStepProofEntry.sol";
 import "./libraries/ChallengeVertexLib.sol";
 
+// Glossary terms to add
+// assertion
+// sub challenge
+// challenge
+// predecessor
+// successor
+// PS
+// Lowest height successor
+// vertex
+// confirmation
+
 enum Status {
     Pending,
     Confirmed,

@@ -4,80 +4,27 @@ pragma solidity ^0.8.17;
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
 
-// Glossary of terms - we shouldnt need these if they're documented well? also we can find this stuff in the paper?
-// successor
-// PS
-// Lowest height successor
-// vertex
-// confirmation
-
-// CHRIS: TODO: define the remit of this lib
-// CHRIS: TODO: defines properties of linked challenge vertices, and how they can be updated
-// CHRIS: TODO: we should rename this then, since it isnt just a vertex mapping, it's specific type
-// of mapping.
 // CHRIS: TODO: we dont need to put lib in the name here?
 
-// CHRIS: TODO: rather than checking if prev exists we could explicitly disallow root?
+// CHRIS: TODO: rather than checking if prev exists we could explicitly disallow root? Yes, if it's not root then prev must exist
 
-// CHRIS: TODO: make all lib functions internal
-
-// CHRIS: TODO: how should we capitalise PS?
-
-// CHRIS: TODO: add this back in maybe?
-// function existsAndPredecessor(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId)
-//     public
-//     returns (bytes32)
-// {
-//     // CHRIS: TODO: is it necessary to check exists everywhere? shoudlnt we just do that in the base?
-//     // ideally we'd do it at each boundary, but it's expensive. What if we only do it when accessing the vertices
-//     // and what if we only access them via this class? is that true? no, because we grab and set other info all over the place
-//     // eg succession challenge id
-//     require(vertices[vId].exists(), "Vertex does not exist for ps timer");
-//     bytes32 predecessorId = vertices[vId].predecessorId;
-//     require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
-// }
-
-// dont allow updates if the challenge has a winner? should this be a check at the challenge level?
-// CHRIS: TODO: require winning claim == 0
-
-// CHRIS: TODO comments and assertions in here
-// eg. assert that presumptive successor id is also 0 if lowest height = 0
 // CHRIS: TODO: check all the places we do existance checks - it doesnt seem necessary every where
+
 // CHRIS: TODO: use unique messages if we're checking vertex exists in multiple places
-// CHRIS: TODO: check isLeaf when trying to set a predecessor
-// CHRIS: TODO: invariants testing here lowest height successor = psId, or psId = 0
-// CHRIS: TODO: we could have getters and setters on the vertex props - that we know
-// CHRIS: TODO:
-
-// CHRIS: TODO: keep the psExceedsChallengePeriod in here? it gives us the security that we will never
-// CHRIS: TODO: connect a vertex it the predecessor has a confirmable ps, but it means we need
-// CHRIS: TODO: to always pass that information down, and it doesnt really belong here
-
-// CHRIS: TODO: remove psExceeds from here? - we should have it elsewhere since it has challenge concepts in it
-// CHRIS: TODO: however we cant put it in the challenge lib since it's used in the leaf adders
-// CHRIS: TODO: it belongs in some base lib but we really want to keep the challenge lib with the challenge
-// CHRIS: TODO: since they're so similar? It might become a pain in the ass otherwise to jump around
 
 // CHRIS: TODO: wherever we talk about time we should include the word seconds for clarity
 
-// CHRIS: TODO: we can never be made presumptive successor again
-// CHRIS: TODO: this is an invariant we should try to test / assert
 
-// CHRIS: TODO: should we also not allow connection if another vertex is confirmed, or if this start vertex
+// CHRIS: TODO: should we also disallow connection if another vertex is confirmed, or if this start vertex
 // has a chosen winner of a succession challenge?
 
-// CHRIS: TODO: think about what happens if we add a new vertex with a high initial ps
+// CHRIS: TODO: think about what happens if we add a new vertex with a high initial ps!
 
-// CHRIS: TODO: some docs to put somewhere
-// include this in a doc - on the struct
-// a set of ps vertices has the following rules
-// a vertex may have 0 or 1 presumptive successor
-// if the ps exists it is also the lowest height successor
-// if no successors exist there is no ps
-// if only one successor exists at the lowest height, then it is the ps
-// if more than one successor exists at the lowest height, then there is no ps
+// CHRIS: TODO: wherever we compare two vertices should we check the challenge ids? not for predecessor since we know they must be the same
 
-// if a vertex is a leaf it will never have a ps
+// CHRIS: TODO: invariant: once a ps timer goes above challenge period, it will always remain ps
+// CHRIS: TODO: invariant: once a vertex is no longer the ps, it can never be ps again
+// CHRIS: TODO: invariant: all the things stated in the challenge vertex struct eg lowest height = ps if ps != 0, or ps = 0 if lowest heigh == 0
 
 /// @title Presumptive Successor Vertices library
 /// @author Offchain Labs
@@ -206,20 +153,12 @@ library PsVerticesLib {
             "Predecessor and successor are in different challenges"
         );
 
-        // if the start vertex has a ps that exceeds the challenge period then we dont allow any connection
-        // if that vertex as the start. This is because any connected vertex would be rejectable by default
-        require(
-            !psExceedsChallengePeriod(vertices, startVertexId, challengePeriod),
-            "The start vertex has a presumptive successor whose ps time has exceeded the challenge period"
-        );
-
-        // first make the connection
+        // first make the connection, then update ps
         vertices[endVertexId].setPredecessor(startVertexId);
 
-        // now we may need to update ps and the lowest height successor
+        // the current vertex has no successors, in this case the new successor will certainly
+        // be the ps
         if (vertices[startVertexId].lowestHeightSuccessorId == 0) {
-            // no lowest height successor, means no successors at all,
-            // so we can set this vertex as the ps and as the lowest height successor
             flushPs(vertices, startVertexId, 0);
             vertices[startVertexId].setPsId(endVertexId);
             return;
@@ -227,17 +166,29 @@ library PsVerticesLib {
 
         uint256 height = vertices[endVertexId].height;
         uint256 lowestHeightSuccessorHeight = vertices[vertices[startVertexId].lowestHeightSuccessorId].height;
+        // we're connect a successor that is lower than the current lowest height, so this new successor
+        // will become the ps. Set the ps.
         if (height < lowestHeightSuccessorHeight) {
-            // new successor has height lower than the current lowest height
-            // so we can set the PS and the lowest height successor
+            // never allow a ps with a timer greater than the challenge period to be replaced
+            require(
+                !psExceedsChallengePeriod(vertices, startVertexId, challengePeriod),
+                "Start vertex has ps with timer greater than challenge period, cannot set lower ps"
+            );
+
             flushPs(vertices, startVertexId, 0);
             vertices[startVertexId].setPsId(endVertexId);
             return;
         }
 
+        // we're connecting a sibling to the current lowest height, that means that there will be more than
+        // one successor at the same lowest height, in this case we set non of the successors to be the ps
         if (height == lowestHeightSuccessorHeight) {
-            // same height as the lowest height successor, we should zero out the PS
-            // no update to lowest height successor required
+            // never allow a ps with a timer greater than the challenge period to be replaced
+            require(
+                !psExceedsChallengePeriod(vertices, startVertexId, challengePeriod),
+                "Start vertex has ps with timer greater than challenge period, cannot set same height ps"
+            );
+
             flushPs(vertices, startVertexId, 0);
             vertices[startVertexId].setPsId(0);
             return;
@@ -257,8 +208,9 @@ library PsVerticesLib {
     ) internal returns (bytes32) {
         bytes32 vId = ChallengeVertexLib.id(vertex.challengeId, vertex.historyRoot, vertex.height);
         require(!vertices[vId].exists(), "Vertex already exists");
-
         vertices[vId] = vertex;
+
+        // connect the newly stored vertex to an existing vertex
         connectVertices(vertices, predecessorId, vId, challengePeriod);
 
         return vId;
