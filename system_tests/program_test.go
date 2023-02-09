@@ -168,7 +168,7 @@ func formatTime(duration time.Duration) string {
 	unit := 0
 	units := []string{"ns", "μs", "ms", "s", "min", "h", "d", "w", "mo", "yr", "dec", "cent", "mill", "eon"}
 	scale := []float64{1000., 1000., 1000., 60., 60., 24., 7., 4.34, 12., 10., 10., 10., 1000000.}
-	for span >= scale[unit] {
+	for span >= scale[unit] && unit < len(scale) {
 		span /= scale[unit]
 		unit += 1
 	}
