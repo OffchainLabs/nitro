@@ -4,14 +4,14 @@
 
 pragma solidity ^0.8.0;
 
-import "./Node.sol";
+import "./Assertion.sol";
 import "./RollupLib.sol";
 
 interface IRollupCore {
     struct Staker {
         uint256 amountStaked;
         uint64 index;
-        uint64 latestStakedNode;
+        uint64 latestStakedAssertion;
         // currentChallenge is 0 if staker is not in a challenge
         uint64 currentChallenge;
         bool isStaked;
@@ -19,26 +19,26 @@ interface IRollupCore {
 
     event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
-    event NodeCreated(
+    event AssertionCreated(
         uint64 indexed nodeNum,
-        bytes32 indexed parentNodeHash,
+        bytes32 indexed parentAssertionHash,
         bytes32 indexed nodeHash,
         bytes32 executionHash,
-        OldAssertion assertion,
+        AssertionInputs assertion,
         bytes32 afterInboxBatchAcc,
         bytes32 wasmModuleRoot,
         uint256 inboxMaxCount
     );
 
-    event NodeConfirmed(uint64 indexed nodeNum, bytes32 blockHash, bytes32 sendRoot);
+    event AssertionConfirmed(uint64 indexed nodeNum, bytes32 blockHash, bytes32 sendRoot);
 
-    event NodeRejected(uint64 indexed nodeNum);
+    event AssertionRejected(uint64 indexed nodeNum);
 
     event RollupChallengeStarted(
         uint64 indexed challengeIndex,
         address asserter,
         address challenger,
-        uint64 challengedNode
+        uint64 challengedAssertion
     );
 
     event UserStakeUpdated(address indexed user, uint256 initialBalance, uint256 finalBalance);
@@ -80,9 +80,9 @@ interface IRollupCore {
     function validatorWhitelistDisabled() external view returns (bool);
 
     /**
-     * @notice Get the Node for the given index.
+     * @notice Get the Assertion for the given index.
      */
-    function getNode(uint64 nodeNum) external view returns (Node memory);
+    function getAssertion(uint64 nodeNum) external view returns (Assertion memory);
 
     /**
      * @notice Check if the specified node has been staked on by the provided staker.
@@ -109,7 +109,7 @@ interface IRollupCore {
      * @param staker Staker address to lookup
      * @return Latest node staked of the staker
      */
-    function latestStakedNode(address staker) external view returns (uint64);
+    function latestStakedAssertion(address staker) external view returns (uint64);
 
     /**
      * @notice Get the current challenge of the given staker
@@ -144,7 +144,7 @@ interface IRollupCore {
      * @param zombieNum Index of the zombie to lookup
      * @return Latest node that the given zombie is staked on
      */
-    function zombieLatestStakedNode(uint256 zombieNum) external view returns (uint64);
+    function zombieLatestStakedAssertion(uint256 zombieNum) external view returns (uint64);
 
     /// @return Current number of un-removed zombies
     function zombieCount() external view returns (uint256);
@@ -160,15 +160,15 @@ interface IRollupCore {
 
     /**
      * @return Index of the first unresolved node
-     * @dev If all nodes have been resolved, this will be latestNodeCreated + 1
+     * @dev If all nodes have been resolved, this will be latestAssertionCreated + 1
      */
-    function firstUnresolvedNode() external view returns (uint64);
+    function firstUnresolvedAssertion() external view returns (uint64);
 
     /// @return Index of the latest confirmed node
     function latestConfirmed() external view returns (uint64);
 
     /// @return Index of the latest rollup node created
-    function latestNodeCreated() external view returns (uint64);
+    function latestAssertionCreated() external view returns (uint64);
 
     /// @return Ethereum block that the most recent stake was created
     function lastStakeBlock() external view returns (uint64);

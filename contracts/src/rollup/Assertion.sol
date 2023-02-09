@@ -4,7 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-struct Node {
+struct Assertion {
     // Hash of the state of the chain as of this node
     bytes32 stateHash;
     // Hash of the data that can be challenged
@@ -32,11 +32,11 @@ struct Node {
 }
 
 /**
- * @notice Utility functions for Node
+ * @notice Utility functions for Assertion
  */
-library NodeLib {
+library AssertionLib {
     /**
-     * @notice Initialize a Node
+     * @notice Initialize a Assertion
      * @param _stateHash Initial value of stateHash
      * @param _challengeHash Initial value of challengeHash
      * @param _confirmData Initial value of confirmData
@@ -44,15 +44,15 @@ library NodeLib {
      * @param _deadlineBlock Initial value of deadlineBlock
      * @param _nodeHash Initial value of nodeHash
      */
-    function createNode(
+    function createAssertion(
         bytes32 _stateHash,
         bytes32 _challengeHash,
         bytes32 _confirmData,
         uint64 _prevNum,
         uint64 _deadlineBlock,
         bytes32 _nodeHash
-    ) internal view returns (Node memory) {
-        Node memory node;
+    ) internal view returns (Assertion memory) {
+        Assertion memory node;
         node.stateHash = _stateHash;
         node.challengeHash = _challengeHash;
         node.confirmData = _confirmData;
@@ -68,7 +68,7 @@ library NodeLib {
      * @notice Update child properties
      * @param number The child number to set
      */
-    function childCreated(Node storage self, uint64 number) internal {
+    function childCreated(Assertion storage self, uint64 number) internal {
         if (self.firstChildBlock == 0) {
             self.firstChildBlock = uint64(block.number);
         }
@@ -79,21 +79,21 @@ library NodeLib {
      * @notice Update the child confirmed deadline
      * @param deadline The new deadline to set
      */
-    function newChildConfirmDeadline(Node storage self, uint64 deadline) internal {
+    function newChildConfirmDeadline(Assertion storage self, uint64 deadline) internal {
         self.noChildConfirmedBeforeBlock = deadline;
     }
 
     /**
      * @notice Check whether the current block number has met or passed the node's deadline
      */
-    function requirePastDeadline(Node memory self) internal view {
+    function requirePastDeadline(Assertion memory self) internal view {
         require(block.number >= self.deadlineBlock, "BEFORE_DEADLINE");
     }
 
     /**
      * @notice Check whether the current block number has met or passed deadline for children of this node to be confirmed
      */
-    function requirePastChildConfirmDeadline(Node memory self) internal view {
+    function requirePastChildConfirmDeadline(Assertion memory self) internal view {
         require(block.number >= self.noChildConfirmedBeforeBlock, "CHILD_TOO_RECENT");
     }
 }

@@ -20,7 +20,7 @@ struct ExecutionState {
     MachineStatus machineStatus;
 }
 
-struct OldAssertion {
+struct AssertionInputs {
     ExecutionState beforeState;
     ExecutionState afterState;
     uint64 numBlocks;
@@ -87,7 +87,7 @@ library RollupLib {
             );
     }
 
-    function executionHash(OldAssertion memory assertion) internal pure returns (bytes32) {
+    function executionHash(AssertionInputs memory assertion) internal pure returns (bytes32) {
         MachineStatus[2] memory statuses;
         statuses[0] = assertion.beforeState.machineStatus;
         statuses[1] = assertion.afterState.machineStatus;
@@ -117,7 +117,7 @@ library RollupLib {
         return keccak256(abi.encodePacked(execution, proposedTime, wasmModuleRoot));
     }
 
-    function confirmHash(OldAssertion memory assertion) internal pure returns (bytes32) {
+    function confirmHash(AssertionInputs memory assertion) internal pure returns (bytes32) {
         return
             confirmHash(
                 assertion.afterState.globalState.getBlockHash(),

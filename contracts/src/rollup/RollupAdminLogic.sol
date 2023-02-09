@@ -50,7 +50,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
         challengeManager = connectedContracts.challengeManager;
 
-        Node memory node = createInitialNode();
+        Assertion memory node = createInitialAssertion();
         initializeCore(node);
 
         confirmPeriodBlocks = config.confirmPeriodBlocks;
@@ -73,14 +73,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit RollupInitialized(config.wasmModuleRoot, config.chainId);
     }
 
-    function createInitialNode() private view returns (Node memory) {
+    function createInitialAssertion() private view returns (Assertion memory) {
         GlobalState memory emptyGlobalState;
         bytes32 state = RollupLib.stateHashMem(
             ExecutionState(emptyGlobalState, MachineStatus.FINISHED),
             1 // inboxMaxCount - force the first assertion to read a message
         );
         return
-            NodeLib.createNode(
+            AssertionLib.createAssertion(
                 state,
                 0, // challenge hash (not challengeable)
                 0, // confirm data
@@ -282,26 +282,26 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(22);
     }
 
-    function forceCreateNode(
-        uint64 prevNode,
-        uint256 prevNodeInboxMaxCount,
-        OldAssertion calldata assertion,
-        bytes32 expectedNodeHash
+    function forceCreateAssertion(
+        uint64 prevAssertion,
+        uint256 prevAssertionInboxMaxCount,
+        AssertionInputs calldata assertion,
+        bytes32 expectedAssertionHash
     ) external override whenPaused {
-        require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
+        require(prevAssertion == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
-        createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
+        createNewAssertion(assertion, prevAssertion, prevAssertionInboxMaxCount, expectedAssertionHash);
 
         emit OwnerFunctionCalled(23);
     }
 
-    function forceConfirmNode(
+    function forceConfirmAssertion(
         uint64 nodeNum,
         bytes32 blockHash,
         bytes32 sendRoot
     ) external override whenPaused {
         // this skips deadline, staker and zombie validation
-        confirmNode(nodeNum, blockHash, sendRoot);
+        confirmAssertion(nodeNum, blockHash, sendRoot);
         emit OwnerFunctionCalled(24);
     }
 
@@ -340,11 +340,11 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(28);
     }
 
-    function createNitroMigrationGenesis(OldAssertion calldata assertion) external whenPaused {
+    function createNitroMigrationGenesis(AssertionInputs calldata assertion) external whenPaused {
         bytes32 expectedSendRoot = bytes32(0);
         uint64 expectedInboxCount = 1;
 
-        require(latestNodeCreated() == 0, "NON_GENESIS_NODES_EXIST");
+        require(latestAssertionCreated() == 0, "NON_GENESIS_NODES_EXIST");
         require(GlobalStateLib.isEmpty(assertion.beforeState.globalState), "NOT_EMPTY_BEFORE");
         require(
             assertion.beforeState.machineStatus == MachineStatus.FINISHED,
@@ -365,8 +365,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             "AFTER_MACHINE_NOT_FINISHED"
         );
         bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
-        createNewNode(assertion, 0, expectedInboxCount, bytes32(0));
-        confirmNode(1, genesisBlockHash, expectedSendRoot);
+        createNewAssertion(assertion, 0, expectedInboxCount, bytes32(0));
+        confirmAssertion(1, genesisBlockHash, expectedSendRoot);
         emit OwnerFunctionCalled(29);
     }
 

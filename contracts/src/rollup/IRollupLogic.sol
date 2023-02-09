@@ -21,30 +21,30 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function isERC20Enabled() external view returns (bool);
 
-    function rejectNextNode(address stakerAddress) external;
+    function rejectNextAssertion(address stakerAddress) external;
 
-    function confirmNextNode(bytes32 blockHash, bytes32 sendRoot) external;
+    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot) external;
 
-    function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external;
+    function stakeOnExistingAssertion(uint64 nodeNum, bytes32 nodeHash) external;
 
-    function stakeOnNewNode(
-        OldAssertion memory assertion,
-        bytes32 expectedNodeHash,
-        uint256 prevNodeInboxMaxCount
+    function stakeOnNewAssertion(
+        AssertionInputs memory assertion,
+        bytes32 expectedAssertionHash,
+        uint256 prevAssertionInboxMaxCount
     ) external;
 
     function returnOldDeposit(address stakerAddress) external;
 
     function reduceDeposit(uint256 target) external;
 
-    function removeZombie(uint256 zombieNum, uint256 maxNodes) external;
+    function removeZombie(uint256 zombieNum, uint256 maxAssertions) external;
 
     function removeOldZombies(uint256 startIndex) external;
 
     function requiredStake(
         uint256 blockNumber,
-        uint64 firstUnresolvedNodeNum,
-        uint64 latestCreatedNode
+        uint64 firstUnresolvedAssertionNum,
+        uint64 latestCreatedAssertion
     ) external view returns (uint256);
 
     function currentRequiredStake() external view returns (uint256);
@@ -72,29 +72,29 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 }
 
 interface IRollupUser is IRollupUserAbs {
-    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
+    function newStakeOnExistingAssertion(uint64 nodeNum, bytes32 nodeHash) external payable;
 
-    function newStakeOnNewNode(
-        OldAssertion calldata assertion,
-        bytes32 expectedNodeHash,
-        uint256 prevNodeInboxMaxCount
+    function newStakeOnNewAssertion(
+        AssertionInputs calldata assertion,
+        bytes32 expectedAssertionHash,
+        uint256 prevAssertionInboxMaxCount
     ) external payable;
 
     function addToDeposit(address stakerAddress) external payable;
 }
 
 interface IRollupUserERC20 is IRollupUserAbs {
-    function newStakeOnExistingNode(
+    function newStakeOnExistingAssertion(
         uint256 tokenAmount,
         uint64 nodeNum,
         bytes32 nodeHash
     ) external;
 
-    function newStakeOnNewNode(
+    function newStakeOnNewAssertion(
         uint256 tokenAmount,
-        OldAssertion calldata assertion,
-        bytes32 expectedNodeHash,
-        uint256 prevNodeInboxMaxCount
+        AssertionInputs calldata assertion,
+        bytes32 expectedAssertionHash,
+        uint256 prevAssertionInboxMaxCount
     ) external;
 
     function addToDeposit(address stakerAddress, uint256 tokenAmount) external;
@@ -193,14 +193,14 @@ interface IRollupAdmin {
 
     function forceRefundStaker(address[] memory stacker) external;
 
-    function forceCreateNode(
-        uint64 prevNode,
-        uint256 prevNodeInboxMaxCount,
-        OldAssertion memory assertion,
-        bytes32 expectedNodeHash
+    function forceCreateAssertion(
+        uint64 prevAssertion,
+        uint256 prevAssertionInboxMaxCount,
+        AssertionInputs memory assertion,
+        bytes32 expectedAssertionHash
     ) external;
 
-    function forceConfirmNode(
+    function forceConfirmAssertion(
         uint64 nodeNum,
         bytes32 blockHash,
         bytes32 sendRoot

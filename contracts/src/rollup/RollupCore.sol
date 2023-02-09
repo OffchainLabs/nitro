@@ -6,7 +6,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
-import "./Node.sol";
+import "./Assertion.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
 import "./IRollupEventInbox.sol";
@@ -21,7 +21,7 @@ import "../bridge/IOutbox.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
-    using NodeLib for Node;
+    using AssertionLib for Assertion;
     using GlobalStateLib for GlobalState;
 
     // Rollup Config
@@ -52,14 +52,14 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // Stakers become Zombies after losing a challenge
     struct Zombie {
         address stakerAddress;
-        uint64 latestStakedNode;
+        uint64 latestStakedAssertion;
     }
 
     uint64 private _latestConfirmed;
-    uint64 private _firstUnresolvedNode;
-    uint64 private _latestNodeCreated;
+    uint64 private _firstUnresolvedAssertion;
+    uint64 private _latestAssertionCreated;
     uint64 private _lastStakeBlock;
-    mapping(uint64 => Node) private _nodes;
+    mapping(uint64 => Assertion) private _nodes;
     mapping(uint64 => mapping(address => bool)) private _nodeStakers;
 
     address[] private _stakerList;
@@ -77,19 +77,19 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     bool public validatorWhitelistDisabled;
 
     /**
-     * @notice Get a storage reference to the Node for the given node index
+     * @notice Get a storage reference to the Assertion for the given node index
      * @param nodeNum Index of the node
-     * @return Node struct
+     * @return Assertion struct
      */
-    function getNodeStorage(uint64 nodeNum) internal view returns (Node storage) {
+    function getAssertionStorage(uint64 nodeNum) internal view returns (Assertion storage) {
         return _nodes[nodeNum];
     }
 
     /**
-     * @notice Get the Node for the given index.
+     * @notice Get the Assertion for the given index.
      */
-    function getNode(uint64 nodeNum) public view override returns (Node memory) {
-        return getNodeStorage(nodeNum);
+    function getAssertion(uint64 nodeNum) public view override returns (Assertion memory) {
+        return getAssertionStorage(nodeNum);
     }
 
     /**
@@ -133,8 +133,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param staker Staker address to lookup
      * @return Latest node staked of the staker
      */
-    function latestStakedNode(address staker) public view override returns (uint64) {
-        return _stakerMap[staker].latestStakedNode;
+    function latestStakedAssertion(address staker) public view override returns (uint64) {
+        return _stakerMap[staker].latestStakedAssertion;
     }
 
     /**
@@ -178,8 +178,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param zombieNum Index of the zombie to lookup
      * @return Latest node that the given zombie is staked on
      */
-    function zombieLatestStakedNode(uint256 zombieNum) public view override returns (uint64) {
-        return _zombies[zombieNum].latestStakedNode;
+    function zombieLatestStakedAssertion(uint256 zombieNum) public view override returns (uint64) {
+        return _zombies[zombieNum].latestStakedAssertion;
     }
 
     /**
@@ -216,10 +216,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     /**
      * @return Index of the first unresolved node
-     * @dev If all nodes have been resolved, this will be latestNodeCreated + 1
+     * @dev If all nodes have been resolved, this will be latestAssertionCreated + 1
      */
-    function firstUnresolvedNode() public view override returns (uint64) {
-        return _firstUnresolvedNode;
+    function firstUnresolvedAssertion() public view override returns (uint64) {
+        return _firstUnresolvedAssertion;
     }
 
     /// @return Index of the latest confirmed node
@@ -228,8 +228,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     }
 
     /// @return Index of the latest rollup node created
-    function latestNodeCreated() public view override returns (uint64) {
-        return _latestNodeCreated;
+    function latestAssertionCreated() public view override returns (uint64) {
+        return _latestAssertionCreated;
     }
 
     /// @return Ethereum block that the most recent stake was created
@@ -244,34 +244,34 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     /**
      * @notice Initialize the core with an initial node
-     * @param initialNode Initial node to start the chain with
+     * @param initialAssertion Initial node to start the chain with
      */
-    function initializeCore(Node memory initialNode) internal {
+    function initializeCore(Assertion memory initialAssertion) internal {
         __Pausable_init();
-        _nodes[GENESIS_NODE] = initialNode;
-        _firstUnresolvedNode = GENESIS_NODE + 1;
+        _nodes[GENESIS_NODE] = initialAssertion;
+        _firstUnresolvedAssertion = GENESIS_NODE + 1;
     }
 
     /**
      * @notice React to a new node being created by storing it an incrementing the latest node counter
-     * @param node Node that was newly created
+     * @param node Assertion that was newly created
      */
-    function nodeCreated(Node memory node) internal {
-        _latestNodeCreated++;
-        _nodes[_latestNodeCreated] = node;
+    function nodeCreated(Assertion memory node) internal {
+        _latestAssertionCreated++;
+        _nodes[_latestAssertionCreated] = node;
     }
 
     /// @notice Reject the next unresolved node
-    function _rejectNextNode() internal {
-        _firstUnresolvedNode++;
+    function _rejectNextAssertion() internal {
+        _firstUnresolvedAssertion++;
     }
 
-    function confirmNode(
+    function confirmAssertion(
         uint64 nodeNum,
         bytes32 blockHash,
         bytes32 sendRoot
     ) internal {
-        Node storage node = getNodeStorage(nodeNum);
+        Assertion storage node = getAssertionStorage(nodeNum);
         // Authenticate data against node's confirm data pre-image
         require(node.confirmData == RollupLib.confirmHash(blockHash, sendRoot), "CONFIRM_DATA");
 
@@ -279,9 +279,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         outbox.updateSendRoot(sendRoot, blockHash);
 
         _latestConfirmed = nodeNum;
-        _firstUnresolvedNode = nodeNum + 1;
+        _firstUnresolvedAssertion = nodeNum + 1;
 
-        emit NodeConfirmed(nodeNum, blockHash, sendRoot);
+        emit AssertionConfirmed(nodeNum, blockHash, sendRoot);
     }
 
     /**
@@ -383,7 +383,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function turnIntoZombie(address stakerAddress) internal {
         Staker storage staker = _stakerMap[stakerAddress];
-        _zombies.push(Zombie(stakerAddress, staker.latestStakedNode));
+        _zombies.push(Zombie(stakerAddress, staker.latestStakedAssertion));
         deleteStaker(stakerAddress);
     }
 
@@ -392,8 +392,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param zombieNum Index of the zombie to move
      * @param latest New latest node the zombie is staked on
      */
-    function zombieUpdateLatestStakedNode(uint256 zombieNum, uint64 latest) internal {
-        _zombies[zombieNum].latestStakedNode = latest;
+    function zombieUpdateLatestStakedAssertion(uint256 zombieNum, uint64 latest) internal {
+        _zombies[zombieNum].latestStakedAssertion = latest;
     }
 
     /**
@@ -412,14 +412,14 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function addStaker(uint64 nodeNum, address staker) internal {
         require(!_nodeStakers[nodeNum][staker], "ALREADY_STAKED");
         _nodeStakers[nodeNum][staker] = true;
-        Node storage node = getNodeStorage(nodeNum);
+        Assertion storage node = getAssertionStorage(nodeNum);
         require(node.deadlineBlock != 0, "NO_NODE");
 
         uint64 prevCount = node.stakerCount;
         node.stakerCount = prevCount + 1;
 
         if (nodeNum > GENESIS_NODE) {
-            Node storage parent = getNodeStorage(node.prevNum);
+            Assertion storage parent = getAssertionStorage(node.prevNum);
             parent.childStakerCount++;
             if (prevCount == 0) {
                 parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
@@ -435,11 +435,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         require(_nodeStakers[nodeNum][staker], "NOT_STAKED");
         _nodeStakers[nodeNum][staker] = false;
 
-        Node storage node = getNodeStorage(nodeNum);
+        Assertion storage node = getAssertionStorage(nodeNum);
         node.stakerCount--;
 
         if (nodeNum > GENESIS_NODE) {
-            getNodeStorage(node.prevNum).childStakerCount--;
+            getAssertionStorage(node.prevNum).childStakerCount--;
         }
     }
 
@@ -453,7 +453,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         uint64 latestConfirmedNum = latestConfirmed();
         if (nodeHasStaker(latestConfirmedNum, stakerAddress)) {
             // Withdrawing a staker whose latest staked node isn't resolved should be impossible
-            assert(staker.latestStakedNode == latestConfirmedNum);
+            assert(staker.latestStakedAssertion == latestConfirmedNum);
             removeStaker(latestConfirmedNum, stakerAddress);
         }
         uint256 initialStaked = staker.amountStaked;
@@ -467,10 +467,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param stakerAddress Address of the staker adding their stake
      * @param nodeNum Index of the node to stake on
      */
-    function stakeOnNode(address stakerAddress, uint64 nodeNum) internal {
+    function stakeOnAssertion(address stakerAddress, uint64 nodeNum) internal {
         Staker storage staker = _stakerMap[stakerAddress];
         addStaker(nodeNum, stakerAddress);
-        staker.latestStakedNode = nodeNum;
+        staker.latestStakedAssertion = nodeNum;
     }
 
     /**
@@ -512,39 +512,39 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         delete _stakerMap[stakerAddress];
     }
 
-    struct StakeOnNewNodeFrame {
+    struct StakeOnNewAssertionFrame {
         uint256 currentInboxSize;
-        Node node;
+        Assertion node;
         bytes32 executionHash;
-        Node prevNode;
+        Assertion prevAssertion;
         bytes32 lastHash;
         bool hasSibling;
         uint64 deadlineBlock;
         bytes32 sequencerBatchAcc;
     }
 
-    function createNewNode(
-        OldAssertion calldata assertion,
-        uint64 prevNodeNum,
-        uint256 prevNodeInboxMaxCount,
-        bytes32 expectedNodeHash
-    ) internal returns (bytes32 newNodeHash) {
+    function createNewAssertion(
+        AssertionInputs calldata assertion,
+        uint64 prevAssertionNum,
+        uint256 prevAssertionInboxMaxCount,
+        bytes32 expectedAssertionHash
+    ) internal returns (bytes32 newAssertionHash) {
         require(
             assertion.afterState.machineStatus == MachineStatus.FINISHED ||
                 assertion.afterState.machineStatus == MachineStatus.ERRORED,
             "BAD_AFTER_STATUS"
         );
 
-        StakeOnNewNodeFrame memory memoryFrame;
+        StakeOnNewAssertionFrame memory memoryFrame;
         {
             // validate data
-            memoryFrame.prevNode = getNode(prevNodeNum);
+            memoryFrame.prevAssertion = getAssertion(prevAssertionNum);
             memoryFrame.currentInboxSize = bridge.sequencerMessageCount();
 
             // Make sure the previous state is correct against the node being built on
             require(
-                RollupLib.stateHash(assertion.beforeState, prevNodeInboxMaxCount) ==
-                    memoryFrame.prevNode.stateHash,
+                RollupLib.stateHash(assertion.beforeState, prevAssertionInboxMaxCount) ==
+                    memoryFrame.prevAssertion.stateHash,
                 "PREV_STATE_HASH"
             );
 
@@ -579,16 +579,16 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             memoryFrame.deadlineBlock = uint64(block.number) + confirmPeriodBlocks;
 
-            memoryFrame.hasSibling = memoryFrame.prevNode.latestChildNumber > 0;
+            memoryFrame.hasSibling = memoryFrame.prevAssertion.latestChildNumber > 0;
             // here we don't use ternacy operator to remain compatible with slither
             if (memoryFrame.hasSibling) {
-                memoryFrame.lastHash = getNodeStorage(memoryFrame.prevNode.latestChildNumber)
+                memoryFrame.lastHash = getAssertionStorage(memoryFrame.prevAssertion.latestChildNumber)
                     .nodeHash;
             } else {
-                memoryFrame.lastHash = memoryFrame.prevNode.nodeHash;
+                memoryFrame.lastHash = memoryFrame.prevAssertion.nodeHash;
             }
 
-            newNodeHash = RollupLib.nodeHash(
+            newAssertionHash = RollupLib.nodeHash(
                 memoryFrame.hasSibling,
                 memoryFrame.lastHash,
                 memoryFrame.executionHash,
@@ -596,11 +596,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 wasmModuleRoot
             );
             require(
-                newNodeHash == expectedNodeHash || expectedNodeHash == bytes32(0),
+                newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0),
                 "UNEXPECTED_NODE_HASH"
             );
 
-            memoryFrame.node = NodeLib.createNode(
+            memoryFrame.node = AssertionLib.createAssertion(
                 RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
@@ -608,27 +608,27 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                     wasmModuleRoot
                 ),
                 RollupLib.confirmHash(assertion),
-                prevNodeNum,
+                prevAssertionNum,
                 memoryFrame.deadlineBlock,
-                newNodeHash
+                newAssertionHash
             );
         }
 
         {
-            uint64 nodeNum = latestNodeCreated() + 1;
+            uint64 nodeNum = latestAssertionCreated() + 1;
 
-            // Fetch a storage reference to prevNode since we copied our other one into memory
+            // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around
-            Node storage prevNode = getNodeStorage(prevNodeNum);
-            prevNode.childCreated(nodeNum);
+            Assertion storage prevAssertion = getAssertionStorage(prevAssertionNum);
+            prevAssertion.childCreated(nodeNum);
 
             nodeCreated(memoryFrame.node);
         }
 
-        emit NodeCreated(
-            latestNodeCreated(),
-            memoryFrame.prevNode.nodeHash,
-            newNodeHash,
+        emit AssertionCreated(
+            latestAssertionCreated(),
+            memoryFrame.prevAssertion.nodeHash,
+            newAssertionHash,
             memoryFrame.executionHash,
             assertion,
             memoryFrame.sequencerBatchAcc,
@@ -636,6 +636,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             memoryFrame.currentInboxSize
         );
 
-        return newNodeHash;
+        return newAssertionHash;
     }
 }

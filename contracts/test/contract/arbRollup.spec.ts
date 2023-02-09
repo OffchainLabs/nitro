@@ -45,9 +45,9 @@ import {
 import { initializeAccounts } from './utils'
 
 import {
-  Node,
+  Assertion,
   RollupContract,
-  forceCreateNode,
+  forceCreateAssertion,
   assertionEquals,
 } from './common/rolluplib'
 import { RollupLib } from '../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic'
@@ -330,29 +330,29 @@ function newRandomAssertion(
   }
 }
 
-async function makeSimpleNode(
+async function makeSimpleAssertion(
   rollup: RollupContract,
   sequencerInbox: SequencerInbox,
-  parentNode: {
+  parentAssertion: {
     assertion: { afterState: ExecutionStateStruct }
     nodeNum: number
     nodeHash: BytesLike
     inboxMaxCount: BigNumber
   },
-  siblingNode?: Node,
-  prevNode?: Node,
+  siblingAssertion?: Assertion,
+  prevAssertion?: Assertion,
   stakeToAdd?: BigNumber
-): Promise<{ tx: ContractTransaction; node: Node }> {
+): Promise<{ tx: ContractTransaction; node: Assertion }> {
   const staker = await rollup.rollup.getStaker(
     await rollup.rollup.signer.getAddress()
   )
 
-  const assertion = newRandomAssertion(parentNode.assertion.afterState)
-  const { tx, node, expectedNewNodeHash } = await rollup.stakeOnNewNode(
+  const assertion = newRandomAssertion(parentAssertion.assertion.afterState)
+  const { tx, node, expectedNewAssertionHash } = await rollup.stakeOnNewAssertion(
     sequencerInbox,
-    parentNode,
+    parentAssertion,
     assertion,
-    siblingNode,
+    siblingAssertion,
     stakeToAdd
   )
 
@@ -360,15 +360,15 @@ async function makeSimpleNode(
     .be.true
   assert.equal(
     node.nodeNum,
-    (prevNode || siblingNode || parentNode).nodeNum + 1
+    (prevAssertion || siblingAssertion || parentAssertion).nodeNum + 1
   )
-  assert.equal(node.nodeHash, expectedNewNodeHash)
+  assert.equal(node.nodeHash, expectedNewAssertionHash)
 
   if (stakeToAdd) {
     const stakerAfter = await rollup.rollup.getStaker(
       await rollup.rollup.signer.getAddress()
     )
-    expect(stakerAfter.latestStakedNode.toNumber()).to.eq(node.nodeNum)
+    expect(stakerAfter.latestStakedAssertion.toNumber()).to.eq(node.nodeNum)
     expect(stakerAfter.amountStaked.toString()).to.eq(
       staker.amountStaked.add(stakeToAdd).toString()
     )
@@ -376,12 +376,12 @@ async function makeSimpleNode(
   return { tx, node }
 }
 
-let prevNode: Node
-const prevNodes: Node[] = []
+let prevAssertion: Assertion
+const prevAssertions: Assertion[] = []
 
-function updatePrevNode(node: Node) {
-  prevNode = node
-  prevNodes.push(node)
+function updatePrevAssertion(node: Assertion) {
+  prevAssertion = node
+  prevAssertions.push(node)
 }
 
 const _IMPLEMENTATION_PRIMARY_SLOT =
@@ -446,7 +446,7 @@ describe('ArbRollup', () => {
   it('should place stake on new node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod)
 
-    const initNode: {
+    const initAssertion: {
       assertion: { afterState: ExecutionStateStruct }
       nodeNum: number
       nodeHash: BytesLike
@@ -467,71 +467,71 @@ describe('ArbRollup', () => {
     }
 
     const stake = await rollup.currentRequiredStake()
-    const { node } = await makeSimpleNode(
+    const { node } = await makeSimpleAssertion(
       rollup,
       sequencerInbox,
-      initNode,
+      initAssertion,
       undefined,
       undefined,
       stake
     )
-    updatePrevNode(node)
+    updatePrevAssertion(node)
   })
 
   it('should let a new staker place on existing node', async function () {
     const stake = await rollup.currentRequiredStake()
     await rollupUser
       .connect(validators[2])
-      .newStakeOnExistingNode(1, prevNode.nodeHash, { value: stake })
+      .newStakeOnExistingAssertion(1, prevAssertion.nodeHash, { value: stake })
   })
 
   it('should move stake to a new node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod)
-    const { node } = await makeSimpleNode(rollup, sequencerInbox, prevNode)
-    updatePrevNode(node)
+    const { node } = await makeSimpleAssertion(rollup, sequencerInbox, prevAssertion)
+    updatePrevAssertion(node)
   })
 
   it('should let the second staker place on the new node', async function () {
     await rollup
       .connect(validators[2])
-      .stakeOnExistingNode(2, prevNode.nodeHash)
+      .stakeOnExistingAssertion(2, prevAssertion.nodeHash)
   })
 
   it('should confirm node', async function () {
     await tryAdvanceChain(confirmationPeriodBlocks * 2)
 
-    await rollup.confirmNextNode(prevNodes[0])
+    await rollup.confirmNextAssertion(prevAssertions[0])
   })
 
   it('should confirm next node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod)
-    await rollup.confirmNextNode(prevNodes[1])
+    await rollup.confirmNextAssertion(prevAssertions[1])
   })
 
-  let challengedNode: Node
-  let validNode: Node
+  let challengedAssertion: Assertion
+  let validAssertion: Assertion
   it('should let the first staker make another node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod)
-    const { node } = await makeSimpleNode(rollup, sequencerInbox, prevNode)
-    challengedNode = node
-    validNode = node
+    const { node } = await makeSimpleAssertion(rollup, sequencerInbox, prevAssertion)
+    challengedAssertion = node
+    validAssertion = node
   })
 
-  let challengerNode: Node
+  let challengerAssertion: Assertion
   it('should let the second staker make a conflicting node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod)
-    const { node } = await makeSimpleNode(
+    const { node } = await makeSimpleAssertion(
       rollup.connect(validators[2]),
       sequencerInbox,
-      prevNode,
-      validNode
+      prevAssertion,
+      validAssertion
     )
-    challengerNode = node
+    challengerAssertion = node
   })
 
   it('should fail to confirm first staker node', async function () {
-    await advancePastAssertion(challengerNode.proposedBlock)
-    await expect(rollup.confirmNextNode(validNode)).to.be.revertedWith(
+    await advancePastAssertion(challengerAssertion.proposedBlock)
+    await expect(rollup.confirmNextAssertion(validAssertion)).to.be.revertedWith(
       'NOT_ALL_STAKED'
     )
   })
@@ -542,8 +542,8 @@ describe('ArbRollup', () => {
     const tx = rollup.createChallenge(
       await validators[0].getAddress(),
       await validators[2].getAddress(),
-      challengedNode,
-      challengerNode
+      challengedAssertion,
+      challengerAssertion
     )
     const receipt = await (await tx).wait()
     const ev = rollup.rollup.interface.parseLog(
@@ -557,31 +557,31 @@ describe('ArbRollup', () => {
   })
 
   it('should make a new node', async function () {
-    const { node } = await makeSimpleNode(
+    const { node } = await makeSimpleAssertion(
       rollup,
       sequencerInbox,
-      validNode,
+      validAssertion,
       undefined,
-      challengerNode
+      challengerAssertion
     )
-    challengedNode = node
+    challengedAssertion = node
   })
 
   it('new staker should make a conflicting node', async function () {
     const stake = await rollup.currentRequiredStake()
     await rollup.rollup
       .connect(validators[1])
-      .newStakeOnExistingNode(3, validNode.nodeHash, {
+      .newStakeOnExistingAssertion(3, validAssertion.nodeHash, {
         value: stake.add(50),
       })
 
-    const { node } = await makeSimpleNode(
+    const { node } = await makeSimpleAssertion(
       rollup.connect(validators[1]),
       sequencerInbox,
-      validNode,
-      challengedNode
+      validAssertion,
+      challengedAssertion
     )
-    challengerNode = node
+    challengerAssertion = node
   })
 
   it('timeout should not occur early', async function () {
@@ -590,8 +590,8 @@ describe('ArbRollup', () => {
     ).timestamp
     // This is missing the extraChallengeTimeBlocks
     const notQuiteChallengeDuration =
-      challengedNode.proposedBlock -
-      validNode.proposedBlock +
+      challengedAssertion.proposedBlock -
+      validAssertion.proposedBlock +
       confirmationPeriodBlocks
     const elapsedTime =
       (await ethers.provider.getBlock('latest')).timestamp -
@@ -609,19 +609,19 @@ describe('ArbRollup', () => {
   })
 
   it('confirm first staker node', async function () {
-    await rollup.confirmNextNode(validNode)
+    await rollup.confirmNextAssertion(validAssertion)
   })
 
   it('should reject out of order second node', async function () {
-    await rollup.rejectNextNode(stakeToken)
+    await rollup.rejectNextAssertion(stakeToken)
   })
 
   it('should initiate another challenge', async function () {
     const tx = rollup.createChallenge(
       await validators[0].getAddress(),
       await validators[1].getAddress(),
-      challengedNode,
-      challengerNode
+      challengedAssertion,
+      challengerAssertion
     )
     const receipt = await (await tx).wait()
     const ev = rollup.rollup.interface.parseLog(
@@ -642,20 +642,20 @@ describe('ArbRollup', () => {
 
   it('challenger should reply in challenge', async function () {
     const seg0 = blockStateHash(
-      BigNumber.from(challengerNode.assertion.beforeState.machineStatus),
-      globalStateLib.hash(challengerNode.assertion.beforeState.globalState)
+      BigNumber.from(challengerAssertion.assertion.beforeState.machineStatus),
+      globalStateLib.hash(challengerAssertion.assertion.beforeState.globalState)
     )
 
     const seg1 = blockStateHash(
-      BigNumber.from(challengedNode.assertion.afterState.machineStatus),
-      globalStateLib.hash(challengedNode.assertion.afterState.globalState)
+      BigNumber.from(challengedAssertion.assertion.afterState.machineStatus),
+      globalStateLib.hash(challengedAssertion.assertion.afterState.globalState)
     )
     await challengeManager.connect(validators[1]).bisectExecution(
       challengeIndex,
       {
         challengePosition: BigNumber.from(0),
         oldSegments: [seg0, seg1],
-        oldSegmentsLength: BigNumber.from(challengedNode.assertion.numBlocks),
+        oldSegmentsLength: BigNumber.from(challengedAssertion.assertion.numBlocks),
         oldSegmentsStart: 0,
       },
       [
@@ -678,18 +678,18 @@ describe('ArbRollup', () => {
     const challengeDuration =
       confirmationPeriodBlocks +
       extraChallengeTimeBlocks +
-      (challengerNode.proposedBlock - validNode.proposedBlock)
-    await advancePastAssertion(challengerNode.proposedBlock, challengeDuration)
+      (challengerAssertion.proposedBlock - validAssertion.proposedBlock)
+    await advancePastAssertion(challengerAssertion.proposedBlock, challengeDuration)
     await challengeManager.timeout(challengeIndex)
   })
 
   it('should reject out of order second node', async function () {
-    await rollup.rejectNextNode(await validators[1].getAddress())
+    await rollup.rejectNextAssertion(await validators[1].getAddress())
   })
 
   it('confirm next node', async function () {
     await tryAdvanceChain(confirmationPeriodBlocks)
-    await rollup.confirmNextNode(challengerNode)
+    await rollup.confirmNextAssertion(challengerAssertion)
   })
 
   it('should add and remove stakes correctly', async function () {
@@ -784,33 +784,33 @@ describe('ArbRollup', () => {
   it('should allow admin to alter rollup while paused', async function () {
     const prevLatestConfirmed = await rollup.rollup.latestConfirmed()
     expect(prevLatestConfirmed.toNumber()).to.equal(6)
-    // prevNode is prevLatestConfirmed
-    prevNode = challengerNode
+    // prevAssertion is prevLatestConfirmed
+    prevAssertion = challengerAssertion
 
     const stake = await rollup.currentRequiredStake()
 
-    const { node: node1 } = await makeSimpleNode(
+    const { node: node1 } = await makeSimpleAssertion(
       rollup,
       sequencerInbox,
-      prevNode,
+      prevAssertion,
       undefined,
       undefined,
       stake
     )
-    const node1Num = await rollup.rollup.latestNodeCreated()
+    const node1Num = await rollup.rollup.latestAssertionCreated()
     expect(node1Num.toNumber(), 'node1num').to.eq(node1.nodeNum)
 
     await tryAdvanceChain(minimumAssertionPeriod)
 
-    const { node: node2 } = await makeSimpleNode(
+    const { node: node2 } = await makeSimpleAssertion(
       rollup.connect(validators[2]),
       sequencerInbox,
-      prevNode,
+      prevAssertion,
       node1,
       undefined,
       stake
     )
-    const node2Num = await rollup.rollup.latestNodeCreated()
+    const node2Num = await rollup.rollup.latestAssertionCreated()
     expect(node2Num.toNumber(), 'node2num').to.eq(node2.nodeNum)
 
     const tx = await rollup.createChallenge(
@@ -878,77 +878,77 @@ describe('ArbRollup', () => {
       await validators[2].getAddress(),
     ])
 
-    const adminAssertion = newRandomAssertion(prevNode.assertion.afterState)
-    const { node: forceCreatedNode1 } = await forceCreateNode(
+    const adminAssertion = newRandomAssertion(prevAssertion.assertion.afterState)
+    const { node: forceCreatedAssertion1 } = await forceCreateAssertion(
       rollupAdmin,
       sequencerInbox,
-      prevNode,
+      prevAssertion,
       adminAssertion,
       node2
     )
     expect(
-      assertionEquals(forceCreatedNode1.assertion, adminAssertion),
+      assertionEquals(forceCreatedAssertion1.assertion, adminAssertion),
       'assertion error'
     ).to.be.true
 
-    const adminNodeNum = await rollup.rollup.latestNodeCreated()
+    const adminAssertionNum = await rollup.rollup.latestAssertionCreated()
     const midLatestConfirmed = await rollup.rollup.latestConfirmed()
     expect(midLatestConfirmed.toNumber()).to.equal(6)
 
-    expect(adminNodeNum.toNumber()).to.equal(node2Num.toNumber() + 1)
+    expect(adminAssertionNum.toNumber()).to.equal(node2Num.toNumber() + 1)
 
-    const adminAssertion2 = newRandomAssertion(prevNode.assertion.afterState)
-    const { node: forceCreatedNode2 } = await forceCreateNode(
+    const adminAssertion2 = newRandomAssertion(prevAssertion.assertion.afterState)
+    const { node: forceCreatedAssertion2 } = await forceCreateAssertion(
       rollupAdmin,
       sequencerInbox,
-      prevNode,
+      prevAssertion,
       adminAssertion2,
-      forceCreatedNode1
+      forceCreatedAssertion1
     )
 
-    const postLatestCreated = await rollup.rollup.latestNodeCreated()
+    const postLatestCreated = await rollup.rollup.latestAssertionCreated()
 
-    await rollupAdmin.forceConfirmNode(
-      adminNodeNum,
+    await rollupAdmin.forceConfirmAssertion(
+      adminAssertionNum,
       adminAssertion.afterState.globalState.bytes32Vals[0],
       adminAssertion.afterState.globalState.bytes32Vals[1]
     )
 
     const postLatestConfirmed = await rollup.rollup.latestConfirmed()
-    expect(postLatestCreated).to.equal(adminNodeNum.add(1))
-    expect(postLatestConfirmed).to.equal(adminNodeNum)
+    expect(postLatestCreated).to.equal(adminAssertionNum.add(1))
+    expect(postLatestConfirmed).to.equal(adminAssertionNum)
 
     await rollupAdmin.resume()
 
     // should create node after resuming
 
-    prevNode = forceCreatedNode1
+    prevAssertion = forceCreatedAssertion1
 
     await tryAdvanceChain(minimumAssertionPeriod)
 
     await expect(
-      makeSimpleNode(
+      makeSimpleAssertion(
         rollup.connect(validators[2]),
         sequencerInbox,
-        prevNode,
+        prevAssertion,
         undefined,
-        forceCreatedNode2,
+        forceCreatedAssertion2,
         stake
       )
     ).to.be.revertedWith('STAKER_IS_ZOMBIE')
 
     await expect(
-      makeSimpleNode(rollup.connect(validators[2]), sequencerInbox, prevNode)
+      makeSimpleAssertion(rollup.connect(validators[2]), sequencerInbox, prevAssertion)
     ).to.be.revertedWith('NOT_STAKED')
 
     await rollup.rollup.connect(validators[2]).removeOldZombies(0)
 
-    await makeSimpleNode(
+    await makeSimpleAssertion(
       rollup.connect(validators[2]),
       sequencerInbox,
-      prevNode,
+      prevAssertion,
       undefined,
-      forceCreatedNode2,
+      forceCreatedAssertion2,
       stake
     )
   })
@@ -970,7 +970,7 @@ describe('ArbRollup', () => {
   it('should stake on initial node again', async function () {
     await tryAdvanceChain(minimumAssertionPeriod)
 
-    const initNode: {
+    const initAssertion: {
       assertion: { afterState: ExecutionStateStruct }
       nodeNum: number
       nodeHash: BytesLike
@@ -991,15 +991,15 @@ describe('ArbRollup', () => {
     }
 
     const stake = await rollup.currentRequiredStake()
-    const { node } = await makeSimpleNode(
+    const { node } = await makeSimpleAssertion(
       rollup,
       sequencerInbox,
-      initNode,
+      initAssertion,
       undefined,
       undefined,
       stake
     )
-    updatePrevNode(node)
+    updatePrevAssertion(node)
   })
 
   it('should only allow admin to upgrade primary logic', async function () {
