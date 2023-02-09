@@ -23,7 +23,7 @@ type Opt = func(val *Validator)
 // Validator defines a validator client instances in the assertion protocol, which will be
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
-	chain                                  protocol.ChainReadWriter
+	chain                                  protocol.OnChainProtocol
 	stateManager                           statemanager.Manager
 	assertionEvents                        chan protocol.AssertionChainEvent
 	address                                common.Address
@@ -105,7 +105,7 @@ func WithDisableLeafCreation() Opt {
 // and additional options.
 func New(
 	ctx context.Context,
-	chain protocol.ChainReadWriter,
+	chain protocol.OnChainProtocol,
 	stateManager statemanager.Manager,
 	opts ...Opt,
 ) (*Validator, error) {
@@ -205,8 +205,8 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 	parentAssertionSeq := v.findLatestValidAssertion(ctx)
 	var parentAssertion *protocol.Assertion
 	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		parentAssertion, err = p.AssertionBySequenceNum(tx, parentAssertionSeq)
+	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		parentAssertion, err = v.chain.AssertionBySequenceNum(tx, parentAssertionSeq)
 		if err != nil {
 			return err
 		}
@@ -223,8 +223,8 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 		StateRoot: currentCommit.StateRoot,
 	}
 	var leaf *protocol.Assertion
-	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		leaf, err = p.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
+	err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
+		leaf, err = v.chain.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
 		if err != nil {
 			return err
 		}
@@ -276,9 +276,9 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.AssertionSequenceNumber {
 	var numAssertions uint64
 	var latestConfirmed protocol.AssertionSequenceNumber
-	_ = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		numAssertions = p.NumAssertions(tx)
-		latestConfirmed = p.LatestConfirmed(tx).SequenceNum
+	_ = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		numAssertions = v.chain.NumAssertions(tx)
+		latestConfirmed = v.chain.LatestConfirmed(tx).SequenceNum
 		return nil
 	})
 	v.assertionsLock.RLock()
@@ -299,8 +299,8 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Asser
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
 func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 	var challengePeriodLength time.Duration
-	_ = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		challengePeriodLength = p.ChallengePeriodLength(tx)
+	_ = v.chain.Call(func(tx *protocol.ActiveTx) error {
+		challengePeriodLength = v.chain.ChallengePeriodLength(tx)
 		return nil
 	})
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(challengePeriodLength))
@@ -310,7 +310,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 		"height":      leaf.StateCommitment.Height,
 		"sequenceNum": leaf.SequenceNum,
 	}
-	if err := v.chain.Tx(func(tx *protocol.ActiveTx, _ protocol.OnChainProtocol) error {
+	if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
 		return leaf.ConfirmNoRival(tx)
 	}); err != nil {
 		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")

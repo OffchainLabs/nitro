@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {Status, IAssertionChain, IChallengeManager} from "./DataEntities.sol";
+import {Status, IAssertionChain, IChallengeManager} from "./challengeV2/DataEntities.sol";
 
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation
@@ -61,13 +61,13 @@ contract AssertionChain is IAssertionChain {
             secondChildCreationTime: 0,
             stateHash: stateHash,
             height: 0,
-            status: Status.Pending,
+            status: Status.Confirmed,
             inboxMsgCountSeen: 0
         });
     }
 
     function challengeManagerAddr() public view returns (address) {
-        return address(0);
+        return address(challengeManager);
     }
 
     // CHRIS: TODO: expensive to do from the challenge contract - could just ask for specific properties?

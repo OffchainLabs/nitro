@@ -38,7 +38,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 vId,
         uint256 challengePeriod
-    ) external view {
+    ) internal view {
         confirmationPreChecks(vertices, vId);
 
         // ensure only one type of confirmation is valid on this node and all it's siblings
@@ -54,7 +54,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => ChallengeVertex) storage vertices,
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId
-    ) external view {
+    ) internal view {
         confirmationPreChecks(vertices, vId);
 
         // ensure only one type of confirmation is valid on this node and all it's siblings
@@ -73,7 +73,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 assertionId,
         address assertionChain
-    ) external view returns (bytes32) {
+    ) internal view returns (bytes32) {
         // CHRIS: TODO: use pre-existing rights model contracts
         require(msg.sender == address(assertionChain), "Only assertion chain can create challenges");
 
@@ -89,7 +89,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
         uint256 challengePeriod
-    ) external view returns (bytes32, ChallengeType) {
+    ) internal view returns (bytes32, ChallengeType) {
         vertices.checkAtOneStepFork(vId);
 
         require(challenges[vId].winningClaim == 0, "Winner already declared");
@@ -156,7 +156,7 @@ library ChallengeManagerLib {
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
-    ) external view returns (bytes32, uint256) {
+    ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -174,7 +174,7 @@ library ChallengeManagerLib {
         bytes32 prefixHistoryCommitment,
         bytes memory prefixProof,
         uint256 challengePeriod
-    ) external view returns (bytes32, uint256) {
+    ) internal view returns (bytes32, uint256) {
         (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
             vertices, challenges, vId, prefixHistoryCommitment, prefixProof, challengePeriod
         );
@@ -196,7 +196,7 @@ library ChallengeManagerLib {
         OneStepData calldata oneStepData,
         bytes calldata beforeHistoryInclusionProof,
         bytes calldata afterHistoryInclusionProof
-    ) external returns (bytes32) {
+    ) internal returns (bytes32) {
         require(vertices[winnerVId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[winnerVId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor does not exist");

@@ -59,13 +59,13 @@ func (m *MockProtocol) Inbox() *protocol.Inbox {
 	return args.Get(0).(*protocol.Inbox)
 }
 
-func (m *MockProtocol) Tx(clo func(tx *protocol.ActiveTx, pro protocol.OnChainProtocol) error) error {
+func (m *MockProtocol) Tx(clo func(tx *protocol.ActiveTx) error) error {
 	ch := protocol.AssertionChain{}
 	return ch.Tx(clo)
 }
 
-func (m *MockProtocol) Call(clo func(tx *protocol.ActiveTx, pro protocol.OnChainProtocol) error) error {
-	return clo(&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, m)
+func (m *MockProtocol) Call(clo func(tx *protocol.ActiveTx) error) error {
+	return clo(&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus})
 }
 
 func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- protocol.AssertionChainEvent) {
