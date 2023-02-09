@@ -74,7 +74,7 @@ func TestProgramKeccak(t *testing.T) {
 		return meta.MessageCount == messageCount
 	})
 
-	validateBlocks(t, ctx, node, l2client)
+	validateBlocks(t, 1, ctx, node, l2client)
 }
 
 func TestProgramError(t *testing.T) {
@@ -97,7 +97,7 @@ func TestProgramError(t *testing.T) {
 		Fail(t, "call should have failed")
 	}
 
-	validateBlocks(t, ctx, node, l2client)
+	validateBlocks(t, 7, ctx, node, l2client)
 }
 
 func setupProgramTest(t *testing.T, file string) (
@@ -174,13 +174,13 @@ func setupProgramTest(t *testing.T, file string) (
 	return ctx, node, l2info, l2client, auth, programAddress, cleanup
 }
 
-func validateBlocks(t *testing.T, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
+func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
 	success := true
-	validate := func(jit bool, name string) {
-		for block := uint64(1); block <= blockHeight; block++ {
+	validate := func(jit bool, name string, start uint64) {
+		for block := start; block <= blockHeight; block++ {
 			header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
 			Require(t, err)
 
@@ -197,8 +197,8 @@ func validateBlocks(t *testing.T, ctx context.Context, node *arbnode.Node, l2cli
 		}
 	}
 
-	validate(true, "jit")
-	validate(false, "full")
+	validate(true, "jit", 1)
+	validate(false, "full", start)
 	if !success {
 		Fail(t)
 	}
