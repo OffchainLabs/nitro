@@ -129,8 +129,7 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 
 test-go-deps: \
 	build-replay-env \
-	$(stylus_test_keccak_wasm) \
-	$(stylus_test_siphash_wasm) \
+	$(stylus_test_wasms) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 build-prover-header: $(arbitrator_generated_header)
