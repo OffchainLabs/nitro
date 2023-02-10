@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,12 +40,16 @@ type SeqCoordinator struct {
 
 	redisutil.RedisCoordinator
 
-	sync             *SyncMonitor
-	streamer         *TransactionStreamer
-	sequencer        *Sequencer
-	delayedSequencer *DelayedSequencer
-	signer           *signature.SignVerify
-	config           SeqCoordinatorConfig
+	sync                   *SyncMonitor
+	streamer               *TransactionStreamer
+	sequencer              *Sequencer
+	delayedSequencer       *DelayedSequencer
+	signer                 *signature.SignVerify
+	config                 SeqCoordinatorConfig // warning: static, don't use for hot reloadable fields
+	dynamicConfig          SeqCoordinatorConfigFetcher
+	dbCompactionStopWaiter stopwaiter.StopWaiter
+	dbCompactionLastCheck  time.Time
+	runDbCompaction        func()
 
 	prevChosenSequencer string
 	reportedAlive       bool
@@ -69,7 +75,39 @@ type SeqCoordinatorConfig struct {
 	SafeShutdownDelay     time.Duration              `koanf:"safe-shutdown-delay"`
 	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
 	MyUrlImpl             string                     `koanf:"my-url"`
+	DbCompactionTime      string                     `koanf:"db-compaction-time" reload:"hot"`
 	Signing               signature.SignVerifyConfig `koanf:"signer"`
+
+	// Generated: the minutes since start of UTC day to compact at
+	dbCompactionMinutes int
+}
+
+// Returns true if successful
+func (c *SeqCoordinatorConfig) parseDbCompactionTime() bool {
+	if c.DbCompactionTime == "" {
+		return true
+	}
+	parts := strings.Split(c.DbCompactionTime, ":")
+	if len(parts) != 2 {
+		return false
+	}
+	hours, err := strconv.Atoi(parts[0])
+	if err != nil || hours >= 24 {
+		return false
+	}
+	minutes, err := strconv.Atoi(parts[1])
+	if err != nil || minutes >= 60 {
+		return false
+	}
+	c.dbCompactionMinutes = hours*60 + minutes
+	return true
+}
+
+func (c *SeqCoordinatorConfig) Validate() error {
+	if !c.parseDbCompactionTime() {
+		return fmt.Errorf("expected sequencer coordinator db compaction time to be in HH:MM format but got \"%v\"", c.DbCompactionTime)
+	}
+	return nil
 }
 
 func (c *SeqCoordinatorConfig) MyUrl() string {
@@ -93,6 +131,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
 	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
+	f.String(prefix+".db-compaction-time", DefaultSeqCoordinatorConfig.DbCompactionTime, "UTC time of day to run database compaction at (e.g. 15:00)")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
 
@@ -109,6 +148,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:         time.Second,
 	MaxMsgPerPoll:         2000,
 	MyUrlImpl:             redisutil.INVALID_URL,
+	DbCompactionTime:      "",
 	Signing:               signature.DefaultSignVerifyConfig,
 }
 
@@ -124,10 +164,18 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:     time.Millisecond * 3,
 	MaxMsgPerPoll:     20,
 	MyUrlImpl:         redisutil.INVALID_URL,
+	DbCompactionTime:  "",
 	Signing:           signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+type SeqCoordinatorConfigFetcher func() *SeqCoordinatorConfig
+
+func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, dynamicConfig SeqCoordinatorConfigFetcher, runDbCompaction func()) (*SeqCoordinator, error) {
+	config := dynamicConfig()
+	err := config.Validate()
+	if err != nil {
+		return nil, err
+	}
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err
@@ -137,12 +185,15 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		return nil, err
 	}
 	coordinator := &SeqCoordinator{
-		RedisCoordinator: *redisCoordinator,
-		sync:             sync,
-		streamer:         streamer,
-		sequencer:        sequencer,
-		config:           config,
-		signer:           signer,
+		RedisCoordinator:      *redisCoordinator,
+		sync:                  sync,
+		streamer:              streamer,
+		sequencer:             sequencer,
+		config:                *config,
+		dynamicConfig:         dynamicConfig,
+		signer:                signer,
+		dbCompactionLastCheck: time.Now().UTC(),
+		runDbCompaction:       runDbCompaction,
 	}
 	if sequencer != nil {
 		sequencer.Pause()
@@ -687,6 +738,10 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}
+	c.dbCompactionStopWaiter.Start(ctxIn, c)
+	if c.runDbCompaction != nil {
+		c.dbCompactionStopWaiter.CallIteratively(c.maybeCompactDb)
+	}
 }
 
 // Calls check() every c.config.RetryInterval until it returns true, or the context times out.
@@ -707,11 +762,12 @@ func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) bool {
 }
 
 func (c *SeqCoordinator) PrepareForShutdown() {
+	c.dbCompactionStopWaiter.StopAndWait()
 	ctx := c.StopWaiter.GetContext()
-	err := c.Zombify(ctx)
-	if err != nil {
-		log.Error("failed to release liveliness to become a zombie", "err", err)
+	success := c.Zombify(ctx)
+	if !success {
 		// trying to release the chosen one status is pointless if we're still alive
+		// the error was already logged in Zombify
 		return
 	}
 	// Any errors/failures here are logged in the method
@@ -719,6 +775,7 @@ func (c *SeqCoordinator) PrepareForShutdown() {
 }
 
 func (c *SeqCoordinator) StopAndWait() {
+	c.dbCompactionStopWaiter.StopAndWait()
 	c.StopWaiter.StopAndWait()
 	// We've just stopped our normal context so we need to use our parent's context.
 	parentCtx := c.StopWaiter.GetParentContext()
@@ -747,11 +804,18 @@ func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbsta
 	return nil
 }
 
-func (c *SeqCoordinator) Zombify(ctx context.Context) error {
+// Returns true if liveliness was released.
+// The seq coordinator becomes a zombie regardless, so you might want to call Unzombify on error.
+func (c *SeqCoordinator) Zombify(ctx context.Context) bool {
 	c.chosenUpdateMutex.Lock()
 	c.zombie++
 	c.chosenUpdateMutex.Unlock()
-	return c.livelinessRelease(ctx)
+	err := c.livelinessRelease(ctx)
+	if err != nil {
+		log.Error("failed to release liveliness to become a zombie", "err", err)
+		return false
+	}
+	return true
 }
 
 // Returns true on success.
@@ -789,4 +853,35 @@ func (c *SeqCoordinator) Unzombify(ctx context.Context) {
 			log.Warn("failed to acquire liveliness after unzombifying", "err", err)
 		}
 	}
+}
+
+func (c *SeqCoordinator) maybeCompactDb(ctx context.Context) time.Duration {
+	config := c.dynamicConfig()
+	if config.DbCompactionTime == "" {
+		return time.Minute
+	}
+	now := time.Now().UTC()
+	prevMinutes := c.dbCompactionLastCheck.Hour()*60 + c.dbCompactionLastCheck.Minute()
+	newMinutes := now.Hour()*60 + now.Minute()
+	if newMinutes < prevMinutes {
+		newMinutes += 60 * 24
+	}
+	dbCompactionMinutes := config.dbCompactionMinutes
+	if dbCompactionMinutes < prevMinutes {
+		dbCompactionMinutes += 60 * 24
+	}
+	if prevMinutes < dbCompactionMinutes && newMinutes >= dbCompactionMinutes && c.runDbCompaction != nil {
+		log.Info("attempting to release sequencer lockout to run database compaction", "targetTime", config.DbCompactionTime)
+		success := c.Zombify(ctx)
+		defer c.Unzombify(ctx) // needs called even if c.Zombify returns false
+		if success {
+			// We've released liveliness, now wait for the handoff
+			success = c.TryToHandoff(ctx)
+			if success {
+				c.runDbCompaction()
+			}
+		}
+	}
+	c.dbCompactionLastCheck = now
+	return time.Minute
 }

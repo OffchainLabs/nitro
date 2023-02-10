@@ -137,8 +137,14 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		}
 	}
 
+	var needsStop []*arbnode.Node
 	killNode := func(nodeNum int) {
-		nodes[nodeNum].StopAndWait()
+		if nodeNum%3 == 0 {
+			nodes[nodeNum].SeqCoordinator.PrepareForShutdown()
+			needsStop = append(needsStop, nodes[nodeNum])
+		} else {
+			nodes[nodeNum].StopAndWait()
+		}
 		nodes[nodeNum] = nil
 	}
 
@@ -256,6 +262,9 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	for nodeNum := range nodes {
 		killNode(nodeNum)
+	}
+	for _, node := range needsStop {
+		node.StopAndWait()
 	}
 
 }

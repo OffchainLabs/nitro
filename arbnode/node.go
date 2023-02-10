@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -410,7 +411,7 @@ type Config struct {
 	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
 	Validator              staker.L1ValidatorConfig    `koanf:"validator"`
-	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
+	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator" reload:"hot"`
 	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
 	Wasm                   WasmConfig                  `koanf:"wasm"`
 	SyncMonitor            SyncMonitorConfig           `koanf:"sync-monitor"`
@@ -426,6 +427,9 @@ func (c *Config) Validate() error {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
 	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.SeqCoordinator.Validate(); err != nil {
 		return err
 	}
 	if err := c.InboxReader.Validate(); err != nil {
@@ -866,7 +870,25 @@ func createNodeImpl(
 		}
 	}
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
+		runDbCompaction := func() {
+			start := time.Now()
+			log.Info("compacting databases (this may take a while)")
+			var wg sync.WaitGroup
+			for _, db := range []ethdb.Database{chainDb, arbDb} {
+				db := db
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					err := db.Compact(nil, nil)
+					if err != nil {
+						log.Warn("failed to compact chaindb", "err", err)
+					}
+				}()
+			}
+			wg.Wait()
+			log.Info("done compacting databases", "elapsed", time.Since(start))
+		}
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, func() *SeqCoordinatorConfig { return &configFetcher.Get().SeqCoordinator }, runDbCompaction)
 		if err != nil {
 			return nil, err
 		}
