@@ -6,6 +6,7 @@ go_library(
         "assertion_chain.go",
         "challenge.go",
         "challenge_manager.go",
+        "challenge_vertex.go",
         "types.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation",
@@ -30,6 +31,28 @@ go_test(
         "types_test.go",
     ],
     embed = [":solimpl"],
+    deps = [
+        "//solgen/go/outgen",
+        "//util",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "sol-implementation_test",
+    srcs = [
+        "assertion_chain_test.go",
+        "challenge_manager_test.go",
+        "challenge_test.go",
+        "challenge_vertex_test.go",
+        "types_test.go",
+    ],
+    embed = [":sol-implementation"],
     deps = [
         "//solgen/go/outgen",
         "//util",
