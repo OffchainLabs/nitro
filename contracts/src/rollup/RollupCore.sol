@@ -17,10 +17,10 @@ import "../challenge/IOldChallengeManager.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-import "../ChallengeManagerImpl.sol";
+import "../challengeV2/ChallengeManagerImpl.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
-abstract contract RollupCore is IRollupCore, PausableUpgradeable {
+abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeable {
     using AssertionLib for Assertion;
     using GlobalStateLib for GlobalState;
 
@@ -75,6 +75,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     uint64 internal constant GENESIS_NODE = 0;
 
     bool public validatorWhitelistDisabled;
+
+    IChallengeManager public challengeManager;
 
     /**
      * @notice Get a storage reference to the Assertion for the given assertion index
@@ -579,14 +581,16 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             memoryFrame.deadlineBlock = uint64(block.number) + confirmPeriodBlocks;
 
-            memoryFrame.hasSibling = memoryFrame.prevAssertion.latestChildNumber > 0;
+            memoryFrame.hasSibling = memoryFrame.prevAssertion.firstChildBlock > 0;
             // here we don't use ternacy operator to remain compatible with slither
-            if (memoryFrame.hasSibling) {
-                memoryFrame.lastHash = getAssertionStorage(memoryFrame.prevAssertion.latestChildNumber)
-                    .assertionHash;
-            } else {
-                memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
-            }
+            // if (memoryFrame.hasSibling) {
+            //     memoryFrame.lastHash = getAssertionStorage(memoryFrame.prevAssertion.latestChildNumber)
+            //         .assertionHash;
+            // } else {
+            //     memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
+            // }
+            // HN: TODO: is this ok?
+            memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
 
             newAssertionHash = RollupLib.assertionHash(
                 memoryFrame.hasSibling,
@@ -610,7 +614,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 RollupLib.confirmHash(assertion),
                 prevAssertionNum,
                 memoryFrame.deadlineBlock,
-                newAssertionHash
+                newAssertionHash,
+                assertion.numBlocks + memoryFrame.prevAssertion.height,
+                memoryFrame.currentInboxSize,
+                !memoryFrame.hasSibling
             );
         }
 
@@ -637,5 +644,39 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         );
 
         return newAssertionHash;
+    }
+
+    function getPredecessorId(bytes32 assertionId) external view returns (bytes32){
+        uint64 prevNum = getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).prevNum;
+        return AssertionLib.AssertionNum2Id(prevNum);
+    }
+
+    function getHeight(bytes32 assertionId) external view returns (uint256){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).height;
+    }
+
+    function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).inboxMsgCountSeen;
+    }
+
+    function getStateHash(bytes32 assertionId) external view returns (bytes32){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).stateHash;
+    }
+
+    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).successionChallenge;
+    }
+
+    // HN: TODO: use block or timestamp?
+    function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).firstChildBlock;
+    }
+
+    function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).firstChildTime;
+    }
+
+    function isFirstChild(bytes32 assertionId) external view returns (bool){
+        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).isFirstChild;
     }
 }

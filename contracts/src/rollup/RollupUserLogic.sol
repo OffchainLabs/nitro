@@ -90,18 +90,19 @@ abstract contract AbsRollupUserLogic is
             require(!assertionHasStaker(firstUnresolvedAssertionNum, stakerAddress), "STAKED_ON_TARGET");
             // If a staker is staked on a assertion that is neither a child nor a parent of firstUnresolvedAssertion, it must be a sibling, QED
 
-            // Verify the block's deadline has passed
-            firstUnresolvedAssertion_.requirePastDeadline();
+            // // Verify the block's deadline has passed
+            // firstUnresolvedAssertion_.requirePastDeadline();
 
             getAssertionStorage(latestConfirmedAssertionNum).requirePastChildConfirmDeadline();
 
             removeOldZombies(0);
 
-            // Verify that no staker is staked on this assertion
-            require(
-                firstUnresolvedAssertion_.stakerCount == countStakedZombies(firstUnresolvedAssertionNum),
-                "HAS_STAKERS"
-            );
+            // HN: TODO: do we need this logic here?
+            // // Verify that no staker is staked on this assertion
+            // require(
+            //     firstUnresolvedAssertion_.stakerCount == countStakedZombies(firstUnresolvedAssertionNum),
+            //     "HAS_STAKERS"
+            // );
         }
         // Simpler case: if the first unreseolved assertion doesn't point to the last confirmed assertion, another branch was confirmed and can simply reject it outright
         _rejectNextAssertion();
@@ -124,8 +125,8 @@ abstract contract AbsRollupUserLogic is
         uint64 assertionNum = firstUnresolvedAssertion();
         Assertion storage assertion = getAssertionStorage(assertionNum);
 
-        // Verify the block's deadline has passed
-        assertion.requirePastDeadline();
+        // // Verify the block's deadline has passed
+        // assertion.requirePastDeadline();
 
         // Check that prev is latest confirmed
         assert(assertion.prevNum == latestConfirmed());
@@ -133,17 +134,29 @@ abstract contract AbsRollupUserLogic is
         Assertion storage prevAssertion = getAssertionStorage(assertion.prevNum);
         prevAssertion.requirePastChildConfirmDeadline();
 
-        removeOldZombies(0);
-
-        // Require only zombies are staked on siblings to this assertion, and there's at least one non-zombie staked on this assertion
-        uint256 stakedZombies = countStakedZombies(assertionNum);
-        uint256 zombiesStakedOnOtherChildren = countZombiesStakedOnChildren(assertion.prevNum) -
-            stakedZombies;
-        require(assertion.stakerCount > stakedZombies, "NO_STAKERS");
-        require(
-            prevAssertion.childStakerCount == assertion.stakerCount + zombiesStakedOnOtherChildren,
-            "NOT_ALL_STAKED"
-        );
+        // HN: TODO: Do we need the zombie logic here?
+        // removeOldZombies(0);
+        //
+        // // Require only zombies are staked on siblings to this assertion, and there's at least one non-zombie staked on this assertion
+        // uint256 stakedZombies = countStakedZombies(assertionNum);
+        // uint256 zombiesStakedOnOtherChildren = countZombiesStakedOnChildren(assertion.prevNum) -
+        //     stakedZombies;
+        // require(assertion.stakerCount > stakedZombies, "NO_STAKERS");
+        // require(
+        //     prevAssertion.childStakerCount == assertion.stakerCount + zombiesStakedOnOtherChildren,
+        //     "NOT_ALL_STAKED"
+        // );
+        
+        if(prevAssertion.secondChildBlock > 0) {
+            // check if assertion is the challenge winner
+            bytes32 successionChallenge = prevAssertion.successionChallenge;
+            if (successionChallenge != bytes32(0)) {
+                bytes32 winner = challengeManager.winningClaim(successionChallenge);
+                require(AssertionLib.AssertionId2Num(winner) == assertionNum, "IN_CHAL");
+            } else {
+                revert("NO_CHAL");
+            }
+        }
 
         confirmAssertion(assertionNum, blockHash, sendRoot);
     }
@@ -202,14 +215,16 @@ abstract contract AbsRollupUserLogic is
             // Verify that assertion meets the minimum Delta time requirement
             require(timeSinceLastAssertion >= minimumAssertionPeriod, "TIME_DELTA");
 
-            // Minimum size requirement: any assertion must consume at least all inbox messages
-            // put into L1 inbox before the prev node’s L1 blocknum.
+            // Minimum size requirement: any assertion must consume exactly all inbox messages
+            // put into L1 inbox before the prev assertion’s L1 blocknum.
             // We make an exception if the machine enters the errored state,
             // as it can't consume future batches.
             require(
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() >= prevAssertionInboxMaxCount,
-                "TOO_SMALL"
+                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount ||
+                    (assertion.beforeState.globalState.getInboxPosition() == prevAssertionInboxMaxCount &&
+                     assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount + 1),
+                "WRONG_INBOX_POS"
             );
             // Minimum size requirement: any assertion must contain at least one block
             require(assertion.numBlocks > 0, "EMPTY_ASSERTION");
@@ -265,112 +280,22 @@ abstract contract AbsRollupUserLogic is
         reduceStakeTo(msg.sender, target);
     }
 
-    /**
-     * @notice Start a challenge between the given stakers over the assertion created by the first staker assuming that the two are staked on conflicting assertions. N.B.: challenge creator does not necessarily need to be one of the two asserters.
-     * @param stakers Stakers engaged in the challenge. The first staker should be staked on the first assertion
-     * @param assertionNums Assertions of the stakers engaged in the challenge. The first assertion should be the earliest and is the one challenged
-     * @param machineStatuses The before and after machine status for the first assertion
-     * @param globalStates The before and after global state for the first assertion
-     * @param numBlocks The number of L2 blocks contained in the first assertion
-     * @param secondExecutionHash The execution hash of the second assertion
-     * @param proposedBlocks L1 block numbers that the two assertions were proposed at
-     * @param wasmModuleRoots The wasm module roots at the time of the creation of each assertion
-     */
     function createChallenge(
-        address[2] calldata stakers,
-        uint64[2] calldata assertionNums,
-        MachineStatus[2] calldata machineStatuses,
-        GlobalState[2] calldata globalStates,
-        uint64 numBlocks,
-        bytes32 secondExecutionHash,
-        uint256[2] calldata proposedBlocks,
-        bytes32[2] calldata wasmModuleRoots
-    ) external onlyValidator whenNotPaused {
-        require(assertionNums[0] < assertionNums[1], "WRONG_ORDER");
-        require(assertionNums[1] <= latestAssertionCreated(), "NOT_PROPOSED");
-        require(latestConfirmed() < assertionNums[0], "ALREADY_CONFIRMED");
-
-        Assertion storage assertion1 = getAssertionStorage(assertionNums[0]);
-        Assertion storage assertion2 = getAssertionStorage(assertionNums[1]);
-
-        // ensure assertions staked on the same parent (and thus in conflict)
-        require(assertion1.prevNum == assertion2.prevNum, "DIFF_PREV");
-
-        // ensure both stakers aren't currently in challenge
-        requireUnchallengedStaker(stakers[0]);
-        requireUnchallengedStaker(stakers[1]);
-
-        require(assertionHasStaker(assertionNums[0], stakers[0]), "STAKER1_NOT_STAKED");
-        require(assertionHasStaker(assertionNums[1], stakers[1]), "STAKER2_NOT_STAKED");
-
-        // Check param data against challenge hash
+        uint64 assertionNum
+    ) external onlyValidator whenNotPaused returns(bytes32) {
+        // HN: TODO: prevent rejected assertion to create challenge
         require(
-            assertion1.challengeHash ==
-                RollupLib.challengeRootHash(
-                    RollupLib.executionHash(machineStatuses, globalStates, numBlocks),
-                    proposedBlocks[0],
-                    wasmModuleRoots[0]
-                ),
-            "CHAL_HASH1"
+            getAssertionStorage(assertionNum).successionChallenge == bytes32(0),
+            "ALREADY_CHALLENGED"
         );
-
         require(
-            assertion2.challengeHash ==
-                RollupLib.challengeRootHash(
-                    secondExecutionHash,
-                    proposedBlocks[1],
-                    wasmModuleRoots[1]
-                ),
-            "CHAL_HASH2"
+            getAssertionStorage(assertionNum).secondChildBlock > 0, "NO_SECOND_CHILD"
         );
-
-        // Calculate upper limit for allowed assertion proposal time:
-        uint256 commonEndBlock = getAssertionStorage(assertion1.prevNum).firstChildBlock +
-            // Dispute start: dispute timer for a assertion starts when its first child is created
-            (assertion1.deadlineBlock - proposedBlocks[0]) +
-            extraChallengeTimeBlocks; // add dispute window to dispute start time
-        if (commonEndBlock < proposedBlocks[1]) {
-            // The 2nd assertion was created too late; loses challenge automatically.
-            completeChallengeImpl(stakers[0], stakers[1]);
-            return;
-        }
-        // Start a challenge between staker1 and staker2. Staker1 will defend the correctness of assertion1, and staker2 will challenge it.
-        uint64 challengeIndex = createChallengeHelper(
-            stakers,
-            machineStatuses,
-            globalStates,
-            numBlocks,
-            wasmModuleRoots,
-            // convert from block counts to real second based timestamps
-            (commonEndBlock - proposedBlocks[0]) * ETH_POS_BLOCK_TIME,
-            (commonEndBlock - proposedBlocks[1]) * ETH_POS_BLOCK_TIME
-        ); // trusted external call
-
-        challengeStarted(stakers[0], stakers[1], challengeIndex);
-
-        emit RollupChallengeStarted(challengeIndex, stakers[0], stakers[1], assertionNums[0]);
-    }
-
-    function createChallengeHelper(
-        address[2] calldata stakers,
-        MachineStatus[2] calldata machineStatuses,
-        GlobalState[2] calldata globalStates,
-        uint64 numBlocks,
-        bytes32[2] calldata wasmModuleRoots,
-        uint256 asserterTimeLeft,
-        uint256 challengerTimeLeft
-    ) internal returns (uint64) {
-        return
-            oldChallengeManager.createChallenge(
-                wasmModuleRoots[0],
-                machineStatuses,
-                globalStates,
-                numBlocks,
-                stakers[0],
-                stakers[1],
-                asserterTimeLeft,
-                challengerTimeLeft
-            );
+        // HN: TODO: validation
+        bytes32 challengeId = challengeManager.createChallenge(AssertionLib.AssertionNum2Id(assertionNum));
+        require(challengeId != bytes32(0), "CHALLENGE_FAILED_TO_CREATE");
+        getAssertionStorage(assertionNum).successionChallenge = challengeId;
+        return challengeId;
     }
 
     /**
@@ -383,31 +308,7 @@ abstract contract AbsRollupUserLogic is
         address winningStaker,
         address losingStaker
     ) external override whenNotPaused {
-        // Only the challenge manager contract can call this to declare the winner and loser
-        require(msg.sender == address(oldChallengeManager), "WRONG_SENDER");
-        require(challengeIndex == inChallenge(winningStaker, losingStaker), "NOT_IN_CHAL");
-        completeChallengeImpl(winningStaker, losingStaker);
-    }
-
-    function completeChallengeImpl(address winningStaker, address losingStaker) private {
-        uint256 remainingLoserStake = amountStaked(losingStaker);
-        uint256 winnerStake = amountStaked(winningStaker);
-        if (remainingLoserStake > winnerStake) {
-            // If loser has a higher stake than the winner, refund the difference
-            remainingLoserStake -= reduceStakeTo(losingStaker, winnerStake);
-        }
-
-        // Reward the winner with half the remaining stake
-        uint256 amountWon = remainingLoserStake / 2;
-        increaseStakeBy(winningStaker, amountWon);
-        remainingLoserStake -= amountWon;
-        // We deliberately leave loser in challenge state to prevent them from
-        // doing certain thing that are allowed only to parties not in a challenge
-        clearChallenge(winningStaker);
-        // Credit the other half to the loserStakeEscrow address
-        increaseWithdrawableFunds(loserStakeEscrow, remainingLoserStake);
-        // Turning loser into zombie renders the loser's remaining stake inaccessible
-        turnIntoZombie(losingStaker);
+        revert("DEPRECATED");
     }
 
     /**

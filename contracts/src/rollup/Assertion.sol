@@ -24,11 +24,20 @@ struct Assertion {
     // This value starts at zero and is set to a value when the first child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
     uint64 firstChildBlock;
     // The number of the latest child of this assertion to be created
-    uint64 latestChildNumber;
+    // uint64 latestChildNumber;
     // The block number when this assertion was created
     uint64 createdAtBlock;
-    // A hash of all the data needed to determine this node's validity, to protect against reorgs
-    bytes32 nodeHash;
+    // A hash of all the data needed to determine this assertion's validity, to protect against reorgs
+    bytes32 assertionHash;
+    // HN: TODO: Add new fields below
+    uint64 secondChildBlock;
+    bytes32 successionChallenge;
+    // HN: TODO: Adding these for simplier getter, but these should be proved from the hashes
+    uint256 height; // in stateHash
+    uint256 inboxMsgCountSeen; // in stateHash
+    bool isFirstChild; // in assertionHash
+    // HN: TODO: Pick block or timestamp
+    uint256 firstChildTime;
 }
 
 /**
@@ -50,7 +59,10 @@ library AssertionLib {
         bytes32 _confirmData,
         uint64 _prevNum,
         uint64 _deadlineBlock,
-        bytes32 _assertionHash
+        bytes32 _assertionHash,
+        uint256 _height,
+        uint256 _inboxMsgCountSeen,
+        bool _isFirstChild
     ) internal view returns (Assertion memory) {
         Assertion memory assertion;
         assertion.stateHash = _stateHash;
@@ -61,6 +73,9 @@ library AssertionLib {
         assertion.noChildConfirmedBeforeBlock = _deadlineBlock;
         assertion.createdAtBlock = uint64(block.number);
         assertion.assertionHash = _assertionHash;
+        assertion.height = _height;
+        assertion.inboxMsgCountSeen = _inboxMsgCountSeen;
+        assertion.isFirstChild = _isFirstChild;
         return assertion;
     }
 
@@ -68,11 +83,14 @@ library AssertionLib {
      * @notice Update child properties
      * @param number The child number to set
      */
-    function childCreated(Assertion storage self, uint64 number) internal {
+    function childCreated(Assertion storage self, uint64 number, uint64 confirmPeriodBlocks) internal {
         if (self.firstChildBlock == 0) {
             self.firstChildBlock = uint64(block.number);
+            self.firstChildTime = block.timestamp;
+            self.noChildConfirmedBeforeBlock = uint64(block.number) + confirmPeriodBlocks;
+        } else if (self.secondChildBlock == 0) {
+            self.secondChildBlock = uint64(block.number);
         }
-        self.latestChildNumber = number;
     }
 
     /**
@@ -95,5 +113,15 @@ library AssertionLib {
      */
     function requirePastChildConfirmDeadline(Assertion memory self) internal view {
         require(block.number >= self.noChildConfirmedBeforeBlock, "CHILD_TOO_RECENT");
+    }
+
+    // HN: TODO: remove this hack
+    function AssertionId2Num(bytes32 id) internal view returns(uint64){
+        uint256 num = uint256(id);
+        require(num <= type(uint64).max, ">uint64");
+        return uint64(num);
+    }
+    function AssertionNum2Id(uint64 id) internal view returns(bytes32){
+        return bytes32(uint256(id));
     }
 }

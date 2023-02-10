@@ -48,7 +48,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         validatorUtils = connectedContracts.validatorUtils;
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
-        oldChallengeManager = connectedContracts.oldChallengeManager;
+        challengeManager = connectedContracts.challengeManager;
 
         Assertion memory assertion = createInitialAssertion();
         initializeCore(assertion);
@@ -86,7 +86,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
                 0, // confirm data
                 0, // prev assertion
                 uint64(block.number), // deadline block (not challengeable)
-                0 // initial assertion has a assertion hash of 0
+                0, // initial assertion has a assertion hash of 0
+                0, // initial assertion has a height of 0
+                0, // initial assertion has a inboxMsgCountSeen of 0
+                true // initial assertion is first child
             );
     }
 
