@@ -42,10 +42,6 @@ func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
 
 // RecommendLiveSequencer returns the top priority live sequencer
 func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, error) {
-	return c.RecommendLiveSequencerIgnoring(ctx, "")
-}
-
-func (c *RedisCoordinator) RecommendLiveSequencerIgnoring(ctx context.Context, ignore string) (string, error) {
 	prioritiesString, err := c.Client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -54,7 +50,6 @@ func (c *RedisCoordinator) RecommendLiveSequencerIgnoring(ctx context.Context, i
 		return "", err
 	}
 	priorities := strings.Split(prioritiesString, ",")
-	foundIgnored := false
 	for _, url := range priorities {
 		err := c.Client.Get(ctx, LivelinessKeyFor(url)).Err()
 		if errors.Is(err, redis.Nil) { // liveliness not set
@@ -63,17 +58,9 @@ func (c *RedisCoordinator) RecommendLiveSequencerIgnoring(ctx context.Context, i
 		if err != nil {
 			return "", err
 		}
-		if url == ignore {
-			foundIgnored = true
-			continue
-		}
 		return url, nil
 	}
-	if ignore != "" && foundIgnored {
-		log.Warn("no other sequencer appears live on redis", "priorities", prioritiesString, "ignored", ignore)
-	} else {
-		log.Error("no sequencer appears live on redis", "priorities", prioritiesString)
-	}
+	log.Error("no sequencer appears live on redis", "priorities", prioritiesString)
 	return "", nil
 }
 
