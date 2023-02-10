@@ -69,7 +69,8 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 	t.Run("presumptive successor already confirmable", func(t *testing.T) {
 		chalPeriod, err := chain.ChallengePeriodSeconds()
 		require.NoError(t, err)
-		acc.backend.AdjustTime(chalPeriod)
+		err = acc.backend.AdjustTime(chalPeriod)
+		require.NoError(t, err)
 		// We make a challenge period pass.
 		_, err = v2.Bisect(
 			util.HistoryCommitment{
