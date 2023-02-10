@@ -199,7 +199,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		options = append(options, &arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress: {SlotValue: map[common.Hash]common.Hash{{0}: common.BigToHash(big.NewInt(int64(expected)))}}}})
 	}
 	ctxTimeouted, cancelTimeouted := context.WithTimeout(ctx, 5*time.Second)
-	required := make(chan struct{}, len(txes))
+	success := make(chan struct{}, len(txes))
 	wg := sync.WaitGroup{}
 	for i := 0; i < len(txes); i++ {
 		wg.Add(1)
@@ -210,7 +210,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 			for ctxTimeouted.Err() == nil {
 				err := arbitrum.SendConditionalTransactionRPC(ctxTimeouted, rpcClient, tx, opts)
 				if err == nil {
-					required <- struct{}{}
+					success <- struct{}{}
 					break
 				}
 			}
@@ -219,7 +219,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 Loop:
 	for i := 0; i < expectedSuccesses; i++ {
 		select {
-		case <-required:
+		case <-success:
 		case <-ctxTimeouted.Done():
 			break Loop
 		}
