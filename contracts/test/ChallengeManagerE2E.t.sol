@@ -2,18 +2,17 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "../src/DataEntities.sol";
+import "../src/challengeV2/DataEntities.sol";
 import "./MockAssertionChain.sol";
-import "../src/ChallengeManagerImpl.sol";
+import "../src/challengeV2/ChallengeManagerImpl.sol";
 import "../src/osp/IOneStepProofEntry.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
-    function proveOneStep(
-        ExecutionContext calldata,
-        uint256,
-        bytes32,
-        bytes calldata proof
-    ) external view returns (bytes32 afterHash) {
+    function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
+        external
+        view
+        returns (bytes32 afterHash)
+    {
         return bytes32(proof);
     }
 }
@@ -261,21 +260,23 @@ contract ChallengeManagerE2ETest is Test {
         bytes32 smallStepChallengeId =
             challengeManager.createSubChallenge(challengeManager.getVertex(bigStepWinners[0]).predecessorId);
 
-        (bytes32[5] memory smallStepWinners, ) = addLeafsAndBisectToSubChallenge(
-            challengeManager, smallStepChallengeId, bigStepWinners[0], h1, bigStepLosers[0], h2, abi.encodePacked(height1)
+        (bytes32[5] memory smallStepWinners,) = addLeafsAndBisectToSubChallenge(
+            challengeManager,
+            smallStepChallengeId,
+            bigStepWinners[0],
+            h1,
+            bigStepLosers[0],
+            h2,
+            abi.encodePacked(height1)
         );
-
 
         challengeManager.createSubChallenge(challengeManager.getVertex(smallStepWinners[0]).predecessorId);
         uint256 height = challengeManager.getVertex(smallStepWinners[0]).height - 1;
 
         challengeManager.executeOneStep(
             smallStepWinners[0],
-            ChallengeManagerImpl.OneStepData({
-                execCtx: ExecutionContext({
-                    maxInboxMessagesRead: 0,
-                    bridge: IBridge(address(0))
-                }),
+            OneStepData({
+                execCtx: ExecutionContext({maxInboxMessagesRead: 0, bridge: IBridge(address(0))}),
                 machineStep: height,
                 beforeHash: genesisHash,
                 proof: abi.encodePacked(bytes32(smallStepWinners[0]))
@@ -285,13 +286,12 @@ contract ChallengeManagerE2ETest is Test {
         );
 
         challengeManager.confirmForSucessionChallengeWin(smallStepWinners[0]);
-        
+
         vm.warp(challengePeriod + 2);
         challengeManager.confirmForPsTimer(smallStepWinners[1]);
         challengeManager.confirmForPsTimer(smallStepWinners[2]);
         challengeManager.confirmForPsTimer(smallStepWinners[3]);
         challengeManager.confirmForPsTimer(smallStepWinners[4]);
-        
 
         challengeManager.confirmForSucessionChallengeWin(bigStepWinners[0]);
         challengeManager.confirmForPsTimer(bigStepWinners[1]);
