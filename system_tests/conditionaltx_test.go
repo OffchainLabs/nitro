@@ -3,14 +3,22 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -74,7 +82,7 @@ func getSuccessOptions(address1, address2 common.Address, currentRootHash1, curr
 	}
 }
 
-func TestSendRawTransactionConditional(t *testing.T) {
+func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, node, client := CreateTestL2(t, ctx)
@@ -153,5 +161,104 @@ func TestSendRawTransactionConditional(t *testing.T) {
 	}
 	for _, options := range failOptions {
 		testConditionalTxThatShouldFail(t, ctx, l2info, rpcClient, options)
+	}
+}
+
+func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2info, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+	rpcClient, err := node.Stack.Attach()
+	testhelpers.RequireImpl(t, err)
+
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	contractAddress, simple := deploySimple(t, ctx, auth, client)
+
+	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
+	testhelpers.RequireImpl(t, err)
+
+	uniqueTxes := 21
+	var txes types.Transactions
+	var options []*arbitrum_types.ConditionalOptions
+	for i := 0; i < uniqueTxes; i++ {
+		account := fmt.Sprintf("User%v", i)
+		l2info.GenerateAccount(account)
+		tx := l2info.PrepareTx("Owner", account, l2info.TransferGas, big.NewInt(1e16), nil)
+		err := client.SendTransaction(ctx, tx)
+		testhelpers.RequireImpl(t, err)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
+		Require(t, err)
+	}
+	for i := uniqueTxes*2 - 1; i >= 0; i-- {
+		index := i % uniqueTxes
+		data, err := simpleContract.Pack("logAndIncrement", big.NewInt(int64(index)))
+		testhelpers.RequireImpl(t, err)
+		account := fmt.Sprintf("User%v", index)
+		txes = append(txes, l2info.PrepareTxTo(account, &contractAddress, l2info.TransferGas, big.NewInt(0), data))
+		options = append(options, &arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress: {SlotValue: map[common.Hash]common.Hash{{0}: common.BigToHash(big.NewInt(int64(index)))}}}})
+	}
+	ctxTimeouted, cancelTimeouted := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelTimeouted()
+	required := make(chan struct{}, len(txes))
+	wg := sync.WaitGroup{}
+	var stopBackground uint32
+	for i := 0; i < 5*len(txes); i++ {
+		wg.Add(1)
+		index := i % len(txes)
+		tx := txes[index]
+		opts := options[index]
+		go func() {
+			defer wg.Done()
+			for atomic.LoadUint32(&stopBackground) == 0 && ctxTimeouted.Err() == nil {
+				err := arbitrum.SendConditionalTransactionRPC(ctxTimeouted, rpcClient, tx, opts)
+				if err == nil {
+					required <- struct{}{}
+					break
+				}
+			}
+		}()
+	}
+Loop:
+	for i := 0; i < uniqueTxes; i++ {
+		select {
+		case <-required:
+		case <-ctxTimeouted.Done():
+			break Loop
+		}
+	}
+	atomic.StoreUint32(&stopBackground, 1)
+	wg.Wait()
+	if err := ctxTimeouted.Err(); err != nil {
+		testhelpers.FailImpl(t, "failed to send successfully required number of transaction within time limit, err:", err)
+	}
+	bc := node.Backend.ArbInterface().BlockChain()
+	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
+
+	var receipts types.Receipts
+	header := bc.GetHeaderByNumber(genesis)
+	for i := genesis + 1; header != nil; i++ {
+		blockReceipts := bc.GetReceiptsByHash(header.Hash())
+		if blockReceipts == nil {
+			testhelpers.FailImpl(t, "Failed to get block receipts, block number:", header.Number)
+		}
+		receipts = append(receipts, blockReceipts...)
+		header = bc.GetHeaderByNumber(i)
+	}
+
+	succeeded := 0
+	for _, receipt := range receipts {
+		if receipt.Status == types.ReceiptStatusSuccessful && len(receipt.Logs) == 1 {
+			parsed, err := simple.ParseLogAndIncrementCalled(*receipt.Logs[0])
+			Require(t, err)
+			if parsed.Expected.Int64() != parsed.Have.Int64() {
+				testhelpers.FailImpl(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
+			} else {
+				succeeded++
+			}
+		}
+	}
+	if succeeded != uniqueTxes {
+		testhelpers.FailImpl(t, "Unexpected number of successful txes, want:", uniqueTxes, "have:", succeeded)
 	}
 }
