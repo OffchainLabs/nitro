@@ -189,7 +189,7 @@ library ChallengeVertexLib {
 
     function setPsId(ChallengeVertex storage vertex, bytes32 psId) internal {
         require(exists(vertex), "Vertex does not exist");
-        require(vertex.psId != psId, "Ps already set");
+        require(psId == 0 || vertex.psId != psId, "Ps already set");
         require(!isLeaf(vertex), "Cannot set ps id on a leaf");
 
         vertex.psId = psId;

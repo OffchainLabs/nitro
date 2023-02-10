@@ -455,7 +455,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         vertices.addVertex(bVertex, predecessorId, challengePeriodSec);
         // CHRIS: TODO: check these two successor updates really do conform to the spec
         // CHRIS: TODO: rename to just `connect`
-        vertices.connectVertices(bVId, vId, challengePeriodSec);
+        vertices.connect(bVId, vId, challengePeriodSec);
 
         return bVId;
     }
@@ -465,7 +465,7 @@ contract ChallengeManagerImpl is IChallengeManager {
             vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
         );
 
-        vertices.connectVertices(bVId, vId, challengePeriodSec);
+        vertices.connect(bVId, vId, challengePeriodSec);
         // flush the ps time on the merged vertex, and increase it if has a time lower
         // than the vertex we're merging from
         vertices.flushPs(vertices[bVId].predecessorId, vertices[vId].flushedPsTimeSec);

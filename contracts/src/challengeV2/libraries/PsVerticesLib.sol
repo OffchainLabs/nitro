@@ -18,6 +18,7 @@ library PsVerticesLib {
     /// @param vId      The one step fork root to check
     function checkAtOneStepFork(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId) internal view {
         require(vertices[vId].exists(), "Fork candidate vertex does not exist");
+        require(!vertices[vId].isLeaf(), "Leaf can never be a fork candidate");
 
         // if this vertex has no successor at all, it cannot be the root of a one step fork
         require(vertices[vertices[vId].lowestHeightSuccessorId].exists(), "No successors");
@@ -114,7 +115,7 @@ library PsVerticesLib {
     /// @param startVertexId The start vertex to connect to
     /// @param endVertexId The end vertex to connect from
     /// @param challengePeriodSec The challenge period - used for checking valid ps timers
-    function connectVertices(
+    function connect(
         mapping(bytes32 => ChallengeVertex) storage vertices,
         bytes32 startVertexId,
         bytes32 endVertexId,
@@ -125,11 +126,14 @@ library PsVerticesLib {
         require(!vertices[startVertexId].isLeaf(), "Cannot connect a successor to a leaf");
         require(vertices[endVertexId].exists(), "End vertex does not exist");
         require(vertices[endVertexId].predecessorId != startVertexId, "Vertices already connected");
+        require(vertices[startVertexId].height < vertices[endVertexId].height, "Start height not lower than end height");
         // cannot connect vertices that are in different challenges
         require(
             vertices[startVertexId].challengeId == vertices[endVertexId].challengeId,
             "Predecessor and successor are in different challenges"
         );
+
+        // are we newly connecting, then predecessor should be 0
 
         // first make the connection, then update ps
         vertices[endVertexId].setPredecessor(startVertexId);
@@ -184,12 +188,12 @@ library PsVerticesLib {
         bytes32 predecessorId,
         uint256 challengePeriodSec
     ) internal returns (bytes32) {
-        bytes32 vId = ChallengeVertexLib.id(vertex.challengeId, vertex.historyRoot, vertex.height);
+        bytes32 vId = vertex.id();
         require(!vertices[vId].exists(), "Vertex already exists");
         vertices[vId] = vertex;
 
         // connect the newly stored vertex to an existing vertex
-        connectVertices(vertices, predecessorId, vId, challengePeriodSec);
+        connect(vertices, predecessorId, vId, challengePeriodSec);
 
         return vId;
     }
