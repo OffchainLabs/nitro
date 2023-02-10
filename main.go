@@ -184,7 +184,7 @@ func (s *server) sendChainEventsToClients(
 		select {
 		case ev := <-chalEvs:
 			log.Infof("Got challenge event: %+T, and %+v", ev, ev)
-			vis := s.chain.Visualize()
+			vis := s.chain.Visualize(ctx, &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus})
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ: fmt.Sprintf("%+T", ev),
@@ -227,7 +227,7 @@ func (s *server) sendChainEventsToClients(
 			s.lock.RUnlock()
 		case ev := <-chainEvs:
 			log.Infof("Got chain event: %+T, and %+v", ev, ev)
-			vis := s.chain.Visualize()
+			vis := s.chain.Visualize(ctx, &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus})
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ: fmt.Sprintf("%+T", ev),

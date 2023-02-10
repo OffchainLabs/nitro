@@ -23,6 +23,7 @@ func init() {
 }
 
 func Test_track(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	hook := test.NewGlobal()
 	tkr := newVertexTracker(util.NewArtificialTimeReference(), time.Millisecond, &protocol.Challenge{}, &protocol.ChallengeVertex{
 		Commitment: util.HistoryCommitment{},
@@ -31,12 +32,13 @@ func Test_track(t *testing.T) {
 	tkr.awaitingOneStepFork = true
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
 	defer cancel()
-	tkr.track(ctx)
+	tkr.track(ctx, tx)
 	AssertLogsContain(t, hook, "Tracking challenge vertex")
 	AssertLogsContain(t, hook, "Challenge goroutine exiting")
 }
 
 func Test_actOnBlockChallenge(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
@@ -47,7 +49,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		tkr := &vertexTracker{
 			awaitingOneStepFork: true,
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
 	})
 	t.Run("fails to fetch vertex by history commit", func(t *testing.T) {
@@ -68,7 +70,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorContains(t, err, "could not refresh vertex")
 	})
 	t.Run("fails to check if at one-step-fork", func(t *testing.T) {
@@ -109,7 +111,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("logs one-step-fork and returns", func(t *testing.T) {
@@ -145,7 +147,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
 	})
@@ -167,7 +169,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrPrevNone)
 	})
 	t.Run("vertex confirmed and returns", func(t *testing.T) {
@@ -194,7 +196,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrConfirmed)
 	})
 	t.Run("challenge completed and returns", func(t *testing.T) {
@@ -222,7 +224,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				WinnerAssertion: util.Some(&protocol.Assertion{}),
 			},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrChallengeCompleted)
 	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
@@ -259,21 +261,21 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx)
+		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
 	})
 	t.Run("bisects", func(t *testing.T) {
 		hook := test.NewGlobal()
-		trk := setupNonPSTracker(t, ctx)
-		err := trk.actOnBlockChallenge(ctx)
+		trk := setupNonPSTracker(t, ctx, tx)
+		err := trk.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 	})
 	t.Run("merges", func(t *testing.T) {
 		hook := test.NewGlobal()
-		trk := setupNonPSTracker(t, ctx)
-		err := trk.actOnBlockChallenge(ctx)
+		trk := setupNonPSTracker(t, ctx, tx)
+		err := trk.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
 
 		// Get the challenge vertex from the other validator. It should share a history
@@ -282,7 +284,12 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		v, err := trk.stateManager.HistoryCommitmentUpTo(ctx, 5)
 		require.NoError(t, err)
 		err = trk.chain.Call(func(tx *protocol.ActiveTx) error {
-			vertex, err = trk.chain.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(trk.challenge.ParentStateCommitment().Hash()), protocol.VertexCommitHash(v.Hash()))
+			var parentStateCommitment util.StateCommitment
+			parentStateCommitment, err = trk.challenge.ParentStateCommitment(ctx, tx)
+			if err != nil {
+				return err
+			}
+			vertex, err = trk.chain.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(parentStateCommitment.Hash()), protocol.VertexCommitHash(v.Hash()))
 			if err != nil {
 				return err
 			}
@@ -292,7 +299,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		require.NotNil(t, vertex)
 		trk.vertex = vertex
 
-		err = trk.actOnBlockChallenge(ctx)
+		err = trk.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
@@ -301,6 +308,8 @@ func Test_actOnBlockChallenge(t *testing.T) {
 }
 
 func Test_isAtOneStepFork(t *testing.T) {
+	tx := &protocol.ActiveTx{}
+	ctx := context.Background()
 	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
@@ -334,7 +343,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		_, err := tkr.isAtOneStepFork()
+		_, err := tkr.isAtOneStepFork(ctx, tx)
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -353,13 +362,14 @@ func Test_isAtOneStepFork(t *testing.T) {
 			vertex:    vertex,
 			challenge: &protocol.Challenge{},
 		}
-		ok, err := tkr.isAtOneStepFork()
+		ok, err := tkr.isAtOneStepFork(ctx, tx)
 		require.NoError(t, err)
 		require.True(t, ok)
 	})
 }
 
 func Test_fetchVertexByHistoryCommit(t *testing.T) {
+	ctx := context.Background()
 	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
@@ -379,7 +389,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			chain:     p,
 			challenge: &protocol.Challenge{},
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
+		_, err := tkr.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "fetched nil challenge")
 	})
 	t.Run("fetching error", func(t *testing.T) {
@@ -396,7 +406,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			chain:     p,
 			challenge: &protocol.Challenge{},
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
+		_, err := tkr.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -412,19 +422,19 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			chain:     p,
 			challenge: &protocol.Challenge{},
 		}
-		got, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
+		got, err := tkr.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(history.Hash()))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
 }
 
-func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
+func setupNonPSTracker(t *testing.T, ctx context.Context, tx *protocol.ActiveTx) *vertexTracker {
 	stateRoots := generateStateRoots(10)
 	manager := statemanager.New(stateRoots)
 	leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
-	err := validator.onLeafCreated(ctx, leaf1)
+	err := validator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, leaf2)
+	err = validator.onLeafCreated(ctx, tx, leaf2)
 	require.NoError(t, err)
 
 	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
@@ -446,7 +456,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 		if err != nil {
 			return err
 		}
-		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
+		if _, err = challenge.AddLeaf(ctx, tx, assertion, historyCommit, validator.address); err != nil {
 			return err
 		}
 		return nil
@@ -472,15 +482,17 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 }
 
 func Test_vertexTracker_canConfirm(t *testing.T) {
-	tracker := setupNonPSTracker(t, context.Background())
+	ctx := context.Background()
+	tx := &protocol.ActiveTx{}
+	tracker := setupNonPSTracker(t, ctx, tx)
 
 	// Can't confirm is vertex is confirmed or rejected
 	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.ConfirmedAssertionState
-	confirmed, err := tracker.confirmed()
+	confirmed, err := tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
 	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.RejectedAssertionState
-	confirmed, err = tracker.confirmed()
+	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
 
@@ -489,7 +501,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	tracker.vertex.(*protocol.ChallengeVertex).Prev = util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
 		Status: protocol.PendingAssertionState,
 	}))
-	confirmed, err = tracker.confirmed()
+	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
 
@@ -500,7 +512,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 			WinnerVertex: util.Some(tracker.vertex),
 		})),
 	}))
-	confirmed, err = tracker.confirmed()
+	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.True(t, confirmed)
 
@@ -512,7 +524,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 			WinnerVertex: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{})),
 		})),
 	}))
-	confirmed, err = tracker.confirmed()
+	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
 
@@ -522,8 +534,10 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 		Status:       protocol.ConfirmedAssertionState,
 		SubChallenge: util.None[protocol.ChallengeInterface](),
 	}))
-	tracker.vertex.GetPsTimer().Add(1000000001)
-	confirmed, err = tracker.confirmed()
+	psTimer, err := tracker.vertex.GetPsTimer(ctx, tx)
+	require.NoError(t, err)
+	psTimer.Add(1000000001)
+	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.True(t, confirmed)
 
@@ -534,7 +548,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 		SubChallenge:         util.None[protocol.ChallengeInterface](),
 		PresumptiveSuccessor: util.Some(tracker.vertex),
 	}))
-	confirmed, err = tracker.confirmed()
+	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.True(t, confirmed)
 }
