@@ -4,6 +4,7 @@ go_library(
     name = "assertion-chain",
     srcs = [
         "assertion_chain.go",
+        "challenge.go",
         "challenge_manager.go",
         "types.go",
     ],
@@ -25,6 +26,7 @@ go_test(
     srcs = [
         "assertion_chain_test.go",
         "challenge_manager_test.go",
+        "challenge_test.go",
         "types_test.go",
     ],
     embed = [":assertion-chain"],
