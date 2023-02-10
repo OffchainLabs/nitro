@@ -267,3 +267,18 @@ func getAssertionId(
 	)
 	return crypto.Keccak256Hash(packed)
 }
+
+func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
+	return &bind.TransactOpts{
+		From:      opts.From,
+		Nonce:     opts.Nonce,
+		Signer:    opts.Signer,
+		Value:     opts.Value,
+		GasPrice:  opts.GasPrice,
+		GasFeeCap: opts.GasFeeCap,
+		GasTipCap: opts.GasTipCap,
+		GasLimit:  opts.GasLimit,
+		Context:   opts.Context,
+		NoSend:    opts.NoSend,
+	}
+}
