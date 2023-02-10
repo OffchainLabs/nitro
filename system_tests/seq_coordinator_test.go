@@ -304,6 +304,9 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	l2Info.GenerateAccount("User2")
 
+	nodeConfigDup := *nodeConfig
+	nodeConfig = &nodeConfigDup
+
 	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[1]
 	if !successCase {
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
