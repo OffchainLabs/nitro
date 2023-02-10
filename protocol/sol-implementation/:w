@@ -29,7 +29,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	_, err = challenge.AddLeaf(
+	_, err := challenge.AddLeaf(
 		a2,
 		util.HistoryCommitment{
 			Height:    height2,
