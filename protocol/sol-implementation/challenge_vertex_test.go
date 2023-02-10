@@ -1,11 +1,69 @@
 package solimpl
 
 import (
+	"context"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
+
+func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
+	ctx := context.Background()
+	chain, acc := setupAssertionChainWithChallengeManager(t)
+	height1 := uint64(6)
+	height2 := uint64(7)
+	a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+
+	genesis, err := chain.AssertionByID(common.Hash{})
+	require.NoError(t, err)
+
+	// We add two leaves to the challenge.
+	v1, err := challenge.AddLeaf(
+		a1,
+		util.HistoryCommitment{
+			Height:    height1,
+			Merkle:    common.BytesToHash([]byte("nyan")),
+			FirstLeaf: genesis.inner.StateHash,
+		},
+	)
+	require.NoError(t, err)
+	v2, err := challenge.AddLeaf(
+		a2,
+		util.HistoryCommitment{
+			Height:    height2,
+			Merkle:    common.BytesToHash([]byte("nyan2")),
+			FirstLeaf: genesis.inner.StateHash,
+		},
+	)
+	require.NoError(t, err)
+
+	t.Run("first to act is now presumptive", func(t *testing.T) {
+		isPs, err := v1.IsPresumptiveSuccessor(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+
+		isPs, err = v2.IsPresumptiveSuccessor(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+	})
+	t.Run("the newly bisected vertex is now presumptive", func(t *testing.T) {
+		wantCommit := common.BytesToHash([]byte("nyan2"))
+		bisectedTo, err := v2.Bisect(
+			util.HistoryCommitment{
+				Height:    4,
+				Merkle:    wantCommit,
+				FirstLeaf: genesis.inner.StateHash,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
+	})
+}
+
+func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
+}
 
 func TestChallengeVertex_Bisect(t *testing.T) {
 	chain, acc := setupAssertionChainWithChallengeManager(t)

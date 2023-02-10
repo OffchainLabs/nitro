@@ -1,10 +1,28 @@
 package solimpl
 
 import (
+	"context"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 )
+
+// HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
+func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
+	return v.manager.caller.HasConfirmedSibling(v.manager.assertionChain.callOpts, v.id)
+}
+
+// IsPresumptiveSuccessor checks if a vertex is the presumptive successor
+// within its challenge.
+func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, error) {
+	return v.manager.caller.IsPresumptiveSuccessor(v.manager.assertionChain.callOpts, v.id)
+}
+
+// IsAtOneStepFork checks if a vertex is at a one-step-fork in the challenge
+// it is contained in.
+func (v *ChallengeVertex) IsAtOneStepFork(ctx context.Context) (bool, error) {
+	return v.manager.caller.IsAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
+}
 
 // Bisect a challenge vertex by providing a history commitment.
 func (v *ChallengeVertex) Bisect(
