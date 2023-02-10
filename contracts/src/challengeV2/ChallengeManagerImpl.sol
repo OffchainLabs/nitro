@@ -547,7 +547,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         require(vertices[vId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[vId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
-        return vertices[predecessorId].psId != vId;
+        return vertices[predecessorId].psId == vId;
     }
 
     // CHRIS: TODO: move to lib?
