@@ -119,7 +119,7 @@ pub unsafe extern "C" fn stylus_call(
     }
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, calldata.clone(), config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(module, config.clone()) };
 
     let mut instance = match instance {
         Ok(instance) => instance,

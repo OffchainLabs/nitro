@@ -16,12 +16,12 @@ impl RunProgram for Machine {
 
         macro_rules! call {
             ($module:expr, $func:expr, $args:expr) => {
-                call!($module, $func, $args, |error| Err(error))
+                call!($module, $func, $args, |error| UserOutcome::Failure(error))
             };
             ($module:expr, $func:expr, $args:expr, $error:expr) => {{
                 match self.call_function($module, $func, $args) {
                     Ok(value) => value[0].try_into().unwrap(),
-                    Err(error) => return $error(error),
+                    Err(error) => return Ok($error(error)),
                 }
             }};
         }
@@ -39,12 +39,12 @@ impl RunProgram for Machine {
 
         let status: u32 = call!("user", STYLUS_ENTRY_POINT, vec![args_len], |error| {
             if self.gas_left() == MachineMeter::Exhausted {
-                return Ok(UserOutcome::OutOfGas);
+                return UserOutcome::OutOfGas;
             }
             if self.stack_left() == 0 {
-                return Ok(UserOutcome::OutOfStack);
+                return UserOutcome::OutOfStack;
             }
-            Err(error)
+            UserOutcome::Failure(error)
         });
 
         let outs_len = call!(USER_HOST, "get_output_len", vec![]);
@@ -66,6 +66,10 @@ impl RunProgram for NativeInstance {
         use UserOutcome::*;
 
         let store = &mut self.store;
+        let mut env = self.env.as_mut(store);
+        env.args = args.to_owned();
+        env.outs.clear();
+
         let exports = &self.instance.exports;
         let main = exports.get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)?;
         let status = match main.call(store, args.len() as u32) {

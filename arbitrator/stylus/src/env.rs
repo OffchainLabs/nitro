@@ -83,10 +83,9 @@ pub struct SystemStateData {
 }
 
 impl WasmEnv {
-    pub fn new(config: StylusConfig, args: Vec<u8>) -> Self {
+    pub fn new(config: StylusConfig) -> Self {
         Self {
             config,
-            args,
             ..Default::default()
         }
     }

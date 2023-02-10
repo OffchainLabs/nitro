@@ -6,7 +6,7 @@
     clippy::inconsistent_digit_grouping
 )]
 
-use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram};
+use crate::{native::NativeInstance, run::RunProgram};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
@@ -15,7 +15,7 @@ use prover::{
         counter::{Counter, CountingMachine},
         prelude::*,
         start::StartMover,
-        MiddlewareWrapper, ModuleMod, STYLUS_ENTRY_POINT,
+        MiddlewareWrapper, ModuleMod,
     },
     Machine,
 };
@@ -328,29 +328,21 @@ fn test_rust() -> Result<()> {
 
     let mut args = vec![0x01];
     args.extend(preimage);
-    let args_len = args.len() as u32;
 
     let config = uniform_cost_config();
-    let env = WasmEnv::new(config.clone(), args.clone());
-    let mut instance = NativeInstance::from_path(filename, env)?;
-    let exports = &instance.instance.exports;
-    let store = &mut instance.store;
-
-    let main = exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT)?;
-    let status = main.call(store, args_len)?;
-    assert_eq!(status, 0);
-
-    let env = instance.env.as_ref(&store);
-    assert_eq!(hex::encode(&env.outs), hash);
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    match native.run_main(&args, &config)? {
+        UserOutcome::Success(output) => assert_eq!(hex::encode(output), hash),
+        err => bail!("user program failure: {}", err.red()),
+    }
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => hex::encode(output),
+    match machine.run_main(&args, &config)? {
+        UserOutcome::Success(output) => assert_eq!(hex::encode(output), hash),
         err => bail!("user program failure: {}", err.red()),
-    };
+    }
 
-    assert_eq!(output, hash);
-    check_instrumentation(instance, machine)
+    check_instrumentation(native, machine)
 }
 
 #[test]
@@ -366,30 +358,61 @@ fn test_c() -> Result<()> {
     let key: [u8; 16] = key.try_into().unwrap();
     let hash = crypto::siphash(&text, &key);
 
+    let config = uniform_cost_config();
     let mut args = hash.to_le_bytes().to_vec();
     args.extend(key);
     args.extend(text);
-    let args_len = args.len() as i32;
+    let args_string = hex::encode(&args);
 
-    let config = uniform_cost_config();
-    let env = WasmEnv::new(config.clone(), args.clone());
-    let mut instance = NativeInstance::from_path(filename, env)?;
-    let exports = &instance.instance.exports;
-    let store = &mut instance.store;
-
-    let main = exports.get_typed_function::<i32, i32>(store, STYLUS_ENTRY_POINT)?;
-    let status = main.call(store, args_len)?;
-    assert_eq!(status, 0);
-
-    let env = instance.env.as_ref(&store);
-    assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    match native.run_main(&args, &config)? {
+        UserOutcome::Success(output) => assert_eq!(hex::encode(output), args_string),
+        err => bail!("user program failure: {}", err.red()),
+    }
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => hex::encode(output),
+    match machine.run_main(&args, &config)? {
+        UserOutcome::Success(output) => assert_eq!(hex::encode(output), args_string),
         err => bail!("user program failure: {}", err.red()),
+    }
+
+    check_instrumentation(native, machine)
+}
+
+#[test]
+fn test_fallible() -> Result<()> {
+    // in fallible.rs
+    //     an input starting with 0x00 will execute an unreachable
+    //     an empty input induces a panic
+
+    let filename = "tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm";
+    let config = uniform_cost_config();
+
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    match native.run_main(&[0x00], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    };
+    match native.run_main(&[], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
     };
 
-    assert_eq!(output, hex::encode(&env.outs));
-    check_instrumentation(instance, machine)
+    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
+    match machine.run_main(&[0x00], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+    match machine.run_main(&[], &config)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+
+    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
+
+    let native_counts = native.operator_counts()?;
+    let machine_counts = machine.operator_counts()?;
+    assert_eq!(native_counts, machine_counts);
+    Ok(())
 }

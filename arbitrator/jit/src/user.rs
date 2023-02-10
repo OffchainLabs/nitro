@@ -63,8 +63,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     }
 
     // Safety: module came from compile_user_wasm
-    let instance =
-        unsafe { NativeInstance::deserialize(&module, calldata.clone(), config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(&module, config.clone()) };
 
     let mut instance = match instance {
         Ok(instance) => instance,
