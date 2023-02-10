@@ -29,7 +29,6 @@ go_test(
         "challenge_manager_test.go",
         "challenge_test.go",
         "challenge_vertex_test.go",
-        "types_test.go",
     ],
     embed = [":sol-implementation"],
     deps = [

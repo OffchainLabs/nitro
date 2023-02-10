@@ -165,11 +165,6 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 
 // Confirm creates a confirmation for the given assertion.
 func (a *Assertion) Confirm() error {
-	// Refresh the inner fields of our before making on-chain calls.
-	if err := a.invalidate(); err != nil {
-		return err
-	}
-
 	_, err := a.chain.writer.ConfirmAssertion(a.chain.txOpts, a.id)
 	switch {
 	case err == nil:
