@@ -285,7 +285,9 @@ func deployRollupDependencies(ctx context.Context, l1Reader *headerreader.Header
 
 func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
 	ospEntryAddr, challengeManagerAddr, rollupAdminLogic, rollupUserLogic, validatorUtils, validatorWalletCreator, err := deployRollupDependencies(ctx, l1Reader, auth)
-
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	}
 	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, err
@@ -316,7 +318,9 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 
 func deployERC20RollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, nativeERC20Token common.Address) (*rollupgen.ERC20RollupCreator, common.Address, common.Address, common.Address, error) {
 	ospEntryAddr, challengeManagerAddr, rollupAdminLogic, rollupUserLogic, validatorUtils, validatorWalletCreator, err := deployRollupDependencies(ctx, l1Reader, auth)
-
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	}
 	bridgeCreator, err := deployERC20BridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, err
