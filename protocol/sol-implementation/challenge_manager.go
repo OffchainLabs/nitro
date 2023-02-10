@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrChallengeNotFound = errors.New("challenge not found")
+	ErrPsTimerNotYet     = errors.New("ps timer has not exceeded challenge period")
 )
 
 // ChallengeManager --

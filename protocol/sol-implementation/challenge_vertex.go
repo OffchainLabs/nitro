@@ -1,10 +1,13 @@
 package solimpl
 
 import (
+	"context"
 	"math/big"
+	"strings"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 )
 
 // Bisect a challenge vertex by providing a history commitment.
@@ -48,4 +51,22 @@ func (v *ChallengeVertex) Bisect(
 		inner:   bisectedTo,
 		manager: v.manager,
 	}, nil
+}
+
+func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
+	err := withChainCommitment(v.manager.assertionChain.backend, func() error {
+		_, err := v.manager.writer.ConfirmForPsTimer(
+			v.manager.assertionChain.txOpts,
+			v.id,
+		)
+		return err
+	})
+	switch {
+	case err == nil:
+	case strings.Contains(err.Error(), "PsTimer not greater than challenge period"):
+		return errors.Wrapf(ErrPsTimerNotYet, "vertex id %#v", v.id)
+	default:
+		return err
+	}
+	return nil
 }
