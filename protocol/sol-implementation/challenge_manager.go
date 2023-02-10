@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -41,6 +42,7 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 
 // CalculateChallengeId calculates the challenge ID for a given assertion and challenge type.
 func (cm *ChallengeManager) CalculateChallengeId(assertionId common.Hash, cType ChallengeType) (common.Hash, error) {
+	fmt.Println(cType)
 	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, assertionId, uint8(cType))
 	if err != nil {
 		return common.Hash{}, err
@@ -65,6 +67,7 @@ func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, 
 			manager: cm,
 		}, nil
 	case strings.Contains(err.Error(), "Vertex does not exist"):
+		fmt.Println("GOT THIS")
 		return nil, errors.Wrapf(
 			ErrChallengeNotFound,
 			"challenge id %#x",

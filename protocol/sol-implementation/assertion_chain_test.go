@@ -242,7 +242,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		require.ErrorIs(t, err, ErrTooLate)
 	})
 	t.Run("OK", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
+		chain, acc := setupAssertionChainWithChallengeManager(t)
 		commit1 := util.StateCommitment{
 			Height:    1,
 			StateRoot: common.BytesToHash([]byte{1}),
