@@ -395,8 +395,9 @@ contract OneStepProverHostIo is IOneStepProver {
     ) internal view {
         bytes32 frames = mach.frameStack.hash();
         bytes32 values = mach.valueStack.hash();
+        bytes32 inters = mach.internalStack.hash();
         Value memory onError = ValueLib.newPc(mach.functionPc, mach.functionIdx, mach.moduleIdx);
-        mach.guardStack.push(GuardStackLib.newErrorGuard(frames, values, onError));
+        mach.guardStack.push(GuardStackLib.newErrorGuard(frames, values, inters, onError));
         mach.valueStack.push(ValueLib.newI32(1));
     }
 

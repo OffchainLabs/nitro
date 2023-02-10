@@ -9,6 +9,7 @@ import "./Value.sol";
 struct ErrorGuard {
     bytes32 frameStack;
     bytes32 valueStack;
+    bytes32 interStack;
     Value onErrorPc;
 }
 
@@ -23,9 +24,16 @@ library GuardStackLib {
     function newErrorGuard(
         bytes32 frameStack,
         bytes32 valueStack,
+        bytes32 interStack,
         Value memory onErrorPc
     ) internal pure returns (ErrorGuard memory) {
-        return ErrorGuard({frameStack: frameStack, valueStack: valueStack, onErrorPc: onErrorPc});
+        return
+            ErrorGuard({
+                frameStack: frameStack,
+                valueStack: valueStack,
+                interStack: interStack,
+                onErrorPc: onErrorPc
+            });
     }
 
     function hash(ErrorGuard memory guard) internal pure returns (bytes32) {
@@ -35,6 +43,7 @@ library GuardStackLib {
                     "Error guard:",
                     guard.frameStack,
                     guard.valueStack,
+                    guard.interStack,
                     guard.onErrorPc.hash()
                 )
             );

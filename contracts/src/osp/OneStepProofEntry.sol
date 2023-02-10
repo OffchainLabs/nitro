@@ -134,8 +134,9 @@ contract OneStepProofEntry is IOneStepProofEntry {
 
         if (mach.status == MachineStatus.ERRORED && !mach.guardStack.empty()) {
             ErrorGuard memory guard = mach.guardStack.pop();
-            mach.valueStack.overwrite(guard.valueStack);
             mach.frameStack.overwrite(guard.frameStack);
+            mach.valueStack.overwrite(guard.valueStack);
+            mach.internalStack.overwrite(guard.interStack);
             mach.setPc(guard.onErrorPc);
 
             // indicate an error and continue

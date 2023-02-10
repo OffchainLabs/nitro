@@ -21,6 +21,7 @@ use arbutil::{math, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
+use itertools::izip;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -727,6 +728,7 @@ impl PreimageResolverWrapper {
 pub struct ErrorGuard {
     frame_stack: usize,
     value_stack: usize,
+    inter_stack: usize,
     on_error: ProgramCounter,
 }
 
@@ -734,10 +736,11 @@ impl Display for ErrorGuard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}{} {} {} {}{}",
+            "{}{} {} {} {} {}{}",
             "ErrorGuard(".grey(),
             self.frame_stack.mint(),
             self.value_stack.mint(),
+            self.inter_stack.mint(),
             "→".grey(),
             self.on_error,
             ")".grey(),
@@ -749,6 +752,7 @@ impl Display for ErrorGuard {
 struct ErrorGuardProof {
     frame_stack: Bytes32,
     value_stack: Bytes32,
+    inter_stack: Bytes32,
     on_error: ProgramCounter,
 }
 
@@ -756,10 +760,16 @@ impl ErrorGuardProof {
     const STACK_PREFIX: &str = "Guard stack:";
     const GUARD_PREFIX: &str = "Error guard:";
 
-    fn new(frame_stack: Bytes32, value_stack: Bytes32, on_error: ProgramCounter) -> Self {
+    fn new(
+        frame_stack: Bytes32,
+        value_stack: Bytes32,
+        inter_stack: Bytes32,
+        on_error: ProgramCounter,
+    ) -> Self {
         Self {
             frame_stack,
             value_stack,
+            inter_stack,
             on_error,
         }
     }
@@ -767,6 +777,7 @@ impl ErrorGuardProof {
     fn serialize_for_proof(&self) -> Vec<u8> {
         let mut data = self.frame_stack.to_vec();
         data.extend(self.value_stack.0);
+        data.extend(self.inter_stack.0);
         data.extend(Value::from(self.on_error).serialize_for_proof());
         data
     }
@@ -776,6 +787,7 @@ impl ErrorGuardProof {
             .chain(Self::GUARD_PREFIX)
             .chain(self.frame_stack)
             .chain(self.value_stack)
+            .chain(self.inter_stack)
             .chain(Value::InternalRef(self.on_error).hash())
             .finalize()
             .into()
@@ -809,6 +821,7 @@ pub struct Machine {
 
 type FrameStackHash = Bytes32;
 type ValueStackHash = Bytes32;
+type InterStackHash = Bytes32;
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
 where
@@ -1705,15 +1718,17 @@ impl Machine {
                 println!("{}", "Backtrace:".grey());
                 self.print_backtrace(true);
 
-                if let Some(context) = self.guards.pop() {
+                if let Some(guard) = self.guards.pop() {
                     println!("{}", "Recovering...".pink());
 
                     // recover at the previous stack heights
-                    assert!(self.frame_stack.len() >= context.frame_stack);
-                    assert!(self.value_stack.len() >= context.value_stack);
-                    self.frame_stack.truncate(context.frame_stack);
-                    self.value_stack.truncate(context.value_stack);
-                    self.pc = context.on_error;
+                    assert!(self.frame_stack.len() >= guard.frame_stack);
+                    assert!(self.value_stack.len() >= guard.value_stack);
+                    assert!(self.internal_stack.len() >= guard.inter_stack);
+                    self.frame_stack.truncate(guard.frame_stack);
+                    self.value_stack.truncate(guard.value_stack);
+                    self.internal_stack.truncate(guard.inter_stack);
+                    self.pc = guard.on_error;
 
                     // indicate an error has occured
                     self.value_stack.push(0_u32.into());
@@ -2290,6 +2305,7 @@ impl Machine {
                     self.guards.push(ErrorGuard {
                         frame_stack: self.frame_stack.len(),
                         value_stack: self.value_stack.len(),
+                        inter_stack: self.internal_stack.len(),
                         on_error: self.pc,
                     });
                     self.value_stack.push(1_u32.into());
@@ -2418,35 +2434,46 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
-    fn stack_hashes(&self) -> (ValueStackHash, FrameStackHash, Vec<ErrorGuardProof>) {
-        let heights: Vec<_> = self.guards.iter().map(|x| x.value_stack).collect();
-        let values = self.value_stack.iter().map(|v| v.hash());
-        let (value_stack, values) = hash_stack_with_heights(values, &heights, "Value stack:");
-
-        let heights: Vec<_> = self.guards.iter().map(|x| x.frame_stack).collect();
-        let frames = self.frame_stack.iter().map(|v| v.hash());
-        let (frame_stack, frames) = hash_stack_with_heights(frames, &heights, "Stack frame stack:");
+    fn stack_hashes(
+        &self,
+    ) -> (
+        FrameStackHash,
+        ValueStackHash,
+        InterStackHash,
+        Vec<ErrorGuardProof>,
+    ) {
+        macro_rules! compute {
+            ($field:expr, $stack:expr, $prefix:expr) => {{
+                let heights: Vec<_> = self.guards.iter().map($field).collect();
+                let frames = $stack.iter().map(|v| v.hash());
+                hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
+            }};
+        }
+        let (frame_stack, frames) = compute!(|x| x.frame_stack, self.frame_stack, "Stack frame");
+        let (value_stack, values) = compute!(|x| x.value_stack, self.value_stack, "Value");
+        let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
 
         let pcs = self.guards.iter().map(|x| x.on_error);
         let mut guards: Vec<ErrorGuardProof> = vec![];
         assert_eq!(values.len(), frames.len());
+        assert_eq!(values.len(), inters.len());
         assert_eq!(values.len(), pcs.len());
 
-        for (frames, (values, pc)) in frames.into_iter().zip(values.into_iter().zip(pcs)) {
-            guards.push(ErrorGuardProof::new(frames, values, pc));
+        for (frames, values, inters, pc) in izip!(frames, values, inters, pcs) {
+            guards.push(ErrorGuardProof::new(frames, values, inters, pc));
         }
-        (value_stack, frame_stack, guards)
+        (frame_stack, value_stack, inter_stack, guards)
     }
 
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
-                let (value_stack, frame_stack, guards) = self.stack_hashes();
+                let (frame_stack, value_stack, inter_stack, guards) = self.stack_hashes();
 
                 h.update(b"Machine running:");
                 h.update(value_stack);
-                h.update(hash_value_stack(&self.internal_stack));
+                h.update(inter_stack);
                 h.update(frame_stack);
                 h.update(self.global_state.hash());
                 h.update(self.pc.module.to_be_bytes());
@@ -2729,7 +2756,7 @@ impl Machine {
 
     fn prove_guards(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(33); // size in the empty case
-        let guards = self.stack_hashes().2;
+        let guards = self.stack_hashes().3;
         if guards.is_empty() {
             data.extend(Bytes32::default());
             data.push(0);
@@ -2744,6 +2771,10 @@ impl Machine {
 
     pub fn get_data_stack(&self) -> &[Value] {
         &self.value_stack
+    }
+
+    pub fn get_internals_stack(&self) -> &[Value] {
+        &self.internal_stack
     }
 
     pub fn get_guards(&self) -> &[ErrorGuard] {

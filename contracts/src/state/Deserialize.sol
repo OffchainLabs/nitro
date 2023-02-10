@@ -184,10 +184,17 @@ library Deserialize {
         Value memory onErrorPc;
         bytes32 frameStack;
         bytes32 valueStack;
+        bytes32 interStack;
         (frameStack, offset) = b32(proof, offset);
         (valueStack, offset) = b32(proof, offset);
+        (interStack, offset) = b32(proof, offset);
         (onErrorPc, offset) = value(proof, offset);
-        guard = ErrorGuard({frameStack: frameStack, valueStack: valueStack, onErrorPc: onErrorPc});
+        guard = ErrorGuard({
+            frameStack: frameStack,
+            valueStack: valueStack,
+            interStack: interStack,
+            onErrorPc: onErrorPc
+        });
     }
 
     function guardStack(bytes calldata proof, uint256 startOffset)

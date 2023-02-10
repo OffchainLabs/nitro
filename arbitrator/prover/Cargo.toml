@@ -23,6 +23,7 @@ structopt = "0.3.23"
 serde_with = "1.12.1"
 parking_lot = "0.12.1"
 lazy_static = "1.4.0"
+itertools = "0.10.5"
 smallvec = { version = "1.10.0", features = ["serde"] }
 brotli2 = { version = "0.3.2", optional = true }
 rayon = { version = "1.5.1", optional = true }
