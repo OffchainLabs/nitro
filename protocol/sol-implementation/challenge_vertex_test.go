@@ -1,11 +1,42 @@
 package solimpl
 
 import (
+	"context"
+	"testing"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
+
+func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
+	chain, acc := setupAssertionChainWithChallengeManager(t)
+	height1 := uint64(6)
+	height2 := uint64(7)
+	a1, _, challenge := setupTopLevelFork(t, chain, height1, height2)
+
+	genesis, err := chain.AssertionByID(common.Hash{})
+	require.NoError(t, err)
+
+	v1, err := challenge.AddLeaf(
+		a1,
+		util.HistoryCommitment{
+			Height:    height1,
+			Merkle:    common.BytesToHash([]byte("nyan")),
+			FirstLeaf: genesis.inner.StateHash,
+		},
+	)
+	require.NoError(t, err)
+
+	t.Run("vertex ps timer has not exceeded challenge duration", func(t *testing.T) {
+		require.ErrorIs(t, v1.ConfirmPsTimer(context.Background()), ErrPsTimerNotYet)
+	})
+	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
+		acc.backend.AdjustTime(time.Second * 2000)
+		require.NoError(t, v1.ConfirmPsTimer(context.Background()))
+	})
+}
 
 func TestChallengeVertex_Bisect(t *testing.T) {
 	chain, acc := setupAssertionChainWithChallengeManager(t)
