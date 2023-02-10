@@ -807,6 +807,9 @@ pub struct Machine {
     context: u64,
 }
 
+type FrameStackHash = Bytes32;
+type ValueStackHash = Bytes32;
+
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
 where
     I: IntoIterator<Item = D>,
@@ -815,6 +818,7 @@ where
     hash_stack_with_heights(stack, &[], prefix).0
 }
 
+/// Hashes a stack of n elements, returning the values at various heights along the way in O(n).
 fn hash_stack_with_heights<I, D>(
     stack: I,
     mut heights: &[usize],
@@ -850,11 +854,11 @@ where
     (hash, parts)
 }
 
-fn hash_value_stack(stack: &[Value]) -> Bytes32 {
+fn hash_value_stack(stack: &[Value]) -> ValueStackHash {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
+fn hash_stack_frame_stack(frames: &[StackFrame]) -> FrameStackHash {
     hash_stack(frames.iter().map(|f| f.hash()), "Stack frame stack:")
 }
 
@@ -2414,7 +2418,7 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
-    fn stack_hashes(&self) -> (Bytes32, Bytes32, Vec<ErrorGuardProof>) {
+    fn stack_hashes(&self) -> (ValueStackHash, FrameStackHash, Vec<ErrorGuardProof>) {
         let heights: Vec<_> = self.guards.iter().map(|x| x.value_stack).collect();
         let values = self.value_stack.iter().map(|v| v.hash());
         let (value_stack, values) = hash_stack_with_heights(values, &heights, "Value stack:");
@@ -2724,7 +2728,7 @@ impl Machine {
     }
 
     fn prove_guards(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(33);
+        let mut data = Vec::with_capacity(33); // size in the empty case
         let guards = self.stack_hashes().2;
         if guards.is_empty() {
             data.extend(Bytes32::default());
