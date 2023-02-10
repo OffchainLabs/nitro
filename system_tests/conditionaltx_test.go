@@ -177,8 +177,8 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	testhelpers.RequireImpl(t, err)
 
-	numTxes := 100
-	expectedSuccesses := numTxes / 5
+	numTxes := 200
+	expectedSuccesses := numTxes / 20
 	var txes types.Transactions
 	var options []*arbitrum_types.ConditionalOptions
 	for i := 0; i < numTxes; i++ {
