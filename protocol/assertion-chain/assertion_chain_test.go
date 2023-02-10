@@ -295,7 +295,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriodSeconds := big.NewInt(30)
+	challengePeriodSeconds := big.NewInt(1000)
 	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,

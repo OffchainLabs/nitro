@@ -72,6 +72,7 @@ func (c *Challenge) AddLeaf(
 		return nil, err
 	}
 	return &ChallengeVertex{
+		id:      vertexId,
 		inner:   vertex,
 		manager: c.manager,
 	}, nil
