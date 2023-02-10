@@ -80,7 +80,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			},
 			make([]common.Hash, 0),
 		)
-		require.ErrorContains(t, err, "Presumptive successor already confirmable")
+		require.ErrorContains(t, err, "cannot set lower ps")
 	})
 	t.Run("invalid prefix history", func(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")
@@ -121,7 +121,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
-		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryCommitment[:])
+		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
 
 		_, err = v1.Bisect(
 			util.HistoryCommitment{

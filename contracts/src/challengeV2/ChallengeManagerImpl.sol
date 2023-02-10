@@ -496,6 +496,17 @@ contract ChallengeManagerImpl is IChallengeManager {
         setConfirmed(vId);
     }
 
+
+    function calculateChallengeId(bytes32 assertionId, ChallengeType typ) public pure returns (bytes32) {
+        return ChallengeStructLib.id(assertionId, typ);
+    }
+
+    function calculateChallengeVertexId(
+        bytes32 challengeId, bytes32 commitmentMerkle, uint256 commitmentHeight
+    ) public pure returns (bytes32) {
+        return ChallengeVertexLib.id(challengeId, commitmentMerkle, commitmentHeight);
+    }
+
     // EXTERNAL VIEW FUNCTIONS
     // --------------------
     // Functions that are not required internally, and do not update state, but may be useful

@@ -21,7 +21,7 @@ func (c *Challenge) AddLeaf(
 		ChallengeId:            c.id,
 		ClaimId:                assertion.id,
 		Height:                 big.NewInt(int64(history.Height)),
-		HistoryCommitment:      history.Merkle,
+		HistoryRoot:            history.Merkle,
 		FirstState:             history.FirstLeaf,
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
