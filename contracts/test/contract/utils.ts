@@ -45,7 +45,7 @@ export async function tryAdvanceChain(
       await ethers.provider.send('evm_mine', [])
     }
   } catch (e) {
-    // EVM mine failed. Try advancing the chain by sending txes if the assertion
+    // EVM mine failed. Try advancing the chain by sending txes if the node
     // is in dev mode and mints blocks when txes are sent
     for (let i = 0; i < blocks; i++) {
       const tx = await account.sendTransaction({

@@ -12,7 +12,7 @@ import {
 } from '../../../build/types'
 import {
   RollupLib,
-  AssertionCreatedEvent,
+  NodeCreatedEvent,
 } from '../../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic'
 type AssertionStruct = RollupLib.AssertionStruct
 type ExecutionStateStruct = RollupLib.ExecutionStateStruct
@@ -21,16 +21,16 @@ import * as globalStateLib from './globalStateLib'
 import { constants } from 'ethers'
 import { GlobalStateStruct } from '../../../build/types/src/challenge/ChallengeManager'
 
-export interface Assertion {
-  assertionNum: number
+export interface Node {
+  nodeNum: number
   proposedBlock: number
   assertion: AssertionStruct
   inboxMaxCount: BigNumber
-  assertionHash: BytesLike
+  nodeHash: BytesLike
   wasmModuleRoot: BytesLike
 }
 
-export function assertionHash(
+export function nodeHash(
   hasSibling: boolean,
   lastHash: BytesLike,
   assertionExecHash: BytesLike,
@@ -115,30 +115,30 @@ export function assertionExecutionHash(a: AssertionStruct): BytesLike {
   ])
 }
 
-async function assertionFromAssertionCreatedLog(
+async function nodeFromNodeCreatedLog(
   blockNumber: number,
   log: LogDescription
-): Promise<Assertion> {
-  if (log.name != 'AssertionCreated') {
+): Promise<Node> {
+  if (log.name != 'NodeCreated') {
     throw Error('wrong event type')
   }
-  const parsedEv = log.args as AssertionCreatedEvent['args']
+  const parsedEv = log.args as NodeCreatedEvent['args']
 
-  const assertion: Assertion = {
+  const node: Node = {
     assertion: parsedEv.assertion,
-    assertionHash: parsedEv.assertionHash,
+    nodeHash: parsedEv.nodeHash,
     wasmModuleRoot: parsedEv.wasmModuleRoot,
-    assertionNum: parsedEv.assertionNum.toNumber(),
+    nodeNum: parsedEv.nodeNum.toNumber(),
     proposedBlock: blockNumber,
     inboxMaxCount: parsedEv.inboxMaxCount,
   }
-  return assertion
+  return node
 }
 
-async function assertionFromTx(
+async function nodeFromTx(
   abi: Interface,
   tx: ContractTransaction
-): Promise<Assertion> {
+): Promise<Node> {
   const receipt = await tx.wait()
   if (receipt.logs == undefined) {
     throw Error('expected receipt to have logs')
@@ -151,12 +151,12 @@ async function assertionFromTx(
         return undefined
       }
     })
-    .filter(ev => ev && ev.name == 'AssertionCreated')
+    .filter(ev => ev && ev.name == 'NodeCreated')
   if (evs.length != 1) {
     throw Error('unique event not found')
   }
 
-  return assertionFromAssertionCreatedLog(receipt.blockNumber, evs[0]!)
+  return nodeFromNodeCreatedLog(receipt.blockNumber, evs[0]!)
 }
 
 export class RollupContract {
@@ -166,19 +166,19 @@ export class RollupContract {
     return new RollupContract(this.rollup.connect(signerOrProvider))
   }
 
-  async stakeOnNewAssertion(
+  async stakeOnNewNode(
     sequencerInbox: SequencerInbox,
-    parentAssertion: {
-      assertionHash: BytesLike
+    parentNode: {
+      nodeHash: BytesLike
       inboxMaxCount: BigNumber
     },
     assertion: AssertionStruct,
-    siblingAssertion?: Assertion,
+    siblingNode?: Node,
     stakeToAdd?: BigNumber
   ): Promise<{
     tx: ContractTransaction
-    assertion: Assertion
-    expectedNewAssertionHash: BytesLike
+    node: Node
+    expectedNewNodeHash: BytesLike
   }> {
     const inboxPosition = BigNumber.from(
       assertion.afterState.globalState.u64Vals[0]
@@ -188,70 +188,70 @@ export class RollupContract {
         ? await sequencerInbox.inboxAccs(inboxPosition - 1)
         : constants.HashZero
     const wasmModuleRoot = await this.rollup.wasmModuleRoot()
-    const newAssertionHash = assertionHash(
-      Boolean(siblingAssertion),
-      (siblingAssertion || parentAssertion).assertionHash,
+    const newNodeHash = nodeHash(
+      Boolean(siblingNode),
+      (siblingNode || parentNode).nodeHash,
       assertionExecutionHash(assertion),
       afterInboxAcc,
       wasmModuleRoot
     )
     const tx = stakeToAdd
-      ? await this.rollup.newStakeOnNewAssertion(
+      ? await this.rollup.newStakeOnNewNode(
           assertion,
-          newAssertionHash,
-          parentAssertion.inboxMaxCount,
+          newNodeHash,
+          parentNode.inboxMaxCount,
           {
             value: stakeToAdd,
           }
         )
-      : await this.rollup.stakeOnNewAssertion(
+      : await this.rollup.stakeOnNewNode(
           assertion,
-          newAssertionHash,
-          parentAssertion.inboxMaxCount
+          newNodeHash,
+          parentNode.inboxMaxCount
         )
-    const assertion = await assertionFromTx(this.rollup.interface, tx)
-    return { tx, assertion, expectedNewAssertionHash: newAssertionHash }
+    const node = await nodeFromTx(this.rollup.interface, tx)
+    return { tx, node, expectedNewNodeHash: newNodeHash }
   }
 
-  stakeOnExistingAssertion(
-    assertionNum: BigNumberish,
-    assertionHash: BytesLike
+  stakeOnExistingNode(
+    nodeNum: BigNumberish,
+    nodeHash: BytesLike
   ): Promise<ContractTransaction> {
-    return this.rollup.stakeOnExistingAssertion(assertionNum, assertionHash)
+    return this.rollup.stakeOnExistingNode(nodeNum, nodeHash)
   }
 
-  confirmNextAssertion(assertion: Assertion): Promise<ContractTransaction> {
-    return this.rollup.confirmNextAssertion(
-      assertion.assertion.afterState.globalState.bytes32Vals[0],
-      assertion.assertion.afterState.globalState.bytes32Vals[1]
+  confirmNextNode(node: Node): Promise<ContractTransaction> {
+    return this.rollup.confirmNextNode(
+      node.assertion.afterState.globalState.bytes32Vals[0],
+      node.assertion.afterState.globalState.bytes32Vals[1]
     )
   }
 
-  rejectNextAssertion(stakerAddress: string): Promise<ContractTransaction> {
-    return this.rollup.rejectNextAssertion(stakerAddress)
+  rejectNextNode(stakerAddress: string): Promise<ContractTransaction> {
+    return this.rollup.rejectNextNode(stakerAddress)
   }
 
   async createChallenge(
     staker1Address: string,
     staker2Address: string,
-    assertion1: Assertion,
-    assertion2: Assertion
+    node1: Node,
+    node2: Node
   ): Promise<ContractTransaction> {
     return this.rollup.createChallenge(
       [staker1Address, staker2Address],
-      [assertion1.assertionNum, assertion2.assertionNum],
+      [node1.nodeNum, node2.nodeNum],
       [
-        assertion1.assertion.beforeState.machineStatus,
-        assertion1.assertion.afterState.machineStatus,
+        node1.assertion.beforeState.machineStatus,
+        node1.assertion.afterState.machineStatus,
       ],
       [
-        assertion1.assertion.beforeState.globalState,
-        assertion1.assertion.afterState.globalState,
+        node1.assertion.beforeState.globalState,
+        node1.assertion.afterState.globalState,
       ],
-      assertion1.assertion.numBlocks,
-      assertionExecutionHash(assertion2.assertion),
-      [assertion1.proposedBlock, assertion2.proposedBlock],
-      [assertion1.wasmModuleRoot, assertion2.wasmModuleRoot]
+      node1.assertion.numBlocks,
+      assertionExecutionHash(node2.assertion),
+      [node1.proposedBlock, node2.proposedBlock],
+      [node1.wasmModuleRoot, node2.wasmModuleRoot]
     )
   }
 
@@ -274,12 +274,12 @@ export class RollupContract {
     return this.rollup.latestConfirmed()
   }
 
-  getAssertionStateHash(index: BigNumberish): Promise<string> {
-    return this.rollup.getAssertion(index).then(n => n.stateHash)
+  getNodeStateHash(index: BigNumberish): Promise<string> {
+    return this.rollup.getNode(index).then(n => n.stateHash)
   }
 
-  latestStakedAssertion(staker: string): Promise<BigNumber> {
-    return this.rollup.latestStakedAssertion(staker)
+  latestStakedNode(staker: string): Promise<BigNumber> {
+    return this.rollup.latestStakedNode(staker)
   }
 
   currentRequiredStake(): Promise<BigNumber> {
@@ -287,13 +287,13 @@ export class RollupContract {
   }
 }
 
-export async function forceCreateAssertion(
+export async function forceCreateNode(
   rollupAdmin: RollupAdminLogic,
   sequencerInbox: SequencerInbox,
-  parentAssertion: Assertion,
+  parentNode: Node,
   assertion: AssertionStruct,
-  siblingAssertion?: Assertion
-): Promise<{ tx: ContractTransaction; assertion: Assertion }> {
+  siblingNode?: Node
+): Promise<{ tx: ContractTransaction; node: Node }> {
   const inboxPosition = BigNumber.from(
     assertion.afterState.globalState.u64Vals[0]
   ).toNumber()
@@ -302,19 +302,19 @@ export async function forceCreateAssertion(
       ? await sequencerInbox.inboxAccs(inboxPosition - 1)
       : constants.HashZero
   const wasmModuleRoot = await rollupAdmin.wasmModuleRoot()
-  const newAssertionHash = assertionHash(
-    Boolean(siblingAssertion),
-    (siblingAssertion || parentAssertion).assertionHash,
+  const newNodeHash = nodeHash(
+    Boolean(siblingNode),
+    (siblingNode || parentNode).nodeHash,
     assertionExecutionHash(assertion),
     afterInboxAcc,
     wasmModuleRoot
   )
-  const tx = await rollupAdmin.forceCreateAssertion(
-    parentAssertion.assertionNum,
-    parentAssertion.inboxMaxCount,
+  const tx = await rollupAdmin.forceCreateNode(
+    parentNode.nodeNum,
+    parentNode.inboxMaxCount,
     assertion,
-    newAssertionHash
+    newNodeHash
   )
-  const assertion = await assertionFromTx(rollupAdmin.interface, tx)
-  return { tx, assertion }
+  const node = await nodeFromTx(rollupAdmin.interface, tx)
+  return { tx, node }
 }
