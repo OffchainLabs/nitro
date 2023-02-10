@@ -33,7 +33,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		require.ErrorIs(t, v1.ConfirmPsTimer(context.Background()), ErrPsTimerNotYet)
 	})
 	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
-		acc.backend.AdjustTime(time.Second * 2000)
+		require.NoError(t, acc.backend.AdjustTime(time.Second * 2000))
 		require.NoError(t, v1.ConfirmPsTimer(context.Background()))
 	})
 }
