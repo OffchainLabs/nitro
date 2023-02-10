@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "protocol",
+    name = "go-implementation",
     srcs = [
         "assertions.go",
         "event_feed.go",
@@ -10,7 +10,7 @@ go_library(
         "subchallenges.go",
         "visualization.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol",
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation",
     visibility = ["//visibility:public"],
     deps = [
         "//util",
@@ -24,13 +24,13 @@ go_library(
 )
 
 go_test(
-    name = "protocol_test",
+    name = "go-implementation_test",
     srcs = [
         "assertions_test.go",
         "inbox_test.go",
         "subchallenges_test.go",
     ],
-    embed = [":protocol"],
+    embed = [":go-implementation"],
     deps = [
         "//util",
         "@com_github_ethereum_go_ethereum//common",

@@ -1,6 +1,7 @@
-package protocol
+package goimpl
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,34 +12,38 @@ import (
 )
 
 func TestChallengeVertex_CreateBigStepChallenge(t *testing.T) {
+	ctx := context.Background()
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	t.Run("top level challenge must be block challenge", func(t *testing.T) {
 		v := setupValidSubChallengeCreation(t, SmallStepChallenge)
-		err := v.CreateBigStepChallenge(tx)
+		err := v.CreateBigStepChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("OK", func(t *testing.T) {
 		v := setupValidSubChallengeCreation(t, BlockChallenge)
-		err := v.CreateBigStepChallenge(tx)
+		err := v.CreateBigStepChallenge(ctx, tx)
 		require.NoError(t, err)
 		sub := v.SubChallenge.Unwrap()
-		require.Equal(t, ChallengeType(BigStepChallenge), sub.GetChallengeType())
+		subChallengeType, _ := sub.GetChallengeType(ctx, tx)
+		require.Equal(t, ChallengeType(BigStepChallenge), subChallengeType)
 	})
 }
 
 func TestChallengeVertex_CreateSmallStepChallenge(t *testing.T) {
+	ctx := context.Background()
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	t.Run("top level challenge must be big step challenge", func(t *testing.T) {
 		v := setupValidSubChallengeCreation(t, SmallStepChallenge)
-		err := v.CreateSmallStepChallenge(tx)
+		err := v.CreateSmallStepChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("OK", func(t *testing.T) {
 		v := setupValidSubChallengeCreation(t, BigStepChallenge)
-		err := v.CreateSmallStepChallenge(tx)
+		err := v.CreateSmallStepChallenge(ctx, tx)
 		require.NoError(t, err)
 		sub := v.SubChallenge.Unwrap()
-		require.Equal(t, ChallengeType(SmallStepChallenge), sub.GetChallengeType())
+		subChallengeType, _ := sub.GetChallengeType(ctx, tx)
+		require.Equal(t, ChallengeType(SmallStepChallenge), subChallengeType)
 	})
 }
 
@@ -96,18 +101,20 @@ func setupValidSubChallengeCreation(t *testing.T, topLevelType ChallengeType) *C
 }
 
 func Test_canCreateSubChallenge(t *testing.T) {
+	ctx := context.Background()
+	tx := &ActiveTx{}
 	t.Run("no challenge for vertex", func(t *testing.T) {
 		v := &ChallengeVertex{
 			Challenge: util.None[ChallengeInterface](),
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorIs(t, err, ErrNoChallenge)
 	})
 	t.Run("block challenge cannot be a subchallenge", func(t *testing.T) {
 		v := &ChallengeVertex{
 			Challenge: util.Some(ChallengeInterface(&Challenge{})),
 		}
-		err := v.canCreateSubChallenge(BlockChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BlockChallenge)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("parent of big step challenge must be block challenge", func(t *testing.T) {
@@ -116,7 +123,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 				challengeType: SmallStepChallenge,
 			})),
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("parent of small step challenge must be big step challenge", func(t *testing.T) {
@@ -125,7 +132,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 				challengeType: SmallStepChallenge,
 			})),
 		}
-		err := v.canCreateSubChallenge(SmallStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, SmallStepChallenge)
 		require.ErrorIs(t, err, ErrWrongChallengeKind)
 	})
 	t.Run("challenge must be ongoing", func(t *testing.T) {
@@ -147,7 +154,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		v := &ChallengeVertex{
 			Challenge: util.Some(ChallengeInterface(chal)),
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorIs(t, err, ErrChallengeNotRunning)
 	})
 	t.Run("subchallenge already exists", func(t *testing.T) {
@@ -169,7 +176,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			Challenge:    util.Some(ChallengeInterface(chal)),
 			SubChallenge: util.Some(ChallengeInterface(&Challenge{})),
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorIs(t, err, ErrSubchallengeAlreadyExists)
 	})
 	t.Run("vertex must not be confirmed", func(t *testing.T) {
@@ -192,7 +199,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			SubChallenge: util.None[ChallengeInterface](),
 			Status:       ConfirmedAssertionState,
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorIs(t, err, ErrWrongState)
 	})
 	t.Run("checking unexpired children's existence fails", func(t *testing.T) {
@@ -218,7 +225,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			SubChallenge: util.None[ChallengeInterface](),
 			Status:       PendingAssertionState,
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorContains(t, err, "vertices not found")
 	})
 	t.Run("not enough unexpired children", func(t *testing.T) {
@@ -249,7 +256,7 @@ func Test_canCreateSubChallenge(t *testing.T) {
 			SubChallenge: util.None[ChallengeInterface](),
 			Status:       PendingAssertionState,
 		}
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.ErrorIs(t, err, ErrNotEnoughValidChildren)
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -299,18 +306,20 @@ func Test_canCreateSubChallenge(t *testing.T) {
 		}
 		chain.challengeVerticesByCommitHash[challengeHash] = vertices
 
-		err := v.canCreateSubChallenge(BigStepChallenge)
+		err := v.canCreateSubChallenge(ctx, tx, BigStepChallenge)
 		require.NoError(t, err)
 	})
 }
 
 func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
+	ctx := context.Background()
+	tx := &ActiveTx{}
 	t.Run("no challenge for vertex", func(t *testing.T) {
 		chain := &AssertionChain{}
 		v := &ChallengeVertex{
 			Challenge: util.None[ChallengeInterface](),
 		}
-		_, err := hasUnexpiredChildren(chain, v)
+		_, err := hasUnexpiredChildren(ctx, tx, chain, v)
 		require.ErrorIs(t, err, ErrNoChallenge)
 	})
 	t.Run("vertices not found for challenge", func(t *testing.T) {
@@ -323,7 +332,7 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 				rootAssertion: util.None[*Assertion](),
 			})),
 		}
-		_, err := hasUnexpiredChildren(chain, v)
+		_, err := hasUnexpiredChildren(ctx, tx, chain, v)
 		require.ErrorContains(t, err, "vertices not found")
 	})
 
@@ -414,7 +423,7 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 			}
 			chain.challengeVerticesByCommitHash[challengeHash] = vertices
 
-			got, err := hasUnexpiredChildren(chain, parent)
+			got, err := hasUnexpiredChildren(ctx, tx, chain, parent)
 			require.NoError(t, err)
 			require.Equal(t, testCase.want, got)
 		})
@@ -422,6 +431,8 @@ func TestChallengeVertex_hasUnexpiredChildren(t *testing.T) {
 }
 
 func TestChallenge_hasEnded(t *testing.T) {
+	ctx := context.Background()
+	tx := &ActiveTx{}
 	challengePeriod := 5 * time.Second
 	for _, tt := range []struct {
 		elapsed time.Duration
@@ -440,7 +451,7 @@ func TestChallenge_hasEnded(t *testing.T) {
 			challengePeriod: challengePeriod,
 			timeReference:   ref,
 		}
-		got := chal.HasEnded(chain)
+		got, _ := chal.HasEnded(ctx, tx, chain)
 		require.Equal(t, tt.want, got)
 	}
 

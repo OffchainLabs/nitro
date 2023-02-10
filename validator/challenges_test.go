@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,10 +56,10 @@ func TestBlockChallenge(t *testing.T) {
 		// Bob bisects from 4 to 3, is presumptive.
 		// Alice merges to 3.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   2,
-			&protocol.ChallengeBisectEvent{}: 4,
-			&protocol.ChallengeMergeEvent{}:  2,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   2,
+			&goimpl.ChallengeBisectEvent{}: 4,
+			&goimpl.ChallengeMergeEvent{}:  2,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -87,10 +87,10 @@ func TestBlockChallenge(t *testing.T) {
 				bobAddr:   4,
 			},
 		}
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   2,
-			&protocol.ChallengeBisectEvent{}: 3,
-			&protocol.ChallengeMergeEvent{}:  1,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   2,
+			&goimpl.ChallengeBisectEvent{}: 3,
+			&goimpl.ChallengeMergeEvent{}:  1,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -121,10 +121,10 @@ func TestBlockChallenge(t *testing.T) {
 		// With Alice starting at 256 and bisecting all the way down to 4
 		// will take 6 bisections. Then, Alice bisects from 4 to 3. Bob bisects twice to 4 and 2.
 		// We should see a total of 9 bisections and 2 merges.
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   2,
-			&protocol.ChallengeBisectEvent{}: 9,
-			&protocol.ChallengeMergeEvent{}:  2,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   2,
+			&goimpl.ChallengeBisectEvent{}: 9,
+			&goimpl.ChallengeMergeEvent{}:  2,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -154,10 +154,10 @@ func TestBlockChallenge(t *testing.T) {
 		}
 		// Same as the test case above but bob has 4 more bisections to perform
 		// if Bob starts at 129.
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   2,
-			&protocol.ChallengeBisectEvent{}: 14,
-			&protocol.ChallengeMergeEvent{}:  2,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   2,
+			&goimpl.ChallengeBisectEvent{}: 14,
+			&goimpl.ChallengeMergeEvent{}:  2,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -196,10 +196,10 @@ func TestBlockChallenge(t *testing.T) {
 				charlieAddr: 3,
 			},
 		}
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   3,
-			&protocol.ChallengeBisectEvent{}: 5,
-			&protocol.ChallengeMergeEvent{}:  4,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   3,
+			&goimpl.ChallengeBisectEvent{}: 5,
+			&goimpl.ChallengeMergeEvent{}:  4,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -240,10 +240,10 @@ func TestBlockChallenge(t *testing.T) {
 			},
 		}
 
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   3,
-			&protocol.ChallengeBisectEvent{}: 6,
-			&protocol.ChallengeMergeEvent{}:  3,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   3,
+			&goimpl.ChallengeBisectEvent{}: 6,
+			&goimpl.ChallengeMergeEvent{}:  3,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -288,10 +288,10 @@ func TestBlockChallenge(t *testing.T) {
 			},
 		}
 
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   3,
-			&protocol.ChallengeBisectEvent{}: 9,
-			&protocol.ChallengeMergeEvent{}:  3,
+		cfg.eventsToAssert = map[goimpl.ChallengeEvent]uint{
+			&goimpl.ChallengeLeafEvent{}:   3,
+			&goimpl.ChallengeBisectEvent{}: 9,
+			&goimpl.ChallengeMergeEvent{}:  3,
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
@@ -316,18 +316,18 @@ type blockChallengeTestConfig struct {
 	latestStateHeightByAddress map[common.Address]uint64
 	// List of validator addresses to initialize in order.
 	validatorAddrs []common.Address
-	// Events we want to assert are fired from the protocol.
-	eventsToAssert map[protocol.ChallengeEvent]uint
+	// Events we want to assert are fired from the goimpl.
+	eventsToAssert map[goimpl.ChallengeEvent]uint
 }
 
 func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
-	chain := protocol.NewAssertionChain(ctx, ref, time.Minute)
+	chain := goimpl.NewAssertionChain(ctx, ref, time.Minute)
 
 	// Increase the balance for each validator in the test.
-	bal := big.NewInt(0).Mul(protocol.AssertionStake, big.NewInt(100))
-	err := chain.Tx(func(tx *protocol.ActiveTx) error {
+	bal := big.NewInt(0).Mul(goimpl.AssertionStake, big.NewInt(100))
+	err := chain.Tx(func(tx *goimpl.ActiveTx) error {
 		for addr := range cfg.validatorNamesByAddress {
 			chain.AddToBalance(tx, addr, bal)
 		}
@@ -378,7 +378,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
 	defer cancel()
 
-	harnessObserver := make(chan protocol.ChallengeEvent, 100)
+	harnessObserver := make(chan goimpl.ChallengeEvent, 100)
 	chain.SubscribeChallengeEvents(ctx, harnessObserver)
 
 	// Submit leaf creation manually for each validator.
@@ -404,7 +404,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			t.Logf("Received more events than expected, saw an extra %+T", ev)
 		}
 		switch e := ev.(type) {
-		case *protocol.ChallengeLeafEvent:
+		case *goimpl.ChallengeLeafEvent:
 			fmt.Println("ChallengeLeafEvent")
 			fmt.Printf(
 				"validator=%s height=%d commit=%#x\n",
@@ -413,7 +413,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 				e.History.Merkle,
 			)
 			fmt.Println("")
-		case *protocol.ChallengeMergeEvent:
+		case *goimpl.ChallengeMergeEvent:
 			fmt.Println("ChallengeMergeEvent")
 			fmt.Printf(
 				"validator=%s to=%d commit=%#x\n",
@@ -422,7 +422,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 				e.ToHistory.Merkle,
 			)
 			fmt.Println("")
-		case *protocol.ChallengeBisectEvent:
+		case *goimpl.ChallengeBisectEvent:
 			fmt.Println("ChallengeBisectEvent")
 			fmt.Printf(
 				"validator=%s to=%d commit=%#x\n",
@@ -461,22 +461,23 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 }
 
 func TestValidator_verifyAddLeafConditions(t *testing.T) {
-	badAssertion := &protocol.Assertion{}
+	tx := &goimpl.ActiveTx{}
+	badAssertion := &goimpl.Assertion{}
 	ctx := context.Background()
 	timeRef := util.NewArtificialTimeReference()
-	v := &Validator{chain: protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)}
+	v := &Validator{chain: goimpl.NewAssertionChain(ctx, timeRef, 100*time.Second)}
 	// Can not add leaf on root assertion
-	require.ErrorIs(t, v.verifyAddLeafConditions(badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
+	require.ErrorIs(t, v.verifyAddLeafConditions(ctx, tx, badAssertion, &goimpl.Challenge{}), goimpl.ErrInvalidOp)
 
-	chain := protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)
-	var chal protocol.ChallengeInterface
-	var rootAssertion *protocol.Assertion
+	chain := goimpl.NewAssertionChain(ctx, timeRef, 100*time.Second)
+	var chal goimpl.ChallengeInterface
+	var rootAssertion *goimpl.Assertion
 	var err error
-	err = chain.Tx(func(tx *protocol.ActiveTx) error {
+	err = chain.Tx(func(tx *goimpl.ActiveTx) error {
 		require.Equal(t, uint64(1), chain.NumAssertions(tx))
 		rootAssertion, err = chain.AssertionBySequenceNum(tx, 0)
 		require.NoError(t, err)
-		chain.SetBalance(tx, common.Address{}, new(big.Int).Mul(protocol.AssertionStake, big.NewInt(1000)))
+		chain.SetBalance(tx, common.Address{}, new(big.Int).Mul(goimpl.AssertionStake, big.NewInt(1000)))
 		_, err = chain.CreateLeaf(tx, rootAssertion, util.StateCommitment{
 			Height:    1,
 			StateRoot: common.Hash{'a'},
@@ -490,10 +491,10 @@ func TestValidator_verifyAddLeafConditions(t *testing.T) {
 		chal, err = rootAssertion.CreateChallenge(tx, ctx, common.Address{})
 		require.NoError(t, err)
 		// Parent missmatch between challenge and assertion's parent
-		require.ErrorIs(t, v.verifyAddLeafConditions(&protocol.Assertion{Prev: util.Some[*protocol.Assertion](badAssertion)}, chal), protocol.ErrInvalidOp)
+		require.ErrorIs(t, v.verifyAddLeafConditions(ctx, tx, &goimpl.Assertion{Prev: util.Some[*goimpl.Assertion](badAssertion)}, chal), goimpl.ErrInvalidOp)
 
 		// Happy case
-		require.NoError(t, v.verifyAddLeafConditions(&protocol.Assertion{Prev: util.Some[*protocol.Assertion](rootAssertion)}, chal), protocol.ErrInvalidOp)
+		require.NoError(t, v.verifyAddLeafConditions(ctx, tx, &goimpl.Assertion{Prev: util.Some[*goimpl.Assertion](rootAssertion)}, chal), goimpl.ErrInvalidOp)
 		return nil
 	})
 	require.NoError(t, err)

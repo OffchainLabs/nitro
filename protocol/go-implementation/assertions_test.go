@@ -1,4 +1,4 @@
-package protocol
+package goimpl
 
 import (
 	"context"
@@ -150,7 +150,7 @@ func TestAssertionChain(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		chal1, err := challenge.AddLeaf(tx, branch1, historyCommit, staker1)
+		chal1, err := challenge.AddLeaf(ctx, tx, branch1, historyCommit, staker1)
 		require.NoError(t, err)
 
 		badCommit, err := util.NewHistoryCommitment(
@@ -160,25 +160,26 @@ func TestAssertionChain(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = challenge.AddLeaf(tx, branch2, badCommit, staker2)
+		_, err = challenge.AddLeaf(ctx, tx, branch2, badCommit, staker2)
 		require.NoError(t, err)
 
 		// Cannot be confirmed yet.
-		err = chal1.ConfirmForPsTimer(tx)
+		err = chal1.ConfirmForPsTimer(ctx, tx)
 		require.ErrorIs(t, err, ErrNotYet)
 
 		// Add a challenge period, and then the leaf can be confirmed.
 		timeRef.Add(testChallengePeriod)
-		require.NoError(t, chal1.ConfirmForPsTimer(tx))
+		require.NoError(t, chal1.ConfirmForPsTimer(ctx, tx))
 
 		half := big.NewInt(0).Div(ChallengeVertexStake, big.NewInt(2))
 		want := big.NewInt(0).Add(half, ChallengeVertexStake)
-		require.Equal(t, want, assertionsChain.GetBalance(tx, chal1.GetValidator())) // Should receive own mini stake plus half of others.
-		require.NoError(t, branch1.ConfirmForWin(tx))
+		chal1Validator, _ := chal1.GetValidator(ctx, tx)
+		require.Equal(t, want, assertionsChain.GetBalance(tx, chal1Validator)) // Should receive own mini stake plus half of others.
+		require.NoError(t, branch1.ConfirmForWin(ctx, tx))
 		require.Equal(t, branch1, assertionsChain.LatestConfirmed(tx))
 
 		verifyConfirmEventInFeed(t, eventChan, 2)
-		require.NoError(t, branch2.RejectForLoss(tx))
+		require.NoError(t, branch2.RejectForLoss(ctx, tx))
 		verifyRejectEventInFeed(t, eventChan, 3)
 		return nil
 	})
@@ -489,6 +490,7 @@ func TestIsAtOneStepFork(t *testing.T) {
 				assertionsChain.challengeVerticesByCommitHash = make(map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex)
 				assertionsChain.challengeVerticesByCommitHash[genesisCommitHash] = tt.vertices
 				ok, err := assertionsChain.IsAtOneStepFork(
+					ctx,
 					tx,
 					genesisCommitHash,
 					vertexCommit,
@@ -571,6 +573,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			Prev: util.None[*Assertion](),
 		}
 		_, err := c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			util.HistoryCommitment{},
@@ -589,6 +592,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			}),
 		}
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			util.HistoryCommitment{},
@@ -607,6 +611,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			Prev: c.rootAssertion,
 		}
 		_, err := c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			util.HistoryCommitment{},
@@ -638,6 +643,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			Prev: c.rootAssertion,
 		}
 		_, err := c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			util.HistoryCommitment{},
@@ -663,6 +669,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			Prev: c.rootAssertion,
 		}
 		_, err := c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -690,6 +697,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			Prev: c.rootAssertion,
 		}
 		_, err := c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -721,6 +729,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 			Prev: c.rootAssertion,
 		}
 		_, err := c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -759,6 +768,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -805,6 +815,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -851,6 +862,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -897,6 +909,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -947,6 +960,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history.LastLeafProof[0] = common.BytesToHash([]byte("nyan"))
 
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -1004,6 +1018,7 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
+			ctx,
 			tx,
 			assertion,
 			history,
@@ -1054,6 +1069,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		badLeaf, err := challenge.AddLeaf(
+			ctx,
 			tx,
 			wrongBranch,
 			badCommit,
@@ -1068,6 +1084,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		)
 		require.NoError(t, err)
 		goodLeaf, err := challenge.AddLeaf(
+			ctx,
 			tx,
 			correctBranch,
 			goodCommit,
@@ -1076,16 +1093,19 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure the lower height challenge vertex is the ps.
-		require.Equal(t, true, badLeaf.IsPresumptiveSuccessor())
-		require.Equal(t, false, goodLeaf.IsPresumptiveSuccessor())
+		badLeafIsPresumptiveSuccessor, _ := badLeaf.IsPresumptiveSuccessor(ctx, tx)
+		goodLeafIsPresumptiveSuccessor, _ := goodLeaf.IsPresumptiveSuccessor(ctx, tx)
+		require.Equal(t, true, badLeafIsPresumptiveSuccessor)
+		require.Equal(t, false, goodLeafIsPresumptiveSuccessor)
 
 		// Next, only the vertex that is not the presumptive successor can start a bisection move.
-		bisectionHeight, err := goodLeaf.(*ChallengeVertex).requiredBisectionHeight()
+		bisectionHeight, err := goodLeaf.(*ChallengeVertex).requiredBisectionHeight(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, expectedBisectionHeight, bisectionHeight)
 
 		proof := util.GeneratePrefixProof(lo, loExp, wrongBlockHashes[lo:6])
 		_, err = badLeaf.Bisect(
+			ctx,
 			tx,
 			util.HistoryCommitment{
 				Height: lo,
@@ -1101,6 +1121,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		loExp = util.ExpansionFromLeaves(correctBlockHashes[:lo])
 		proof = util.GeneratePrefixProof(lo, loExp, correctBlockHashes[lo:hi])
 		bisection, err := goodLeaf.Bisect(
+			ctx,
 			tx,
 			util.HistoryCommitment{
 				Height: lo,
@@ -1112,12 +1133,16 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
-		require.Equal(t, bisection, goodLeaf.GetPrev().Unwrap())
+		goodLeafPrev, _ := goodLeaf.GetPrev(ctx, tx)
+		require.Equal(t, bisection, goodLeafPrev.Unwrap())
 
 		// The rootAssertion of the bisectoin should be the rootVertex of this challenge and the bisection
 		// should be the new presumptive successor.
-		require.Equal(t, challenge.(*Challenge).rootVertex.Unwrap().(*ChallengeVertex).Commitment.Merkle, bisection.GetPrev().Unwrap().GetCommitment().Merkle)
-		require.Equal(t, true, bisection.GetPrev().Unwrap().IsPresumptiveSuccessor())
+		bisectionPrev, _ := bisection.GetPrev(ctx, tx)
+		bisectionPrevCommitment, _ := bisectionPrev.Unwrap().GetCommitment(ctx, tx)
+		require.Equal(t, challenge.(*Challenge).rootVertex.Unwrap().(*ChallengeVertex).Commitment.Merkle, bisectionPrevCommitment.Merkle)
+		bisectionPrevPresumptiveSuccessor, _ := bisectionPrev.Unwrap().IsPresumptiveSuccessor(ctx, tx)
+		require.Equal(t, true, bisectionPrevPresumptiveSuccessor)
 		return nil
 	})
 
@@ -1126,6 +1151,7 @@ func TestAssertionChain_Bisect(t *testing.T) {
 
 func TestAssertionChain_Merge(t *testing.T) {
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
+	ctx := context.Background()
 	t.Run("past deadline", func(t *testing.T) {
 		timeRef := util.NewArtificialTimeReference()
 		counter := util.NewCountUpTimer(timeRef)
@@ -1149,6 +1175,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 		}
 		mergingFrom := &ChallengeVertex{}
 		err := mergingFrom.Merge(
+			ctx,
 			tx,
 			mergingTo,
 			[]common.Hash{},
@@ -1169,6 +1196,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		err := mergingFrom.Merge(
+			ctx,
 			tx,
 			mergingTo,
 			[]common.Hash{},
@@ -1193,6 +1221,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		err := mergingFrom.Merge(
+			ctx,
 			tx,
 			mergingTo,
 			[]common.Hash{},
@@ -1217,6 +1246,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		err := mergingFrom.Merge(
+			ctx,
 			tx,
 			mergingTo,
 			[]common.Hash{},
@@ -1268,6 +1298,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			Commitment: mergingFromCommit,
 		}
 		err := mergingFrom.Merge(
+			ctx,
 			tx,
 			mergingTo,
 			proof,
@@ -1355,8 +1386,8 @@ func TestAssertion_ErrWrongState(t *testing.T) {
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	a := chain.LatestConfirmed(tx)
 	require.ErrorIs(t, a.RejectForPrev(tx), ErrWrongState)
-	require.ErrorIs(t, a.RejectForLoss(tx), ErrWrongState)
-	require.ErrorIs(t, a.ConfirmForWin(tx), ErrWrongState)
+	require.ErrorIs(t, a.RejectForLoss(ctx, tx), ErrWrongState)
+	require.ErrorIs(t, a.ConfirmForWin(ctx, tx), ErrWrongState)
 }
 
 func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
@@ -1369,7 +1400,7 @@ func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), util.StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
 	require.ErrorIs(t, newA.RejectForPrev(tx), ErrWrongPredecessorState)
-	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrWrongPredecessorState)
+	require.ErrorIs(t, newA.ConfirmForWin(ctx, tx), ErrWrongPredecessorState)
 }
 
 func TestAssertion_ErrNotYet(t *testing.T) {
@@ -1395,12 +1426,13 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	require.NoError(t, err)
 	newA.Prev = util.None[*Assertion]()
 	require.ErrorIs(t, newA.RejectForPrev(tx), ErrInvalidOp)
-	require.ErrorIs(t, newA.RejectForLoss(tx), ErrInvalidOp)
+	require.ErrorIs(t, newA.RejectForLoss(ctx, tx), ErrInvalidOp)
 	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalidOp)
-	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrInvalidOp)
+	require.ErrorIs(t, newA.ConfirmForWin(ctx, tx), ErrInvalidOp)
 }
 
 func TestAssertion_HasConfirmedSibling(t *testing.T) {
+	ctx := context.Background()
 	c := &Challenge{}
 	tx := &ActiveTx{TxStatus: ReadOnlyTxStatus}
 	a := util.Some(&Assertion{
@@ -1409,7 +1441,8 @@ func TestAssertion_HasConfirmedSibling(t *testing.T) {
 		}})
 	c.rootAssertion = a
 
-	h := c.ParentStateCommitment().Hash()
+	parentStateCommitment, _ := c.ParentStateCommitment(ctx, tx)
+	h := parentStateCommitment.Hash()
 	parent := &ChallengeVertex{}
 	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[ChallengeCommitHash(h)] = map[VertexCommitHash]*ChallengeVertex{
 		VertexCommitHash(h): {SequenceNum: 100, Status: ConfirmedAssertionState, Prev: util.Some(ChallengeVertexInterface(parent))},
@@ -1417,5 +1450,6 @@ func TestAssertion_HasConfirmedSibling(t *testing.T) {
 
 	child := &ChallengeVertex{SequenceNum: 101, Prev: util.Some(ChallengeVertexInterface(parent))}
 
-	require.True(t, c.HasConfirmedSibling(tx, child))
+	hasConfirmedSibling, _ := c.HasConfirmedSibling(ctx, tx, child)
+	require.True(t, hasConfirmedSibling)
 }

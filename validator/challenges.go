@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -14,7 +14,7 @@ import (
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
 func (v *Validator) onChallengeStarted(
-	ctx context.Context, ev *protocol.StartChallengeEvent,
+	ctx context.Context, tx *goimpl.ActiveTx, ev *goimpl.StartChallengeEvent,
 ) error {
 	if ev == nil {
 		return nil
@@ -34,14 +34,15 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	// We then add a challenge vertex to the challenge.
-	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
+	challengeVertex, err := v.addChallengeVertex(ctx, tx, challenge)
 	if err != nil {
-		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
+		parentStateCommitment, _ := challenge.ParentStateCommitment(ctx, tx)
+		if errors.Is(err, goimpl.ErrVertexAlreadyExists) {
 			log.Infof(
 				"Attempted to add a challenge leaf that already exists to challenge with "+
 					"parent state commit: height=%d, stateRoot=%#x",
-				challenge.ParentStateCommitment().Height,
-				challenge.ParentStateCommitment().StateRoot,
+				parentStateCommitment.Height,
+				parentStateCommitment.StateRoot,
 			)
 			return nil
 		}
@@ -49,19 +50,26 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker := challengeVertex.GetValidator()
+	staker, err := challengeVertex.GetValidator(ctx, tx)
+	if err != nil {
+		return err
+	}
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
+	}
+	parentStateCommitment, err := challenge.ParentStateCommitment(ctx, tx)
+	if err != nil {
+		return err
 	}
 	log.WithFields(logrus.Fields{
 		"name":                 v.name,
 		"challenger":           challengerName,
-		"challengingStateRoot": fmt.Sprintf("%#x", challenge.ParentStateCommitment().StateRoot),
-		"challengingHeight":    challenge.ParentStateCommitment().Height,
+		"challengingStateRoot": fmt.Sprintf("%#x", parentStateCommitment.StateRoot),
+		"challengingHeight":    parentStateCommitment.Height,
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx, tx)
 
 	return nil
 }
@@ -69,12 +77,12 @@ func (v *Validator) onChallengeStarted(
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	var challenge protocol.ChallengeInterface
+func (v *Validator) challengeAssertion(ctx context.Context, tx *goimpl.ActiveTx, ev *goimpl.CreateLeafEvent) error {
+	var challenge goimpl.ChallengeInterface
 	var err error
 	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum)
 	if err != nil {
-		if errors.Is(err, protocol.ErrChallengeAlreadyExists) {
+		if errors.Is(err, goimpl.ErrChallengeAlreadyExists) {
 			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
 			if fetchErr != nil {
 				return fetchErr
@@ -86,22 +94,26 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	}
 
 	// We then add a challenge vertex to the challenge.
-	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
+	challengeVertex, err := v.addChallengeVertex(ctx, tx, challenge)
 	if err != nil {
 		return err
 	}
-	if errors.Is(err, protocol.ErrVertexAlreadyExists) {
+	if errors.Is(err, goimpl.ErrVertexAlreadyExists) {
+		parentStateCommitment, err := challenge.ParentStateCommitment(ctx, tx)
+		if err != nil {
+			return err
+		}
 		log.Infof(
 			"Attempted to add a challenge leaf that already exists to challenge with "+
 				"parent state commit: height=%d, stateRoot=%#x",
-			challenge.ParentStateCommitment().Height,
-			challenge.ParentStateCommitment().StateRoot,
+			parentStateCommitment.Height,
+			parentStateCommitment.StateRoot,
 		)
 		return nil
 	}
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx, tx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
@@ -113,36 +125,54 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	return nil
 }
 
-func (v *Validator) verifyAddLeafConditions(a *protocol.Assertion, c protocol.ChallengeInterface) error {
+func (v *Validator) verifyAddLeafConditions(ctx context.Context, tx *goimpl.ActiveTx, a *goimpl.Assertion, c goimpl.ChallengeInterface) error {
 	if a.Prev.IsNone() {
-		return errors.Wrap(protocol.ErrInvalidOp, "Can not add leaf on root assertion")
+		return errors.Wrap(goimpl.ErrInvalidOp, "Can not add leaf on root assertion")
 	}
-	if a.Prev.Unwrap() != c.RootAssertion() {
-		return errors.Wrap(protocol.ErrInvalidOp, "Challenge and assertion parent mismatch")
+	rootAssertion, err := c.RootAssertion(ctx, tx)
+	if err != nil {
+		return err
 	}
-	if err := v.chain.Call(func(tx *protocol.ActiveTx) error {
-		if c.Completed(tx) {
+	if a.Prev.Unwrap() != rootAssertion {
+		return errors.Wrap(goimpl.ErrInvalidOp, "Challenge and assertion parent mismatch")
+	}
+	if err = v.chain.Call(func(tx *goimpl.ActiveTx) error {
+		var completed bool
+		completed, err = c.Completed(ctx, tx)
+		if err != nil {
+			return nil
+		}
+		if completed {
 			return errors.New("Challenge has been completed")
 		}
 		return nil
 	}); err != nil {
-		return errors.Wrap(protocol.ErrInvalidOp, err.Error())
+		return errors.Wrap(goimpl.ErrInvalidOp, err.Error())
 	}
-	if !c.RootVertex().EligibleForNewSuccessor() {
-		return errors.Wrap(protocol.ErrInvalidOp, "Root vertex is not eligible for new successor")
+	rootVertex, err := c.RootVertex(ctx, tx)
+	if err != nil {
+		return err
+	}
+	eligibleForNewSuccessor, err := rootVertex.EligibleForNewSuccessor(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !eligibleForNewSuccessor {
+		return errors.Wrap(goimpl.ErrInvalidOp, "Root vertex is not eligible for new successor")
 	}
 	return nil
 }
 
 func (v *Validator) addChallengeVertex(
 	ctx context.Context,
-	challenge protocol.ChallengeInterface,
-) (protocol.ChallengeVertexInterface, error) {
+	tx *goimpl.ActiveTx,
+	challenge goimpl.ChallengeInterface,
+) (goimpl.ChallengeVertexInterface, error) {
 	latestValidAssertionSeq := v.findLatestValidAssertion(ctx)
 
-	var assertion *protocol.Assertion
+	var assertion *goimpl.Assertion
 	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+	if err = v.chain.Call(func(tx *goimpl.ActiveTx) error {
 		assertion, err = v.chain.AssertionBySequenceNum(tx, latestValidAssertionSeq)
 		if err != nil {
 			return err
@@ -157,19 +187,20 @@ func (v *Validator) addChallengeVertex(
 		return nil, err
 	}
 
-	var challengeVertex protocol.ChallengeVertexInterface
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
-		challengeVertex, err = challenge.AddLeaf(tx, assertion, historyCommit, v.address)
+	var challengeVertex goimpl.ChallengeVertexInterface
+	if err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
+		challengeVertex, err = challenge.AddLeaf(ctx, tx, assertion, historyCommit, v.address)
 		if err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
+		parentStateCommitment, _ := challenge.ParentStateCommitment(ctx, tx)
 		return nil, errors.Wrapf(
 			err,
 			"could add challenge vertex to challenge with parent state commitment: height=%d, stateRoot=%#x",
-			challenge.ParentStateCommitment().Height,
-			challenge.ParentStateCommitment().StateRoot,
+			parentStateCommitment.Height,
+			parentStateCommitment.StateRoot,
 		)
 	}
 	return challengeVertex, nil
@@ -177,11 +208,11 @@ func (v *Validator) addChallengeVertex(
 
 func (v *Validator) submitProtocolChallenge(
 	ctx context.Context,
-	parentAssertionSeqNum protocol.AssertionSequenceNumber,
-) (protocol.ChallengeInterface, error) {
-	var challenge protocol.ChallengeInterface
+	parentAssertionSeqNum goimpl.AssertionSequenceNumber,
+) (goimpl.ChallengeInterface, error) {
+	var challenge goimpl.ChallengeInterface
 	var err error
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
+	if err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
 		parentAssertion, readErr := v.chain.AssertionBySequenceNum(tx, parentAssertionSeqNum)
 		if readErr != nil {
 			return readErr
@@ -201,15 +232,15 @@ func (v *Validator) submitProtocolChallenge(
 // based on the parent assertion's state commitment hash.
 func (v *Validator) fetchProtocolChallenge(
 	ctx context.Context,
-	parentAssertionSeqNum protocol.AssertionSequenceNumber,
+	parentAssertionSeqNum goimpl.AssertionSequenceNumber,
 	parentAssertionCommit util.StateCommitment,
-) (*protocol.Challenge, error) {
+) (*goimpl.Challenge, error) {
 	var err error
-	var challenge *protocol.Challenge
-	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+	var challenge *goimpl.Challenge
+	if err = v.chain.Call(func(tx *goimpl.ActiveTx) error {
 		challenge, err = v.chain.ChallengeByCommitHash(
 			tx,
-			protocol.ChallengeCommitHash(parentAssertionCommit.Hash()),
+			goimpl.ChallengeCommitHash(parentAssertionCommit.Hash()),
 		)
 		if err != nil {
 			return err

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -54,53 +54,54 @@ type MockProtocol struct {
 	mock.Mock
 }
 
-func (m *MockProtocol) Inbox() *protocol.Inbox {
+func (m *MockProtocol) Inbox() *goimpl.Inbox {
 	args := m.Called()
-	return args.Get(0).(*protocol.Inbox)
+	return args.Get(0).(*goimpl.Inbox)
 }
 
-func (m *MockProtocol) Tx(clo func(tx *protocol.ActiveTx) error) error {
-	ch := protocol.AssertionChain{}
+func (m *MockProtocol) Tx(clo func(tx *goimpl.ActiveTx) error) error {
+	ch := goimpl.AssertionChain{}
 	return ch.Tx(clo)
 }
 
-func (m *MockProtocol) Call(clo func(tx *protocol.ActiveTx) error) error {
-	return clo(&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus})
+func (m *MockProtocol) Call(clo func(tx *goimpl.ActiveTx) error) error {
+	return clo(&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
 }
 
-func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- protocol.AssertionChainEvent) {
+func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- goimpl.AssertionChainEvent) {
 }
 
 func (m *MockProtocol) TimeReference() util.TimeReference {
 	return nil
 }
 
-func (m *MockProtocol) SubscribeChallengeEvents(ctx context.Context, ch chan<- protocol.ChallengeEvent) {
+func (m *MockProtocol) SubscribeChallengeEvents(ctx context.Context, ch chan<- goimpl.ChallengeEvent) {
 }
 
-func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum protocol.AssertionSequenceNumber) (*protocol.Assertion, error) {
+func (m *MockProtocol) AssertionBySequenceNum(tx *goimpl.ActiveTx, seqNum goimpl.AssertionSequenceNumber) (*goimpl.Assertion, error) {
 	args := m.Called(tx, seqNum)
-	return args.Get(0).(*protocol.Assertion), args.Error(1)
+	return args.Get(0).(*goimpl.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeVertexByCommitHash(tx *protocol.ActiveTx, challengeHash protocol.ChallengeCommitHash, vertexHash protocol.VertexCommitHash) (*protocol.ChallengeVertex, error) {
+func (m *MockProtocol) ChallengeVertexByCommitHash(tx *goimpl.ActiveTx, challengeHash goimpl.ChallengeCommitHash, vertexHash goimpl.VertexCommitHash) (*goimpl.ChallengeVertex, error) {
 	args := m.Called(tx, challengeHash, vertexHash)
-	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
+	return args.Get(0).(*goimpl.ChallengeVertex), args.Error(1)
 }
 
-func (m *MockProtocol) Completed(tx *protocol.ActiveTx) bool {
+func (m *MockProtocol) Completed(tx *goimpl.ActiveTx) bool {
 	args := m.Called(tx)
 	return args.Get(0).(bool)
 }
 
-func (m *MockProtocol) HasConfirmedAboveSeqNumber(tx *protocol.ActiveTx, seqNum protocol.VertexSequenceNumber) (bool, error) {
+func (m *MockProtocol) HasConfirmedAboveSeqNumber(tx *goimpl.ActiveTx, seqNum goimpl.VertexSequenceNumber) (bool, error) {
 	args := m.Called(tx, seqNum)
 	return args.Get(0).(bool), args.Error(1)
 }
 
 func (m *MockProtocol) IsAtOneStepFork(
-	tx *protocol.ActiveTx,
-	challengeCommitHash protocol.ChallengeCommitHash,
+	ctx context.Context,
+	tx *goimpl.ActiveTx,
+	challengeCommitHash goimpl.ChallengeCommitHash,
 	vertexCommit util.HistoryCommitment,
 	vertexParentCommit util.HistoryCommitment,
 ) (bool, error) {
@@ -108,27 +109,27 @@ func (m *MockProtocol) IsAtOneStepFork(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.ChallengeCommitHash) (*protocol.Challenge, error) {
+func (m *MockProtocol) ChallengeByCommitHash(tx *goimpl.ActiveTx, commitHash goimpl.ChallengeCommitHash) (*goimpl.Challenge, error) {
 	args := m.Called(tx, commitHash)
-	return args.Get(0).(*protocol.Challenge), args.Error(1)
+	return args.Get(0).(*goimpl.Challenge), args.Error(1)
 }
 
-func (m *MockProtocol) LatestConfirmed(tx *protocol.ActiveTx) *protocol.Assertion {
+func (m *MockProtocol) LatestConfirmed(tx *goimpl.ActiveTx) *goimpl.Assertion {
 	args := m.Called(tx)
-	return args.Get(0).(*protocol.Assertion)
+	return args.Get(0).(*goimpl.Assertion)
 }
 
-func (m *MockProtocol) CreateLeaf(tx *protocol.ActiveTx, prev *protocol.Assertion, commitment util.StateCommitment, staker common.Address) (*protocol.Assertion, error) {
+func (m *MockProtocol) CreateLeaf(tx *goimpl.ActiveTx, prev *goimpl.Assertion, commitment util.StateCommitment, staker common.Address) (*goimpl.Assertion, error) {
 	args := m.Called(tx, prev, commitment, staker)
-	return args.Get(0).(*protocol.Assertion), args.Error(1)
+	return args.Get(0).(*goimpl.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengePeriodLength(tx *protocol.ActiveTx) time.Duration {
+func (m *MockProtocol) ChallengePeriodLength(tx *goimpl.ActiveTx) time.Duration {
 	args := m.Called(tx)
 	return args.Get(0).(time.Duration)
 }
 
-func (m *MockProtocol) NumAssertions(tx *protocol.ActiveTx) uint64 {
+func (m *MockProtocol) NumAssertions(tx *goimpl.ActiveTx) uint64 {
 	args := m.Called(tx)
 	return args.Get(0).(uint64)
 }

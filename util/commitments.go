@@ -24,7 +24,7 @@ func (comm StateCommitment) Hash() common.Hash {
 }
 
 // HistoryCommitment defines a Merkle accumulator over a list of leaves, which
-// are understood to be state roots in the protocol. A history commitment contains
+// are understood to be state roots in the goimpl. A history commitment contains
 // a "height" value, which can refer to a height of an assertion in the assertions
 // tree, or a "step" of WAVM states in a big step or small step subchallenge.
 // A commitment contains a Merkle root over the list of leaves, and can optionally

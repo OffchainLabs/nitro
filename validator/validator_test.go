@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -20,28 +20,29 @@ import (
 )
 
 func Test_onLeafCreation(t *testing.T) {
+	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, s := setupValidator(t)
 
-		parentSeqNum := protocol.AssertionSequenceNumber(1)
+		parentSeqNum := goimpl.AssertionSequenceNumber(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
-		parentAssertion := &protocol.Assertion{
+		parentAssertion := &goimpl.Assertion{
 			StateCommitment: util.StateCommitment{
 				StateRoot: prevRoot,
 				Height:    uint64(parentSeqNum),
 			},
 		}
 		seqNum := parentSeqNum + 1
-		newlyCreatedAssertion := &protocol.Assertion{
-			Prev:            util.Some[*protocol.Assertion](parentAssertion),
+		newlyCreatedAssertion := &goimpl.Assertion{
+			Prev:            util.Some[*goimpl.Assertion](parentAssertion),
 			SequenceNum:     seqNum,
 			StateCommitment: util.StateCommitment{},
 			Staker:          util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
-		ev := &protocol.CreateLeafEvent{
+		ev := &goimpl.CreateLeafEvent{
 			PrevSeqNum:          parentAssertion.SequenceNum,
 			PrevStateCommitment: parentAssertion.StateCommitment,
 			SeqNum:              newlyCreatedAssertion.SequenceNum,
@@ -51,7 +52,7 @@ func Test_onLeafCreation(t *testing.T) {
 
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
 
-		err := v.onLeafCreated(ctx, ev)
+		err := v.onLeafCreated(ctx, tx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
@@ -86,9 +87,9 @@ func Test_onLeafCreation(t *testing.T) {
 
 		validator.stateManager = manager
 
-		err = validator.onLeafCreated(ctx, leaf1)
+		err = validator.onLeafCreated(ctx, tx, leaf1)
 		require.NoError(t, err)
-		err = validator.onLeafCreated(ctx, leaf2)
+		err = validator.onLeafCreated(ctx, tx, leaf2)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
@@ -96,6 +97,7 @@ func Test_onLeafCreation(t *testing.T) {
 }
 
 func Test_onChallengeStarted(t *testing.T) {
+	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	logsHook := test.NewGlobal()
 
@@ -137,18 +139,18 @@ func Test_onChallengeStarted(t *testing.T) {
 	).Return(commit4, nil)
 	leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
 
-	err = validator.onLeafCreated(ctx, leaf1)
+	err = validator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, leaf2)
+	err = validator.onLeafCreated(ctx, tx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-	var challenge *protocol.Challenge
-	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+	var challenge *goimpl.Challenge
+	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
 		commit := util.StateCommitment{}
-		id := protocol.ChallengeCommitHash(commit.Hash())
+		id := goimpl.ChallengeCommitHash(commit.Hash())
 		challenge, err = validator.chain.ChallengeByCommitHash(tx, id)
 		if err != nil {
 			return err
@@ -168,18 +170,20 @@ func Test_onChallengeStarted(t *testing.T) {
 	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(commit4, nil)
 	validator.stateManager = manager
 
-	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+	parentStateCommitment, err := challenge.ParentStateCommitment(ctx, tx)
+	require.NoError(t, err)
+	err = validator.onChallengeStarted(ctx, tx, &goimpl.StartChallengeEvent{
 		ParentSeqNum:          0,
-		ParentStateCommitment: challenge.ParentStateCommitment(),
+		ParentStateCommitment: parentStateCommitment,
 		ParentStaker:          common.Address{},
 		Validator:             common.BytesToAddress([]byte("other validator")),
 	})
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
 
-	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+	err = validator.onChallengeStarted(ctx, tx, &goimpl.StartChallengeEvent{
 		ParentSeqNum:          0,
-		ParentStateCommitment: challenge.ParentStateCommitment(),
+		ParentStateCommitment: parentStateCommitment,
 		ParentStaker:          common.Address{},
 		Validator:             common.BytesToAddress([]byte("other validator")),
 	})
@@ -191,9 +195,9 @@ func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 	ctx := context.Background()
 	stateRoots := generateStateRoots(10)
 	_, _, validator := createTwoValidatorFork(t, ctx, &mocks.MockStateManager{}, stateRoots)
-	var genesis *protocol.Assertion
+	var genesis *goimpl.Assertion
 	var err error
-	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
+	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
 		genesis = validator.chain.LatestConfirmed(tx)
 		return nil
 	})
@@ -210,8 +214,8 @@ func createTwoValidatorFork(
 	ctx context.Context,
 	stateManager statemanager.Manager,
 	stateRoots []common.Hash,
-) (*protocol.CreateLeafEvent, *protocol.CreateLeafEvent, *Validator) {
-	chain := protocol.NewAssertionChain(
+) (*goimpl.CreateLeafEvent, *goimpl.CreateLeafEvent, *Validator) {
+	chain := goimpl.NewAssertionChain(
 		ctx,
 		util.NewArtificialTimeReference(),
 		time.Second,
@@ -222,8 +226,8 @@ func createTwoValidatorFork(
 	v := setupValidatorWithChain(t, chain, stateManager, staker3)
 
 	// Add balances to the stakers.
-	bal := big.NewInt(0).Mul(protocol.AssertionStake, big.NewInt(100))
-	err := chain.Tx(func(tx *protocol.ActiveTx) error {
+	bal := big.NewInt(0).Mul(goimpl.AssertionStake, big.NewInt(100))
+	err := chain.Tx(func(tx *goimpl.ActiveTx) error {
 		chain.AddToBalance(tx, staker1, bal)
 		chain.AddToBalance(tx, staker2, bal)
 		chain.AddToBalance(tx, staker3, bal)
@@ -241,16 +245,16 @@ func createTwoValidatorFork(
 		Height:    6,
 	}
 
-	var genesis *protocol.Assertion
-	var assertion *protocol.Assertion
-	var forkedAssertion *protocol.Assertion
-	err = chain.Call(func(tx *protocol.ActiveTx) error {
+	var genesis *goimpl.Assertion
+	var assertion *goimpl.Assertion
+	var forkedAssertion *goimpl.Assertion
+	err = chain.Call(func(tx *goimpl.ActiveTx) error {
 		genesis = chain.LatestConfirmed(tx)
 		return nil
 	})
 	require.NoError(t, err)
 
-	err = chain.Tx(func(tx *protocol.ActiveTx) error {
+	err = chain.Tx(func(tx *goimpl.ActiveTx) error {
 		assertion, err = chain.CreateLeaf(
 			tx,
 			genesis,
@@ -273,14 +277,14 @@ func createTwoValidatorFork(
 	})
 	require.NoError(t, err)
 
-	ev1 := &protocol.CreateLeafEvent{
+	ev1 := &goimpl.CreateLeafEvent{
 		PrevSeqNum:          genesis.SequenceNum,
 		PrevStateCommitment: genesis.StateCommitment,
 		SeqNum:              assertion.SequenceNum,
 		StateCommitment:     assertion.StateCommitment,
 		Validator:           staker1,
 	}
-	ev2 := &protocol.CreateLeafEvent{
+	ev2 := &goimpl.CreateLeafEvent{
 		PrevSeqNum:          genesis.SequenceNum,
 		PrevStateCommitment: genesis.StateCommitment,
 		SeqNum:              forkedAssertion.SequenceNum,
@@ -292,16 +296,16 @@ func createTwoValidatorFork(
 
 func Test_findLatestValidAssertion(t *testing.T) {
 	ctx := context.Background()
-	tx := &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}
+	tx := &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}
 	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
 		v, p, _ := setupValidator(t)
-		genesis := &protocol.Assertion{
+		genesis := &goimpl.Assertion{
 			SequenceNum: 0,
 			StateCommitment: util.StateCommitment{
 				Height:    0,
 				StateRoot: common.Hash{},
 			},
-			Prev:   util.None[*protocol.Assertion](),
+			Prev:   util.None[*goimpl.Assertion](),
 			Staker: util.None[common.Address](),
 		}
 		p.On("LatestConfirmed", tx).Return(genesis)
@@ -313,7 +317,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
-			v.assertions[a.SequenceNum] = &protocol.CreateLeafEvent{
+			v.assertions[a.SequenceNum] = &goimpl.CreateLeafEvent{
 				StateCommitment: a.StateCommitment,
 				SeqNum:          a.SequenceNum,
 			}
@@ -329,7 +333,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
-			v.assertions[a.SequenceNum] = &protocol.CreateLeafEvent{
+			v.assertions[a.SequenceNum] = &goimpl.CreateLeafEvent{
 				StateCommitment: a.StateCommitment,
 				SeqNum:          a.SequenceNum,
 			}
@@ -346,28 +350,28 @@ func Test_findLatestValidAssertion(t *testing.T) {
 	})
 }
 
-func setupAssertions(num int) []*protocol.Assertion {
+func setupAssertions(num int) []*goimpl.Assertion {
 	if num == 0 {
-		return make([]*protocol.Assertion, 0)
+		return make([]*goimpl.Assertion, 0)
 	}
-	genesis := &protocol.Assertion{
+	genesis := &goimpl.Assertion{
 		SequenceNum: 0,
 		StateCommitment: util.StateCommitment{
 			Height:    0,
 			StateRoot: common.Hash{},
 		},
-		Prev:   util.None[*protocol.Assertion](),
+		Prev:   util.None[*goimpl.Assertion](),
 		Staker: util.None[common.Address](),
 	}
-	assertions := []*protocol.Assertion{genesis}
+	assertions := []*goimpl.Assertion{genesis}
 	for i := 1; i < num; i++ {
-		assertions = append(assertions, &protocol.Assertion{
-			SequenceNum: protocol.AssertionSequenceNumber(i),
+		assertions = append(assertions, &goimpl.Assertion{
+			SequenceNum: goimpl.AssertionSequenceNumber(i),
 			StateCommitment: util.StateCommitment{
 				Height:    uint64(i),
 				StateRoot: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
 			},
-			Prev:   util.Some[*protocol.Assertion](assertions[i-1]),
+			Prev:   util.Some[*goimpl.Assertion](assertions[i-1]),
 			Staker: util.None[common.Address](),
 		})
 	}
@@ -375,7 +379,7 @@ func setupAssertions(num int) []*protocol.Assertion {
 }
 
 func setupValidatorWithChain(
-	t testing.TB, chain protocol.OnChainProtocol, manager statemanager.Manager, staker common.Address,
+	t testing.TB, chain goimpl.OnChainProtocol, manager statemanager.Manager, staker common.Address,
 ) *Validator {
 	v, err := New(context.Background(), chain, manager, WithAddress(staker))
 	require.NoError(t, err)
