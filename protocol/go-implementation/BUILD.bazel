@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "goimpl",
+    name = "go-implementation",
     srcs = [
         "assertions.go",
         "event_feed.go",
@@ -20,21 +20,6 @@ go_library(
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_ethereum_go_ethereum//params",
         "@com_github_pkg_errors//:errors",
-    ],
-)
-
-go_test(
-    name = "goimpl_test",
-    srcs = [
-        "assertions_test.go",
-        "inbox_test.go",
-        "subchallenges_test.go",
-    ],
-    embed = [":goimpl"],
-    deps = [
-        "//util",
-        "@com_github_ethereum_go_ethereum//common",
-        "@com_github_stretchr_testify//require",
     ],
 )
 
