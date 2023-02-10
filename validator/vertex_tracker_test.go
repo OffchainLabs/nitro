@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -23,9 +23,9 @@ func init() {
 }
 
 func Test_track(t *testing.T) {
-	tx := &protocol.ActiveTx{}
+	tx := &goimpl.ActiveTx{}
 	hook := test.NewGlobal()
-	tkr := newVertexTracker(util.NewArtificialTimeReference(), time.Millisecond, &protocol.Challenge{}, &protocol.ChallengeVertex{
+	tkr := newVertexTracker(util.NewArtificialTimeReference(), time.Millisecond, &goimpl.Challenge{}, &goimpl.ChallengeVertex{
 		Commitment: util.HistoryCommitment{},
 		Validator:  common.Address{},
 	}, nil, nil, "", common.Address{})
@@ -38,12 +38,12 @@ func Test_track(t *testing.T) {
 }
 
 func Test_actOnBlockChallenge(t *testing.T) {
-	tx := &protocol.ActiveTx{}
+	tx := &goimpl.ActiveTx{}
 	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.ChallengeCommitHash(challengeCommit.Hash())
+	challengeCommitHash := goimpl.ChallengeCommitHash(challengeCommit.Hash())
 	ctx := context.Background()
 	t.Run("does nothing if awaiting one step fork", func(t *testing.T) {
 		tkr := &vertexTracker{
@@ -57,18 +57,18 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		var vertex *goimpl.ChallengeVertex
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
-		vertex = &protocol.ChallengeVertex{
+		vertex = &goimpl.ChallengeVertex{
 			Commitment: history,
 		}
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorContains(t, err, "could not refresh vertex")
@@ -81,25 +81,25 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
 			Commitment: history,
-			Prev: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
+			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
 				Commitment: parentHistory,
 			})),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
-		p.On("Completed", &protocol.ActiveTx{}).Return(
+		p.On("Completed", &goimpl.ActiveTx{}).Return(
 			false,
 		)
-		p.On("HasConfirmedSibling", &protocol.ActiveTx{}, vertex.SequenceNum).Return(
+		p.On("HasConfirmedSibling", &goimpl.ActiveTx{}, vertex.SequenceNum).Return(
 			false, nil,
 		)
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
+			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
 			challengeCommitHash,
 			history,
 			parentHistory,
@@ -109,7 +109,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorContains(t, err, "something went wrong")
@@ -123,19 +123,19 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
 			Commitment: history,
-			Prev: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
+			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
 				Commitment: parentHistory,
 			})),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
+			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
 			challengeCommitHash,
 			history,
 			parentHistory,
@@ -145,7 +145,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
@@ -156,18 +156,18 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
 			Commitment: history,
-			Prev:       util.None[protocol.ChallengeVertexInterface](),
+			Prev:       util.None[goimpl.ChallengeVertexInterface](),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrPrevNone)
@@ -180,21 +180,21 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
 			Commitment: history,
-			Prev: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
+			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
 				Commitment: parentHistory,
 			})),
-			Status: protocol.ConfirmedAssertionState,
+			Status: goimpl.ConfirmedAssertionState,
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.ErrorIs(t, err, ErrConfirmed)
@@ -207,21 +207,21 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
 			Commitment: history,
-			Prev: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
+			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
 				Commitment: parentHistory,
 			})),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		tkr := &vertexTracker{
 			chain:  p,
 			vertex: vertex,
-			challenge: &protocol.Challenge{
-				WinnerAssertion: util.Some(&protocol.Assertion{}),
+			challenge: &goimpl.Challenge{
+				WinnerAssertion: util.Some(&goimpl.Assertion{}),
 			},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
@@ -235,21 +235,21 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
 			Commitment: history,
 		}
-		prev := &protocol.ChallengeVertex{
+		prev := &goimpl.ChallengeVertex{
 			Commitment:           parentHistory,
-			PresumptiveSuccessor: util.Some(protocol.ChallengeVertexInterface(vertex)),
+			PresumptiveSuccessor: util.Some(goimpl.ChallengeVertexInterface(vertex)),
 		}
-		vertex.Prev = util.Some(protocol.ChallengeVertexInterface(prev))
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		vertex.Prev = util.Some(goimpl.ChallengeVertexInterface(prev))
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
+			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
 			challengeCommitHash,
 			history,
 			parentHistory,
@@ -259,7 +259,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx, tx)
 		require.NoError(t, err)
@@ -280,16 +280,16 @@ func Test_actOnBlockChallenge(t *testing.T) {
 
 		// Get the challenge vertex from the other validator. It should share a history
 		// with the vertex we just bisected to, so it should try to merge instead.
-		var vertex *protocol.ChallengeVertex
+		var vertex *goimpl.ChallengeVertex
 		v, err := trk.stateManager.HistoryCommitmentUpTo(ctx, 5)
 		require.NoError(t, err)
-		err = trk.chain.Call(func(tx *protocol.ActiveTx) error {
+		err = trk.chain.Call(func(tx *goimpl.ActiveTx) error {
 			var parentStateCommitment util.StateCommitment
 			parentStateCommitment, err = trk.challenge.ParentStateCommitment(ctx, tx)
 			if err != nil {
 				return err
 			}
-			vertex, err = trk.chain.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(parentStateCommitment.Hash()), protocol.VertexCommitHash(v.Hash()))
+			vertex, err = trk.chain.ChallengeVertexByCommitHash(tx, goimpl.ChallengeCommitHash(parentStateCommitment.Hash()), goimpl.VertexCommitHash(v.Hash()))
 			if err != nil {
 				return err
 			}
@@ -308,22 +308,22 @@ func Test_actOnBlockChallenge(t *testing.T) {
 }
 
 func Test_isAtOneStepFork(t *testing.T) {
-	tx := &protocol.ActiveTx{}
+	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	challengeCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.ChallengeCommitHash(challengeCommit.Hash())
+	challengeCommitHash := goimpl.ChallengeCommitHash(challengeCommit.Hash())
 	commitA := util.HistoryCommitment{
 		Height: 1,
 	}
 	commitB := util.HistoryCommitment{
 		Height: 2,
 	}
-	vertex := &protocol.ChallengeVertex{
+	vertex := &goimpl.ChallengeVertex{
 		Commitment: commitA,
-		Prev: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
+		Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
 			Commitment: commitB,
 		})),
 	}
@@ -331,7 +331,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
+			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
 			challengeCommitHash,
 			commitA,
 			commitB,
@@ -341,7 +341,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		_, err := tkr.isAtOneStepFork(ctx, tx)
 		require.ErrorContains(t, err, "something went wrong")
@@ -350,7 +350,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		p.On(
 			"IsAtOneStepFork",
-			&protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus},
+			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
 			challengeCommitHash,
 			commitA,
 			commitB,
@@ -360,7 +360,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
 		ok, err := tkr.isAtOneStepFork(ctx, tx)
 		require.NoError(t, err)
@@ -374,22 +374,22 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.ChallengeCommitHash(challengeCommit.Hash())
+	challengeCommitHash := goimpl.ChallengeCommitHash(challengeCommit.Hash())
 
 	t.Run("nil vertex", func(t *testing.T) {
 		history := util.HistoryCommitment{
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		var vertex *goimpl.ChallengeVertex
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex, nil,
 		)
 		tkr := &vertexTracker{
 			chain:     p,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(history.Hash()))
+		_, err := tkr.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "fetched nil challenge")
 	})
 	t.Run("fetching error", func(t *testing.T) {
@@ -397,16 +397,16 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		var vertex *goimpl.ChallengeVertex
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
 		tkr := &vertexTracker{
 			chain:     p,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(history.Hash()))
+		_, err := tkr.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -414,21 +414,21 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		want := &protocol.ChallengeVertex{
+		want := &goimpl.ChallengeVertex{
 			Commitment: history,
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(want, nil)
+		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(want, nil)
 		tkr := &vertexTracker{
 			chain:     p,
-			challenge: &protocol.Challenge{},
+			challenge: &goimpl.Challenge{},
 		}
-		got, err := tkr.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(history.Hash()))
+		got, err := tkr.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(history.Hash()))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
 }
 
-func setupNonPSTracker(t *testing.T, ctx context.Context, tx *protocol.ActiveTx) *vertexTracker {
+func setupNonPSTracker(t *testing.T, ctx context.Context, tx *goimpl.ActiveTx) *vertexTracker {
 	stateRoots := generateStateRoots(10)
 	manager := statemanager.New(stateRoots)
 	leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
@@ -445,10 +445,10 @@ func setupNonPSTracker(t *testing.T, ctx context.Context, tx *protocol.ActiveTx)
 		StateRoot: common.Hash{},
 	}
 
-	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
-	var challenge *protocol.Challenge
-	err = validator.chain.Tx(func(tx *protocol.ActiveTx) error {
-		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+	id := goimpl.ChallengeCommitHash(genesisCommit.Hash())
+	var challenge *goimpl.Challenge
+	err = validator.chain.Tx(func(tx *goimpl.ActiveTx) error {
+		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, goimpl.AssertionSequenceNumber(1))
 		if fetchErr != nil {
 			return fetchErr
 		}
@@ -467,9 +467,9 @@ func setupNonPSTracker(t *testing.T, ctx context.Context, tx *protocol.ActiveTx)
 	c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, 6)
 	require.NoError(t, err)
 
-	var vertex *protocol.ChallengeVertex
-	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
-		vertex, err = validator.chain.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
+	var vertex *goimpl.ChallengeVertex
+	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
+		vertex, err = validator.chain.ChallengeVertexByCommitHash(tx, id, goimpl.VertexCommitHash(c.Hash()))
 		if err != nil {
 			return err
 		}
@@ -483,32 +483,32 @@ func setupNonPSTracker(t *testing.T, ctx context.Context, tx *protocol.ActiveTx)
 
 func Test_vertexTracker_canConfirm(t *testing.T) {
 	ctx := context.Background()
-	tx := &protocol.ActiveTx{}
+	tx := &goimpl.ActiveTx{}
 	tracker := setupNonPSTracker(t, ctx, tx)
 
 	// Can't confirm is vertex is confirmed or rejected
-	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.ConfirmedAssertionState
+	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.ConfirmedAssertionState
 	confirmed, err := tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
-	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.RejectedAssertionState
+	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.RejectedAssertionState
 	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
 
-	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.PendingAssertionState
+	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
 	// Can't confirm is parent isn't confirmed
-	tracker.vertex.(*protocol.ChallengeVertex).Prev = util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
-		Status: protocol.PendingAssertionState,
+	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
+		Status: goimpl.PendingAssertionState,
 	}))
 	confirmed, err = tracker.confirmed(ctx, tx)
 	require.NoError(t, err)
 	require.False(t, confirmed)
 
 	// Can confirm if vertex has won subchallenge
-	tracker.vertex.(*protocol.ChallengeVertex).Prev = util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
-		Status: protocol.ConfirmedAssertionState,
-		SubChallenge: util.Some(protocol.ChallengeInterface(&protocol.Challenge{
+	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
+		Status: goimpl.ConfirmedAssertionState,
+		SubChallenge: util.Some(goimpl.ChallengeInterface(&goimpl.Challenge{
 			WinnerVertex: util.Some(tracker.vertex),
 		})),
 	}))
@@ -517,11 +517,11 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	require.True(t, confirmed)
 
 	// Can't confirm if vertex is in the middle of subchallenge
-	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.PendingAssertionState
-	tracker.vertex.(*protocol.ChallengeVertex).Prev = util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
-		Status: protocol.ConfirmedAssertionState,
-		SubChallenge: util.Some(protocol.ChallengeInterface(&protocol.Challenge{
-			WinnerVertex: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{})),
+	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
+	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
+		Status: goimpl.ConfirmedAssertionState,
+		SubChallenge: util.Some(goimpl.ChallengeInterface(&goimpl.Challenge{
+			WinnerVertex: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{})),
 		})),
 	}))
 	confirmed, err = tracker.confirmed(ctx, tx)
@@ -529,10 +529,10 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	require.False(t, confirmed)
 
 	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
-	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.PendingAssertionState
-	tracker.vertex.(*protocol.ChallengeVertex).Prev = util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
-		Status:       protocol.ConfirmedAssertionState,
-		SubChallenge: util.None[protocol.ChallengeInterface](),
+	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
+	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
+		Status:       goimpl.ConfirmedAssertionState,
+		SubChallenge: util.None[goimpl.ChallengeInterface](),
 	}))
 	psTimer, err := tracker.vertex.GetPsTimer(ctx, tx)
 	require.NoError(t, err)
@@ -542,10 +542,10 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 	require.True(t, confirmed)
 
 	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
-	tracker.vertex.(*protocol.ChallengeVertex).Status = protocol.PendingAssertionState
-	tracker.vertex.(*protocol.ChallengeVertex).Prev = util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
-		Status:               protocol.ConfirmedAssertionState,
-		SubChallenge:         util.None[protocol.ChallengeInterface](),
+	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
+	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
+		Status:               goimpl.ConfirmedAssertionState,
+		SubChallenge:         util.None[goimpl.ChallengeInterface](),
 		PresumptiveSuccessor: util.Some(tracker.vertex),
 	}))
 	confirmed, err = tracker.confirmed(ctx, tx)

@@ -1,7 +1,7 @@
-// Package assertionchain includes an easy-to-use abstraction
+// Package solimpl includes an easy-to-use abstraction
 // around the challenge protocol contracts using their Go
 // bindings and exposes minimal details of Ethereum's internals.
-package assertionchain
+package solimpl
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package assertionchain
+package solimpl
 
 import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
@@ -36,7 +36,7 @@ type Challenge struct {
 }
 
 // ChallengeType defines an enum of the same name
-// from the protocol.
+// from the goimpl.
 type ChallengeType uint
 
 const (

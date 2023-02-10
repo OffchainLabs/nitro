@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -28,12 +28,12 @@ func (v *vertexTracker) determineBisectionPointWithHistory(
 
 // Performs a bisection move during a BlockChallenge in the assertion protocol given
 // a validator challenge vertex. It will create a historical commitment for the vertex
-// the validator wants to bisect to and an associated proof for submitting to the protocol.
+// the validator wants to bisect to and an associated proof for submitting to the goimpl.
 func (v *vertexTracker) bisect(
 	ctx context.Context,
-	tx *protocol.ActiveTx,
-	validatorChallengeVertex protocol.ChallengeVertexInterface,
-) (protocol.ChallengeVertexInterface, error) {
+	tx *goimpl.ActiveTx,
+	validatorChallengeVertex goimpl.ChallengeVertexInterface,
+) (goimpl.ChallengeVertexInterface, error) {
 	commitment, err := validatorChallengeVertex.GetCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -68,8 +68,8 @@ func (v *vertexTracker) bisect(
 			commitment,
 		)
 	}
-	var bisectedVertex protocol.ChallengeVertexInterface
-	err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
+	var bisectedVertex goimpl.ChallengeVertexInterface
+	err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
 		bisectedVertex, err = validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof, v.validatorAddress)
 		if err != nil {
 			return err
@@ -108,14 +108,14 @@ func (v *vertexTracker) bisect(
 
 // Performs a merge move during a BlockChallenge in the assertion protocol given
 // a challenge vertex and the sequence number we should be merging into. To do this, we
-// also need to fetch vertex we are merging to by reading it from the protocol.
+// also need to fetch vertex we are merging to by reading it from the goimpl.
 func (v *vertexTracker) merge(
 	ctx context.Context,
-	tx *protocol.ActiveTx,
-	challengeCommitHash protocol.ChallengeCommitHash,
-	mergingTo protocol.ChallengeVertexInterface,
-	mergingFrom protocol.ChallengeVertexInterface,
-) (protocol.ChallengeVertexInterface, error) {
+	tx *goimpl.ActiveTx,
+	challengeCommitHash goimpl.ChallengeCommitHash,
+	mergingTo goimpl.ChallengeVertexInterface,
+	mergingFrom goimpl.ChallengeVertexInterface,
+) (goimpl.ChallengeVertexInterface, error) {
 	mergingToCommit, err := mergingTo.GetCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (v *vertexTracker) merge(
 	if err = util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
 		return nil, err
 	}
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
+	if err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
 		if err = mergingFrom.Merge(ctx, tx, mergingTo, proof, v.validatorAddress); err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ func (v *vertexTracker) merge(
 		if err != nil {
 			return err
 		}
-		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingToCommit.Hash()))
+		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, goimpl.VertexCommitHash(mergingToCommit.Hash()))
 		if err != nil {
 			return err
 		}

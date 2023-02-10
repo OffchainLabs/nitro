@@ -1,4 +1,4 @@
-package protocol
+package goimpl
 
 import (
 	"context"
@@ -69,18 +69,18 @@ type ChainReadWriter interface {
 	EventProvider
 }
 
-// ChainReader can make non-mutating calls to the on-chain protocol. It provides
+// ChainReader can make non-mutating calls to the on-chain goimpl. It provides
 // an ActiveTx type which has the block number to use when making chain calls.
 type ChainReader interface {
 	Call(clo func(*ActiveTx) error) error
 }
 
-// ChainWriter can make mutating calls to the on-chain protocol.
+// ChainWriter can make mutating calls to the on-chain goimpl.
 type ChainWriter interface {
 	Tx(clo func(*ActiveTx) error) error
 }
 
-// EventProvider allows subscribing to chain events for the on-chain protocol.
+// EventProvider allows subscribing to chain events for the on-chain goimpl.
 type EventProvider interface {
 	SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent)
 	SubscribeChallengeEvents(ctx context.Context, ch chan<- ChallengeEvent)
@@ -179,7 +179,7 @@ func (tx *ActiveTx) verifyReadWrite() {
 	}
 }
 
-// Tx enables a mutating call to the on-chain protocol.
+// Tx enables a mutating call to the on-chain goimpl.
 func (chain *AssertionChain) Tx(clo func(tx *ActiveTx) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
@@ -189,7 +189,7 @@ func (chain *AssertionChain) Tx(clo func(tx *ActiveTx) error) error {
 	return err
 }
 
-// Call enables a non-mutating call to the on-chain protocol.
+// Call enables a non-mutating call to the on-chain goimpl.
 func (chain *AssertionChain) Call(clo func(tx *ActiveTx) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
@@ -208,7 +208,7 @@ const (
 // AssertionState is a type used to represent the state of an assertion.
 type AssertionState int
 
-// Assertion represents an assertion in the protocol.
+// Assertion represents an assertion in the goimpl.
 type Assertion struct {
 	SequenceNum             AssertionSequenceNumber `json:"sequence_num"`
 	StateCommitment         util.StateCommitment    `json:"state_commitment"`

@@ -1,4 +1,4 @@
-package assertionchain
+package solimpl
 
 import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
