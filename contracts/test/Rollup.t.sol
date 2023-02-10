@@ -38,7 +38,7 @@ contract RollupTest is Test {
         RollupUserLogic userLogic = new RollupUserLogic();
         RollupAdminLogic adminLogic = new RollupAdminLogic();
         ContractDependencies memory connectedContracts = ContractDependencies({
-            oldChallengeManager: IOldChallengeManager(address(0)),
+            challengeManager: IChallengeManager(address(0)),
             bridge: IBridge(address(0)),
             inbox: IInbox(address(0)),
             outbox: IOutbox(address(0)),

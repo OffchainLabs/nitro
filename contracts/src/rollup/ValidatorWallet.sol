@@ -4,7 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IOldChallengeManager.sol";
+import "../challenge/IChallengeManager.sol";
 import "../libraries/DelegateCallAware.sol";
 import "../libraries/IGasRefunder.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
@@ -160,13 +160,13 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         }
     }
 
-    function timeoutChallenges(IOldChallengeManager manager, uint64[] calldata challenges) external {
+    function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges) external {
         timeoutChallengesWithGasRefunder(IGasRefunder(address(0)), manager, challenges);
     }
 
     function timeoutChallengesWithGasRefunder(
         IGasRefunder gasRefunder,
-        IOldChallengeManager manager,
+        IChallengeManager manager,
         uint64[] calldata challenges
     ) public onlyExecutorOrOwner refundsGas(gasRefunder) {
         uint256 challengesCount = challenges.length;

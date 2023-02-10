@@ -15,9 +15,9 @@ abstract contract AbsRollupUserLogic is
     RollupCore,
     UUPSNotUpgradeable,
     IRollupUserAbs,
-    IOldChallengeResultReceiver
+    IChallengeResultReceiver
 {
-    using AssertionLib for Assertion;
+    using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
@@ -38,9 +38,9 @@ abstract contract AbsRollupUserLogic is
     uint256 public constant VALIDATOR_AFK_BLOCKS = 45818;
 
     function _validatorIsAfk() internal view returns (bool) {
-        Assertion memory latestAssertion = getAssertionStorage(latestAssertionCreated());
-        if (latestAssertion.createdAtBlock == 0) return false;
-        if (latestAssertion.createdAtBlock + confirmPeriodBlocks + VALIDATOR_AFK_BLOCKS < block.number) {
+        Node memory latestNode = getNodeStorage(latestNodeCreated());
+        if (latestNode.createdAtBlock == 0) return false;
+        if (latestNode.createdAtBlock + confirmPeriodBlocks + VALIDATOR_AFK_BLOCKS < block.number) {
             return true;
         }
         return false;
@@ -63,17 +63,17 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Reject the next unresolved assertion
-     * @param stakerAddress Example staker staked on sibling, used to prove a assertion is on an unconfirmable branch and can be rejected
+     * @notice Reject the next unresolved node
+     * @param stakerAddress Example staker staked on sibling, used to prove a node is on an unconfirmable branch and can be rejected
      */
-    function rejectNextAssertion(address stakerAddress) external onlyValidator whenNotPaused {
+    function rejectNextNode(address stakerAddress) external onlyValidator whenNotPaused {
         requireUnresolvedExists();
-        uint64 latestConfirmedAssertionNum = latestConfirmed();
-        uint64 firstUnresolvedAssertionNum = firstUnresolvedAssertion();
-        Assertion storage firstUnresolvedAssertion_ = getAssertionStorage(firstUnresolvedAssertionNum);
+        uint64 latestConfirmedNodeNum = latestConfirmed();
+        uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
+        Node storage firstUnresolvedNode_ = getNodeStorage(firstUnresolvedNodeNum);
 
-        if (firstUnresolvedAssertion_.prevNum == latestConfirmedAssertionNum) {
-            /**If the first unresolved assertion is a child of the latest confirmed assertion, to prove it can be rejected, we show:
+        if (firstUnresolvedNode_.prevNum == latestConfirmedNodeNum) {
+            /**If the first unresolved node is a child of the latest confirmed node, to prove it can be rejected, we show:
              * a) Its deadline has expired
              * b) *Some* staker is staked on a sibling
 
@@ -83,69 +83,69 @@ abstract contract AbsRollupUserLogic is
             // 1.  StakerAddress is indeed a staker
             require(isStakedOnLatestConfirmed(stakerAddress), "NOT_STAKED");
 
-            // 2. Staker's latest staked assertion hasn't been resolved; this proves that staker's latest staked assertion can't be a parent of firstUnresolvedAssertion
-            requireUnresolved(latestStakedAssertion(stakerAddress));
+            // 2. Staker's latest staked node hasn't been resolved; this proves that staker's latest staked node can't be a parent of firstUnresolvedNode
+            requireUnresolved(latestStakedNode(stakerAddress));
 
-            // 3. staker isn't staked on first unresolved assertion; this proves staker's latest staked can't be a child of firstUnresolvedAssertion (recall staking on assertion requires staking on all of its parents)
-            require(!assertionHasStaker(firstUnresolvedAssertionNum, stakerAddress), "STAKED_ON_TARGET");
-            // If a staker is staked on a assertion that is neither a child nor a parent of firstUnresolvedAssertion, it must be a sibling, QED
+            // 3. staker isn't staked on first unresolved node; this proves staker's latest staked can't be a child of firstUnresolvedNode (recall staking on node requires staking on all of its parents)
+            require(!nodeHasStaker(firstUnresolvedNodeNum, stakerAddress), "STAKED_ON_TARGET");
+            // If a staker is staked on a node that is neither a child nor a parent of firstUnresolvedNode, it must be a sibling, QED
 
             // Verify the block's deadline has passed
-            firstUnresolvedAssertion_.requirePastDeadline();
+            firstUnresolvedNode_.requirePastDeadline();
 
-            getAssertionStorage(latestConfirmedAssertionNum).requirePastChildConfirmDeadline();
+            getNodeStorage(latestConfirmedNodeNum).requirePastChildConfirmDeadline();
 
             removeOldZombies(0);
 
-            // Verify that no staker is staked on this assertion
+            // Verify that no staker is staked on this node
             require(
-                firstUnresolvedAssertion_.stakerCount == countStakedZombies(firstUnresolvedAssertionNum),
+                firstUnresolvedNode_.stakerCount == countStakedZombies(firstUnresolvedNodeNum),
                 "HAS_STAKERS"
             );
         }
-        // Simpler case: if the first unreseolved assertion doesn't point to the last confirmed assertion, another branch was confirmed and can simply reject it outright
-        _rejectNextAssertion();
+        // Simpler case: if the first unreseolved node doesn't point to the last confirmed node, another branch was confirmed and can simply reject it outright
+        _rejectNextNode();
 
-        emit AssertionRejected(firstUnresolvedAssertionNum);
+        emit NodeRejected(firstUnresolvedNodeNum);
     }
 
     /**
-     * @notice Confirm the next unresolved assertion
+     * @notice Confirm the next unresolved node
      * @param blockHash The block hash at the end of the assertion
      * @param sendRoot The send root at the end of the assertion
      */
-    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot)
+    function confirmNextNode(bytes32 blockHash, bytes32 sendRoot)
         external
         onlyValidator
         whenNotPaused
     {
         requireUnresolvedExists();
 
-        uint64 assertionNum = firstUnresolvedAssertion();
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        uint64 nodeNum = firstUnresolvedNode();
+        Node storage node = getNodeStorage(nodeNum);
 
         // Verify the block's deadline has passed
-        assertion.requirePastDeadline();
+        node.requirePastDeadline();
 
         // Check that prev is latest confirmed
-        assert(assertion.prevNum == latestConfirmed());
+        assert(node.prevNum == latestConfirmed());
 
-        Assertion storage prevAssertion = getAssertionStorage(assertion.prevNum);
-        prevAssertion.requirePastChildConfirmDeadline();
+        Node storage prevNode = getNodeStorage(node.prevNum);
+        prevNode.requirePastChildConfirmDeadline();
 
         removeOldZombies(0);
 
-        // Require only zombies are staked on siblings to this assertion, and there's at least one non-zombie staked on this assertion
-        uint256 stakedZombies = countStakedZombies(assertionNum);
-        uint256 zombiesStakedOnOtherChildren = countZombiesStakedOnChildren(assertion.prevNum) -
+        // Require only zombies are staked on siblings to this node, and there's at least one non-zombie staked on this node
+        uint256 stakedZombies = countStakedZombies(nodeNum);
+        uint256 zombiesStakedOnOtherChildren = countZombiesStakedOnChildren(node.prevNum) -
             stakedZombies;
-        require(assertion.stakerCount > stakedZombies, "NO_STAKERS");
+        require(node.stakerCount > stakedZombies, "NO_STAKERS");
         require(
-            prevAssertion.childStakerCount == assertion.stakerCount + zombiesStakedOnOtherChildren,
+            prevNode.childStakerCount == node.stakerCount + zombiesStakedOnOtherChildren,
             "NOT_ALL_STAKED"
         );
 
-        confirmAssertion(assertionNum, blockHash, sendRoot);
+        confirmNode(nodeNum, blockHash, sendRoot);
     }
 
     /**
@@ -162,11 +162,11 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Move stake onto existing child assertion
-     * @param assertionNum Index of the assertion to move stake to. This must by a child of the assertion the staker is currently staked on
-     * @param assertionHash Assertion hash of assertionNum (protects against reorgs)
+     * @notice Move stake onto existing child node
+     * @param nodeNum Index of the node to move stake to. This must by a child of the node the staker is currently staked on
+     * @param nodeHash Node hash of nodeNum (protects against reorgs)
      */
-    function stakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash)
+    function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash)
         public
         onlyValidator
         whenNotPaused
@@ -174,33 +174,33 @@ abstract contract AbsRollupUserLogic is
         require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
 
         require(
-            assertionNum >= firstUnresolvedAssertion() && assertionNum <= latestAssertionCreated(),
+            nodeNum >= firstUnresolvedNode() && nodeNum <= latestNodeCreated(),
             "NODE_NUM_OUT_OF_RANGE"
         );
-        Assertion storage assertion = getAssertionStorage(assertionNum);
-        require(assertion.assertionHash == assertionHash, "NODE_REORG");
-        require(latestStakedAssertion(msg.sender) == assertion.prevNum, "NOT_STAKED_PREV");
-        stakeOnAssertion(msg.sender, assertionNum);
+        Node storage node = getNodeStorage(nodeNum);
+        require(node.nodeHash == nodeHash, "NODE_REORG");
+        require(latestStakedNode(msg.sender) == node.prevNum, "NOT_STAKED_PREV");
+        stakeOnNode(msg.sender, nodeNum);
     }
 
     /**
-     * @notice Create a new assertion and move stake onto it
+     * @notice Create a new node and move stake onto it
      * @param assertion The assertion data
-     * @param expectedAssertionHash The hash of the assertion being created (protects against reorgs)
+     * @param expectedNodeHash The hash of the node being created (protects against reorgs)
      */
-    function stakeOnNewAssertion(
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+    function stakeOnNewNode(
+        OldAssertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) public onlyValidator whenNotPaused {
         require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
-        // Ensure staker is staked on the previous assertion
-        uint64 prevAssertion = latestStakedAssertion(msg.sender);
+        // Ensure staker is staked on the previous node
+        uint64 prevNode = latestStakedNode(msg.sender);
 
         {
-            uint256 timeSinceLastAssertion = block.number - getAssertion(prevAssertion).createdAtBlock;
+            uint256 timeSinceLastNode = block.number - getNode(prevNode).createdAtBlock;
             // Verify that assertion meets the minimum Delta time requirement
-            require(timeSinceLastAssertion >= minimumAssertionPeriod, "TIME_DELTA");
+            require(timeSinceLastNode >= minimumAssertionPeriod, "TIME_DELTA");
 
             // Minimum size requirement: any assertion must consume at least all inbox messages
             // put into L1 inbox before the prev node’s L1 blocknum.
@@ -208,7 +208,7 @@ abstract contract AbsRollupUserLogic is
             // as it can't consume future batches.
             require(
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() >= prevAssertionInboxMaxCount,
+                    assertion.afterState.globalState.getInboxPosition() >= prevNodeInboxMaxCount,
                 "TOO_SMALL"
             );
             // Minimum size requirement: any assertion must contain at least one block
@@ -220,20 +220,20 @@ abstract contract AbsRollupUserLogic is
                 "BAD_PREV_STATUS"
             );
         }
-        createNewAssertion(assertion, prevAssertion, prevAssertionInboxMaxCount, expectedAssertionHash);
+        createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
 
-        stakeOnAssertion(msg.sender, latestAssertionCreated());
+        stakeOnNode(msg.sender, latestNodeCreated());
     }
 
     /**
-     * @notice Refund a staker that is currently staked on or before the latest confirmed assertion
-     * @dev Since a staker is initially placed in the latest confirmed assertion, if they don't move it
+     * @notice Refund a staker that is currently staked on or before the latest confirmed node
+     * @dev Since a staker is initially placed in the latest confirmed node, if they don't move it
      * a griefer can remove their stake. It is recomended to batch together the txs to place a stake
-     * and move it to the desired assertion.
+     * and move it to the desired node.
      * @param stakerAddress Address of the staker whose stake is refunded
      */
     function returnOldDeposit(address stakerAddress) external override onlyValidator whenNotPaused {
-        require(latestStakedAssertion(stakerAddress) <= latestConfirmed(), "TOO_RECENT");
+        require(latestStakedNode(stakerAddress) <= latestConfirmed(), "TOO_RECENT");
         requireUnchallengedStaker(stakerAddress);
         withdrawStaker(stakerAddress);
     }
@@ -266,19 +266,19 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Start a challenge between the given stakers over the assertion created by the first staker assuming that the two are staked on conflicting assertions. N.B.: challenge creator does not necessarily need to be one of the two asserters.
-     * @param stakers Stakers engaged in the challenge. The first staker should be staked on the first assertion
-     * @param assertionNums Assertions of the stakers engaged in the challenge. The first assertion should be the earliest and is the one challenged
+     * @notice Start a challenge between the given stakers over the node created by the first staker assuming that the two are staked on conflicting nodes. N.B.: challenge creator does not necessarily need to be one of the two asserters.
+     * @param stakers Stakers engaged in the challenge. The first staker should be staked on the first node
+     * @param nodeNums Nodes of the stakers engaged in the challenge. The first node should be the earliest and is the one challenged
      * @param machineStatuses The before and after machine status for the first assertion
      * @param globalStates The before and after global state for the first assertion
      * @param numBlocks The number of L2 blocks contained in the first assertion
      * @param secondExecutionHash The execution hash of the second assertion
-     * @param proposedBlocks L1 block numbers that the two assertions were proposed at
+     * @param proposedBlocks L1 block numbers that the two nodes were proposed at
      * @param wasmModuleRoots The wasm module roots at the time of the creation of each assertion
      */
     function createChallenge(
         address[2] calldata stakers,
-        uint64[2] calldata assertionNums,
+        uint64[2] calldata nodeNums,
         MachineStatus[2] calldata machineStatuses,
         GlobalState[2] calldata globalStates,
         uint64 numBlocks,
@@ -286,26 +286,26 @@ abstract contract AbsRollupUserLogic is
         uint256[2] calldata proposedBlocks,
         bytes32[2] calldata wasmModuleRoots
     ) external onlyValidator whenNotPaused {
-        require(assertionNums[0] < assertionNums[1], "WRONG_ORDER");
-        require(assertionNums[1] <= latestAssertionCreated(), "NOT_PROPOSED");
-        require(latestConfirmed() < assertionNums[0], "ALREADY_CONFIRMED");
+        require(nodeNums[0] < nodeNums[1], "WRONG_ORDER");
+        require(nodeNums[1] <= latestNodeCreated(), "NOT_PROPOSED");
+        require(latestConfirmed() < nodeNums[0], "ALREADY_CONFIRMED");
 
-        Assertion storage assertion1 = getAssertionStorage(assertionNums[0]);
-        Assertion storage assertion2 = getAssertionStorage(assertionNums[1]);
+        Node storage node1 = getNodeStorage(nodeNums[0]);
+        Node storage node2 = getNodeStorage(nodeNums[1]);
 
-        // ensure assertions staked on the same parent (and thus in conflict)
-        require(assertion1.prevNum == assertion2.prevNum, "DIFF_PREV");
+        // ensure nodes staked on the same parent (and thus in conflict)
+        require(node1.prevNum == node2.prevNum, "DIFF_PREV");
 
         // ensure both stakers aren't currently in challenge
         requireUnchallengedStaker(stakers[0]);
         requireUnchallengedStaker(stakers[1]);
 
-        require(assertionHasStaker(assertionNums[0], stakers[0]), "STAKER1_NOT_STAKED");
-        require(assertionHasStaker(assertionNums[1], stakers[1]), "STAKER2_NOT_STAKED");
+        require(nodeHasStaker(nodeNums[0], stakers[0]), "STAKER1_NOT_STAKED");
+        require(nodeHasStaker(nodeNums[1], stakers[1]), "STAKER2_NOT_STAKED");
 
         // Check param data against challenge hash
         require(
-            assertion1.challengeHash ==
+            node1.challengeHash ==
                 RollupLib.challengeRootHash(
                     RollupLib.executionHash(machineStatuses, globalStates, numBlocks),
                     proposedBlocks[0],
@@ -315,7 +315,7 @@ abstract contract AbsRollupUserLogic is
         );
 
         require(
-            assertion2.challengeHash ==
+            node2.challengeHash ==
                 RollupLib.challengeRootHash(
                     secondExecutionHash,
                     proposedBlocks[1],
@@ -324,17 +324,17 @@ abstract contract AbsRollupUserLogic is
             "CHAL_HASH2"
         );
 
-        // Calculate upper limit for allowed assertion proposal time:
-        uint256 commonEndBlock = getAssertionStorage(assertion1.prevNum).firstChildBlock +
-            // Dispute start: dispute timer for a assertion starts when its first child is created
-            (assertion1.deadlineBlock - proposedBlocks[0]) +
+        // Calculate upper limit for allowed node proposal time:
+        uint256 commonEndBlock = getNodeStorage(node1.prevNum).firstChildBlock +
+            // Dispute start: dispute timer for a node starts when its first child is created
+            (node1.deadlineBlock - proposedBlocks[0]) +
             extraChallengeTimeBlocks; // add dispute window to dispute start time
         if (commonEndBlock < proposedBlocks[1]) {
-            // The 2nd assertion was created too late; loses challenge automatically.
+            // The 2nd node was created too late; loses challenge automatically.
             completeChallengeImpl(stakers[0], stakers[1]);
             return;
         }
-        // Start a challenge between staker1 and staker2. Staker1 will defend the correctness of assertion1, and staker2 will challenge it.
+        // Start a challenge between staker1 and staker2. Staker1 will defend the correctness of node1, and staker2 will challenge it.
         uint64 challengeIndex = createChallengeHelper(
             stakers,
             machineStatuses,
@@ -348,7 +348,7 @@ abstract contract AbsRollupUserLogic is
 
         challengeStarted(stakers[0], stakers[1], challengeIndex);
 
-        emit RollupChallengeStarted(challengeIndex, stakers[0], stakers[1], assertionNums[0]);
+        emit RollupChallengeStarted(challengeIndex, stakers[0], stakers[1], nodeNums[0]);
     }
 
     function createChallengeHelper(
@@ -361,7 +361,7 @@ abstract contract AbsRollupUserLogic is
         uint256 challengerTimeLeft
     ) internal returns (uint64) {
         return
-            oldChallengeManager.createChallenge(
+            challengeManager.createChallenge(
                 wasmModuleRoots[0],
                 machineStatuses,
                 globalStates,
@@ -384,7 +384,7 @@ abstract contract AbsRollupUserLogic is
         address losingStaker
     ) external override whenNotPaused {
         // Only the challenge manager contract can call this to declare the winner and loser
-        require(msg.sender == address(oldChallengeManager), "WRONG_SENDER");
+        require(msg.sender == address(challengeManager), "WRONG_SENDER");
         require(challengeIndex == inChallenge(winningStaker, losingStaker), "NOT_IN_CHAL");
         completeChallengeImpl(winningStaker, losingStaker);
     }
@@ -411,42 +411,42 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Remove the given zombie from assertions it is staked on, moving backwords from the latest assertion it is staked on
+     * @notice Remove the given zombie from nodes it is staked on, moving backwords from the latest node it is staked on
      * @param zombieNum Index of the zombie to remove
-     * @param maxAssertions Maximum number of assertions to remove the zombie from (to limit the cost of this transaction)
+     * @param maxNodes Maximum number of nodes to remove the zombie from (to limit the cost of this transaction)
      */
-    function removeZombie(uint256 zombieNum, uint256 maxAssertions)
+    function removeZombie(uint256 zombieNum, uint256 maxNodes)
         external
         onlyValidator
         whenNotPaused
     {
         require(zombieNum < zombieCount(), "NO_SUCH_ZOMBIE");
         address zombieStakerAddress = zombieAddress(zombieNum);
-        uint64 latestAssertionStaked = zombieLatestStakedAssertion(zombieNum);
-        uint256 assertionsRemoved = 0;
+        uint64 latestNodeStaked = zombieLatestStakedNode(zombieNum);
+        uint256 nodesRemoved = 0;
         uint256 latestConfirmedNum = latestConfirmed();
-        while (latestAssertionStaked >= latestConfirmedNum && assertionsRemoved < maxAssertions) {
-            Assertion storage assertion = getAssertionStorage(latestAssertionStaked);
-            removeStaker(latestAssertionStaked, zombieStakerAddress);
-            latestAssertionStaked = assertion.prevNum;
-            assertionsRemoved++;
+        while (latestNodeStaked >= latestConfirmedNum && nodesRemoved < maxNodes) {
+            Node storage node = getNodeStorage(latestNodeStaked);
+            removeStaker(latestNodeStaked, zombieStakerAddress);
+            latestNodeStaked = node.prevNum;
+            nodesRemoved++;
         }
-        if (latestAssertionStaked < latestConfirmedNum) {
+        if (latestNodeStaked < latestConfirmedNum) {
             removeZombie(zombieNum);
         } else {
-            zombieUpdateLatestStakedAssertion(zombieNum, latestAssertionStaked);
+            zombieUpdateLatestStakedNode(zombieNum, latestNodeStaked);
         }
     }
 
     /**
-     * @notice Remove any zombies whose latest stake is earlier than the latest confirmed assertion
+     * @notice Remove any zombies whose latest stake is earlier than the latest confirmed node
      * @param startIndex Index in the zombie list to start removing zombies from (to limit the cost of this transaction)
      */
     function removeOldZombies(uint256 startIndex) public onlyValidator whenNotPaused {
         uint256 currentZombieCount = zombieCount();
         uint256 latestConfirmedNum = latestConfirmed();
         for (uint256 i = startIndex; i < currentZombieCount; i++) {
-            while (zombieLatestStakedAssertion(i) < latestConfirmedNum) {
+            while (zombieLatestStakedNode(i) < latestConfirmedNum) {
                 removeZombie(i);
                 currentZombieCount--;
                 if (i >= currentZombieCount) {
@@ -464,14 +464,14 @@ abstract contract AbsRollupUserLogic is
      */
     function currentRequiredStake(
         uint256 _blockNumber,
-        uint64 _firstUnresolvedAssertionNum,
-        uint256 _latestCreatedAssertion
+        uint64 _firstUnresolvedNodeNum,
+        uint256 _latestCreatedNode
     ) internal view returns (uint256) {
-        // If there are no unresolved assertions, then you can use the base stake
-        if (_firstUnresolvedAssertionNum - 1 == _latestCreatedAssertion) {
+        // If there are no unresolved nodes, then you can use the base stake
+        if (_firstUnresolvedNodeNum - 1 == _latestCreatedNode) {
             return baseStake;
         }
-        uint256 firstUnresolvedDeadline = getAssertionStorage(_firstUnresolvedAssertionNum).deadlineBlock;
+        uint256 firstUnresolvedDeadline = getNodeStorage(_firstUnresolvedNodeNum).deadlineBlock;
         if (_blockNumber < firstUnresolvedDeadline) {
             return baseStake;
         }
@@ -518,10 +518,10 @@ abstract contract AbsRollupUserLogic is
      */
     function requiredStake(
         uint256 blockNumber,
-        uint64 firstUnresolvedAssertionNum,
-        uint64 latestCreatedAssertion
+        uint64 firstUnresolvedNodeNum,
+        uint64 latestCreatedNode
     ) external view returns (uint256) {
-        return currentRequiredStake(blockNumber, firstUnresolvedAssertionNum, latestCreatedAssertion);
+        return currentRequiredStake(blockNumber, firstUnresolvedNodeNum, latestCreatedNode);
     }
 
     function owner() external view returns (address) {
@@ -529,26 +529,26 @@ abstract contract AbsRollupUserLogic is
     }
 
     function currentRequiredStake() public view returns (uint256) {
-        uint64 firstUnresolvedAssertionNum = firstUnresolvedAssertion();
+        uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
 
-        return currentRequiredStake(block.number, firstUnresolvedAssertionNum, latestAssertionCreated());
+        return currentRequiredStake(block.number, firstUnresolvedNodeNum, latestNodeCreated());
     }
 
     /**
-     * @notice Calculate the number of zombies staked on the given assertion
+     * @notice Calculate the number of zombies staked on the given node
      *
      * @dev This function could be uncallable if there are too many zombies. However,
      * removeZombie and removeOldZombies can be used to remove any zombies that exist
      * so that this will then be callable
      *
-     * @param assertionNum The assertion on which to count staked zombies
-     * @return The number of zombies staked on the assertion
+     * @param nodeNum The node on which to count staked zombies
+     * @return The number of zombies staked on the node
      */
-    function countStakedZombies(uint64 assertionNum) public view override returns (uint256) {
+    function countStakedZombies(uint64 nodeNum) public view override returns (uint256) {
         uint256 currentZombieCount = zombieCount();
         uint256 stakedZombieCount = 0;
         for (uint256 i = 0; i < currentZombieCount; i++) {
-            if (assertionHasStaker(assertionNum, zombieAddress(i))) {
+            if (nodeHasStaker(nodeNum, zombieAddress(i))) {
                 stakedZombieCount++;
             }
         }
@@ -556,24 +556,24 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Calculate the number of zombies staked on a child of the given assertion
+     * @notice Calculate the number of zombies staked on a child of the given node
      *
      * @dev This function could be uncallable if there are too many zombies. However,
      * removeZombie and removeOldZombies can be used to remove any zombies that exist
      * so that this will then be callable
      *
-     * @param assertionNum The parent assertion on which to count zombies staked on children
-     * @return The number of zombies staked on children of the assertion
+     * @param nodeNum The parent node on which to count zombies staked on children
+     * @return The number of zombies staked on children of the node
      */
-    function countZombiesStakedOnChildren(uint64 assertionNum) public view override returns (uint256) {
+    function countZombiesStakedOnChildren(uint64 nodeNum) public view override returns (uint256) {
         uint256 currentZombieCount = zombieCount();
         uint256 stakedZombieCount = 0;
         for (uint256 i = 0; i < currentZombieCount; i++) {
             Zombie storage zombie = getZombieStorage(i);
-            // If this zombie is staked on this assertion, but its _latest_ staked assertion isn't this assertion,
-            // then it must be staked on a child of this assertion.
+            // If this zombie is staked on this node, but its _latest_ staked node isn't this node,
+            // then it must be staked on a child of this node.
             if (
-                zombie.latestStakedAssertion != assertionNum && assertionHasStaker(assertionNum, zombie.stakerAddress)
+                zombie.latestStakedNode != nodeNum && nodeHasStaker(nodeNum, zombie.stakerAddress)
             ) {
                 stakedZombieCount++;
             }
@@ -582,19 +582,19 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Verify that there are some number of assertions still unresolved
+     * @notice Verify that there are some number of nodes still unresolved
      */
     function requireUnresolvedExists() public view override {
-        uint256 firstUnresolved = firstUnresolvedAssertion();
+        uint256 firstUnresolved = firstUnresolvedNode();
         require(
-            firstUnresolved > latestConfirmed() && firstUnresolved <= latestAssertionCreated(),
+            firstUnresolved > latestConfirmed() && firstUnresolved <= latestNodeCreated(),
             "NO_UNRESOLVED"
         );
     }
 
-    function requireUnresolved(uint256 assertionNum) public view override {
-        require(assertionNum >= firstUnresolvedAssertion(), "ALREADY_DECIDED");
-        require(assertionNum <= latestAssertionCreated(), "DOESNT_EXIST");
+    function requireUnresolved(uint256 nodeNum) public view override {
+        require(nodeNum >= firstUnresolvedNode(), "ALREADY_DECIDED");
+        require(nodeNum <= latestNodeCreated(), "DOESNT_EXIST");
     }
 
     /**
@@ -616,28 +616,28 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
     }
 
     /**
-     * @notice Create a new stake on an existing assertion
-     * @param assertionNum Number of the assertion your stake will be place one
-     * @param assertionHash Assertion hash of the assertion with the given assertionNum
+     * @notice Create a new stake on an existing node
+     * @param nodeNum Number of the node your stake will be place one
+     * @param nodeHash Node hash of the node with the given nodeNum
      */
-    function newStakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) external payable override {
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable override {
         _newStake(msg.value);
-        stakeOnExistingAssertion(assertionNum, assertionHash);
+        stakeOnExistingNode(nodeNum, nodeHash);
     }
 
     /**
-     * @notice Create a new stake on a new assertion
-     * @param assertion Assertion describing the state change between the old assertion and the new one
-     * @param expectedAssertionHash Assertion hash of the assertion that will be created
-     * @param prevAssertionInboxMaxCount Total of messages in the inbox as of the previous assertion
+     * @notice Create a new stake on a new node
+     * @param assertion Assertion describing the state change between the old node and the new one
+     * @param expectedNodeHash Node hash of the node that will be created
+     * @param prevNodeInboxMaxCount Total of messages in the inbox as of the previous node
      */
-    function newStakeOnNewAssertion(
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+    function newStakeOnNewNode(
+        OldAssertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external payable override {
         _newStake(msg.value);
-        stakeOnNewAssertion(assertion, expectedAssertionHash, prevAssertionInboxMaxCount);
+        stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
     }
 
     /**
@@ -676,37 +676,37 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
     }
 
     /**
-     * @notice Create a new stake on an existing assertion
+     * @notice Create a new stake on an existing node
      * @param tokenAmount Amount of the rollups staking token to stake
-     * @param assertionNum Number of the assertion your stake will be place one
-     * @param assertionHash Assertion hash of the assertion with the given assertionNum
+     * @param nodeNum Number of the node your stake will be place one
+     * @param nodeHash Node hash of the node with the given nodeNum
      */
-    function newStakeOnExistingAssertion(
+    function newStakeOnExistingNode(
         uint256 tokenAmount,
-        uint64 assertionNum,
-        bytes32 assertionHash
+        uint64 nodeNum,
+        bytes32 nodeHash
     ) external override {
         _newStake(tokenAmount);
-        stakeOnExistingAssertion(assertionNum, assertionHash);
+        stakeOnExistingNode(nodeNum, nodeHash);
         /// @dev This is an external call, safe because it's at the end of the function
         receiveTokens(tokenAmount);
     }
 
     /**
-     * @notice Create a new stake on a new assertion
+     * @notice Create a new stake on a new node
      * @param tokenAmount Amount of the rollups staking token to stake
-     * @param assertion Assertion describing the state change between the old assertion and the new one
-     * @param expectedAssertionHash Assertion hash of the assertion that will be created
-     * @param prevAssertionInboxMaxCount Total of messages in the inbox as of the previous assertion
+     * @param assertion Assertion describing the state change between the old node and the new one
+     * @param expectedNodeHash Node hash of the node that will be created
+     * @param prevNodeInboxMaxCount Total of messages in the inbox as of the previous node
      */
-    function newStakeOnNewAssertion(
+    function newStakeOnNewNode(
         uint256 tokenAmount,
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        OldAssertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external override {
         _newStake(tokenAmount);
-        stakeOnNewAssertion(assertion, expectedAssertionHash, prevAssertionInboxMaxCount);
+        stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
         /// @dev This is an external call, safe because it's at the end of the function
         receiveTokens(tokenAmount);
     }
