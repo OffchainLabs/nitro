@@ -12,14 +12,6 @@ func (c *Challenge) AddLeaf(
 	assertion *Assertion,
 	history util.HistoryCommitment,
 ) (*ChallengeVertex, error) {
-	// Refresh the inner fields of our before making on-chain calls.
-	if err := assertion.invalidate(); err != nil {
-		return nil, err
-	}
-	if err := c.invalidate(); err != nil {
-		return nil, err
-	}
-
 	// Flatten the last leaf proof for submission to the chain.
 	lastLeafProof := make([]byte, 0)
 	for _, h := range history.LastLeafProof {
