@@ -4,12 +4,12 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/ChallengeManager.sol";
+import "../challenge/OldChallengeManager.sol";
 
-contract SingleExecutionChallenge is ChallengeManager {
+contract SingleExecutionChallenge is OldChallengeManager {
     constructor(
         IOneStepProofEntry osp_,
-        IChallengeResultReceiver resultReceiver_,
+        IOldChallengeResultReceiver resultReceiver_,
         uint64 maxInboxMessagesRead_,
         bytes32[2] memory startAndEndHashes,
         uint256 numSteps_,
@@ -21,20 +21,20 @@ contract SingleExecutionChallenge is ChallengeManager {
         osp = osp_;
         resultReceiver = resultReceiver_;
         uint64 challengeIndex = ++totalChallengesCreated;
-        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
+        OldChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.maxInboxMessages = maxInboxMessagesRead_;
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
-        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps_, segments);
+        bytes32 challengeStateHash = OldChallengeLib.hashChallengeState(0, numSteps_, segments);
         challenge.challengeStateHash = challengeStateHash;
-        challenge.next = ChallengeLib.Participant({addr: asserter_, timeLeft: asserterTimeLeft_});
-        challenge.current = ChallengeLib.Participant({
+        challenge.next = OldChallengeLib.Participant({addr: asserter_, timeLeft: asserterTimeLeft_});
+        challenge.current = OldChallengeLib.Participant({
             addr: challenger_,
             timeLeft: challengerTimeLeft_
         });
         challenge.lastMoveTimestamp = block.timestamp;
-        challenge.mode = ChallengeLib.ChallengeMode.EXECUTION;
+        challenge.mode = OldChallengeLib.ChallengeMode.EXECUTION;
 
         emit Bisected(challengeIndex, challengeStateHash, 0, numSteps_, segments);
     }
