@@ -2,12 +2,12 @@ package assertionchain
 
 import (
 	"bytes"
+	"math/big"
 	"strings"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
-	"math/big"
 )
 
 var (

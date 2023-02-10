@@ -159,6 +159,52 @@ func TestAssertion_Confirm(t *testing.T) {
 	})
 }
 
+func TestAssertion_Reject(t *testing.T) {
+	acc, err := setupAccount()
+	require.NoError(t, err)
+
+	chain, _ := setupAssertionChainWithChallengeManager(t)
+	commit := util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{1}),
+	}
+	genesisId := common.Hash{}
+	created, err := chain.CreateAssertion(commit, genesisId)
+	require.NoError(t, err)
+	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
+	acc.backend.Commit()
+
+	commit = util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{2}),
+	}
+	created, err = chain.CreateAssertion(commit, genesisId)
+	require.NoError(t, err)
+	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
+	acc.backend.Commit()
+
+	_, err = chain.CreateSuccessionChallenge(genesisId)
+	require.NoError(t, err)
+
+	ga, err := chain.AssertionByID(genesisId)
+	require.NoError(t, err)
+	t.Log(ga.inner.SuccessionChallenge)
+
+	t.Run("Can reject assertion", func(t *testing.T) {
+		require.Equal(t, uint8(0), created.inner.Status) // Pending.
+		require.NoError(t, created.Reject())
+		acc.backend.Commit()
+		created, err = chain.AssertionByID(created.id)
+		require.NoError(t, err)
+		require.Equal(t, uint8(2), created.inner.Status) // Confirmed.
+	})
+
+	t.Run("Unknown assertion", func(t *testing.T) {
+		created.id = common.BytesToHash([]byte("meow"))
+		require.ErrorIs(t, created.Reject(), ErrNotFound)
+	})
+}
+
 func TestChallengePeriodSeconds(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()
