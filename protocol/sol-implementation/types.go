@@ -1,8 +1,6 @@
 package solimpl
 
 import (
-	"sync"
-
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 )
@@ -16,7 +14,6 @@ type Assertion struct {
 	chain           *AssertionChain
 	id              [32]byte
 	inner           outgen.Assertion
-	lock            sync.Mutex
 }
 
 // Challenge is a developer-friendly wrapper around
@@ -25,7 +22,6 @@ type Challenge struct {
 	manager *ChallengeManager
 	id      [32]byte
 	inner   outgen.Challenge
-	lock    sync.Mutex
 }
 
 // ChallengeType defines an enum of the same name
@@ -45,5 +41,4 @@ type ChallengeVertex struct {
 	manager *ChallengeManager
 	id      [32]byte
 	inner   outgen.ChallengeVertex
-	lock    sync.Mutex
 }
