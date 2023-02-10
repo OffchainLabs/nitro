@@ -196,6 +196,9 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 			if ctx.Err() != nil {
 				return
 			}
+			if interval == time.Duration(0) {
+				continue
+			}
 			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():
