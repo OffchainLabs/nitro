@@ -71,11 +71,11 @@ contract ERC20BridgeCreatorTest is Test {
 
         // bridge
         assertEq(address(bridge.rollup()), rollup, "Invalid rollup ref");
-        // assertEq(
-        //     address(IERC20Bridge(address(bridge)).nativeToken()),
-        //     nativeToken,
-        //     "Invalid nativeToken ref"
-        // );
+        assertEq(
+            address(IERC20Bridge(address(bridge)).nativeToken()),
+            nativeToken,
+            "Invalid nativeToken ref"
+        );
         assertEq(bridge.activeOutbox(), address(0), "Invalid activeOutbox ref");
 
         // seqInbox

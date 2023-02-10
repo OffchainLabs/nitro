@@ -345,7 +345,6 @@ func deployERC20RollupCreator(ctx context.Context, l1Reader *headerreader.Header
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-
 func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
@@ -500,7 +499,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		Rollup:                 rollupAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
-		NativeERC20Token: 		nativeERC20Token,
+		NativeERC20Token:       nativeERC20Token,
 	}, nil
 }
 

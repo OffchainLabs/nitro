@@ -43,11 +43,7 @@ contract ERC20BridgeCreator is AbsBridgeCreator, IERC20BridgeCreator {
         IOwnable rollup,
         address nativeToken
     ) internal override {
-
-        address deployedNativeToken = address(
-            new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, 0xe2148eE53c0755215Df69b2616E552154EdC584f)
-        );
-
-        IERC20Bridge(address(bridge)).initialize(IOwnable(rollup), deployedNativeToken);
+        IERC20Bridge(address(bridge)).initialize(IOwnable(rollup), nativeToken);
     }
 }
+`
