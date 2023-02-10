@@ -2,9 +2,10 @@ package solimpl
 
 import (
 	"context"
+	"math/big"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
-	"math/big"
 )
 
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
@@ -29,11 +30,6 @@ func (v *ChallengeVertex) Bisect(
 	history util.HistoryCommitment,
 	proof []common.Hash,
 ) (*ChallengeVertex, error) {
-	// Refresh the inner fields of our before making on-chain calls.
-	if err := v.invalidate(); err != nil {
-		return nil, err
-	}
-
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
