@@ -263,11 +263,14 @@ if $force_init; then
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
 
-    ## TODO - deploy token here and provide the address to deployer
-    NATIVE_TOKEN_L1_ADDRESS="0x0000000000000000000000000000000000000001"
-    echo $erc20rollup
+    nativeTokenAddress=""
     if $erc20rollup; then
-        docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --nativeERC20TokenAddress $NATIVE_TOKEN_L1_ADDRESS --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
+        echo == Deploying token
+        nativeTokenAddress=`docker-compose run testnode-scripts create-erc20 --deployerKey $devprivkey --mintTo user_l1user | tail -n 1 | awk '{ print $NF }'`
+    fi
+
+    if $erc20rollup; then
+        docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --nativeERC20TokenAddress $nativeTokenAddress --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
     else
         docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
     fi
