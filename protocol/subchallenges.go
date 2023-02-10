@@ -116,14 +116,14 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 // unexpired chess-clocks. It does this by filtering out vertices from the chain
 // that are the specified vertex's children and checking that at least two in this
 // filtered list have unexpired chess clocks and are one-step away from the parent.
-func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, chain ChallengeManagerInterface, v *ChallengeVertex) (bool, error) {
+func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, challengeManager ChallengeManagerInterface, v *ChallengeVertex) (bool, error) {
 	if v.Challenge.IsNone() {
 		return false, ErrNoChallenge
 	}
 	chal := v.Challenge.Unwrap()
 	challengeCommit, _ := chal.ParentStateCommitment(ctx, tx)
 	challengeHash := ChallengeCommitHash(challengeCommit.Hash())
-	vertices, ok := chain.GetChallengeVerticesByCommitHashmap()[challengeHash]
+	vertices, ok := challengeManager.GetChallengeVerticesByCommitHashmap()[challengeHash]
 	if !ok {
 		return false, fmt.Errorf("vertices not found for challenge with hash: %#x", challengeHash)
 	}
@@ -147,7 +147,7 @@ func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, chain ChallengeMana
 		isOneStepAway := commitment.Height == prevCommitment.Height+1
 		isChild := parentCommitHash == vertexCommitHash
 		var checkClockExpired bool
-		checkClockExpired, err = otherVertex.ChessClockExpired(ctx, tx, chain.ChallengePeriodLength(tx))
+		checkClockExpired, err = otherVertex.ChessClockExpired(ctx, tx, challengeManager.ChallengePeriodLength(tx))
 		if err != nil {
 			return false, err
 		}
@@ -163,9 +163,9 @@ func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, chain ChallengeMana
 
 // Checks if a challenge is still ongoing by making sure the current
 // timestamp is within the challenge's creation time + challenge period.
-func (c *Challenge) HasEnded(ctx context.Context, tx *ActiveTx, chain ChallengeManagerInterface) (bool, error) {
-	challengeEndTime := c.creationTime.Add(chain.(*AssertionChain).challengePeriod).Unix()
-	now := chain.(*AssertionChain).timeReference.Get().Unix()
+func (c *Challenge) HasEnded(ctx context.Context, tx *ActiveTx, challengeManager ChallengeManagerInterface) (bool, error) {
+	challengeEndTime := c.creationTime.Add(challengeManager.(*AssertionChain).challengePeriod).Unix()
+	now := challengeManager.(*AssertionChain).timeReference.Get().Unix()
 	return now > challengeEndTime, nil
 }
 
