@@ -392,11 +392,11 @@ fn test_fallible() -> Result<()> {
     match native.run_main(&[0x00], &config)? {
         UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
         err => bail!("expected hard error: {}", err.red()),
-    };
+    }
     match native.run_main(&[], &config)? {
         UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
         err => bail!("expected hard error: {}", err.red()),
-    };
+    }
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
     match machine.run_main(&[0x00], &config)? {
