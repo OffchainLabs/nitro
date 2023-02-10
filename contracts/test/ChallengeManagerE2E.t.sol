@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../src/challengeV2/DataEntities.sol";
@@ -33,12 +33,12 @@ contract ChallengeManagerE2ETest is Test {
     uint256 inboxSeenCount1 = 5;
 
     uint256 miniStakeVal = 1 ether;
-    uint256 challengePeriod = 1000;
+    uint256 challengePeriodSec = 1000;
 
     function deploy() internal returns (MockAssertionChain, ChallengeManagerImpl, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
         ChallengeManagerImpl challengeManager =
-            new ChallengeManagerImpl(assertionChain, miniStakeVal, challengePeriod, new MockOneStepProofEntry());
+            new ChallengeManagerImpl(assertionChain, miniStakeVal, challengePeriodSec, new MockOneStepProofEntry());
         bytes32 genesis = assertionChain.addAssertionUnsafe(0, 0, 0, genesisHash, 0);
 
         return (assertionChain, challengeManager, genesis);
@@ -66,7 +66,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: challengeId,
                 claimId: a1,
                 height: height1,
-                historyCommitment: h1,
+                historyRoot: h1,
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -76,7 +76,7 @@ contract ChallengeManagerE2ETest is Test {
             abi.encodePacked(uint256(0))
         );
 
-        vm.warp(challengePeriod + 2);
+        vm.warp(challengePeriodSec + 2);
 
         challengeManager.confirmForPsTimer(v1Id);
 
@@ -92,7 +92,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: blockChallengeId,
                 claimId: a1,
                 height: height1,
-                historyCommitment: h1,
+                historyRoot: h1,
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -107,7 +107,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: blockChallengeId,
                 claimId: a2,
                 height: height1,
-                historyCommitment: h2,
+                historyRoot: h2,
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h2,
@@ -149,7 +149,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: bigStepChallengeId,
                 claimId: b11,
                 height: height1,
-                historyCommitment: h1,
+                historyRoot: h1,
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -159,7 +159,7 @@ contract ChallengeManagerE2ETest is Test {
             abi.encodePacked(uint256(0))
         );
 
-        vm.warp(challengePeriod + 2);
+        vm.warp(challengePeriodSec + 2);
 
         // confirm in the sub challenge by ps
         challengeManager.confirmForPsTimer(bsLeaf1);
@@ -207,7 +207,7 @@ contract ChallengeManagerE2ETest is Test {
         IChallengeManager challengeManager,
         bytes32 challengeId,
         bytes32 claimId,
-        bytes32 historyCommitment,
+        bytes32 historyRoot,
         bytes memory proof2
     ) internal returns (bytes32) {
         return challengeManager.addLeaf{value: miniStakeVal}(
@@ -215,13 +215,13 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: challengeId,
                 claimId: claimId,
                 height: height1,
-                historyCommitment: historyCommitment,
+                historyRoot: historyRoot,
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
-                lastState: historyCommitment,
+                lastState: historyRoot,
                 lastStatehistoryProof: ""
             }),
-            abi.encodePacked(historyCommitment),
+            abi.encodePacked(historyRoot),
             proof2
         );
     }
@@ -230,13 +230,13 @@ contract ChallengeManagerE2ETest is Test {
         IChallengeManager challengeManager,
         bytes32 challengeId,
         bytes32 claimId1,
-        bytes32 historyCommitment1,
+        bytes32 historyRoot1,
         bytes32 claimId2,
-        bytes32 historyCommitment2,
+        bytes32 historyRoot2,
         bytes memory addLeafProof2
     ) internal returns (bytes32[5] memory, bytes32[5] memory) {
-        bytes32 blockLeaf1Id = addLeaf(challengeManager, challengeId, claimId1, historyCommitment1, addLeafProof2);
-        bytes32 blockLeaf2Id = addLeaf(challengeManager, challengeId, claimId2, historyCommitment2, addLeafProof2);
+        bytes32 blockLeaf1Id = addLeaf(challengeManager, challengeId, claimId1, historyRoot1, addLeafProof2);
+        bytes32 blockLeaf2Id = addLeaf(challengeManager, challengeId, claimId2, historyRoot2, addLeafProof2);
         (bytes32[5] memory challengeWinningVertices, bytes32[5] memory challengeLosingVertices) =
             bisectToRoot(challengeManager, blockLeaf1Id, blockLeaf2Id);
 
@@ -287,7 +287,7 @@ contract ChallengeManagerE2ETest is Test {
 
         challengeManager.confirmForSucessionChallengeWin(smallStepWinners[0]);
 
-        vm.warp(challengePeriod + 2);
+        vm.warp(challengePeriodSec + 2);
         challengeManager.confirmForPsTimer(smallStepWinners[1]);
         challengeManager.confirmForPsTimer(smallStepWinners[2]);
         challengeManager.confirmForPsTimer(smallStepWinners[3]);

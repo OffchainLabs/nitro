@@ -2,6 +2,22 @@
 pragma solidity ^0.8.17;
 
 import "../osp/IOneStepProofEntry.sol";
+import "./libraries/ChallengeVertexLib.sol";
+
+// Glossary terms to add
+// assertion
+// sub challenge
+// challenge
+// predecessor
+// successor
+// PS
+// Lowest height successor
+// vertex
+// confirmation
+
+// CHRIS: TODO: invariant: once a ps timer goes above challenge period, it will always remain ps
+// CHRIS: TODO: invariant: once a vertex is no longer the ps, it can never be ps again
+// CHRIS: TODO: invariant: all the things stated in the challenge vertex struct eg lowest height = ps if ps != 0, or ps = 0 if lowest heigh == 0
 
 enum Status {
     Pending,
@@ -37,7 +53,7 @@ struct AddLeafArgs {
     bytes32 challengeId;
     bytes32 claimId;
     uint256 height;
-    bytes32 historyCommitment;
+    bytes32 historyRoot;
     bytes32 firstState;
     bytes firstStatehistoryProof;
     bytes32 lastState;
@@ -46,7 +62,7 @@ struct AddLeafArgs {
 
 struct AddLeafLibArgs {
     uint256 miniStake;
-    uint256 challengePeriod;
+    uint256 challengePeriodSec;
     AddLeafArgs leafData;
     bytes proof1;
     bytes proof2;
@@ -79,11 +95,9 @@ interface IChallengeManagerCore {
 
     function createSubChallenge(bytes32 vId) external returns (bytes32);
 
-    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
-        external
-        returns (bytes32);
+    function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32);
 
-    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32);
+    function merge(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32);
 
     function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2)
         external
@@ -92,31 +106,6 @@ interface IChallengeManagerCore {
 }
 
 interface IChallengeManager is IChallengeManagerCore, IChallengeManagerExternalView {}
-
-struct ChallengeVertex {
-    bytes32 challengeId;
-    bytes32 historyCommitment;
-    uint256 height;
-    bytes32 successionChallenge;
-    bytes32 predecessorId;
-    bytes32 claimId; // CHRIS: TODO: aka tag; only on a leaf (could also go on a root if we wanted, would be consistent but unused)
-    address staker; // CHRIS: TODO: only on a leaf
-    // CHRIS: TODO: use a different status for the vertices since they never transition to rejected?
-    Status status;
-    // the presumptive successor to this vertex
-    bytes32 presumptiveSuccessorId;
-    // CHRIS: TODO: we should have a staker in here to decide what do in the event of a win/loss?
-    // the last time the presumptive successor to this vertex changed
-    uint256 presumptiveSuccessorLastUpdated;
-    // the amount of time this vertex has spent as the presumptive successor
-    /// @notice DO NOT USE TO GET PS TIME! Instead use a getter function which takes into account unflushed ps time as well.
-    ///         This is the amount of time that this vertex is recorded to have been the presumptive successor
-    ///         However this may not be the total amount of time being the presumptive successor, as this vertex may currently
-    ///         be the ps, and so may have some time currently being record on the predecessor.
-    uint256 flushedPsTime;
-    // the id of the successor with the lowest height. Zero if this vertex has no successors.
-    bytes32 lowestHeightSucessorId;
-}
 
 enum ChallengeType {
     Block,

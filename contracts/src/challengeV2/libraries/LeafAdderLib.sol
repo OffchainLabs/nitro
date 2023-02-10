@@ -3,10 +3,12 @@ pragma solidity ^0.8.17;
 
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
-import "./HistoryCommitmentLib.sol";
-import "./PSVerticesLib.sol";
+import "./HistoryRootLib.sol";
+import "./PsVerticesLib.sol";
 
 library LeafAdderLib {
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
+
     // CHRIS: TODO: re-arrange the order of args on all these functions - we should use something consistent
     function checkAddLeaf(
         mapping(bytes32 => Challenge) storage challenges,
@@ -14,7 +16,7 @@ library LeafAdderLib {
         uint256 miniStake
     ) internal view {
         require(leafData.claimId != 0, "Empty claimId");
-        require(leafData.historyCommitment != 0, "Empty historyCommitment");
+        require(leafData.historyRoot != 0, "Empty historyRoot");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
         require(leafData.height != 0, "Empty height");
 
@@ -29,17 +31,15 @@ library LeafAdderLib {
 
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
+            HistoryRootLib.hasState(
+                leafData.historyRoot, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
             ),
             "Last state not in history"
         );
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            HistoryCommitmentLib.hasState(
-                leafData.historyCommitment, leafData.firstState, 0, leafData.firstStatehistoryProof
-            ),
+            HistoryRootLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
             "First state not in history"
         );
 
@@ -56,9 +56,9 @@ library LeafAdderLib {
 library BlockLeafAdder {
     // CHRIS: TODO: not all these libs are used
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
-    function initialPsTime(bytes32 claimId, IAssertionChain assertionChain) internal view returns (uint256) {
+    function initialPsTimeSec(bytes32 claimId, IAssertionChain assertionChain) internal view returns (uint256) {
         bool isFirstChild = assertionChain.isFirstChild(claimId);
 
         if (isFirstChild) {
@@ -119,18 +119,17 @@ library BlockLeafAdder {
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
 
-        return vertices.addNewSuccessor(
+        ChallengeVertex memory leaf = ChallengeVertexLib.newLeaf(
             leafLibArgs.leafData.challengeId,
-            challenges[leafLibArgs.leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
-            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            // CHRIS: TODO: this has a nicer pattern by encapsulating the args, could we do the same?
-            initialPsTime(leafLibArgs.leafData.claimId, assertionChain),
-            leafLibArgs.challengePeriod
+            initialPsTimeSec(leafLibArgs.leafData.claimId, assertionChain)
+        );
+
+        return vertices.addVertex(
+            leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriodSec
         );
     }
 
@@ -139,7 +138,7 @@ library BlockLeafAdder {
 
 library BigStepLeafAdder {
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
     function getBlockHashFromClaim(bytes32 claimId, bytes memory claimProof) internal returns (bytes32) {
         // CHRIS: TODO:
@@ -189,24 +188,25 @@ library BigStepLeafAdder {
 
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
-        return vertices.addNewSuccessor(
+
+        ChallengeVertex memory leaf = ChallengeVertexLib.newLeaf(
             leafLibArgs.leafData.challengeId,
-            challenges[leafLibArgs.leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
-            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
-            leafLibArgs.challengePeriod
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
+        );
+
+        return vertices.addVertex(
+            leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriodSec
         );
     }
 }
 
 library SmallStepLeafAdder {
     using ChallengeVertexLib for ChallengeVertex;
-    using PSVerticesLib for mapping(bytes32 => ChallengeVertex);
+    using PsVerticesLib for mapping(bytes32 => ChallengeVertex);
 
     uint256 public constant MAX_STEPS = 2 << 19;
 
@@ -240,8 +240,8 @@ library SmallStepLeafAdder {
             // the wavm state of the last state should always be exactly the same as the wavm state of the claim
             // regardless of the height
             require(
-                HistoryCommitmentLib.hasState(
-                    vertices[leafLibArgs.leafData.claimId].historyCommitment,
+                HistoryRootLib.hasState(
+                    vertices[leafLibArgs.leafData.claimId].historyRoot,
                     leafLibArgs.leafData.lastState,
                     1,
                     leafLibArgs.proof1
@@ -267,17 +267,18 @@ library SmallStepLeafAdder {
 
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
-        return vertices.addNewSuccessor(
+
+        ChallengeVertex memory leaf = ChallengeVertexLib.newLeaf(
             leafLibArgs.leafData.challengeId,
-            challenges[leafLibArgs.leafData.challengeId].rootId,
-            // CHRIS: TODO: move this struct out
-            leafLibArgs.leafData.historyCommitment,
+            leafLibArgs.leafData.historyRoot,
             leafLibArgs.leafData.height,
             leafLibArgs.leafData.claimId,
             msg.sender,
-            // CHRIS: TODO: the naming is bad here
-            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId),
-            leafLibArgs.challengePeriod
+            vertices.getCurrentPsTimer(leafLibArgs.leafData.claimId)
+        );
+
+        return vertices.addVertex(
+            leaf, challenges[leafLibArgs.leafData.challengeId].rootId, leafLibArgs.challengePeriodSec
         );
     }
 }
