@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops int, expensiveTx bool, arbitrator bool) {
@@ -123,10 +124,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	}
 	t.Log("waiting for block: ", lastBlock.NumberU64())
 	timeout := getDeadlineTimeout(t, time.Minute*10)
-	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {
+	// messageindex is same as block number here
+	if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fail(t, "did not validate all blocks")
 	}
-	finalRefCount := nodeB.BlockValidator.RecordDBReferenceCount()
+	nodeB.Execution.Recorder.TrimAllPrepared(t)
+	finalRefCount := nodeB.Execution.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader

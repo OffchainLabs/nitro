@@ -337,7 +337,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &conf.BlockValidator)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2.Execution.Recorder, asserterL2ArbDb, nil, &conf.BlockValidator)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -346,11 +346,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		Fail(t, err)
 	}
 	defer asserterValidator.Stop()
-	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, asserterL2.InboxTracker, asserterValidator, 0, 0)
+	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterValidator, 0, 0)
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &conf.BlockValidator)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2.Execution.Recorder, challengerL2ArbDb, nil, &conf.BlockValidator)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -359,7 +359,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		Fail(t, err)
 	}
 	defer challengerValidator.Stop()
-	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, challengerL2.InboxTracker, challengerValidator, 0, 0)
+	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerValidator, 0, 0)
 	if err != nil {
 		Fail(t, err)
 	}

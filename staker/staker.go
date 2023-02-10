@@ -165,7 +165,7 @@ func NewStaker(
 	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
-		statelessBlockValidator.blockchain, statelessBlockValidator.daService, statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
+		statelessBlockValidator.daService, statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -515,8 +515,6 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			*s.builder.wallet.Address(),
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
-			s.l2Blockchain,
-			s.inboxTracker,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
 			s.config.ConfirmationBlocks,

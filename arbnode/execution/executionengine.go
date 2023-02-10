@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
@@ -33,9 +33,8 @@ type TransactionStreamerInterface interface {
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc        *core.BlockChain
-	validator *staker.BlockValidator
-	streamer  TransactionStreamerInterface
+	bc       *core.BlockChain
+	streamer TransactionStreamerInterface
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -55,16 +54,6 @@ func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
 	}, nil
-}
-
-func (s *ExecutionEngine) SetBlockValidator(validator *staker.BlockValidator) {
-	if s.Started() {
-		panic("trying to set block validator after start")
-	}
-	if s.validator != nil {
-		panic("trying to set block validator when already set")
-	}
-	s.validator = validator
 }
 
 func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
@@ -88,6 +77,9 @@ func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInt
 }
 
 func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
+	if count == 0 {
+		return errors.New("cannot reorg out genesis")
+	}
 	s.createBlocksMutex.Lock()
 	successful := false
 	defer func() {
@@ -95,24 +87,15 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 			s.createBlocksMutex.Unlock()
 		}
 	}()
-	blockNum, err := s.MessageCountToBlockNumber(count)
-	if err != nil {
-		return err
-	}
+	blockNum := s.MessageIndexToBlockNumber(count - 1)
 	// We can safely cast blockNum to a uint64 as we checked count == 0 above
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		log.Warn("reorg target block not found", "block", blockNum)
 		return nil
 	}
-	if s.validator != nil {
-		err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
-		if err != nil {
-			return err
-		}
-	}
 
-	err = s.bc.ReorgToOldBlock(targetBlock)
+	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
 	}
@@ -128,11 +111,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 }
 
 func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
-	msgCount, err := s.BlockNumberToMessageCount(s.bc.CurrentBlock().Header().Number.Uint64())
-	if err != nil {
-		return 0, err
-	}
-	return msgCount - 1, err
+	return s.BlockNumberToMessageIndex(s.bc.CurrentBlock().Header().Number.Uint64())
 }
 
 func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
@@ -302,7 +281,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		DelayedMessagesRead: delayedMessagesRead,
 	}
 
-	pos, err := s.BlockNumberToMessageCount(lastBlockHeader.Number.Uint64())
+	pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -319,31 +298,23 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	if s.validator != nil {
-		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
-	}
-
 	return block, nil
 }
 
-func (s *ExecutionEngine) GetGenesisBlockNumber() (uint64, error) {
-	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum, nil
+func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
+	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum
 }
 
-func (s *ExecutionEngine) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {
-	genesis, err := s.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
+func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
+	genesis := s.GetGenesisBlockNumber()
+	if blockNum < genesis {
+		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
 	}
-	return arbutil.BlockNumberToMessageCount(blockNum, genesis), nil
+	return arbutil.MessageIndex(blockNum - genesis), nil
 }
 
-func (s *ExecutionEngine) MessageCountToBlockNumber(messageNum arbutil.MessageIndex) (int64, error) {
-	genesis, err := s.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
-	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
+func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
+	return uint64(messageNum) + s.GetGenesisBlockNumber()
 }
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
@@ -363,7 +334,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
-	pos, err := s.BlockNumberToMessageCount(currentHeader.Number.Uint64())
+	lastMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
 		return err
 	}
@@ -377,7 +348,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(pos, messageWithMeta)
+	err = s.streamer.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
 	if err != nil {
 		return err
 	}
@@ -393,7 +364,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return err
 	}
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "pos", lastMsg+1, "delayed", delayedSeqNum, "block-header", block.Header())
 
 	return nil
 }
@@ -441,6 +412,26 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	return nil
 }
 
+type MessageResult struct {
+	BlockHash common.Hash
+	SendRoot  common.Hash
+}
+
+func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*MessageResult, error) {
+	if header == nil {
+		return nil, fmt.Errorf("result not found")
+	}
+	info, err := types.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return nil, err
+	}
+	return &MessageResult{header.Hash(), info.SendRoot}, nil
+}
+
+func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error) {
+	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+}
+
 func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	if !s.createBlocksMutex.TryLock() {
 		return errors.New("mutex held")
@@ -451,12 +442,12 @@ func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostype
 
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	currentHeader := s.bc.CurrentHeader()
-	expNum, err := s.BlockNumberToMessageCount(currentHeader.Number.Uint64())
+	curMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
 		return err
 	}
-	if expNum != num {
-		return fmt.Errorf("wrong message number in digest got %d expected %d", num, expNum)
+	if curMsg+1 != num {
+		return fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
 	}
 
 	startTime := time.Now()
@@ -468,10 +459,6 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
 	if err != nil {
 		return err
-	}
-
-	if s.validator != nil {
-		s.validator.NewBlock(block, currentHeader, *msg)
 	}
 
 	if time.Now().After(s.nextScheduledVersionCheck) {

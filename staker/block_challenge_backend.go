@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -20,14 +19,13 @@ import (
 )
 
 type BlockChallengeBackend struct {
-	bc                     *core.BlockChain
-	startBlock             int64
+	streamer               TransactionStreamerInterface
+	startMsgCount          arbutil.MessageIndex
 	startPosition          uint64
 	endPosition            uint64
 	startGs                validator.GoGlobalState
 	endGs                  validator.GoGlobalState
 	inboxTracker           InboxTrackerInterface
-	genesisBlockNumber     uint64
 	tooFarStartsAtPosition uint64
 }
 
@@ -36,19 +34,10 @@ var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
 func NewBlockChallengeBackend(
 	initialState *challengegen.ChallengeManagerInitiatedChallenge,
-	bc *core.BlockChain,
+	streamer TransactionStreamerInterface,
 	inboxTracker InboxTrackerInterface,
-	genesisBlockNumber uint64,
 ) (*BlockChallengeBackend, error) {
 	startGs := validator.GoGlobalStateFromSolidity(initialState.StartState)
-	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNumber)
-	if startGs.BlockHash != (common.Hash{}) {
-		startBlock := bc.GetBlockByHash(startGs.BlockHash)
-		if startBlock == nil {
-			return nil, fmt.Errorf("failed to find start block %v", startGs.BlockHash)
-		}
-		startBlockNum = int64(startBlock.NumberU64())
-	}
 
 	var startMsgCount arbutil.MessageIndex
 	if startGs.Batch > 0 {
@@ -59,10 +48,6 @@ func NewBlockChallengeBackend(
 		}
 	}
 	startMsgCount += arbutil.MessageIndex(startGs.PosInBatch)
-	expectedMsgCount := arbutil.SignedBlockNumberToMessageCount(startBlockNum, genesisBlockNumber)
-	if startMsgCount != expectedMsgCount {
-		return nil, fmt.Errorf("start block %v and start message count %v don't correspond", startBlockNum, startMsgCount)
-	}
 
 	endGs := validator.GoGlobalStateFromSolidity(initialState.EndState)
 	var endMsgCount arbutil.MessageIndex
@@ -76,19 +61,18 @@ func NewBlockChallengeBackend(
 	endMsgCount += arbutil.MessageIndex(endGs.PosInBatch)
 
 	return &BlockChallengeBackend{
-		bc:                     bc,
-		startBlock:             startBlockNum,
+		streamer:               streamer,
+		startMsgCount:          startMsgCount,
 		startGs:                startGs,
 		startPosition:          0,
 		endPosition:            math.MaxUint64,
 		endGs:                  endGs,
 		inboxTracker:           inboxTracker,
-		genesisBlockNumber:     genesisBlockNumber,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
 	}, nil
 }
 
-func (b *BlockChallengeBackend) findBatchFromMessageIndex(msgCount arbutil.MessageIndex) (uint64, error) {
+func (b *BlockChallengeBackend) findBatchFromMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
 	}
@@ -119,12 +103,8 @@ func (b *BlockChallengeBackend) findBatchFromMessageIndex(msgCount arbutil.Messa
 	}
 }
 
-func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) (validator.GoGlobalState, error) {
-	if header == nil {
-		return validator.GoGlobalState{}, nil
-	}
-	msgCount := arbutil.BlockNumberToMessageCount(header.Number.Uint64(), b.genesisBlockNumber)
-	batch, err := b.findBatchFromMessageIndex(msgCount)
+func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.MessageIndex) (validator.GoGlobalState, error) {
+	batch, err := b.findBatchFromMessageCount(count)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
@@ -134,42 +114,35 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
-		if batchMsgCount > msgCount {
+		if batchMsgCount > count {
 			return validator.GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
+	res, err := b.streamer.ResultAtCount(count)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
 	return validator.GoGlobalState{
-		BlockHash:  header.Hash(),
-		SendRoot:   extraInfo.SendRoot,
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
 		Batch:      batch,
-		PosInBatch: uint64(msgCount - batchMsgCount),
+		PosInBatch: uint64(count - batchMsgCount),
 	}, nil
 }
 
 const StatusFinished uint8 = 1
 const StatusTooFar uint8 = 3
 
-func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) (int64, bool) {
-	return b.startBlock + int64(step), step >= b.tooFarStartsAtPosition
+func (b *BlockChallengeBackend) GetMessageCountAtStep(step uint64) (arbutil.MessageIndex, bool) {
+	return b.startMsgCount + arbutil.MessageIndex(step), step >= b.tooFarStartsAtPosition
 }
 
 func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (validator.GoGlobalState, uint8, error) {
-	blockNum, tooFar := b.GetBlockNrAtStep(step)
+	msgNum, tooFar := b.GetMessageCountAtStep(step)
 	if tooFar {
 		return validator.GoGlobalState{}, StatusTooFar, nil
 	}
-	var header *types.Header
-	if blockNum != -1 {
-		header = b.bc.GetHeaderByNumber(uint64(blockNum))
-		if header == nil {
-			return validator.GoGlobalState{}, 0, fmt.Errorf("failed to get block %v in block challenge", blockNum)
-		}
-	}
-	globalState, err := b.FindGlobalStateFromHeader(header)
+	globalState, err := b.FindGlobalStateFromMessageCount(msgNum)
 	if err != nil {
 		return validator.GoGlobalState{}, 0, err
 	}

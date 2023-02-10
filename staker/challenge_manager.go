@@ -14,10 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -70,7 +70,7 @@ type ChallengeManager struct {
 	validator      *StatelessBlockValidator
 	wasmModuleRoot common.Hash
 
-	initialMachineBlockNr int64
+	initialMachineMessageCount arbutil.MessageIndex
 
 	// nil until working on execution challenge
 	executionChallengeBackend *ExecutionChallengeBackend
@@ -85,8 +85,6 @@ func NewChallengeManager(
 	fromAddr common.Address,
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
-	l2blockChain *core.BlockChain,
-	inboxTracker InboxTrackerInterface,
 	validator *StatelessBlockValidator,
 	startL1Block uint64,
 	confirmationBlocks int64,
@@ -124,12 +122,10 @@ func NewChallengeManager(
 		return nil, fmt.Errorf("error getting challenge %v info: %w", challengeIndex, err)
 	}
 
-	genesisBlockNum := l2blockChain.Config().ArbitrumChainParams.GenesisBlockNum
 	backend, err := NewBlockChallengeBackend(
 		parsedLog,
-		l2blockChain,
-		inboxTracker,
-		genesisBlockNum,
+		validator.streamer,
+		validator.inboxTracker,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
@@ -426,8 +422,8 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 	if err != nil {
 		return fmt.Errorf("error parsing ExecutionChallengeBegun event of challenge %v: %w", m.challengeIndex, err)
 	}
-	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
-	return m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
+	count, tooFar := m.blockChallengeBackend.GetMessageCountAtStep(ev.BlockSteps.Uint64())
+	return m.createExecutionBackend(ctx, count, tooFar)
 }
 
 func (m *ChallengeManager) IssueOneStepProof(
@@ -453,37 +449,37 @@ func (m *ChallengeManager) IssueOneStepProof(
 	)
 }
 
-func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum uint64, tooFar bool) error {
+// count is for the initial machine, which also means it's the position of the challenged machine
+func (m *ChallengeManager) createExecutionBackend(ctx context.Context, initialCount arbutil.MessageIndex, tooFar bool) error {
 	// Get the next message and block header, and record the full block creation
-	if m.initialMachineBlockNr == int64(blockNum) && m.executionChallengeBackend != nil {
+	if m.initialMachineMessageCount == initialCount && m.executionChallengeBackend != nil {
 		return nil
 	}
 	m.executionChallengeBackend = nil
-	nextHeader := m.blockChallengeBackend.bc.GetHeaderByNumber(uint64(blockNum + 1))
-	if nextHeader == nil {
-		return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
+	if initialCount == 0 {
+		return errors.New("cannot validate before genesis block")
 	}
-	entry, err := m.validator.CreateReadyValidationEntry(ctx, nextHeader)
+	entry, err := m.validator.CreateReadyValidationEntry(ctx, initialCount)
 	if err != nil {
-		return fmt.Errorf("error creating validation entry for challenge %v block %v for execution challenge: %w", m.challengeIndex, blockNum, err)
+		return fmt.Errorf("error creating validation entry for challenge %v msg %v for execution challenge: %w", m.challengeIndex, initialCount, err)
 	}
 	input, err := entry.ToInput()
 	if err != nil {
-		return fmt.Errorf("error getting validation entry input of challenge %v block %v: %w", m.challengeIndex, blockNum, err)
+		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
 	}
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
 	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input)
 	if err != nil {
-		return fmt.Errorf("error creating execution backend for block %v: %w", blockNum, err)
+		return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
 	}
 	backend, err := NewExecutionChallengeBackend(execRun)
 	if err != nil {
 		return err
 	}
 	m.executionChallengeBackend = backend
-	m.initialMachineBlockNr = int64(blockNum)
+	m.initialMachineMessageCount = initialCount
 	return nil
 }
 
@@ -531,12 +527,12 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 			nextMovePos,
 		)
 	}
-	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
+	initialCount, tooFar := m.blockChallengeBackend.GetMessageCountAtStep(uint64(nextMovePos))
 	expectedState, expectedStatus, err := m.blockChallengeBackend.GetInfoAtStep(uint64(nextMovePos + 1))
 	if err != nil {
 		return nil, fmt.Errorf("error getting info from block challenge backend: %w", err)
 	}
-	err = m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
+	err = m.createExecutionBackend(ctx, initialCount, tooFar)
 	if err != nil {
 		return nil, fmt.Errorf("error creating execution backend: %w", err)
 	}
@@ -545,14 +541,14 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, fmt.Errorf("error getting execution challenge final state: %w", err)
 	}
 	if expectedStatus != computedStatus {
-		return nil, fmt.Errorf("after block %v expected status %v but got %v", blockNum, expectedStatus, computedStatus)
+		return nil, fmt.Errorf("after block %v expected status %v but got %v", initialCount, expectedStatus, computedStatus)
 	}
 	if computedStatus == StatusFinished {
 		if computedState != expectedState {
-			return nil, fmt.Errorf("after block %v expected global state %v but got %v", blockNum, expectedState, computedState)
+			return nil, fmt.Errorf("after block %v expected global state %v but got %v", initialCount, expectedState, computedState)
 		}
 	}
-	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "blockNum", blockNum)
+	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "initial count", initialCount)
 	return m.blockChallengeBackend.IssueExecChallenge(
 		m.challengeCore,
 		state,

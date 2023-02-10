@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -173,7 +174,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
 		timeout := getDeadlineTimeout(t, time.Minute*30)
-		if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlockHeader.Number.Uint64(), timeout) {
+		if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlockHeader.Number.Uint64()), timeout) {
 			Fail(t, "did not validate all blocks")
 		}
 	}

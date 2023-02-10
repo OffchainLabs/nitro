@@ -42,6 +42,7 @@ type TransactionStreamer struct {
 
 	chainConfig *params.ChainConfig
 	exec        *execution.ExecutionEngine
+	validator   *staker.BlockValidator
 
 	db           ethdb.Database
 	fatalErrChan chan<- error
@@ -115,7 +116,13 @@ func uint64ToKey(x uint64) []byte {
 
 // TODO: this is needed only for block validator
 func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
-	s.exec.SetBlockValidator(validator)
+	if s.Started() {
+		panic("trying to set coordinator after start")
+	}
+	if s.validator != nil {
+		panic("trying to set coordinator when already set")
+	}
+	s.validator = validator
 }
 
 func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
@@ -274,6 +281,13 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 
+	if s.validator != nil {
+		err = s.validator.Reorg(s.GetContext(), count)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
@@ -331,6 +345,21 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 		return 0, err
 	}
 	return arbutil.MessageIndex(pos), nil
+}
+
+func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	digestedHead, err := s.exec.HeadMessageNumber()
+	if err != nil {
+		return 0, err
+	}
+	if msgCount > digestedHead+1 {
+		return digestedHead + 1, nil
+	}
+	return msgCount, nil
 }
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
@@ -817,6 +846,14 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
+// TODO: eventually there will be a table maintained by txStreamer itself
+func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
+	if count == 0 {
+		return &execution.MessageResult{}, nil
+	}
+	return s.exec.ResultAtPos(count - 1)
+}
+
 // return value: true if should be called again
 func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *execution.ExecutionEngine) bool {
 	if ctx.Err() != nil {
@@ -850,6 +887,7 @@ func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *execution.E
 		log.Info("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
 	}
+
 	return pos+1 < msgCount
 }
 

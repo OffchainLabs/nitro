@@ -612,18 +612,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 	t.batchMetaMutex.Unlock()
 
-	if t.validator != nil {
-		batchBytes := make([][]byte, 0, len(batches))
-		for _, batch := range batches {
-			msg, err := batch.Serialize(ctx, client)
-			if err != nil {
-				return err
-			}
-			batchBytes = append(batchBytes, msg)
-		}
-		t.validator.ProcessBatches(startPos, batchBytes)
-	}
-
 	if t.txStreamer.broadcastServer != nil && pos > 1 {
 		prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
 		if errors.Is(err, AccumulatorNotFoundErr) {

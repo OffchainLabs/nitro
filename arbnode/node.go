@@ -650,9 +650,10 @@ func createNodeImpl(
 	l2Config := l2BlockChain.Config()
 	l2ChainId := l2Config.ChainID.Uint64()
 
-	var reorgingToBlock *types.Block
+	//TODO:
+	// var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
-		reorgingToBlock, err = execution.ReorgToBlock(l2BlockChain, uint64(config.Dangerous.ReorgToBlock))
+		_, err = execution.ReorgToBlock(l2BlockChain, uint64(config.Dangerous.ReorgToBlock))
 		if err != nil {
 			return nil, err
 		}
@@ -830,8 +831,7 @@ func createNodeImpl(
 			inboxReader,
 			inboxTracker,
 			txStreamer,
-			l2BlockChain,
-			chainDb,
+			exec.Recorder,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&configFetcher.Get().BlockValidator,
@@ -850,7 +850,6 @@ func createNodeImpl(
 			statelessBlockValidator,
 			inboxTracker,
 			txStreamer,
-			reorgingToBlock,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
 		)
@@ -1165,6 +1164,7 @@ func (n *Node) StopAndWait() {
 	if n.StatelessBlockValidator != nil {
 		n.StatelessBlockValidator.Stop()
 	}
+	n.Execution.Recorder.OrderlyShutdown()
 	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()
 	}
