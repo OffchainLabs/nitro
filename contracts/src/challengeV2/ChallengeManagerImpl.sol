@@ -583,7 +583,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         return false;
     }
 
-    function isAtOneStepFork(bytes32 vId) external view returns (bool) {
+    function childrenAreAtOneStepFork(bytes32 vId) external view returns (bool) {
         // CHRIS: TODO: remove this function - it hides error messages
         vertices.checkAtOneStepFork(vId);
         return true;

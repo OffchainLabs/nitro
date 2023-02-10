@@ -83,9 +83,9 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	})
 }
 
-func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
+func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 	ctx := context.Background()
-	t.Run("heights are one step away from parent", func(t *testing.T) {
+	t.Run("children are one step away", func(t *testing.T) {
 		chain, _ := setupAssertionChainWithChallengeManager(t)
 		height1 := uint64(1)
 		height2 := uint64(1)
@@ -95,7 +95,7 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
-		v1, err := challenge.AddLeaf(
+		_, err = challenge.AddLeaf(
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -104,7 +104,7 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 			},
 		)
 		require.NoError(t, err)
-		v2, err := challenge.AddLeaf(
+		_, err = challenge.AddLeaf(
 			a2,
 			util.HistoryCommitment{
 				Height:    height2,
@@ -114,11 +114,12 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		atOSF, err := v1.IsAtOneStepFork(ctx)
+		manager, err := chain.ChallengeManager()
 		require.NoError(t, err)
-		require.Equal(t, true, atOSF)
+		rootV, err := manager.vertexById(challenge.inner.RootId)
+		require.NoError(t, err)
 
-		atOSF, err = v2.IsAtOneStepFork(ctx)
+		atOSF, err := rootV.ChildrenAreAtOneStepFork(ctx)
 		require.NoError(t, err)
 		require.Equal(t, true, atOSF)
 	})
@@ -132,7 +133,7 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
-		v1, err := challenge.AddLeaf(
+		_, err = challenge.AddLeaf(
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -141,7 +142,7 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 			},
 		)
 		require.NoError(t, err)
-		v2, err := challenge.AddLeaf(
+		_, err = challenge.AddLeaf(
 			a2,
 			util.HistoryCommitment{
 				Height:    height2,
@@ -151,11 +152,12 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		atOSF, err := v1.IsAtOneStepFork(ctx)
+		manager, err := chain.ChallengeManager()
 		require.NoError(t, err)
-		require.Equal(t, false, atOSF)
+		rootV, err := manager.vertexById(challenge.inner.RootId)
+		require.NoError(t, err)
 
-		atOSF, err = v2.IsAtOneStepFork(ctx)
+		atOSF, err := rootV.ChildrenAreAtOneStepFork(ctx)
 		require.NoError(t, err)
 		require.Equal(t, false, atOSF)
 	})
@@ -188,11 +190,12 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		atOSF, err := v1.IsAtOneStepFork(ctx)
+		manager, err := chain.ChallengeManager()
 		require.NoError(t, err)
-		require.Equal(t, false, atOSF)
+		rootV, err := manager.vertexById(challenge.inner.RootId)
+		require.NoError(t, err)
 
-		atOSF, err = v2.IsAtOneStepFork(ctx)
+		atOSF, err := rootV.ChildrenAreAtOneStepFork(ctx)
 		require.NoError(t, err)
 		require.Equal(t, false, atOSF)
 
@@ -202,7 +205,7 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		commit := common.BytesToHash([]byte("nyan2"))
 		bisectedTo2, err := v2.Bisect(
 			util.HistoryCommitment{
-				Height:    4,
+				Height:    1,
 				Merkle:    commit,
 				FirstLeaf: genesis.inner.StateHash,
 			},
@@ -211,16 +214,15 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(1), bisectedTo2.inner.Height.Uint64())
 
-		manager, err := chain.ChallengeManager()
-		require.NoError(t, err)
 		v1, err = manager.vertexById(v1.id)
 		require.NoError(t, err)
-		v2, err = manager.vertexById(v1.id)
+		v2, err = manager.vertexById(v2.id)
 		require.NoError(t, err)
 
+		commit = common.BytesToHash([]byte("nyan2fork"))
 		bisectedTo1, err := v1.Bisect(
 			util.HistoryCommitment{
-				Height:    4,
+				Height:    1,
 				Merkle:    commit,
 				FirstLeaf: genesis.inner.StateHash,
 			},
@@ -229,13 +231,12 @@ func TestChallengeVertex_IsAtOneStepFork(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(1), bisectedTo1.inner.Height.Uint64())
 
-		atOSF, err = bisectedTo1.IsAtOneStepFork(ctx)
+		rootV, err = manager.vertexById(challenge.inner.RootId)
 		require.NoError(t, err)
-		require.Equal(t, false, atOSF)
 
-		atOSF, err = bisectedTo2.IsAtOneStepFork(ctx)
+		atOSF, err = rootV.ChildrenAreAtOneStepFork(ctx)
 		require.NoError(t, err)
-		require.Equal(t, false, atOSF)
+		require.Equal(t, true, atOSF)
 	})
 }
 

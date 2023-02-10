@@ -6,6 +6,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"strings"
 )
 
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
@@ -19,10 +20,20 @@ func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, err
 	return v.manager.caller.IsPresumptiveSuccessor(v.manager.assertionChain.callOpts, v.id)
 }
 
-// IsAtOneStepFork checks if a vertex is at a one-step-fork in the challenge
+// ChildrenAreAtOneStepFork checks if child vertices are at a one-step-fork in the challenge
 // it is contained in.
-func (v *ChallengeVertex) IsAtOneStepFork(ctx context.Context) (bool, error) {
-	return v.manager.caller.IsAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
+func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, error) {
+	atFork, err := v.manager.caller.ChildrenAreAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
+	if err != nil {
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "Lowest height not one above"):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+	return atFork, nil
 }
 
 // Bisect a challenge vertex by providing a history commitment.
