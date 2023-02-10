@@ -236,7 +236,7 @@ func (v *Validator) fetchProtocolChallenge(
 	parentAssertionCommit util.StateCommitment,
 ) (*protocol.Challenge, error) {
 	var err error
-	var challenge *protocol.Challenge
+	var challenge protocol.ChallengeInterface
 	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
 		challenge, err = v.chain.ChallengeByCommitHash(
 			tx,
@@ -252,5 +252,5 @@ func (v *Validator) fetchProtocolChallenge(
 	if challenge == nil {
 		return nil, errors.New("got nil challenge from protocol")
 	}
-	return challenge, nil
+	return challenge.(*protocol.Challenge), nil
 }

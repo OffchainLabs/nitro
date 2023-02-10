@@ -446,7 +446,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context, tx *protocol.ActiveTx)
 	}
 
 	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
-	var challenge *protocol.Challenge
+	var challenge protocol.ChallengeInterface
 	err = validator.chain.Tx(func(tx *protocol.ActiveTx) error {
 		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
 		if fetchErr != nil {

@@ -109,7 +109,7 @@ func (m *MockProtocol) IsAtOneStepFork(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.ChallengeCommitHash) (*protocol.Challenge, error) {
+func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.ChallengeCommitHash) (protocol.ChallengeInterface, error) {
 	args := m.Called(tx, commitHash)
 	return args.Get(0).(*protocol.Challenge), args.Error(1)
 }
