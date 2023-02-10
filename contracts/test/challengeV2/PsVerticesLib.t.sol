@@ -205,15 +205,6 @@ contract PsVerticesLibTest is Test {
         assertFalse(vertices.psExceedsChallengePeriod(vId, challengePeriodSec), "Ps did exceed");
     }
 
-    function testPsExceedsChallengePeriodFailRoot() public {
-        ChallengeVertex memory v0 = ChallengeVertexLib.newRoot(rand.hash(), rand.hash(), rand.hash());
-        bytes32 v0Id = v0.id();
-        vertices[v0Id] = v0;
-
-        vm.expectRevert("Root has no ps timer");
-        vertices.psExceedsChallengePeriod(v0Id, challengePeriodSec);
-    }
-
     // getCurrentPsTimer
 
     function testGetCurrentPsTimer() public {

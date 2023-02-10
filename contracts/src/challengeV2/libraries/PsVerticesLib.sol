@@ -45,7 +45,6 @@ library PsVerticesLib {
         uint256 challengePeriodSec
     ) internal view returns (bool) {
         require(vertices[vId].exists(), "Predecessor vertex does not exist");
-        require(!vertices[vId].isRoot(), "Root has no ps timer");
 
         // we dont allow presumptive successor to be updated if the ps has a timer that exceeds the challenge period
         // therefore if it is at 0 we must non of the successor must have a high enough timer,
