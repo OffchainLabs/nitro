@@ -8,7 +8,7 @@ import (
 )
 
 func TestChallengeVertex_Bisect(t *testing.T) {
-	chain, _ := setupAssertionChainWithChallengeManager(t)
+	chain, acc := setupAssertionChainWithChallengeManager(t)
 	height1 := uint64(6)
 	height2 := uint64(7)
 	a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
@@ -34,7 +34,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			FirstLeaf: genesis.inner.StateHash,
 		},
 	)
-	require.NoError(t, err, "FAILS HERE")
+	require.NoError(t, err)
 
 	t.Run("vertex does not exist", func(t *testing.T) {
 		vertex := &ChallengeVertex{
@@ -67,6 +67,9 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		require.ErrorContains(t, err, "Cannot bisect presumptive")
 	})
 	t.Run("presumptive successor already confirmable", func(t *testing.T) {
+		chalPeriod, err := chain.ChallengePeriodSeconds()
+		require.NoError(t, err)
+		acc.backend.AdjustTime(chalPeriod)
 		// We make a challenge period pass.
 		_, err = v2.Bisect(
 			util.HistoryCommitment{
@@ -76,11 +79,57 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			},
 			make([]common.Hash, 0),
 		)
-		require.ErrorContains(t, err, "presumptive successor already confirmable")
+		require.ErrorContains(t, err, "Presumptive successor already confirmable")
 	})
 	t.Run("invalid prefix history", func(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")
 	})
-	t.Run("bisection vertex already exists", func(t *testing.T) {
+	t.Run("OK", func(t *testing.T) {
+		chain, _ = setupAssertionChainWithChallengeManager(t)
+		height1 = uint64(6)
+		height2 = uint64(7)
+		a1, a2, challenge = setupTopLevelFork(t, chain, height1, height2)
+
+		// We add two leaves to the challenge.
+		v1, err := challenge.AddLeaf(
+			a1,
+			util.HistoryCommitment{
+				Height:    height1,
+				Merkle:    common.BytesToHash([]byte("nyan")),
+				FirstLeaf: genesis.inner.StateHash,
+			},
+		)
+		require.NoError(t, err)
+		v2, err = challenge.AddLeaf(
+			a2,
+			util.HistoryCommitment{
+				Height:    height2,
+				Merkle:    common.BytesToHash([]byte("nyan2")),
+				FirstLeaf: genesis.inner.StateHash,
+			},
+		)
+		require.NoError(t, err)
+		wantCommit := common.BytesToHash([]byte("nyan2"))
+		bisectedTo, err := v2.Bisect(
+			util.HistoryCommitment{
+				Height:    4,
+				Merkle:    wantCommit,
+				FirstLeaf: genesis.inner.StateHash,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
+		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryCommitment[:])
+
+		_, err = v1.Bisect(
+			util.HistoryCommitment{
+				Height:    4,
+				Merkle:    wantCommit,
+				FirstLeaf: genesis.inner.StateHash,
+			},
+			make([]common.Hash, 0),
+		)
+		require.ErrorContains(t, err, "already exists")
 	})
 }

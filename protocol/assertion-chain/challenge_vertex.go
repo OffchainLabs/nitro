@@ -32,25 +32,24 @@ func (v *ChallengeVertex) Bisect(
 	}); err2 != nil {
 		return nil, err2
 	}
-
-	vertexId, err := v.manager.caller.CalculateChallengeVertexId(
+	bisectedToId, err := v.manager.caller.CalculateChallengeVertexId(
 		v.manager.assertionChain.callOpts,
-		v.id,
+		v.inner.ChallengeId,
 		history.Merkle,
 		big.NewInt(int64(history.Height)),
 	)
 	if err != nil {
 		return nil, err
 	}
-	vertex, err := v.manager.caller.GetVertex(
+	bisectedTo, err := v.manager.caller.GetVertex(
 		v.manager.assertionChain.callOpts,
-		vertexId,
+		bisectedToId,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeVertex{
-		inner:   vertex,
+		inner:   bisectedTo,
 		manager: v.manager,
 	}, nil
 }
