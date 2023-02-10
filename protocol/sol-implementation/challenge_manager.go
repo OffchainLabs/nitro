@@ -2,14 +2,12 @@ package solimpl
 
 import (
 	"bytes"
+	"math/big"
 	"strings"
 
-	"context"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
-	"math/big"
 )
 
 var (
@@ -71,6 +69,27 @@ func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, 
 			ErrChallengeNotFound,
 			"challenge id %#x",
 			challengeID,
+		)
+	default:
+		return nil, err
+	}
+}
+
+// Returns a challenge vertex by its iD.
+func (cm *ChallengeManager) vertexById(vertexId common.Hash) (*ChallengeVertex, error) {
+	v, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
+	switch {
+	case err == nil:
+		return &ChallengeVertex{
+			id:      vertexId,
+			inner:   v,
+			manager: cm,
+		}, nil
+	case strings.Contains(err.Error(), "Vertex does not exist"):
+		return nil, errors.Wrapf(
+			ErrNotFound,
+			"vertex id %#x",
+			vertexId,
 		)
 	default:
 		return nil, err

@@ -56,7 +56,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				Merkle: common.Hash{},
 			},
 		)
-		require.ErrorContains(t, err, "Empty historyCommitment")
+		require.ErrorContains(t, err, "Empty historyRoot")
 	})
 	t.Run("winner already declared", func(t *testing.T) {
 		t.Skip("Needs winner declaration logic implemented in solidity")
