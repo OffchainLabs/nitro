@@ -1,14 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "assertion-chain",
+    name = "solimpl",
     srcs = [
         "assertion_chain.go",
         "challenge.go",
         "challenge_manager.go",
         "types.go",
     ],
-    importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/assertion-chain",
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation",
     visibility = ["//visibility:public"],
     deps = [
         "//solgen/go/outgen",
@@ -22,14 +22,14 @@ go_library(
 )
 
 go_test(
-    name = "assertion-chain_test",
+    name = "solimpl_test",
     srcs = [
         "assertion_chain_test.go",
         "challenge_manager_test.go",
         "challenge_test.go",
         "types_test.go",
     ],
-    embed = [":assertion-chain"],
+    embed = [":solimpl"],
     deps = [
         "//solgen/go/outgen",
         "//util",

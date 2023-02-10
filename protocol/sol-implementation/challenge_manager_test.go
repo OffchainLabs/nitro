@@ -1,4 +1,4 @@
-package assertionchain
+package solimpl
 
 import (
 	"testing"

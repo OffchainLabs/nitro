@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/stretchr/testify/require"
 )
@@ -14,14 +14,14 @@ func TestInboxFeeder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	timeRef := util.NewArtificialTimeReference()
-	chain := protocol.NewAssertionChain(ctx, timeRef, time.Second)
+	chain := goimpl.NewAssertionChain(ctx, timeRef, time.Second)
 	StartInboxFeeder(ctx, chain, time.Second, []byte{})
 	time.Sleep(100 * time.Millisecond)
 
 	getNumMsgs := func() uint64 {
 		t.Helper()
 		var numMsgs uint64
-		err := chain.Call(func(tx *protocol.ActiveTx) error {
+		err := chain.Call(func(tx *goimpl.ActiveTx) error {
 			numMsgs = chain.Inbox().NumMessages(tx)
 			return nil
 		})
