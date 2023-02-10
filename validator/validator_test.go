@@ -20,6 +20,7 @@ import (
 )
 
 func Test_onLeafCreation(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	ctx := context.Background()
 	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
@@ -51,7 +52,7 @@ func Test_onLeafCreation(t *testing.T) {
 
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
 
-		err := v.onLeafCreated(ctx, ev)
+		err := v.onLeafCreated(ctx, tx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
@@ -86,9 +87,9 @@ func Test_onLeafCreation(t *testing.T) {
 
 		validator.stateManager = manager
 
-		err = validator.onLeafCreated(ctx, leaf1)
+		err = validator.onLeafCreated(ctx, tx, leaf1)
 		require.NoError(t, err)
-		err = validator.onLeafCreated(ctx, leaf2)
+		err = validator.onLeafCreated(ctx, tx, leaf2)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
@@ -96,6 +97,7 @@ func Test_onLeafCreation(t *testing.T) {
 }
 
 func Test_onChallengeStarted(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	ctx := context.Background()
 	logsHook := test.NewGlobal()
 
@@ -137,9 +139,9 @@ func Test_onChallengeStarted(t *testing.T) {
 	).Return(commit4, nil)
 	leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
 
-	err = validator.onLeafCreated(ctx, leaf1)
+	err = validator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, leaf2)
+	err = validator.onLeafCreated(ctx, tx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "New leaf appended")
@@ -168,18 +170,20 @@ func Test_onChallengeStarted(t *testing.T) {
 	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(commit4, nil)
 	validator.stateManager = manager
 
-	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+	parentStateCommitment, err := challenge.ParentStateCommitment(ctx, tx)
+	require.NoError(t, err)
+	err = validator.onChallengeStarted(ctx, tx, &protocol.StartChallengeEvent{
 		ParentSeqNum:          0,
-		ParentStateCommitment: challenge.ParentStateCommitment(),
+		ParentStateCommitment: parentStateCommitment,
 		ParentStaker:          common.Address{},
 		Validator:             common.BytesToAddress([]byte("other validator")),
 	})
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
 
-	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+	err = validator.onChallengeStarted(ctx, tx, &protocol.StartChallengeEvent{
 		ParentSeqNum:          0,
-		ParentStateCommitment: challenge.ParentStateCommitment(),
+		ParentStateCommitment: parentStateCommitment,
 		ParentStaker:          common.Address{},
 		Validator:             common.BytesToAddress([]byte("other validator")),
 	})

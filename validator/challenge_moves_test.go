@@ -35,6 +35,7 @@ func Test_computePrefixProof(t *testing.T) {
 }
 
 func Test_bisect(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
 		stateRoots := generateStateRoots(10)
@@ -59,7 +60,7 @@ func Test_bisect(t *testing.T) {
 			validatorName:    validator.name,
 			validatorAddress: validator.address,
 		}
-		_, err := v.bisect(ctx, vertex)
+		_, err := v.bisect(ctx, tx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("fails to verify prefix proof", func(t *testing.T) {
@@ -85,7 +86,7 @@ func Test_bisect(t *testing.T) {
 			validatorName:    validator.name,
 			validatorAddress: validator.address,
 		}
-		_, err := v.bisect(ctx, vertex)
+		_, err := v.bisect(ctx, tx, vertex)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -93,14 +94,17 @@ func Test_bisect(t *testing.T) {
 		stateRoots := generateStateRoots(10)
 		manager := statemanager.New(stateRoots)
 		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
-		bisectedVertex := runBisectionTest(t, logsHook, ctx, validator, stateRoots, leaf1, leaf2)
+		bisectedVertex := runBisectionTest(t, logsHook, ctx, tx, validator, stateRoots, leaf1, leaf2)
 
 		// Expect to bisect to 4.
-		require.Equal(t, uint64(4), bisectedVertex.GetCommitment().Height)
+		commitment, err := bisectedVertex.GetCommitment(ctx, tx)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), commitment.Height)
 	})
 }
 
 func Test_merge(t *testing.T) {
+	tx := &protocol.ActiveTx{}
 	ctx := context.Background()
 	genesisCommit := util.StateCommitment{
 		Height:    0,
@@ -114,9 +118,9 @@ func Test_merge(t *testing.T) {
 		manager := statemanager.New(stateRoots)
 		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
-		err := validator.onLeafCreated(ctx, leaf1)
+		err := validator.onLeafCreated(ctx, tx, leaf1)
 		require.NoError(t, err)
-		err = validator.onLeafCreated(ctx, leaf2)
+		err = validator.onLeafCreated(ctx, tx, leaf2)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "New leaf appended")
@@ -155,7 +159,7 @@ func Test_merge(t *testing.T) {
 			validatorAddress: validator.address,
 		}
 		_, err = v.merge(
-			ctx, challengeCommitHash, mergingTo, mergingFrom,
+			ctx, tx, challengeCommitHash, mergingTo, mergingFrom,
 		)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
@@ -166,10 +170,12 @@ func Test_merge(t *testing.T) {
 		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
 		// Bisect and obtain the result.
-		bisectedVertex := runBisectionTest(t, logsHook, ctx, validator, stateRoots, leaf1, leaf2)
+		bisectedVertex := runBisectionTest(t, logsHook, ctx, tx, validator, stateRoots, leaf1, leaf2)
 
 		// Expect to bisect to 4.
-		require.Equal(t, uint64(4), bisectedVertex.GetCommitment().Height)
+		commitment, err := bisectedVertex.GetCommitment(ctx, tx)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), commitment.Height)
 
 		c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
 		require.NoError(t, err)
@@ -193,7 +199,7 @@ func Test_merge(t *testing.T) {
 			validatorName:    validator.name,
 			validatorAddress: validator.address,
 		}
-		mergingTo, err := v.merge(ctx, challengeCommitHash, bisectedVertex, vertexToMergeFrom)
+		mergingTo, err := v.merge(ctx, tx, challengeCommitHash, bisectedVertex, vertexToMergeFrom)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
 		require.Equal(t, bisectedVertex, mergingTo)
@@ -204,14 +210,15 @@ func runBisectionTest(
 	t *testing.T,
 	logsHook *test.Hook,
 	ctx context.Context,
+	tx *protocol.ActiveTx,
 	validator *Validator,
 	stateRoots []common.Hash,
 	leaf1,
 	leaf2 *protocol.CreateLeafEvent,
 ) protocol.ChallengeVertexInterface {
-	err := validator.onLeafCreated(ctx, leaf1)
+	err := validator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, leaf2)
+	err = validator.onLeafCreated(ctx, tx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "New leaf appended")
@@ -235,7 +242,7 @@ func runBisectionTest(
 		if challErr != nil {
 			return challErr
 		}
-		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
+		if _, err = challenge.AddLeaf(ctx, tx, assertion, historyCommit, validator.address); err != nil {
 			return err
 		}
 		return nil
@@ -264,7 +271,7 @@ func runBisectionTest(
 		validatorAddress: validator.address,
 	}
 
-	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx, tx, vertexToBisect)
 	require.NoError(t, err)
 
 	bisectionHeight := uint64(4)
@@ -274,7 +281,9 @@ func runBisectionTest(
 		Height: bisectionHeight,
 		Merkle: loExp.Root(),
 	}
-	require.Equal(t, bisectedVertex.GetCommitment().Hash(), bisectionCommit.Hash())
+	commitment, err := bisectedVertex.GetCommitment(ctx, tx)
+	require.NoError(t, err)
+	require.Equal(t, commitment.Hash(), bisectionCommit.Hash())
 
 	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
 	return bisectedVertex
