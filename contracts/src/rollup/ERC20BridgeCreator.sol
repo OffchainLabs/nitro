@@ -46,4 +46,3 @@ contract ERC20BridgeCreator is AbsBridgeCreator, IERC20BridgeCreator {
         IERC20Bridge(address(bridge)).initialize(IOwnable(rollup), nativeToken);
     }
 }
-`
