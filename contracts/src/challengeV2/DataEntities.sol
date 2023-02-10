@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
+import "../osp/IOneStepProofEntry.sol";
+
 enum Status {
     Pending,
     Confirmed,
@@ -23,6 +25,14 @@ interface IAssertionChain {
     function isFirstChild(bytes32 assertionId) external view returns (bool);
 }
 
+// CHRIS: TODO: move this to data entities?
+struct OneStepData {
+    ExecutionContext execCtx;
+    uint256 machineStep;
+    bytes32 beforeHash;
+    bytes proof;
+}
+
 struct AddLeafArgs {
     bytes32 challengeId;
     bytes32 claimId;
@@ -34,7 +44,15 @@ struct AddLeafArgs {
     bytes lastStatehistoryProof;
 }
 
-interface IChallengeManager {
+struct AddLeafLibArgs {
+    uint256 miniStake;
+    uint256 challengePeriod;
+    AddLeafArgs leafData;
+    bytes proof1;
+    bytes proof2;
+}
+
+interface IChallengeManagerExternalView {
     function challengeExists(bytes32 challengeId) external view returns (bool);
 
     function getChallenge(bytes32 challengeId) external view returns (Challenge memory);
@@ -47,36 +65,33 @@ interface IChallengeManager {
 
     function getCurrentPsTimer(bytes32 vId) external view returns (uint256);
 
-    function confirmForPsTimer(bytes32 vId) external;
-
-    function confirmForSucessionChallengeWin(bytes32 vId) external;
-
     function hasConfirmedSibling(bytes32 vId) external view returns (bool);
 
     function isAtOneStepFork(bytes32 vId) external view returns (bool);
+}
+
+interface IChallengeManagerCore {
+    function confirmForPsTimer(bytes32 vId) external;
+
+    function confirmForSucessionChallengeWin(bytes32 vId) external;
 
     function createChallenge(bytes32 assertionId) external returns (bytes32);
 
     function createSubChallenge(bytes32 vId) external returns (bytes32);
 
-    function bisect(
-        bytes32 vId,
-        bytes32 prefixHistoryCommitment,
-        bytes memory prefixProof
-    ) external returns (bytes32);
+    function bisect(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof)
+        external
+        returns (bytes32);
 
-    function merge(
-        bytes32 vId,
-        bytes32 prefixHistoryCommitment,
-        bytes memory prefixProof
-    ) external returns (bytes32);
+    function merge(bytes32 vId, bytes32 prefixHistoryCommitment, bytes memory prefixProof) external returns (bytes32);
 
-    function addLeaf(
-        AddLeafArgs calldata leafData,
-        bytes calldata proof1,
-        bytes calldata proof2
-    ) external payable returns (bytes32);
+    function addLeaf(AddLeafArgs calldata leafData, bytes calldata proof1, bytes calldata proof2)
+        external
+        payable
+        returns (bytes32);
 }
+
+interface IChallengeManager is IChallengeManagerCore, IChallengeManagerExternalView {}
 
 struct ChallengeVertex {
     bytes32 challengeId;

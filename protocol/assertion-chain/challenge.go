@@ -41,21 +41,20 @@ func (c *Challenge) AddLeaf(
 	if err != nil {
 		return nil, err
 	}
-	c.manager.assertionChain.txOpts.Value = miniStake
+	opts := copyTxOpts(c.manager.assertionChain.txOpts)
+	opts.Value = miniStake
 
 	if err2 := withChainCommitment(c.manager.assertionChain.backend, func() error {
 		_, err3 := c.manager.writer.AddLeaf(
-			c.manager.assertionChain.txOpts,
+			opts,
 			leafData,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
 		return err3
 	}); err2 != nil {
-		c.manager.assertionChain.txOpts.Value = big.NewInt(0)
 		return nil, err2
 	}
-	c.manager.assertionChain.txOpts.Value = big.NewInt(0)
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
 		c.manager.assertionChain.callOpts,
 		c.id,
