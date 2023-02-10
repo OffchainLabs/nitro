@@ -87,8 +87,8 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	}
 	// The challenge must be ongoing.
 	rootAssertion, _ := chal.RootAssertion(ctx, tx)
-	chain := rootAssertion.challengeManager
-	hasEnded, _ := chal.HasEnded(ctx, tx, chain)
+	challengeManager := rootAssertion.challengeManager
+	hasEnded, _ := chal.HasEnded(ctx, tx, challengeManager)
 	if hasEnded {
 		return ErrChallengeNotRunning
 	}
@@ -102,7 +102,7 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	}
 	// The vertex must have at least two children with unexpired
 	// chess clocks in order to create a big step challenge.
-	ok, err := hasUnexpiredChildren(ctx, tx, chain, v)
+	ok, err := hasUnexpiredChildren(ctx, tx, challengeManager, v)
 	if err != nil {
 		return err
 	}
