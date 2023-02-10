@@ -28,7 +28,7 @@ struct Assertion {
     // The block number when this assertion was created
     uint64 createdAtBlock;
     // A hash of all the data needed to determine this node's validity, to protect against reorgs
-    bytes32 nodeHash;
+    bytes32 assertionHash;
 }
 
 /**

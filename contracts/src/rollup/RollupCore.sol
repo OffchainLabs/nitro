@@ -17,7 +17,7 @@ import "../challenge/IOldChallengeManager.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-import "../ChallengeManagerImpl.sol";
+import "../challengeV2/ChallengeManagerImpl.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
@@ -620,7 +620,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around
             Assertion storage prevAssertion = getAssertionStorage(prevAssertionNum);
-            prevAssertion.childCreated(assertionNum, confirmPeriodBlocks);
+            prevAssertion.childCreated(assertionNum);
 
             assertionCreated(memoryFrame.assertion);
         }
