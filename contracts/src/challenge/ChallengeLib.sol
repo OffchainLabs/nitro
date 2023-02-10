@@ -7,9 +7,9 @@ pragma solidity ^0.8.0;
 import "../state/Machine.sol";
 import "../state/GlobalState.sol";
 
-library OldChallengeLib {
+library ChallengeLib {
     using MachineLib for Machine;
-    using OldChallengeLib for Challenge;
+    using ChallengeLib for Challenge;
 
     /// @dev It's assumed that that uninitialzed challenges have mode NONE
     enum ChallengeMode {

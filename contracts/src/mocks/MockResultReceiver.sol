@@ -4,11 +4,11 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IOldChallengeResultReceiver.sol";
-import "../challenge/IOldChallengeManager.sol";
+import "../challenge/IChallengeResultReceiver.sol";
+import "../challenge/IChallengeManager.sol";
 
-contract MockResultReceiver is IOldChallengeResultReceiver {
-    IOldChallengeManager public manager;
+contract MockResultReceiver is IChallengeResultReceiver {
+    IChallengeManager public manager;
     address public winner;
     address public loser;
     uint256 public challengeIndex;
@@ -19,7 +19,7 @@ contract MockResultReceiver is IOldChallengeResultReceiver {
         address indexed loser
     );
 
-    constructor(IOldChallengeManager manager_) {
+    constructor(IChallengeManager manager_) {
         manager = manager_;
     }
 

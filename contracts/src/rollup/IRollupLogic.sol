@@ -21,47 +21,47 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function isERC20Enabled() external view returns (bool);
 
-    function rejectNextAssertion(address stakerAddress) external;
+    function rejectNextNode(address stakerAddress) external;
 
-    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot) external;
+    function confirmNextNode(bytes32 blockHash, bytes32 sendRoot) external;
 
-    function stakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) external;
+    function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external;
 
-    function stakeOnNewAssertion(
-        AssertionInputs memory assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+    function stakeOnNewNode(
+        OldAssertion memory assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external;
 
     function returnOldDeposit(address stakerAddress) external;
 
     function reduceDeposit(uint256 target) external;
 
-    function removeZombie(uint256 zombieNum, uint256 maxAssertions) external;
+    function removeZombie(uint256 zombieNum, uint256 maxNodes) external;
 
     function removeOldZombies(uint256 startIndex) external;
 
     function requiredStake(
         uint256 blockNumber,
-        uint64 firstUnresolvedAssertionNum,
-        uint64 latestCreatedAssertion
+        uint64 firstUnresolvedNodeNum,
+        uint64 latestCreatedNode
     ) external view returns (uint256);
 
     function currentRequiredStake() external view returns (uint256);
 
-    function countStakedZombies(uint64 assertionNum) external view returns (uint256);
+    function countStakedZombies(uint64 nodeNum) external view returns (uint256);
 
-    function countZombiesStakedOnChildren(uint64 assertionNum) external view returns (uint256);
+    function countZombiesStakedOnChildren(uint64 nodeNum) external view returns (uint256);
 
     function requireUnresolvedExists() external view;
 
-    function requireUnresolved(uint256 assertionNum) external view;
+    function requireUnresolved(uint256 nodeNum) external view;
 
     function withdrawStakerFunds() external returns (uint256);
 
     function createChallenge(
         address[2] calldata stakers,
-        uint64[2] calldata assertionNums,
+        uint64[2] calldata nodeNums,
         MachineStatus[2] calldata machineStatuses,
         GlobalState[2] calldata globalStates,
         uint64 numBlocks,
@@ -72,29 +72,29 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 }
 
 interface IRollupUser is IRollupUserAbs {
-    function newStakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) external payable;
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
 
-    function newStakeOnNewAssertion(
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+    function newStakeOnNewNode(
+        OldAssertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external payable;
 
     function addToDeposit(address stakerAddress) external payable;
 }
 
 interface IRollupUserERC20 is IRollupUserAbs {
-    function newStakeOnExistingAssertion(
+    function newStakeOnExistingNode(
         uint256 tokenAmount,
-        uint64 assertionNum,
-        bytes32 assertionHash
+        uint64 nodeNum,
+        bytes32 nodeHash
     ) external;
 
-    function newStakeOnNewAssertion(
+    function newStakeOnNewNode(
         uint256 tokenAmount,
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        OldAssertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external;
 
     function addToDeposit(address stakerAddress, uint256 tokenAmount) external;
@@ -157,8 +157,8 @@ interface IRollupAdmin {
     function setMinimumAssertionPeriod(uint256 newPeriod) external;
 
     /**
-     * @notice Set number of blocks until a assertion is considered confirmed
-     * @param newConfirmPeriod new number of blocks until a assertion is confirmed
+     * @notice Set number of blocks until a node is considered confirmed
+     * @param newConfirmPeriod new number of blocks until a node is confirmed
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external;
 
@@ -193,15 +193,15 @@ interface IRollupAdmin {
 
     function forceRefundStaker(address[] memory stacker) external;
 
-    function forceCreateAssertion(
-        uint64 prevAssertion,
-        uint256 prevAssertionInboxMaxCount,
-        AssertionInputs memory assertion,
-        bytes32 expectedAssertionHash
+    function forceCreateNode(
+        uint64 prevNode,
+        uint256 prevNodeInboxMaxCount,
+        OldAssertion memory assertion,
+        bytes32 expectedNodeHash
     ) external;
 
-    function forceConfirmAssertion(
-        uint64 assertionNum,
+    function forceConfirmNode(
+        uint64 nodeNum,
         bytes32 blockHash,
         bytes32 sendRoot
     ) external;
