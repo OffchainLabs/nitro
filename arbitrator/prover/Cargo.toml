@@ -29,7 +29,7 @@ rayon = { version = "1.5.1", optional = true }
 arbutil = { path = "../arbutil/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/", optional = true }
 wasmer-types = { path = "../wasm-upstream/wasmer/lib/types" }
-wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass", optional = true }
+wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass", optional = true, default-features = false, features = ["std", "unwind", "avx"] }
 wasmparser = "0.83"
 
 [lib]
@@ -37,5 +37,6 @@ name = "prover"
 crate-type = ["staticlib", "lib"]
 
 [features]
-default = ["native"]
-native = ["dep:wasmer", "dep:rayon", "dep:wasmer-compiler-singlepass", "dep:brotli2"]
+default = ["native", "singlepass_rayon"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "dep:rayon", "dep:brotli2"]
+singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]

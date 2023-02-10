@@ -5,9 +5,9 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../arbutil/" }
-prover = { path = "../prover/" }
+prover = { path = "../prover/", default-features = false, features = ["native"] }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
-wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
+wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
 wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm", optional = true }
 ouroboros = "0.15.5"
@@ -20,7 +20,10 @@ sha3 = "0.10.5"
 hex = "0.4.3"
 
 [features]
-benchmark = ["dep:wasmer-compiler-llvm"]
+default = ["singlepass_rayon"]
+llvm = ["dep:wasmer-compiler-llvm"]
+benchmark = []
+singlepass_rayon = ["prover/singlepass_rayon", "wasmer-compiler-singlepass/rayon"]
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["lib", "staticlib"]

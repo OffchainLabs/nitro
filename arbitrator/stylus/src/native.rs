@@ -48,6 +48,52 @@ impl NativeInstance {
         self.env.as_ref(&self.store)
     }
 
+    /// Creates a `NativeInstance` from a serialized module
+    /// Safety: module bytes must represent a module
+    pub unsafe fn deserialize(
+        module: &[u8],
+        calldata: Vec<u8>,
+        config: StylusConfig,
+    ) -> Result<Self> {
+        let env = WasmEnv::new(config, calldata);
+        let store = env.config.store();
+        let module = Module::deserialize(&store, module)?;
+        Self::from_module(module, store, env)
+    }
+
+    pub fn from_path(path: &str, env: WasmEnv) -> Result<Self> {
+        let store = env.config.store();
+        let wat_or_wasm = std::fs::read(path)?;
+        let module = Module::new(&store, wat_or_wasm)?;
+        Self::from_module(module, store, env)
+    }
+
+    fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
+        let func_env = FunctionEnv::new(&mut store, env);
+        let imports = imports! {
+            "forward" => {
+                "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
+                "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
+            },
+        };
+        let instance = Instance::new(&mut store, &module, &imports)?;
+        let exports = &instance.exports;
+        let memory = exports.get_memory("memory")?.clone();
+
+        let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
+        let gas_left = expect_global(STYLUS_GAS_LEFT);
+        let gas_status = expect_global(STYLUS_GAS_STATUS);
+
+        let env = func_env.as_mut(&mut store);
+        env.memory = Some(memory);
+        env.state = Some(SystemStateData {
+            gas_left,
+            gas_status,
+            pricing: env.config.pricing,
+        });
+        Ok(Self::new(instance, store, func_env))
+    }
+
     pub fn get_global<T>(&mut self, name: &str) -> Result<T>
     where
         T: TryFrom<Value>,
@@ -153,43 +199,4 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
 
     let module = module.serialize()?;
     Ok(module.to_vec())
-}
-
-pub fn instance_from_module(
-    module: Module,
-    mut store: Store,
-    env: WasmEnv,
-) -> Result<NativeInstance> {
-    let func_env = FunctionEnv::new(&mut store, env);
-    let imports = imports! {
-        "forward" => {
-            "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
-            "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
-        },
-    };
-    let instance = Instance::new(&mut store, &module, &imports)?;
-    let exports = &instance.exports;
-
-    let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
-
-    let memory = exports.get_memory("memory")?.clone();
-    let gas_left = expect_global(STYLUS_GAS_LEFT);
-    let gas_status = expect_global(STYLUS_GAS_STATUS);
-
-    let env = func_env.as_mut(&mut store);
-    env.memory = Some(memory);
-    env.state = Some(SystemStateData {
-        gas_left,
-        gas_status,
-        pricing: env.config.pricing,
-    });
-
-    Ok(NativeInstance::new(instance, store, func_env))
-}
-
-pub fn instance(path: &str, env: WasmEnv) -> Result<NativeInstance> {
-    let store = env.config.store();
-    let wat_or_wasm = std::fs::read(path)?;
-    let module = Module::new(&store, wat_or_wasm)?;
-    instance_from_module(module, store, env)
 }

@@ -1,15 +1,17 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{env::WasmEnv, stylus};
+use crate::{env::WasmEnv, native::NativeInstance};
 use arbutil::{crypto, format};
 use eyre::Result;
 use prover::programs::{config::StylusConfig, STYLUS_ENTRY_POINT};
 use std::time::{Duration, Instant};
 use wasmer::{CompilerConfig, Imports, Instance, Module, Store};
 use wasmer_compiler_cranelift::{Cranelift, CraneliftOptLevel};
-use wasmer_compiler_llvm::{LLVMOptLevel, LLVM};
 use wasmer_compiler_singlepass::Singlepass;
+
+#[cfg(feature = "llvm")]
+use wasmer_compiler_llvm::{LLVMOptLevel, LLVM};
 
 #[test]
 fn benchmark_wasmer() -> Result<()> {
@@ -30,6 +32,7 @@ fn benchmark_wasmer() -> Result<()> {
         Store::new(compiler)
     }
 
+    #[cfg(feature = "llvm")]
     fn llvm() -> Store {
         let mut compiler = LLVM::new();
         compiler.canonicalize_nans(true);
@@ -60,7 +63,7 @@ fn benchmark_wasmer() -> Result<()> {
         let env = WasmEnv::new(config, args);
 
         let file = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-        let mut instance = stylus::instance(file, env)?;
+        let mut instance = NativeInstance::from_path(file, env)?;
         let exports = &instance.exports;
         let main = exports.get_typed_function::<i32, i32>(&instance.store, STYLUS_ENTRY_POINT)?;
 
@@ -80,6 +83,7 @@ fn benchmark_wasmer() -> Result<()> {
     }
 
     println!("Native:  {}", format::time(native()));
+    #[cfg(feature = "llvm")]
     println!("LLVM:    {}", format::time(emulated(llvm())?));
     println!("Crane:   {}", format::time(emulated(cranelift())?));
     println!("Single:  {}", format::time(emulated(single())?));

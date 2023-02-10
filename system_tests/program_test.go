@@ -33,7 +33,7 @@ func TestKeccakProgram(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2config := arbnode.ConfigDefaultL1Test()
 	l2config.BlockValidator.ArbitratorValidator = true
-	l2config.BlockValidator.JitValidator = false
+	l2config.BlockValidator.JitValidator = true
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 
@@ -138,22 +138,39 @@ func TestKeccakProgram(t *testing.T) {
 	Require(t, err)
 
 	success := true
-	for block := uint64(1); block <= blockHeight; block++ {
-		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
-		Require(t, err)
+	validate := func(jit bool, name string) {
+		for block := uint64(1); block <= blockHeight; block++ {
+			header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
+			Require(t, err)
 
-		now := time.Now()
-		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, true, common.Hash{})
-		Require(t, err, "block", block)
-		passed := time.Since(now).String()
-		if correct {
-			colors.PrintMint("yay!! we validated block ", block, " in ", passed)
-		} else {
-			colors.PrintRed("failed to validate block ", block, " in ", passed)
+			now := time.Now()
+			correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, !jit, common.Hash{})
+			Require(t, err, "block", block)
+			passed := formatTime(time.Since(now))
+			if correct {
+				colors.PrintMint("yay!! we ", name, "-validated block ", block, " in ", passed)
+			} else {
+				colors.PrintRed("failed to ", name, "-validate block ", block, " in ", passed)
+			}
+			success = success && correct
 		}
-		success = success && correct
 	}
+
+	validate(true, "jit")
+	validate(false, "full")
 	if !success {
 		Fail(t)
 	}
+}
+
+func formatTime(duration time.Duration) string {
+	span := float64(duration.Nanoseconds())
+	unit := 0
+	units := []string{"ns", "μs", "ms", "s", "min", "h", "d", "w", "mo", "yr", "dec", "cent", "mill", "eon"}
+	scale := []float64{1000., 1000., 1000., 60., 60., 24., 7., 4.34, 12., 10., 10., 10., 1000000.}
+	for span >= scale[unit] && unit < len(scale) {
+		span /= scale[unit]
+		unit += 1
+	}
+	return fmt.Sprintf("%.2f%s", span, units[unit])
 }

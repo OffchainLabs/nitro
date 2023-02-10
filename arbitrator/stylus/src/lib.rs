@@ -1,17 +1,16 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use env::WasmEnv;
 use eyre::ErrReport;
+use native::NativeInstance;
 use prover::programs::prelude::*;
 use run::RunProgram;
 use std::mem;
-use wasmer::Module;
 
 mod env;
 pub mod host;
+pub mod native;
 pub mod run;
-pub mod stylus;
 
 #[cfg(test)]
 mod test;
@@ -83,7 +82,7 @@ pub unsafe extern "C" fn stylus_compile(
     let wasm = wasm.slice();
     let config = StylusConfig::version(version);
 
-    match stylus::module(wasm, config) {
+    match native::module(wasm, config) {
         Ok(module) => {
             output.write(module);
             UserOutcomeKind::Success
@@ -103,10 +102,8 @@ pub unsafe extern "C" fn stylus_call(
     mut output: RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
-    use UserOutcomeKind::*;
-
     let module = module.slice();
-    let calldata = calldata.slice();
+    let calldata = calldata.slice().to_vec();
     let config = params.config();
     let pricing = config.pricing;
     let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
@@ -117,28 +114,28 @@ pub unsafe extern "C" fn stylus_call(
             let report = report.wrap_err(ErrReport::msg($msg));
             output.write_err(report);
             *evm_gas = 0; // burn all gas
-            return Failure;
+            return UserOutcomeKind::Failure;
         }};
     }
 
-    let init = || {
-        let env = WasmEnv::new(config.clone(), calldata.to_vec());
-        let store = config.store();
-        let module = Module::deserialize(&store, module)?;
-        stylus::instance_from_module(module, store, env)
-    };
-    let mut native = match init() {
-        Ok(native) => native,
+    // Safety: module came from compile_user_wasm
+    let instance = unsafe { NativeInstance::deserialize(module, calldata.clone(), config.clone()) };
+
+    let mut instance = match instance {
+        Ok(instance) => instance,
         Err(error) => error!("failed to instantiate program", error),
     };
-    native.set_gas(wasm_gas);
+    instance.set_gas(wasm_gas);
 
-    let (status, outs) = match native.run_main(calldata, &config) {
+    let (status, outs) = match instance.run_main(&calldata, &config) {
         Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
         Ok(outcome) => outcome.into_data(),
     };
     if pricing.wasm_gas_price != 0 {
-        let wasm_gas = native.gas_left().into();
+        let wasm_gas = match status {
+            UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+            _ => instance.gas_left().into(),
+        };
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
     }
     output.write(outs);

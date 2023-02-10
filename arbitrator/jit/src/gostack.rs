@@ -83,62 +83,81 @@ impl GoStack {
 
     pub fn read_u8(&mut self) -> u8 {
         let ptr = self.advance(1);
-        self.read_u8_ptr(ptr)
+        self.read_u8_raw(ptr)
     }
 
     pub fn read_u32(&mut self) -> u32 {
         let ptr = self.advance(4);
-        self.read_u32_ptr(ptr)
+        self.read_u32_raw(ptr)
     }
 
     pub fn read_u64(&mut self) -> u64 {
         let ptr = self.advance(8);
-        self.read_u64_ptr(ptr)
+        self.read_u64_raw(ptr)
     }
 
-    pub fn read_u8_ptr(&self, ptr: u32) -> u8 {
+    pub fn read_u8_raw(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(self.view()).read().unwrap()
     }
 
-    pub fn read_u32_ptr(&self, ptr: u32) -> u32 {
+    pub fn read_u32_raw(&self, ptr: u32) -> u32 {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
         ptr.deref(self.view()).read().unwrap()
     }
 
-    pub fn read_u64_ptr(&self, ptr: u32) -> u64 {
+    pub fn read_u64_raw(&self, ptr: u32) -> u64 {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(self.view()).read().unwrap()
     }
 
-    pub fn write_u8(&mut self, x: u8) {
+    pub fn read_ptr<T>(&mut self) -> *const T {
+        self.read_u64() as *const T
+    }
+
+    pub fn read_ptr_mut<T>(&mut self) -> *mut T {
+        self.read_u64() as *mut T
+    }
+
+    pub fn write_u8(&mut self, x: u8) -> &mut Self {
         let ptr = self.advance(1);
-        self.write_u8_ptr(ptr, x);
+        self.write_u8_raw(ptr, x)
     }
 
-    pub fn write_u32(&mut self, x: u32) {
+    pub fn write_u32(&mut self, x: u32) -> &mut Self {
         let ptr = self.advance(4);
-        self.write_u32_ptr(ptr, x);
+        self.write_u32_raw(ptr, x)
     }
 
-    pub fn write_u64(&mut self, x: u64) {
+    pub fn write_u64(&mut self, x: u64) -> &mut Self {
         let ptr = self.advance(8);
-        self.write_u64_ptr(ptr, x);
+        self.write_u64_raw(ptr, x)
     }
 
-    pub fn write_u8_ptr(&self, ptr: u32, x: u8) {
+    pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> &mut Self {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
+        self
     }
 
-    pub fn write_u32_ptr(&self, ptr: u32, x: u32) {
+    pub fn write_u32_raw(&mut self, ptr: u32, x: u32) -> &mut Self {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
+        self
     }
 
-    pub fn write_u64_ptr(&self, ptr: u32, x: u64) {
+    pub fn write_u64_raw(&mut self, ptr: u32, x: u64) -> &mut Self {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
+        self
+    }
+
+    pub fn write_ptr<T>(&mut self, ptr: *const T) -> &mut Self {
+        self.write_u64(ptr as u64)
+    }
+
+    pub fn write_nullptr(&mut self) -> &mut Self {
+        self.write_ptr(std::ptr::null::<u8>())
     }
 
     pub fn skip_u8(&mut self) -> &mut Self {
@@ -153,6 +172,12 @@ impl GoStack {
 
     pub fn skip_u64(&mut self) -> &mut Self {
         self.advance(8);
+        self
+    }
+
+    pub fn skip_space(&mut self) -> &mut Self {
+        let space = 8 - (self.top - self.sp) % 8;
+        self.advance(space as usize);
         self
     }
 
@@ -173,10 +198,14 @@ impl GoStack {
         let mut values = Vec::new();
         for _ in 0..len {
             let p = u32::try_from(ptr).expect("Go pointer not a u32");
-            values.push(JsValue::new(self.read_u64_ptr(p)));
+            values.push(JsValue::new(self.read_u64_raw(p)));
             ptr += 8;
         }
         values
+    }
+
+    pub fn read_go_ptr(&mut self) -> u32 {
+        self.read_u64().try_into().expect("go pointer doesn't fit")
     }
 
     pub fn read_go_slice(&mut self) -> (u64, u64) {
@@ -184,6 +213,11 @@ impl GoStack {
         let len = self.read_u64();
         self.skip_u64(); // skip the slice's capacity
         (ptr, len)
+    }
+
+    pub fn read_go_slice_owned(&mut self) -> Vec<u8> {
+        let (ptr, len) = self.read_go_slice();
+        self.read_slice(ptr, len)
     }
 
     pub fn read_js_string(&mut self) -> Vec<u8> {
@@ -242,4 +276,23 @@ pub struct TimeoutState {
     pub times: BinaryHeap<TimeoutInfo>,
     pub pending_ids: BTreeSet<u32>,
     pub next_id: u32,
+}
+
+#[test]
+fn test_sp() -> eyre::Result<()> {
+    use prover::programs::config::StylusConfig;
+    use wasmer::{FunctionEnv, MemoryType};
+
+    let mut store = StylusConfig::default().store();
+    let mut env = WasmEnv::default();
+    env.memory = Some(Memory::new(&mut store, MemoryType::new(0, None, false))?);
+    let env = FunctionEnv::new(&mut store, env);
+
+    let mut sp = GoStack::simple(0, &mut env.into_mut(&mut store));
+    assert_eq!(sp.advance(3), 8 + 0);
+    assert_eq!(sp.advance(2), 8 + 3);
+    assert_eq!(sp.skip_space().top, 8 + 8);
+    assert_eq!(sp.skip_space().top, 8 + 16);
+    assert_eq!(sp.skip_u32().skip_space().top, 8 + 24);
+    Ok(())
 }

@@ -6,11 +6,7 @@
     clippy::inconsistent_digit_grouping
 )]
 
-use crate::{
-    env::WasmEnv,
-    run::RunProgram,
-    stylus::{self, NativeInstance},
-};
+use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
@@ -336,15 +332,15 @@ fn test_rust() -> Result<()> {
 
     let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let mut native = stylus::instance(filename, env)?;
-    let exports = &native.instance.exports;
-    let store = &mut native.store;
+    let mut instance = NativeInstance::from_path(filename, env)?;
+    let exports = &instance.instance.exports;
+    let store = &mut instance.store;
 
     let main = exports.get_typed_function::<u32, i32>(store, STYLUS_ENTRY_POINT)?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
-    let env = native.env.as_ref(&store);
+    let env = instance.env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
@@ -354,7 +350,7 @@ fn test_rust() -> Result<()> {
     };
 
     assert_eq!(output, hash);
-    check_instrumentation(native, machine)
+    check_instrumentation(instance, machine)
 }
 
 #[test]
@@ -377,15 +373,15 @@ fn test_c() -> Result<()> {
 
     let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let mut native = stylus::instance(filename, env)?;
-    let exports = &native.instance.exports;
-    let store = &mut native.store;
+    let mut instance = NativeInstance::from_path(filename, env)?;
+    let exports = &instance.instance.exports;
+    let store = &mut instance.store;
 
     let main = exports.get_typed_function::<i32, i32>(store, STYLUS_ENTRY_POINT)?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
-    let env = native.env.as_ref(&store);
+    let env = instance.env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
@@ -395,5 +391,5 @@ fn test_c() -> Result<()> {
     };
 
     assert_eq!(output, hex::encode(&env.outs));
-    check_instrumentation(native, machine)
+    check_instrumentation(instance, machine)
 }
