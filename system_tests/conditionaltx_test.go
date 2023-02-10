@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,10 +177,11 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
 	testhelpers.RequireImpl(t, err)
 
-	uniqueTxes := 21
+	numTxes := 100
+	expectedSuccesses := numTxes / 5
 	var txes types.Transactions
 	var options []*arbitrum_types.ConditionalOptions
-	for i := 0; i < uniqueTxes; i++ {
+	for i := 0; i < numTxes; i++ {
 		account := fmt.Sprintf("User%v", i)
 		l2info.GenerateAccount(account)
 		tx := l2info.PrepareTx("Owner", account, l2info.TransferGas, big.NewInt(1e16), nil)
@@ -190,27 +190,24 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
-	for i := uniqueTxes*2 - 1; i >= 0; i-- {
-		index := i % uniqueTxes
-		data, err := simpleContract.Pack("logAndIncrement", big.NewInt(int64(index)))
+	for i := numTxes - 1; i >= 0; i-- {
+		expected := i % expectedSuccesses
+		data, err := simpleContract.Pack("logAndIncrement", big.NewInt(int64(expected)))
 		testhelpers.RequireImpl(t, err)
-		account := fmt.Sprintf("User%v", index)
+		account := fmt.Sprintf("User%v", i)
 		txes = append(txes, l2info.PrepareTxTo(account, &contractAddress, l2info.TransferGas, big.NewInt(0), data))
-		options = append(options, &arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress: {SlotValue: map[common.Hash]common.Hash{{0}: common.BigToHash(big.NewInt(int64(index)))}}}})
+		options = append(options, &arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress: {SlotValue: map[common.Hash]common.Hash{{0}: common.BigToHash(big.NewInt(int64(expected)))}}}})
 	}
 	ctxTimeouted, cancelTimeouted := context.WithTimeout(ctx, 5*time.Second)
-	defer cancelTimeouted()
 	required := make(chan struct{}, len(txes))
 	wg := sync.WaitGroup{}
-	var stopBackground uint32
-	for i := 0; i < 5*len(txes); i++ {
+	for i := 0; i < len(txes); i++ {
 		wg.Add(1)
-		index := i % len(txes)
-		tx := txes[index]
-		opts := options[index]
+		tx := txes[i]
+		opts := options[i]
 		go func() {
 			defer wg.Done()
-			for atomic.LoadUint32(&stopBackground) == 0 && ctxTimeouted.Err() == nil {
+			for ctxTimeouted.Err() == nil {
 				err := arbitrum.SendConditionalTransactionRPC(ctxTimeouted, rpcClient, tx, opts)
 				if err == nil {
 					required <- struct{}{}
@@ -220,18 +217,18 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		}()
 	}
 Loop:
-	for i := 0; i < uniqueTxes; i++ {
+	for i := 0; i < expectedSuccesses; i++ {
 		select {
 		case <-required:
 		case <-ctxTimeouted.Done():
 			break Loop
 		}
 	}
-	atomic.StoreUint32(&stopBackground, 1)
-	wg.Wait()
 	if err := ctxTimeouted.Err(); err != nil {
 		testhelpers.FailImpl(t, "failed to send successfully required number of transaction within time limit, err:", err)
 	}
+	cancelTimeouted()
+	wg.Wait()
 	bc := node.Backend.ArbInterface().BlockChain()
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 
@@ -258,7 +255,7 @@ Loop:
 			}
 		}
 	}
-	if succeeded != uniqueTxes {
-		testhelpers.FailImpl(t, "Unexpected number of successful txes, want:", uniqueTxes, "have:", succeeded)
+	if succeeded != expectedSuccesses {
+		testhelpers.FailImpl(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
 	}
 }
