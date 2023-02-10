@@ -80,7 +80,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			},
 			make([]common.Hash, 0),
 		)
-		require.ErrorContains(t, err, "Presumptive successor already confirmable")
+		require.ErrorContains(t, err, "cannot set lower ps")
 	})
 	t.Run("invalid prefix history", func(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")

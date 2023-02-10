@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -161,7 +160,6 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Got %#x\n", challengeId)
 	return manager.ChallengeByID(challengeId)
 }
 
