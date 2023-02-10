@@ -14,4 +14,3 @@ contract Random {
         return address(bytes20(seed));
     }
 }
-   
