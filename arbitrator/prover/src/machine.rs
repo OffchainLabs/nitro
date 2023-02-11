@@ -19,7 +19,7 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
-use rayon::prelude::*;
+use rayon::{prelude::*, vec};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -530,6 +530,87 @@ impl Module {
             },
             memory_store_internal_type,
         ));
+
+        //we're adding two functions here which implement in WAVM the memory.fill and memory.copy
+        //instructions in WASM
+        //TODO seraphina: should we use the macros or something else here?
+        macro_rules! opcode {
+          ($opcode:ident) => {
+            Instruction::simple(Opcode::$opcode)
+          };
+          ($opcode:ident, $value:expr) => {
+              Instruction::with_data(Opcode::$opcode, $value)
+          };
+        }
+        macro_rules! binary {
+          ($type:ident, $op:ident) => {
+            Instruction::simple(Opcode::IBinOp(IntegerValType::$type, IBinOpType::$op))
+          };
+        }
+        macro_rules! compare {
+          ($type:ident, $rel:ident, $signed:expr) => {{
+            Instruction::simple(Opcode::IRelOp(IntegerValType::$type, IRelOpType::$rel, $signed))
+          }};
+      }
+
+        use ArbValueType::I32;
+        let bulkmem_ty = FunctionType::new(vec![I32, I32, I32], vec![]);
+
+        //args/locals: length value pointer 
+        let memfill_wavm = vec![
+          opcode!(I32Const, 0),
+          opcode!(Dup), // * 
+          opcode!(LocalGet, 2), 
+          binary!(I32, Add),
+          opcode!(LocalGet, 1),
+          Instruction::simple(Opcode::MemoryStore { ty: I32, bytes: 1 }),
+          opcode!(I32Const, 1),
+          binary!(I32, Add),
+          opcode!(Dup),
+          opcode!(LocalGet, 0),
+          //TODO seraphina: what even is this bool?
+          compare!(I32, Ne, false),
+          //TODO seraphina: -10 is not the thing here, but code.len() isn't either, because code is 
+          //a vec of *functions*, not of single instructions. the jump target is the * above
+          opcode!(ArbitraryJumpIf, -10), 
+          opcode!(Drop),
+        ];
+        //args/locals: length source dest
+        let memcopy_s_bigger_wavm = vec![
+          //store (s-d) as local 3 
+          opcode!(LocalGet, 2),
+          opcode!(LocalGet, 1),
+          binary!(I32, Sub),
+          opcode!(LocalSet, 3),
+          opcode!(I32Const, 0),
+          opcode!(Dup), // *
+          opcode!(LocalGet, 2),
+          binary!(I32, Add),
+          opcode!(Dup),
+          opcode!(LocalGet, 3),
+          binary!(I32, Add),
+          Instruction::simple(Opcode::MemoryLoad {ty: I32, bytes: 1, signed: false}),
+          Instruction::simple(Opcode::MemoryStore { ty: I32, bytes: 1 }),
+          opcode!(I32Const, 1),
+          binary!(I32, Add),
+          opcode!(Dup),
+          opcode!(LocalGet, 0),
+          compare!(I32, Ne, false),
+          opcode!(ArbitraryJumpIf, -10),
+          opcode!(Drop),
+        ];
+
+        let memcopy_d_bigger_wavm = vec![
+          //TODO seraphina 
+        ];
+        //TODO seraphina: what is the third argument to this function ("local types")
+        //maybe it is the type of all the used local variables? in which case, 
+        //do we "use" any local variables above, or are those all just "arguments" not "locals"
+        code.push(Function::new_from_wavm(memfill_wavm, bulkmem_ty, vec![]));
+        code.push(Function::new_from_wavm(memcopy_s_bigger_wavm, bulkmem_ty, vec![I32]));
+        code.push(Function::new_from_wavm(memcopy_d_bigger_wavm, bulkmem_ty, vec![I32]));
+
+
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
