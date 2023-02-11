@@ -345,6 +345,7 @@ impl Module {
                         &func_types,
                         types,
                         func_type_idxs[idx],
+                        todo!(),
                     )
                 },
                 func_ty.clone(),
@@ -559,7 +560,7 @@ impl Module {
         //args/locals: length value pointer 
         let memfill_wavm = vec![
           opcode!(I32Const, 0),
-          opcode!(Dup), // * 
+          opcode!(Dup), // start of loop
           opcode!(LocalGet, 2), 
           binary!(I32, Add),
           opcode!(LocalGet, 1),
@@ -570,12 +571,13 @@ impl Module {
           opcode!(LocalGet, 0),
           //TODO seraphina: what even is this bool?
           compare!(I32, Ne, false),
-          //TODO seraphina: -10 is not the thing here, but code.len() isn't either, because code is 
-          //a vec of *functions*, not of single instructions. the jump target is the * above
-          opcode!(ArbitraryJumpIf, -10), 
+          //the jump target is the "start of loop" above
+          opcode!(ArbitraryJumpIf, 1), 
           opcode!(Drop),
         ];
         //args/locals: length source dest
+        //TODO seraphina: this only copies forwards, but we need to dynamically copy 
+        //forward or backward depending on whether s or d is bigger
         let memcopy_s_bigger_wavm = vec![
           //store (s-d) as local 3 
           opcode!(LocalGet, 2),
@@ -583,7 +585,7 @@ impl Module {
           binary!(I32, Sub),
           opcode!(LocalSet, 3),
           opcode!(I32Const, 0),
-          opcode!(Dup), // *
+          opcode!(Dup), // start of loop
           opcode!(LocalGet, 2),
           binary!(I32, Add),
           opcode!(Dup),
@@ -596,19 +598,17 @@ impl Module {
           opcode!(Dup),
           opcode!(LocalGet, 0),
           compare!(I32, Ne, false),
-          opcode!(ArbitraryJumpIf, -10),
+          //the jump target is the "start of loop" above
+          opcode!(ArbitraryJumpIf, 5),
           opcode!(Drop),
         ];
 
-        let memcopy_d_bigger_wavm = vec![
-          //TODO seraphina 
-        ];
-        //TODO seraphina: what is the third argument to this function ("local types")
-        //maybe it is the type of all the used local variables? in which case, 
-        //do we "use" any local variables above, or are those all just "arguments" not "locals"
-        code.push(Function::new_from_wavm(memfill_wavm, bulkmem_ty, vec![]));
-        code.push(Function::new_from_wavm(memcopy_s_bigger_wavm, bulkmem_ty, vec![I32]));
-        code.push(Function::new_from_wavm(memcopy_d_bigger_wavm, bulkmem_ty, vec![I32]));
+
+        //internals offset + 4
+        code.push(Function::new_from_wavm(memfill_wavm, bulkmem_ty.clone(), vec![]));
+        //internals offset + 5
+        code.push(Function::new_from_wavm(memcopy_s_bigger_wavm, bulkmem_ty.clone(), vec![I32]));
+        
 
 
 

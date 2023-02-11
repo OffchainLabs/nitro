@@ -434,6 +434,7 @@ pub fn wasm_to_wavm<'a>(
     func_types: &[FunctionType],
     all_types: &[FunctionType],
     all_types_func_idx: u32,
+    internals_offset: u32,
 ) -> Result<()> {
     use Operator::*;
 
@@ -493,7 +494,7 @@ pub fn wasm_to_wavm<'a>(
     }
     macro_rules! load {
         ($type:ident, $memory:expr, $bytes:expr, $signed:ident) => {{
-            ensure!($memory.memory == 0, "multi-memory proposal not supported");
+          ensure!($memory.memory == 0, "multi-memory proposal not supported");
             let op = Opcode::MemoryLoad {
                 ty: ArbValueType::$type,
                 bytes: $bytes,
@@ -775,6 +776,16 @@ pub fn wasm_to_wavm<'a>(
                 let ty = &all_types[*index as usize];
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
                 opcode!(CallIndirect, pack_call_indirect(*table_index, *index), @push delta - 1);
+            },
+
+            MemoryCopy {src, dst} => {
+              ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
+              opcode!(Call, std::convert::Into::<u64>::into(internals_offset)+5);
+            }, 
+            
+            MemoryFill {mem} => {
+              ensure!(*mem == 0, "multi-memory proposal not supported");
+              opcode!(Call, std::convert::Into::<u64>::into(internals_offset)+4);
             }
 
             unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
@@ -979,7 +990,7 @@ pub fn wasm_to_wavm<'a>(
 
             unsupported @ (
                 dot!(
-                    MemoryInit, DataDrop, MemoryCopy, MemoryFill, TableInit, ElemDrop,
+                    MemoryInit, DataDrop, TableInit, ElemDrop,
                     TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                 )
             ) => bail!("bulk-memory-operations extension not supported {:?}", unsupported),
