@@ -508,8 +508,8 @@ contract ChallengeManagerImpl is IChallengeManager {
     }
 
     function calculateChallengeVertexId(bytes32 challengeId, bytes32 commitmentMerkle, uint256 commitmentHeight)
-        public
         external
+        pure
         returns (bytes32)
     {
         return ChallengeVertexLib.id(challengeId, commitmentMerkle, commitmentHeight);
