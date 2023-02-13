@@ -30,11 +30,12 @@ func NewLruCacheWithOnEvict[K comparable, V any](size int, onEvict func(K, V)) *
 	}
 }
 
-func (c *LruCache[K, V]) Add(key K, value V) {
+// Returns true if an item was evicted
+func (c *LruCache[K, V]) Add(key K, value V) bool {
 	if c.inner == nil {
-		return
+		return true
 	}
-	c.inner.Add(key, value)
+	return c.inner.Add(key, value)
 }
 
 func (c *LruCache[K, V]) Get(key K) (V, bool) {

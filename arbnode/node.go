@@ -643,6 +643,9 @@ type CachingConfig struct {
 	BlockAge              time.Duration `koanf:"block-age"`
 	TrieTimeLimit         time.Duration `koanf:"trie-time-limit"`
 	TrieDirtyCache        int           `koanf:"trie-dirty-cache"`
+	TrieCleanCache        int           `koanf:"trie-clean-cache"`
+	SnapshotCache         int           `koanf:"snapshot-cache"`
+	DatabaseCache         int           `koanf:"database-cache"`
 	SnapshotRestoreMaxGas uint64        `koanf:"snapshot-restore-gas-limit"`
 }
 
@@ -652,6 +655,9 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
+	f.Int(prefix+".trie-clean-cache", DefaultCachingConfig.TrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with")
+	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
+	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreMaxGas, "maximum gas rolled back to recover snapshot")
 }
 
@@ -661,6 +667,9 @@ var DefaultCachingConfig = CachingConfig{
 	BlockAge:              30 * time.Minute,
 	TrieTimeLimit:         time.Hour,
 	TrieDirtyCache:        1024,
+	TrieCleanCache:        600,
+	SnapshotCache:         400,
+	DatabaseCache:         2048,
 	SnapshotRestoreMaxGas: 300_000_000_000,
 }
 
@@ -1377,7 +1386,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:        baseConf.TrieCleanCache,
+		TrieCleanLimit:        cachingConfig.TrieCleanCache,
 		TrieCleanJournal:      stack.ResolvePath(baseConf.TrieCleanCacheJournal),
 		TrieCleanRejournal:    baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch:   baseConf.NoPrefetch,
@@ -1386,7 +1395,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieTimeLimit:         cachingConfig.TrieTimeLimit,
 		TriesInMemory:         cachingConfig.BlockCount,
 		TrieRetention:         cachingConfig.BlockAge,
-		SnapshotLimit:         baseConf.SnapshotCache,
+		SnapshotLimit:         cachingConfig.SnapshotCache,
 		Preimages:             baseConf.Preimages,
 		SnapshotRestoreMaxGas: cachingConfig.SnapshotRestoreMaxGas,
 	}
