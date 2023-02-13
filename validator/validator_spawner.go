@@ -88,6 +88,7 @@ func (v *ValidationSpawner) ExecuteArbitrator(
 	}
 
 	mach := basemachine.Clone()
+	defer mach.Destroy()
 	err = v.loadEntryToMachine(ctx, entry, mach)
 	if err != nil {
 		return GoGlobalState{}, err

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -34,13 +35,15 @@ import (
 )
 
 var (
-	sequencerBacklogGauge     = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
-	nonceCacheHitCounter      = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
-	nonceCacheMissCounter     = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
-	nonceCacheRejectedCounter = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
-	nonceCacheClearedCounter  = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
-	blockCreationTimer        = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
-	successfulBlocksCounter   = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
+	sequencerBacklogGauge            = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	nonceCacheHitCounter             = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
+	nonceCacheMissCounter            = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
+	nonceCacheRejectedCounter        = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
+	nonceCacheClearedCounter         = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
+	nonceFailureCacheSizeGauge       = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/size", nil)
+	nonceFailureCacheOverflowCounter = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
+	blockCreationTimer               = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
+	successfulBlocksCounter          = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 )
 
 type SequencerConfig struct {
@@ -509,6 +512,7 @@ func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
 }
 
 func (s *Sequencer) expireNonceFailures() *time.Timer {
+	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	for {
 		_, failure, ok := s.nonceFailures.GetOldest()
 		if !ok {
@@ -585,12 +589,15 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 				if exists {
 					queueItem.returnResult(err)
 				} else {
-					s.nonceFailures.Add(key, &nonceFailure{
+					evicted := s.nonceFailures.Add(key, &nonceFailure{
 						queueItem: queueItem,
 						nonceErr:  err,
 						expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
 						revived:   false,
 					})
+					if evicted {
+						nonceFailureCacheOverflowCounter.Inc(1)
+					}
 				}
 			} else {
 				queueItem.returnResult(err)
@@ -599,6 +606,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 		}
 		outputQueueItems = append(outputQueueItems, queueItem)
 	}
+	nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	return outputQueueItems
 }
 
@@ -620,6 +628,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			returnValue = true
 		}
 	}()
+	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 
 	config := s.config()
 
@@ -709,8 +718,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
-			"l1Timestamp", l1Timestamp,
-			"localTimestamp", timestamp,
+			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
+			"localTimestamp", time.Unix(int64(timestamp), 0),
 		)
 		return false
 	}
@@ -727,11 +736,20 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	hooks := s.makeSequencingHooks()
 	start := time.Now()
 	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
-	blockCreationTimer.Update(time.Since(start))
+	elapsed := time.Since(start)
+	blockCreationTimer.Update(elapsed)
+	if elapsed >= time.Second*5 {
+		var blockNum *big.Int
+		if block != nil {
+			blockNum = block.Number()
+		}
+		log.Warn("took over 5 seconds to sequence a block", "elapsed", elapsed, "numTxes", len(txes), "success", block != nil, "l2Block", blockNum)
+	}
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 	if errors.Is(err, ErrRetrySequencer) {
+		log.Warn("error sequencing transactions", "err", err)
 		// we changed roles
 		// forward if we have where to
 		if s.handleInactive(ctx, queueItems) {
@@ -751,7 +769,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			}
 			return true // don't return failure to avoid retrying immediately
 		}
-		log.Warn("error sequencing transactions", "err", err)
+		log.Error("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
@@ -794,7 +812,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 				expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
 				revived:   false,
 			}
-			s.nonceFailures.Add(key, value)
+			if s.nonceFailures.Add(key, value) {
+				nonceFailureCacheOverflowCounter.Inc(1)
+			}
 			continue
 		}
 		queueItem.returnResult(err)

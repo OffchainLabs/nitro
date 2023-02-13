@@ -4,8 +4,10 @@
 package wsbroadcastserver
 
 import (
+	"compress/flate"
 	"context"
 	"encoding/json"
+	"io"
 	"math/rand"
 	"net"
 	"strconv"
@@ -13,9 +15,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/pkg/errors"
 
 	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -28,6 +33,7 @@ type ClientConnection struct {
 	ioMutex  sync.Mutex
 	conn     net.Conn
 	creation time.Time
+	clientIp net.IP
 
 	desc            *netpoll.Desc
 	Name            string
@@ -36,6 +42,9 @@ type ClientConnection struct {
 
 	lastHeardUnix int64
 	out           chan []byte
+
+	compression bool
+	flateReader *wsflate.Reader
 }
 
 func NewClientConnection(
@@ -43,22 +52,30 @@ func NewClientConnection(
 	desc *netpoll.Desc,
 	clientManager *ClientManager,
 	requestedSeqNum arbutil.MessageIndex,
-	connectingIP string,
+	connectingIP net.IP,
+	compression bool,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
+		clientIp:        connectingIP,
 		desc:            desc,
 		creation:        time.Now(),
-		Name:            connectingIP + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		Name:            string(connectingIP) + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
+		compression:     compression,
+		flateReader:     NewFlateReader(),
 	}
 }
 
 func (cc *ClientConnection) Age() time.Duration {
 	return time.Since(cc.creation)
+}
+
+func (cc *ClientConnection) Compression() bool {
+	return cc.compression
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {
@@ -115,21 +132,48 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 
 	atomic.StoreInt64(&cc.lastHeardUnix, time.Now().Unix())
 
-	return ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide)
+	var data []byte
+	var opCode ws.OpCode
+	var err error
+	data, opCode, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
+	return data, opCode, err
 }
 
 func (cc *ClientConnection) Write(x interface{}) error {
-	writer := wsutil.NewWriter(cc.conn, ws.StateServerSide, ws.OpText)
-	encoder := json.NewEncoder(writer)
-
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
-
+	state := ws.StateServerSide
+	if cc.compression {
+		state |= ws.StateExtended
+	}
+	wsWriter := wsutil.NewWriter(cc.conn, state, ws.OpText)
+	var writer io.Writer
+	var flateWriter *wsflate.Writer
+	if cc.compression {
+		var msg wsflate.MessageState
+		msg.SetCompressed(true)
+		wsWriter.SetExtensions(&msg)
+		flateWriter = wsflate.NewWriter(wsWriter, func(w io.Writer) wsflate.Compressor {
+			f, err := flate.NewWriterDict(w, DeflateCompressionLevel, GetStaticCompressorDictionary())
+			if err != nil {
+				log.Error("Failed to create flate writer", "err", err)
+			}
+			return f
+		})
+		writer = flateWriter
+	} else {
+		writer = wsWriter
+	}
+	encoder := json.NewEncoder(writer)
 	if err := encoder.Encode(x); err != nil {
 		return err
 	}
-
-	return writer.Flush()
+	if flateWriter != nil {
+		if err := flateWriter.Close(); err != nil {
+			return errors.Wrap(err, "unable to flush message")
+		}
+	}
+	return wsWriter.Flush()
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {

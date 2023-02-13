@@ -400,12 +400,6 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if present {
 		return
 	}
-	if v.nextBlockToValidate+v.config().PrerecordedBlocks > blockNum {
-		err := v.sendRecord(status, false)
-		if err != nil {
-			log.Error("failed send recording for new block", "err", err)
-		}
-	}
 	v.validations.Store(blockNum, status)
 	if v.lastValidationEntryBlock < blockNum {
 		v.lastValidationEntryBlock = blockNum
@@ -572,12 +566,14 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			}
 		}
 		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		if !haveBatch && batchCount == v.globalPosNextSend.BatchNumber+1 {
+			// This is the latest batch.
+			// Wait a bit to see if the inbox tracker populates this sequencer batch,
+			// but if it's still missing after this wait, we'll query it from the inbox reader.
+			time.Sleep(time.Second)
+			seqBatchEntry, haveBatch = v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		}
 		if !haveBatch {
-			if batchCount == v.globalPosNextSend.BatchNumber+1 {
-				// This is the latest batch.
-				// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
-				return
-			}
 			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
 			if err != nil {
 				log.Error("validator failed to read sequencer message", "err", err)

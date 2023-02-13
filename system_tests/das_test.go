@@ -65,15 +65,15 @@ func startLocalDASServer(
 	Require(t, err)
 	privKey, err := config.KeyConfig.BLSPrivKey()
 	Require(t, err)
-	currentDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
+	daWriter, err := das.NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, currentDas)
+	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, daWriter, storageService)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, currentDas)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
 	beConfig := das.BackendConfig{
 		URL:                 "http://" + rpcLis.Addr().String(),
@@ -264,16 +264,16 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
-	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1Reader, addresses)
+	daReader, daWriter, daHealthChecker, lifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &addresses.SequencerInbox)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daWriter, daHealthChecker)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 
 	pubkeyA := pubkey
 	authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
@@ -282,8 +282,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigA.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
-
-		LocalCacheConfig: das.TestBigCacheConfig,
 
 		// AggregatorConfig set up below
 		RequestTimeout: 5 * time.Second,
@@ -318,8 +316,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
-
-		LocalCacheConfig: das.TestBigCacheConfig,
 
 		// AggregatorConfig set up below
 

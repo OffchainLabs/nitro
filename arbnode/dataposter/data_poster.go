@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -45,7 +46,7 @@ type QueueStorage[Item any] interface {
 type DataPosterConfig struct {
 	RedisSigner           signature.SimpleHmacConfig `koanf:"redis-signer"`
 	ReplacementTimes      string                     `koanf:"replacement-times"`
-	L1LookBehind          uint64                     `koanf:"l1-look-behind" reload:"hot"`
+	WaitForL1Finality     bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
 	MaxQueuedTransactions uint64                     `koanf:"max-queued-transactions" reload:"hot"`
 	TargetPriceGwei       float64                    `koanf:"target-price-gwei" reload:"hot"`
 	UrgencyGwei           float64                    `koanf:"urgency-gwei" reload:"hot"`
@@ -55,7 +56,7 @@ type DataPosterConfigFetcher func() *DataPosterConfig
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
+	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
@@ -64,7 +65,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:      "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	L1LookBehind:          2,
+	WaitForL1Finality:     true,
 	TargetPriceGwei:       60.,
 	UrgencyGwei:           2.,
 	MaxQueuedTransactions: 64,
@@ -73,7 +74,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:      "1s,2s,5s,10s,20s,30s,1m,5m",
 	RedisSigner:           signature.TestSimpleHmacConfig,
-	L1LookBehind:          0,
+	WaitForL1Finality:     false,
 	TargetPriceGwei:       60.,
 	UrgencyGwei:           2.,
 	MaxQueuedTransactions: 64,
@@ -221,6 +222,15 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 		newFeeCap = balanceFeeCap
 	}
 
+	if arbmath.BigGreaterThan(newTipCap, newFeeCap) {
+		log.Warn(
+			"reducing new tip cap to new fee cap",
+			"proposedTipCap", newTipCap,
+			"newFeeCap", newFeeCap,
+		)
+		newTipCap = new(big.Int).Set(newFeeCap)
+	}
+
 	return newFeeCap, newTipCap, nil
 }
 
@@ -322,16 +332,21 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
-	header, err := p.client.HeaderByNumber(ctx, nil)
+	var blockNumQuery *big.Int
+	if p.config().WaitForL1Finality {
+		blockNumQuery = big.NewInt(int64(rpc.FinalizedBlockNumber))
+	}
+	header, err := p.client.HeaderByNumber(ctx, blockNumQuery)
 	if err != nil {
 		return err
 	}
-	p.lastBlock = arbmath.BigSub(header.Number, new(big.Int).SetUint64(p.config().L1LookBehind))
+	p.lastBlock = header.Number
 	nonce, err := p.client.NonceAt(ctx, p.auth.From, p.lastBlock)
 	if err != nil {
 		return err
 	}
 	if nonce > p.nonce {
+		log.Info("data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "l1Block", p.lastBlock)
 		if len(p.errorCount) > 0 {
 			for x := p.nonce; x < nonce; x++ {
 				delete(p.errorCount, x)
@@ -343,7 +358,9 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 		}
 		p.nonce = nonce
 	}
-	balance, err := p.client.BalanceAt(ctx, p.auth.From, p.lastBlock)
+	// Use the pending (representated as -1) balance because we're looking at batches we'd post,
+	// so we want to see how much gas we could afford with our pending state.
+	balance, err := p.client.BalanceAt(ctx, p.auth.From, big.NewInt(-1))
 	if err != nil {
 		return err
 	}
@@ -359,7 +376,7 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 		delete(p.errorCount, nonce)
 		return
 	}
-	if errors.Is(err, StorageRaceErr) {
+	if errors.Is(err, ErrStorageRace) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
 			log.Debug(msg, "err", err, "nonce", nonce)
@@ -392,7 +409,15 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
 		}
-		queueContents, err := p.queue.GetContents(ctx, p.nonce, maxTxsToRbf)
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
+		if err != nil {
+			log.Warn("failed to get latest nonce", "err", err)
+			return minWait
+		}
+		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
+		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
+		// replacing them by fee.
+		queueContents, err := p.queue.GetContents(ctx, unconfirmedNonce, maxTxsToRbf)
 		if err != nil {
 			log.Warn("failed to get tx queue contents", "err", err)
 			return minWait

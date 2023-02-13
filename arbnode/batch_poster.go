@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbos"
@@ -46,6 +47,7 @@ type BatchPoster struct {
 	streamer     *TransactionStreamer
 	config       BatchPosterConfigFetcher
 	seqInbox     *bridgegen.SequencerInbox
+	bridge       *bridgegen.Bridge
 	syncMonitor  *SyncMonitor
 	seqInboxABI  *abi.ABI
 	seqInboxAddr common.Address
@@ -127,8 +129,12 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DataPoster:           dataposter.TestDataPosterConfig,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
-	seqInbox, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
+	if err != nil {
+		return nil, err
+	}
+	bridge, err := bridgegen.NewBridge(deployInfo.Bridge, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
@@ -156,9 +162,10 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		streamer:     streamer,
 		syncMonitor:  syncMonitor,
 		config:       config,
+		bridge:       bridge,
 		seqInbox:     seqInbox,
 		seqInboxABI:  seqInboxABI,
-		seqInboxAddr: contractAddress,
+		seqInboxAddr: deployInfo.SequencerInbox,
 		daWriter:     daWriter,
 		redisLock:    redisLock,
 	}
@@ -440,6 +447,31 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
+	config := b.config()
+	callOpts := &bind.CallOpts{
+		Context: ctx,
+	}
+	if config.DataPoster.WaitForL1Finality {
+		callOpts.BlockNumber = big.NewInt(int64(rpc.SafeBlockNumber))
+	}
+	safeDelayedMessagesBig, err := b.bridge.DelayedMessageCount(callOpts)
+	if err != nil {
+		return 0, err
+	}
+	if !safeDelayedMessagesBig.IsUint64() {
+		return 0, fmt.Errorf("calling delayedMessageCount() on the bridge returned a non-uint64 result %v", safeDelayedMessagesBig)
+	}
+	safeDelayedMessages := safeDelayedMessagesBig.Uint64()
+	if safeDelayedMessages > delayedMessages {
+		// On restart, we may be trying to estimate gas for a batch whose successor has
+		// already made it into pending state, if not latest state.
+		// In that case, we might get a revert with `DelayedBackwards()`.
+		// To avoid that, we artificially increase the delayed messages to `safeDelayedMessages`.
+		// In theory, this might reduce gas usage, but only by a factor that's already
+		// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
+		// posts a new delayed message that we didn't see while gas estimating.
+		delayedMessages = safeDelayedMessages
+	}
 	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
 	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
@@ -462,12 +494,13 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 			"error estimating gas for batch",
 			"err", err,
 			"delayedMessages", delayedMessages,
+			"safeDelayedMessages", safeDelayedMessages,
 			"sequencerMessageHeader", hex.EncodeToString(sequencerMessageHeader),
 			"sequencerMessageLen", len(sequencerMessage),
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return gas + b.config().ExtraBatchGas, nil
+	return gas + config.ExtraBatchGas, nil
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
@@ -597,7 +630,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.StorageRaceErr) {
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.ErrStorageRace) {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {
