@@ -581,7 +581,7 @@ func (s *TransactionStreamer) countDuplicateMessages(
 }
 
 func (s *TransactionStreamer) logReorg(pos arbutil.MessageIndex, dbMsg *arbstate.MessageWithMetadata, newMsg *arbstate.MessageWithMetadata, confirmed bool) {
-	sendLog := force
+	sendLog := confirmed
 	if time.Now().After(s.nextAllowedFeedReorgLog) {
 		sendLog = true
 	}
