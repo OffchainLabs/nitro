@@ -154,6 +154,7 @@ type ChallengeManagerInterface interface {
 	SubscribeChallengeEvents(ctx context.Context, ch chan<- ChallengeEvent)
 	SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent)
 	Visualize(ctx context.Context, tx *ActiveTx) *Visualization
+	ChainId() uint64
 }
 type AssertionChain struct {
 	mutex                         sync.RWMutex
@@ -168,6 +169,7 @@ type AssertionChain struct {
 	feed                          *EventFeed[AssertionChainEvent]
 	challengesFeed                *EventFeed[ChallengeEvent]
 	inbox                         *Inbox
+	chainId                       uint64
 }
 
 const (
@@ -259,8 +261,8 @@ type Assertion struct {
 	challenge               util.Option[*Challenge]
 }
 
-// NewAssertiSubscribeChainEventsonChain creates a new AssertionChain.
-func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
+// NewAssertionChainWithChainId creates a new AssertionChain with specified chainId.
+func NewAssertionChainWithChainId(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration, chainId uint64) *AssertionChain {
 	genesis := &Assertion{
 		challengeManager: nil,
 		status:           ConfirmedAssertionState,
@@ -299,9 +301,15 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		challengesFeed:                NewEventFeed[ChallengeEvent](ctx),
 		inbox:                         NewInbox(ctx),
 		assertionsBySeqNum:            assertionsSeen,
+		chainId:                       chainId,
 	}
 	genesis.challengeManager = chain
 	return chain
+}
+
+// NewAssertionChain creates a new AssertionChain with specified chainId.
+func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
+	return NewAssertionChainWithChainId(ctx, timeRef, challengePeriod, 0)
 }
 
 // TimeReference returns the time reference used by the chain.
@@ -312,6 +320,11 @@ func (chain *AssertionChain) TimeReference() util.TimeReference {
 // Inbox returns the inbox used by the chain.
 func (chain *AssertionChain) Inbox() *Inbox {
 	return chain.inbox
+}
+
+// ChainId returns the chainId used by the chain.
+func (chain *AssertionChain) ChainId() uint64 {
+	return chain.chainId
 }
 
 // GetBalance returns the balance of the given address.
@@ -401,16 +414,17 @@ func verticesContainOneStepFork(ctx context.Context, tx *ActiveTx, vertices map[
 	if len(vertices) < 2 {
 		return false
 	}
-	childVertices := make([]*ChallengeVertex, 0)
+	childVertices := make([]ChallengeVertexInterface, 0)
 	for _, v := range vertices {
-		if v.(*ChallengeVertex).Prev.IsNone() {
+		prev, _ := v.GetPrev(ctx, tx)
+		if prev.IsNone() {
 			continue
 		}
 		// We only check vertices that have a matching parent commit hash.
-		commitment, _ := v.(*ChallengeVertex).Prev.Unwrap().GetCommitment(ctx, tx)
+		commitment, _ := prev.Unwrap().GetCommitment(ctx, tx)
 		vParentHash := VertexCommitHash(commitment.Hash())
 		if vParentHash == parentCommitHash {
-			childVertices = append(childVertices, v.(*ChallengeVertex))
+			childVertices = append(childVertices, v)
 		}
 	}
 	if len(childVertices) < 2 {
@@ -424,12 +438,14 @@ func verticesContainOneStepFork(ctx context.Context, tx *ActiveTx, vertices map[
 	return true
 }
 
-func isOneStepAwayFromParent(ctx context.Context, tx *ActiveTx, vertex *ChallengeVertex) bool {
-	if vertex.Prev.IsNone() {
+func isOneStepAwayFromParent(ctx context.Context, tx *ActiveTx, vertex ChallengeVertexInterface) bool {
+	prev, _ := vertex.GetPrev(ctx, tx)
+	if prev.IsNone() {
 		return false
 	}
-	commitment, _ := vertex.Prev.Unwrap().GetCommitment(ctx, tx)
-	return vertex.Commitment.Height == commitment.Height+1
+	prevCommitment, _ := prev.Unwrap().GetCommitment(ctx, tx)
+	commitment, _ := vertex.GetCommitment(ctx, tx)
+	return commitment.Height == prevCommitment.Height+1
 }
 
 // ChallengeVertexByCommitHash returns the challenge vertex with the given commit hash.
@@ -471,7 +487,7 @@ func (chain *AssertionChain) SubscribeChallengeEvents(ctx context.Context, ch ch
 // CreateLeaf creates a new leaf assertion.
 func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitment util.StateCommitment, staker common.Address) (*Assertion, error) {
 	tx.verifyReadWrite()
-	if prev.challengeManager.(*AssertionChain) != chain {
+	if prev.challengeManager.ChainId() != chain.ChainId() {
 		return nil, ErrWrongChain
 	}
 	if prev.StateCommitment.Height >= commitment.Height {

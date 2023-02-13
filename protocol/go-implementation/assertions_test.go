@@ -1370,8 +1370,8 @@ func TestAssertionChain_RetrieveAssertions(t *testing.T) {
 
 func TestAssertionChain_LeafCreationErrors(t *testing.T) {
 	ctx := context.Background()
-	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
-	badChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod+1)
+	chain := NewAssertionChainWithChainId(ctx, util.NewArtificialTimeReference(), testChallengePeriod, 0)
+	badChain := NewAssertionChainWithChainId(ctx, util.NewArtificialTimeReference(), testChallengePeriod+1, 1)
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	lc := chain.LatestConfirmed(tx)
 	_, err := badChain.CreateLeaf(tx, lc, util.StateCommitment{}, common.BytesToAddress([]byte{}))
