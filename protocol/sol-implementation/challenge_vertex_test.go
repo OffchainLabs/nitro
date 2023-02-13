@@ -48,6 +48,54 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	})
 }
 
+func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
+	ctx := context.Background()
+	chain, acc := setupAssertionChainWithChallengeManager(t)
+	height1 := uint64(6)
+	height2 := uint64(7)
+	a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+
+	genesis, err := chain.AssertionByID(common.Hash{})
+	require.NoError(t, err)
+
+	// We add two leaves to the challenge.
+	v1, err := challenge.AddLeaf(
+		a1,
+		util.HistoryCommitment{
+			Height:    height1,
+			Merkle:    common.BytesToHash([]byte("nyan")),
+			FirstLeaf: genesis.inner.StateHash,
+		},
+	)
+	require.NoError(t, err)
+	v2, err := challenge.AddLeaf(
+		a2,
+		util.HistoryCommitment{
+			Height:    height2,
+			Merkle:    common.BytesToHash([]byte("nyan2")),
+			FirstLeaf: genesis.inner.StateHash,
+		},
+	)
+	require.NoError(t, err)
+	require.NoError(t, acc.backend.AdjustTime(time.Second*2000))
+	require.NoError(t, v1.ConfirmPsTimer(ctx))
+
+	manager, err := chain.ChallengeManager()
+	require.NoError(t, err)
+	v1, err = manager.vertexById(v1.id)
+	require.NoError(t, err)
+	v2, err = manager.vertexById(v2.id)
+	require.NoError(t, err)
+	challenge, err = manager.ChallengeByID(challenge.id)
+	require.NoError(t, err)
+
+	t.Logf("%+v", v1.inner)
+
+	ok, err := v2.HasConfirmedSibling(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, ok)
+}
+
 func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	ctx := context.Background()
 	chain, _ := setupAssertionChainWithChallengeManager(t)
@@ -104,7 +152,7 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		require.NoError(t, err)
 		v1, err = manager.vertexById(v1.id)
 		require.NoError(t, err)
-		v2, err = manager.vertexById(v1.id)
+		v2, err = manager.vertexById(v2.id)
 		require.NoError(t, err)
 
 		// V1 and V2 should not longer be presumptive.

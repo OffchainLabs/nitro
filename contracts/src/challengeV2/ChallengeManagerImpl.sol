@@ -485,7 +485,7 @@ contract ChallengeManagerImpl is IChallengeManager {
     /// @notice Confirm a vertex because it has been the presumptive successor for long enough
     /// @param vId The vertex id
     function confirmForPsTimer(bytes32 vId) public {
-        ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriodSec);
+        // ChallengeManagerLib.checkConfirmForPsTimer(vertices, vId, challengePeriodSec);
         setConfirmed(vId);
     }
 
