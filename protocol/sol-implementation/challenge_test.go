@@ -1,11 +1,12 @@
 package solimpl
 
 import (
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"testing"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
@@ -24,7 +25,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 					Height:    height1,
 					StateRoot: common.BytesToHash([]byte("foo")),
 				},
-				inner: outgen.Assertion{
+				inner: challengeV2gen.Assertion{
 					PredecessorId: common.BytesToHash([]byte("junk")),
 				},
 			},
