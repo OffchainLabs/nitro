@@ -12,7 +12,7 @@ go_library(
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation",
     visibility = ["//visibility:public"],
     deps = [
-        "//solgen/go/outgen",
+        "//solgen/go/challengeV2gen",
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
@@ -32,7 +32,7 @@ go_test(
     ],
     embed = [":sol-implementation"],
     deps = [
-        "//solgen/go/outgen",
+        "//solgen/go/challengeV2gen",
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",

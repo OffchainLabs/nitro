@@ -1,7 +1,7 @@
 package solimpl
 
 import (
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 )
 
@@ -13,7 +13,7 @@ type Assertion struct {
 	StateCommitment util.StateCommitment
 	chain           *AssertionChain
 	id              [32]byte
-	inner           outgen.Assertion
+	inner           challengeV2gen.Assertion
 }
 
 // Challenge is a developer-friendly wrapper around
@@ -21,7 +21,7 @@ type Assertion struct {
 type Challenge struct {
 	manager *ChallengeManager
 	id      [32]byte
-	inner   outgen.Challenge
+	inner   challengeV2gen.Challenge
 }
 
 // ChallengeType defines an enum of the same name
@@ -40,5 +40,5 @@ const (
 type ChallengeVertex struct {
 	manager *ChallengeManager
 	id      [32]byte
-	inner   outgen.ChallengeVertex
+	inner   challengeV2gen.ChallengeVertex
 }

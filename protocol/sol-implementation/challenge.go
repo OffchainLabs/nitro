@@ -3,7 +3,7 @@ package solimpl
 import (
 	"math/big"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 )
 
@@ -17,7 +17,7 @@ func (c *Challenge) AddLeaf(
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
-	leafData := outgen.AddLeafArgs{
+	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
 		ClaimId:                assertion.id,
 		Height:                 big.NewInt(int64(history.Height)),
