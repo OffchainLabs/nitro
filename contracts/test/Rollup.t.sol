@@ -380,4 +380,23 @@ contract RollupTest is Test {
         vm.prank(validator1);
         userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT);
     }
+
+    function testSuccessRejection() public {
+        testSuccessConfirmForPsTimer();
+        vm.prank(validator1);
+        userRollup.rejectNextAssertion(validator2);
+    }
+
+    function testRevertRejectionTooRecent() public {
+        testSuccessCreateSecondChild();
+        vm.prank(validator1);
+        vm.expectRevert("CHILD_TOO_RECENT");
+        userRollup.rejectNextAssertion(validator2);
+    }
+
+    function testRevertRejectionNoUnresolved() public {
+        vm.prank(validator1);
+        vm.expectRevert("NO_UNRESOLVED");
+        userRollup.rejectNextAssertion(validator2);
+    }
 }
