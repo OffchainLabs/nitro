@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "solgen_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "gen.go",
+        "main.go",
+    ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/solgen",
     visibility = ["//visibility:private"],
     deps = ["@com_github_ethereum_go_ethereum//accounts/abi/bind"],
