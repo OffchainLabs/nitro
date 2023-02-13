@@ -215,13 +215,13 @@ func deployChallengeFactory(
 	genesisStateHash := common.BytesToHash([]byte("nyan"))
 	challengePeriodSeconds := big.NewInt(100)
 
-	assertionChainAddr, tx, _, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, challengePeriodSeconds)
+	assertionChainAddr, tx, assertionChain, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, challengePeriodSeconds)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, assertionChainAddr, backend, err)
 	require.NoError(t, err)
 
 	miniStakeValue := big.NewInt(1)
-	challengeManagerAddr, tx, challengeManager, err := challengeV2gen.DeployChallengeManagerImpl(
+	challengeManagerAddr, tx, _, err := challengeV2gen.DeployChallengeManagerImpl(
 		auth,
 		backend,
 		assertionChainAddr,
