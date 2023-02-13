@@ -4,8 +4,8 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IChallengeManager.sol";
-import "../challenge/ChallengeLib.sol";
+import "../challenge/IOldChallengeManager.sol";
+import "../challenge/OldChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
 
@@ -20,7 +20,7 @@ struct ExecutionState {
     MachineStatus machineStatus;
 }
 
-struct OldAssertion {
+struct AssertionInputs {
     ExecutionState beforeState;
     ExecutionState afterState;
     uint64 numBlocks;
@@ -45,7 +45,7 @@ struct ContractDependencies {
     IInbox inbox;
     IOutbox outbox;
     IRollupEventInbox rollupEventInbox;
-    IChallengeManager challengeManager;
+    IOldChallengeManager oldChallengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
     // misc contracts that are useful when interacting with the rollup
@@ -87,7 +87,7 @@ library RollupLib {
             );
     }
 
-    function executionHash(OldAssertion memory assertion) internal pure returns (bytes32) {
+    function executionHash(AssertionInputs memory assertion) internal pure returns (bytes32) {
         MachineStatus[2] memory statuses;
         statuses[0] = assertion.beforeState.machineStatus;
         statuses[1] = assertion.afterState.machineStatus;
@@ -104,9 +104,9 @@ library RollupLib {
         uint64 numBlocks
     ) internal pure returns (bytes32) {
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(statuses[0], globalStates[0].hash());
-        segments[1] = ChallengeLib.blockStateHash(statuses[1], globalStates[1].hash());
-        return ChallengeLib.hashChallengeState(0, numBlocks, segments);
+        segments[0] = OldChallengeLib.blockStateHash(statuses[0], globalStates[0].hash());
+        segments[1] = OldChallengeLib.blockStateHash(statuses[1], globalStates[1].hash());
+        return OldChallengeLib.hashChallengeState(0, numBlocks, segments);
     }
 
     function challengeRootHash(
@@ -117,7 +117,7 @@ library RollupLib {
         return keccak256(abi.encodePacked(execution, proposedTime, wasmModuleRoot));
     }
 
-    function confirmHash(OldAssertion memory assertion) internal pure returns (bytes32) {
+    function confirmHash(AssertionInputs memory assertion) internal pure returns (bytes32) {
         return
             confirmHash(
                 assertion.afterState.globalState.getBlockHash(),
@@ -129,7 +129,7 @@ library RollupLib {
         return keccak256(abi.encodePacked(blockHash, sendRoot));
     }
 
-    function nodeHash(
+    function assertionHash(
         bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,
