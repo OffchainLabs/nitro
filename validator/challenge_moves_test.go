@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -35,15 +35,15 @@ func Test_computePrefixProof(t *testing.T) {
 }
 
 func Test_bisect(t *testing.T) {
-	tx := &protocol.ActiveTx{}
+	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
 		stateRoots := generateStateRoots(10)
 		manager := statemanager.New(stateRoots)
 		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
-		vertex := &protocol.ChallengeVertex{
-			Prev: util.Some[protocol.ChallengeVertexInterface](&protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
+			Prev: util.Some[goimpl.ChallengeVertexInterface](&goimpl.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 3,
 					Merkle: common.BytesToHash([]byte{0}),
@@ -68,8 +68,8 @@ func Test_bisect(t *testing.T) {
 		manager := statemanager.New(stateRoots)
 		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
-		vertex := &protocol.ChallengeVertex{
-			Prev: util.Some[protocol.ChallengeVertexInterface](&protocol.ChallengeVertex{
+		vertex := &goimpl.ChallengeVertex{
+			Prev: util.Some[goimpl.ChallengeVertexInterface](&goimpl.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 0,
 					Merkle: common.BytesToHash([]byte{0}),
@@ -104,13 +104,13 @@ func Test_bisect(t *testing.T) {
 }
 
 func Test_merge(t *testing.T) {
-	tx := &protocol.ActiveTx{}
+	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	genesisCommit := util.StateCommitment{
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.ChallengeCommitHash(genesisCommit.Hash())
+	challengeCommitHash := goimpl.ChallengeCommitHash(genesisCommit.Hash())
 
 	t.Run("fails to verify prefix proof", func(t *testing.T) {
 		logsHook := test.NewGlobal()
@@ -129,9 +129,9 @@ func Test_merge(t *testing.T) {
 		c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.StateCommitment.Height)
 		require.NoError(t, err)
 
-		var mergingTo protocol.ChallengeVertexInterface
-		err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
-			mergingTo, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
+		var mergingTo goimpl.ChallengeVertexInterface
+		err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
+			mergingTo, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, goimpl.VertexCommitHash(c.Hash()))
 			if err != nil {
 				return err
 			}
@@ -140,8 +140,8 @@ func Test_merge(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, mergingTo)
 
-		mergingFrom := &protocol.ChallengeVertex{
-			Prev: util.Some(protocol.ChallengeVertexInterface(&protocol.ChallengeVertex{
+		mergingFrom := &goimpl.ChallengeVertex{
+			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 0,
 					Merkle: common.BytesToHash([]byte{0}),
@@ -181,9 +181,9 @@ func Test_merge(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get the vertex we want to merge from.
-		var vertexToMergeFrom *protocol.ChallengeVertex
-		err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
-			vertexToMergeFrom, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
+		var vertexToMergeFrom *goimpl.ChallengeVertex
+		err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
+			vertexToMergeFrom, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, goimpl.VertexCommitHash(c.Hash()))
 			if err != nil {
 				return err
 			}
@@ -210,12 +210,12 @@ func runBisectionTest(
 	t *testing.T,
 	logsHook *test.Hook,
 	ctx context.Context,
-	tx *protocol.ActiveTx,
+	tx *goimpl.ActiveTx,
 	validator *Validator,
 	stateRoots []common.Hash,
 	leaf1,
-	leaf2 *protocol.CreateLeafEvent,
-) protocol.ChallengeVertexInterface {
+	leaf2 *goimpl.CreateLeafEvent,
+) goimpl.ChallengeVertexInterface {
 	err := validator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
 	err = validator.onLeafCreated(ctx, tx, leaf2)
@@ -232,9 +232,9 @@ func runBisectionTest(
 		StateRoot: common.Hash{},
 	}
 
-	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
-	err = validator.chain.Tx(func(tx *protocol.ActiveTx) error {
-		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+	id := goimpl.ChallengeCommitHash(genesisCommit.Hash())
+	err = validator.chain.Tx(func(tx *goimpl.ActiveTx) error {
+		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, goimpl.AssertionSequenceNumber(1))
 		if fetchErr != nil {
 			return fetchErr
 		}
@@ -253,9 +253,9 @@ func runBisectionTest(
 	require.NoError(t, err)
 
 	// Get the challenge from the chain itself.
-	var vertexToBisect protocol.ChallengeVertexInterface
-	err = validator.chain.Call(func(tx *protocol.ActiveTx) error {
-		vertexToBisect, err = validator.chain.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
+	var vertexToBisect goimpl.ChallengeVertexInterface
+	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
+		vertexToBisect, err = validator.chain.ChallengeVertexByCommitHash(tx, id, goimpl.VertexCommitHash(c.Hash()))
 		if err != nil {
 			return err
 		}

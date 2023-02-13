@@ -9,7 +9,7 @@ import (
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -25,11 +25,11 @@ var (
 type vertexTracker struct {
 	actEveryNSeconds      time.Duration
 	timeRef               util.TimeReference
-	challenge             protocol.ChallengeInterface
+	challenge             goimpl.ChallengeInterface
 	challengePeriodLength time.Duration
 	challengeCreationTime time.Time
-	vertex                protocol.ChallengeVertexInterface
-	chain                 protocol.OnChainProtocol
+	vertex                goimpl.ChallengeVertexInterface
+	chain                 goimpl.OnChainProtocol
 	stateManager          statemanager.Manager
 	awaitingOneStepFork   bool
 	validatorName         string
@@ -39,9 +39,9 @@ type vertexTracker struct {
 func newVertexTracker(
 	timeRef util.TimeReference,
 	actEveryNSeconds time.Duration,
-	challenge protocol.ChallengeInterface,
-	vertex protocol.ChallengeVertexInterface,
-	chain protocol.OnChainProtocol,
+	challenge goimpl.ChallengeInterface,
+	vertex goimpl.ChallengeVertexInterface,
+	chain goimpl.OnChainProtocol,
 	stateManager statemanager.Manager,
 	validatorName string,
 	validatorAddress common.Address,
@@ -58,7 +58,7 @@ func newVertexTracker(
 	}
 }
 
-func (v *vertexTracker) track(ctx context.Context, tx *protocol.ActiveTx) {
+func (v *vertexTracker) track(ctx context.Context, tx *goimpl.ActiveTx) {
 	commitment, err := v.vertex.GetCommitment(ctx, tx)
 	if err != nil {
 		return
@@ -103,7 +103,7 @@ func (v *vertexTracker) track(ctx context.Context, tx *protocol.ActiveTx) {
 }
 
 // TODO: Add a condition that determines when the vertex is at a one-step-fork is resolved (can check some data from parent)
-func (v *vertexTracker) actOnBlockChallenge(ctx context.Context, tx *protocol.ActiveTx) error {
+func (v *vertexTracker) actOnBlockChallenge(ctx context.Context, tx *goimpl.ActiveTx) error {
 	if v.awaitingOneStepFork {
 		return nil
 	}
@@ -112,7 +112,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context, tx *protocol.Ac
 	if err != nil {
 		return err
 	}
-	vertex, err := v.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(commitment.Hash()))
+	vertex, err := v.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(commitment.Hash()))
 	if err != nil {
 		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}
@@ -128,12 +128,12 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context, tx *protocol.Ac
 	if err != nil {
 		return err
 	}
-	if status == protocol.ConfirmedAssertionState {
+	if status == goimpl.ConfirmedAssertionState {
 		return ErrConfirmed
 	}
 	var challengeCompleted bool
 	var siblingConfirmed bool
-	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+	if err = v.chain.Call(func(tx *goimpl.ActiveTx) error {
 		challengeCompleted, err = v.challenge.Completed(ctx, tx)
 		if err != nil {
 			return nil
@@ -201,7 +201,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context, tx *protocol.Ac
 	// Naive idea: if we get vertex already exists during a bisection, then we should attempt a merge move.
 	bisectedVertex, err := v.bisect(ctx, tx, vertex)
 	if err != nil {
-		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
+		if errors.Is(err, goimpl.ErrVertexAlreadyExists) {
 			mergedTo, mergeErr := v.mergeToExistingVertex(ctx, tx)
 			if mergeErr != nil {
 				return mergeErr
@@ -220,7 +220,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context, tx *protocol.Ac
 }
 
 // Checks if the vertex is at a one-step-fork.
-func (v *vertexTracker) isAtOneStepFork(ctx context.Context, tx *protocol.ActiveTx) (bool, error) {
+func (v *vertexTracker) isAtOneStepFork(ctx context.Context, tx *goimpl.ActiveTx) (bool, error) {
 	var atOneStepFork bool
 	var err error
 	commitment, err := v.vertex.GetCommitment(ctx, tx)
@@ -239,11 +239,11 @@ func (v *vertexTracker) isAtOneStepFork(ctx context.Context, tx *protocol.Active
 	if err != nil {
 		return false, err
 	}
-	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+	if err = v.chain.Call(func(tx *goimpl.ActiveTx) error {
 		atOneStepFork, err = v.chain.IsAtOneStepFork(
 			ctx,
 			tx,
-			protocol.ChallengeCommitHash(challengeParentStateCommitment.Hash()),
+			goimpl.ChallengeCommitHash(challengeParentStateCommitment.Hash()),
 			commitment,
 			prevCommitment,
 		)
@@ -259,16 +259,16 @@ func (v *vertexTracker) isAtOneStepFork(ctx context.Context, tx *protocol.Active
 
 // Obtains a challenge vertex we should perform move into given its corresponding challenge ID
 // and the history commitment of the vertex itself from the chain.
-func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash protocol.VertexCommitHash) (protocol.ChallengeVertexInterface, error) {
-	var mergingTo protocol.ChallengeVertexInterface
+func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash goimpl.VertexCommitHash) (goimpl.ChallengeVertexInterface, error) {
+	var mergingTo goimpl.ChallengeVertexInterface
 	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx) error {
+	if err = v.chain.Call(func(tx *goimpl.ActiveTx) error {
 		var parentStateCommitment util.StateCommitment
 		parentStateCommitment, err = v.challenge.ParentStateCommitment(ctx, tx)
 		if err != nil {
 			return err
 		}
-		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(parentStateCommitment.Hash()), hash)
+		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, goimpl.ChallengeCommitHash(parentStateCommitment.Hash()), hash)
 		if err != nil {
 			return err
 		}
@@ -286,7 +286,7 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash pro
 // Merges to a vertex that already exists in the protocol by fetching its history commit
 // from our state manager and then performing a merge transaction in the chain. Then,
 // this method returns the vertex it merged to.
-func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx *protocol.ActiveTx) (protocol.ChallengeVertexInterface, error) {
+func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx *goimpl.ActiveTx) (goimpl.ChallengeVertexInterface, error) {
 	prev, err := v.vertex.GetPrev(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -309,7 +309,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx *protocol.
 	if err != nil {
 		return nil, err
 	}
-	mergingInto, err := v.fetchVertexByHistoryCommit(ctx, protocol.VertexCommitHash(mergingToHistory.Hash()))
+	mergingInto, err := v.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(mergingToHistory.Hash()))
 	if err != nil {
 		return nil, err
 	}
@@ -318,20 +318,20 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx *protocol.
 	if err != nil {
 		return nil, err
 	}
-	mergedTo, err := v.merge(ctx, tx, protocol.ChallengeCommitHash(parentStateCommitment.Hash()), mergingInto, mergingFrom)
+	mergedTo, err := v.merge(ctx, tx, goimpl.ChallengeCommitHash(parentStateCommitment.Hash()), mergingInto, mergingFrom)
 	if err != nil {
 		return nil, err
 	}
 	return mergedTo, nil
 }
 
-func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (bool, error) {
+func (v *vertexTracker) confirmed(ctx context.Context, tx *goimpl.ActiveTx) (bool, error) {
 	// Can't confirm if the vertex is not in correct state.
 	status, err := v.vertex.GetStatus(ctx, tx)
 	if err != nil {
 		return false, err
 	}
-	if status != protocol.PendingAssertionState {
+	if status != goimpl.PendingAssertionState {
 		return false, nil
 	}
 	// Can't confirm if parent isn't confirmed, exit early.
@@ -343,7 +343,7 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 	if err != nil {
 		return false, err
 	}
-	if prevStatus != protocol.ConfirmedAssertionState {
+	if prevStatus != goimpl.ConfirmedAssertionState {
 		return false, nil
 	}
 
@@ -353,7 +353,7 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 		return false, err
 	}
 	if !subChallenge.IsNone() {
-		var subChallengeWinnerVertex util.Option[protocol.ChallengeVertexInterface]
+		var subChallengeWinnerVertex util.Option[goimpl.ChallengeVertexInterface]
 		subChallengeWinnerVertex, err = subChallenge.Unwrap().GetWinnerVertex(ctx, tx)
 		if err != nil {
 			return false, err
@@ -361,7 +361,7 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 		if !subChallengeWinnerVertex.IsNone() {
 			winner := subChallengeWinnerVertex.Unwrap()
 			if winner == v.vertex {
-				if err = v.chain.Tx(func(tx *protocol.ActiveTx) error {
+				if err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
 					return v.vertex.ConfirmForSubChallengeWin(ctx, tx)
 				}); err != nil {
 					return false, err
@@ -378,7 +378,7 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 		return false, err
 	}
 	if psTimer.Get() > v.challengePeriodLength {
-		if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
+		if err := v.chain.Tx(func(tx *goimpl.ActiveTx) error {
 			return v.vertex.ConfirmForPsTimer(ctx, tx)
 		}); err != nil {
 			return false, err
@@ -388,7 +388,7 @@ func (v *vertexTracker) confirmed(ctx context.Context, tx *protocol.ActiveTx) (b
 
 	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
 	if v.timeRef.Get().After(v.challengeCreationTime.Add(2 * v.challengePeriodLength)) {
-		if err := v.chain.Tx(func(tx *protocol.ActiveTx) error {
+		if err := v.chain.Tx(func(tx *goimpl.ActiveTx) error {
 			return v.vertex.ConfirmForChallengeDeadline(ctx, tx)
 		}); err != nil {
 			return false, err

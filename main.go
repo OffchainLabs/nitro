@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/OffchainLabs/challenge-protocol-v2/validator"
@@ -42,7 +42,7 @@ type config struct {
 }
 
 func defaultConfig() *config {
-	defaultBalance := new(big.Int).Add(protocol.AssertionStake, protocol.ChallengeVertexStake)
+	defaultBalance := new(big.Int).Add(goimpl.AssertionStake, goimpl.ChallengeVertexStake)
 	return &config{
 		NumValidators:          2,
 		NumStates:              10,
@@ -58,7 +58,7 @@ type server struct {
 	cancelFn         context.CancelFunc
 	cfg              *config
 	port             uint
-	challengeManager protocol.ChallengeManagerInterface
+	challengeManager goimpl.ChallengeManagerInterface
 	validators       []*validator.Validator
 	timeRef          *util.ArtificialTimeReference
 	wsClients        map[*websocket.Conn]bool
@@ -153,8 +153,8 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 	}
 	s.validators = validators
 	s.challengeManager = challengeManager
-	challengeObserver := make(chan protocol.ChallengeEvent, 100)
-	chainObserver := make(chan protocol.AssertionChainEvent, 100)
+	challengeObserver := make(chan goimpl.ChallengeEvent, 100)
+	chainObserver := make(chan goimpl.AssertionChainEvent, 100)
 	s.challengeManager.SubscribeChallengeEvents(ctx, challengeObserver)
 	s.challengeManager.SubscribeChainEvents(ctx, chainObserver)
 
@@ -167,24 +167,24 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 }
 
 type event struct {
-	Typ       string                  `json:"typ"`
-	To        string                  `json:"to"`
-	From      string                  `json:"from"`
-	BecomesPS bool                    `json:"becomes_ps"`
-	Validator string                  `json:"validator"`
-	Vis       *protocol.Visualization `json:"vis"`
+	Typ       string                `json:"typ"`
+	To        string                `json:"to"`
+	From      string                `json:"from"`
+	BecomesPS bool                  `json:"becomes_ps"`
+	Validator string                `json:"validator"`
+	Vis       *goimpl.Visualization `json:"vis"`
 }
 
 func (s *server) sendChainEventsToClients(
 	ctx context.Context,
-	chalEvs <-chan protocol.ChallengeEvent,
-	chainEvs <-chan protocol.AssertionChainEvent,
+	chalEvs <-chan goimpl.ChallengeEvent,
+	chainEvs <-chan goimpl.AssertionChainEvent,
 ) {
 	for {
 		select {
 		case ev := <-chalEvs:
 			log.Infof("Got challenge event: %+T, and %+v", ev, ev)
-			vis := s.challengeManager.Visualize(ctx, &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus})
+			vis := s.challengeManager.Visualize(ctx, &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ: fmt.Sprintf("%+T", ev),
@@ -192,15 +192,15 @@ func (s *server) sendChainEventsToClients(
 			}
 
 			switch specificEv := ev.(type) {
-			case *protocol.ChallengeLeafEvent:
+			case *goimpl.ChallengeLeafEvent:
 				eventToSend.BecomesPS = specificEv.BecomesPS
 				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
-			case *protocol.ChallengeMergeEvent:
+			case *goimpl.ChallengeMergeEvent:
 				eventToSend.From = fmt.Sprintf("%d", specificEv.FromHistory.Height)
 				eventToSend.To = fmt.Sprintf("%d", specificEv.ToHistory.Height)
 				eventToSend.BecomesPS = specificEv.BecomesPS
 				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
-			case *protocol.ChallengeBisectEvent:
+			case *goimpl.ChallengeBisectEvent:
 				eventToSend.From = fmt.Sprintf("%d", specificEv.FromHistory.Height)
 				eventToSend.To = fmt.Sprintf("%d", specificEv.ToHistory.Height)
 				eventToSend.BecomesPS = specificEv.BecomesPS
@@ -227,16 +227,16 @@ func (s *server) sendChainEventsToClients(
 			s.lock.RUnlock()
 		case ev := <-chainEvs:
 			log.Infof("Got chain event: %+T, and %+v", ev, ev)
-			vis := s.challengeManager.Visualize(ctx, &protocol.ActiveTx{TxStatus: protocol.ReadOnlyTxStatus})
+			vis := s.challengeManager.Visualize(ctx, &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ: fmt.Sprintf("%+T", ev),
 				Vis: vis,
 			}
 			switch specificEv := ev.(type) {
-			case *protocol.CreateLeafEvent:
+			case *goimpl.CreateLeafEvent:
 				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
-			case *protocol.StartChallengeEvent:
+			case *goimpl.StartChallengeEvent:
 				eventToSend.Validator = fmt.Sprintf("%x", specificEv.Validator[len(specificEv.Validator)-1:])
 			default:
 			}
@@ -289,8 +289,8 @@ func initializeSystem(
 	ctx context.Context,
 	timeRef util.TimeReference,
 	cfg *config,
-) ([]*validator.Validator, protocol.ChallengeManagerInterface, error) {
-	challengeManager := protocol.NewAssertionChain(ctx, timeRef, time.Duration(cfg.ChallengePeriodSeconds)*time.Second)
+) ([]*validator.Validator, goimpl.ChallengeManagerInterface, error) {
+	challengeManager := goimpl.NewAssertionChain(ctx, timeRef, time.Duration(cfg.ChallengePeriodSeconds)*time.Second)
 
 	validatorAddrs := make([]common.Address, cfg.NumValidators)
 	for i := uint8(0); i < cfg.NumValidators; i++ {
@@ -299,8 +299,8 @@ func initializeSystem(
 	}
 
 	// Increase the balance for each validator in the test.
-	bal := big.NewInt(0).Add(protocol.AssertionStake, protocol.ChallengeVertexStake)
-	err := challengeManager.Tx(func(tx *protocol.ActiveTx) error {
+	bal := big.NewInt(0).Add(goimpl.AssertionStake, goimpl.ChallengeVertexStake)
+	err := challengeManager.Tx(func(tx *goimpl.ActiveTx) error {
 		for _, addr := range validatorAddrs {
 			challengeManager.AddToBalance(tx, addr, bal)
 		}
