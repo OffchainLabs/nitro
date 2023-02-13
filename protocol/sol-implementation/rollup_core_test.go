@@ -49,6 +49,7 @@ type rollupAddresses struct {
 	Inbox                  common.Address `json:"inbox"`
 	SequencerInbox         common.Address `json:"sequencer-inbox"`
 	Rollup                 common.Address `json:"rollup"`
+	RollupUserLogic        common.Address `json:"rollup-user-logic"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
 	DeployedAt             uint64         `json:"deployed-at"`
@@ -64,7 +65,7 @@ func deployFullRollupStack(
 	config rollupgen.Config,
 ) *rollupAddresses {
 	t.Helper()
-	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator := deployRollupCreator(t, ctx, backend, deployAuth)
+	rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator := deployRollupCreator(t, ctx, backend, deployAuth)
 
 	nonce, err := backend.PendingNonceAt(ctx, rollupCreatorAddress)
 	require.NoError(t, err)
@@ -125,6 +126,7 @@ func deployFullRollupStack(
 		SequencerInbox:         info.SequencerInbox,
 		DeployedAt:             receipt.BlockNumber.Uint64(),
 		Rollup:                 info.RollupAddress,
+		RollupUserLogic:        rollupUserLogic,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
 	}
@@ -239,10 +241,11 @@ func deployRollupCreator(
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	auth *bind.TransactOpts,
-) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address) {
+) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address) {
 	t.Helper()
 	bridgeCreator := deployBridgeCreator(t, ctx, auth, backend)
 	ospEntryAddr, challengeManagerAddr := deployChallengeFactory(t, ctx, auth, backend)
+	t.Logf("%#x", challengeManagerAddr)
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, backend)
 	backend.Commit()
@@ -285,7 +288,7 @@ func deployRollupCreator(
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt.Status)
-	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator
+	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator
 }
 
 func generateRollupConfig(

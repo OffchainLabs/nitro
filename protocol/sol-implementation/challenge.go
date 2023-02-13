@@ -5,6 +5,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // AddLeaf vertex to a BlockChallenge using an assertion and a history commitment.
@@ -19,7 +20,7 @@ func (c *Challenge) AddLeaf(
 	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
-		ClaimId:                assertion.id,
+		ClaimId:                common.Hash{}, // assertion id.
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
 		FirstState:             history.FirstLeaf,

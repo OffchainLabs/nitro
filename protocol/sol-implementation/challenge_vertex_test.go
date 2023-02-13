@@ -16,7 +16,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	height2 := uint64(7)
 	a1, _, challenge := setupTopLevelFork(t, chain, height1, height2)
 
-	genesis, err := chain.AssertionByID(common.Hash{})
+	genesis, err := chain.AssertionByID(0)
 	require.NoError(t, err)
 
 	v1, err := challenge.AddLeaf(
@@ -33,7 +33,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		require.ErrorIs(t, v1.ConfirmPsTimer(context.Background()), ErrPsTimerNotYet)
 	})
 	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
-		require.NoError(t, acc.backend.AdjustTime(time.Second * 2000))
+		require.NoError(t, acc.backend.AdjustTime(time.Second*2000))
 		require.NoError(t, v1.ConfirmPsTimer(context.Background()))
 	})
 }
@@ -44,7 +44,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 	height2 := uint64(7)
 	a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
 
-	genesis, err := chain.AssertionByID(common.Hash{})
+	genesis, err := chain.AssertionByID(0)
 	require.NoError(t, err)
 
 	// We add two leaves to the challenge.

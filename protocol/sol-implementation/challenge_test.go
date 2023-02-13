@@ -3,7 +3,7 @@ package solimpl
 import (
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -20,13 +20,13 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		_, err := challenge.AddLeaf(
 			&Assertion{
 				chain: chain,
-				id:    common.BytesToHash([]byte("junk")),
+				id:    1,
 				StateCommitment: util.StateCommitment{
 					Height:    height1,
 					StateRoot: common.BytesToHash([]byte("foo")),
 				},
-				inner: challengeV2gen.Assertion{
-					PredecessorId: common.BytesToHash([]byte("junk")),
+				inner: rollupgen.AssertionNode{
+					// PredecessorId: common.BytesToHash([]byte("junk")),
 				},
 			},
 			util.HistoryCommitment{
@@ -79,7 +79,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		require.ErrorContains(t, err, "First state is not the challenge root")
 	})
 	t.Run("OK", func(t *testing.T) {
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(0)
 		require.NoError(t, err)
 		_, err = challenge.AddLeaf(
 			a1,
@@ -92,7 +92,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("already exists", func(t *testing.T) {
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(0)
 		require.NoError(t, err)
 		_, err = challenge.AddLeaf(
 			a1,
@@ -113,25 +113,23 @@ func setupTopLevelFork(
 	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge) {
 	t.Helper()
-	genesisId := common.Hash{}
-
 	// Creates a simple assertion chain fork.
 	commit1 := util.StateCommitment{
 		Height:    height1,
 		StateRoot: common.BytesToHash([]byte{1}),
 	}
-	a1, err := chain.CreateAssertion(commit1, genesisId)
+	a1, err := chain.CreateAssertion(commit1, 0)
 	require.NoError(t, err)
 
 	commit2 := util.StateCommitment{
 		Height:    height2,
 		StateRoot: common.BytesToHash([]byte{2}),
 	}
-	a2, err := chain.CreateAssertion(commit2, genesisId)
+	a2, err := chain.CreateAssertion(commit2, 0)
 	require.NoError(t, err)
 
 	// Initiates a challenge on the genesis assertion.
-	challenge, err := chain.CreateSuccessionChallenge(genesisId)
+	challenge, err := chain.CreateSuccessionChallenge(0)
 	require.NoError(t, err)
 	return a1, a2, challenge
 }

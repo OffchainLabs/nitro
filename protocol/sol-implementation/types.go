@@ -13,7 +13,7 @@ import (
 type Assertion struct {
 	StateCommitment util.StateCommitment
 	chain           *AssertionChain
-	id              [32]byte
+	id              uint64
 	inner           rollupgen.AssertionNode
 }
 

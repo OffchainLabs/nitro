@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"strings"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -25,10 +26,11 @@ type ChallengeManager struct {
 // ChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
 func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
-	addr, err := ac.caller.ChallengeManagerAddr(ac.callOpts)
+	addr, err := ac.caller.ChallengeManager(ac.callOpts)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("%#x", addr)
 	managerBinding, err := challengeV2gen.NewChallengeManagerImpl(addr, ac.backend)
 	if err != nil {
 		return nil, err

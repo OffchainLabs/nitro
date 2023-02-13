@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 )
 
@@ -92,20 +91,20 @@ func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
 }
 
 // AssertionByID --
-func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, error) {
-	res, err := ac.caller.GetAssertion(ac.callOpts, assertionId)
+func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error) {
+	res, err := ac.caller.GetAssertion(ac.callOpts, assertionNum)
 	if err != nil {
 		return nil, err
 	}
 	if bytes.Equal(res.StateHash[:], make([]byte, 32)) {
 		return nil, errors.Wrapf(
 			ErrNotFound,
-			"assertion with id %#x",
-			assertionId,
+			"assertion with id %d",
+			assertionNum,
 		)
 	}
 	return &Assertion{
-		id:    assertionId,
+		id:    assertionNum,
 		chain: ac,
 		inner: res,
 		StateCommitment: util.StateCommitment{
@@ -120,26 +119,36 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 // returns the newly created assertion.
 func (ac *AssertionChain) CreateAssertion(
 	commitment util.StateCommitment,
-	prevAssertionId common.Hash,
+	prevAssertionId uint64,
 ) (*Assertion, error) {
 	err := withChainCommitment(ac.backend, func() error {
+		prevInboxMaxCount := big.NewInt(0)
+		expectedHash := common.Hash{}
 		_, err := ac.writer.NewStakeOnNewAssertion(
 			ac.txOpts,
-			commitment.StateRoot,
-			big.NewInt(int64(commitment.Height)),
-			prevAssertionId,
+			rollupgen.AssertionInputs{
+				BeforeState: rollupgen.ExecutionState{
+					GlobalState:   rollupgen.GlobalState{},
+					MachineStatus: 0,
+				},
+				AfterState: rollupgen.ExecutionState{
+					GlobalState:   rollupgen.GlobalState{},
+					MachineStatus: 0,
+				},
+			},
+			expectedHash,
+			prevInboxMaxCount,
 		)
 		return err
 	})
 	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
 		return nil, err2
 	}
-	assertionId := getAssertionId(commitment, prevAssertionId)
-	return ac.AssertionByID(assertionId)
+	return ac.AssertionByID(prevAssertionId + 1)
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
+func (ac *AssertionChain) CreateSuccessionChallenge(assertionId uint64) (*Challenge, error) {
 	err := withChainCommitment(ac.backend, func() error {
 		_, err2 := ac.writer.CreateChallenge(
 			ac.txOpts,
@@ -154,7 +163,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(assertionId, BlockChallenge)
+	challengeId, err := manager.CalculateChallengeId(common.Hash{}, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +172,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 
 // Confirm creates a confirmation for the given assertion.
 func (a *Assertion) Confirm() error {
-	_, err := a.chain.writer.ConfirmNextAssertion(a.chain.txOpts, a.id)
+	_, err := a.chain.writer.ConfirmNextAssertion(a.chain.txOpts, common.Hash{}, common.Hash{})
 	switch {
 	case err == nil:
 		return nil
@@ -178,7 +187,7 @@ func (a *Assertion) Confirm() error {
 
 // Reject creates a rejection for the given assertion.
 func (a *Assertion) Reject() error {
-	_, err := a.chain.writer.RejectNextAssertion(a.chain.txOpts, a.id)
+	_, err := a.chain.writer.RejectNextAssertion(a.chain.txOpts, a.chain.stakerAddr)
 	switch {
 	case err == nil:
 		return nil
@@ -191,22 +200,22 @@ func (a *Assertion) Reject() error {
 	}
 }
 
-func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) error {
+func handleCreateSuccessionChallengeError(err error, assertionId uint64) error {
 	if err == nil {
 		return nil
 	}
 	errS := err.Error()
 	switch {
 	case strings.Contains(errS, "Assertion does not exist"):
-		return errors.Wrapf(ErrNotFound, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrNotFound, "assertion id %d", assertionId)
 	case strings.Contains(errS, "Assertion already rejected"):
-		return errors.Wrapf(ErrRejectedAssertion, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrRejectedAssertion, "assertion id %d", assertionId)
 	case strings.Contains(errS, "Challenge already created"):
-		return errors.Wrapf(ErrAlreadyExists, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
 	case strings.Contains(errS, "At least two children not created"):
-		return errors.Wrapf(ErrInvalidChildren, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
 	case strings.Contains(errS, "Too late to challenge"):
-		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrTooLate, "assertion id %d", assertionId)
 	default:
 		return nil
 	}
@@ -252,33 +261,6 @@ func withChainCommitment(backend bind.ContractBackend, fn func() error) error {
 		commiter.Commit()
 	}
 	return nil
-}
-
-// Constructs and assertion ID which is built as
-// keccak256(abi.encodePacked(stateRoot,height,prevAssertionId)).
-func getAssertionId(
-	commitment util.StateCommitment,
-	prevAssertionId common.Hash,
-) common.Hash {
-	arguments := abi.Arguments{
-		{
-			Type: hashTy,
-		},
-		{
-			Type: uint256Ty,
-		},
-		{
-			Type: hashTy,
-		},
-	}
-
-	height := big.NewInt(int64(commitment.Height))
-	packed, _ := arguments.Pack(
-		commitment.StateRoot,
-		height,
-		prevAssertionId,
-	)
-	return crypto.Keccak256Hash(packed)
 }
 
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
