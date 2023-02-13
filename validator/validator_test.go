@@ -147,7 +147,7 @@ func Test_onChallengeStarted(t *testing.T) {
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-	var challenge *goimpl.Challenge
+	var challenge goimpl.ChallengeInterface
 	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
 		commit := util.StateCommitment{}
 		id := goimpl.ChallengeCommitHash(commit.Hash())

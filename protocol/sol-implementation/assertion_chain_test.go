@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -27,7 +27,7 @@ func TestCreateAssertion(t *testing.T) {
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -91,7 +91,7 @@ func TestAssertionByID(t *testing.T) {
 	acc, err := setupAccount()
 	require.NoError(t, err)
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -122,7 +122,7 @@ func TestAssertion_Confirm(t *testing.T) {
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -216,7 +216,7 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	acc, err := setupAccount()
 	require.NoError(t, err)
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -340,73 +340,15 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 }
 
-func TestRollup(t *testing.T) {
-	setupRollupStack(t)
-}
-
-func setupRollupStack(t *testing.T) (*AssertionChain, *testAccount) {
-	t.Helper()
-	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-
-	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
-		acc.txOpts,
-		acc.backend,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriodSeconds := big.NewInt(1000)
-	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		challengePeriodSeconds,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	miniStakeValue := big.NewInt(1)
-	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
-		acc.txOpts,
-		acc.backend,
-		assertionChainAddr,
-		miniStakeValue,
-		challengePeriodSeconds,
-		ospAddr,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	chain, err := NewAssertionChain(
-		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
-	err = chain.UpdateChallengeManager(chalManagerAddr)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	return chain, acc
-}
-
 func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
 	t.Helper()
 	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
 
-	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
-		acc.txOpts,
-		acc.backend,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
 	challengePeriodSeconds := big.NewInt(1000)
-	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
+	assertionChainAddr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -416,13 +358,13 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	acc.backend.Commit()
 
 	miniStakeValue := big.NewInt(1)
-	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
+	chalManagerAddr, _, _, err := challengeV2gen.DeployChallengeManagerImpl(
 		acc.txOpts,
 		acc.backend,
 		assertionChainAddr,
 		miniStakeValue,
 		challengePeriodSeconds,
-		ospAddr,
+		common.Address{},
 	)
 	require.NoError(t, err)
 	acc.backend.Commit()
