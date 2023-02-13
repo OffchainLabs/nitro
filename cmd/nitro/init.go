@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/pruner"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -389,7 +388,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 }
 
 func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) error {
-	trieCachePath := stack.ResolvePath(ethconfig.Defaults.TrieCleanCacheJournal)
+	trieCachePath := cacheConfig.TrieCleanJournal
 	config := &nodeConfig.Init
 	if config.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, trieCachePath)
@@ -410,7 +409,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -455,7 +454,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 	if err != nil {
 		return chainDb, nil, err
 	}
