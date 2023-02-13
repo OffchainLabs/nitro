@@ -30,11 +30,10 @@ func TestDeployFullRollupStack(t *testing.T) {
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := acc.accountAddr
 	chainId := big.NewInt(1337)
-	loserStakeEscrow := acc.accountAddr
+	loserStakeEscrow := common.Address{}
 	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow)
 	numValidators := uint64(10)
-
-	addresses := deployFullRollupStack(
+	deployFullRollupStack(
 		t,
 		ctx,
 		acc.backend,
@@ -43,7 +42,6 @@ func TestDeployFullRollupStack(t *testing.T) {
 		numValidators,
 		cfg,
 	)
-	t.Logf("%+v", addresses)
 }
 
 type rollupAddresses struct {
@@ -215,7 +213,7 @@ func deployChallengeFactory(
 	genesisStateHash := common.BytesToHash([]byte("nyan"))
 	challengePeriodSeconds := big.NewInt(100)
 
-	assertionChainAddr, tx, assertionChain, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, challengePeriodSeconds)
+	assertionChainAddr, tx, _, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, challengePeriodSeconds)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, assertionChainAddr, backend, err)
 	require.NoError(t, err)
