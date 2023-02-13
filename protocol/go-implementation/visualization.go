@@ -76,7 +76,7 @@ func (chain *AssertionChain) visualizeAssertionChain() string {
 
 type challengeVertexNode struct {
 	parent  util.Option[ChallengeVertexInterface]
-	vertex  *ChallengeVertex
+	vertex  ChallengeVertexInterface
 	dotNode dot.Node
 }
 
@@ -89,7 +89,7 @@ func (chain *AssertionChain) visualizeChallenges(ctx context.Context, tx *Active
 	res := make([]*ChallengeVisualization, 0, len(chain.challengeVerticesByCommitHash))
 	for cHash, challenge := range chain.challengesByCommitHash {
 		// Ignore challenges with no root assertion or completed status.
-		if challenge.rootAssertion.IsNone() {
+		if challenge.(*Challenge).rootAssertion.IsNone() {
 			continue
 		}
 		completed, _ := challenge.Completed(ctx, tx)
@@ -107,7 +107,9 @@ func (chain *AssertionChain) visualizeChallenges(ctx context.Context, tx *Active
 
 		childCount := make(map[VertexCommitHash]uint64)
 		for _, v := range vertices {
-			commit := v.Commitment
+			commit, _ := v.GetCommitment(ctx, tx)
+			validator, _ := v.GetValidator(ctx, tx)
+			prev, _ := v.GetPrev(ctx, tx)
 			// Construct label of each node.
 			rStr := hexutil.Encode(commit.Hash().Bytes())
 			commitHash := commit.Hash()
@@ -115,17 +117,16 @@ func (chain *AssertionChain) visualizeChallenges(ctx context.Context, tx *Active
 				"height: %d\n merkle: %#x\n staker: %x",
 				commit.Height,
 				commitHash[:4],
-				v.Validator[len(v.Validator)-1:],
+				validator[len(validator)-1:],
 			)
 
-			if !v.Prev.IsNone() {
-				prevCommitment, _ := v.Prev.Unwrap().GetCommitment(ctx, tx)
+			if !prev.IsNone() {
+				prevCommitment, _ := prev.Unwrap().GetCommitment(ctx, tx)
 				childCount[VertexCommitHash(prevCommitment.Hash())]++
 			}
 
 			dotN := graph.Node(rStr).Box().Attr("label", label)
 
-			prev, _ := v.GetPrev(ctx, tx)
 			m[commit.Hash()] = &challengeVertexNode{
 				parent:  prev,
 				vertex:  v,
@@ -153,8 +154,8 @@ func (chain *AssertionChain) visualizeChallenges(ctx context.Context, tx *Active
 			}
 		}
 		var rootAssertionCommit util.StateCommitment
-		if !challenge.rootAssertion.IsNone() {
-			rootAssertionCommit = challenge.rootAssertion.Unwrap().StateCommitment
+		if !challenge.(*Challenge).rootAssertion.IsNone() {
+			rootAssertionCommit = challenge.(*Challenge).rootAssertion.Unwrap().StateCommitment
 		}
 		res = append(res, &ChallengeVisualization{
 			RootAssertionCommit: rootAssertionCommit,
