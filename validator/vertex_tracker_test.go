@@ -446,7 +446,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context, tx *goimpl.ActiveTx) *
 	}
 
 	id := goimpl.ChallengeCommitHash(genesisCommit.Hash())
-	var challenge *goimpl.Challenge
+	var challenge goimpl.ChallengeInterface
 	err = validator.chain.Tx(func(tx *goimpl.ActiveTx) error {
 		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, goimpl.AssertionSequenceNumber(1))
 		if fetchErr != nil {
@@ -467,7 +467,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context, tx *goimpl.ActiveTx) *
 	c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, 6)
 	require.NoError(t, err)
 
-	var vertex *goimpl.ChallengeVertex
+	var vertex goimpl.ChallengeVertexInterface
 	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
 		vertex, err = validator.chain.ChallengeVertexByCommitHash(tx, id, goimpl.VertexCommitHash(c.Hash()))
 		if err != nil {

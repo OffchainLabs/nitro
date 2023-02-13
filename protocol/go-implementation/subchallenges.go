@@ -87,8 +87,8 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	}
 	// The challenge must be ongoing.
 	rootAssertion, _ := chal.RootAssertion(ctx, tx)
-	chain := rootAssertion.chain
-	hasEnded, _ := chal.HasEnded(ctx, tx, chain)
+	challengeManager := rootAssertion.challengeManager
+	hasEnded, _ := chal.HasEnded(ctx, tx, challengeManager)
 	if hasEnded {
 		return ErrChallengeNotRunning
 	}
@@ -102,7 +102,7 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 	}
 	// The vertex must have at least two children with unexpired
 	// chess clocks in order to create a big step challenge.
-	ok, err := hasUnexpiredChildren(ctx, tx, chain, v)
+	ok, err := hasUnexpiredChildren(ctx, tx, challengeManager, v)
 	if err != nil {
 		return err
 	}
@@ -116,29 +116,42 @@ func (v *ChallengeVertex) canCreateSubChallenge(
 // unexpired chess-clocks. It does this by filtering out vertices from the chain
 // that are the specified vertex's children and checking that at least two in this
 // filtered list have unexpired chess clocks and are one-step away from the parent.
-func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, chain *AssertionChain, v *ChallengeVertex) (bool, error) {
+func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, challengeManager ChallengeManagerInterface, v *ChallengeVertex) (bool, error) {
 	if v.Challenge.IsNone() {
 		return false, ErrNoChallenge
 	}
 	chal := v.Challenge.Unwrap()
 	challengeCommit, _ := chal.ParentStateCommitment(ctx, tx)
 	challengeHash := ChallengeCommitHash(challengeCommit.Hash())
-	vertices, ok := chain.challengeVerticesByCommitHash[challengeHash]
+	vertices, ok := challengeManager.GetChallengeVerticesByCommitHashmap()[challengeHash]
 	if !ok {
 		return false, fmt.Errorf("vertices not found for challenge with hash: %#x", challengeHash)
 	}
 	vertexCommitHash := v.Commitment.Hash()
 	unexpiredChildrenTotal := 0
 	for _, otherVertex := range vertices {
-		if otherVertex.Prev.IsNone() {
+		prev, err := otherVertex.GetPrev(ctx, tx)
+		if err != nil {
+			return false, err
+		}
+		if prev.IsNone() {
 			continue
 		}
-		prev := otherVertex.Prev.Unwrap()
-		prevCommitment, _ := prev.GetCommitment(ctx, tx)
+		prevCommitment, _ := prev.Unwrap().GetCommitment(ctx, tx)
 		parentCommitHash := prevCommitment.Hash()
-		isOneStepAway := otherVertex.Commitment.Height == prevCommitment.Height+1
+		var commitment util.HistoryCommitment
+		commitment, err = otherVertex.GetCommitment(ctx, tx)
+		if err != nil {
+			return false, err
+		}
+		isOneStepAway := commitment.Height == prevCommitment.Height+1
 		isChild := parentCommitHash == vertexCommitHash
-		if isOneStepAway && isChild && !otherVertex.ChessClockExpired(chain.challengePeriod) {
+		var checkClockExpired bool
+		checkClockExpired, err = otherVertex.ChessClockExpired(ctx, tx, challengeManager.ChallengePeriodLength(tx))
+		if err != nil {
+			return false, err
+		}
+		if isOneStepAway && isChild && !checkClockExpired {
 			unexpiredChildrenTotal++
 			if unexpiredChildrenTotal > 1 {
 				return true, nil
@@ -150,14 +163,14 @@ func hasUnexpiredChildren(ctx context.Context, tx *ActiveTx, chain *AssertionCha
 
 // Checks if a challenge is still ongoing by making sure the current
 // timestamp is within the challenge's creation time + challenge period.
-func (c *Challenge) HasEnded(ctx context.Context, tx *ActiveTx, chain *AssertionChain) (bool, error) {
-	challengeEndTime := c.creationTime.Add(chain.challengePeriod).Unix()
-	now := chain.timeReference.Get().Unix()
+func (c *Challenge) HasEnded(ctx context.Context, tx *ActiveTx, challengeManager ChallengeManagerInterface) (bool, error) {
+	challengeEndTime := c.creationTime.Add(challengeManager.(*AssertionChain).challengePeriod).Unix()
+	now := challengeManager.(*AssertionChain).timeReference.Get().Unix()
 	return now > challengeEndTime, nil
 }
 
 // Checks if a vertex's chess-clock has expired according
 // to the challenge period length.
-func (v *ChallengeVertex) ChessClockExpired(challengePeriod time.Duration) bool {
-	return v.PsTimer.Get() > challengePeriod
+func (v *ChallengeVertex) ChessClockExpired(ctx context.Context, tx *ActiveTx, challengePeriod time.Duration) (bool, error) {
+	return v.PsTimer.Get() > challengePeriod, nil
 }
