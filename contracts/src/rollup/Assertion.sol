@@ -4,7 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-struct Assertion {
+struct AssertionNode {
     // Hash of the state of the chain as of this assertion
     bytes32 stateHash;
     // Hash of the data that can be challenged
@@ -43,7 +43,7 @@ struct Assertion {
 /**
  * @notice Utility functions for Assertion
  */
-library AssertionLib {
+library AssertionNodeLib {
     /**
      * @notice Initialize a Assertion
      * @param _stateHash Initial value of stateHash
@@ -63,8 +63,8 @@ library AssertionLib {
         uint256 _height,
         uint256 _inboxMsgCountSeen,
         bool _isFirstChild
-    ) internal view returns (Assertion memory) {
-        Assertion memory assertion;
+    ) internal view returns (AssertionNode memory) {
+        AssertionNode memory assertion;
         assertion.stateHash = _stateHash;
         assertion.challengeHash = _challengeHash;
         assertion.confirmData = _confirmData;
@@ -83,7 +83,7 @@ library AssertionLib {
      * @notice Update child properties
      * @param number The child number to set
      */
-    function childCreated(Assertion storage self, uint64 number, uint64 confirmPeriodBlocks) internal {
+    function childCreated(AssertionNode storage self, uint64 number, uint64 confirmPeriodBlocks) internal {
         if (self.firstChildBlock == 0) {
             self.firstChildBlock = uint64(block.number);
             self.firstChildTime = block.timestamp;
@@ -97,21 +97,21 @@ library AssertionLib {
      * @notice Update the child confirmed deadline
      * @param deadline The new deadline to set
      */
-    function newChildConfirmDeadline(Assertion storage self, uint64 deadline) internal {
+    function newChildConfirmDeadline(AssertionNode storage self, uint64 deadline) internal {
         self.noChildConfirmedBeforeBlock = deadline;
     }
 
     /**
      * @notice Check whether the current block number has met or passed the assertion's deadline
      */
-    function requirePastDeadline(Assertion memory self) internal view {
+    function requirePastDeadline(AssertionNode memory self) internal view {
         require(block.number >= self.deadlineBlock, "BEFORE_DEADLINE");
     }
 
     /**
      * @notice Check whether the current block number has met or passed deadline for children of this assertion to be confirmed
      */
-    function requirePastChildConfirmDeadline(Assertion memory self) internal view {
+    function requirePastChildConfirmDeadline(AssertionNode memory self) internal view {
         require(block.number >= self.noChildConfirmedBeforeBlock, "CHILD_TOO_RECENT");
     }
 

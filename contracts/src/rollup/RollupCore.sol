@@ -20,8 +20,8 @@ import "../bridge/IOutbox.sol";
 import "../challengeV2/ChallengeManagerImpl.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
-abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeable {
-    using AssertionLib for Assertion;
+abstract contract RollupCore is IRollupCore, PausableUpgradeable {
+    using AssertionNodeLib for AssertionNode;
     using GlobalStateLib for GlobalState;
 
     // Rollup Config
@@ -59,7 +59,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
     uint64 private _firstUnresolvedAssertion;
     uint64 private _latestAssertionCreated;
     uint64 private _lastStakeBlock;
-    mapping(uint64 => Assertion) private _assertions;
+    mapping(uint64 => AssertionNode) private _assertions;
     mapping(uint64 => mapping(address => bool)) private _assertionStakers;
 
     address[] private _stakerList;
@@ -83,14 +83,14 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
      * @param assertionNum Index of the assertion
      * @return Assertion struct
      */
-    function getAssertionStorage(uint64 assertionNum) internal view returns (Assertion storage) {
+    function getAssertionStorage(uint64 assertionNum) internal view returns (AssertionNode storage) {
         return _assertions[assertionNum];
     }
 
     /**
      * @notice Get the Assertion for the given index.
      */
-    function getAssertion(uint64 assertionNum) public view override returns (Assertion memory) {
+    function getAssertion(uint64 assertionNum) public view override returns (AssertionNode memory) {
         return getAssertionStorage(assertionNum);
     }
 
@@ -248,7 +248,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
      * @notice Initialize the core with an initial assertion
      * @param initialAssertion Initial assertion to start the chain with
      */
-    function initializeCore(Assertion memory initialAssertion) internal {
+    function initializeCore(AssertionNode memory initialAssertion) internal {
         __Pausable_init();
         _assertions[GENESIS_NODE] = initialAssertion;
         _firstUnresolvedAssertion = GENESIS_NODE + 1;
@@ -258,7 +258,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
      * @notice React to a new assertion being created by storing it an incrementing the latest assertion counter
      * @param assertion Assertion that was newly created
      */
-    function assertionCreated(Assertion memory assertion) internal {
+    function assertionCreated(AssertionNode memory assertion) internal {
         _latestAssertionCreated++;
         _assertions[_latestAssertionCreated] = assertion;
     }
@@ -273,7 +273,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
         bytes32 blockHash,
         bytes32 sendRoot
     ) internal {
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
         // Authenticate data against assertion's confirm data pre-image
         require(assertion.confirmData == RollupLib.confirmHash(blockHash, sendRoot), "CONFIRM_DATA");
 
@@ -414,14 +414,14 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
     function addStaker(uint64 assertionNum, address staker) internal {
         require(!_assertionStakers[assertionNum][staker], "ALREADY_STAKED");
         _assertionStakers[assertionNum][staker] = true;
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
         require(assertion.deadlineBlock != 0, "NO_NODE");
 
         uint64 prevCount = assertion.stakerCount;
         assertion.stakerCount = prevCount + 1;
 
         if (assertionNum > GENESIS_NODE) {
-            Assertion storage parent = getAssertionStorage(assertion.prevNum);
+            AssertionNode storage parent = getAssertionStorage(assertion.prevNum);
             parent.childStakerCount++;
             // if (prevCount == 0) {
             //     parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
@@ -437,7 +437,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
         require(_assertionStakers[assertionNum][staker], "NOT_STAKED");
         _assertionStakers[assertionNum][staker] = false;
 
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
         assertion.stakerCount--;
 
         if (assertionNum > GENESIS_NODE) {
@@ -516,9 +516,9 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
 
     struct StakeOnNewAssertionFrame {
         uint256 currentInboxSize;
-        Assertion assertion;
+        AssertionNode assertion;
         bytes32 executionHash;
-        Assertion prevAssertion;
+        AssertionNode prevAssertion;
         bytes32 lastHash;
         bool hasSibling;
         uint64 deadlineBlock;
@@ -604,7 +604,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
                 "UNEXPECTED_NODE_HASH"
             );
 
-            memoryFrame.assertion = AssertionLib.createAssertion(
+            memoryFrame.assertion = AssertionNodeLib.createAssertion(
                 RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
@@ -626,7 +626,7 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
 
             // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around
-            Assertion storage prevAssertion = getAssertionStorage(prevAssertionNum);
+            AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionNum);
             prevAssertion.childCreated(assertionNum, confirmPeriodBlocks);
 
             assertionCreated(memoryFrame.assertion);
@@ -647,36 +647,36 @@ abstract contract RollupCore is IRollupCore, IAssertionChain, PausableUpgradeabl
     }
 
     function getPredecessorId(bytes32 assertionId) external view returns (bytes32){
-        uint64 prevNum = getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).prevNum;
-        return AssertionLib.AssertionNum2Id(prevNum);
+        uint64 prevNum = getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).prevNum;
+        return AssertionNodeLib.AssertionNum2Id(prevNum);
     }
 
     function getHeight(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).height;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).height;
     }
 
     function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).inboxMsgCountSeen;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).inboxMsgCountSeen;
     }
 
     function getStateHash(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).stateHash;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).stateHash;
     }
 
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).successionChallenge;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).successionChallenge;
     }
 
     // HN: TODO: use block or timestamp?
     function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).firstChildBlock;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).firstChildBlock;
     }
 
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).firstChildTime;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).firstChildTime;
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool){
-        return getAssertionStorage(AssertionLib.AssertionId2Num(assertionId)).isFirstChild;
+        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).isFirstChild;
     }
 }

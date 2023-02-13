@@ -312,15 +312,15 @@ contract ChallengeManagerImpl is IChallengeManager {
     IAssertionChain public assertionChain;
     IOneStepProofEntry oneStepProofEntry;
 
-    uint256 public immutable miniStakeValue;
-    uint256 public immutable challengePeriod;
+    uint256 public miniStakeValue;
+    uint256 public challengePeriodSec;
 
-    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod, IOneStepProofEntry _oneStepProofEntry) {
+    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
         // HN: TODO: remove constructor?
-        initialize(_assertionChain, _miniStakeValue, _challengePeriod, _oneStepProofEntry);
+        initialize(_assertionChain, _miniStakeValue, _challengePeriodSec, _oneStepProofEntry);
     }
 
-    function initialize(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod, IOneStepProofEntry _oneStepProofEntry) public {
+    function initialize(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) public {
         require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
         miniStakeValue = _miniStakeValue;
@@ -495,6 +495,17 @@ contract ChallengeManagerImpl is IChallengeManager {
     function confirmForSucessionChallengeWin(bytes32 vId) public {
         ChallengeManagerLib.checkConfirmForSucessionChallengeWin(vertices, challenges, vId);
         setConfirmed(vId);
+    }
+
+
+    function calculateChallengeId(bytes32 assertionId, ChallengeType typ) public pure returns (bytes32) {
+        return ChallengeStructLib.id(assertionId, typ);
+    }
+
+    function calculateChallengeVertexId(
+        bytes32 challengeId, bytes32 commitmentMerkle, uint256 commitmentHeight
+    ) public pure returns (bytes32) {
+        return ChallengeVertexLib.id(challengeId, commitmentMerkle, commitmentHeight);
     }
 
     // EXTERNAL VIEW FUNCTIONS

@@ -17,7 +17,7 @@ abstract contract AbsRollupUserLogic is
     IRollupUserAbs,
     IOldChallengeResultReceiver
 {
-    using AssertionLib for Assertion;
+    using AssertionNodeLib for AssertionNode;
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
@@ -38,7 +38,7 @@ abstract contract AbsRollupUserLogic is
     uint256 public constant VALIDATOR_AFK_BLOCKS = 45818;
 
     function _validatorIsAfk() internal view returns (bool) {
-        Assertion memory latestAssertion = getAssertionStorage(latestAssertionCreated());
+        AssertionNode memory latestAssertion = getAssertionStorage(latestAssertionCreated());
         if (latestAssertion.createdAtBlock == 0) return false;
         if (latestAssertion.createdAtBlock + confirmPeriodBlocks + VALIDATOR_AFK_BLOCKS < block.number) {
             return true;
@@ -70,7 +70,7 @@ abstract contract AbsRollupUserLogic is
         requireUnresolvedExists();
         uint64 latestConfirmedAssertionNum = latestConfirmed();
         uint64 firstUnresolvedAssertionNum = firstUnresolvedAssertion();
-        Assertion storage firstUnresolvedAssertion_ = getAssertionStorage(firstUnresolvedAssertionNum);
+        AssertionNode storage firstUnresolvedAssertion_ = getAssertionStorage(firstUnresolvedAssertionNum);
 
         if (firstUnresolvedAssertion_.prevNum == latestConfirmedAssertionNum) {
             /**If the first unresolved assertion is a child of the latest confirmed assertion, to prove it can be rejected, we show:
@@ -123,7 +123,7 @@ abstract contract AbsRollupUserLogic is
         requireUnresolvedExists();
 
         uint64 assertionNum = firstUnresolvedAssertion();
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
 
         // // Verify the block's deadline has passed
         // assertion.requirePastDeadline();
@@ -131,7 +131,7 @@ abstract contract AbsRollupUserLogic is
         // Check that prev is latest confirmed
         assert(assertion.prevNum == latestConfirmed());
 
-        Assertion storage prevAssertion = getAssertionStorage(assertion.prevNum);
+        AssertionNode storage prevAssertion = getAssertionStorage(assertion.prevNum);
         prevAssertion.requirePastChildConfirmDeadline();
 
         // HN: TODO: Do we need the zombie logic here?
@@ -152,7 +152,7 @@ abstract contract AbsRollupUserLogic is
             bytes32 successionChallenge = prevAssertion.successionChallenge;
             if (successionChallenge != bytes32(0)) {
                 bytes32 winner = challengeManager.winningClaim(successionChallenge);
-                require(AssertionLib.AssertionId2Num(winner) == assertionNum, "IN_CHAL");
+                require(AssertionNodeLib.AssertionId2Num(winner) == assertionNum, "IN_CHAL");
             } else {
                 revert("NO_CHAL");
             }
@@ -190,7 +190,7 @@ abstract contract AbsRollupUserLogic is
             assertionNum >= firstUnresolvedAssertion() && assertionNum <= latestAssertionCreated(),
             "NODE_NUM_OUT_OF_RANGE"
         );
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
         require(assertion.assertionHash == assertionHash, "NODE_REORG");
         require(latestStakedAssertion(msg.sender) == assertion.prevNum, "NOT_STAKED_PREV");
         stakeOnAssertion(msg.sender, assertionNum);
@@ -292,7 +292,7 @@ abstract contract AbsRollupUserLogic is
             getAssertionStorage(assertionNum).secondChildBlock > 0, "NO_SECOND_CHILD"
         );
         // HN: TODO: validation
-        bytes32 challengeId = challengeManager.createChallenge(AssertionLib.AssertionNum2Id(assertionNum));
+        bytes32 challengeId = challengeManager.createChallenge(AssertionNodeLib.AssertionNum2Id(assertionNum));
         require(challengeId != bytes32(0), "CHALLENGE_FAILED_TO_CREATE");
         getAssertionStorage(assertionNum).successionChallenge = challengeId;
         return challengeId;
@@ -327,7 +327,7 @@ abstract contract AbsRollupUserLogic is
         uint256 assertionsRemoved = 0;
         uint256 latestConfirmedNum = latestConfirmed();
         while (latestAssertionStaked >= latestConfirmedNum && assertionsRemoved < maxAssertions) {
-            Assertion storage assertion = getAssertionStorage(latestAssertionStaked);
+            AssertionNode storage assertion = getAssertionStorage(latestAssertionStaked);
             removeStaker(latestAssertionStaked, zombieStakerAddress);
             latestAssertionStaked = assertion.prevNum;
             assertionsRemoved++;

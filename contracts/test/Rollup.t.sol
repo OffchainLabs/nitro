@@ -62,7 +62,7 @@ contract RollupTest is Test {
         ChallengeManagerImpl challengeManagerImpl = new ChallengeManagerImpl({
             _assertionChain: IAssertionChain(address(0)),
             _miniStakeValue: 0,
-            _challengePeriod: 0,
+            _challengePeriodSec: 0,
             _oneStepProofEntry: IOneStepProofEntry(address(0))
         });
         BridgeCreator bridgeCreator = new BridgeCreator();
@@ -360,14 +360,14 @@ contract RollupTest is Test {
         });
         vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.warp(block.timestamp + CONFIRM_PERIOD_BLOCKS * 15);
-        bytes32 h0 = userRollup.getStateHash(AssertionLib.AssertionNum2Id(0));
-        bytes32 h1 = userRollup.getStateHash(AssertionLib.AssertionNum2Id(1));
+        bytes32 h0 = userRollup.getStateHash(AssertionNodeLib.AssertionNum2Id(0));
+        bytes32 h1 = userRollup.getStateHash(AssertionNodeLib.AssertionNum2Id(1));
         bytes32 v1Id = challengeManager.addLeaf{value: 1}(
             AddLeafArgs({
                 challengeId: challengeId,
-                claimId: AssertionLib.AssertionNum2Id(1),
+                claimId: AssertionNodeLib.AssertionNum2Id(1),
                 height: 8,
-                historyCommitment: h1,
+                historyRoot: h1,
                 firstState: h0,
                 firstStatehistoryProof: "",
                 lastState: h1,

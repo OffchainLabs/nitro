@@ -5,11 +5,11 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func StartInboxFeeder(ctx context.Context, chain *protocol.AssertionChain, messageInterval time.Duration, randomSeed []byte) {
+func StartInboxFeeder(ctx context.Context, chain *goimpl.AssertionChain, messageInterval time.Duration, randomSeed []byte) {
 	go func() {
 		ticker := chain.TimeReference().NewTicker(messageInterval)
 		defer ticker.Stop()
@@ -18,7 +18,7 @@ func StartInboxFeeder(ctx context.Context, chain *protocol.AssertionChain, messa
 			select {
 			case <-ticker.C():
 				message := crypto.Keccak256(binary.BigEndian.AppendUint64(randomSeed, msgNum))
-				_ = chain.Tx(func(tx *protocol.ActiveTx) error {
+				_ = chain.Tx(func(tx *goimpl.ActiveTx) error {
 					chain.Inbox().Append(tx, message)
 					return nil
 				})
