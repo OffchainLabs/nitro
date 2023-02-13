@@ -82,7 +82,7 @@ interface IRollupCore {
     /**
      * @notice Get the Assertion for the given index.
      */
-    function getAssertion(uint64 assertionNum) external view returns (Assertion memory);
+    function getAssertion(uint64 assertionNum) external view returns (AssertionNode memory);
 
     /**
      * @notice Check if the specified assertion has been staked on by the provided staker.

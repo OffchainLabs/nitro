@@ -17,7 +17,7 @@ abstract contract AbsRollupUserLogic is
     IRollupUserAbs,
     IOldChallengeResultReceiver
 {
-    using AssertionLib for Assertion;
+    using AssertionNodeLib for AssertionNode;
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
@@ -38,7 +38,7 @@ abstract contract AbsRollupUserLogic is
     uint256 public constant VALIDATOR_AFK_BLOCKS = 45818;
 
     function _validatorIsAfk() internal view returns (bool) {
-        Assertion memory latestAssertion = getAssertionStorage(latestAssertionCreated());
+        AssertionNode memory latestAssertion = getAssertionStorage(latestAssertionCreated());
         if (latestAssertion.createdAtBlock == 0) return false;
         if (latestAssertion.createdAtBlock + confirmPeriodBlocks + VALIDATOR_AFK_BLOCKS < block.number) {
             return true;
@@ -70,7 +70,7 @@ abstract contract AbsRollupUserLogic is
         requireUnresolvedExists();
         uint64 latestConfirmedAssertionNum = latestConfirmed();
         uint64 firstUnresolvedAssertionNum = firstUnresolvedAssertion();
-        Assertion storage firstUnresolvedAssertion_ = getAssertionStorage(firstUnresolvedAssertionNum);
+        AssertionNode storage firstUnresolvedAssertion_ = getAssertionStorage(firstUnresolvedAssertionNum);
 
         if (firstUnresolvedAssertion_.prevNum == latestConfirmedAssertionNum) {
             /**If the first unresolved assertion is a child of the latest confirmed assertion, to prove it can be rejected, we show:
@@ -122,7 +122,7 @@ abstract contract AbsRollupUserLogic is
         requireUnresolvedExists();
 
         uint64 assertionNum = firstUnresolvedAssertion();
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
 
         // Verify the block's deadline has passed
         assertion.requirePastDeadline();
@@ -130,7 +130,7 @@ abstract contract AbsRollupUserLogic is
         // Check that prev is latest confirmed
         assert(assertion.prevNum == latestConfirmed());
 
-        Assertion storage prevAssertion = getAssertionStorage(assertion.prevNum);
+        AssertionNode storage prevAssertion = getAssertionStorage(assertion.prevNum);
         prevAssertion.requirePastChildConfirmDeadline();
 
         removeOldZombies(0);
@@ -177,7 +177,7 @@ abstract contract AbsRollupUserLogic is
             assertionNum >= firstUnresolvedAssertion() && assertionNum <= latestAssertionCreated(),
             "NODE_NUM_OUT_OF_RANGE"
         );
-        Assertion storage assertion = getAssertionStorage(assertionNum);
+        AssertionNode storage assertion = getAssertionStorage(assertionNum);
         require(assertion.assertionHash == assertionHash, "NODE_REORG");
         require(latestStakedAssertion(msg.sender) == assertion.prevNum, "NOT_STAKED_PREV");
         stakeOnAssertion(msg.sender, assertionNum);
@@ -290,8 +290,8 @@ abstract contract AbsRollupUserLogic is
         require(assertionNums[1] <= latestAssertionCreated(), "NOT_PROPOSED");
         require(latestConfirmed() < assertionNums[0], "ALREADY_CONFIRMED");
 
-        Assertion storage assertion1 = getAssertionStorage(assertionNums[0]);
-        Assertion storage assertion2 = getAssertionStorage(assertionNums[1]);
+        AssertionNode storage assertion1 = getAssertionStorage(assertionNums[0]);
+        AssertionNode storage assertion2 = getAssertionStorage(assertionNums[1]);
 
         // ensure assertions staked on the same parent (and thus in conflict)
         require(assertion1.prevNum == assertion2.prevNum, "DIFF_PREV");
@@ -426,7 +426,7 @@ abstract contract AbsRollupUserLogic is
         uint256 assertionsRemoved = 0;
         uint256 latestConfirmedNum = latestConfirmed();
         while (latestAssertionStaked >= latestConfirmedNum && assertionsRemoved < maxAssertions) {
-            Assertion storage assertion = getAssertionStorage(latestAssertionStaked);
+            AssertionNode storage assertion = getAssertionStorage(latestAssertionStaked);
             removeStaker(latestAssertionStaked, zombieStakerAddress);
             latestAssertionStaked = assertion.prevNum;
             assertionsRemoved++;

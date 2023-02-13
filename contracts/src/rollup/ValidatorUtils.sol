@@ -12,7 +12,7 @@ import "../challenge/IOldChallengeManager.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
 contract ValidatorUtils {
-    using AssertionLib for Assertion;
+    using AssertionNodeLib for AssertionNode;
 
     enum ConfirmType {
         NONE,
@@ -59,7 +59,7 @@ contract ValidatorUtils {
     function requireRejectable(IRollupCore rollup) external view {
         IRollupUser(address(rollup)).requireUnresolvedExists();
         uint64 firstUnresolvedAssertion = rollup.firstUnresolvedAssertion();
-        Assertion memory assertion = rollup.getAssertion(firstUnresolvedAssertion);
+        AssertionNode memory assertion = rollup.getAssertion(firstUnresolvedAssertion);
         if (assertion.prevNum == rollup.latestConfirmed()) {
             // Verify the block's deadline has passed
             require(block.number >= assertion.deadlineBlock, "BEFORE_DEADLINE");
@@ -82,7 +82,7 @@ contract ValidatorUtils {
         require(stakerCount > 0, "NO_STAKERS");
 
         uint64 firstUnresolved = rollup.firstUnresolvedAssertion();
-        Assertion memory assertion = rollup.getAssertion(firstUnresolved);
+        AssertionNode memory assertion = rollup.getAssertion(firstUnresolved);
 
         // Verify the block's deadline has passed
         assertion.requirePastDeadline();
@@ -90,7 +90,7 @@ contract ValidatorUtils {
         // Check that prev is latest confirmed
         assert(assertion.prevNum == rollup.latestConfirmed());
 
-        Assertion memory prevAssertion = rollup.getAssertion(assertion.prevNum);
+        AssertionNode memory prevAssertion = rollup.getAssertion(assertion.prevNum);
         prevAssertion.requirePastChildConfirmDeadline();
 
         uint256 zombiesStakedOnOtherChildren = rollup.countZombiesStakedOnChildren(assertion.prevNum) -
@@ -123,13 +123,13 @@ contract ValidatorUtils {
     function latestStaked(IRollupCore rollup, address staker)
         external
         view
-        returns (uint64, Assertion memory)
+        returns (uint64, AssertionNode memory)
     {
         uint64 num = rollup.latestStakedAssertion(staker);
         if (num == 0) {
             num = rollup.latestConfirmed();
         }
-        Assertion memory assertion = rollup.getAssertion(num);
+        AssertionNode memory assertion = rollup.getAssertion(num);
         return (num, assertion);
     }
 
