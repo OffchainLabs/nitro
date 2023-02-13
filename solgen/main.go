@@ -76,6 +76,7 @@ func main() {
 
 		name := file[:len(file)-5]
 
+		//#nosec G304
 		data, err := os.ReadFile(path)
 		if err != nil {
 			log.Fatal("could not read", path, "for contract", name, err)
@@ -111,6 +112,7 @@ func main() {
 
 		folder := filepath.Join(root, "go", module)
 
+		//#nosec G301
 		err = os.MkdirAll(folder, 0o755)
 		if err != nil {
 			log.Fatal(err)
