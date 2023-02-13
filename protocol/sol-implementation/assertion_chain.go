@@ -20,16 +20,17 @@ import (
 )
 
 var (
-	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
-	ErrRejectedAssertion = errors.New("assertion already rejected")
-	ErrInvalidChildren   = errors.New("invalid children")
-	ErrNotFound          = errors.New("item not found on-chain")
-	ErrAlreadyExists     = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
-	ErrTooLate           = errors.New("too late to create assertion sibling")
-	ErrInvalidHeight     = errors.New("invalid assertion height")
-	uint256Ty, _         = abi.NewType("uint256", "", nil)
-	hashTy, _            = abi.NewType("bytes32", "", nil)
+	ErrUnconfirmedParent   = errors.New("parent assertion is not confirmed")
+	ErrNonPendingAssertion = errors.New("assertion is not pending")
+	ErrRejectedAssertion   = errors.New("assertion already rejected")
+	ErrInvalidChildren     = errors.New("invalid children")
+	ErrNotFound            = errors.New("item not found on-chain")
+	ErrAlreadyExists       = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist    = errors.New("assertion predecessor does not exist")
+	ErrTooLate             = errors.New("too late to create assertion sibling")
+	ErrInvalidHeight       = errors.New("invalid assertion height")
+	uint256Ty, _           = abi.NewType("uint256", "", nil)
+	hashTy, _              = abi.NewType("bytes32", "", nil)
 )
 
 // ChainCommitter defines a type of chain backend that supports
@@ -173,6 +174,21 @@ func (a *Assertion) Confirm() error {
 		return errors.Wrapf(ErrNotFound, "assertion with id %#x", a.id)
 	case strings.Contains(err.Error(), "Previous assertion not confirmed"):
 		return errors.Wrapf(ErrUnconfirmedParent, "previous assertion not confirmed")
+	default:
+		return err
+	}
+}
+
+// Reject creates a rejection for the given assertion.
+func (a *Assertion) Reject() error {
+	_, err := a.chain.writer.RejectAssertion(a.chain.txOpts, a.id)
+	switch {
+	case err == nil:
+		return nil
+	case strings.Contains(err.Error(), "Assertion does not exist"):
+		return errors.Wrapf(ErrNotFound, "assertion with id %#x", a.id)
+	case strings.Contains(err.Error(), "Assertion is not pending"):
+		return errors.Wrapf(ErrNonPendingAssertion, "assertion with id %#x", a.id)
 	default:
 		return err
 	}

@@ -2,16 +2,18 @@ package solimpl
 
 import (
 	"bytes"
+	"math/big"
 	"strings"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
-	"math/big"
 )
 
 var (
 	ErrChallengeNotFound = errors.New("challenge not found")
+	ErrPsTimerNotYet     = errors.New("ps timer has not exceeded challenge period")
 )
 
 // ChallengeManager --

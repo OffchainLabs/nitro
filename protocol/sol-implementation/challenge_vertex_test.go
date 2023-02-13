@@ -1,11 +1,42 @@
 package solimpl
 
 import (
+	"context"
+	"testing"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
+
+func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
+	chain, acc := setupAssertionChainWithChallengeManager(t)
+	height1 := uint64(6)
+	height2 := uint64(7)
+	a1, _, challenge := setupTopLevelFork(t, chain, height1, height2)
+
+	genesis, err := chain.AssertionByID(common.Hash{})
+	require.NoError(t, err)
+
+	v1, err := challenge.AddLeaf(
+		a1,
+		util.HistoryCommitment{
+			Height:    height1,
+			Merkle:    common.BytesToHash([]byte("nyan")),
+			FirstLeaf: genesis.inner.StateHash,
+		},
+	)
+	require.NoError(t, err)
+
+	t.Run("vertex ps timer has not exceeded challenge duration", func(t *testing.T) {
+		require.ErrorIs(t, v1.ConfirmPsTimer(context.Background()), ErrPsTimerNotYet)
+	})
+	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
+		require.NoError(t, acc.backend.AdjustTime(time.Second * 2000))
+		require.NoError(t, v1.ConfirmPsTimer(context.Background()))
+	})
+}
 
 func TestChallengeVertex_Bisect(t *testing.T) {
 	chain, acc := setupAssertionChainWithChallengeManager(t)
@@ -80,7 +111,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			},
 			make([]common.Hash, 0),
 		)
-		require.ErrorContains(t, err, "Presumptive successor already confirmable")
+		require.ErrorContains(t, err, "cannot set lower ps")
 	})
 	t.Run("invalid prefix history", func(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")
@@ -121,7 +152,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
-		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryCommitment[:])
+		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
 
 		_, err = v1.Bisect(
 			util.HistoryCommitment{
