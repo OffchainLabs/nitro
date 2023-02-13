@@ -12,22 +12,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-type FoundryArtifact struct {
-	Abi      []interface{}   `json:"abi"`
-	Bytecode FoundryByteCode `json:"bytecode"`
-	Metadata FoundryMetadata `json:"metadata"`
-}
-
-type FoundryByteCode struct {
-	Object string `json:"object"`
-}
-
-type FoundryMetadata struct {
-	Settings FoundrySetting `json:"settings"`
-}
-
-type FoundrySetting struct {
-	CompilationTarget map[string]string `json:"compilationTarget"`
+type HardHatArtifact struct {
+	Format       string        `json:"_format"`
+	ContractName string        `json:"contractName"`
+	SourceName   string        `json:"sourceName"`
+	Abi          []interface{} `json:"abi"`
+	Bytecode     string        `json:"bytecode"`
 }
 
 type moduleInfo struct {
@@ -36,16 +26,14 @@ type moduleInfo struct {
 	bytecodes     []string
 }
 
-func (m *moduleInfo) addArtifact(artifact FoundryArtifact) {
+func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
 	abi, err := json.Marshal(artifact.Abi)
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, contractName := range artifact.Metadata.Settings.CompilationTarget {
-		m.contractNames = append(m.contractNames, contractName)
-	}
+	m.contractNames = append(m.contractNames, artifact.ContractName)
 	m.abis = append(m.abis, string(abi))
-	m.bytecodes = append(m.bytecodes, artifact.Bytecode.Object)
+	m.bytecodes = append(m.bytecodes, artifact.Bytecode)
 }
 
 func (m *moduleInfo) exportABIs(dest string) {
@@ -68,7 +56,7 @@ func main() {
 	}
 	root := filepath.Dir(filename)
 	parent := filepath.Dir(root)
-	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*", "*.json"))
+	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,13 +76,12 @@ func main() {
 
 		name := file[:len(file)-5]
 
-		//#nosec G304
 		data, err := os.ReadFile(path)
 		if err != nil {
 			log.Fatal("could not read", path, "for contract", name, err)
 		}
 
-		artifact := FoundryArtifact{}
+		artifact := HardHatArtifact{}
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
@@ -104,10 +91,6 @@ func main() {
 			modules[module] = modInfo
 		}
 		modInfo.addArtifact(artifact)
-	}
-
-	for module := range modules {
-		fmt.Println(module)
 	}
 
 	for module, info := range modules {
@@ -128,7 +111,6 @@ func main() {
 
 		folder := filepath.Join(root, "go", module)
 
-		//#nosec G301
 		err = os.MkdirAll(folder, 0o755)
 		if err != nil {
 			log.Fatal(err)
