@@ -2,6 +2,7 @@ package solimpl
 
 import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 )
 
@@ -13,7 +14,7 @@ type Assertion struct {
 	StateCommitment util.StateCommitment
 	chain           *AssertionChain
 	id              [32]byte
-	inner           challengeV2gen.Assertion
+	inner           rollupgen.AssertionNode
 }
 
 // Challenge is a developer-friendly wrapper around

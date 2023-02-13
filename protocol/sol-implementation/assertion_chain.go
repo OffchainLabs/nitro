@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -44,8 +44,8 @@ type ChainCommiter interface {
 // that implements the protocol interface.
 type AssertionChain struct {
 	backend    bind.ContractBackend
-	caller     *challengeV2gen.AssertionChainCaller
-	writer     *challengeV2gen.AssertionChainTransactor
+	caller     *rollupgen.RollupUserLogicCaller
+	writer     *rollupgen.RollupUserLogicTransactor
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
 	stakerAddr common.Address
@@ -55,7 +55,7 @@ type AssertionChain struct {
 // instance from a chain backend and provided options.
 func NewAssertionChain(
 	ctx context.Context,
-	contractAddr common.Address,
+	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
@@ -67,20 +67,24 @@ func NewAssertionChain(
 		txOpts:     txOpts,
 		stakerAddr: stakerAddr,
 	}
-	assertionChainBinding, err := challengeV2gen.NewAssertionChain(
-		contractAddr, chain.backend,
+	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
+		rollupAddr, chain.backend,
 	)
 	if err != nil {
 		return nil, err
 	}
-	chain.caller = &assertionChainBinding.AssertionChainCaller
-	chain.writer = &assertionChainBinding.AssertionChainTransactor
+	chain.caller = &assertionChainBinding.RollupUserLogicCaller
+	chain.writer = &assertionChainBinding.RollupUserLogicTransactor
 	return chain, nil
 }
 
 // ChallengePeriodSeconds
 func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
-	res, err := ac.caller.ChallengePeriodSeconds(ac.callOpts)
+	manager, err := ac.ChallengeManager()
+	if err != nil {
+		return time.Second, err
+	}
+	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
 	if err != nil {
 		return time.Second, err
 	}
@@ -119,7 +123,7 @@ func (ac *AssertionChain) CreateAssertion(
 	prevAssertionId common.Hash,
 ) (*Assertion, error) {
 	err := withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.CreateNewAssertion(
+		_, err := ac.writer.NewStakeOnNewAssertion(
 			ac.txOpts,
 			commitment.StateRoot,
 			big.NewInt(int64(commitment.Height)),
@@ -134,17 +138,10 @@ func (ac *AssertionChain) CreateAssertion(
 	return ac.AssertionByID(assertionId)
 }
 
-func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
-	return withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
-		return err
-	})
-}
-
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
 	err := withChainCommitment(ac.backend, func() error {
-		_, err2 := ac.writer.CreateSuccessionChallenge(
+		_, err2 := ac.writer.CreateChallenge(
 			ac.txOpts,
 			assertionId,
 		)
@@ -166,7 +163,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 
 // Confirm creates a confirmation for the given assertion.
 func (a *Assertion) Confirm() error {
-	_, err := a.chain.writer.ConfirmAssertion(a.chain.txOpts, a.id)
+	_, err := a.chain.writer.ConfirmNextAssertion(a.chain.txOpts, a.id)
 	switch {
 	case err == nil:
 		return nil
@@ -181,7 +178,7 @@ func (a *Assertion) Confirm() error {
 
 // Reject creates a rejection for the given assertion.
 func (a *Assertion) Reject() error {
-	_, err := a.chain.writer.RejectAssertion(a.chain.txOpts, a.id)
+	_, err := a.chain.writer.RejectNextAssertion(a.chain.txOpts, a.id)
 	switch {
 	case err == nil:
 		return nil
