@@ -496,23 +496,24 @@ contract ChallengeManagerImpl is IChallengeManager {
         setConfirmed(vId);
     }
 
-
-    function calculateChallengeId(bytes32 assertionId, ChallengeType typ) public pure returns (bytes32) {
-        return ChallengeStructLib.id(assertionId, typ);
-    }
-
-    function calculateChallengeVertexId(
-        bytes32 challengeId, bytes32 commitmentMerkle, uint256 commitmentHeight
-    ) public pure returns (bytes32) {
-        return ChallengeVertexLib.id(challengeId, commitmentMerkle, commitmentHeight);
-    }
-
     // EXTERNAL VIEW FUNCTIONS
     // --------------------
     // Functions that are not required internally, and do not update state, but may be useful
     // for external callers.
     // All functions below this point should be external, not just public, and view and not
     // called within this contract.
+
+    function calculateChallengeId(bytes32 assertionId, ChallengeType typ) external pure returns (bytes32) {
+        return ChallengeStructLib.id(assertionId, typ);
+    }
+
+    function calculateChallengeVertexId(bytes32 challengeId, bytes32 commitmentMerkle, uint256 commitmentHeight)
+        public
+        external
+        returns (bytes32)
+    {
+        return ChallengeVertexLib.id(challengeId, commitmentMerkle, commitmentHeight);
+    }
 
     function winningClaim(bytes32 challengeId) external view returns (bytes32) {
         // CHRIS: TODO: check exists? or return the full struct?
