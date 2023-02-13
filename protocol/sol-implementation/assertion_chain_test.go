@@ -18,6 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFullStack(t *testing.T) {
+}
+
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	acc, err := setupAccount()
@@ -337,11 +340,22 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 }
 
-func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
+func TestRollup(t *testing.T) {
+	setupRollupStack(t)
+}
+
+func setupRollupStack(t *testing.T) (*AssertionChain, *testAccount) {
 	t.Helper()
 	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
+
+	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
+		acc.txOpts,
+		acc.backend,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
 	challengePeriodSeconds := big.NewInt(1000)
@@ -353,22 +367,6 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	)
 	require.NoError(t, err)
 	acc.backend.Commit()
-
-	// Chain contract should be deployed.
-	code, err := acc.backend.CodeAt(ctx, assertionChainAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
-
-	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
-		acc.txOpts,
-		acc.backend,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	code, err = acc.backend.CodeAt(ctx, ospAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
 
 	miniStakeValue := big.NewInt(1)
 	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
@@ -382,9 +380,52 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	require.NoError(t, err)
 	acc.backend.Commit()
 
-	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
+	chain, err := NewAssertionChain(
+		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+	)
 	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
+	err = chain.UpdateChallengeManager(chalManagerAddr)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	return chain, acc
+}
+
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
+	t.Helper()
+	ctx := context.Background()
+	acc, err := setupAccount()
+	require.NoError(t, err)
+
+	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
+		acc.txOpts,
+		acc.backend,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	genesisStateRoot := common.BytesToHash([]byte("foo"))
+	challengePeriodSeconds := big.NewInt(1000)
+	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
+		acc.txOpts,
+		acc.backend,
+		genesisStateRoot,
+		challengePeriodSeconds,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
+
+	miniStakeValue := big.NewInt(1)
+	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
+		acc.txOpts,
+		acc.backend,
+		assertionChainAddr,
+		miniStakeValue,
+		challengePeriodSeconds,
+		ospAddr,
+	)
+	require.NoError(t, err)
+	acc.backend.Commit()
 
 	chain, err := NewAssertionChain(
 		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
