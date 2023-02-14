@@ -24,6 +24,7 @@ struct AssertionNode {
     // This value starts at zero and is set to a value when the first child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
     uint64 firstChildBlock;
     // The number of the latest child of this assertion to be created
+    // HN: TODO: do we need this with the new assertion protocol?
     // uint64 latestChildNumber;
     // The block number when this assertion was created
     uint64 createdAtBlock;
