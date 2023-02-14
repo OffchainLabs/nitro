@@ -1,92 +1,96 @@
 (memory 1)
 
-;;            length     value to set pointer to start of region
-(func $memset (param i32) (param i32) (param i32)
+(func $memset (param $length i32) (param $value i32) (param $pointer i32)
   (local $offset i32)
-  (i32.const 0)
-  (local.set $offset) 
+  i32.const 0
+  local.set $offset
 
   (loop $inner
-    ;;calculate current index into region to be set
-    (local.get $offset)
-    (local.get 2) 
+    ;; calculate current index into region to be set
+    local.get $offset
+    local.get $pointer
     i32.add 
-    (local.get 1) 
-    (i32.store8)
-    ;;increment offset
-    (i32.const 1)
-    (local.get $offset)
+    local.get $value
+    i32.store8
+
+    ;; increment offset
+    i32.const 1
+    local.get $offset
     i32.add 
-    (local.tee $offset)
-    ;;check to terminate loop 
-    (local.get 0) 
+    local.tee $offset
+
+    ;; check to terminate loop 
+    local.get $length
     i32.ne
-    (br_if $inner)
+    br_if $inner
   )
 )
 
-;;            length l    source s    dest d
-(func $memcpy (param i32) (param i32) (param i32)
-  (local $offset i32) ;; o 
+(func $memcpy (param $length i32) (param $source i32) (param $destination i32)
+  (local $offset i32) 
 
-  (local.get 1) 
-  (local.get 2) 
-  (i32.gt_s)
-  (if ;;copy forward when source >= dest
+  local.get $source
+  local.get $destination
+  i32.gt_s
+  (if ;; copy forward when source >= dest
     (then 
-      ;;offset starts at 0
-      (i32.const 0)
-      (local.set $offset) 
+      ;; offset starts at 0
+      i32.const 0
+      local.set $offset
       (loop $forward
-        ;;put d + o on stack
-        (local.get $offset) 
-        (local.get 2) 
+        ;; put d + o on stack
+        local.get $offset
+        local.get $destination
         i32.add 
         ;;load from s + o
-        (local.get $offset)
-        (local.get 1) 
+        local.get $offset
+        local.get $source 
         i32.add
         i32.load8_u
         ;;store to d + o 
         i32.store8
         ;; increment offset
-        (local.get $offset)
-        (i32.const 1) 
+        local.get $offset
+        i32.const 1
         i32.add 
-        (local.tee $offset) 
+        local.tee $offset 
         ;;check to terminate loop 
-        (local.get 0) 
+        local.get $length
         i32.ne
-        (br_if $forward)
+        br_if $forward
       ) 
     )
     (else
       ;;offset starts at (l-1)
-      (local.get 0) 
-      (i32.const 1)
+      local.get $length
+      i32.const 1
       i32.sub 
-      (local.set $offset)
+      local.set $offset
       (loop $backward
-        ;;put d + o on stack
-        (local.get $offset) 
-        (local.get 2) 
+        ;; put d + o on stack
+        local.get $offset
+        local.get $destination
         i32.add 
-        ;;load from s + o
-        (local.get $offset)
-        (local.get 1) 
+
+        ;; load from s + o
+        local.get $offset
+        local.get $source 
         i32.add
         i32.load8_u
-        ;;store to d + o 
+        
+        ;; store to d + o 
         i32.store8
+
         ;; decrement offset
-        (local.get $offset)
-        (i32.const 1) 
+        local.get $offset
+        i32.const 1
         i32.sub 
-        (local.tee $offset) 
-        ;;check to terminate loop 
-        (i32.const -1)
+        local.tee $offset
+
+        ;; check to terminate loop 
+        i32.const -1
         i32.ne
-        (br_if $backward)
+        br_if $backward
       ) 
     )
   )

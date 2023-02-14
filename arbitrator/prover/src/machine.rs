@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
+    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary, self},
     console::Color,
     host::get_host_impl,
     memory::Memory,
@@ -345,7 +345,7 @@ impl Module {
                         &func_types,
                         types,
                         func_type_idxs[idx],
-                        todo!(),
+                        0 //TODO seraphina
                     )
                 },
                 func_ty.clone(),
@@ -988,6 +988,16 @@ impl Machine {
             let library = parse(source).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
+        //TODO seraphina: load in the internal bulkmem ops 
+        let bulk_mem_wasm_bytes = include_bytes!("bulk_memory_internal.wasm");
+        let parsed_bulk_mem_wasm = binary::parse(bulk_mem_wasm_bytes)
+          .expect("bulk_memory_internal.wasm was not a valid wasm binary");
+        
+        dbg!(parsed_bulk_mem_wasm.functions);
+        dbg!(library_paths);
+        // panic!("seraphina says hi TODO");
+        //let mut bulk_memory_impls = HashMap::default(); 
+
         Self::from_binaries(
             &libraries,
             bin,
