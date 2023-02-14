@@ -281,6 +281,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 			// no state changes needed
 		case 9:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
+		case 10:
+			// no state changes needed
 		default:
 			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}
