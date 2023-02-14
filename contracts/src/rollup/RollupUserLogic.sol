@@ -215,17 +215,31 @@ abstract contract AbsRollupUserLogic is
             // Verify that assertion meets the minimum Delta time requirement
             require(timeSinceLastAssertion >= minimumAssertionPeriod, "TIME_DELTA");
 
-            // Minimum size requirement: any assertion must consume exactly all inbox messages
-            // put into L1 inbox before the prev assertion’s L1 blocknum.
-            // We make an exception if the machine enters the errored state,
-            // as it can't consume future batches.
-            require(
-                assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount ||
-                    (assertion.beforeState.globalState.getInboxPosition() == prevAssertionInboxMaxCount &&
-                     assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount + 1),
-                "WRONG_INBOX_POS"
-            );
+            bool isBeforeConsumedAllMsg = assertion.beforeState.globalState.getInboxPosition() == prevAssertionInboxMaxCount;
+
+            // Minimum size requirement: any newly asserted node
+            if(assertion.afterState.machineStatus == MachineStatus.ERRORED){
+                // We make an exception if the machine enters the errored state,
+                // as it can't consume future batches.
+                // HN: TODO: this check is new, currently we allow any inbox position if the machine is errored
+                require(
+                    assertion.afterState.globalState.getInboxPosition() >= assertion.beforeState.globalState.getInboxPosition(),
+                    "WRONG_INBOX_POS"
+                );
+            }else if(!isBeforeConsumedAllMsg){
+                // must consume exactly the number of inbox messages that existed when its prev was created
+                require(
+                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount,
+                    "WRONG_INBOX_POS"
+                );
+            }else{
+                // or 1 message if prev already consumed all messages that existed when prev was created
+                require(
+                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount + 1,
+                    "WRONG_INBOX_POS"
+                );
+            }
+
             // Minimum size requirement: any assertion must contain at least one block
             require(assertion.numBlocks > 0, "EMPTY_ASSERTION");
 
