@@ -210,14 +210,15 @@ func (f *TxDropper) Started() bool {
 type RedisTxForwarder struct {
 	stopwaiter.StopWaiterSafe
 
-	config *ForwarderConfig
-	errors int
+	config         *ForwarderConfig
+	fallbackTarget string
 
-	mtx              sync.RWMutex
-	forwarder        *TxForwarder
-	redisCoordinator *redisutil.RedisCoordinator
+	errors           int
 	currentTarget    string
-	fallbackTarget   string
+	redisCoordinator *redisutil.RedisCoordinator
+
+	mtx       sync.RWMutex
+	forwarder *TxForwarder
 }
 
 func NewRedisTxForwarder(fallbackTarget string, config *ForwarderConfig) *RedisTxForwarder {
@@ -282,6 +283,9 @@ func (f *RedisTxForwarder) getForwarder() *TxForwarder {
 func (f *RedisTxForwarder) setForwarder(forwarder *TxForwarder) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
+	if f.forwarder != nil {
+		f.forwarder.Disable()
+	}
 	f.forwarder = forwarder
 }
 
@@ -331,10 +335,6 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 			return f.retryAfterError()
 		}
 	}
-	oldForwarder := f.getForwarder()
-	if oldForwarder != nil {
-		oldForwarder.Disable()
-	}
 	f.currentTarget = newSequencerUrl
 	f.setForwarder(newForwarder)
 	return nextUpdateIn()
@@ -355,7 +355,6 @@ func (f *RedisTxForwarder) StopAndWait() {
 	if err != nil {
 		log.Error("Failed to stop forwarder", "err", err)
 	}
-	// TODO is disabling of old forwarder required?
 	oldForwarder := f.getForwarder()
 	if oldForwarder != nil {
 		oldForwarder.StopAndWait()
