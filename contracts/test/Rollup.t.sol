@@ -359,12 +359,12 @@ contract RollupTest is Test {
         });
         vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.warp(block.timestamp + CONFIRM_PERIOD_BLOCKS * 15);
-        bytes32 h0 = userRollup.getStateHash(AssertionNodeLib.AssertionNum2Id(0));
-        bytes32 h1 = userRollup.getStateHash(AssertionNodeLib.AssertionNum2Id(1));
+        bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(0));
+        bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(1));
         bytes32 v1Id = challengeManager.addLeaf{value: 1}(
             AddLeafArgs({
                 challengeId: challengeId,
-                claimId: AssertionNodeLib.AssertionNum2Id(1),
+                claimId: userRollup.getAssertionId(1),
                 height: 8,
                 historyRoot: h1,
                 firstState: h0,

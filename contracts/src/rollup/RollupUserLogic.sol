@@ -152,7 +152,7 @@ abstract contract AbsRollupUserLogic is
             bytes32 successionChallenge = prevAssertion.successionChallenge;
             if (successionChallenge != bytes32(0)) {
                 bytes32 winner = challengeManager.winningClaim(successionChallenge);
-                require(AssertionNodeLib.AssertionId2Num(winner) == assertionNum, "IN_CHAL");
+                require(getAssertionNum(winner) == assertionNum, "IN_CHAL");
             } else {
                 revert("NO_CHAL");
             }
@@ -292,7 +292,7 @@ abstract contract AbsRollupUserLogic is
             getAssertionStorage(assertionNum).secondChildBlock > 0, "NO_SECOND_CHILD"
         );
         // HN: TODO: validation
-        bytes32 challengeId = challengeManager.createChallenge(AssertionNodeLib.AssertionNum2Id(assertionNum));
+        bytes32 challengeId = challengeManager.createChallenge(getAssertionId(assertionNum));
         require(challengeId != bytes32(0), "CHALLENGE_FAILED_TO_CREATE");
         getAssertionStorage(assertionNum).successionChallenge = challengeId;
         return challengeId;

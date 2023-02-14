@@ -655,36 +655,51 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     }
 
     function getPredecessorId(bytes32 assertionId) external view returns (bytes32){
-        uint64 prevNum = getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).prevNum;
-        return AssertionNodeLib.AssertionNum2Id(prevNum);
+        uint64 prevNum = getAssertionStorage(getAssertionNum(assertionId)).prevNum;
+        return getAssertionId(prevNum);
     }
 
     function getHeight(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).height;
+        return getAssertionStorage(getAssertionNum(assertionId)).height;
     }
 
     function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).inboxMsgCountSeen;
+        return getAssertionStorage(getAssertionNum(assertionId)).inboxMsgCountSeen;
     }
 
     function getStateHash(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).stateHash;
+        return getAssertionStorage(getAssertionNum(assertionId)).stateHash;
     }
 
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).successionChallenge;
+        return getAssertionStorage(getAssertionNum(assertionId)).successionChallenge;
     }
 
     // HN: TODO: use block or timestamp?
     function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).firstChildBlock;
+        return getAssertionStorage(getAssertionNum(assertionId)).firstChildBlock;
     }
 
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).firstChildTime;
+        return getAssertionStorage(getAssertionNum(assertionId)).firstChildTime;
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).isFirstChild;
+        return getAssertionStorage(getAssertionNum(assertionId)).isFirstChild;
+    }
+
+    // HN: TODO: decide to keep using index or hash
+    function getAssertionNum(bytes32 id) public view returns(uint64){
+        uint64 num = _assertionHashToNum[id];
+        // HN: TODO: genesis assertion is 0, which will fail this check
+        //           bump genesis assertion to 1 instead?
+        // require(num > 0, "ASSERTION_NOT_EXIST");
+        // HN: TODO: workaround by double checking
+        require(id == getAssertionId(num), "INVALID_ASSERTION_ID");
+        return uint64(num);
+    }
+    function getAssertionId(uint64 num) public view returns(bytes32){
+        require(num <= latestAssertionCreated(), "INVALID_ASSERTION_NUM");
+        return getAssertionStorage(num).assertionHash;
     }
 }
