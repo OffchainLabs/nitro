@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::color::Color;
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 #[must_use]
 pub fn time(span: Duration) -> String {
@@ -22,4 +22,14 @@ pub fn time(span: Duration) -> String {
         unit += 1;
     }
     format!("{:6}", format!("{:.1}{}", span, units[unit])).color(colors[unit])
+}
+
+#[must_use]
+pub fn commas<T, U>(items: U) -> String
+where
+    T: Display,
+    U: IntoIterator<Item = T>,
+{
+    let items: Vec<_> = items.into_iter().map(|x| format!("{x}")).collect();
+    items.join(&", ".grey())
 }

@@ -18,6 +18,8 @@ contract OneStepProverHostIo is IOneStepProver {
     using ModuleMemoryLib for ModuleMemory;
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
+    using StackFrameLib for StackFrameWindow;
+    using GuardStackLib for GuardStack;
 
     uint256 private constant LEAF_SIZE = 32;
     uint256 private constant INBOX_NUM = 2;
@@ -373,7 +375,6 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes calldata proof
     ) internal pure {
         string memory prefix = "Module merkle tree:";
-        bytes32 root = mach.modulesRoot;
 
         (uint256 leaf, MerkleProof memory leafProof, ) = proveLastLeaf(mach, 0, proof);
 
@@ -383,6 +384,31 @@ contract OneStepProverHostIo is IOneStepProver {
         } else {
             mach.modulesRoot = leafProof.computeRootUnsafe(leaf, 0, prefix);
         }
+    }
+
+    function executePushErrorGuard(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal view {
+        bytes32 frames = mach.frameStack.hash();
+        bytes32 values = mach.valueStack.hash();
+        bytes32 inters = mach.internalStack.hash();
+        Value memory onError = ValueLib.newPc(mach.functionPc, mach.functionIdx, mach.moduleIdx);
+        mach.guardStack.push(GuardStackLib.newErrorGuard(frames, values, inters, onError));
+        mach.valueStack.push(ValueLib.newI32(1));
+    }
+
+    function executePopErrorGuard(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        mach.guardStack.pop();
     }
 
     function executeGlobalStateAccess(
@@ -450,6 +476,10 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeLinkModule;
         } else if (opcode == Instructions.UNLINK_MODULE) {
             impl = executeUnlinkModule;
+        } else if (opcode == Instructions.PUSH_ERROR_GUARD) {
+            impl = executePushErrorGuard;
+        } else if (opcode == Instructions.POP_ERROR_GUARD) {
+            impl = executePopErrorGuard;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }

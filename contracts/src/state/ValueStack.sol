@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -35,5 +35,10 @@ library ValueStackLib {
 
     function push(ValueStack memory stack, Value memory val) internal pure {
         return stack.proved.push(val);
+    }
+
+    function overwrite(ValueStack memory stack, bytes32 root) internal pure {
+        stack.remainingHash = root;
+        delete stack.proved;
     }
 }

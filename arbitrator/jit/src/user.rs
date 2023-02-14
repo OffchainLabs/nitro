@@ -1,11 +1,9 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{
-    gostack::GoStack,
-    machine::{Escape, MaybeEscape, WasmEnvMut},
-};
+use crate::{gostack::GoStack, machine::WasmEnvMut};
 use arbutil::heapify;
+use eyre::eyre;
 use prover::programs::prelude::*;
 use std::mem;
 use stylus::{
@@ -36,17 +34,11 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 
 /// Links and executes a user wasm.
 /// go side: λ(mach *Machine, data []byte, params *StylusConfig, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
-pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
+pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let module: Vec<u8> = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
-
-    macro_rules! error {
-        ($msg:expr, $report:expr) => {
-            return Escape::failure(format!("{}: {:?}", $msg, $report))
-        };
-    }
 
     // buy wasm gas. If free, provide a virtually limitless amount
     let pricing = config.pricing;
@@ -58,9 +50,20 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     // skip the root since we don't use these
     sp.skip_u64();
 
+    macro_rules! error {
+        ($msg:expr, $report:expr) => {{
+            let outs = format!("{:?}", $report.wrap_err(eyre!($msg))).into_bytes();
+            sp.write_u8(UserOutcomeKind::Failure as u8).skip_space();
+            sp.write_ptr(heapify(outs));
+            if pricing.wasm_gas_price != 0 {
+                sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
+            }
+            return;
+        }};
+    }
+
     // Safety: module came from compile_user_wasm
-    let instance =
-        unsafe { NativeInstance::deserialize(&module, calldata.clone(), config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(&module, config.clone()) };
 
     let mut instance = match instance {
         Ok(instance) => instance,
@@ -82,7 +85,6 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     }
     sp.write_u8(status as u8).skip_space();
     sp.write_ptr(heapify(outs));
-    Ok(())
 }
 
 /// Reads the length of a rust `Vec`

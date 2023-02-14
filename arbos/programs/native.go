@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -75,7 +76,11 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 		output,
 		(*u64)(gas),
 	))
-	return status.output(output.read())
+	data, err := status.output(output.read())
+	if status == userFailure {
+		log.Debug("program failure", "err", string(data), "program", program)
+	}
+	return data, err
 }
 
 func rustVec() C.RustVec {

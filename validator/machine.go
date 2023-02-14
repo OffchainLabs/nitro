@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package validator
 
@@ -333,6 +333,7 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 }
 
 func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) error {
+	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
@@ -345,6 +346,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 }
 
 func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWasm) error {
+	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
 	}

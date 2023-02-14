@@ -3,6 +3,7 @@
 
 #![cfg(feature = "native")]
 
+use arbutil::{format, Color};
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
@@ -326,7 +327,18 @@ fn main() -> Result<()> {
                 backtrace_stack.pop();
             }
         } else {
-            println!("Machine stack: {:?}", mach.get_data_stack());
+            let values = mach.get_data_stack();
+            let inters = mach.get_internals_stack();
+            let guards = mach.get_guards();
+            if !values.is_empty() {
+                println!("{} {}", "Machine stack".grey(), format::commas(values));
+            }
+            if !inters.is_empty() {
+                println!("{} {}", "Internals    ".grey(), format::commas(inters));
+            }
+            if !guards.is_empty() {
+                println!("{} {}", "Error guards ".grey(), format::commas(guards));
+            }
             print!(
                 "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
                 proofs.len(),

@@ -101,10 +101,12 @@ stylus_test_keccak_wasm     = $(call get_stylus_test_wasm,keccak)
 stylus_test_keccak_src      = $(call get_stylus_test_rust,keccak)
 stylus_test_keccak-100_wasm = $(call get_stylus_test_wasm,keccak-100)
 stylus_test_keccak-100_src  = $(call get_stylus_test_rust,keccak-100)
+stylus_test_fallible_wasm   = $(call get_stylus_test_wasm,fallible)
+stylus_test_fallible_src    = $(call get_stylus_test_rust,fallible)
 stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_siphash_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_siphash_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -127,8 +129,7 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 
 test-go-deps: \
 	build-replay-env \
-	$(stylus_test_keccak_wasm) \
-	$(stylus_test_siphash_wasm) \
+	$(stylus_test_wasms) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 build-prover-header: $(arbitrator_generated_header)
@@ -330,6 +331,10 @@ $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
+$(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
 	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
@@ -359,8 +364,8 @@ contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
 
-contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic globals) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/globals.wasm
+contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm
 
 contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize

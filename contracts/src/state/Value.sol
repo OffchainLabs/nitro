@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -60,5 +60,17 @@ library ValueLib {
         } else {
             return newI32(uint32(0));
         }
+    }
+
+    function newPc(
+        uint32 funcPc,
+        uint32 func,
+        uint32 module
+    ) internal pure returns (Value memory) {
+        uint256 data = 0;
+        data |= funcPc;
+        data |= uint256(func) << 32;
+        data |= uint256(module) << 64;
+        return Value({valueType: ValueType.INTERNAL_REF, contents: data});
     }
 }

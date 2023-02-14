@@ -62,12 +62,14 @@ library ChallengeLib {
         ValueStack memory values = ValueStack({proved: valuesArray, remainingHash: 0});
         ValueStack memory internalStack;
         StackFrameWindow memory frameStack;
+        GuardStack memory guardStack;
 
         Machine memory mach = Machine({
             status: MachineStatus.RUNNING,
             valueStack: values,
             internalStack: internalStack,
             frameStack: frameStack,
+            guardStack: guardStack,
             globalStateHash: globalStateHash,
             moduleIdx: 0,
             functionIdx: 0,

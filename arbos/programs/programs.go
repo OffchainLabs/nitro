@@ -194,7 +194,7 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userRevert:
 		return data, errors.New("program reverted")
 	case userFailure:
-		return nil, errors.New(string(data))
+		return nil, errors.New("program failure")
 	case userOutOfGas:
 		return nil, vm.ErrOutOfGas
 	case userOutOfStack:

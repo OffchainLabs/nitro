@@ -13,6 +13,7 @@ use sha3::Keccak256;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
+    ops::Add,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
@@ -153,6 +154,31 @@ impl ProgramCounter {
 
     pub fn inst(self) -> usize {
         self.inst as usize
+    }
+}
+
+impl Add<u32> for ProgramCounter {
+    type Output = ProgramCounter;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        let mut counter = self;
+        counter.inst += rhs;
+        counter
+    }
+}
+
+impl Display for ProgramCounter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}{}{}",
+            "inst".grey(),
+            self.inst.pink(),
+            "in".grey(),
+            self.module.pink(),
+            ":".grey(),
+            self.func.pink()
+        )
     }
 }
 
@@ -297,7 +323,7 @@ impl Value {
             Value::F64(value) => single!("f64", *value),
             Value::RefNull => "null".into(),
             Value::FuncRef(func) => format!("func {}", func),
-            Value::InternalRef(pc) => format!("inst {} in {}-{}", pc.inst, pc.module, pc.func),
+            Value::InternalRef(pc) => format!("{}", pc),
         }
     }
 }
@@ -336,6 +362,12 @@ impl From<f32> for Value {
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
         Value::F64(value)
+    }
+}
+
+impl From<ProgramCounter> for Value {
+    fn from(value: ProgramCounter) -> Self {
+        Value::InternalRef(value)
     }
 }
 
