@@ -266,8 +266,8 @@ func (f *RedisTxForwarder) retryAfterError() time.Duration {
 
 // returns true when retry interval is saturated and there is a fallback url available
 func (f *RedisTxForwarder) shouldFallbackToStatic() bool {
-	return f.config.RetryInterval*time.Duration(f.errors+1) >= f.config.UpdateInterval &&
-		f.fallbackTarget != "" && f.fallbackTarget != f.currentTarget
+	return f.currentTarget == "" ||
+		f.config.RetryInterval*time.Duration(f.errors+1) >= f.config.UpdateInterval && f.fallbackTarget != "" && f.fallbackTarget != f.currentTarget
 }
 
 func (f *RedisTxForwarder) noError() time.Duration {
