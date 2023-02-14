@@ -24,11 +24,21 @@ struct AssertionNode {
     // This value starts at zero and is set to a value when the first child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
     uint64 firstChildBlock;
     // The number of the latest child of this assertion to be created
-    uint64 latestChildNumber;
+    // HN: TODO: do we need this with the new assertion protocol?
+    // uint64 latestChildNumber;
     // The block number when this assertion was created
     uint64 createdAtBlock;
-    // A hash of all the data needed to determine this node's validity, to protect against reorgs
+    // A hash of all the data needed to determine this assertion's validity, to protect against reorgs
     bytes32 assertionHash;
+    // HN: TODO: Add new fields below
+    uint64 secondChildBlock;
+    bytes32 successionChallenge;
+    // HN: TODO: Adding these for simplier getter, but these should be proved from the hashes
+    uint256 height; // in stateHash
+    uint256 inboxMsgCountSeen; // in stateHash
+    bool isFirstChild; // in assertionHash
+    // HN: TODO: Pick block or timestamp
+    uint256 firstChildTime;
 }
 
 /**
@@ -50,7 +60,10 @@ library AssertionNodeLib {
         bytes32 _confirmData,
         uint64 _prevNum,
         uint64 _deadlineBlock,
-        bytes32 _assertionHash
+        bytes32 _assertionHash,
+        uint256 _height,
+        uint256 _inboxMsgCountSeen,
+        bool _isFirstChild
     ) internal view returns (AssertionNode memory) {
         AssertionNode memory assertion;
         assertion.stateHash = _stateHash;
@@ -61,6 +74,9 @@ library AssertionNodeLib {
         assertion.noChildConfirmedBeforeBlock = _deadlineBlock;
         assertion.createdAtBlock = uint64(block.number);
         assertion.assertionHash = _assertionHash;
+        assertion.height = _height;
+        assertion.inboxMsgCountSeen = _inboxMsgCountSeen;
+        assertion.isFirstChild = _isFirstChild;
         return assertion;
     }
 
@@ -68,11 +84,14 @@ library AssertionNodeLib {
      * @notice Update child properties
      * @param number The child number to set
      */
-    function childCreated(AssertionNode storage self, uint64 number) internal {
+    function childCreated(AssertionNode storage self, uint64 number, uint64 confirmPeriodBlocks) internal {
         if (self.firstChildBlock == 0) {
             self.firstChildBlock = uint64(block.number);
+            self.firstChildTime = block.timestamp;
+            self.noChildConfirmedBeforeBlock = uint64(block.number) + confirmPeriodBlocks;
+        } else if (self.secondChildBlock == 0) {
+            self.secondChildBlock = uint64(block.number);
         }
-        self.latestChildNumber = number;
     }
 
     /**

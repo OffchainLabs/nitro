@@ -24,7 +24,7 @@ contract RollupCreator is Ownable {
 
     BridgeCreator public bridgeCreator;
     IOneStepProofEntry public osp;
-    IOldChallengeManager public oldChallengeManagerTemplate;
+    IChallengeManager public challengeManagerTemplate;
     IRollupAdmin public rollupAdminLogic;
     IRollupUser public rollupUserLogic;
 
@@ -36,7 +36,7 @@ contract RollupCreator is Ownable {
     function setTemplates(
         BridgeCreator _bridgeCreator,
         IOneStepProofEntry _osp,
-        IOldChallengeManager _oldChallengeManagerLogic,
+        IChallengeManager _challengeManagerLogic,
         IRollupAdmin _rollupAdminLogic,
         IRollupUser _rollupUserLogic,
         address _validatorUtils,
@@ -44,7 +44,7 @@ contract RollupCreator is Ownable {
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         osp = _osp;
-        oldChallengeManagerTemplate = _oldChallengeManagerLogic;
+        challengeManagerTemplate = _challengeManagerLogic;
         rollupAdminLogic = _rollupAdminLogic;
         rollupUserLogic = _rollupUserLogic;
         validatorUtils = _validatorUtils;
@@ -88,21 +88,28 @@ contract RollupCreator is Ownable {
 
         frame.admin.transferOwnership(config.owner);
 
-        IOldChallengeManager oldChallengeManager = IOldChallengeManager(
+        IChallengeManager challengeManager = IChallengeManager(
             address(
                 new TransparentUpgradeableProxy(
-                    address(oldChallengeManagerTemplate),
+                    address(challengeManagerTemplate),
                     address(frame.admin),
                     ""
                 )
             )
         );
-        oldChallengeManager.initialize(
-            IOldChallengeResultReceiver(expectedRollupAddr),
-            frame.sequencerInbox,
-            frame.bridge,
-            osp
-        );
+        
+        challengeManager.initialize({
+            _assertionChain: IAssertionChain(expectedRollupAddr),
+            _miniStakeValue: 1, // HN: TODO: set this 
+            _challengePeriod: 1, // HN: TODO: set this
+            _oneStepProofEntry: osp
+        });
+        // oldChallengeManager.initialize(
+        //     IOldChallengeResultReceiver(expectedRollupAddr),
+        //     frame.sequencerInbox,
+        //     frame.bridge,
+        //     osp
+        // );
 
         frame.rollup = new RollupProxy(
             config,
@@ -112,7 +119,7 @@ contract RollupCreator is Ownable {
                 inbox: frame.inbox,
                 outbox: frame.outbox,
                 rollupEventInbox: frame.rollupEventInbox,
-                oldChallengeManager: oldChallengeManager,
+                challengeManager: challengeManager,
                 rollupAdminLogic: rollupAdminLogic,
                 rollupUserLogic: rollupUserLogic,
                 validatorUtils: validatorUtils,

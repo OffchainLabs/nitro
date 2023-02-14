@@ -14,6 +14,7 @@ import "../bridge/IOutbox.sol";
 import "../bridge/IInbox.sol";
 import "./IRollupEventInbox.sol";
 import "./IRollupLogic.sol";
+import "../challengeV2/ChallengeManagerImpl.sol";
 
 struct ExecutionState {
     GlobalState globalState;
@@ -45,7 +46,7 @@ struct ContractDependencies {
     IInbox inbox;
     IOutbox outbox;
     IRollupEventInbox rollupEventInbox;
-    IOldChallengeManager oldChallengeManager;
+    IChallengeManager challengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
     // misc contracts that are useful when interacting with the rollup
@@ -129,18 +130,19 @@ library RollupLib {
         return keccak256(abi.encodePacked(blockHash, sendRoot));
     }
 
+    // HN: TODO: any reason to include hasSibling in assertion hash?
     function assertionHash(
-        bool hasSibling,
+        // bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,
         bytes32 inboxAcc,
         bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
-        uint8 hasSiblingInt = hasSibling ? 1 : 0;
+        // uint8 hasSiblingInt = hasSibling ? 1 : 0;
         return
             keccak256(
                 abi.encodePacked(
-                    hasSiblingInt,
+                    // hasSiblingInt,
                     lastHash,
                     assertionExecHash,
                     inboxAcc,

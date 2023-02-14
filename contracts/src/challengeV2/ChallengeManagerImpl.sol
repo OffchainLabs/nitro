@@ -312,15 +312,16 @@ contract ChallengeManagerImpl is IChallengeManager {
     IAssertionChain public assertionChain;
     IOneStepProofEntry oneStepProofEntry;
 
-    uint256 public immutable miniStakeValue;
-    uint256 public immutable challengePeriodSec;
+    uint256 public miniStakeValue;
+    uint256 public challengePeriodSec;
 
-    constructor(
-        IAssertionChain _assertionChain,
-        uint256 _miniStakeValue,
-        uint256 _challengePeriodSec,
-        IOneStepProofEntry _oneStepProofEntry
-    ) {
+    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
+        // HN: TODO: remove constructor?
+        initialize(_assertionChain, _miniStakeValue, _challengePeriodSec, _oneStepProofEntry);
+    }
+
+    function initialize(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) public {
+        require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
         miniStakeValue = _miniStakeValue;
         challengePeriodSec = _challengePeriodSec;
