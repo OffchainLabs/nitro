@@ -152,7 +152,7 @@ abstract contract AbsRollupUserLogic is
             bytes32 successionChallenge = prevAssertion.successionChallenge;
             if (successionChallenge != bytes32(0)) {
                 bytes32 winner = challengeManager.winningClaim(successionChallenge);
-                require(AssertionNodeLib.AssertionId2Num(winner) == assertionNum, "IN_CHAL");
+                require(getAssertionNum(winner) == assertionNum, "IN_CHAL");
             } else {
                 revert("NO_CHAL");
             }
@@ -215,17 +215,18 @@ abstract contract AbsRollupUserLogic is
             // Verify that assertion meets the minimum Delta time requirement
             require(timeSinceLastAssertion >= minimumAssertionPeriod, "TIME_DELTA");
 
+            bool isBeforeConsumedAllMsg = assertion.beforeState.globalState.getInboxPosition() == prevAssertionInboxMaxCount;
+
             // Minimum size requirement: any assertion must consume exactly all inbox messages
-            // put into L1 inbox before the prev assertion’s L1 blocknum.
+            // put into L1 inbox before the prev node’s L1 blocknum.
             // We make an exception if the machine enters the errored state,
             // as it can't consume future batches.
             require(
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount ||
-                    (assertion.beforeState.globalState.getInboxPosition() == prevAssertionInboxMaxCount &&
-                     assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount + 1),
+                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount,
                 "WRONG_INBOX_POS"
             );
+
             // Minimum size requirement: any assertion must contain at least one block
             require(assertion.numBlocks > 0, "EMPTY_ASSERTION");
 
@@ -292,7 +293,7 @@ abstract contract AbsRollupUserLogic is
             getAssertionStorage(assertionNum).secondChildBlock > 0, "NO_SECOND_CHILD"
         );
         // HN: TODO: validation
-        bytes32 challengeId = challengeManager.createChallenge(AssertionNodeLib.AssertionNum2Id(assertionNum));
+        bytes32 challengeId = challengeManager.createChallenge(getAssertionId(assertionNum));
         require(challengeId != bytes32(0), "CHALLENGE_FAILED_TO_CREATE");
         getAssertionStorage(assertionNum).successionChallenge = challengeId;
         return challengeId;

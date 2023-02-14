@@ -62,6 +62,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     uint64 private _lastStakeBlock;
     mapping(uint64 => AssertionNode) private _assertions;
     mapping(uint64 => mapping(address => bool)) private _assertionStakers;
+    // HN: TODO: decide if we want index or hash based mapping
+    mapping(bytes32 => uint64) private _assertionHashToNum;
 
     address[] private _stakerList;
     mapping(address => Staker) public _stakerMap;
@@ -571,6 +573,13 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
                 afterInboxCount++;
             }
             require(afterInboxCount <= memoryFrame.currentInboxSize, "INBOX_PAST_END");
+
+            if(afterInboxCount == memoryFrame.currentInboxSize) {
+                // force next assertion to consume 1 message if this assertion
+                // already consumed all messages in the inbox
+                memoryFrame.currentInboxSize += 1;
+            }
+
             // This gives replay protection against the state of the inbox
             if (afterInboxCount > 0) {
                 memoryFrame.sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxCount - 1);
@@ -594,15 +603,20 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
             memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
 
             newAssertionHash = RollupLib.assertionHash(
-                memoryFrame.hasSibling,
                 memoryFrame.lastHash,
                 memoryFrame.executionHash,
                 memoryFrame.sequencerBatchAcc,
-                wasmModuleRoot
+                wasmModuleRoot // HN: TODO: should we include this in assertion hash? 
             );
             require(
                 newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0),
                 "UNEXPECTED_NODE_HASH"
+            );
+            // HN: TODO: assertion hash include
+            //           lastHash, assertionExecHash, inboxAcc, wasmModuleRoot
+            //           if wasmModuleRoot changed then it will have different hash
+            require(
+                _assertionHashToNum[newAssertionHash] == 0, "ASSERTION_SEEN"
             );
 
             memoryFrame.assertion = AssertionNodeLib.createAssertion(
@@ -624,6 +638,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
 
         {
             uint64 assertionNum = latestAssertionCreated() + 1;
+            _assertionHashToNum[newAssertionHash] = assertionNum;
 
             // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around
@@ -648,36 +663,51 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     }
 
     function getPredecessorId(bytes32 assertionId) external view returns (bytes32){
-        uint64 prevNum = getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).prevNum;
-        return AssertionNodeLib.AssertionNum2Id(prevNum);
+        uint64 prevNum = getAssertionStorage(getAssertionNum(assertionId)).prevNum;
+        return getAssertionId(prevNum);
     }
 
     function getHeight(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).height;
+        return getAssertionStorage(getAssertionNum(assertionId)).height;
     }
 
     function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).inboxMsgCountSeen;
+        return getAssertionStorage(getAssertionNum(assertionId)).inboxMsgCountSeen;
     }
 
     function getStateHash(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).stateHash;
+        return getAssertionStorage(getAssertionNum(assertionId)).stateHash;
     }
 
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).successionChallenge;
+        return getAssertionStorage(getAssertionNum(assertionId)).successionChallenge;
     }
 
     // HN: TODO: use block or timestamp?
     function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).firstChildBlock;
+        return getAssertionStorage(getAssertionNum(assertionId)).firstChildBlock;
     }
 
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).firstChildTime;
+        return getAssertionStorage(getAssertionNum(assertionId)).firstChildTime;
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool){
-        return getAssertionStorage(AssertionNodeLib.AssertionId2Num(assertionId)).isFirstChild;
+        return getAssertionStorage(getAssertionNum(assertionId)).isFirstChild;
+    }
+
+    // HN: TODO: decide to keep using index or hash
+    function getAssertionNum(bytes32 id) public view returns(uint64){
+        uint64 num = _assertionHashToNum[id];
+        // HN: TODO: genesis assertion is 0, which will fail this check
+        //           bump genesis assertion to 1 instead?
+        // require(num > 0, "ASSERTION_NOT_EXIST");
+        // HN: TODO: workaround by double checking
+        require(id == getAssertionId(num), "INVALID_ASSERTION_ID");
+        return uint64(num);
+    }
+    function getAssertionId(uint64 num) public view returns(bytes32){
+        require(num <= latestAssertionCreated(), "INVALID_ASSERTION_NUM");
+        return getAssertionStorage(num).assertionHash;
     }
 }

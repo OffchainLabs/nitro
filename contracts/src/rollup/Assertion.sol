@@ -24,6 +24,7 @@ struct AssertionNode {
     // This value starts at zero and is set to a value when the first child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
     uint64 firstChildBlock;
     // The number of the latest child of this assertion to be created
+    // HN: TODO: do we need this with the new assertion protocol?
     // uint64 latestChildNumber;
     // The block number when this assertion was created
     uint64 createdAtBlock;
@@ -113,15 +114,5 @@ library AssertionNodeLib {
      */
     function requirePastChildConfirmDeadline(AssertionNode memory self) internal view {
         require(block.number >= self.noChildConfirmedBeforeBlock, "CHILD_TOO_RECENT");
-    }
-
-    // HN: TODO: remove this hack
-    function AssertionId2Num(bytes32 id) internal view returns(uint64){
-        uint256 num = uint256(id);
-        require(num <= type(uint64).max, ">uint64");
-        return uint64(num);
-    }
-    function AssertionNum2Id(uint64 id) internal view returns(bytes32){
-        return bytes32(uint256(id));
     }
 }
