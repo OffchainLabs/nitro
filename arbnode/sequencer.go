@@ -289,7 +289,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		l1Timestamp:     0,
 		pauseChan:       nil,
 	}
-	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
+	txStreamer.EnableReorgSequencing()
 	return s, nil
 }
 

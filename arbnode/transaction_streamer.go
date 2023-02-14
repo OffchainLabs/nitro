@@ -67,7 +67,7 @@ type TransactionStreamer struct {
 	latestBlock                *types.Block
 	latestMessage              *arbos.L1IncomingMessage
 	newBlockNotifier           chan struct{}
-	reorgSequencing            func() *arbos.SequencingHooks
+	reorgSequencing            bool
 
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
@@ -155,14 +155,14 @@ func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
 	s.inboxReader = inboxReader
 }
 
-func (s *TransactionStreamer) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
+func (s *TransactionStreamer) EnableReorgSequencing() {
 	if s.Started() {
-		panic("trying to set reorg sequencing policy after start")
+		panic("trying to enable reorg sequencing after start")
 	}
-	if s.reorgSequencing != nil {
-		panic("trying to set reorg sequencing policy when already set")
+	if s.reorgSequencing {
+		panic("trying to enable reorg sequencing when already set")
 	}
-	s.reorgSequencing = reorgSequencing
+	s.reorgSequencing = true
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
@@ -223,7 +223,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		return nil, errors.New("cannot reorg out init message")
 	}
 	var oldMessages []*arbstate.MessageWithMetadata
-	if s.reorgSequencing != nil {
+	if s.reorgSequencing {
 		targetMsgCount, err := s.GetMessageCount()
 		if err != nil {
 			return nil, err
@@ -839,7 +839,9 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing())
+		hooks := arbos.NoopSequencingHooks()
+		hooks.DiscardInvalidTxsEarly = true
+		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, hooks)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
