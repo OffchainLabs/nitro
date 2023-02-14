@@ -71,8 +71,8 @@ func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderCon
 	f.Duration(prefix+".idle-connection-timeout", defaultConfig.IdleConnectionTimeout, "time until idle connections are closed")
 	f.Int(prefix+".max-idle-connections", defaultConfig.MaxIdleConnections, "maximum number of idle connections to keep open")
 	f.String(prefix+".redis-url", defaultConfig.RedisUrl, "the Redis URL to recomend target via")
-	f.Duration(prefix+".update-interval", defaultConfig.UpdateInterval, "")
-	f.Duration(prefix+".retry-interval", defaultConfig.RetryInterval, "")
+	f.Duration(prefix+".update-interval", defaultConfig.UpdateInterval, "forwarding target update interval")
+	f.Duration(prefix+".retry-interval", defaultConfig.RetryInterval, "minimal time between update retries")
 }
 
 type TxForwarder struct {
