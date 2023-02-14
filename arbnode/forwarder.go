@@ -357,7 +357,7 @@ func (f *RedisTxForwarder) StopAndWait() {
 	// TODO is disabling of old forwarder required?
 	oldForwarder := f.getForwarder()
 	if oldForwarder != nil {
-		oldForwarder.Disable()
+		oldForwarder.StopAndWait()
 	}
 }
 
