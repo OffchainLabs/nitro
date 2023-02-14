@@ -30,7 +30,6 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("%#x", addr)
 	managerBinding, err := challengeV2gen.NewChallengeManagerImpl(addr, ac.backend)
 	if err != nil {
 		return nil, err

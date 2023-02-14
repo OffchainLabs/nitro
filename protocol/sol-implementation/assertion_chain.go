@@ -43,7 +43,7 @@ type ChainCommiter interface {
 // that implements the protocol interface.
 type AssertionChain struct {
 	backend    bind.ContractBackend
-	caller     *rollupgen.RollupUserLogicCaller
+	caller     *rollupgen.RollupCoreCaller
 	writer     *rollupgen.RollupUserLogicTransactor
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
@@ -55,6 +55,7 @@ type AssertionChain struct {
 func NewAssertionChain(
 	ctx context.Context,
 	rollupAddr common.Address,
+	rollupUserLogicAddr common.Address,
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
@@ -66,13 +67,19 @@ func NewAssertionChain(
 		txOpts:     txOpts,
 		stakerAddr: stakerAddr,
 	}
-	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
+	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,
 	)
 	if err != nil {
 		return nil, err
 	}
-	chain.caller = &assertionChainBinding.RollupUserLogicCaller
+	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
+		rollupUserLogicAddr, chain.backend,
+	)
+	if err != nil {
+		return nil, err
+	}
+	chain.caller = &coreBinding.RollupCoreCaller
 	chain.writer = &assertionChainBinding.RollupUserLogicTransactor
 	return chain, nil
 }
