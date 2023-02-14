@@ -102,7 +102,7 @@ func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 			return common.Hash{}, err
 		}
 		if !hasKey {
-			return common.Hash{}, AccumulatorNotFoundErr
+			return common.Hash{}, fmt.Errorf("%w: not found delayed %d", AccumulatorNotFoundErr, seqNum)
 		}
 	}
 	data, err := t.db.Get(key)
@@ -150,7 +150,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 		return BatchMetadata{}, err
 	}
 	if !hasKey {
-		return BatchMetadata{}, AccumulatorNotFoundErr
+		return BatchMetadata{}, fmt.Errorf("%w: no metadata for batch %d", AccumulatorNotFoundErr, seqNum)
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
