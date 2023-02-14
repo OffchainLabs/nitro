@@ -245,7 +245,6 @@ func deployRollupCreator(
 	t.Helper()
 	bridgeCreator := deployBridgeCreator(t, ctx, auth, backend)
 	ospEntryAddr, challengeManagerAddr := deployChallengeFactory(t, ctx, auth, backend)
-	t.Logf("%#x", challengeManagerAddr)
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, backend)
 	backend.Commit()

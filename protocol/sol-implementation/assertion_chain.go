@@ -129,29 +129,34 @@ func (ac *AssertionChain) CreateAssertion(
 	prevAssertionId uint64,
 ) (*Assertion, error) {
 	err := withChainCommitment(ac.backend, func() error {
-		prevInboxMaxCount := big.NewInt(0)
-		expectedHash := common.Hash{}
 		_, err := ac.writer.NewStakeOnNewAssertion(
 			ac.txOpts,
 			rollupgen.AssertionInputs{
+				// TODO: Get the prestate of the last assertion created.
 				BeforeState: rollupgen.ExecutionState{
 					GlobalState:   rollupgen.GlobalState{},
 					MachineStatus: 0,
 				},
 				AfterState: rollupgen.ExecutionState{
-					GlobalState:   rollupgen.GlobalState{},
+					GlobalState: rollupgen.GlobalState{
+						Bytes32Vals: [2][32]byte{
+							common.Hash{},
+							common.Hash{},
+						},
+					},
 					MachineStatus: 0,
 				},
+				NumBlocks: commitment.Height, // TODO: Minus old assertion height.
 			},
-			expectedHash,
-			prevInboxMaxCount,
+			common.Hash{}, // Expected hash.
+			big.NewInt(0), // TODO: Use actual number of messages in inbox.
 		)
 		return err
 	})
 	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
 		return nil, err2
 	}
-	return ac.AssertionByID(prevAssertionId + 1)
+	return ac.AssertionByID(prevAssertionId)
 }
 
 // CreateSuccessionChallenge creates a succession challenge

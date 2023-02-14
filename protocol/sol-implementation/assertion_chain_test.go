@@ -13,97 +13,62 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// func TestCreateAssertion(t *testing.T) {
-// 	ctx := context.Background()
-// 	acc, err := setupAccount()
-// 	require.NoError(t, err)
+func TestCreateAssertion(t *testing.T) {
+	chain, _ := setupAssertionChainWithChallengeManager(t)
 
-// 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-// 	addr, _, _, err := challengeV2gen.DeployAssertionChain(
-// 		acc.txOpts,
-// 		acc.backend,
-// 		genesisStateRoot,
-// 		big.NewInt(10), // 10 second challenge period.
-// 	)
-// 	require.NoError(t, err)
+	commit := util.StateCommitment{
+		Height:    1,
+		StateRoot: common.BytesToHash([]byte{1}),
+	}
+	t.Run("OK", func(t *testing.T) {
+		created, err2 := chain.CreateAssertion(commit, 0)
+		require.NoError(t, err2)
+		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
+	})
+	// t.Run("already exists", func(t *testing.T) {
+	// 	_, err = chain.CreateAssertion(commit, 0)
+	// 	require.ErrorIs(t, err, ErrAlreadyExists)
+	// })
+	// t.Run("previous assertion does not exist", func(t *testing.T) {
+	// 	commit := util.StateCommitment{
+	// 		Height:    2,
+	// 		StateRoot: common.BytesToHash([]byte{2}),
+	// 	}
+	// 	_, err = chain.CreateAssertion(commit, 1)
+	// 	require.ErrorIs(t, err, ErrPrevDoesNotExist)
+	// })
+	// t.Run("invalid height", func(t *testing.T) {
+	// 	commit := util.StateCommitment{
+	// 		Height:    0,
+	// 		StateRoot: common.BytesToHash([]byte{3}),
+	// 	}
+	// 	_, err = chain.CreateAssertion(commit, 0)
+	// 	require.ErrorIs(t, err, ErrInvalidHeight)
+	// })
+	// t.Run("too late to create sibling", func(t *testing.T) {
+	// 	Adds two challenge periods to the chain timestamp.
+	// 	err = acc.backend.AdjustTime(time.Second * 20)
+	// 	require.NoError(t, err)
+	// 	commit := util.StateCommitment{
+	// 		Height:    1,
+	// 		StateRoot: common.BytesToHash([]byte("forked")),
+	// 	}
+	// 	_, err = chain.CreateAssertion(commit, 0)
+	// 	require.ErrorIs(t, err, ErrTooLate)
+	// })
+}
 
-// 	acc.backend.Commit()
+func TestAssertionByID(t *testing.T) {
+	chain, _ := setupAssertionChainWithChallengeManager(t)
 
-// 	chain, err := NewAssertionChain(
-// 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-// 	)
-// 	require.NoError(t, err)
+	resp, err := chain.AssertionByID(0)
+	require.NoError(t, err)
 
-// 	commit := util.StateCommitment{
-// 		Height:    1,
-// 		StateRoot: common.BytesToHash([]byte{1}),
-// 	}
-// 	t.Run("OK", func(t *testing.T) {
-// 		created, err2 := chain.CreateAssertion(commit, 0)
-// 		require.NoError(t, err2)
-// 		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
-// 	})
-// 	t.Run("already exists", func(t *testing.T) {
-// 		_, err = chain.CreateAssertion(commit, 0)
-// 		require.ErrorIs(t, err, ErrAlreadyExists)
-// 	})
-// 	t.Run("previous assertion does not exist", func(t *testing.T) {
-// 		commit := util.StateCommitment{
-// 			Height:    2,
-// 			StateRoot: common.BytesToHash([]byte{2}),
-// 		}
-// 		_, err = chain.CreateAssertion(commit, 1)
-// 		require.ErrorIs(t, err, ErrPrevDoesNotExist)
-// 	})
-// 	t.Run("invalid height", func(t *testing.T) {
-// 		commit := util.StateCommitment{
-// 			Height:    0,
-// 			StateRoot: common.BytesToHash([]byte{3}),
-// 		}
-// 		_, err = chain.CreateAssertion(commit, 0)
-// 		require.ErrorIs(t, err, ErrInvalidHeight)
-// 	})
-// 	t.Run("too late to create sibling", func(t *testing.T) {
-// 		// Adds two challenge periods to the chain timestamp.
-// 		err = acc.backend.AdjustTime(time.Second * 20)
-// 		require.NoError(t, err)
-// 		commit := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte("forked")),
-// 		}
-// 		_, err = chain.CreateAssertion(commit, 0)
-// 		require.ErrorIs(t, err, ErrTooLate)
-// 	})
-// }
+	require.Equal(t, true, resp.inner.StateHash != [32]byte{})
 
-// func TestAssertionByID(t *testing.T) {
-// 	ctx := context.Background()
-// 	acc, err := setupAccount()
-// 	require.NoError(t, err)
-// 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-// 	addr, _, _, err := challengeV2gen.DeployAssertionChain(
-// 		acc.txOpts,
-// 		acc.backend,
-// 		genesisStateRoot,
-// 		big.NewInt(1), // 1 second challenge period.
-// 	)
-// 	require.NoError(t, err)
-
-// 	acc.backend.Commit()
-
-// 	chain, err := NewAssertionChain(
-// 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-// 	)
-// 	require.NoError(t, err)
-
-// 	resp, err := chain.AssertionByID(0)
-// 	require.NoError(t, err)
-
-// 	require.Equal(t, genesisStateRoot[:], resp.inner.StateHash[:])
-
-// 	_, err = chain.AssertionByID(1)
-// 	require.ErrorIs(t, err, ErrNotFound)
-// }
+	_, err = chain.AssertionByID(1)
+	require.ErrorIs(t, err, ErrNotFound)
+}
 
 // func TestAssertion_Confirm(t *testing.T) {
 // 	ctx := context.Background()
