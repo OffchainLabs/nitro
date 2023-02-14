@@ -167,14 +167,15 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 // Disable is not thread-safe vs. Initialize
 func (f *TxForwarder) Disable() {
 	atomic.StoreInt32(&f.enabled, 0)
-	// TODO should we close ethClient / rpcClient here or in StopAndWait?
 }
 
 func (f *TxForwarder) Start(ctx context.Context) error {
 	return nil
 }
 
-func (f *TxForwarder) StopAndWait() {}
+func (f *TxForwarder) StopAndWait() {
+	f.ethClient.Close() // internally closes also the rpc client
+}
 
 func (f *TxForwarder) Started() bool {
 	return true
