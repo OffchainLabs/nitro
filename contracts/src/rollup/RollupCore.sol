@@ -61,6 +61,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     uint64 private _lastStakeBlock;
     mapping(uint64 => AssertionNode) private _assertions;
     mapping(uint64 => mapping(address => bool)) private _assertionStakers;
+    // HN: TODO: decide if we want index or hash based mapping
+    mapping(bytes32 => uint64) private _assertionHashToNum;
 
     address[] private _stakerList;
     mapping(address => Staker) public _stakerMap;
@@ -593,7 +595,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
 
             newAssertionHash = RollupLib.assertionHash(
-                memoryFrame.hasSibling,
                 memoryFrame.lastHash,
                 memoryFrame.executionHash,
                 memoryFrame.sequencerBatchAcc,
@@ -602,6 +603,12 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             require(
                 newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0),
                 "UNEXPECTED_NODE_HASH"
+            );
+            // HN: TODO: assertion hash include
+            //           lastHash, assertionExecHash, inboxAcc, wasmModuleRoot
+            //           if wasmModuleRoot changed then it will have different hash
+            require(
+                _assertionHashToNum[newAssertionHash] == 0, "ASSERTION_SEEN"
             );
 
             memoryFrame.assertion = AssertionNodeLib.createAssertion(
@@ -623,6 +630,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
         {
             uint64 assertionNum = latestAssertionCreated() + 1;
+            _assertionHashToNum[newAssertionHash] = assertionNum;
 
             // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around

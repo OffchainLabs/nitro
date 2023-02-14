@@ -130,18 +130,19 @@ library RollupLib {
         return keccak256(abi.encodePacked(blockHash, sendRoot));
     }
 
+    // HN: TODO: any reason to include hasSibling in assertion hash?
     function assertionHash(
-        bool hasSibling,
+        // bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,
         bytes32 inboxAcc,
         bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
-        uint8 hasSiblingInt = hasSibling ? 1 : 0;
+        // uint8 hasSiblingInt = hasSibling ? 1 : 0;
         return
             keccak256(
                 abi.encodePacked(
-                    hasSiblingInt,
+                    // hasSiblingInt,
                     lastHash,
                     assertionExecHash,
                     inboxAcc,
