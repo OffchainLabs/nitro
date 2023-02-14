@@ -35,6 +35,7 @@ type ExecutionEngine struct {
 
 	bc       *core.BlockChain
 	streamer TransactionStreamerInterface
+	recorder *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -66,12 +67,22 @@ func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos
 	s.reorgSequencing = reorgSequencing
 }
 
+func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
+	if s.Started() {
+		panic("trying to set recorder after start")
+	}
+	if s.reorgSequencing != nil {
+		panic("trying to set recorder policy when already set")
+	}
+	s.recorder = recorder
+}
+
 func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInterface) {
 	if s.Started() {
-		panic("trying to set reorg sequencing policy after start")
+		panic("trying to set transaction streamer after start")
 	}
 	if s.streamer != nil {
-		panic("trying to set reorg sequencing policy when already set")
+		panic("trying to set transaction streamer when already set")
 	}
 	s.streamer = streamer
 }
@@ -104,6 +115,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		if err != nil {
 			return err
 		}
+	}
+	if s.recorder != nil {
+		s.recorder.ReorgTo(targetBlock.Header())
 	}
 	s.resequenceChan <- oldMessages
 	successful = true

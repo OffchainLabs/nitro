@@ -47,10 +47,12 @@ type RecordResult struct {
 }
 
 func NewBlockRecorder(execEngine *ExecutionEngine, ethDb ethdb.Database) *BlockRecorder {
-	return &BlockRecorder{
+	recorder := &BlockRecorder{
 		execEngine:        execEngine,
 		recordingDatabase: arbitrum.NewRecordingDatabase(ethDb, execEngine.bc),
 	}
+	execEngine.SetRecorder(recorder)
+	return recorder
 }
 
 func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
@@ -319,18 +321,18 @@ func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil
 
 func (r *BlockRecorder) ReorgTo(hdr *types.Header) {
 	r.validHdrLock.Lock()
-	if r.validHdr.Number.Cmp(hdr.Number) > 0 {
+	if r.validHdr != nil && r.validHdr.Number.Cmp(hdr.Number) > 0 {
 		log.Error("block recorder: reorging past previously-marked final block", "reorg target num", hdr.Number, "hash", hdr.Hash(), "reorged past num", r.validHdr.Number, "hash", r.validHdr.Hash())
 		r.recordingDatabase.Dereference(r.validHdr)
 		r.validHdr = nil
 	}
-	if r.validHdrCandidate.Number.Cmp(hdr.Number) > 0 {
+	if r.validHdrCandidate != nil && r.validHdrCandidate.Number.Cmp(hdr.Number) > 0 {
 		r.recordingDatabase.Dereference(r.validHdrCandidate)
 		r.validHdrCandidate = nil
 	}
 	r.validHdrLock.Unlock()
 	r.lastHdrLock.Lock()
-	if r.lastHdr.Number.Cmp(hdr.Number) > 0 {
+	if r.lastHdr != nil && r.lastHdr.Number.Cmp(hdr.Number) > 0 {
 		r.recordingDatabase.Dereference(r.lastHdr)
 		r.lastHdr = nil
 	}
