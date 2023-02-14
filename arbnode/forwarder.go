@@ -45,8 +45,8 @@ var DefaultNodeForwarderConfig = ForwarderConfig{
 	IdleConnectionTimeout: 15 * time.Second,
 	MaxIdleConnections:    1,
 	RedisUrl:              "",
-	UpdateInterval:        time.Duration(5) * time.Second,
-	RetryInterval:         time.Second,
+	UpdateInterval:        time.Second,
+	RetryInterval:         100 * time.Millisecond,
 }
 
 var DefaultSequencerForwarderConfig = ForwarderConfig{
@@ -54,8 +54,8 @@ var DefaultSequencerForwarderConfig = ForwarderConfig{
 	IdleConnectionTimeout: 60 * time.Second,
 	MaxIdleConnections:    100,
 	RedisUrl:              "",
-	UpdateInterval:        time.Duration(5) * time.Second,
-	RetryInterval:         time.Second,
+	UpdateInterval:        time.Second,
+	RetryInterval:         100 * time.Millisecond,
 }
 
 func AddOptionsForNodeForwarderConfig(prefix string, f *flag.FlagSet) {
