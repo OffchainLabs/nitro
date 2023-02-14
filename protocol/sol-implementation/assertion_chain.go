@@ -140,15 +140,20 @@ func (ac *AssertionChain) CreateAssertion(
 				AfterState: rollupgen.ExecutionState{
 					GlobalState: rollupgen.GlobalState{
 						Bytes32Vals: [2][32]byte{
-							common.Hash{},
-							common.Hash{},
+							commitment.StateRoot, // Blockhash, TODO: Use block hash instead of state root for commitment.
+							common.Hash{},        // Sendroot.
+						},
+						U64Vals: [2]uint64{
+							1, // Inbox count.
+							0, // Pos in message.
 						},
 					},
 					MachineStatus: 0,
 				},
-				NumBlocks: commitment.Height, // TODO: Minus old assertion height.
+				// TODO: Minus old assertion height, seems like the assertion chain wants diff instead of abs height.
+				NumBlocks: commitment.Height,
 			},
-			common.Hash{}, // Expected hash.
+			common.Hash{}, // Expected hash (seems like it can be 0 and pass through contract checks).
 			big.NewInt(0), // TODO: Use actual number of messages in inbox.
 		)
 		return err
