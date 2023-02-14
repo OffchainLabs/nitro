@@ -178,8 +178,9 @@ func TestRedisForwarder(t *testing.T) {
 		for _, node := range nodes {
 			if node != nil && node != fallbackNode {
 				wg.Add(1)
+				n := node
 				go func() {
-					node.StopAndWait()
+					n.StopAndWait()
 					wg.Done()
 				}()
 			}
