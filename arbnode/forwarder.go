@@ -251,6 +251,7 @@ func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "unable to create redis coordinator")
 	}
+	f.update(ctx)
 	return nil
 }
 
