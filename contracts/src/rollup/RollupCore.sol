@@ -572,6 +572,13 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 afterInboxCount++;
             }
             require(afterInboxCount <= memoryFrame.currentInboxSize, "INBOX_PAST_END");
+
+            if(afterInboxCount == memoryFrame.currentInboxSize) {
+                // force next assertion to consume 1 message if this assertion
+                // already consumed all messages in the inbox
+                memoryFrame.currentInboxSize += 1;
+            }
+
             // This gives replay protection against the state of the inbox
             if (afterInboxCount > 0) {
                 memoryFrame.sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxCount - 1);
