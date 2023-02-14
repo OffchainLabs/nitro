@@ -96,9 +96,9 @@ func deployFullRollupStack(
 		backend.Commit()
 		require.NoError(t, err)
 
-		receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+		receipt2, err := backend.TransactionReceipt(ctx, tx.Hash())
 		require.NoError(t, err)
-		require.Equal(t, uint64(1), receipt.Status)
+		require.Equal(t, uint64(1), receipt2.Status)
 	}
 
 	var allowValidators []bool
@@ -115,9 +115,9 @@ func deployFullRollupStack(
 		backend.Commit()
 		require.NoError(t, err)
 
-		receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+		receipt2, err := backend.TransactionReceipt(ctx, tx.Hash())
 		require.NoError(t, err)
-		require.Equal(t, uint64(1), receipt.Status)
+		require.Equal(t, uint64(1), receipt2.Status)
 	}
 
 	return &rollupAddresses{
