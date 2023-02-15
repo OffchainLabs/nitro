@@ -33,7 +33,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		require.ErrorIs(t, v1.ConfirmPsTimer(context.Background()), ErrPsTimerNotYet)
 	})
 	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
-		require.NoError(t, acc.backend.AdjustTime(time.Second * 2000))
+		require.NoError(t, acc.backend.AdjustTime(time.Second*2000))
 		require.NoError(t, v1.ConfirmPsTimer(context.Background()))
 	})
 }
@@ -153,6 +153,9 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
 		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
+		// Vertex must be in the protocol.
+		_, err = challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, bisectedTo.id)
+		require.NoError(t, err)
 
 		_, err = v1.Bisect(
 			util.HistoryCommitment{
