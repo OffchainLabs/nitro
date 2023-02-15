@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -56,7 +55,6 @@ type AssertionChain struct {
 func NewAssertionChain(
 	ctx context.Context,
 	rollupAddr common.Address,
-	rollupUserLogicAddr common.Address,
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
@@ -75,7 +73,7 @@ func NewAssertionChain(
 		return nil, err
 	}
 	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
-		rollupUserLogicAddr, chain.backend,
+		rollupAddr, chain.backend,
 	)
 	if err != nil {
 		return nil, err
@@ -134,15 +132,21 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
-	fmt.Printf("%+v\n", prev)
 	prevHeight := prev.inner.Height.Uint64()
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}
+
 	numBlocks := height - prevHeight
+	baseStake, err := ac.caller.BaseStake(ac.callOpts)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get base stake")
+	}
+	newOpts := copyTxOpts(ac.txOpts)
+	newOpts.Value = baseStake
 	result := withChainCommitment(ac.backend, func() error {
 		_, stakeErr := ac.writer.NewStakeOnNewAssertion(
-			ac.txOpts,
+			newOpts,
 			rollupgen.AssertionInputs{
 				BeforeState: prevAssertionState.AsSolidityStruct(),
 				AfterState:  postState.AsSolidityStruct(),

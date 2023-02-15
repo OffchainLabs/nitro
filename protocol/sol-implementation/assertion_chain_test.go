@@ -9,23 +9,32 @@ import (
 	//"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	// "github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateAssertion(t *testing.T) {
-	chain, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, backend := setupAssertionChainWithChallengeManager(t)
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
 		prev := uint64(0)
+		minAssertionPeriod, err := chain.caller.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		latestBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			latestBlockHash = backend.Commit()
+		}
+
 		prevState := &ExecutionState{
 			GlobalState:   GoGlobalState{},
 			MachineStatus: MachineStatusFinished,
 		}
 		postState := &ExecutionState{
 			GlobalState: GoGlobalState{
-				BlockHash:  common.BytesToHash([]byte("foo")),
+				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
@@ -42,6 +51,15 @@ func TestCreateAssertion(t *testing.T) {
 		)
 		require.NoError(t, err)
 		t.Logf("%+v", created)
+
+		_, err = chain.CreateAssertion(
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.ErrorContains(t, err, "ALREADY_STAKED")
 		// require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
 	// t.Run("already exists", func(t *testing.T) {
@@ -78,7 +96,7 @@ func TestCreateAssertion(t *testing.T) {
 }
 
 func TestAssertionByID(t *testing.T) {
-	chain, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, _ := setupAssertionChainWithChallengeManager(t)
 
 	resp, err := chain.AssertionByID(0)
 	require.NoError(t, err)
@@ -184,7 +202,7 @@ func TestAssertionByID(t *testing.T) {
 // }
 
 func TestChallengePeriodSeconds(t *testing.T) {
-	chain, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, _ := setupAssertionChainWithChallengeManager(t)
 	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
 	require.Equal(t, time.Second, chalPeriod)
@@ -293,38 +311,32 @@ func TestChallengePeriodSeconds(t *testing.T) {
 // 	})
 // }
 
-func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount, *backends.SimulatedBackend) {
 	t.Helper()
 	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
+	accs, backend := setupAccounts(t, 2)
 	prod := false
 	wasmModuleRoot := common.Hash{}
-	rollupOwner := acc.accountAddr
+	rollupOwner := accs[0].accountAddr
 	chainId := big.NewInt(1337)
 	loserStakeEscrow := common.Address{}
 	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow)
-	numValidators := uint64(10)
 	addresses := deployFullRollupStack(
 		t,
 		ctx,
-		acc.backend,
-		acc.txOpts,
-		common.Address{},
-		numValidators,
+		backend,
+		accs[0].txOpts,
+		common.Address{}, // Sequencer addr.
 		cfg,
 	)
 	chain, err := NewAssertionChain(
 		ctx,
 		addresses.Rollup,
-		addresses.RollupUserLogic,
-		acc.txOpts,
+		accs[1].txOpts,
 		&bind.CallOpts{},
-		acc.accountAddr,
-		acc.backend,
+		accs[1].accountAddr,
+		backend,
 	)
 	require.NoError(t, err)
-	acc.backend.Commit()
-
-	return chain, acc
+	return chain, accs[1], backend
 }
