@@ -3,6 +3,7 @@ package solimpl
 import (
 	"testing"
 
+	"context"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -10,6 +11,7 @@ import (
 )
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
+	ctx := context.Background()
 	chain, _ := setupAssertionChainWithChallengeManager(t)
 	height1 := uint64(1)
 	height2 := uint64(1)
@@ -18,6 +20,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
 		// Pass in a junk assertion that has no predecessor.
 		_, err := challenge.AddLeaf(
+			ctx,
 			&Assertion{
 				chain: chain,
 				id:    common.BytesToHash([]byte("junk")),
@@ -38,6 +41,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	})
 	t.Run("invalid height", func(t *testing.T) {
 		_, err := challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height: 100,
@@ -51,6 +55,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	})
 	t.Run("empty history commitment", func(t *testing.T) {
 		_, err := challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height: height1,
@@ -70,6 +75,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	})
 	t.Run("first state is not the challenge root", func(t *testing.T) {
 		_, err := challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height: height1,
@@ -79,9 +85,10 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		require.ErrorContains(t, err, "First state is not the challenge root")
 	})
 	t.Run("OK", func(t *testing.T) {
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(ctx, common.Hash{})
 		require.NoError(t, err)
 		_, err = challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -92,9 +99,10 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("already exists", func(t *testing.T) {
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(ctx, common.Hash{})
 		require.NoError(t, err)
 		_, err = challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -113,6 +121,7 @@ func setupTopLevelFork(
 	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge) {
 	t.Helper()
+	ctx := context.Background()
 	genesisId := common.Hash{}
 
 	// Creates a simple assertion chain fork.
@@ -120,18 +129,18 @@ func setupTopLevelFork(
 		Height:    height1,
 		StateRoot: common.BytesToHash([]byte{1}),
 	}
-	a1, err := chain.CreateAssertion(commit1, genesisId)
+	a1, err := chain.CreateAssertion(ctx, commit1, genesisId)
 	require.NoError(t, err)
 
 	commit2 := util.StateCommitment{
 		Height:    height2,
 		StateRoot: common.BytesToHash([]byte{2}),
 	}
-	a2, err := chain.CreateAssertion(commit2, genesisId)
+	a2, err := chain.CreateAssertion(ctx, commit2, genesisId)
 	require.NoError(t, err)
 
 	// Initiates a challenge on the genesis assertion.
-	challenge, err := chain.CreateSuccessionChallenge(genesisId)
+	challenge, err := chain.CreateSuccessionChallenge(ctx, genesisId)
 	require.NoError(t, err)
 	return a1, a2, challenge
 }
