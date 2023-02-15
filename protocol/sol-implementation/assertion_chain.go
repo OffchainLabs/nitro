@@ -121,47 +121,40 @@ func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error)
 	}, nil
 }
 
-// CreateAssertion provided a state commitment and the previous
-// assertion's ID. Then, if the creation was successful,
-// returns the newly created assertion.
+// CreateAssertion makes an on-chain claim given a previous assertion state, a commitment.
 func (ac *AssertionChain) CreateAssertion(
-	commitment util.StateCommitment,
+	height uint64,
 	prevAssertionId uint64,
+	prevAssertionState *ExecutionState,
+	postState *ExecutionState,
+	prevInboxMaxCount *big.Int,
 ) (*Assertion, error) {
+	prev, err := ac.AssertionByID(prevAssertionId)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
+	}
+	prevHeight := prev.inner.Height.Uint64()
+	if prevHeight >= height {
+		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
+	}
+	numBlocks := height - prevHeight
 	err := withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.NewStakeOnNewAssertion(
+		_, stakeErr := ac.writer.NewStakeOnNewAssertion(
 			ac.txOpts,
 			rollupgen.AssertionInputs{
-				// TODO: Get the prestate of the last assertion created.
-				BeforeState: rollupgen.ExecutionState{
-					GlobalState:   rollupgen.GlobalState{},
-					MachineStatus: 0,
-				},
-				AfterState: rollupgen.ExecutionState{
-					GlobalState: rollupgen.GlobalState{
-						Bytes32Vals: [2][32]byte{
-							commitment.StateRoot, // Blockhash, TODO: Use block hash instead of state root for commitment.
-							common.Hash{},        // Sendroot.
-						},
-						U64Vals: [2]uint64{
-							1, // Inbox count.
-							0, // Pos in message.
-						},
-					},
-					MachineStatus: 0,
-				},
-				// TODO: Minus old assertion height, seems like the assertion chain wants diff instead of abs height.
-				NumBlocks: commitment.Height,
+				BeforeState: prevAssertionState.AsSolidityStruct(),
+				AfterState:  postState.AsSolidityStruct(),
+				NumBlocks:   numBlocks,
 			},
-			common.Hash{}, // Expected hash (seems like it can be 0 and pass through contract checks).
-			big.NewInt(0), // TODO: Use actual number of messages in inbox.
+			common.Hash{}, // Expected hash.
+			prevInboxMaxCount,
 		)
-		return err
+		return stakeErr
 	})
-	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
-		return nil, err2
+	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
+		return nil, createErr
 	}
-	return ac.AssertionByID(prevAssertionId)
+	return ac.AssertionByID(prevAssertionId + 1)
 }
 
 // CreateSuccessionChallenge creates a succession challenge
@@ -238,7 +231,7 @@ func handleCreateSuccessionChallengeError(err error, assertionId uint64) error {
 	}
 }
 
-func handleCreateAssertionError(err error, commitment util.StateCommitment) error {
+func handleCreateAssertionError(err error, height uint64, blockHash common.Hash) error {
 	if err == nil {
 		return nil
 	}
@@ -247,16 +240,16 @@ func handleCreateAssertionError(err error, commitment util.StateCommitment) erro
 	case strings.Contains(errS, "Assertion already exists"):
 		return errors.Wrapf(
 			ErrAlreadyExists,
-			"commit state root %#x and height %d",
-			commitment.StateRoot,
-			commitment.Height,
+			"commit block hash %#x and height %d",
+			blockHash,
+			height,
 		)
 	case strings.Contains(errS, "Height not greater than predecessor"):
 		return errors.Wrapf(
 			ErrInvalidHeight,
-			"commit state root %#x and height %d",
-			commitment.StateRoot,
-			commitment.Height,
+			"commit block hash %#x and height %d",
+			blockHash,
+			height,
 		)
 	case strings.Contains(errS, "Previous assertion does not exist"):
 		return ErrPrevDoesNotExist
