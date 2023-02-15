@@ -210,6 +210,9 @@ func (r *BlockRecorder) updateValidCandidateHdr(hdr *types.Header) {
 		log.Warn("failed to get state in updateLastHdr", "err", err)
 		return
 	}
+	if r.validHdrCandidate != nil {
+		r.recordingDatabase.Dereference(r.validHdrCandidate)
+	}
 	r.validHdrCandidate = hdr
 }
 
@@ -227,7 +230,6 @@ func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Ha
 	canonicalResultHash := r.execEngine.bc.GetCanonicalHash(uint64(validNum))
 	if canonicalResultHash != resultHash {
 		log.Warn("markvalid hash not canonical", "pos", pos, "result", resultHash, "canonical", canonicalResultHash)
-		r.validHdrCandidate = nil
 		return
 	}
 	// make sure the candidate is still canonical
@@ -235,6 +237,7 @@ func (r *BlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Ha
 	candidateHash := r.validHdrCandidate.Hash()
 	if canonicalHash != candidateHash {
 		log.Error("vlid candidate hash not canonical", "number", r.validHdrCandidate.Number, "candidate", candidateHash, "canonical", canonicalHash)
+		r.recordingDatabase.Dereference(r.validHdrCandidate)
 		r.validHdrCandidate = nil
 		return
 	}
@@ -289,7 +292,7 @@ func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil
 	if end < start {
 		return fmt.Errorf("illegal range start %d > end %d", start, end)
 	}
-	numOfBlocks := uint64(end - start)
+	numOfBlocks := uint64(end + 1 - start)
 	hdrNum := r.execEngine.MessageIndexToBlockNumber(start)
 	if start > 0 {
 		hdrNum-- // need to get previous
@@ -297,24 +300,22 @@ func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil
 		numOfBlocks-- // genesis block doesn't need preparation, so recording one less block
 	}
 	lastHdrNum := hdrNum + numOfBlocks
-	var header *types.Header
-	for hdrNum < lastHdrNum {
-		newHeader := r.execEngine.bc.GetHeaderByNumber(uint64(hdrNum))
-		if newHeader == nil {
+	for hdrNum <= lastHdrNum {
+		header := r.execEngine.bc.GetHeaderByNumber(uint64(hdrNum))
+		if header == nil {
 			log.Warn("prepareblocks asked for non-found block", "hdrNum", hdrNum)
 			break
 		}
-		_, err := r.recordingDatabase.GetOrRecreateState(ctx, newHeader, stateLogFunc)
+		_, err := r.recordingDatabase.GetOrRecreateState(ctx, header, stateLogFunc)
 		if err != nil {
 			log.Warn("prepareblocks failed to get state for block", "hdrNum", hdrNum, "err", err)
 			break
 		}
-		header = newHeader
 		references = append(references, header)
 		r.updateValidCandidateHdr(header)
+		r.updateLastHdr(header)
 		hdrNum++
 	}
-	r.updateLastHdr(header)
 	r.preparedAddTrim(references, 1000)
 	return nil
 }
@@ -322,7 +323,7 @@ func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil
 func (r *BlockRecorder) ReorgTo(hdr *types.Header) {
 	r.validHdrLock.Lock()
 	if r.validHdr != nil && r.validHdr.Number.Cmp(hdr.Number) > 0 {
-		log.Error("block recorder: reorging past previously-marked final block", "reorg target num", hdr.Number, "hash", hdr.Hash(), "reorged past num", r.validHdr.Number, "hash", r.validHdr.Hash())
+		log.Warn("block recorder: reorging past previously-marked valid block", "reorg target num", hdr.Number, "hash", hdr.Hash(), "reorged past num", r.validHdr.Number, "hash", r.validHdr.Hash())
 		r.recordingDatabase.Dereference(r.validHdr)
 		r.validHdr = nil
 	}

@@ -887,7 +887,6 @@ func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *execution.E
 		log.Info("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
 	}
-
 	return pos+1 < msgCount
 }
 
@@ -906,7 +905,6 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 				timer.Stop()
 			case <-timer.C:
 			}
-
 		}
 	})
 }

@@ -57,16 +57,6 @@ func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 	}, nil
 }
 
-func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
-	if s.Started() {
-		panic("trying to set reorg sequencing policy after start")
-	}
-	if s.reorgSequencing != nil {
-		panic("trying to set reorg sequencing policy when already set")
-	}
-	s.reorgSequencing = reorgSequencing
-}
-
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 	if s.Started() {
 		panic("trying to set recorder after start")
@@ -75,6 +65,16 @@ func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
 		panic("trying to set recorder policy when already set")
 	}
 	s.recorder = recorder
+}
+
+func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
+	if s.Started() {
+		panic("trying to set reorg sequencing policy after start")
+	}
+	if s.reorgSequencing != nil {
+		panic("trying to set reorg sequencing policy when already set")
+	}
+	s.reorgSequencing = reorgSequencing
 }
 
 func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInterface) {
