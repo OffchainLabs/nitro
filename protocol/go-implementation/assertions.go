@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"math"
 	"math/big"
 	"sync"
 	"time"
 
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
