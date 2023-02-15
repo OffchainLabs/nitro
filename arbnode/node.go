@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -698,6 +697,7 @@ type Node struct {
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
+	DbCompactor             *DbCompactor
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
@@ -827,6 +827,7 @@ func createNodeImpl(
 	}
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
+	var dbCompactor *DbCompactor
 	var sequencer *Sequencer
 	var bpVerifier *contracts.BatchPosterVerifier
 	if deployInfo != nil && l1client != nil {
@@ -870,28 +871,12 @@ func createNodeImpl(
 		}
 	}
 	if config.SeqCoordinator.Enable {
-		runDbCompaction := func() {
-			start := time.Now()
-			log.Info("compacting databases (this may take a while)")
-			var wg sync.WaitGroup
-			for _, db := range []ethdb.Database{chainDb, arbDb} {
-				db := db
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					err := db.Compact(nil, nil)
-					if err != nil {
-						log.Warn("failed to compact chaindb", "err", err)
-					}
-				}()
-			}
-			wg.Wait()
-			log.Info("done compacting databases", "elapsed", time.Since(start))
-		}
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, func() *SeqCoordinatorConfig { return &configFetcher.Get().SeqCoordinator }, runDbCompaction)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
+		dbs := []ethdb.Database{chainDb, arbDb}
+		dbCompactor = NewDbCompactor(func() *DbCompactorConfig { return &configFetcher.Get().SeqCoordinator.DbCompactor }, coordinator, dbs)
 	}
 	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
@@ -949,6 +934,7 @@ func createNodeImpl(
 			broadcastServer,
 			broadcastClients,
 			coordinator,
+			dbCompactor,
 			nil,
 			classicOutbox,
 			syncMonitor,
@@ -1146,6 +1132,7 @@ func createNodeImpl(
 		broadcastServer,
 		broadcastClients,
 		coordinator,
+		dbCompactor,
 		dasLifecycleManager,
 		classicOutbox,
 		syncMonitor,
@@ -1274,6 +1261,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	}
+	if n.DbCompactor != nil {
+		n.DbCompactor.Start(ctx)
+	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
 	}
@@ -1327,6 +1317,9 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	if n.DbCompactor != nil && n.DbCompactor.Started() {
+		n.DbCompactor.StopAndWait()
+	}
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
