@@ -139,16 +139,12 @@ func (ac *AssertionChain) CreateAssertion(
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}
-
-	numBlocks := height - prevHeight
 	stake, err := ac.userLogic.CurrentRequiredStake(ac.callOpts)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get current required stake")
 	}
 	newOpts := copyTxOpts(ac.txOpts)
 	newOpts.Value = stake
-	fmt.Printf("STAKING %d\n", stake.Uint64())
-
 	// TODO: Await transaction results.
 	result := withChainCommitment(ac.backend, func() error {
 		_, stakeErr := ac.writer.NewStakeOnNewAssertion(
@@ -156,7 +152,7 @@ func (ac *AssertionChain) CreateAssertion(
 			rollupgen.AssertionInputs{
 				BeforeState: prevAssertionState.AsSolidityStruct(),
 				AfterState:  postState.AsSolidityStruct(),
-				NumBlocks:   numBlocks,
+				NumBlocks:   height - prevHeight,
 			},
 			common.Hash{}, // Expected hash.
 			prevInboxMaxCount,
