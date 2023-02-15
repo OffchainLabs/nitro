@@ -75,12 +75,11 @@ func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
 }
 
 func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) error {
-	err := withChainCommitment(v.manager.assertionChain.backend, func() error {
-		_, err := v.manager.writer.CreateSubChallenge(
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.CreateSubChallenge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 		)
-		return err
 	})
 	return err
 }
