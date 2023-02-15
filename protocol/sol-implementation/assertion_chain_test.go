@@ -15,6 +15,7 @@ import (
 )
 
 func TestCreateAssertion(t *testing.T) {
+	ctx := context.Background()
 	chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
 
 	t.Run("OK", func(t *testing.T) {
@@ -43,6 +44,7 @@ func TestCreateAssertion(t *testing.T) {
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		created, err := chain.CreateAssertion(
+			ctx,
 			height,
 			prev,
 			prevState,
@@ -53,6 +55,7 @@ func TestCreateAssertion(t *testing.T) {
 		t.Logf("%+v", created)
 
 		_, err = chain.CreateAssertion(
+			ctx,
 			height,
 			prev,
 			prevState,
@@ -64,7 +67,7 @@ func TestCreateAssertion(t *testing.T) {
 	})
 	t.Run("can create fork", func(t *testing.T) {
 		chain, err := NewAssertionChain(
-			context.Background(),
+			ctx,
 			addresses.Rollup,
 			accs[2].txOpts,
 			&bind.CallOpts{},
@@ -96,6 +99,7 @@ func TestCreateAssertion(t *testing.T) {
 		prevInboxMaxCount := big.NewInt(1)
 		chain.txOpts.From = accs[2].accountAddr
 		created, err := chain.CreateAssertion(
+			ctx,
 			height,
 			prev,
 			prevState,

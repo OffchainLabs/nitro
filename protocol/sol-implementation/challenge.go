@@ -3,13 +3,16 @@ package solimpl
 import (
 	"math/big"
 
+	"context"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // AddLeaf vertex to a BlockChallenge using an assertion and a history commitment.
 func (c *Challenge) AddLeaf(
+	ctx context.Context,
 	assertion *Assertion,
 	history util.HistoryCommitment,
 ) (*ChallengeVertex, error) {
@@ -37,16 +40,15 @@ func (c *Challenge) AddLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	if err2 := withChainCommitment(c.manager.assertionChain.backend, func() error {
-		_, err3 := c.manager.writer.AddLeaf(
+	if _, err := transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
-		return err3
-	}); err2 != nil {
-		return nil, err2
+	}); err != nil {
+		return nil, err
 	}
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
 		c.manager.assertionChain.callOpts,

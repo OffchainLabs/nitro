@@ -7,11 +7,13 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
 
 // Bisect a challenge vertex by providing a history commitment.
 func (v *ChallengeVertex) Bisect(
+	ctx context.Context,
 	history util.HistoryCommitment,
 	proof []common.Hash,
 ) (*ChallengeVertex, error) {
@@ -20,16 +22,16 @@ func (v *ChallengeVertex) Bisect(
 	for _, h := range proof {
 		flatProof = append(flatProof, h[:]...)
 	}
-	if err2 := withChainCommitment(v.manager.assertionChain.backend, func() error {
-		_, err3 := v.manager.writer.Bisect(
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.Bisect(
 			v.manager.assertionChain.txOpts,
 			v.id,
 			history.Merkle,
 			flatProof,
 		)
-		return err3
-	}); err2 != nil {
-		return nil, err2
+	})
+	if err != nil {
+		return nil, err
 	}
 	bisectedToId, err := v.manager.caller.CalculateChallengeVertexId(
 		v.manager.assertionChain.callOpts,
@@ -54,12 +56,11 @@ func (v *ChallengeVertex) Bisect(
 }
 
 func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
-	err := withChainCommitment(v.manager.assertionChain.backend, func() error {
-		_, err := v.manager.writer.ConfirmForPsTimer(
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.ConfirmForPsTimer(
 			v.manager.assertionChain.txOpts,
 			v.id,
 		)
-		return err
 	})
 	switch {
 	case err == nil:

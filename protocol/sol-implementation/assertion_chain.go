@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"fmt"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
 
@@ -33,6 +35,12 @@ var (
 	hashTy, _              = abi.NewType("bytes32", "", nil)
 )
 
+// ChainBackend to interact with the underlying blockchain.
+type ChainBackend interface {
+	bind.ContractBackend
+	ReceiptFetcher
+}
+
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
 // for testing purposes.
@@ -40,10 +48,15 @@ type ChainCommiter interface {
 	Commit() common.Hash
 }
 
+// ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
+type ReceiptFetcher interface {
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend    bind.ContractBackend
+	backend    ChainBackend
 	caller     *rollupgen.RollupCoreCaller
 	userLogic  *rollupgen.RollupUserLogicCaller
 	writer     *rollupgen.RollupUserLogicTransactor
@@ -60,7 +73,7 @@ func NewAssertionChain(
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
-	backend bind.ContractBackend,
+	backend ChainBackend,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
 		backend:    backend,
@@ -125,6 +138,7 @@ func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error)
 
 // CreateAssertion makes an on-chain claim given a previous assertion state, a commitment.
 func (ac *AssertionChain) CreateAssertion(
+	ctx context.Context,
 	height uint64,
 	prevAssertionId uint64,
 	prevAssertionState *ExecutionState,
@@ -145,9 +159,9 @@ func (ac *AssertionChain) CreateAssertion(
 	}
 	newOpts := copyTxOpts(ac.txOpts)
 	newOpts.Value = stake
-	// TODO: Await transaction results.
-	result := withChainCommitment(ac.backend, func() error {
-		_, stakeErr := ac.writer.NewStakeOnNewAssertion(
+
+	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.writer.NewStakeOnNewAssertion(
 			newOpts,
 			rollupgen.AssertionInputs{
 				BeforeState: prevAssertionState.AsSolidityStruct(),
@@ -157,27 +171,27 @@ func (ac *AssertionChain) CreateAssertion(
 			common.Hash{}, // Expected hash.
 			prevInboxMaxCount,
 		)
-		return stakeErr
 	})
-	if createErr := handleCreateAssertionError(result, height, postState.GlobalState.BlockHash); createErr != nil {
+	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
 		return nil, createErr
 	}
+
+	fmt.Printf("%+v\n", receipt)
 
 	// TODO: THIS IS WRONG in the case of a fork.
 	return ac.AssertionByID(prevAssertionId + 1)
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(assertionId uint64) (*Challenge, error) {
-	err := withChainCommitment(ac.backend, func() error {
-		_, err2 := ac.writer.CreateChallenge(
+func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, assertionId uint64) (*Challenge, error) {
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.writer.CreateChallenge(
 			ac.txOpts,
 			assertionId,
 		)
-		return err2
 	})
-	if err3 := handleCreateSuccessionChallengeError(err, assertionId); err3 != nil {
-		return nil, err3
+	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
+		return nil, err2
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
@@ -270,17 +284,29 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 	}
 }
 
-// Runs a callback function meant to write to a contract backend, and if the
+// Runs a callback function meant to write to a chain backend, and if the
 // chain backend supports committing directly, we call the commit function before
-// returning.
-func withChainCommitment(backend bind.ContractBackend, fn func() error) error {
-	if err := fn(); err != nil {
-		return err
+// returning. This function additionally waits for the transaction to complete and returns
+// an optional transaction receipt. It returns an error if the
+// transaction had a failed status on-chain, or if the execution of the callback
+// failed directly.
+// TODO(RJ): Add logic of waiting for transactions to complete.
+func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+	tx, err := fn()
+	if err != nil {
+		return nil, err
 	}
 	if commiter, ok := backend.(ChainCommiter); ok {
 		commiter.Commit()
 	}
-	return nil
+	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+	if err != nil {
+		return nil, err
+	}
+	if receipt.Status != 1 {
+		return nil, fmt.Errorf("receipt status shows failing transaction: %+v", receipt)
+	}
+	return receipt, nil
 }
 
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
