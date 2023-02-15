@@ -86,10 +86,6 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 	require.NoError(t, err)
 	v2, err = manager.vertexById(v2.id)
 	require.NoError(t, err)
-	challenge, err = manager.ChallengeByID(challenge.id)
-	require.NoError(t, err)
-
-	t.Logf("%+v", v1.inner)
 
 	ok, err := v2.HasConfirmedSibling(ctx)
 	require.NoError(t, err)
@@ -304,7 +300,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 
 		v1, err = manager.vertexById(v1.id)
 		require.NoError(t, err)
-		v2, err = manager.vertexById(v2.id)
+		_, err = manager.vertexById(v2.id)
 		require.NoError(t, err)
 
 		commit = common.BytesToHash([]byte("nyan2fork"))
