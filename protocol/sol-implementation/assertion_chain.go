@@ -93,6 +93,7 @@ func NewAssertionChain(
 	if err != nil {
 		return nil, err
 	}
+	assertionChainBinding.ParseAssertionCreated(nil)
 	chain.caller = &coreBinding.RollupCoreCaller
 	chain.userLogic = &assertionChainBinding.RollupUserLogicCaller
 	chain.writer = &assertionChainBinding.RollupUserLogicTransactor
