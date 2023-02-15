@@ -179,7 +179,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 	genesis, err := chain.AssertionByID(common.Hash{})
 	require.NoError(t, err)
 
-	t.Run("vertex does not exist", func(t *testing.T) {
+	t.Run("Error: vertex does not exist", func(t *testing.T) {
 		vertex := &ChallengeVertex{
 			id:      common.BytesToHash([]byte("junk")),
 			manager: challenge.manager,
@@ -187,7 +187,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		err = vertex.CreateSubChallenge(ctx)
 		require.ErrorContains(t, err, "execution reverted: Fork candidate vertex does not exist")
 	})
-	t.Run("leaf can never be a fork candidate", func(t *testing.T) {
+	t.Run("Error: leaf can never be a fork candidate", func(t *testing.T) {
 		chain, _ = setupAssertionChainWithChallengeManager(t)
 		height1 = uint64(6)
 		height2 = uint64(7)
@@ -205,7 +205,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		err = v1.CreateSubChallenge(ctx)
 		require.ErrorContains(t, err, "execution reverted: Leaf can never be a fork candidate")
 	})
-	t.Run("lowest height not one above the current height", func(t *testing.T) {
+	t.Run("Error: lowest height not one above the current height", func(t *testing.T) {
 		chain, _ = setupAssertionChainWithChallengeManager(t)
 		height1 = uint64(6)
 		height2 = uint64(7)
@@ -247,7 +247,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.NoError(t, err)
 		require.ErrorContains(t, bisectedTo.CreateSubChallenge(context.Background()), "execution reverted: Lowest height not one above the current height")
 	})
-	t.Run("Has presumptive successor", func(t *testing.T) {
+	t.Run("Error: has presumptive successor", func(t *testing.T) {
 		chain, _ = setupAssertionChainWithChallengeManager(t)
 		height1 = uint64(8)
 		height2 = uint64(8)
@@ -440,6 +440,13 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
 		require.Equal(t, v2Commit[:], v2Height1.inner.HistoryRoot[:])
 
-		require.NoError(t, v1Height1.CreateSubChallenge(context.Background()))
+		genesisVertex, err := challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, v2Height1.inner.PredecessorId)
+		require.NoError(t, err)
+		genesis := &ChallengeVertex{
+			inner:   genesisVertex,
+			id:      v2Height1.inner.PredecessorId,
+			manager: challenge.manager,
+		}
+		require.NoError(t, genesis.CreateSubChallenge(context.Background()))
 	})
 }
