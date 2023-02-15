@@ -2,19 +2,14 @@ package solimpl
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +19,7 @@ func TestCreateAssertion(t *testing.T) {
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -88,7 +83,7 @@ func TestAssertionByID(t *testing.T) {
 	acc, err := setupAccount()
 	require.NoError(t, err)
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -119,7 +114,7 @@ func TestAssertion_Confirm(t *testing.T) {
 	require.NoError(t, err)
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -213,7 +208,7 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	acc, err := setupAccount()
 	require.NoError(t, err)
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
+	addr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -345,7 +340,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 
 	genesisStateRoot := common.BytesToHash([]byte("foo"))
 	challengePeriodSeconds := big.NewInt(1000)
-	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
+	assertionChainAddr, _, _, err := challengeV2gen.DeployAssertionChain(
 		acc.txOpts,
 		acc.backend,
 		genesisStateRoot,
@@ -359,25 +354,14 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	require.NoError(t, err)
 	require.Equal(t, true, len(code) > 0)
 
-	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
-		acc.txOpts,
-		acc.backend,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	code, err = acc.backend.CodeAt(ctx, ospAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
-
 	miniStakeValue := big.NewInt(1)
-	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
+	chalManagerAddr, _, _, err := challengeV2gen.DeployChallengeManagerImpl(
 		acc.txOpts,
 		acc.backend,
 		assertionChainAddr,
 		miniStakeValue,
 		challengePeriodSeconds,
-		ospAddr,
+		common.Address{},
 	)
 	require.NoError(t, err)
 	acc.backend.Commit()
@@ -395,48 +379,4 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 	acc.backend.Commit()
 
 	return chain, acc
-}
-
-// Represents a test EOA account in the simulated backend,
-type testAccount struct {
-	accountAddr common.Address
-	backend     *backends.SimulatedBackend
-	txOpts      *bind.TransactOpts
-}
-
-func setupAccount() (*testAccount, error) {
-	genesis := make(core.GenesisAlloc)
-	privKey, err := crypto.GenerateKey()
-	if err != nil {
-		return nil, err
-	}
-	pubKeyECDSA, ok := privKey.Public().(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("error casting public key to ECDSA")
-	}
-
-	// Strip off the 0x and the first 2 characters 04 which is always the
-	// EC prefix and is not required.
-	publicKeyBytes := crypto.FromECDSAPub(pubKeyECDSA)[4:]
-	var pubKey = make([]byte, 48)
-	copy(pubKey, publicKeyBytes)
-
-	addr := crypto.PubkeyToAddress(privKey.PublicKey)
-	chainID := big.NewInt(1337)
-	txOpts, err := bind.NewKeyedTransactorWithChainID(privKey, chainID)
-	if err != nil {
-		return nil, err
-	}
-	startingBalance, _ := new(big.Int).SetString(
-		"100000000000000000000000000000000000000",
-		10,
-	)
-	genesis[addr] = core.GenesisAccount{Balance: startingBalance}
-	gasLimit := uint64(100000000)
-	backend := backends.NewSimulatedBackend(genesis, gasLimit)
-	return &testAccount{
-		accountAddr: addr,
-		backend:     backend,
-		txOpts:      txOpts,
-	}, nil
 }

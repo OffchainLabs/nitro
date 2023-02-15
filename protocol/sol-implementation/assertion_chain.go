@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -44,8 +44,8 @@ type ChainCommiter interface {
 // that implements the protocol interface.
 type AssertionChain struct {
 	backend    bind.ContractBackend
-	caller     *outgen.AssertionChainCaller
-	writer     *outgen.AssertionChainTransactor
+	caller     *challengeV2gen.AssertionChainCaller
+	writer     *challengeV2gen.AssertionChainTransactor
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
 	stakerAddr common.Address
@@ -67,7 +67,7 @@ func NewAssertionChain(
 		txOpts:     txOpts,
 		stakerAddr: stakerAddr,
 	}
-	assertionChainBinding, err := outgen.NewAssertionChain(
+	assertionChainBinding, err := challengeV2gen.NewAssertionChain(
 		contractAddr, chain.backend,
 	)
 	if err != nil {
@@ -219,7 +219,7 @@ func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) er
 	case strings.Contains(errS, "Too late to challenge"):
 		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
 	default:
-		return nil
+		return err
 	}
 }
 
@@ -248,7 +248,7 @@ func handleCreateAssertionError(err error, commitment util.StateCommitment) erro
 	case strings.Contains(errS, "Too late to create sibling"):
 		return ErrTooLate
 	default:
-		return nil
+		return err
 	}
 }
 

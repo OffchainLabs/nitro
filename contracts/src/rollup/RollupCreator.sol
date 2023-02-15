@@ -97,12 +97,19 @@ contract RollupCreator is Ownable {
                 )
             )
         );
-        challengeManager.initialize(
-            IChallengeResultReceiver(expectedRollupAddr),
-            frame.sequencerInbox,
-            frame.bridge,
-            osp
-        );
+        
+        challengeManager.initialize({
+            _assertionChain: IAssertionChain(expectedRollupAddr),
+            _miniStakeValue: 1, // HN: TODO: set this 
+            _challengePeriod: 1, // HN: TODO: set this
+            _oneStepProofEntry: osp
+        });
+        // oldChallengeManager.initialize(
+        //     IOldChallengeResultReceiver(expectedRollupAddr),
+        //     frame.sequencerInbox,
+        //     frame.bridge,
+        //     osp
+        // );
 
         frame.rollup = new RollupProxy(
             config,

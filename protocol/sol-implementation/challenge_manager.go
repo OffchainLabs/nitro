@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
@@ -18,8 +18,8 @@ var (
 // ChallengeManager --
 type ChallengeManager struct {
 	assertionChain *AssertionChain
-	caller         *outgen.ChallengeManagerImplCaller
-	writer         *outgen.ChallengeManagerImplTransactor
+	caller         *challengeV2gen.ChallengeManagerImplCaller
+	writer         *challengeV2gen.ChallengeManagerImplTransactor
 }
 
 // ChallengeManager returns an instance of the current challenge manager
@@ -29,7 +29,7 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	managerBinding, err := outgen.NewChallengeManagerImpl(addr, ac.backend)
+	managerBinding, err := challengeV2gen.NewChallengeManagerImpl(addr, ac.backend)
 	if err != nil {
 		return nil, err
 	}

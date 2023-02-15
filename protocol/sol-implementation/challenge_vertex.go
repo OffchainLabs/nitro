@@ -75,6 +75,7 @@ func (v *ChallengeVertex) Bisect(
 		return nil, err
 	}
 	return &ChallengeVertex{
+		id:      bisectedToId,
 		inner:   bisectedTo,
 		id:      bisectedToId,
 		manager: v.manager,

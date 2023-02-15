@@ -443,6 +443,9 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
 		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
+		// Vertex must be in the protocol.
+		_, err = challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, bisectedTo.id)
+		require.NoError(t, err)
 
 		_, err = v1.Bisect(
 			util.HistoryCommitment{
