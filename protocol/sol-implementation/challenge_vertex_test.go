@@ -156,7 +156,6 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		// Vertex must be in the protocol.
 		_, err = challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, bisectedTo.id)
 		require.NoError(t, err)
-		require.NoError(t, bisectedTo.CreateSubChallenge(context.Background()))
 
 		_, err = v1.Bisect(
 			util.HistoryCommitment{
