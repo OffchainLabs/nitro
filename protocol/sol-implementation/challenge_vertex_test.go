@@ -201,7 +201,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				FirstLeaf: genesis.inner.StateHash,
 			},
 		)
-
+		require.NoError(t, err)
 		err = v1.CreateSubChallenge(ctx)
 		require.ErrorContains(t, err, "execution reverted: Leaf can never be a fork candidate")
 	})
