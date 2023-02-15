@@ -288,7 +288,6 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
 		require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
 
-		v1Commit = common.BytesToHash([]byte("nyan"))
 		v1Height4, err := v1.Bisect(
 			util.HistoryCommitment{
 				Height:    4,
