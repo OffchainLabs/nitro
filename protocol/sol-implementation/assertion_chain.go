@@ -134,7 +134,8 @@ func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error)
 	}, nil
 }
 
-// CreateAssertion makes an on-chain claim given a previous assertion state, a commitment.
+// CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
+// and a commitment to a post-state.
 func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
 	height uint64,
@@ -166,12 +167,15 @@ func (ac *AssertionChain) CreateAssertion(
 				AfterState:  postState.AsSolidityStruct(),
 				NumBlocks:   height - prevHeight,
 			},
-			common.Hash{}, // Expected hash.
+			common.Hash{}, // Expected hash. TODO: Is this fine as empty?
 			prevInboxMaxCount,
 		)
 	})
 	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
 		return nil, createErr
+	}
+	if len(receipt.Logs) == 0 {
+		return nil, errors.New("no logs observed from assertion creation")
 	}
 	assertionCreated, err := ac.rollup.ParseAssertionCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
