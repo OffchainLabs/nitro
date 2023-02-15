@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -27,8 +28,9 @@ type BlockValidatorDebugAPI struct {
 }
 
 type ValidateBlockResult struct {
-	Valid   bool   `json:"valid"`
-	Latency string `json:"latency"`
+	Valid       bool                    `json:"valid"`
+	Latency     string                  `json:"latency"`
+	GlobalState validator.GoGlobalState `json:"globalstate"`
 }
 
 func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
@@ -47,8 +49,11 @@ func (a *BlockValidatorDebugAPI) ValidateMessageNumber(
 		moduleRoot = moduleRoots[0]
 	}
 	start_time := time.Now()
-	valid, err := a.val.ValidateBlock(ctx, arbutil.MessageIndex(msgNum), full, moduleRoot)
-	result.Valid = valid
+	valid, gs, err := a.val.ValidateResult(ctx, arbutil.MessageIndex(msgNum), full, moduleRoot)
 	result.Latency = fmt.Sprintf("%vms", time.Since(start_time).Milliseconds())
+	if gs != nil {
+		result.GlobalState = *gs
+	}
+	result.Valid = valid
 	return result, err
 }

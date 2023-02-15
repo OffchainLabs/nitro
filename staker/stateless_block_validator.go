@@ -376,16 +376,16 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	return entry, nil
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(
+func (v *StatelessBlockValidator) ValidateResult(
 	ctx context.Context, pos arbutil.MessageIndex, useExec bool, moduleRoot common.Hash,
-) (bool, error) {
+) (bool, *validator.GoGlobalState, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, pos)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	input, err := entry.ToInput()
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	var spawners []validator.ValidationSpawner
 	if useExec {
@@ -394,7 +394,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		spawners = v.validationSpawners
 	}
 	if len(spawners) == 0 {
-		return false, errors.New("no validation defined")
+		return false, &entry.End, errors.New("no validation defined")
 	}
 	var runs []validator.ValidationRun
 	for _, spawner := range spawners {
@@ -409,10 +409,10 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	for _, run := range runs {
 		gsEnd, err := run.Await(ctx)
 		if err != nil || gsEnd != entry.End {
-			return false, err
+			return false, &gsEnd, err
 		}
 	}
-	return true, nil
+	return true, &entry.End, nil
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
