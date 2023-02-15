@@ -10,11 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 )
@@ -33,6 +35,12 @@ var (
 	hashTy, _              = abi.NewType("bytes32", "", nil)
 )
 
+// ChainBackend to interact with the underlying blockchain.
+type ChainBackend interface {
+	bind.ContractBackend
+	ReceiptFetcher
+}
+
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
 // for testing purposes.
@@ -40,10 +48,15 @@ type ChainCommiter interface {
 	Commit() common.Hash
 }
 
+// ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
+type ReceiptFetcher interface {
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend    bind.ContractBackend
+	backend    ChainBackend
 	caller     *challengeV2gen.AssertionChainCaller
 	writer     *challengeV2gen.AssertionChainTransactor
 	callOpts   *bind.CallOpts
@@ -59,7 +72,7 @@ func NewAssertionChain(
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
-	backend bind.ContractBackend,
+	backend ChainBackend,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
 		backend:    backend,
@@ -79,7 +92,7 @@ func NewAssertionChain(
 }
 
 // ChallengePeriodSeconds
-func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
+func (ac *AssertionChain) ChallengePeriodSeconds(ctx context.Context) (time.Duration, error) {
 	res, err := ac.caller.ChallengePeriodSeconds(ac.callOpts)
 	if err != nil {
 		return time.Second, err
@@ -88,7 +101,7 @@ func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
 }
 
 // AssertionByID --
-func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, error) {
+func (ac *AssertionChain) AssertionByID(ctx context.Context, assertionId common.Hash) (*Assertion, error) {
 	res, err := ac.caller.GetAssertion(ac.callOpts, assertionId)
 	if err != nil {
 		return nil, err
@@ -115,40 +128,42 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 // assertion's ID. Then, if the creation was successful,
 // returns the newly created assertion.
 func (ac *AssertionChain) CreateAssertion(
+	ctx context.Context,
 	commitment util.StateCommitment,
 	prevAssertionId common.Hash,
 ) (*Assertion, error) {
-	err := withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.CreateNewAssertion(
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.writer.CreateNewAssertion(
 			ac.txOpts,
 			commitment.StateRoot,
 			big.NewInt(int64(commitment.Height)),
 			prevAssertionId,
 		)
-		return err
 	})
 	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
 		return nil, err2
 	}
 	assertionId := getAssertionId(commitment, prevAssertionId)
-	return ac.AssertionByID(assertionId)
+	return ac.AssertionByID(ctx, assertionId)
 }
 
-func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
-	return withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
-		return err
+func (ac *AssertionChain) UpdateChallengeManager(ctx context.Context, a common.Address) error {
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.writer.UpdateChallengeManager(ac.txOpts, a)
 	})
+	return err
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
-	err := withChainCommitment(ac.backend, func() error {
-		_, err2 := ac.writer.CreateSuccessionChallenge(
+func (ac *AssertionChain) CreateSuccessionChallenge(
+	ctx context.Context,
+	assertionId common.Hash,
+) (*Challenge, error) {
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.writer.CreateSuccessionChallenge(
 			ac.txOpts,
 			assertionId,
 		)
-		return err2
 	})
 	if err3 := handleCreateSuccessionChallengeError(err, assertionId); err3 != nil {
 		return nil, err3
@@ -157,15 +172,15 @@ func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*C
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(assertionId, BlockChallenge)
+	challengeId, err := manager.CalculateChallengeId(ctx, assertionId, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
-	return manager.ChallengeByID(challengeId)
+	return manager.ChallengeByID(ctx, challengeId)
 }
 
 // Confirm creates a confirmation for the given assertion.
-func (a *Assertion) Confirm() error {
+func (a *Assertion) Confirm(ctx context.Context) error {
 	_, err := a.chain.writer.ConfirmAssertion(a.chain.txOpts, a.id)
 	switch {
 	case err == nil:
@@ -180,7 +195,7 @@ func (a *Assertion) Confirm() error {
 }
 
 // Reject creates a rejection for the given assertion.
-func (a *Assertion) Reject() error {
+func (a *Assertion) Reject(ctx context.Context) error {
 	_, err := a.chain.writer.RejectAssertion(a.chain.txOpts, a.id)
 	switch {
 	case err == nil:
@@ -244,17 +259,29 @@ func handleCreateAssertionError(err error, commitment util.StateCommitment) erro
 	}
 }
 
-// Runs a callback function meant to write to a contract backend, and if the
+// Runs a callback function meant to write to a chain backend, and if the
 // chain backend supports committing directly, we call the commit function before
-// returning.
-func withChainCommitment(backend bind.ContractBackend, fn func() error) error {
-	if err := fn(); err != nil {
-		return err
+// returning. This function additionally waits for the transaction to complete and returns
+// an optional transaction receipt. It returns an error if the
+// transaction had a failed status on-chain, or if the execution of the callback
+// failed directly.
+// TODO(RJ): Add logic of waiting for transactions to complete.
+func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+	tx, err := fn()
+	if err != nil {
+		return nil, err
 	}
 	if commiter, ok := backend.(ChainCommiter); ok {
 		commiter.Commit()
 	}
-	return nil
+	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+	if err != nil {
+		return nil, err
+	}
+	if receipt.Status != 1 {
+		return nil, fmt.Errorf("receipt status shows failing transaction: %+v", receipt)
+	}
+	return receipt, nil
 }
 
 // Constructs and assertion ID which is built as

@@ -41,12 +41,12 @@ func TestCreateAssertion(t *testing.T) {
 	genesisId := common.Hash{}
 
 	t.Run("OK", func(t *testing.T) {
-		created, err2 := chain.CreateAssertion(commit, genesisId)
+		created, err2 := chain.CreateAssertion(ctx, commit, genesisId)
 		require.NoError(t, err2)
 		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
 	t.Run("already exists", func(t *testing.T) {
-		_, err = chain.CreateAssertion(commit, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit, genesisId)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 	t.Run("previous assertion does not exist", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestCreateAssertion(t *testing.T) {
 			Height:    2,
 			StateRoot: common.BytesToHash([]byte{2}),
 		}
-		_, err = chain.CreateAssertion(commit, common.BytesToHash([]byte("nyan")))
+		_, err = chain.CreateAssertion(ctx, commit, common.BytesToHash([]byte("nyan")))
 		require.ErrorIs(t, err, ErrPrevDoesNotExist)
 	})
 	t.Run("invalid height", func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestCreateAssertion(t *testing.T) {
 			Height:    0,
 			StateRoot: common.BytesToHash([]byte{3}),
 		}
-		_, err = chain.CreateAssertion(commit, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit, genesisId)
 		require.ErrorIs(t, err, ErrInvalidHeight)
 	})
 	t.Run("too late to create sibling", func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestCreateAssertion(t *testing.T) {
 			Height:    1,
 			StateRoot: common.BytesToHash([]byte("forked")),
 		}
-		_, err = chain.CreateAssertion(commit, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit, genesisId)
 		require.ErrorIs(t, err, ErrTooLate)
 	})
 }
@@ -99,12 +99,12 @@ func TestAssertionByID(t *testing.T) {
 	require.NoError(t, err)
 
 	genesisId := common.Hash{}
-	resp, err := chain.AssertionByID(genesisId)
+	resp, err := chain.AssertionByID(ctx, genesisId)
 	require.NoError(t, err)
 
 	require.Equal(t, genesisStateRoot[:], resp.inner.StateHash[:])
 
-	_, err = chain.AssertionByID(common.BytesToHash([]byte("bar")))
+	_, err = chain.AssertionByID(ctx, common.BytesToHash([]byte("bar")))
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -134,27 +134,28 @@ func TestAssertion_Confirm(t *testing.T) {
 	}
 	genesisId := common.Hash{}
 
-	created, err := chain.CreateAssertion(commit, genesisId)
+	created, err := chain.CreateAssertion(ctx, commit, genesisId)
 	require.NoError(t, err)
 	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	acc.backend.Commit()
 
 	t.Run("Can confirm assertion", func(t *testing.T) {
 		require.Equal(t, uint8(0), created.inner.Status) // Pending.
-		require.NoError(t, created.Confirm())
+		require.NoError(t, created.Confirm(ctx))
 		acc.backend.Commit()
-		created, err = chain.AssertionByID(created.id)
+		created, err = chain.AssertionByID(ctx, created.id)
 		require.NoError(t, err)
 		require.Equal(t, uint8(1), created.inner.Status) // Confirmed.
 	})
 
 	t.Run("Unknown assertion", func(t *testing.T) {
 		created.id = common.BytesToHash([]byte("meow"))
-		require.ErrorIs(t, created.Confirm(), ErrNotFound)
+		require.ErrorIs(t, created.Confirm(ctx), ErrNotFound)
 	})
 }
 
 func TestAssertion_Reject(t *testing.T) {
+	ctx := context.Background()
 	acc, err := setupAccount()
 	require.NoError(t, err)
 
@@ -164,7 +165,7 @@ func TestAssertion_Reject(t *testing.T) {
 		StateRoot: common.BytesToHash([]byte{1}),
 	}
 	genesisId := common.Hash{}
-	created, err := chain.CreateAssertion(commit, genesisId)
+	created, err := chain.CreateAssertion(ctx, commit, genesisId)
 	require.NoError(t, err)
 	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	acc.backend.Commit()
@@ -173,33 +174,33 @@ func TestAssertion_Reject(t *testing.T) {
 		Height:    1,
 		StateRoot: common.BytesToHash([]byte{2}),
 	}
-	created, err = chain.CreateAssertion(commit, genesisId)
+	created, err = chain.CreateAssertion(ctx, commit, genesisId)
 	require.NoError(t, err)
 	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	acc.backend.Commit()
 
-	_, err = chain.CreateSuccessionChallenge(genesisId)
+	_, err = chain.CreateSuccessionChallenge(ctx, genesisId)
 	require.NoError(t, err)
 
 	t.Run("Can reject assertion", func(t *testing.T) {
 		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
 		require.Equal(t, uint8(0), created.inner.Status) // Pending.
-		require.NoError(t, created.Reject())
+		require.NoError(t, created.Reject(ctx))
 		acc.backend.Commit()
-		created, err = chain.AssertionByID(created.id)
+		created, err = chain.AssertionByID(ctx, created.id)
 		require.NoError(t, err)
 		require.Equal(t, uint8(2), created.inner.Status) // Confirmed.
 	})
 
 	t.Run("Unknown assertion", func(t *testing.T) {
 		created.id = common.BytesToHash([]byte("meow"))
-		require.ErrorIs(t, created.Reject(), ErrNotFound)
+		require.ErrorIs(t, created.Reject(ctx), ErrNotFound)
 	})
 
 	t.Run("Already confirmed assertion", func(t *testing.T) {
-		ga, err := chain.AssertionByID(genesisId)
+		ga, err := chain.AssertionByID(ctx, genesisId)
 		require.NoError(t, err)
-		require.ErrorIs(t, ga.Reject(), ErrNonPendingAssertion)
+		require.ErrorIs(t, ga.Reject(ctx), ErrNonPendingAssertion)
 	})
 }
 
@@ -222,17 +223,18 @@ func TestChallengePeriodSeconds(t *testing.T) {
 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-	chalPeriod, err := chain.ChallengePeriodSeconds()
+	chalPeriod, err := chain.ChallengePeriodSeconds(ctx)
 	require.NoError(t, err)
 	require.Equal(t, time.Second, chalPeriod)
 }
 
 func TestCreateSuccessionChallenge(t *testing.T) {
 	genesisId := common.Hash{}
+	ctx := context.Background()
 
 	t.Run("assertion does not exist", func(t *testing.T) {
 		chain, _ := setupAssertionChainWithChallengeManager(t)
-		_, err := chain.CreateSuccessionChallenge([32]byte{9})
+		_, err := chain.CreateSuccessionChallenge(ctx, [32]byte{9})
 		require.ErrorIs(t, err, ErrNotFound)
 	})
 	t.Run("assertion already rejected", func(t *testing.T) {
@@ -242,7 +244,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 	t.Run("at least two children required", func(t *testing.T) {
 		chain, _ := setupAssertionChainWithChallengeManager(t)
-		_, err := chain.CreateSuccessionChallenge(genesisId)
+		_, err := chain.CreateSuccessionChallenge(ctx, genesisId)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 
 		commit1 := util.StateCommitment{
@@ -250,10 +252,10 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{1}),
 		}
 
-		_, err = chain.CreateAssertion(commit1, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit1, genesisId)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(ctx, genesisId)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 
@@ -264,7 +266,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{1}),
 		}
 
-		_, err := chain.CreateAssertion(commit1, genesisId)
+		_, err := chain.CreateAssertion(ctx, commit1, genesisId)
 		require.NoError(t, err)
 
 		commit2 := util.StateCommitment{
@@ -272,17 +274,17 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{2}),
 		}
 
-		_, err = chain.CreateAssertion(commit2, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit2, genesisId)
 		require.NoError(t, err)
 
-		challengePeriod, err := chain.ChallengePeriodSeconds()
+		challengePeriod, err := chain.ChallengePeriodSeconds(ctx)
 		require.NoError(t, err)
 
 		// Adds two challenge periods to the chain timestamp.
 		err = acc.backend.AdjustTime(challengePeriod * 2)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(ctx, genesisId)
 		require.ErrorIs(t, err, ErrTooLate)
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -292,7 +294,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{1}),
 		}
 
-		_, err := chain.CreateAssertion(commit1, genesisId)
+		_, err := chain.CreateAssertion(ctx, commit1, genesisId)
 		require.NoError(t, err)
 
 		commit2 := util.StateCommitment{
@@ -300,10 +302,10 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{2}),
 		}
 
-		_, err = chain.CreateAssertion(commit2, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit2, genesisId)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(ctx, genesisId)
 		require.NoError(t, err)
 	})
 	t.Run("challenge already exists", func(t *testing.T) {
@@ -313,7 +315,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{1}),
 		}
 
-		_, err := chain.CreateAssertion(commit1, genesisId)
+		_, err := chain.CreateAssertion(ctx, commit1, genesisId)
 		require.NoError(t, err)
 
 		commit2 := util.StateCommitment{
@@ -321,13 +323,13 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			StateRoot: common.BytesToHash([]byte{2}),
 		}
 
-		_, err = chain.CreateAssertion(commit2, genesisId)
+		_, err = chain.CreateAssertion(ctx, commit2, genesisId)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(ctx, genesisId)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(ctx, genesisId)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 }
@@ -374,7 +376,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
 	)
 	require.NoError(t, err)
-	err = chain.UpdateChallengeManager(chalManagerAddr)
+	err = chain.UpdateChallengeManager(ctx, chalManagerAddr)
 	require.NoError(t, err)
 	acc.backend.Commit()
 
