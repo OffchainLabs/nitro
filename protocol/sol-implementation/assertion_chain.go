@@ -211,7 +211,7 @@ func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) er
 	case strings.Contains(errS, "Too late to challenge"):
 		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
 	default:
-		return nil
+		return err
 	}
 }
 
@@ -240,7 +240,7 @@ func handleCreateAssertionError(err error, commitment util.StateCommitment) erro
 	case strings.Contains(errS, "Too late to create sibling"):
 		return ErrTooLate
 	default:
-		return nil
+		return err
 	}
 }
 
