@@ -50,6 +50,7 @@ func (v *ChallengeVertex) Bisect(
 		return nil, err
 	}
 	return &ChallengeVertex{
+		id:      bisectedToId,
 		inner:   bisectedTo,
 		manager: v.manager,
 	}, nil
@@ -62,12 +63,23 @@ func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
 			v.id,
 		)
 	})
+	if err == nil {
+		return nil
+	}
 	switch {
-	case err == nil:
 	case strings.Contains(err.Error(), "PsTimer not greater than challenge period"):
 		return errors.Wrapf(ErrPsTimerNotYet, "vertex id %#v", v.id)
 	default:
 		return err
 	}
-	return nil
+}
+
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) error {
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.CreateSubChallenge(
+			v.manager.assertionChain.txOpts,
+			v.id,
+		)
+	})
+	return err
 }

@@ -93,7 +93,6 @@ func NewAssertionChain(
 	if err != nil {
 		return nil, err
 	}
-	assertionChainBinding.ParseAssertionCreated(nil)
 	chain.caller = &coreBinding.RollupCoreCaller
 	chain.userLogic = &assertionChainBinding.RollupUserLogicCaller
 	chain.writer = &assertionChainBinding.RollupUserLogicTransactor
@@ -198,11 +197,11 @@ func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, asserti
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(common.Hash{}, BlockChallenge)
+	challengeId, err := manager.CalculateChallengeId(ctx, common.Hash{}, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
-	return manager.ChallengeByID(challengeId)
+	return manager.ChallengeByID(ctx, challengeId)
 }
 
 // Confirm creates a confirmation for the given assertion.
