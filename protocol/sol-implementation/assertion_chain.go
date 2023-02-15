@@ -57,9 +57,8 @@ type ReceiptFetcher interface {
 // that implements the protocol interface.
 type AssertionChain struct {
 	backend    ChainBackend
-	caller     *rollupgen.RollupCoreCaller
-	userLogic  *rollupgen.RollupUserLogicCaller
-	writer     *rollupgen.RollupUserLogicTransactor
+	rollup     *rollupgen.RollupCore
+	userLogic  *rollupgen.RollupUserLogic
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
 	stakerAddr common.Address
@@ -93,9 +92,8 @@ func NewAssertionChain(
 	if err != nil {
 		return nil, err
 	}
-	chain.caller = &coreBinding.RollupCoreCaller
-	chain.userLogic = &assertionChainBinding.RollupUserLogicCaller
-	chain.writer = &assertionChainBinding.RollupUserLogicTransactor
+	chain.rollup = coreBinding
+	chain.userLogic = assertionChainBinding
 	return chain, nil
 }
 
@@ -114,7 +112,7 @@ func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
 
 // AssertionByID --
 func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error) {
-	res, err := ac.caller.GetAssertion(ac.callOpts, assertionNum)
+	res, err := ac.userLogic.GetAssertion(ac.callOpts, assertionNum)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +159,7 @@ func (ac *AssertionChain) CreateAssertion(
 	newOpts.Value = stake
 
 	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
-		return ac.writer.NewStakeOnNewAssertion(
+		return ac.userLogic.NewStakeOnNewAssertion(
 			newOpts,
 			rollupgen.AssertionInputs{
 				BeforeState: prevAssertionState.AsSolidityStruct(),
@@ -175,17 +173,17 @@ func (ac *AssertionChain) CreateAssertion(
 	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
 		return nil, createErr
 	}
-
-	fmt.Printf("%+v\n", receipt)
-
-	// TODO: THIS IS WRONG in the case of a fork.
-	return ac.AssertionByID(prevAssertionId + 1)
+	assertionCreated, err := ac.rollup.ParseAssertionCreated(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse assertion creation log")
+	}
+	return ac.AssertionByID(assertionCreated.AssertionNum)
 }
 
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, assertionId uint64) (*Challenge, error) {
 	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
-		return ac.writer.CreateChallenge(
+		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
 			assertionId,
 		)
@@ -206,7 +204,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, asserti
 
 // Confirm creates a confirmation for the given assertion.
 func (a *Assertion) Confirm() error {
-	_, err := a.chain.writer.ConfirmNextAssertion(a.chain.txOpts, common.Hash{}, common.Hash{})
+	_, err := a.chain.userLogic.ConfirmNextAssertion(a.chain.txOpts, common.Hash{}, common.Hash{})
 	switch {
 	case err == nil:
 		return nil
@@ -221,7 +219,7 @@ func (a *Assertion) Confirm() error {
 
 // Reject creates a rejection for the given assertion.
 func (a *Assertion) Reject() error {
-	_, err := a.chain.writer.RejectNextAssertion(a.chain.txOpts, a.chain.stakerAddr)
+	_, err := a.chain.userLogic.RejectNextAssertion(a.chain.txOpts, a.chain.stakerAddr)
 	switch {
 	case err == nil:
 		return nil

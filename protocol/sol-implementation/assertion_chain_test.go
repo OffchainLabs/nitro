@@ -21,7 +21,7 @@ func TestCreateAssertion(t *testing.T) {
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
 		prev := uint64(0)
-		minAssertionPeriod, err := chain.caller.MinimumAssertionPeriod(chain.callOpts)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
 		require.NoError(t, err)
 
 		latestBlockHash := common.Hash{}
@@ -76,7 +76,7 @@ func TestCreateAssertion(t *testing.T) {
 		)
 		height := uint64(1)
 		prev := uint64(0)
-		minAssertionPeriod, err := chain.caller.MinimumAssertionPeriod(chain.callOpts)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
 		require.NoError(t, err)
 
 		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
