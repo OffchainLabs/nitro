@@ -82,7 +82,7 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 
 	manager, err := chain.ChallengeManager()
 	require.NoError(t, err)
-	v1, err = manager.vertexById(v1.id)
+	_, err = manager.vertexById(v1.id)
 	require.NoError(t, err)
 	v2, err = manager.vertexById(v2.id)
 	require.NoError(t, err)
