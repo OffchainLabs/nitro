@@ -278,7 +278,7 @@ func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Trans
 	if err != nil {
 		return nil, err
 	}
-	if receipt.Status != 1 {
+	if receipt.Status != types.ReceiptStatusSuccessful {
 		return nil, fmt.Errorf("receipt status shows failing transaction: %+v", receipt)
 	}
 	return receipt, nil
