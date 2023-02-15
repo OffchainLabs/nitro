@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -133,12 +134,13 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
+	fmt.Printf("%+v\n", prev)
 	prevHeight := prev.inner.Height.Uint64()
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}
 	numBlocks := height - prevHeight
-	err := withChainCommitment(ac.backend, func() error {
+	result := withChainCommitment(ac.backend, func() error {
 		_, stakeErr := ac.writer.NewStakeOnNewAssertion(
 			ac.txOpts,
 			rollupgen.AssertionInputs{
@@ -151,7 +153,7 @@ func (ac *AssertionChain) CreateAssertion(
 		)
 		return stakeErr
 	})
-	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
+	if createErr := handleCreateAssertionError(result, height, postState.GlobalState.BlockHash); createErr != nil {
 		return nil, createErr
 	}
 	return ac.AssertionByID(prevAssertionId + 1)
@@ -227,7 +229,7 @@ func handleCreateSuccessionChallengeError(err error, assertionId uint64) error {
 	case strings.Contains(errS, "Too late to challenge"):
 		return errors.Wrapf(ErrTooLate, "assertion id %d", assertionId)
 	default:
-		return nil
+		return err
 	}
 }
 
@@ -256,7 +258,7 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 	case strings.Contains(errS, "Too late to create sibling"):
 		return ErrTooLate
 	default:
-		return nil
+		return err
 	}
 }
 
