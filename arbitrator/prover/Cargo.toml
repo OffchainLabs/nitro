@@ -25,6 +25,7 @@ structopt = "0.3.23"
 wasmparser = "0.84.0"
 serde_with = "1.12.1"
 smallvec = { version = "1.10.0", features = ["serde"] }
+lazy_static = "1.4.0"
 
 [lib]
 name = "prover"

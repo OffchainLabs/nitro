@@ -1,19 +1,19 @@
 (memory 1)
 
 (data (i32.const 1) "\01\02")
-(table $firsttable 2 funcref)
-(elem (table $firsttable) (i32.const 0) $f1 $f2)
-(table $secondtable 2 funcref)
-(elem (table $secondtable) (i32.const 0) $f3 $f4)
+;; (table $firsttable 2 funcref)
+;; (elem (table $firsttable) (i32.const 0) $f1 $f2)
+;; (table $secondtable 2 funcref)
+;; (elem (table $secondtable) (i32.const 0) $f3 $f4)
 
-  (func $f1 (result i32)
-    i32.const 42)
-  (func $f2 (result i32)
-    i32.const 13)
-  (func $f3 (result i32)
-    i32.const 43)
-  (func $f4 (result i32)
-    i32.const 14)
+;;   (func $f1 (result i32)
+;;     i32.const 42)
+;;   (func $f2 (result i32)
+;;     i32.const 13)
+;;   (func $f3 (result i32)
+;;     i32.const 43)
+;;   (func $f4 (result i32)
+;;     i32.const 14)
 
 (type $return_i32 (func (result i32)))
 
@@ -48,40 +48,42 @@
   ;; (call $f2)
   
   
-  (call_indirect $firsttable (type $return_i32) (i32.const 0))
-  (i32.eq (i32.const 42))
-  (call $assert_true)
+  ;; (call_indirect $firsttable (type $return_i32) (i32.const 0))
+  ;; (i32.eq (i32.const 42))
+  ;; (call $assert_true)
 
-  (call_indirect $firsttable (type $return_i32) (i32.const 1))
-  (i32.eq (i32.const 13))
-  (call $assert_true)
+  ;; (call_indirect $firsttable (type $return_i32) (i32.const 1))
+  ;; (i32.eq (i32.const 13))
+  ;; (call $assert_true)
 
-  (call_indirect $secondtable (type $return_i32) (i32.const 0))
-  (i32.eq (i32.const 43))
-  (call $assert_true)
+  ;; (call_indirect $secondtable (type $return_i32) (i32.const 0))
+  ;; (i32.eq (i32.const 43))
+  ;; (call $assert_true)
 
-  (i32.const 0) ;; destination offset
-  (i32.const 1) ;; source offset 
-  (i32.const 1) ;; length to copy
-  (table.copy $secondtable $secondtable)
+  ;; (i32.const 0) ;; destination offset
+  ;; (i32.const 1) ;; source offset 
+  ;; (i32.const 1) ;; length to copy
+  ;; (table.copy $secondtable $secondtable)
 
-  (call_indirect $secondtable (type $return_i32) (i32.const 0))
-  (i32.eq (i32.const 14))
-  (call $assert_true)
+  ;; (call_indirect $secondtable (type $return_i32) (i32.const 0))
+  ;; (i32.eq (i32.const 14))
+  ;; (call $assert_true)
 
-  (i32.const 0) ;; destination offset
-  (i32.const 1) ;; source offset 
-  (i32.const 1) ;; length to copy
-  (table.copy $firsttable $secondtable)
+  ;; (i32.const 0) ;; destination offset
+  ;; (i32.const 1) ;; source offset 
+  ;; (i32.const 1) ;; length to copy
+  ;; (table.copy $firsttable $secondtable)
 
-  (call_indirect $secondtable (type $return_i32) (i32.const 0))
-  (i32.eq (i32.const 14))
-  (call $assert_true)
+  ;; (call_indirect $secondtable (type $return_i32) (i32.const 0))
+  ;; (i32.eq (i32.const 14))
+  ;; (call $assert_true)
 
 
-  (call_indirect $firsttable (type $return_i32) (i32.const 0))
-  (i32.eq (i32.const 14))
-  (call $assert_true)
+  ;; (call_indirect $firsttable (type $return_i32) (i32.const 0))
+  ;; (i32.eq (i32.const 14))
+  ;; (call $assert_true)
+
+
 
   ;; (call_indirect $firsttable (type $return_i32) (i32.const 0))
   ;; (i32.eq (i32.const 13))

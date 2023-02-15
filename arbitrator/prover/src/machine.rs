@@ -1,6 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary, self},
     console::Color,
@@ -35,6 +34,16 @@ use std::{
     sync::Arc,
 };
 use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
+use lazy_static::lazy_static;
+
+
+fn times_two(n: u32) -> u32 { n * 2 }
+lazy_static!{
+  static ref NUMBER: u32 = times_two(21);
+  static ref BULK_MEM_WASM_BYTES: &'static[u8] = include_bytes!("bulk_memory_internal.wasm");
+  static ref BULK_MEM_WASM: WasmBinary<'static> = binary::parse(&BULK_MEM_WASM_BYTES)
+    .expect("bulk_memory_internal.wasm was not a valid wasm binary");
+}
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -332,6 +341,9 @@ impl Module {
             .iter()
             .map(|i| types[*i as usize].clone())
             .collect();
+        
+        //TODO seraphina: make this a checked conversion the same as below
+        let future_internals_offset: u32 = (code.len() + bin.codes.len()) as u32;
         for c in &bin.codes {
             let idx = code.len();
             let func_ty = func_types[idx].clone();
@@ -345,10 +357,10 @@ impl Module {
                         &func_types,
                         types,
                         func_type_idxs[idx],
-                        0 //TODO seraphina
+                        future_internals_offset
                     )
                 },
-                func_ty.clone(),
+                func_ty,
                 types,
             )?);
         }
@@ -491,6 +503,7 @@ impl Module {
 
         // Make internal functions
         let internals_offset = code.len() as u32;
+        assert!(future_internals_offset == internals_offset);  
         let mut memory_load_internal_type = FunctionType::default();
         memory_load_internal_type.inputs.push(ArbValueType::I32);
         memory_load_internal_type.outputs.push(ArbValueType::I32);
@@ -534,83 +547,59 @@ impl Module {
 
         //we're adding two functions here which implement in WAVM the memory.fill and memory.copy
         //instructions in WASM
-        //TODO seraphina: should we use the macros or something else here?
-        macro_rules! opcode {
-          ($opcode:ident) => {
-            Instruction::simple(Opcode::$opcode)
-          };
-          ($opcode:ident, $value:expr) => {
-              Instruction::with_data(Opcode::$opcode, $value)
-          };
-        }
-        macro_rules! binary {
-          ($type:ident, $op:ident) => {
-            Instruction::simple(Opcode::IBinOp(IntegerValType::$type, IBinOpType::$op))
-          };
-        }
-        macro_rules! compare {
-          ($type:ident, $rel:ident, $signed:expr) => {{
-            Instruction::simple(Opcode::IRelOp(IntegerValType::$type, IRelOpType::$rel, $signed))
-          }};
-      }
-
-        use ArbValueType::I32;
-        let bulkmem_ty = FunctionType::new(vec![I32, I32, I32], vec![]);
-
-        //args/locals: length value pointer 
-        let memfill_wavm = vec![
-          opcode!(I32Const, 0),
-          opcode!(Dup), // start of loop
-          opcode!(LocalGet, 2), 
-          binary!(I32, Add),
-          opcode!(LocalGet, 1),
-          Instruction::simple(Opcode::MemoryStore { ty: I32, bytes: 1 }),
-          opcode!(I32Const, 1),
-          binary!(I32, Add),
-          opcode!(Dup),
-          opcode!(LocalGet, 0),
-          //TODO seraphina: what even is this bool?
-          compare!(I32, Ne, false),
-          //the jump target is the "start of loop" above
-          opcode!(ArbitraryJumpIf, 1), 
-          opcode!(Drop),
-        ];
-        //args/locals: length source dest
-        //TODO seraphina: this only copies forwards, but we need to dynamically copy 
-        //forward or backward depending on whether s or d is bigger
-        let memcopy_s_bigger_wavm = vec![
-          //store (s-d) as local 3 
-          opcode!(LocalGet, 2),
-          opcode!(LocalGet, 1),
-          binary!(I32, Sub),
-          opcode!(LocalSet, 3),
-          opcode!(I32Const, 0),
-          opcode!(Dup), // start of loop
-          opcode!(LocalGet, 2),
-          binary!(I32, Add),
-          opcode!(Dup),
-          opcode!(LocalGet, 3),
-          binary!(I32, Add),
-          Instruction::simple(Opcode::MemoryLoad {ty: I32, bytes: 1, signed: false}),
-          Instruction::simple(Opcode::MemoryStore { ty: I32, bytes: 1 }),
-          opcode!(I32Const, 1),
-          binary!(I32, Add),
-          opcode!(Dup),
-          opcode!(LocalGet, 0),
-          compare!(I32, Ne, false),
-          //the jump target is the "start of loop" above
-          opcode!(ArbitraryJumpIf, 5),
-          opcode!(Drop),
-        ];
-
-
-        //internals offset + 4
-        code.push(Function::new_from_wavm(memfill_wavm, bulkmem_ty.clone(), vec![]));
-        //internals offset + 5
-        code.push(Function::new_from_wavm(memcopy_s_bigger_wavm, bulkmem_ty.clone(), vec![I32]));
+        //TODO seraphina: load in the internal bulkmem ops 
+        let bulk_mem_wasm_bytes: &[u8; 151] = include_bytes!("bulk_memory_internal.wasm");
+        let parsed_bulk_mem_wasm: WasmBinary = binary::parse(bulk_mem_wasm_bytes)
+          .expect("bulk_memory_internal.wasm was not a valid wasm binary");
         
-
-
+        dbg!(&parsed_bulk_mem_wasm.functions);
+        dbg!(&parsed_bulk_mem_wasm.codes);
+        let types = &parsed_bulk_mem_wasm.types;
+        dbg!(types);
+        assert_eq!(types.len(), 1);
+        let func_type = types.get(0).unwrap();
+        let memset_code = parsed_bulk_mem_wasm.codes.get(0).unwrap();
+        let memset = Function::new(
+          &memset_code.locals,
+          |code| {
+            wasm_to_wavm(
+              &memset_code.expr, 
+              code, 
+              floating_point_impls, 
+              &Vec::new(), //only used for Call instrs, which there are none 
+              types, 
+              0, 
+              internals_offset)
+          },
+          func_type.clone(),
+          types,
+        ).unwrap();
+        // let memset = Function::new_from_wavm(code, ty, local_types)
+        dbg!(&memset);
+        let memcpy_code = parsed_bulk_mem_wasm.codes.get(1).unwrap();
+        //TODO seraphina: should we use Function::new or Function::new_from_wavm here
+        let memcpy = Function::new(
+          &memcpy_code.locals,
+          |code| {
+            wasm_to_wavm(
+              &memcpy_code.expr, 
+              code, 
+              floating_point_impls, 
+              &Vec::new(),
+              types, 
+              0, 
+              internals_offset)
+          },
+          func_type.clone(),
+          types,
+        ).unwrap();
+        dbg!(&memcpy);
+        // //internals offset + 4
+        code.push(memset);
+        // code.push(Function::new_from_wavm(memfill_wavm, bulkmem_ty.clone(), vec![]));
+        // //internals offset + 5
+        code.push(memcpy);
+        // code.push(Function::new_from_wavm(memcopy_s_bigger_wavm, bulkmem_ty.clone(), vec![I32]));
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
@@ -987,16 +976,7 @@ impl Machine {
         for (source, error_message) in &lib_sources {
             let library = parse(source).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
-        }
-        //TODO seraphina: load in the internal bulkmem ops 
-        let bulk_mem_wasm_bytes = include_bytes!("bulk_memory_internal.wasm");
-        let parsed_bulk_mem_wasm = binary::parse(bulk_mem_wasm_bytes)
-          .expect("bulk_memory_internal.wasm was not a valid wasm binary");
-        
-        dbg!(parsed_bulk_mem_wasm.functions);
-        dbg!(library_paths);
-        // panic!("seraphina says hi TODO");
-        //let mut bulk_memory_impls = HashMap::default(); 
+        }        
 
         Self::from_binaries(
             &libraries,

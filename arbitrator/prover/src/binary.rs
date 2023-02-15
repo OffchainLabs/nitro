@@ -253,7 +253,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         sign_extension: true,
         reference_types: false,
         multi_value: true,
-        bulk_memory: false,
+        bulk_memory: true,
         simd: false,
         relaxed_simd: false,
         threads: false,
