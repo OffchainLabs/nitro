@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"math"
 	"math/big"
 	"sync"
@@ -156,6 +158,295 @@ type ChallengeManagerInterface interface {
 	Visualize(ctx context.Context, tx *ActiveTx) *Visualization
 	ChainId() uint64
 }
+
+type ChallengeImpl struct {
+	//nolint:unused
+	inner *solimpl.Challenge
+}
+
+//nolint:unused
+func newChallengeImpl(
+	ctx context.Context,
+	contractAddr common.Address,
+	txOpts *bind.TransactOpts,
+	callOpts *bind.CallOpts,
+	stakerAddr common.Address,
+	backend bind.ContractBackend,
+	challengeId common.Hash,
+) (ChallengeInterface, error) {
+	assertionManager, err := solimpl.NewAssertionChain(ctx, contractAddr, txOpts, callOpts, stakerAddr, backend)
+	if err != nil {
+		return nil, err
+	}
+	challengeManager, err := assertionManager.ChallengeManager()
+	if err != nil {
+		return nil, err
+	}
+	challenge, err := challengeManager.GetChallenge(challengeId)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeImpl{challenge}, nil
+}
+
+func (c *ChallengeImpl) RootAssertion(ctx context.Context, tx *ActiveTx) (*Assertion, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) Completed(ctx context.Context, tx *ActiveTx) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) HasConfirmedSibling(ctx context.Context, tx *ActiveTx, vertex ChallengeVertexInterface) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) RootVertex(ctx context.Context, tx *ActiveTx) (ChallengeVertexInterface, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) ParentStateCommitment(ctx context.Context, tx *ActiveTx) (util.StateCommitment, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) AddLeaf(ctx context.Context, tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address) (ChallengeVertexInterface, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) GetWinnerVertex(ctx context.Context, tx *ActiveTx) (util.Option[ChallengeVertexInterface], error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) HasEnded(ctx context.Context, tx *ActiveTx, challengeManager ChallengeManagerInterface) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) GetChallengeType(ctx context.Context, tx *ActiveTx) (ChallengeType, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeImpl) GetCreationTime(ctx context.Context, tx *ActiveTx) (time.Time, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+type ChallengeVertexImpl struct {
+	//nolint:unused
+	inner *solimpl.ChallengeVertex
+}
+
+//nolint:unused
+func newChallengeVertexImpl(
+	ctx context.Context,
+	contractAddr common.Address,
+	txOpts *bind.TransactOpts,
+	callOpts *bind.CallOpts,
+	stakerAddr common.Address,
+	backend bind.ContractBackend,
+	vertexId common.Hash,
+) (ChallengeVertexInterface, error) {
+	assertionManager, err := solimpl.NewAssertionChain(ctx, contractAddr, txOpts, callOpts, stakerAddr, backend)
+	if err != nil {
+		return nil, err
+	}
+	challengeManager, err := assertionManager.ChallengeManager()
+	if err != nil {
+		return nil, err
+	}
+	vertex, err := challengeManager.GetVertex(vertexId)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeVertexImpl{vertex}, nil
+}
+
+func (c *ChallengeVertexImpl) ConfirmForPsTimer(ctx context.Context, tx *ActiveTx) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) ConfirmForChallengeDeadline(ctx context.Context, tx *ActiveTx) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) ConfirmForSubChallengeWin(ctx context.Context, tx *ActiveTx) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) IsPresumptiveSuccessor(ctx context.Context, tx *ActiveTx) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) Bisect(ctx context.Context, tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, validator common.Address) (ChallengeVertexInterface, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) Merge(ctx context.Context, tx *ActiveTx, mergingTo ChallengeVertexInterface, proof []common.Hash, validator common.Address) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) EligibleForNewSuccessor(ctx context.Context, tx *ActiveTx) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetPrev(ctx context.Context, tx *ActiveTx) (util.Option[ChallengeVertexInterface], error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetStatus(ctx context.Context, tx *ActiveTx) (AssertionState, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetSubChallenge(ctx context.Context, tx *ActiveTx) (util.Option[ChallengeInterface], error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetPsTimer(ctx context.Context, tx *ActiveTx) (*util.CountUpTimer, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetCommitment(ctx context.Context, tx *ActiveTx) (util.HistoryCommitment, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetValidator(ctx context.Context, tx *ActiveTx) (common.Address, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetSequenceNum(ctx context.Context, tx *ActiveTx) (VertexSequenceNumber, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) GetPresumptiveSuccessor(ctx context.Context, tx *ActiveTx) (util.Option[ChallengeVertexInterface], error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeVertexImpl) ChessClockExpired(ctx context.Context, tx *ActiveTx, challengePeriod time.Duration) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+type ChallengeManagerImpl struct {
+	inner *solimpl.ChallengeManager
+}
+
+//nolint:unused
+func newChallengeManagerImpl(
+	ctx context.Context,
+	contractAddr common.Address,
+	txOpts *bind.TransactOpts,
+	callOpts *bind.CallOpts,
+	stakerAddr common.Address,
+	backend bind.ContractBackend,
+) (ChallengeManagerInterface, error) {
+	assertionManager, err := solimpl.NewAssertionChain(ctx, contractAddr, txOpts, callOpts, stakerAddr, backend)
+	if err != nil {
+		return nil, err
+	}
+	challengeManager, err := assertionManager.ChallengeManager()
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeManagerImpl{challengeManager}, nil
+}
+
+func (c *ChallengeManagerImpl) GetChallengeVerticesByCommitHashmap() map[ChallengeCommitHash]map[VertexCommitHash]ChallengeVertexInterface {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) GetChallengesByCommitHash() map[ChallengeCommitHash]ChallengeInterface {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) ChallengePeriodLength(tx *ActiveTx) time.Duration {
+	tx.verifyRead()
+	sec, err := c.inner.ChallengePeriodSec()
+	if err != nil {
+		return 0
+	}
+	return time.Second * time.Duration(sec.Uint64())
+}
+
+func (c *ChallengeManagerImpl) AddToBalance(tx *ActiveTx, addr common.Address, amount *big.Int) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) TimeReference() util.TimeReference {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) GetChallengesFeed() *EventFeed[ChallengeEvent] {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) DeductFromBalance(tx *ActiveTx, addr common.Address, amount *big.Int) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) GetFeed() *EventFeed[AssertionChainEvent] {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) SetLatestConfirmed(assertionSequenceNumber AssertionSequenceNumber) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) LatestConfirmed(tx *ActiveTx) *Assertion {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) SubscribeChallengeEvents(ctx context.Context, ch chan<- ChallengeEvent) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) Visualize(ctx context.Context, tx *ActiveTx) *Visualization {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *ChallengeManagerImpl) ChainId() uint64 {
+	//TODO implement me
+	panic("implement me")
+}
+
 type AssertionChain struct {
 	mutex                         sync.RWMutex
 	timeReference                 util.TimeReference

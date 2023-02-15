@@ -49,6 +49,41 @@ func (cm *ChallengeManager) CalculateChallengeId(assertionId common.Hash, cType 
 	return c, nil
 }
 
+// ChallengePeriodSec returns the challenge period in seconds.
+func (cm *ChallengeManager) ChallengePeriodSec() (*big.Int, error) {
+	challengePeriodSec, err := cm.caller.ChallengePeriodSec(cm.assertionChain.callOpts)
+	if err != nil {
+		return big.NewInt(0), err
+	}
+	return challengePeriodSec, nil
+}
+
+// GetVertex returns the challenge vertex for the given vertexId.
+func (cm *ChallengeManager) GetVertex(vertexId common.Hash) (*ChallengeVertex, error) {
+	vertex, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeVertex{
+		manager: cm,
+		id:      vertexId,
+		inner:   vertex,
+	}, nil
+}
+
+// GetChallenge returns the challenge for the given challengeId.
+func (cm *ChallengeManager) GetChallenge(challengeId common.Hash) (*Challenge, error) {
+	challenge, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
+	if err != nil {
+		return nil, err
+	}
+	return &Challenge{
+		manager: cm,
+		id:      challengeId,
+		inner:   challenge,
+	}, nil
+}
+
 // ChallengeByID returns a challenge by its challenge ID.
 func (cm *ChallengeManager) ChallengeByID(challengeID common.Hash) (*Challenge, error) {
 	c, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeID)
