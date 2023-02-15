@@ -15,7 +15,7 @@ import (
 )
 
 func TestCreateAssertion(t *testing.T) {
-	chain, _, backend := setupAssertionChainWithChallengeManager(t)
+	chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
@@ -62,6 +62,50 @@ func TestCreateAssertion(t *testing.T) {
 		require.ErrorContains(t, err, "ALREADY_STAKED")
 		// require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
+	t.Run("can create fork", func(t *testing.T) {
+		chain, err := NewAssertionChain(
+			context.Background(),
+			addresses.Rollup,
+			accs[2].txOpts,
+			&bind.CallOpts{},
+			accs[2].accountAddr,
+			backend,
+		)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.caller.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  common.BytesToHash([]byte("evil hash")),
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		chain.txOpts.From = accs[2].accountAddr
+		created, err := chain.CreateAssertion(
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
+		t.Logf("%+v", created)
+		// require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
+	})
 	// t.Run("already exists", func(t *testing.T) {
 	// 	_, err = chain.CreateAssertion(commit, 0)
 	// 	require.ErrorIs(t, err, ErrAlreadyExists)
@@ -96,7 +140,7 @@ func TestCreateAssertion(t *testing.T) {
 }
 
 func TestAssertionByID(t *testing.T) {
-	chain, _, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
 
 	resp, err := chain.AssertionByID(0)
 	require.NoError(t, err)
@@ -202,7 +246,7 @@ func TestAssertionByID(t *testing.T) {
 // }
 
 func TestChallengePeriodSeconds(t *testing.T) {
-	chain, _, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
 	require.Equal(t, time.Second, chalPeriod)
@@ -311,10 +355,10 @@ func TestChallengePeriodSeconds(t *testing.T) {
 // 	})
 // }
 
-func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount, *backends.SimulatedBackend) {
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
 	t.Helper()
 	ctx := context.Background()
-	accs, backend := setupAccounts(t, 2)
+	accs, backend := setupAccounts(t, 3)
 	prod := false
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := accs[0].accountAddr
@@ -338,5 +382,5 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *te
 		backend,
 	)
 	require.NoError(t, err)
-	return chain, accs[1], backend
+	return chain, accs, addresses, backend
 }

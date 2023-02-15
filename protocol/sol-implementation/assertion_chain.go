@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -44,6 +45,7 @@ type ChainCommiter interface {
 type AssertionChain struct {
 	backend    bind.ContractBackend
 	caller     *rollupgen.RollupCoreCaller
+	userLogic  *rollupgen.RollupUserLogicCaller
 	writer     *rollupgen.RollupUserLogicTransactor
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
@@ -79,6 +81,7 @@ func NewAssertionChain(
 		return nil, err
 	}
 	chain.caller = &coreBinding.RollupCoreCaller
+	chain.userLogic = &assertionChainBinding.RollupUserLogicCaller
 	chain.writer = &assertionChainBinding.RollupUserLogicTransactor
 	return chain, nil
 }
@@ -138,12 +141,15 @@ func (ac *AssertionChain) CreateAssertion(
 	}
 
 	numBlocks := height - prevHeight
-	baseStake, err := ac.caller.BaseStake(ac.callOpts)
+	stake, err := ac.userLogic.CurrentRequiredStake(ac.callOpts)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get base stake")
+		return nil, errors.Wrap(err, "could not get current required stake")
 	}
 	newOpts := copyTxOpts(ac.txOpts)
-	newOpts.Value = baseStake
+	newOpts.Value = stake
+	fmt.Printf("STAKING %d\n", stake.Uint64())
+
+	// TODO: Await transaction results.
 	result := withChainCommitment(ac.backend, func() error {
 		_, stakeErr := ac.writer.NewStakeOnNewAssertion(
 			newOpts,
@@ -160,6 +166,8 @@ func (ac *AssertionChain) CreateAssertion(
 	if createErr := handleCreateAssertionError(result, height, postState.GlobalState.BlockHash); createErr != nil {
 		return nil, createErr
 	}
+
+	// TODO: THIS IS WRONG in the case of a fork.
 	return ac.AssertionByID(prevAssertionId + 1)
 }
 
