@@ -45,13 +45,13 @@ type SeqCoordinator struct {
 	signer           *signature.SignVerify
 	config           SeqCoordinatorConfig // warning: static, don't use for hot reloadable fields
 
-	prevChosenSequencer string
-	reportedAlive       bool
+	prevChosenSequencer  string
+	reportedWantsLockout bool
 
 	lockoutUntil int64 // atomic
 
 	chosenUpdateMutex sync.Mutex // manages access to chosenOneUpdate
-	zombie            int32      // If > 0, prevents liveliness but not extending lockout. Protected by chosenUpdateMutex.
+	avoidLockout      int32      // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
 
 	redisErrors int // error counter, from workthread
 }
@@ -96,7 +96,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
 	f.Duration(prefix+".handoff-timeout", DefaultSeqCoordinatorConfig.HandoffTimeout, "the maximum amount of time to spend waiting for another sequencer to accept the lockout when handing it off on shutdown or db compaction")
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
-	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
+	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked as wanting the lockout if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 	DbCompactorConfigAddOptions(prefix+".db-compactor", f)
@@ -315,10 +315,10 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			}
 		}
 		pipe.PExpireAt(ctx, redisutil.CHOSENSEQ_KEY, lockoutUntil)
-		if c.zombie <= 0 {
-			myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
-			pipe.Set(ctx, myLivelinessKey, redisutil.LIVELINESS_VAL, initialDuration)
-			pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
+		if c.avoidLockout <= 0 {
+			myWantsLockoutKey := redisutil.WantsLockoutKeyFor(c.config.MyUrl())
+			pipe.Set(ctx, myWantsLockoutKey, redisutil.WANTS_LOCKOUT_VAL, initialDuration)
+			pipe.PExpireAt(ctx, myWantsLockoutKey, lockoutUntil)
 		}
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
@@ -353,28 +353,28 @@ func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
 	return c.getRemoteMsgCountImpl(c.GetContext(), c.Client)
 }
 
-func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
+func (c *SeqCoordinator) wantsLockoutUpdate(ctx context.Context) error {
 	c.chosenUpdateMutex.Lock()
 	defer c.chosenUpdateMutex.Unlock()
-	return c.livelinessUpdateWithChosenUpdateMutex(ctx)
+	return c.wantsLockoutUpdateWithChosenUpdateMutex(ctx)
 }
 
-func (c *SeqCoordinator) livelinessUpdateWithChosenUpdateMutex(ctx context.Context) error {
-	if c.zombie > 0 {
+func (c *SeqCoordinator) wantsLockoutUpdateWithChosenUpdateMutex(ctx context.Context) error {
+	if c.avoidLockout > 0 {
 		return nil
 	}
-	myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
-	aliveUntil := time.Now().Add(c.config.LockoutDuration)
+	myWantsLockoutKey := redisutil.WantsLockoutKeyFor(c.config.MyUrl())
+	wantsLockoutUntil := time.Now().Add(c.config.LockoutDuration)
 	pipe := c.Client.TxPipeline()
 	initialDuration := c.config.LockoutDuration
 	if initialDuration < 2*time.Second {
 		initialDuration = 2 * time.Second
 	}
-	pipe.Set(ctx, myLivelinessKey, redisutil.LIVELINESS_VAL, initialDuration)
-	pipe.PExpireAt(ctx, myLivelinessKey, aliveUntil)
+	pipe.Set(ctx, myWantsLockoutKey, redisutil.WANTS_LOCKOUT_VAL, initialDuration)
+	pipe.PExpireAt(ctx, myWantsLockoutKey, wantsLockoutUntil)
 	err := execTestPipe(pipe, ctx)
 	if err != nil {
-		return fmt.Errorf("liveliness failed to update redis: %w", err)
+		return fmt.Errorf("failed to update wants lockout key in redis: %w", err)
 	}
 	return nil
 }
@@ -415,14 +415,14 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 	return releaseErr
 }
 
-func (c *SeqCoordinator) livelinessRelease(ctx context.Context) error {
-	myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
-	releaseErr := c.Client.Del(ctx, myLivelinessKey).Err()
+func (c *SeqCoordinator) wantsLockoutRelease(ctx context.Context) error {
+	myWantsLockoutKey := redisutil.WantsLockoutKeyFor(c.config.MyUrl())
+	releaseErr := c.Client.Del(ctx, myWantsLockoutKey).Err()
 	if releaseErr == nil {
 		return nil
 	}
 	// got error - was it still deleted?
-	readErr := c.Client.Get(ctx, myLivelinessKey).Err()
+	readErr := c.Client.Get(ctx, myWantsLockoutKey).Err()
 	if errors.Is(readErr, redis.Nil) {
 		return nil
 	}
@@ -447,7 +447,7 @@ func (c *SeqCoordinator) noRedisError() time.Duration {
 func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen string) time.Duration {
 	if nextChosen != "" && nextChosen != c.config.MyUrl() {
 		// was the active sequencer, but no longer
-		// we maintain chosen status if we had it and nobody in the priorities is alive
+		// we maintain chosen status if we had it and nobody in the priorities wants the lockout
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
 			err := c.sequencer.ForwardTo(nextChosen)
@@ -480,14 +480,14 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Warn("coordinator failed chosen-one keepalive", "err", err)
 		return c.retryAfterRedisError()
 	}
-	c.reportedAlive = true
+	c.reportedWantsLockout = true
 	return c.noRedisError()
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
-	chosenSeq, err := c.RecommendLiveSequencer(ctx)
+	chosenSeq, err := c.RecommendSequencerWantingLockout(ctx)
 	if err != nil {
-		log.Warn("coordinator failed finding live sequencer", "err", err)
+		log.Warn("coordinator failed finding sequencer wanting lockout", "err", err)
 		return c.retryAfterRedisError()
 	}
 	if c.prevChosenSequencer == c.config.MyUrl() {
@@ -610,9 +610,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
 			log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
-			// make sure we're marked alive
-			if err := c.livelinessUpdate(ctx); err != nil {
-				log.Warn("failed to update liveliness", "err", err)
+			// make sure we're marked as wanting the lockout
+			if err := c.wantsLockoutUpdate(ctx); err != nil {
+				log.Warn("failed to update wants lockout key", "err", err)
 			}
 			c.prevChosenSequencer = ""
 			return c.retryAfterRedisError()
@@ -629,24 +629,24 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	// update liveliness
-	var livelinessErr error
+	// update wanting the lockout
+	var wantsLockoutErr error
 	if c.sync.Synced() {
-		livelinessErr = c.livelinessUpdate(ctx)
-		if livelinessErr == nil {
-			c.reportedAlive = true
+		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
+		if wantsLockoutErr == nil {
+			c.reportedWantsLockout = true
 		}
-	} else if c.reportedAlive {
-		livelinessErr = c.livelinessRelease(ctx)
-		if livelinessErr == nil {
-			c.reportedAlive = false
+	} else if c.reportedWantsLockout {
+		wantsLockoutErr = c.wantsLockoutRelease(ctx)
+		if wantsLockoutErr == nil {
+			c.reportedWantsLockout = false
 		}
 	}
-	if livelinessErr != nil {
-		log.Warn("coordinator failed to post liveness", "err", livelinessErr)
+	if wantsLockoutErr != nil {
+		log.Warn("coordinator failed to update its wanting lockout status", "err", wantsLockoutErr)
 	}
 
-	if (livelinessErr != nil) || (msgReadErr != nil) {
+	if (wantsLockoutErr != nil) || (msgReadErr != nil) {
 		return c.retryAfterRedisError()
 	}
 	return c.noRedisError()
@@ -655,7 +655,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 func (c *SeqCoordinator) DebugPrint() string {
 	return fmt.Sprint("Url:", c.config.MyUrl(),
 		" prevChosenSequencer:", c.prevChosenSequencer,
-		" reportedAlive:", c.reportedAlive,
+		" reportedWantsLockout:", c.reportedWantsLockout,
 		" lockoutUntil:", c.lockoutUntil,
 		" redisErrors:", c.redisErrors)
 }
@@ -720,23 +720,23 @@ func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) bool {
 
 func (c *SeqCoordinator) PrepareForShutdown() {
 	ctx := c.StopWaiter.GetContext()
-	success := c.Zombify(ctx)
+	success := c.AvoidLockout(ctx)
 	if !success {
-		// trying to release the chosen one status is pointless if we're still alive
+		// trying to release the chosen one status is pointless if we still are marked as wanting the lockout
 		// the error was already logged in Zombify
 		return
 	}
 	// Any errors/failures here are logged in the method
-	c.TryToHandoff(ctx)
+	c.TryToHandoffChosenOne(ctx)
 }
 
 func (c *SeqCoordinator) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 	// We've just stopped our normal context so we need to use our parent's context.
 	parentCtx := c.StopWaiter.GetParentContext()
-	err := c.livelinessRelease(parentCtx)
+	err := c.wantsLockoutRelease(parentCtx)
 	if err != nil {
-		log.Error("failed to release liveliness on shutdown", "err", err)
+		log.Error("failed to release wanting the lockout on shutdown", "err", err)
 	}
 	err = c.chosenOneRelease(parentCtx)
 	if err != nil {
@@ -759,53 +759,54 @@ func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbsta
 	return nil
 }
 
-// Returns true if liveliness was released.
-// The seq coordinator becomes a zombie regardless, so you might want to call Unzombify on error.
-func (c *SeqCoordinator) Zombify(ctx context.Context) bool {
+// Returns true if the wanting the lockout key was released.
+// The seq coordinator is internally marked as disliking the lockout regardless, so you might want to call SeekLockout on error.
+func (c *SeqCoordinator) AvoidLockout(ctx context.Context) bool {
 	c.chosenUpdateMutex.Lock()
-	c.zombie++
+	c.avoidLockout++
 	c.chosenUpdateMutex.Unlock()
-	err := c.livelinessRelease(ctx)
+	err := c.wantsLockoutRelease(ctx)
 	if err != nil {
-		log.Error("failed to release liveliness to become a zombie", "err", err)
+		log.Error("failed to release wanting the lockout in redis", "err", err)
 		return false
 	}
 	return true
 }
 
 // Returns true on success.
-func (c *SeqCoordinator) TryToHandoff(ctx context.Context) bool {
+func (c *SeqCoordinator) TryToHandoffChosenOne(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, c.config.HandoffTimeout)
 	defer cancel()
 	if c.CurrentlyChosen() {
-		log.Info("waiting for another sequencer to acquire liveliness...", "timeout", c.config.HandoffTimeout)
+		log.Info("waiting for another sequencer to become chosen...", "timeout", c.config.HandoffTimeout)
 		success := c.waitFor(ctx, func() bool {
 			return !c.CurrentlyChosen()
 		})
 		if success {
-			newChosen, err := c.CurrentChosenSequencer(ctx)
+			wantsLockout, err := c.RecommendSequencerWantingLockout(ctx)
 			if err == nil {
-				log.Info("switched chosen sequencer; waiting some more", "delay", c.config.SafeShutdownDelay, "newChosen", newChosen)
+				log.Info("released chosen one status; a new sequencer hopefully wants to acquire it", "delay", c.config.SafeShutdownDelay, "wantsLockout", wantsLockout)
 			} else {
-				log.Warn("succeeded in releasing lockout but failed to get currently chosen sequencer", "err", err)
+				log.Warn("succeeded in releasing chosen one status but failed to get sequencer wanting lockout", "err", err)
 			}
 		} else {
-			log.Error("timed out waiting for another sequencer to acquire liveliness", "timeout", c.config.HandoffTimeout)
+			log.Error("timed out waiting for another sequencer to become chosen", "timeout", c.config.HandoffTimeout)
 		}
 		return success
 	}
 	return true
 }
 
-func (c *SeqCoordinator) Unzombify(ctx context.Context) {
+// Undoes the effects of AvoidLockout. AvoidLockout must've been called before an equal number of times.
+func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	c.chosenUpdateMutex.Lock()
 	defer c.chosenUpdateMutex.Unlock()
-	c.zombie--
+	c.avoidLockout--
 	if c.sync.Synced() {
-		// Even if this errors we still unzombified
-		err := c.livelinessUpdateWithChosenUpdateMutex(ctx)
+		// Even if this errors we still internally marked ourselves as wanting the lockout
+		err := c.wantsLockoutUpdateWithChosenUpdateMutex(ctx)
 		if err != nil {
-			log.Warn("failed to acquire liveliness after unzombifying", "err", err)
+			log.Warn("failed to set wants lockout key in redis after unzombifying", "err", err)
 		}
 	}
 }

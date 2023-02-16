@@ -114,11 +114,11 @@ func (c *DbCompactor) maybeCompactDb(ctx context.Context) time.Duration {
 	now := time.Now().UTC()
 	if wentPastTimeOfDay(c.lastCheck, now, config.minutesAfterMidnight) {
 		log.Info("attempting to release sequencer lockout to run database compaction", "targetTime", config.TimeOfDay)
-		success := c.seqCoordinator.Zombify(ctx)
-		defer c.seqCoordinator.Unzombify(ctx) // needs called even if c.Zombify returns false
+		success := c.seqCoordinator.AvoidLockout(ctx)
+		defer c.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
 		if success {
 			// We've released liveliness, now wait for the handoff
-			success = c.seqCoordinator.TryToHandoff(ctx)
+			success = c.seqCoordinator.TryToHandoffChosenOne(ctx)
 			if success {
 				c.compactDb()
 			}
