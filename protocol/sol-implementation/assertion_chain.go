@@ -14,7 +14,6 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -33,8 +32,6 @@ var (
 	ErrTooLate             = errors.New("too late to create assertion sibling")
 	ErrTooSoon             = errors.New("too soon to confirm assertion")
 	ErrInvalidHeight       = errors.New("invalid assertion height")
-	uint256Ty, _           = abi.NewType("uint256", "", nil)
-	hashTy, _              = abi.NewType("bytes32", "", nil)
 )
 
 // ChainBackend to interact with the underlying blockchain.

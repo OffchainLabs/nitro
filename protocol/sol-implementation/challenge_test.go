@@ -148,6 +148,7 @@ func setupTopLevelFork(
 		accs[2].accountAddr,
 		backend,
 	)
+	require.NoError(t, err)
 
 	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
 		backend.Commit()

@@ -313,7 +313,6 @@ func generateRollupConfig(
 // Represents a test EOA account in the simulated backend,
 type testAccount struct {
 	accountAddr common.Address
-	backend     *backends.SimulatedBackend
 	txOpts      *bind.TransactOpts
 }
 

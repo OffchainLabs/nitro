@@ -70,6 +70,7 @@ func TestCreateAssertion(t *testing.T) {
 			accs[2].accountAddr,
 			backend,
 		)
+		require.NoError(t, err)
 		height := uint64(1)
 		prev := uint64(0)
 		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
@@ -322,6 +323,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			accs[2].accountAddr,
 			backend,
 		)
+		require.NoError(t, err)
 
 		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
 			backend.Commit()
