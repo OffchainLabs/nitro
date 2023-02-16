@@ -1,35 +1,29 @@
 package solimpl
 
 import (
-	"testing"
-
 	"context"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+	"math/big"
+	"testing"
 )
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
-	chain, _ := setupAssertionChainWithChallengeManager(t)
 	height1 := uint64(1)
 	height2 := uint64(1)
-	a1, _, challenge := setupTopLevelFork(t, chain, height1, height2)
-
+	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
-		// Pass in a junk assertion that has no predecessor.
 		_, err := challenge.AddLeaf(
 			ctx,
 			&Assertion{
-				chain: chain,
-				id:    common.BytesToHash([]byte("junk")),
-				StateCommitment: util.StateCommitment{
-					Height:    height1,
-					StateRoot: common.BytesToHash([]byte("foo")),
-				},
-				inner: challengeV2gen.Assertion{
-					PredecessorId: common.BytesToHash([]byte("junk")),
+				chain: chain1,
+				id:    20,
+				inner: rollupgen.AssertionNode{
+					Height: big.NewInt(1),
 				},
 			},
 			util.HistoryCommitment{
@@ -37,14 +31,21 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				Merkle: common.BytesToHash([]byte("bar")),
 			},
 		)
-		require.ErrorContains(t, err, "Assertion does not exist")
+		require.ErrorContains(t, err, "INVALID_ASSERTION_NUM")
 	})
 	t.Run("invalid height", func(t *testing.T) {
+		// Pass in a junk assertion that has no predecessor.
 		_, err := challenge.AddLeaf(
 			ctx,
-			a1,
+			&Assertion{
+				chain: chain1,
+				id:    1,
+				inner: rollupgen.AssertionNode{
+					Height: big.NewInt(0),
+				},
+			},
 			util.HistoryCommitment{
-				Height: 100,
+				Height: 0,
 				Merkle: common.BytesToHash([]byte("bar")),
 			},
 		)
@@ -73,7 +74,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("first state not in history", func(t *testing.T) {
 		t.Skip()
 	})
-	t.Run("first state is not the challenge root", func(t *testing.T) {
+	t.Run("OK", func(t *testing.T) {
 		_, err := challenge.AddLeaf(
 			ctx,
 			a1,
@@ -82,32 +83,15 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				Merkle: common.BytesToHash([]byte("nyan")),
 			},
 		)
-		require.ErrorContains(t, err, "First state is not the challenge root")
-	})
-	t.Run("OK", func(t *testing.T) {
-		genesis, err := chain.AssertionByID(ctx, common.Hash{})
-		require.NoError(t, err)
-		_, err = challenge.AddLeaf(
-			ctx,
-			a1,
-			util.HistoryCommitment{
-				Height:    height1,
-				Merkle:    common.BytesToHash([]byte("nyan")),
-				FirstLeaf: genesis.inner.StateHash,
-			},
-		)
 		require.NoError(t, err)
 	})
 	t.Run("already exists", func(t *testing.T) {
-		genesis, err := chain.AssertionByID(ctx, common.Hash{})
-		require.NoError(t, err)
-		_, err = challenge.AddLeaf(
+		_, err := challenge.AddLeaf(
 			ctx,
 			a1,
 			util.HistoryCommitment{
-				Height:    height1,
-				Merkle:    common.BytesToHash([]byte("nyan")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height: height2,
+				Merkle: common.BytesToHash([]byte("nyan")),
 			},
 		)
 		require.ErrorContains(t, err, "already exists")
@@ -116,31 +100,72 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 
 func setupTopLevelFork(
 	t *testing.T,
-	chain *AssertionChain,
+	ctx context.Context,
 	height1,
 	height2 uint64,
-) (*Assertion, *Assertion, *Challenge) {
+) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
 	t.Helper()
-	ctx := context.Background()
-	genesisId := common.Hash{}
+	chain1, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+	prev := uint64(0)
 
-	// Creates a simple assertion chain fork.
-	commit1 := util.StateCommitment{
-		Height:    height1,
-		StateRoot: common.BytesToHash([]byte{1}),
+	minAssertionPeriod, err := chain1.userLogic.MinimumAssertionPeriod(chain1.callOpts)
+	require.NoError(t, err)
+
+	latestBlockHash := common.Hash{}
+	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+		latestBlockHash = backend.Commit()
 	}
-	a1, err := chain.CreateAssertion(ctx, commit1, genesisId)
-	require.NoError(t, err)
 
-	commit2 := util.StateCommitment{
-		Height:    height2,
-		StateRoot: common.BytesToHash([]byte{2}),
+	prevState := &ExecutionState{
+		GlobalState:   GoGlobalState{},
+		MachineStatus: MachineStatusFinished,
 	}
-	a2, err := chain.CreateAssertion(ctx, commit2, genesisId)
+	postState := &ExecutionState{
+		GlobalState: GoGlobalState{
+			BlockHash:  latestBlockHash,
+			SendRoot:   common.Hash{},
+			Batch:      1,
+			PosInBatch: 0,
+		},
+		MachineStatus: MachineStatusFinished,
+	}
+	prevInboxMaxCount := big.NewInt(1)
+	a1, err := chain1.CreateAssertion(
+		ctx,
+		height1,
+		prev,
+		prevState,
+		postState,
+		prevInboxMaxCount,
+	)
 	require.NoError(t, err)
 
-	// Initiates a challenge on the genesis assertion.
-	challenge, err := chain.CreateSuccessionChallenge(ctx, genesisId)
+	chain2, err := NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		accs[2].txOpts,
+		&bind.CallOpts{},
+		accs[2].accountAddr,
+		backend,
+	)
 	require.NoError(t, err)
-	return a1, a2, challenge
+
+	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+		backend.Commit()
+	}
+
+	postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
+	a2, err := chain2.CreateAssertion(
+		ctx,
+		height2,
+		prev,
+		prevState,
+		postState,
+		prevInboxMaxCount,
+	)
+	require.NoError(t, err)
+
+	challenge, err := chain2.CreateSuccessionChallenge(ctx, 0)
+	require.NoError(t, err)
+	return a1, a2, challenge, chain1, chain2
 }

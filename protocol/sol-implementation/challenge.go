@@ -20,12 +20,21 @@ func (c *Challenge) AddLeaf(
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
+	callOpts := c.manager.assertionChain.callOpts
+	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, assertion.id)
+	if err != nil {
+		return nil, err
+	}
+	prevAssertion, err := c.manager.assertionChain.AssertionByID(assertion.inner.PrevNum)
+	if err != nil {
+		return nil, err
+	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
-		ClaimId:                assertion.id,
+		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             history.FirstLeaf,
+		FirstState:             prevAssertion.inner.StateHash,
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
@@ -39,15 +48,14 @@ func (c *Challenge) AddLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	_, err2 := transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	if _, err2 := transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
-	})
-	if err2 != nil {
+	}); err2 != nil {
 		return nil, err2
 	}
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(

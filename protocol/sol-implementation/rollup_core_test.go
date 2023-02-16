@@ -24,22 +24,19 @@ import (
 
 func TestDeployFullRollupStack(t *testing.T) {
 	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
+	accs, backend := setupAccounts(t, 1)
 	prod := false
 	wasmModuleRoot := common.Hash{}
-	rollupOwner := acc.accountAddr
+	rollupOwner := accs[0].accountAddr
 	chainId := big.NewInt(1337)
 	loserStakeEscrow := common.Address{}
 	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow)
-	numValidators := uint64(10)
 	deployFullRollupStack(
 		t,
 		ctx,
-		acc.backend,
-		acc.txOpts,
+		backend,
+		accs[0].txOpts,
 		common.Address{},
-		numValidators,
 		cfg,
 	)
 }
@@ -61,11 +58,10 @@ func deployFullRollupStack(
 	backend *backends.SimulatedBackend,
 	deployAuth *bind.TransactOpts,
 	sequencer common.Address,
-	authorizeValidators uint64,
 	config rollupgen.Config,
 ) *rollupAddresses {
 	t.Helper()
-	rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator := deployRollupCreator(t, ctx, backend, deployAuth)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator := deployRollupCreator(t, ctx, backend, deployAuth)
 
 	nonce, err := backend.PendingNonceAt(ctx, rollupCreatorAddress)
 	require.NoError(t, err)
@@ -96,29 +92,21 @@ func deployFullRollupStack(
 		backend.Commit()
 		require.NoError(t, err)
 
-		receipt2, err := backend.TransactionReceipt(ctx, tx.Hash())
-		require.NoError(t, err)
+		receipt2, err2 := backend.TransactionReceipt(ctx, tx.Hash())
+		require.NoError(t, err2)
 		require.Equal(t, uint64(1), receipt2.Status)
 	}
 
-	var allowValidators []bool
-	var validatorAddrs []common.Address
-	for i := uint64(1); i <= authorizeValidators; i++ {
-		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
-		allowValidators = append(allowValidators, true)
-	}
-	if len(validatorAddrs) > 0 {
-		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, backend)
-		require.NoError(t, err)
+	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, backend)
+	require.NoError(t, err)
 
-		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-		backend.Commit()
-		require.NoError(t, err)
+	tx, err = rollup.SetValidatorWhitelistDisabled(deployAuth, true)
+	backend.Commit()
+	require.NoError(t, err)
 
-		receipt2, err := backend.TransactionReceipt(ctx, tx.Hash())
-		require.NoError(t, err)
-		require.Equal(t, uint64(1), receipt2.Status)
-	}
+	receipt2, err := backend.TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), receipt2.Status)
 
 	return &rollupAddresses{
 		Bridge:                 info.Bridge,
@@ -126,7 +114,7 @@ func deployFullRollupStack(
 		SequencerInbox:         info.SequencerInbox,
 		DeployedAt:             receipt.BlockNumber.Uint64(),
 		Rollup:                 info.RollupAddress,
-		RollupUserLogic:        rollupUserLogic,
+		RollupUserLogic:        rollupUserAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
 	}
@@ -212,6 +200,7 @@ func deployChallengeFactory(
 	err = andTxSucceeded(ctx, tx, ospEntryAddr, backend, err)
 	require.NoError(t, err)
 
+	// TODO(RJ): This assertion chain is not used, but still needed by challenge manager. Need to remove.
 	genesisStateHash := common.BytesToHash([]byte("nyan"))
 	challengePeriodSeconds := big.NewInt(100)
 
@@ -324,45 +313,43 @@ func generateRollupConfig(
 // Represents a test EOA account in the simulated backend,
 type testAccount struct {
 	accountAddr common.Address
-	backend     *backends.SimulatedBackend
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccount() (*testAccount, error) {
+func setupAccounts(t *testing.T, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
+	t.Helper()
 	genesis := make(core.GenesisAlloc)
-	privKey, err := crypto.GenerateKey()
-	if err != nil {
-		return nil, err
-	}
-	pubKeyECDSA, ok := privKey.Public().(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("error casting public key to ECDSA")
-	}
-
-	// Strip off the 0x and the first 2 characters 04 which is always the
-	// EC prefix and is not required.
-	publicKeyBytes := crypto.FromECDSAPub(pubKeyECDSA)[4:]
-	var pubKey = make([]byte, 48)
-	copy(pubKey, publicKeyBytes)
-
-	addr := crypto.PubkeyToAddress(privKey.PublicKey)
-	chainID := big.NewInt(1337)
-	txOpts, err := bind.NewKeyedTransactorWithChainID(privKey, chainID)
-	if err != nil {
-		return nil, err
-	}
-	startingBalance, _ := new(big.Int).SetString(
-		"100000000000000000000000000000000000000",
-		10,
-	)
-	genesis[addr] = core.GenesisAccount{Balance: startingBalance}
 	gasLimit := uint64(100000000)
+
+	accs := make([]*testAccount, numAccounts)
+	for i := uint64(0); i < numAccounts; i++ {
+		privKey, err := crypto.GenerateKey()
+		require.NoError(t, err)
+		pubKeyECDSA, ok := privKey.Public().(*ecdsa.PublicKey)
+		require.Equal(t, true, ok)
+
+		// Strip off the 0x and the first 2 characters 04 which is always the
+		// EC prefix and is not required.
+		publicKeyBytes := crypto.FromECDSAPub(pubKeyECDSA)[4:]
+		var pubKey = make([]byte, 48)
+		copy(pubKey, publicKeyBytes)
+
+		addr := crypto.PubkeyToAddress(privKey.PublicKey)
+		chainID := big.NewInt(1337)
+		txOpts, err := bind.NewKeyedTransactorWithChainID(privKey, chainID)
+		require.NoError(t, err)
+		startingBalance, _ := new(big.Int).SetString(
+			"100000000000000000000000000000000000000",
+			10,
+		)
+		genesis[addr] = core.GenesisAccount{Balance: startingBalance}
+		accs[i] = &testAccount{
+			accountAddr: addr,
+			txOpts:      txOpts,
+		}
+	}
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
-	return &testAccount{
-		accountAddr: addr,
-		backend:     backend,
-		txOpts:      txOpts,
-	}, nil
+	return accs, backend
 }
 
 func andTxSucceeded(

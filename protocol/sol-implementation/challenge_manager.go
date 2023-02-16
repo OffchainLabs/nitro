@@ -26,7 +26,7 @@ type ChallengeManager struct {
 // ChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
 func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
-	addr, err := ac.caller.ChallengeManagerAddr(ac.callOpts)
+	addr, err := ac.userLogic.ChallengeManager(ac.callOpts)
 	if err != nil {
 		return nil, err
 	}
