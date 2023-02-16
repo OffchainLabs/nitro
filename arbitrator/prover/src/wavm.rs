@@ -494,7 +494,7 @@ pub fn wasm_to_wavm<'a>(
     }
     macro_rules! load {
         ($type:ident, $memory:expr, $bytes:expr, $signed:ident) => {{
-          ensure!($memory.memory == 0, "multi-memory proposal not supported");
+            ensure!($memory.memory == 0, "multi-memory proposal not supported");
             let op = Opcode::MemoryLoad {
                 ty: ArbValueType::$type,
                 bytes: $bytes,
@@ -777,18 +777,16 @@ pub fn wasm_to_wavm<'a>(
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
                 opcode!(CallIndirect, pack_call_indirect(*table_index, *index), @push delta - 1);
             },
-            
             MemoryFill {mem} => {
               ensure!(*mem == 0, "multi-memory proposal not supported");
               //TODO seraphina put @pop 2 I think?
               opcode!(Call, std::convert::Into::<u64>::into(internals_offset)+4, @pop 3);
             }
-            
             MemoryCopy {src, dst} => {
               ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
               //TODO seraphina put @pop 2 I think?
               opcode!(Call, std::convert::Into::<u64>::into(internals_offset)+5, @pop 3);
-            }, 
+            },
 
             unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
                 bail!("tail-call extension not supported {:?}", unsupported)

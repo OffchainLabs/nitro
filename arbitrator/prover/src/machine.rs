@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use crate::{
-    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary, self},
+    binary::{self, parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
     console::Color,
     host::get_host_impl,
     memory::Memory,
@@ -17,8 +17,9 @@ use crate::{
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
-use rayon::{prelude::*};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -34,13 +35,11 @@ use std::{
     sync::Arc,
 };
 use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
-use lazy_static::lazy_static;
 
-
-lazy_static!{
-  static ref BULK_MEM_WASM_BYTES: &'static[u8] = include_bytes!("bulk_memory_internal.wasm");
-  static ref BULK_MEM_WASM: WasmBinary<'static> = binary::parse(&BULK_MEM_WASM_BYTES)
-    .expect("bulk_memory_internal.wasm was not a valid wasm binary");
+lazy_static! {
+    static ref BULK_MEM_WASM_BYTES: &'static [u8] = include_bytes!("bulk_memory_internal.wasm");
+    static ref BULK_MEM_WASM: WasmBinary<'static> = binary::parse(&BULK_MEM_WASM_BYTES)
+        .expect("bulk_memory_internal.wasm was not a valid wasm binary");
 }
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
@@ -339,7 +338,7 @@ impl Module {
             .iter()
             .map(|i| types[*i as usize].clone())
             .collect();
-        
+
         //TODO seraphina: make this a checked conversion the same as below
         let future_internals_offset: u32 = (code.len() + bin.codes.len()) as u32;
         for c in &bin.codes {
@@ -355,7 +354,7 @@ impl Module {
                         &func_types,
                         types,
                         func_type_idxs[idx],
-                        future_internals_offset
+                        future_internals_offset,
                     )
                 },
                 func_ty,
@@ -501,7 +500,7 @@ impl Module {
 
         // Make internal functions
         let internals_offset = code.len() as u32;
-        assert!(future_internals_offset == internals_offset);  
+        assert!(future_internals_offset == internals_offset);
         let mut memory_load_internal_type = FunctionType::default();
         memory_load_internal_type.inputs.push(ArbValueType::I32);
         memory_load_internal_type.outputs.push(ArbValueType::I32);
@@ -543,34 +542,35 @@ impl Module {
             memory_store_internal_type,
         ));
 
-        //we're adding two internal functions here which implement in WAVM the 
+        //we're adding two internal functions here which implement in WAVM the
         //memory.fill and memory.copy instructions in WASM
         let types = &BULK_MEM_WASM.types;
         assert_eq!(types.len(), 1);
         let func_type = types.get(0).unwrap();
-        let [memset, memcpy] = [0,1].map(|i|{
-          let code = BULK_MEM_WASM.codes.get(i).unwrap();
-          Function::new(
-            &code.locals,
-            |code_vec| {
-              wasm_to_wavm(
-                &code.expr, 
-                code_vec, 
-                floating_point_impls, 
-                &Vec::new(), //only used for Call instrs, which there are none 
-                types, 
-                0, 
-                internals_offset)
-            },
-            func_type.clone(),
-            types,
-          ).unwrap()
+        let [memset, memcpy] = [0, 1].map(|i| {
+            let code = BULK_MEM_WASM.codes.get(i).unwrap();
+            Function::new(
+                &code.locals,
+                |code_vec| {
+                    wasm_to_wavm(
+                        &code.expr,
+                        code_vec,
+                        floating_point_impls,
+                        &Vec::new(), //only used for Call instrs, which there are none
+                        types,
+                        0,
+                        internals_offset,
+                    )
+                },
+                func_type.clone(),
+                types,
+            )
+            .unwrap()
         });
         //internals offset + 4
         code.push(memset);
         //internals offset + 5
         code.push(memcpy);
-        
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
@@ -947,7 +947,7 @@ impl Machine {
         for (source, error_message) in &lib_sources {
             let library = parse(source).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
-        }        
+        }
 
         Self::from_binaries(
             &libraries,
