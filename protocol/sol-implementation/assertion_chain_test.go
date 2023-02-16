@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	//"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	// "github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -150,51 +148,58 @@ func TestAssertionByID(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-// func TestAssertion_Confirm(t *testing.T) {
-// 	ctx := context.Background()
-// 	acc, err := setupAccount()
-// 	require.NoError(t, err)
+func TestAssertion_Confirm(t *testing.T) {
+	ctx := context.Background()
+	chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
 
-// 	genesisStateRoot := common.BytesToHash([]byte("foo"))
-// 	addr, _, _, err := challengeV2gen.DeployAssertionChain(
-// 		acc.txOpts,
-// 		acc.backend,
-// 		genesisStateRoot,
-// 		big.NewInt(10), // 10 second challenge period.
-// 	)
-// 	require.NoError(t, err)
-// 	acc.backend.Commit()
+	height := uint64(1)
+	prev := uint64(0)
+	minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+	require.NoError(t, err)
 
-// 	chain, err := NewAssertionChain(
-// 		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-// 	)
-// 	require.NoError(t, err)
+	latestBlockHash := common.Hash{}
+	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+		latestBlockHash = backend.Commit()
+	}
 
-// 	commit := util.StateCommitment{
-// 		Height:    1,
-// 		StateRoot: common.BytesToHash([]byte{1}),
-// 	}
-// 	genesisId := common.Hash{}
+	prevState := &ExecutionState{
+		GlobalState:   GoGlobalState{},
+		MachineStatus: MachineStatusFinished,
+	}
+	postState := &ExecutionState{
+		GlobalState: GoGlobalState{
+			BlockHash:  latestBlockHash,
+			SendRoot:   common.Hash{},
+			Batch:      1,
+			PosInBatch: 0,
+		},
+		MachineStatus: MachineStatusFinished,
+	}
+	prevInboxMaxCount := big.NewInt(1)
+	created, err := chain.CreateAssertion(
+		ctx,
+		height,
+		prev,
+		prevState,
+		postState,
+		prevInboxMaxCount,
+	)
+	require.NoError(t, err)
 
-// 	created, err := chain.CreateAssertion(commit, genesisId)
-// 	require.NoError(t, err)
-// 	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
-// 	acc.backend.Commit()
+	t.Run("Can confirm assertion", func(t *testing.T) {
+		//require.Equal(t, uint8(0), created.inner.Status) // Pending.
+		require.NoError(t, created.Confirm())
+		backend.Commit()
+		created, err = chain.AssertionByID(created.id)
+		require.NoError(t, err)
+		//require.Equal(t, uint8(1), created.inner.Status) // Confirmed.
+	})
 
-// 	t.Run("Can confirm assertion", func(t *testing.T) {
-// 		require.Equal(t, uint8(0), created.inner.Status) // Pending.
-// 		require.NoError(t, created.Confirm())
-// 		acc.backend.Commit()
-// 		created, err = chain.AssertionByID(created.id)
-// 		require.NoError(t, err)
-// 		require.Equal(t, uint8(1), created.inner.Status) // Confirmed.
-// 	})
-
-// 	t.Run("Unknown assertion", func(t *testing.T) {
-// 		created.id = common.BytesToHash([]byte("meow"))
-// 		require.ErrorIs(t, created.Confirm(), ErrNotFound)
-// 	})
-// }
+	// t.Run("Unknown assertion", func(t *testing.T) {
+	// 	created.id = common.BytesToHash([]byte("meow"))
+	// 	require.ErrorIs(t, created.Confirm(), ErrNotFound)
+	// })
+}
 
 // func TestAssertion_Reject(t *testing.T) {
 // 	acc, err := setupAccount()
