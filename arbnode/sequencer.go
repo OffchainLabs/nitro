@@ -929,6 +929,7 @@ func (s *Sequencer) StopAndWait() {
 				_, failure, _ := s.nonceFailures.GetOldest()
 				failure.revived = true
 				item = failure.queueItem
+				s.nonceFailures.RemoveOldest()
 			} else {
 				select {
 				case item = <-s.txQueue:
