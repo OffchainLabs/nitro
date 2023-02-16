@@ -37,9 +37,7 @@ use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, Tab
 use lazy_static::lazy_static;
 
 
-fn times_two(n: u32) -> u32 { n * 2 }
 lazy_static!{
-  static ref NUMBER: u32 = times_two(21);
   static ref BULK_MEM_WASM_BYTES: &'static[u8] = include_bytes!("bulk_memory_internal.wasm");
   static ref BULK_MEM_WASM: WasmBinary<'static> = binary::parse(&BULK_MEM_WASM_BYTES)
     .expect("bulk_memory_internal.wasm was not a valid wasm binary");
@@ -545,61 +543,34 @@ impl Module {
             memory_store_internal_type,
         ));
 
-        //we're adding two functions here which implement in WAVM the memory.fill and memory.copy
-        //instructions in WASM
-        //TODO seraphina: load in the internal bulkmem ops 
-        let bulk_mem_wasm_bytes = include_bytes!("bulk_memory_internal.wasm");
-        let parsed_bulk_mem_wasm: WasmBinary = binary::parse(bulk_mem_wasm_bytes)
-          .expect("bulk_memory_internal.wasm was not a valid wasm binary");
-        
-        dbg!(&parsed_bulk_mem_wasm.functions);
-        dbg!(&parsed_bulk_mem_wasm.codes);
-        let types = &parsed_bulk_mem_wasm.types;
-        dbg!(types);
+        //we're adding two internal functions here which implement in WAVM the 
+        //memory.fill and memory.copy instructions in WASM
+        let types = &BULK_MEM_WASM.types;
         assert_eq!(types.len(), 1);
         let func_type = types.get(0).unwrap();
-        let memset_code = parsed_bulk_mem_wasm.codes.get(0).unwrap();
-        let memset = Function::new(
-          &memset_code.locals,
-          |code| {
-            wasm_to_wavm(
-              &memset_code.expr, 
-              code, 
-              floating_point_impls, 
-              &Vec::new(), //only used for Call instrs, which there are none 
-              types, 
-              0, 
-              internals_offset)
-          },
-          func_type.clone(),
-          types,
-        ).unwrap();
-        // let memset = Function::new_from_wavm(code, ty, local_types)
-        dbg!(&memset);
-        let memcpy_code = parsed_bulk_mem_wasm.codes.get(1).unwrap();
-        //TODO seraphina: should we use Function::new or Function::new_from_wavm here
-        let memcpy = Function::new(
-          &memcpy_code.locals,
-          |code| {
-            wasm_to_wavm(
-              &memcpy_code.expr, 
-              code, 
-              floating_point_impls, 
-              &Vec::new(),
-              types, 
-              0, 
-              internals_offset)
-          },
-          func_type.clone(),
-          types,
-        ).unwrap();
-        dbg!(&memcpy);
-        // //internals offset + 4
+        let [memset, memcpy] = [0,1].map(|i|{
+          let code = BULK_MEM_WASM.codes.get(i).unwrap();
+          Function::new(
+            &code.locals,
+            |code_vec| {
+              wasm_to_wavm(
+                &code.expr, 
+                code_vec, 
+                floating_point_impls, 
+                &Vec::new(), //only used for Call instrs, which there are none 
+                types, 
+                0, 
+                internals_offset)
+            },
+            func_type.clone(),
+            types,
+          ).unwrap()
+        });
+        //internals offset + 4
         code.push(memset);
-        // code.push(Function::new_from_wavm(memfill_wavm, bulkmem_ty.clone(), vec![]));
-        // //internals offset + 5
+        //internals offset + 5
         code.push(memcpy);
-        // code.push(Function::new_from_wavm(memcopy_s_bigger_wavm, bulkmem_ty.clone(), vec![I32]));
+        
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 

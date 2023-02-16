@@ -3,6 +3,12 @@
 
   (func $memset (param $pointer i32) (param $value i32) (param $length i32)
     (local $offset i32)
+
+    ;; if length is zero, nothing to do 
+    local.get $length 
+    i32.eqz
+    (if (then return))
+
     i32.const 0
     local.set $offset
 
@@ -29,6 +35,12 @@
 
   (func $memcpy (param $destination i32) (param $source i32) (param $length i32)
     (local $offset i32) 
+
+    ;; if length is zero, nothing to do 
+    local.get $length 
+    i32.eqz
+    (if (then return))
+
 
     local.get $source
     local.get $destination
@@ -97,11 +109,3 @@
     )
   )
 )
-;; (func $main 
-;;   (i32.const 100)
-;;   (i32.const 3)
-;;   (i32.const 2)
-;;   (call $memset)
-;; )
-
-;; (start $main)
