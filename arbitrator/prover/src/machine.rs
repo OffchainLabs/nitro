@@ -18,7 +18,7 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
-use rayon::{prelude::*, vec};
+use rayon::{prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -548,7 +548,7 @@ impl Module {
         //we're adding two functions here which implement in WAVM the memory.fill and memory.copy
         //instructions in WASM
         //TODO seraphina: load in the internal bulkmem ops 
-        let bulk_mem_wasm_bytes: &[u8; 151] = include_bytes!("bulk_memory_internal.wasm");
+        let bulk_mem_wasm_bytes = include_bytes!("bulk_memory_internal.wasm");
         let parsed_bulk_mem_wasm: WasmBinary = binary::parse(bulk_mem_wasm_bytes)
           .expect("bulk_memory_internal.wasm was not a valid wasm binary");
         

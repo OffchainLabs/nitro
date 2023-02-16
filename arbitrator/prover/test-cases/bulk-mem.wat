@@ -17,6 +17,31 @@
 
 (type $return_i32 (func (result i32)))
 
+(func $memset (param $pointer i32) (param $value i32) (param $length i32)
+  (local $offset i32)
+  i32.const 0
+  local.set $offset
+
+  (loop $inner
+    ;; calculate current index into region to be set
+    local.get $offset
+    local.get $pointer
+    i32.add 
+    local.get $value
+    i32.store8
+
+    ;; increment offset
+    i32.const 1
+    local.get $offset
+    i32.add 
+    local.tee $offset
+
+    ;; check to terminate loop 
+    local.get $length
+    i32.ne
+    br_if $inner
+  )
+)
 (func $main
 
   ;; (i32.const 20) ;; offset
@@ -27,22 +52,27 @@
   ;; (i32.eq (i32.const 5))
   ;; (call $assert_true)
 
-  (i32.const 200) ;; pointer into start of region to fill
-  (i32.const 7) ;; value to fill
+  (i32.const 20) ;; pointer into start of region to fill
+  (i32.const 55) ;; value to fill
   (i32.const 10) ;; length of segment to fill
   (memory.fill)
-
-  (call $assert_byte_at_address (i32.const 209) (i32.const 7))
-  (call $assert_byte_at_address (i32.const 300) (i32.const 0))
+  ;; (call $memset)
+  (call $assert_byte_at_address (i32.const 19) (i32.const 0))
+  (call $assert_byte_at_address (i32.const 20) (i32.const 55))
+  (call $assert_byte_at_address (i32.const 29) (i32.const 55))
+  (call $assert_byte_at_address (i32.const 30) (i32.const 0))
 
   (i32.const 300) ;; pointer to destination
-  (i32.const 200) ;; pointer to source
+  (i32.const 20) ;; pointer to source
   (i32.const 5) ;; number of bytes to copy
   (memory.copy) 
   
-  (call $assert_byte_at_address (i32.const 300) (i32.const 7))
-  (call $assert_byte_at_address (i32.const 304) (i32.const 7))
+  (call $assert_byte_at_address (i32.const 300) (i32.const 55))
+  (call $assert_byte_at_address (i32.const 304) (i32.const 55))
   (call $assert_byte_at_address (i32.const 305) (i32.const 0))
+  
+  
+  
   
   
   ;; (call $f2)
@@ -114,14 +144,14 @@
 	)
 )
 
-(func $assert_false (param i32)
-	(local.get 0)
-	(if
-		(then
-			(local.get 0)
-			unreachable
-		)
-	)
-)
+;; (func $assert_false (param i32)
+;; 	(local.get 0)
+;; 	(if
+;; 		(then
+;; 			(local.get 0)
+;; 			unreachable
+;; 		)
+;; 	)
+;; )
 
 (start $main)

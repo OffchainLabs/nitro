@@ -1,7 +1,7 @@
 (module 
   (memory 1)
 
-  (func $memset (param $length i32) (param $value i32) (param $pointer i32)
+  (func $memset (param $pointer i32) (param $value i32) (param $length i32)
     (local $offset i32)
     i32.const 0
     local.set $offset
@@ -27,7 +27,7 @@
     )
   )
 
-  (func $memcpy (param $length i32) (param $source i32) (param $destination i32)
+  (func $memcpy (param $destination i32) (param $source i32) (param $length i32)
     (local $offset i32) 
 
     local.get $source
