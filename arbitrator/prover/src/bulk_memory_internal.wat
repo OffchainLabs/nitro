@@ -41,7 +41,6 @@
     i32.eqz
     (if (then return))
 
-
     local.get $source
     local.get $destination
     i32.gt_s
