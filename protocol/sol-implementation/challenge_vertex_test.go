@@ -48,9 +48,6 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 	height2 := uint64(7)
 	a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
 
-	// genesis, err := chain1.AssertionByID(0)
-	// require.NoError(t, err)
-
 	// We add two leaves to the challenge.
 	manager, err := chain1.ChallengeManager()
 	require.NoError(t, err)
@@ -258,220 +255,201 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.NoError(t, err)
 		require.ErrorContains(t, bisectedTo.CreateSubChallenge(context.Background()), "execution reverted: Lowest height not one above the current height")
 	})
-	// 	t.Run("Error: has presumptive successor", func(t *testing.T) {
-	// 		chain, _ = setupAssertionChainWithChallengeManager(t)
-	// 		height1 = uint64(8)
-	// 		height2 = uint64(8)
-	// 		a1, a2, challenge = setupTopLevelFork(t, chain, height1, height2)
+	t.Run("Error: has presumptive successor", func(t *testing.T) {
+		t.Skip("Failing due to ps check, need investigation")
+		a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-	// 		// We add two leaves to the challenge.
-	// 		v1, err := challenge.AddLeaf(
-	// 			ctx,
-	// 			a1,
-	// 			util.HistoryCommitment{
-	// 				Height:    height1,
-	// 				Merkle:    common.BytesToHash([]byte("nyan")),
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 		)
-	// 		require.NoError(t, err)
+		// We add two leaves to the challenge.
+		v1, err := challenge.AddLeaf(
+			ctx,
+			a1,
+			util.HistoryCommitment{
+				Height: height1,
+				Merkle: common.BytesToHash([]byte("nyan")),
+			},
+		)
+		require.NoError(t, err)
 
-	// 		v2, err := challenge.AddLeaf(
-	// 			ctx,
-	// 			a2,
-	// 			util.HistoryCommitment{
-	// 				Height:    height2,
-	// 				Merkle:    common.BytesToHash([]byte("nyan2")),
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 		)
-	// 		require.NoError(t, err)
+		v2, err := challenge.AddLeaf(
+			ctx,
+			a2,
+			util.HistoryCommitment{
+				Height: height2,
+				Merkle: common.BytesToHash([]byte("nyan2")),
+			},
+		)
+		require.NoError(t, err)
 
-	// 		v1Commit := common.BytesToHash([]byte("nyan"))
-	// 		v2Commit := common.BytesToHash([]byte("nyan2"))
-	// 		v2Height4, err := v2.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    4,
-	// 				Merkle:    v2Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
-	// 		require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
+		v1Commit := common.BytesToHash([]byte("nyan"))
+		v2Commit := common.BytesToHash([]byte("nyan2"))
+		v2Height4, err := v2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: v2Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
+		require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
 
-	// 		v1Height4, err := v1.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    4,
-	// 				Merkle:    v1Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
-	// 		require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
+		v1Height4, err := v1.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: v1Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
+		require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
 
-	// 		v2Height2, err := v2Height4.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    2,
-	// 				Merkle:    v2Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
-	// 		require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
+		v2Height2, err := v2Height4.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 2,
+				Merkle: v2Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
+		require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
 
-	// 		v1Height2, err := v1Height4.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    2,
-	// 				Merkle:    v1Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
-	// 		require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
+		v1Height2, err := v1Height4.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 2,
+				Merkle: v1Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
+		require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
 
-	// 		v1Height1, err := v1Height2.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    1,
-	// 				Merkle:    v1Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
-	// 		require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
+		v1Height1, err := v1Height2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 1,
+				Merkle: v1Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
+		require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
 
-	// 		require.ErrorContains(t, v1Height1.CreateSubChallenge(context.Background()), "execution reverted: Has presumptive successor")
-	// 	})
-	// 	t.Run("Can create succession challenge", func(t *testing.T) {
-	// 		chain, _ = setupAssertionChainWithChallengeManager(t)
-	// 		height1 = uint64(8)
-	// 		height2 = uint64(8)
-	// 		a1, a2, challenge = setupTopLevelFork(t, chain, height1, height2)
+		require.ErrorContains(t, v1Height1.CreateSubChallenge(context.Background()), "execution reverted: Has presumptive successor")
+	})
+	t.Run("Can create succession challenge", func(t *testing.T) {
+		t.Skip("Failing due to ps check, need investigation")
+		a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-	// 		// We add two leaves to the challenge.
-	// 		v1, err := challenge.AddLeaf(
-	// 			ctx,
-	// 			a1,
-	// 			util.HistoryCommitment{
-	// 				Height:    height1,
-	// 				Merkle:    common.BytesToHash([]byte("nyan")),
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 		)
-	// 		require.NoError(t, err)
+		// We add two leaves to the challenge.
+		v1, err := challenge.AddLeaf(
+			ctx,
+			a1,
+			util.HistoryCommitment{
+				Height: height1,
+				Merkle: common.BytesToHash([]byte("nyan")),
+			},
+		)
+		require.NoError(t, err)
 
-	// 		v2, err := challenge.AddLeaf(
-	// 			ctx,
-	// 			a2,
-	// 			util.HistoryCommitment{
-	// 				Height:    height2,
-	// 				Merkle:    common.BytesToHash([]byte("nyan2")),
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 		)
-	// 		require.NoError(t, err)
+		v2, err := challenge.AddLeaf(
+			ctx,
+			a2,
+			util.HistoryCommitment{
+				Height: height2,
+				Merkle: common.BytesToHash([]byte("nyan2")),
+			},
+		)
+		require.NoError(t, err)
 
-	// 		v1Commit := common.BytesToHash([]byte("nyan"))
-	// 		v2Commit := common.BytesToHash([]byte("nyan2"))
-	// 		v2Height4, err := v2.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    4,
-	// 				Merkle:    v2Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
-	// 		require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
+		v1Commit := common.BytesToHash([]byte("nyan"))
+		v2Commit := common.BytesToHash([]byte("nyan2"))
+		v2Height4, err := v2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: v2Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
+		require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
 
-	// 		v1Height4, err := v1.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    4,
-	// 				Merkle:    v1Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
-	// 		require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
+		v1Height4, err := v1.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: v1Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
+		require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
 
-	// 		v2Height2, err := v2Height4.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    2,
-	// 				Merkle:    v2Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
-	// 		require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
+		v2Height2, err := v2Height4.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 2,
+				Merkle: v2Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
+		require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
 
-	// 		v1Height2, err := v1Height4.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    2,
-	// 				Merkle:    v1Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
-	// 		require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
+		v1Height2, err := v1Height4.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 2,
+				Merkle: v1Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
+		require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
 
-	// 		v1Height1, err := v1Height2.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    1,
-	// 				Merkle:    v1Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
-	// 		require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
+		v1Height1, err := v1Height2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 1,
+				Merkle: v1Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
+		require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
 
-	// 		v2Height1, err := v2Height2.Bisect(
-	// 			ctx,
-	// 			util.HistoryCommitment{
-	// 				Height:    1,
-	// 				Merkle:    v2Commit,
-	// 				FirstLeaf: genesis.inner.StateHash,
-	// 			},
-	// 			make([]common.Hash, 0),
-	// 		)
-	// 		require.NoError(t, err)
-	// 		require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
-	// 		require.Equal(t, v2Commit[:], v2Height1.inner.HistoryRoot[:])
+		v2Height1, err := v2Height2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 1,
+				Merkle: v2Commit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
+		require.Equal(t, v2Commit[:], v2Height1.inner.HistoryRoot[:])
 
-	//		genesisVertex, err := challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, v2Height1.inner.PredecessorId)
-	//		require.NoError(t, err)
-	//		genesis := &ChallengeVertex{
-	//			inner:   genesisVertex,
-	//			id:      v2Height1.inner.PredecessorId,
-	//			manager: challenge.manager,
-	//		}
-	//		require.NoError(t, genesis.CreateSubChallenge(context.Background()))
-	//	})
+		genesisVertex, err := challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, v2Height1.inner.PredecessorId)
+		require.NoError(t, err)
+		genesis := &ChallengeVertex{
+			inner:   genesisVertex,
+			id:      v2Height1.inner.PredecessorId,
+			manager: challenge.manager,
+		}
+		require.NoError(t, genesis.CreateSubChallenge(context.Background()))
+	})
 }
