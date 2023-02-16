@@ -256,108 +256,124 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	require.Equal(t, time.Second, chalPeriod)
 }
 
-// func TestCreateSuccessionChallenge(t *testing.T) {
-// 	t.Run("assertion does not exist", func(t *testing.T) {
-// 		chain, _ := setupAssertionChainWithChallengeManager(t)
-// 		_, err := chain.CreateSuccessionChallenge(2)
-// 		require.ErrorIs(t, err, ErrNotFound)
-// 	})
-// 	t.Run("assertion already rejected", func(t *testing.T) {
-// 		t.Skip(
-// 			"Needs a challenge manager to provide a winning claim first",
-// 		)
-// 	})
-// 	t.Run("at least two children required", func(t *testing.T) {
-// 		chain, _ := setupAssertionChainWithChallengeManager(t)
-// 		_, err := chain.CreateSuccessionChallenge(0)
-// 		require.ErrorIs(t, err, ErrInvalidChildren)
+func TestCreateSuccessionChallenge(t *testing.T) {
+	ctx := context.Background()
+	t.Run("assertion does not exist", func(t *testing.T) {
+		chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+		_, err := chain.CreateSuccessionChallenge(ctx, 2)
+		require.ErrorIs(t, err, ErrInvalidChildren)
+	})
+	t.Run("at least two children required", func(t *testing.T) {
+		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
 
-// 		commit1 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{1}),
-// 		}
+		latestBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			latestBlockHash = backend.Commit()
+		}
 
-// 		_, err = chain.CreateAssertion(commit1, 0)
-// 		require.NoError(t, err)
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  latestBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
 
-// 		_, err = chain.CreateSuccessionChallenge(0)
-// 		require.ErrorIs(t, err, ErrInvalidChildren)
-// 	})
+		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		require.ErrorIs(t, err, ErrInvalidChildren)
+	})
+	t.Run("assertion already rejected", func(t *testing.T) {
+		t.Skip(
+			"Needs a challenge manager to provide a winning claim first",
+		)
+	})
+	t.Run("OK", func(t *testing.T) {
+		chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
 
-// 	t.Run("too late to challenge", func(t *testing.T) {
-// 		chain, acc := setupAssertionChainWithChallengeManager(t)
-// 		commit1 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{1}),
-// 		}
+		latestBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			latestBlockHash = backend.Commit()
+		}
 
-// 		_, err := chain.CreateAssertion(commit1, 0)
-// 		require.NoError(t, err)
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  latestBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
 
-// 		commit2 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{2}),
-// 		}
+		chain, err = NewAssertionChain(
+			ctx,
+			addresses.Rollup,
+			accs[2].txOpts,
+			&bind.CallOpts{},
+			accs[2].accountAddr,
+			backend,
+		)
 
-// 		_, err = chain.CreateAssertion(commit2, 0)
-// 		require.NoError(t, err)
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
 
-// 		challengePeriod, err := chain.ChallengePeriodSeconds()
-// 		require.NoError(t, err)
+		postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
 
-// 		// Adds two challenge periods to the chain timestamp.
-// 		err = acc.backend.AdjustTime(challengePeriod * 2)
-// 		require.NoError(t, err)
+		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		require.NoError(t, err)
 
-// 		_, err = chain.CreateSuccessionChallenge(0)
-// 		require.ErrorIs(t, err, ErrTooLate)
-// 	})
-// 	t.Run("OK", func(t *testing.T) {
-// 		chain, _ := setupAssertionChainWithChallengeManager(t)
-// 		commit1 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{1}),
-// 		}
-
-// 		_, err := chain.CreateAssertion(commit1, 0)
-// 		require.NoError(t, err)
-
-// 		commit2 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{2}),
-// 		}
-
-// 		_, err = chain.CreateAssertion(commit2, 0)
-// 		require.NoError(t, err)
-
-// 		_, err = chain.CreateSuccessionChallenge(0)
-// 		require.NoError(t, err)
-// 	})
-// 	t.Run("challenge already exists", func(t *testing.T) {
-// 		chain, _ := setupAssertionChainWithChallengeManager(t)
-// 		commit1 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{1}),
-// 		}
-
-// 		_, err := chain.CreateAssertion(commit1, 0)
-// 		require.NoError(t, err)
-
-// 		commit2 := util.StateCommitment{
-// 			Height:    1,
-// 			StateRoot: common.BytesToHash([]byte{2}),
-// 		}
-
-// 		_, err = chain.CreateAssertion(commit2, 0)
-// 		require.NoError(t, err)
-
-// 		_, err = chain.CreateSuccessionChallenge(0)
-// 		require.NoError(t, err)
-
-// 		_, err = chain.CreateSuccessionChallenge(0)
-// 		require.ErrorIs(t, err, ErrAlreadyExists)
-// 	})
-// }
+		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		require.ErrorIs(t, err, ErrAlreadyExists)
+	})
+}
 
 func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
 	t.Helper()

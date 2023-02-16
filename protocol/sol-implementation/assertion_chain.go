@@ -248,9 +248,13 @@ func handleCreateSuccessionChallengeError(err error, assertionId uint64) error {
 		return errors.Wrapf(ErrRejectedAssertion, "assertion id %d", assertionId)
 	case strings.Contains(errS, "Challenge already created"):
 		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
+	case strings.Contains(errS, "ALREADY_CHALLENGED"):
+		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
 	case strings.Contains(errS, "At least two children not created"):
 		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
-	case strings.Contains(errS, "Too late to challenge"):
+	case strings.Contains(errS, "NO_SECOND_CHILD"):
+		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
+	case strings.Contains(errS, "too late"):
 		return errors.Wrapf(ErrTooLate, "assertion id %d", assertionId)
 	default:
 		return err
