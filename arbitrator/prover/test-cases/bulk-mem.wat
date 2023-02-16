@@ -1,32 +1,6 @@
 (module 
   (memory 1)
 
-  (func $memset (param $pointer i32) (param $value i32) (param $length i32)
-    (local $offset i32)
-    i32.const 0
-    local.set $offset
-
-    (loop $inner
-      ;; calculate current index into region to be set
-      local.get $offset
-      local.get $pointer
-      i32.add 
-      local.get $value
-      i32.store8
-
-      ;; increment offset
-      i32.const 1
-      local.get $offset
-      i32.add 
-      local.tee $offset
-
-      ;; check to terminate loop 
-      local.get $length
-      i32.ne
-      br_if $inner
-    )
-  )
-
   (func $main
 
     (i32.const 20) ;; pointer into start of region to fill
@@ -54,8 +28,9 @@
     (i32.const 55) ;; value to fill
     (i32.const 0) ;; length of segment to fill
     (memory.fill)
-    ;; (call $memset)
+
     (call $assert_byte_at_address (i32.const 30) (i32.const 0))
+
 
     (i32.const 306) ;; pointer into start of region to fill
     (i32.const 71) ;; value to fill
@@ -68,9 +43,10 @@
     (call $assert_byte_at_address (i32.const 351) (i32.const 71))
     (call $assert_byte_at_address (i32.const 355) (i32.const 71))
     (call $assert_byte_at_address (i32.const 356) (i32.const 0))
-    ;;memory is currently 55 on [20,29] and [300,304]; 71 on [306, 355]
+    ;; memory is currently 55 on [20,29] and [300,304]; 71 on [306, 355]
 
-    ;;goal: do 4 copies, src (> & <) dest with overlapping & not
+    ;; goal: do 5 copies, src (> & <) dest with overlapping & not; plus src==dest
+    ;; we've already done src < dest nonoverlapping above
 
     ;; source > dest
     (i32.const 50) ;; pointer to destination
@@ -137,6 +113,14 @@
     (call $assert_byte_at_address (i32.const 60) (i32.const 71))
     (call $assert_byte_at_address (i32.const 61) (i32.const 0))
     ;; memory now has [71 * 6, 0, 0, 71 * 7] stored at [46, 60]
+
+    ;; length 0
+    (i32.const 50);; pointer to destination
+    (i32.const 52) ;; pointer to source
+    (i32.const 0) ;; number of bytes to copy
+    (memory.copy) 
+    (call $assert_byte_at_address (i32.const 50) (i32.const 71))
+    (call $assert_byte_at_address (i32.const 52) (i32.const 0))
   )
 
   (func $assert_byte_at_address (param i32) (param i32)
@@ -158,14 +142,5 @@
     )
   )
 
-  ;; (func $assert_false (param i32)
-  ;; 	(local.get 0)
-  ;; 	(if
-  ;; 		(then
-  ;; 			(local.get 0)
-  ;; 			unreachable
-  ;; 		)
-  ;; 	)
-  ;; )
   (start $main)
 )
