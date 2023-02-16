@@ -23,6 +23,7 @@ import (
 
 var (
 	ErrUnconfirmedParent   = errors.New("parent assertion is not confirmed")
+	ErrNoUnresolved        = errors.New("no assertion to resolve")
 	ErrNonPendingAssertion = errors.New("assertion is not pending")
 	ErrRejectedAssertion   = errors.New("assertion already rejected")
 	ErrInvalidChildren     = errors.New("invalid children")
@@ -30,6 +31,7 @@ var (
 	ErrAlreadyExists       = errors.New("item already exists on-chain")
 	ErrPrevDoesNotExist    = errors.New("assertion predecessor does not exist")
 	ErrTooLate             = errors.New("too late to create assertion sibling")
+	ErrTooSoon             = errors.New("too soon to confirm assertion")
 	ErrInvalidHeight       = errors.New("invalid assertion height")
 	uint256Ty, _           = abi.NewType("uint256", "", nil)
 	hashTy, _              = abi.NewType("bytes32", "", nil)
@@ -206,31 +208,59 @@ func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, asserti
 	return manager.ChallengeByID(ctx, challengeId)
 }
 
-// Confirm creates a confirmation for the given assertion.
-func (a *Assertion) Confirm() error {
-	_, err := a.chain.userLogic.ConfirmNextAssertion(a.chain.txOpts, common.Hash{}, common.Hash{})
-	switch {
-	case err == nil:
-		return nil
-	case strings.Contains(err.Error(), "Assertion does not exist"):
-		return errors.Wrapf(ErrNotFound, "assertion with id %#x", a.id)
-	case strings.Contains(err.Error(), "Previous assertion not confirmed"):
-		return errors.Wrapf(ErrUnconfirmedParent, "previous assertion not confirmed")
-	default:
-		return err
+// Confirm creates a confirmation for an assertion at the block hash and send root.
+func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
+	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot)
+	})
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "Assertion does not exist"):
+			return errors.Wrapf(ErrNotFound, "block hash %#x", blockHash)
+		case strings.Contains(err.Error(), "Previous assertion not confirmed"):
+			return errors.Wrapf(ErrUnconfirmedParent, "previous assertion not confirmed")
+		case strings.Contains(err.Error(), "NO_UNRESOLVED"):
+			return ErrNoUnresolved
+		case strings.Contains(err.Error(), "CHILD_TOO_RECENT"):
+			return ErrTooSoon
+		default:
+			return err
+		}
 	}
+	if len(receipt.Logs) == 0 {
+		return errors.New("no logs observed from assertion confirmation")
+	}
+	confirmed, err := ac.rollup.ParseAssertionConfirmed(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return errors.Wrap(err, "could not parse assertion confirmation log")
+	}
+	if confirmed.BlockHash != blockHash {
+		return fmt.Errorf(
+			"Wanted assertion at block hash %#x confirmed, but block hash was %#x",
+			blockHash,
+			confirmed.BlockHash,
+		)
+	}
+	if confirmed.SendRoot != sendRoot {
+		return fmt.Errorf(
+			"Wanted assertion at send root %#x confirmed, but send root was %#x",
+			sendRoot,
+			confirmed.SendRoot,
+		)
+	}
+	return nil
 }
 
 // Reject creates a rejection for the given assertion.
-func (a *Assertion) Reject() error {
-	_, err := a.chain.userLogic.RejectNextAssertion(a.chain.txOpts, a.chain.stakerAddr)
+func (ac *AssertionChain) Reject(ctx context.Context, staker common.Address) error {
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.userLogic.RejectNextAssertion(ac.txOpts, staker)
+	})
 	switch {
 	case err == nil:
 		return nil
-	case strings.Contains(err.Error(), "Assertion does not exist"):
-		return errors.Wrapf(ErrNotFound, "assertion with id %#x", a.id)
-	case strings.Contains(err.Error(), "Assertion is not pending"):
-		return errors.Wrapf(ErrNonPendingAssertion, "assertion with id %#x", a.id)
+	case strings.Contains(err.Error(), "NO_UNRESOLVED"):
+		return ErrNoUnresolved
 	default:
 		return err
 	}

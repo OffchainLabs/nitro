@@ -41,7 +41,7 @@ func TestCreateAssertion(t *testing.T) {
 			MachineStatus: MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
-		created, err := chain.CreateAssertion(
+		_, err = chain.CreateAssertion(
 			ctx,
 			height,
 			prev,
@@ -50,7 +50,6 @@ func TestCreateAssertion(t *testing.T) {
 			prevInboxMaxCount,
 		)
 		require.NoError(t, err)
-		t.Logf("%+v", created)
 
 		_, err = chain.CreateAssertion(
 			ctx,
@@ -95,7 +94,7 @@ func TestCreateAssertion(t *testing.T) {
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		chain.txOpts.From = accs[2].accountAddr
-		created, err := chain.CreateAssertion(
+		_, err = chain.CreateAssertion(
 			ctx,
 			height,
 			prev,
@@ -104,36 +103,7 @@ func TestCreateAssertion(t *testing.T) {
 			prevInboxMaxCount,
 		)
 		require.NoError(t, err)
-		t.Logf("%+v", created)
-		// require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
-	// t.Run("previous assertion does not exist", func(t *testing.T) {
-	// 	commit := util.StateCommitment{
-	// 		Height:    2,
-	// 		StateRoot: common.BytesToHash([]byte{2}),
-	// 	}
-	// 	_, err = chain.CreateAssertion(commit, 1)
-	// 	require.ErrorIs(t, err, ErrPrevDoesNotExist)
-	// })
-	// t.Run("invalid height", func(t *testing.T) {
-	// 	commit := util.StateCommitment{
-	// 		Height:    0,
-	// 		StateRoot: common.BytesToHash([]byte{3}),
-	// 	}
-	// 	_, err = chain.CreateAssertion(commit, 0)
-	// 	require.ErrorIs(t, err, ErrInvalidHeight)
-	// })
-	// t.Run("too late to create sibling", func(t *testing.T) {
-	// 	Adds two challenge periods to the chain timestamp.
-	// 	err = acc.backend.AdjustTime(time.Second * 20)
-	// 	require.NoError(t, err)
-	// 	commit := util.StateCommitment{
-	// 		Height:    1,
-	// 		StateRoot: common.BytesToHash([]byte("forked")),
-	// 	}
-	// 	_, err = chain.CreateAssertion(commit, 0)
-	// 	require.ErrorIs(t, err, ErrTooLate)
-	// })
 }
 
 func TestAssertionByID(t *testing.T) {
@@ -150,104 +120,105 @@ func TestAssertionByID(t *testing.T) {
 
 func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
-	chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+	t.Run("OK", func(t *testing.T) {
+		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
 
-	height := uint64(1)
-	prev := uint64(0)
-	minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
-	require.NoError(t, err)
-
-	latestBlockHash := common.Hash{}
-	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
-		latestBlockHash = backend.Commit()
-	}
-
-	prevState := &ExecutionState{
-		GlobalState:   GoGlobalState{},
-		MachineStatus: MachineStatusFinished,
-	}
-	postState := &ExecutionState{
-		GlobalState: GoGlobalState{
-			BlockHash:  latestBlockHash,
-			SendRoot:   common.Hash{},
-			Batch:      1,
-			PosInBatch: 0,
-		},
-		MachineStatus: MachineStatusFinished,
-	}
-	prevInboxMaxCount := big.NewInt(1)
-	created, err := chain.CreateAssertion(
-		ctx,
-		height,
-		prev,
-		prevState,
-		postState,
-		prevInboxMaxCount,
-	)
-	require.NoError(t, err)
-
-	t.Run("Can confirm assertion", func(t *testing.T) {
-		//require.Equal(t, uint8(0), created.inner.Status) // Pending.
-		require.NoError(t, created.Confirm())
-		backend.Commit()
-		created, err = chain.AssertionByID(created.id)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
 		require.NoError(t, err)
-		//require.Equal(t, uint8(1), created.inner.Status) // Confirmed.
-	})
 
-	// t.Run("Unknown assertion", func(t *testing.T) {
-	// 	created.id = common.BytesToHash([]byte("meow"))
-	// 	require.ErrorIs(t, created.Confirm(), ErrNotFound)
-	// })
+		assertionBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			assertionBlockHash = backend.Commit()
+		}
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  assertionBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
+
+		err = chain.Confirm(ctx, assertionBlockHash, common.Hash{})
+		require.ErrorIs(t, err, ErrTooSoon)
+
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+	})
 }
 
-// func TestAssertion_Reject(t *testing.T) {
-// 	acc, err := setupAccount()
-// 	require.NoError(t, err)
+func TestAssertion_Reject(t *testing.T) {
+	ctx := context.Background()
 
-// 	chain, _ := setupAssertionChainWithChallengeManager(t)
-// 	commit := util.StateCommitment{
-// 		Height:    1,
-// 		StateRoot: common.BytesToHash([]byte{1}),
-// 	}
-// 	created, err := chain.CreateAssertion(commit, 0)
-// 	require.NoError(t, err)
-// 	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
-// 	acc.backend.Commit()
+	t.Run("Can reject assertion", func(t *testing.T) {
+		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
+	})
 
-// 	commit = util.StateCommitment{
-// 		Height:    1,
-// 		StateRoot: common.BytesToHash([]byte{2}),
-// 	}
-// 	created, err = chain.CreateAssertion(commit, 0)
-// 	require.NoError(t, err)
-// 	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
-// 	acc.backend.Commit()
+	t.Run("Already confirmed assertion", func(t *testing.T) {
+		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
 
-// 	_, err = chain.CreateSuccessionChallenge(0)
-// 	require.NoError(t, err)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
 
-// 	// t.Run("Can reject assertion", func(t *testing.T) {
-// 	// 	t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
-// 	// 	require.Equal(t, uint8(0), created.inner.Status) // Pending.
-// 	// 	require.NoError(t, created.Reject())
-// 	// 	acc.backend.Commit()
-// 	// 	created, err = chain.AssertionByID(created.id)
-// 	// 	require.NoError(t, err)
-// 	// 	require.Equal(t, uint8(2), created.inner.Status) // Confirmed.
-// 	// })
+		assertionBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			assertionBlockHash = backend.Commit()
+		}
 
-// 	t.Run("Unknown assertion", func(t *testing.T) {
-// 		created.id = 1
-// 		require.ErrorIs(t, created.Reject(), ErrNotFound)
-// 	})
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  assertionBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
 
-// 	t.Run("Already confirmed assertion", func(t *testing.T) {
-// 		ga, err := chain.AssertionByID(0)
-// 		require.NoError(t, err)
-// 		require.ErrorIs(t, ga.Reject(), ErrNonPendingAssertion)
-// 	})
-// }
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Reject(ctx, chain.stakerAddr))
+	})
+}
 
 func TestChallengePeriodSeconds(t *testing.T) {
 	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
