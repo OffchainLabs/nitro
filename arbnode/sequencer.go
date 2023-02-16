@@ -234,12 +234,6 @@ type nonceFailure struct {
 	revived   bool
 }
 
-func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
-	if !failure.revived {
-		failure.queueItem.returnResult(failure.nonceErr)
-	}
-}
-
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
@@ -284,13 +278,41 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
-		nonceFailures:   containers.NewLruCacheWithOnEvict(config.NonceCacheSize, onNonceFailureEvict),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
 		pauseChan:       nil,
 	}
+	s.nonceFailures = containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict)
 	txStreamer.EnableReorgSequencing()
 	return s, nil
+}
+
+func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
+	if failure.revived {
+		return
+	}
+	queueItem := failure.queueItem
+	err := queueItem.ctx.Err()
+	if err != nil {
+		queueItem.returnResult(err)
+		return
+	}
+	_, forwarder := s.GetPauseAndForwarder()
+	if forwarder != nil {
+		// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
+		// We run this in a background goroutine because LRU eviction needs to be quick.
+		// We use an untracked thread for a few reasons:
+		//   - It's guaranteed to run even when stopped (we need to return *some* result).
+		//   - It acquires mutexes and this might need to happen a lot.
+		//   - We don't need the context because queueItem has its own.
+		//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
+		s.LaunchUntrackedThread(func() {
+			err = forwarder.PublishTransaction(queueItem.ctx, queueItem.tx)
+			queueItem.returnResult(err)
+		})
+	} else {
+		queueItem.returnResult(failure.nonceErr)
+	}
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
@@ -895,6 +917,7 @@ func (s *Sequencer) StopAndWait() {
 	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
+		var wg sync.WaitGroup
 	emptyqueues:
 		for {
 			var item txQueueItem
@@ -902,6 +925,10 @@ func (s *Sequencer) StopAndWait() {
 			if s.txRetryQueue.Len() > 0 {
 				item = s.txRetryQueue.Pop()
 				source = "retryQueue"
+			} else if s.nonceFailures.Len() > 0 {
+				_, failure, _ := s.nonceFailures.GetOldest()
+				failure.revived = true
+				item = failure.queueItem
 			} else {
 				select {
 				case item = <-s.txQueue:
@@ -910,10 +937,15 @@ func (s *Sequencer) StopAndWait() {
 					break emptyqueues
 				}
 			}
-			err := forwarder.PublishTransaction(item.ctx, item.tx)
-			if err != nil {
-				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
-			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err := forwarder.PublishTransaction(item.ctx, item.tx)
+				if err != nil {
+					log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
+				}
+			}()
 		}
+		wg.Wait()
 	}
 }
