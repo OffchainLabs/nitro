@@ -92,8 +92,8 @@ func deployFullRollupStack(
 		backend.Commit()
 		require.NoError(t, err)
 
-		receipt2, err := backend.TransactionReceipt(ctx, tx.Hash())
-		require.NoError(t, err)
+		receipt2, err2 := backend.TransactionReceipt(ctx, tx.Hash())
+		require.NoError(t, err2)
 		require.Equal(t, uint64(1), receipt2.Status)
 	}
 

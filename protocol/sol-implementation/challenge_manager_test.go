@@ -22,9 +22,9 @@ func TestGetChallengeByID(t *testing.T) {
 	})
 
 	t.Run("challenge exists", func(t *testing.T) {
-		challenge, err := cm.ChallengeByID(ctx, challenge.id)
+		fetched, err := cm.ChallengeByID(ctx, challenge.id)
 		require.NoError(t, err)
-		require.Equal(t, uint8(0), challenge.inner.ChallengeType)
-		require.Equal(t, [32]byte{}, challenge.inner.WinningClaim)
+		require.Equal(t, uint8(0), fetched.inner.ChallengeType)
+		require.Equal(t, [32]byte{}, fetched.inner.WinningClaim)
 	})
 }
