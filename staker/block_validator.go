@@ -43,9 +43,9 @@ type BlockValidator struct {
 	nextRecordPrepared *containers.Promise[arbutil.MessageIndex]
 
 	// can only be accessed from from validation thread or if holding reorg-write
-	lastValidGS validator.GoGlobalState
-	valLoopPos  arbutil.MessageIndex
-	// validInfoPrintTime time.Time TODO: print validated once in a while..
+	lastValidGS        validator.GoGlobalState
+	valLoopPos         arbutil.MessageIndex
+	validInfoPrintTime time.Time
 
 	// can be read by anyone holding reorg-read
 	// written by appropriate thread or reorg-write
@@ -575,6 +575,15 @@ func (v *BlockValidator) iterativeValidationEntryRecorder(ctx context.Context, i
 	return v.config().ValidationPoll
 }
 
+func (v *BlockValidator) maybePrintNewlyValid() {
+	if time.Since(v.validInfoPrintTime) > time.Second {
+		log.Info("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+		v.validInfoPrintTime = time.Now()
+	} else {
+		log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
+	}
+}
+
 // return val:
 // *MessageIndex - pointer to bad entry if there is one (requires reorg)
 func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.MessageIndex, error) {
@@ -652,6 +661,7 @@ validatiosLoop:
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTriger(v.testingProgressMadeChan)
 			}
+			v.maybePrintNewlyValid()
 			continue
 		}
 		if room == 0 {
