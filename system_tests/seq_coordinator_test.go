@@ -35,7 +35,7 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 
 	for _, name := range nodeNames {
 		priorities = priorities + name + ","
-		redisClient.Del(ctx, redisutil.LIVELINESS_KEY_PREFIX+name)
+		redisClient.Del(ctx, redisutil.WANTS_LOCKOUT_KEY_PREFIX+name)
 	}
 	priorities = priorities[:len(priorities)-1] // remove last ","
 	Require(t, redisClient.Set(ctx, redisutil.PRIORITIES_KEY, priorities, time.Duration(0)).Err())

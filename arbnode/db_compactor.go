@@ -117,7 +117,7 @@ func (c *DbCompactor) maybeCompactDb(ctx context.Context) time.Duration {
 		success := c.seqCoordinator.AvoidLockout(ctx)
 		defer c.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
 		if success {
-			// We've released liveliness, now wait for the handoff
+			// We've unset the wants lockout key, now wait for the handoff
 			success = c.seqCoordinator.TryToHandoffChosenOne(ctx)
 			if success {
 				c.compactDb()
