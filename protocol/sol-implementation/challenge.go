@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -21,12 +20,21 @@ func (c *Challenge) AddLeaf(
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
+	callOpts := c.manager.assertionChain.callOpts
+	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, assertion.id)
+	if err != nil {
+		return nil, err
+	}
+	prevAssertion, err := c.manager.assertionChain.AssertionByID(assertion.inner.PrevNum)
+	if err != nil {
+		return nil, err
+	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
-		ClaimId:                common.Hash{}, // assertion id.
+		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             history.FirstLeaf,
+		FirstState:             prevAssertion.inner.StateHash,
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,

@@ -63,7 +63,6 @@ func TestCreateAssertion(t *testing.T) {
 			prevInboxMaxCount,
 		)
 		require.ErrorContains(t, err, "ALREADY_STAKED")
-		// require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
 	t.Run("can create fork", func(t *testing.T) {
 		chain, err := NewAssertionChain(
@@ -110,10 +109,6 @@ func TestCreateAssertion(t *testing.T) {
 		t.Logf("%+v", created)
 		// require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
 	})
-	// t.Run("already exists", func(t *testing.T) {
-	// 	_, err = chain.CreateAssertion(commit, 0)
-	// 	require.ErrorIs(t, err, ErrAlreadyExists)
-	// })
 	// t.Run("previous assertion does not exist", func(t *testing.T) {
 	// 	commit := util.StateCommitment{
 	// 		Height:    2,
