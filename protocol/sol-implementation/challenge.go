@@ -48,16 +48,18 @@ func (c *Challenge) AddLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	if _, err2 := transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err = transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
-	}); err2 != nil {
-		return nil, err2
+	})
+	if err != nil {
+		return nil, err
 	}
+
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
 		c.manager.assertionChain.callOpts,
 		c.id,

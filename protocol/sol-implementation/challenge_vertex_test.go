@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -130,7 +131,6 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")
 	})
 	t.Run("OK", func(t *testing.T) {
-		t.Skip("Need to investigate why it fails")
 		height1 := uint64(6)
 		height2 := uint64(7)
 		a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
@@ -161,6 +161,13 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			},
 		)
 		require.NoError(t, err)
+
+		curr, err := manager.caller.GetCurrentPsTimer(&bind.CallOpts{}, v1.id)
+		require.NoError(t, err)
+		t.Logf("V1 ps is %d", curr.Uint64())
+		curr, err = manager.caller.GetCurrentPsTimer(&bind.CallOpts{}, v2.id)
+		require.NoError(t, err)
+		t.Logf("V2 ps is %d", curr.Uint64())
 
 		wantCommit := common.BytesToHash([]byte("nyan4"))
 		bisectedTo, err := v2.Bisect(
