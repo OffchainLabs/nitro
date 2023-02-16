@@ -535,6 +535,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Forwarder = DefaultTestForwarderConfig
 
 	return &config
 }
@@ -862,12 +863,16 @@ func createNodeImpl(
 		txPublisher = sequencer
 	} else {
 		if config.DelayedSequencer.Enable {
-			return nil, errors.New("cannot have delayedsequencer without sequencer")
+			return nil, errors.New("cannot have delayed sequencer without sequencer")
 		}
-		if config.ForwardingTarget() == "" {
-			txPublisher = NewTxDropper()
+		if config.Forwarder.RedisUrl != "" {
+			txPublisher = NewRedisTxForwarder(config.ForwardingTarget(), &config.Forwarder)
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
+			if config.ForwardingTarget() == "" {
+				txPublisher = NewTxDropper()
+			} else {
+				txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
+			}
 		}
 	}
 	if config.SeqCoordinator.Enable {

@@ -7,6 +7,7 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
+	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/alicebob/miniredis/v2 v2.21.0
 	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
 	github.com/andybalholm/brotli v1.0.3
@@ -92,6 +93,7 @@ require (
 	github.com/golang/glog v1.0.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/graph-gophers/graphql-go v1.3.0 // indirect
