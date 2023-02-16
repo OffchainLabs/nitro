@@ -21,8 +21,7 @@ abstract contract AbsRollupUserLogic is
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
-        // TODO(RJ): Remove this deletion.
-        // require(isValidator[msg.sender] || validatorWhitelistDisabled, "NOT_VALIDATOR");
+        require(isValidator[msg.sender] || validatorWhitelistDisabled, "NOT_VALIDATOR");
         _;
     }
 
