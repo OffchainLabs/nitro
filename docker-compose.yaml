@@ -4,14 +4,18 @@ services:
     depends_on:
       - postgres
       - sequencer
-    build:
-      context: blockscout
-      dockerfile: docker/Dockerfile
+    image: blockscout-testnode
     restart: always
     container_name: 'blockscout'
     links:
       - postgres:database
-    command: 'sh -c "mix do ecto.create, ecto.migrate; node init/install.js postgres 5432; mix do phx.server"'
+    command:
+      - /bin/sh
+      - -c
+      - |
+        bin/blockscout eval "Elixir.Explorer.ReleaseTasks.create_and_migrate()"
+        node init/install.js postgres 5432
+        bin/blockscout start
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file:
@@ -20,7 +24,7 @@ services:
         ETHEREUM_JSONRPC_VARIANT: 'geth'
         ETHEREUM_JSONRPC_HTTP_URL: http://sequencer:8547/
         INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
-        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout?ssl=false
+        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout
         ECTO_USE_SSL: "false"
     ports:
       - "127.0.0.1:4000:4000"
@@ -44,22 +48,110 @@ services:
       - "127.0.0.1:6379:6379"
 
   geth:
-    image: ethereum/client-go:stable
+    image: ethereum/client-go:v1.10.23
     ports:
       - "127.0.0.1:8545:8545"
+      - "127.0.0.1:8551:8551"
       - "127.0.0.1:8546:8546"
       - "127.0.0.1:30303:30303"
     volumes:
-      - "l1data:/root/.ethereum"
+      - "l1data:/datadir"
       - "l1keystore:/keystore"
       - "config:/config"
-    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --http.corsdomain * --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
+    command:
+      - --keystore=/keystore
+      - --http
+      - --datadir=/datadir
+      - --http.addr=0.0.0.0
+      - --authrpc.vhosts=*
+      - --authrpc.port=8551
+      - --authrpc.addr=0.0.0.0
+      - --http.vhosts=*
+      - --http.api=engine,personal,eth,net,web3
+      - --http.corsdomain=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.api=personal,eth,net,web3,debug,txpool
+      - --allow-insecure-unlock
+      - --unlock=0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
+      - --password=/datadir/passphrase
+      - --authrpc.jwtsecret=/config/jwt.hex
+      - --nodiscover
+      - --syncmode=full
+      - --dev
+      - --dev.period=1
+      - --mine
+      - --miner.etherbase=0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
+      - --gcmode=archive
+
+  # Creates a genesis state for the beacon chain using a YAML configuration file and
+  # a deterministic set of validators
+  # TODO: Make num validators customizable
+  create_beacon_chain_genesis:
+    image: "gcr.io/prysmaticlabs/prysm/cmd/prysmctl:latest"
+    command:
+      - testnet
+      - generate-genesis
+      - --num-validators=64
+      - --output-ssz=/consensus/genesis.ssz
+      - --chain-config-file=/config/prysm.yaml
+    volumes:
+      - "consensus:/consensus"
+      - "config:/config"
+
+  # Runs a Prysm beacon chain from a specified genesis state created in the previous step
+  # and connects to go-ethereum in the same network as the execution client.
+  # The account used in go-ethereum is set as the suggested fee recipient for transactions
+  # proposed via the validators attached to the beacon node.
+  prysm_beacon_chain:
+    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:stable"
+    command:
+      - --datadir=/consensus/beacondata
+      - --rpc-port=5000
+      - --min-sync-peers=0
+      - --interop-genesis-state=/consensus/genesis.ssz
+      - --interop-eth1data-votes
+      - --bootstrap-node=
+      - --chain-config-file=/config/prysm.yaml
+      - --rpc-host=0.0.0.0
+      - --grpc-gateway-host=0.0.0.0
+      - --chain-id=32382
+      - --execution-endpoint=http://geth:8551
+      - --accept-terms-of-use
+      - --jwt-secret=/config/jwt.hex
+    depends_on:
+      geth:
+        condition: service_started
+      create_beacon_chain_genesis:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:5000:5000"
+      - "127.0.0.1:3500:3500"
+    volumes:
+      - "consensus:/consensus"
+      - "config:/config"
+
+  # We run a validator client with 64, deterministically-generated keys that match
+  # The validator keys present in the beacon chain genesis state generated a few steps above.
+  prysm_validator:
+    image: "gcr.io/prysmaticlabs/prysm/validator:stable"
+    command:
+      - --beacon-rpc-provider=prysm_beacon_chain:5000
+      - --datadir=/consensus/validatordata
+      - --accept-terms-of-use
+      - --interop-num-validators=64
+      - --interop-start-index=0
+      - --chain-config-file=/config/prysm.yaml
+    depends_on:
+      prysm_beacon_chain:
+        condition: service_started
+    volumes:
+      - "consensus:/consensus"
+      - "config:/config"
 
   sequencer:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8547:8547"
       - "127.0.0.1:8548:8548"
@@ -72,11 +164,10 @@ services:
       - geth
       - redis
 
+
   sequencer_b:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8647:8547"
       - "127.0.0.1:8648:8548"
@@ -90,9 +181,7 @@ services:
 
   sequencer_c:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8747:8547"
       - "127.0.0.1:8748:8548"
@@ -106,9 +195,7 @@ services:
 
   sequencer_d:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8847:8547"
       - "127.0.0.1:8848:8548"
@@ -122,9 +209,7 @@ services:
 
   staker-unsafe:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8047:8547"
       - "127.0.0.1:8048:8548"
@@ -139,9 +224,7 @@ services:
 
   poster:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8147:8547"
       - "127.0.0.1:8148:8548"
@@ -156,9 +239,7 @@ services:
 
   poster_b:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:9147:8547"
       - "127.0.0.1:9148:8548"
@@ -173,9 +254,7 @@ services:
 
   poster_c:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:9247:8547"
       - "127.0.0.1:9248:8548"
@@ -190,9 +269,7 @@ services:
 
   validator:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:8247:8547"
       - "127.0.0.1:8248:8548"
@@ -210,14 +287,11 @@ services:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
     depends_on:
-      - geth
       - redis
 
   relay:
     pid: host
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:9652:9652"
     entrypoint: bin/relay
@@ -238,6 +312,7 @@ services:
 
 volumes:
   l1data:
+  consensus:
   l1keystore:
   seqdata:
   seqdata_b:

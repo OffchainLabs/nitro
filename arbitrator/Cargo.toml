@@ -1,5 +1,6 @@
 [workspace]
 members = [
+        "arbutil",
         "prover",
         "jit",
 ]

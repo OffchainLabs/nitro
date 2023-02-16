@@ -32,7 +32,7 @@ func TestDASTree(t *testing.T) {
 			Fail(t, "key not the hash of value")
 		}
 	}
-	oracle := func(key bytes32) []byte {
+	oracle := func(key bytes32) ([]byte, error) {
 		preimage, ok := store[key]
 		if !ok {
 			Fail(t, "no preimage for key", key)
@@ -41,7 +41,7 @@ func TestDASTree(t *testing.T) {
 			Fail(t, "key not the hash of preimage")
 		}
 		colors.PrintBlue("loading ", key, " ", pretty.PrettyBytes(preimage))
-		return preimage
+		return preimage, nil
 	}
 
 	hashes := map[bytes32][]byte{}

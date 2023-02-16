@@ -70,3 +70,36 @@ func ParseLogType(logType string) (log.Format, error) {
 	}
 	return nil, errors.New("invalid log type")
 }
+
+type FileLoggingConfig struct {
+	Enable     bool   `koanf:"enable"`
+	File       string `koanf:"file"`
+	MaxSize    int    `koanf:"max-size"`
+	MaxAge     int    `koanf:"max-age"`
+	MaxBackups int    `koanf:"max-backups"`
+	LocalTime  bool   `koanf:"local-time"`
+	Compress   bool   `koanf:"compress"`
+	BufSize    int    `koanf:"buf-size"`
+}
+
+var DefaultFileLoggingConfig = FileLoggingConfig{
+	Enable:     true,
+	File:       "nitro.log",
+	MaxSize:    5,     // 5Mb
+	MaxAge:     0,     // don't remove old files based on age
+	MaxBackups: 20,    // keep 20 files
+	LocalTime:  false, // use UTC time
+	Compress:   true,
+	BufSize:    512,
+}
+
+func FileLoggingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultFileLoggingConfig.Enable, "enable logging to file")
+	f.String(prefix+".file", DefaultFileLoggingConfig.File, "path to log file")
+	f.Int(prefix+".max-size", DefaultFileLoggingConfig.MaxSize, "log file size in Mb that will trigger log file rotation (0 = trigger disabled)")
+	f.Int(prefix+".max-age", DefaultFileLoggingConfig.MaxAge, "maximum number of days to retain old log files based on the timestamp encoded in their filename (0 = no limit)")
+	f.Int(prefix+".max-backups", DefaultFileLoggingConfig.MaxBackups, "maximum number of old log files to retain (0 = no limit)")
+	f.Bool(prefix+".local-time", DefaultFileLoggingConfig.LocalTime, "if true: local time will be used in old log filename timestamps")
+	f.Bool(prefix+".compress", DefaultFileLoggingConfig.Compress, "enable compression of old log files")
+	f.Int(prefix+".buf-size", DefaultFileLoggingConfig.BufSize, "size of intermediate log records buffer")
+}

@@ -67,7 +67,7 @@ func TestBatchPosterParallel(t *testing.T) {
 	startL1Block, err := l1client.BlockNumber(ctx)
 	Require(t, err)
 	for i := 0; i < parallelBatchPosters; i++ {
-		batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &conf.BatchPoster }, nodeA.DeployInfo.SequencerInbox, &seqTxOpts, nil)
+		batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &conf.BatchPoster }, nodeA.DeployInfo, &seqTxOpts, nil)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()

@@ -38,11 +38,12 @@ type SeqCoordinator struct {
 
 	redisutil.RedisCoordinator
 
-	sync      *SyncMonitor
-	streamer  *TransactionStreamer
-	sequencer *Sequencer
-	signer    *signature.SignVerify
-	config    SeqCoordinatorConfig
+	sync             *SyncMonitor
+	streamer         *TransactionStreamer
+	sequencer        *Sequencer
+	delayedSequencer *DelayedSequencer
+	signer           *signature.SignVerify
+	config           SeqCoordinatorConfig
 
 	prevChosenSequencer string
 	reportedAlive       bool
@@ -54,18 +55,19 @@ type SeqCoordinator struct {
 }
 
 type SeqCoordinatorConfig struct {
-	Enable                bool                       `koanf:"enable"`
-	ChosenHealthcheckAddr string                     `koanf:"chosen-healthcheck-addr"`
-	RedisUrl              string                     `koanf:"redis-url"`
-	LockoutDuration       time.Duration              `koanf:"lockout-duration"`
-	LockoutSpare          time.Duration              `koanf:"lockout-spare"`
-	SeqNumDuration        time.Duration              `koanf:"seq-num-duration"`
-	UpdateInterval        time.Duration              `koanf:"update-interval"`
-	RetryInterval         time.Duration              `koanf:"retry-interval"`
-	SafeShutdownDelay     time.Duration              `koanf:"safe-shutdown-delay"`
-	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
-	MyUrlImpl             string                     `koanf:"my-url"`
-	Signing               signature.SignVerifyConfig `koanf:"signer"`
+	Enable                 bool                       `koanf:"enable"`
+	ChosenHealthcheckAddr  string                     `koanf:"chosen-healthcheck-addr"`
+	RedisUrl               string                     `koanf:"redis-url"`
+	LockoutDuration        time.Duration              `koanf:"lockout-duration"`
+	LockoutSpare           time.Duration              `koanf:"lockout-spare"`
+	SeqNumDuration         time.Duration              `koanf:"seq-num-duration"`
+	UpdateInterval         time.Duration              `koanf:"update-interval"`
+	RetryInterval          time.Duration              `koanf:"retry-interval"`
+	ShutdownHandoffTimeout time.Duration              `koanf:"shutdown-handoff-timeout"`
+	SafeShutdownDelay      time.Duration              `koanf:"safe-shutdown-delay"`
+	MaxMsgPerPoll          arbutil.MessageIndex       `koanf:"msg-per-poll"`
+	MyUrlImpl              string                     `koanf:"my-url"`
+	Signing                signature.SignVerifyConfig `koanf:"signer"`
 }
 
 func (c *SeqCoordinatorConfig) MyUrl() string {
@@ -85,39 +87,42 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
+	f.Duration(prefix+".shutdown-handoff-timeout", DefaultSeqCoordinatorConfig.ShutdownHandoffTimeout, "the maximum amount of time to spend waiting for another sequencer to accept the lockout on shutdown")
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
-	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
+	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:                false,
-	ChosenHealthcheckAddr: "",
-	RedisUrl:              "",
-	LockoutDuration:       time.Duration(5) * time.Minute,
-	LockoutSpare:          time.Duration(30) * time.Second,
-	SeqNumDuration:        time.Duration(24) * time.Hour,
-	UpdateInterval:        time.Duration(5) * time.Second,
-	SafeShutdownDelay:     time.Duration(10) * time.Second,
-	RetryInterval:         time.Second,
-	MaxMsgPerPoll:         2000,
-	MyUrlImpl:             redisutil.INVALID_URL,
-	Signing:               signature.DefaultSignVerifyConfig,
+	Enable:                 false,
+	ChosenHealthcheckAddr:  "",
+	RedisUrl:               "",
+	LockoutDuration:        time.Minute,
+	LockoutSpare:           30 * time.Second,
+	SeqNumDuration:         24 * time.Hour,
+	UpdateInterval:         250 * time.Millisecond,
+	ShutdownHandoffTimeout: 30 * time.Second,
+	SafeShutdownDelay:      5 * time.Second,
+	RetryInterval:          time.Second,
+	MaxMsgPerPoll:          2000,
+	MyUrlImpl:              redisutil.INVALID_URL,
+	Signing:                signature.DefaultSignVerifyConfig,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:            false,
-	RedisUrl:          redisutil.DefaultTestRedisURL,
-	LockoutDuration:   time.Second * 2,
-	LockoutSpare:      time.Millisecond * 10,
-	SeqNumDuration:    time.Minute * 10,
-	UpdateInterval:    time.Millisecond * 10,
-	SafeShutdownDelay: time.Duration(0),
-	RetryInterval:     time.Millisecond * 3,
-	MaxMsgPerPoll:     20,
-	MyUrlImpl:         redisutil.INVALID_URL,
-	Signing:           signature.DefaultSignVerifyConfig,
+	Enable:                 false,
+	RedisUrl:               redisutil.DefaultTestRedisURL,
+	LockoutDuration:        time.Second * 2,
+	LockoutSpare:           time.Millisecond * 10,
+	SeqNumDuration:         time.Minute * 10,
+	UpdateInterval:         time.Millisecond * 10,
+	ShutdownHandoffTimeout: time.Duration(0),
+	SafeShutdownDelay:      time.Duration(0),
+	RetryInterval:          time.Millisecond * 3,
+	MaxMsgPerPoll:          20,
+	MyUrlImpl:              redisutil.INVALID_URL,
+	Signing:                signature.DefaultSignVerifyConfig,
 }
 
 func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
@@ -137,8 +142,21 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		config:           config,
 		signer:           signer,
 	}
+	if sequencer != nil {
+		sequencer.Pause()
+	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
+}
+
+func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) {
+	if c.Started() {
+		panic("trying to set delayed sequencer after start")
+	}
+	if c.delayedSequencer != nil {
+		panic("trying to set delayed sequencer when already set")
+	}
+	c.delayedSequencer = delayedSequencer
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
@@ -559,6 +577,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
+		// we're here because we don't currently hold the lock
+		// sequencer is already either paused or forwarding
+		c.sequencer.Pause()
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -567,10 +588,17 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			if err := c.livelinessUpdate(ctx); err != nil {
 				log.Warn("failed to update liveliness", "err", err)
 			}
+			c.prevChosenSequencer = ""
 			return c.retryAfterRedisError()
 		}
 		log.Info("caught chosen-coordinator lock")
-		c.sequencer.DontForward()
+		if c.delayedSequencer != nil {
+			err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+			if err != nil {
+				log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+			}
+		}
+		c.sequencer.Activate()
 		c.prevChosenSequencer = c.config.MyUrl()
 		return c.noRedisError()
 	}
@@ -647,46 +675,72 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	}
 }
 
-func (c *SeqCoordinator) waitForHandoff(ctx context.Context) string {
-	var nextChosen string
+// Calls check() every c.config.RetryInterval until it returns true, or the context times out.
+func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) {
 	for {
-		var err error
-		nextChosen, err = c.CurrentChosenSequencer(ctx)
-		if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
-			return nextChosen
+		result := check()
+		if result {
+			return
 		}
 		select {
 		case <-ctx.Done():
-			return ""
+			// The caller should've already logged an info line with context about what it's waiting on
+			log.Warn("timed out waiting")
+			return
 		case <-time.After(c.config.RetryInterval):
 		}
 	}
 }
 
-func (c *SeqCoordinator) StopAndWait() {
+func (c *SeqCoordinator) PrepareForShutdown() {
+	// normal context will be closed, use parent context
+	parentCtx := c.StopWaiter.GetParentContext()
+	handoffCtx, cancel := context.WithTimeout(c.StopWaiter.GetContext(), c.config.ShutdownHandoffTimeout)
+	defer cancel()
 	wasChosen := c.CurrentlyChosen()
+	if wasChosen && c.config.ShutdownHandoffTimeout != time.Duration(0) {
+		log.Info("Waiting for an alternative sequencer in the priorities to acquire liveliness...", "timeout", c.config.ShutdownHandoffTimeout)
+		c.waitFor(handoffCtx, func() bool {
+			otherSeq, err := c.RecommendLiveSequencerIgnoring(handoffCtx, c.config.MyUrl())
+			if err != nil {
+				log.Warn("failed to find alternative sequencer", "err", err)
+				return false
+			}
+			log.Info("found an alternative sequencer", "url", otherSeq)
+			return true
+		})
+	}
 	c.StopWaiter.StopAndWait()
-	// normal context now closed, use parent context
-	ctx := c.StopWaiter.GetParentContext()
 	if c.CurrentlyChosen() {
 		wasChosen = true
 	}
 	if c.reportedAlive {
-		err := c.livelinessRelease(ctx)
+		err := c.livelinessRelease(parentCtx)
 		if err != nil {
-			log.Warn("lieveliness release failed", "err", err)
+			log.Warn("liveliness release failed", "err", err)
 		}
 	}
 	if wasChosen {
-		err := c.chosenOneRelease(ctx)
+		err := c.chosenOneRelease(parentCtx)
 		if err != nil {
 			log.Warn("chosen release failed", "err", err)
 		}
-		if c.config.SafeShutdownDelay != time.Duration(0) {
-			handoffCtx, cancel := context.WithTimeout(ctx, c.config.SafeShutdownDelay)
-			defer cancel()
-			log.Info("Waiting for someone else to become main sequencer..")
-			newTarget := c.waitForHandoff(handoffCtx)
+		if c.config.ShutdownHandoffTimeout != time.Duration(0) {
+			log.Info("Waiting for someone else to become the chosen sequencer...", "timeout", c.config.ShutdownHandoffTimeout)
+			var newTarget string
+			c.waitFor(handoffCtx, func() bool {
+				chosen, err := c.CurrentChosenSequencer(handoffCtx)
+				if err != nil {
+					log.Warn("failed to get chosen sequencer", "err", err)
+					return false
+				}
+				if chosen != "" && chosen != c.config.MyUrl() {
+					log.Info("got new chosen sequencer", "url", chosen)
+					newTarget = chosen
+					return true
+				}
+				return false
+			})
 			if newTarget != "" {
 				err := c.sequencer.ForwardTo(newTarget)
 				if err != nil {
@@ -697,6 +751,12 @@ func (c *SeqCoordinator) StopAndWait() {
 				}
 			}
 		}
+	}
+}
+
+func (c *SeqCoordinator) StopAndWait() {
+	if !c.StopWaiter.Stopped() {
+		c.PrepareForShutdown()
 	}
 	_ = c.Client.Close()
 }

@@ -144,11 +144,11 @@ func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 		h.L1BaseFee == other.L1BaseFee
 }
 
-func (h *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetcher) error {
-	if batchFetcher == nil || h.Header.Kind != L1MessageType_BatchPostingReport || h.BatchGasCost != nil {
+func (msg *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetcher) error {
+	if batchFetcher == nil || msg.Header.Kind != L1MessageType_BatchPostingReport || msg.BatchGasCost != nil {
 		return nil
 	}
-	_, _, batchHash, batchNum, _, err := parseBatchPostingReportMessageFields(bytes.NewReader(h.L2msg))
+	_, _, batchHash, batchNum, _, err := parseBatchPostingReportMessageFields(bytes.NewReader(msg.L2msg))
 	if err != nil {
 		return fmt.Errorf("failed to parse batch posting report: %w", err)
 	}
@@ -161,7 +161,7 @@ func (h *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetcher
 		return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
 	}
 	gas := computeBatchGasCost(batchData)
-	h.BatchGasCost = &gas
+	msg.BatchGasCost = &gas
 	return nil
 }
 

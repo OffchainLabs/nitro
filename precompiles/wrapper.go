@@ -47,7 +47,7 @@ func (wrapper *DebugPrecompile) Call(
 	}
 }
 
-func (wrapper *DebugPrecompile) Precompile() Precompile {
+func (wrapper *DebugPrecompile) Precompile() *Precompile {
 	return wrapper.precompile.Precompile()
 }
 
@@ -110,7 +110,7 @@ func (wrapper *OwnerPrecompile) Call(
 	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 }
 
-func (wrapper *OwnerPrecompile) Precompile() Precompile {
+func (wrapper *OwnerPrecompile) Precompile() *Precompile {
 	con := wrapper.precompile
 	return con.Precompile()
 }

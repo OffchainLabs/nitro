@@ -99,12 +99,12 @@ func TestLiveNodeConfig(t *testing.T) {
 	jsonConfig := "{\"l2\":{\"chain-id\":421613}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--file-logging.enable=false --persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config)
+	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
 
 	// check updating the config
 	update := config.ShallowClone()
@@ -182,7 +182,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config)
+	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
 	liveConfig.Start(ctx)
 
 	// test if periodic reload works

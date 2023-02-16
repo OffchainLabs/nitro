@@ -4,6 +4,8 @@
 package precompiles
 
 import (
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common/math"
@@ -101,6 +103,50 @@ func TestArbOwner(t *testing.T) {
 	Require(t, err)
 	if costCap != newCostCap {
 		Fail(t)
+	}
+
+	avail, err := gasInfo.GetL1FeesAvailable(callCtx, evm)
+	Require(t, err)
+	if avail.Sign() != 0 {
+		Fail(t, avail)
+	}
+	deposited := big.NewInt(1000000)
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, deposited)
+	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
+	Require(t, err)
+	if avail.Sign() != 0 {
+		Fail(t, avail)
+	}
+	requested := big.NewInt(200000)
+	x, err := prec.ReleaseL1PricerSurplusFunds(callCtx, evm, requested)
+	Require(t, err)
+	if x.Cmp(requested) != 0 {
+		Fail(t, x, requested)
+	}
+	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
+	Require(t, err)
+	if avail.Cmp(requested) != 0 {
+		Fail(t, avail, requested)
+	}
+	x, err = prec.ReleaseL1PricerSurplusFunds(callCtx, evm, deposited)
+	Require(t, err)
+	if x.Cmp(new(big.Int).Sub(deposited, requested)) != 0 {
+		Fail(t, x, deposited, requested)
+	}
+	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
+	Require(t, err)
+	if avail.Cmp(deposited) != 0 {
+		Fail(t, avail, deposited)
+	}
+	x, err = prec.ReleaseL1PricerSurplusFunds(callCtx, evm, deposited)
+	Require(t, err)
+	if x.Sign() != 0 {
+		Fail(t, x)
+	}
+	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
+	Require(t, err)
+	if avail.Cmp(deposited) != 0 {
+		Fail(t, avail, deposited)
 	}
 }
 

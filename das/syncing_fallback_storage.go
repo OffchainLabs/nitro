@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"sync"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 )
 
 var sequencerInboxABI *abi.ABI
-var batchDeliveredID common.Hash
+var BatchDeliveredID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 
@@ -50,36 +51,42 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	batchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
+	BatchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
 	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
 	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 }
 
 type SyncToStorageConfig struct {
+	CheckAlreadyExists   bool          `koanf:"check-already-exists"`
 	Eager                bool          `koanf:"eager"`
 	EagerLowerBoundBlock uint64        `koanf:"eager-lower-bound-block"`
 	RetentionPeriod      time.Duration `koanf:"retention-period"`
 	DelayOnError         time.Duration `koanf:"delay-on-error"`
 	IgnoreWriteErrors    bool          `koanf:"ignore-write-errors"`
 	L1BlocksPerRead      uint64        `koanf:"l1-blocks-per-read"`
+	StateDir             string        `koanf:"state-dir"`
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
+	CheckAlreadyExists:   true,
 	Eager:                false,
 	EagerLowerBoundBlock: 0,
 	RetentionPeriod:      time.Duration(math.MaxInt64),
 	DelayOnError:         time.Second,
 	IgnoreWriteErrors:    true,
 	L1BlocksPerRead:      100,
+	StateDir:             "",
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".check-already-exists", DefaultSyncToStorageConfig.CheckAlreadyExists, "check if the data already exists in this DAS's storage. Must be disabled for fast sync with an IPFS backend")
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
-	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block")
+	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
 	f.Uint64(prefix+".l1-blocks-per-read", DefaultSyncToStorageConfig.L1BlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
 	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to retain synced data (defaults to forever)")
 	f.Duration(prefix+".delay-on-error", DefaultSyncToStorageConfig.DelayOnError, "time to wait if encountered an error before retrying")
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
+	f.String(prefix+".state-dir", DefaultSyncToStorageConfig.StateDir, "directory to store the sync state in, ie the block number currently synced up to, so that we don't sync from scratch each time")
 }
 
 type l1SyncService struct {
@@ -97,6 +104,61 @@ type l1SyncService struct {
 	lowBlockNr     uint64
 	lastBatchCount *big.Int
 	lastBatchAcc   common.Hash
+}
+
+const nextBlockNoFilename = "nextBlockNumber"
+
+func readSyncStateOrDefault(syncDir string, dflt uint64) uint64 {
+	if syncDir == "" {
+		return dflt
+	}
+
+	path := syncDir + "/" + nextBlockNoFilename
+
+	f, err := os.Open(path)
+	if err != nil {
+		log.Info("Couldn't open sync state file, using default sync start block number", "err", err, "path", path, "default", dflt)
+		return dflt
+	}
+	var blockNr uint64
+	n, err := fmt.Fscanln(f, &blockNr)
+	if err != nil {
+		log.Warn("Invalid data in sync state file, using default sync start block number", "err", err, "path", path, "default", dflt)
+		return dflt
+	}
+	if n != 1 {
+		log.Warn("Incorrect number of fields in sync state file, using default sync start block number", "n", n, "path", path, "default", dflt)
+		return dflt
+	}
+	return blockNr
+}
+
+func writeSyncState(syncDir string, blockNr uint64) error {
+	if syncDir == "" {
+		return fmt.Errorf("No sync-to-storage.state-dir has been configured")
+	}
+
+	path := syncDir + "/" + nextBlockNoFilename
+
+	// Use a temp file and rename to achieve atomic writes.
+	f, err := os.CreateTemp(syncDir, nextBlockNoFilename)
+	if err != nil {
+		return err
+	}
+	err = f.Chmod(0600)
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(fmt.Sprintf("%d\n", blockNr))
+	if err != nil {
+		return err
+	}
+	err = f.Close()
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), path)
 }
 
 func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSource arbstate.DataAvailabilityReader, l1Reader *headerreader.HeaderReader, inboxAddr common.Address) (*l1SyncService, error) {
@@ -118,13 +180,12 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 		inboxContract:  inboxContract,
 		inboxAddr:      inboxAddr,
 		catchingUp:     true,
-		lowBlockNr:     config.EagerLowerBoundBlock,
+		lowBlockNr:     readSyncStateOrDefault(config.StateDir, config.EagerLowerBoundBlock),
 		lastBatchCount: big.NewInt(0),
 	}, nil
 }
 
 func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDeliveredLog types.Log) error {
-	data := []byte{}
 	deliveredEvent, err := s.inboxContract.ParseSequencerBatchDelivered(batchDeliveredLog)
 	if err != nil {
 		return err
@@ -135,47 +196,11 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		// old batch - no need to store
 		return nil
 	}
-	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
-		query := ethereum.FilterQuery{
-			BlockHash: &batchDeliveredLog.BlockHash,
-			Addresses: []common.Address{s.inboxAddr},
-			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
-		}
-		logs, err := s.l1Reader.Client().FilterLogs(ctx, query)
-		if err != nil {
-			return err
-		}
-		if len(logs) != 1 {
-			return fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
-		}
-		dataEvent, err := s.inboxContract.ParseSequencerBatchData(logs[0])
-		if err != nil {
-			return err
-		}
-		data = dataEvent.Data
-	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
-		txData, err := arbutil.GetLogEmitterTxData(ctx, s.l1Reader.Client(), batchDeliveredLog)
-		if err != nil {
-			return err
-		}
-		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
-		if err != nil {
-			return err
-		}
-		var ok bool
-		data, ok = args["data"].([]byte)
-		if !ok {
-			return fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
-		}
+	data, err := FindDASDataFromLog(ctx, s.inboxContract, deliveredEvent, s.inboxAddr, s.l1Reader.Client(), batchDeliveredLog)
+	if err != nil {
+		return err
 	}
-	if len(data) < 1 {
-		// no data - nothing to do
-		log.Warn("BatchDelivered - no data found", "data", data)
-		return nil
-	}
-	if !arbstate.IsDASMessageHeaderByte(data[0]) {
-		log.Warn("BatchDelivered - data not DAS")
+	if data == nil {
 		return nil
 	}
 
@@ -193,12 +218,15 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		return err
 	}
 	for hash, contents := range preimages {
-		_, err := s.syncTo.GetByHash(ctx, hash)
-		if errors.Is(err, ErrNotFound) {
+		var err error
+		if s.config.CheckAlreadyExists {
+			_, err = s.syncTo.GetByHash(ctx, hash)
+		}
+		if err == nil || errors.Is(err, ErrNotFound) {
 			if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
 				return err
 			}
-		} else if err != nil {
+		} else {
 			return err
 		}
 	}
@@ -214,12 +242,66 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	return nil
 }
 
+func FindDASDataFromLog(
+	ctx context.Context,
+	inboxContract *bridgegen.SequencerInbox,
+	deliveredEvent *bridgegen.SequencerInboxSequencerBatchDelivered,
+	inboxAddr common.Address,
+	l1Client arbutil.L1Interface,
+	batchDeliveredLog types.Log) ([]byte, error) {
+	data := []byte{}
+	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
+		query := ethereum.FilterQuery{
+			BlockHash: &batchDeliveredLog.BlockHash,
+			Addresses: []common.Address{inboxAddr},
+			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
+		}
+		logs, err := l1Client.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if len(logs) != 1 {
+			return nil, fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
+		}
+		dataEvent, err := inboxContract.ParseSequencerBatchData(logs[0])
+		if err != nil {
+			return nil, err
+		}
+		data = dataEvent.Data
+	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
+		txData, err := arbutil.GetLogEmitterTxData(ctx, l1Client, batchDeliveredLog)
+		if err != nil {
+			return nil, err
+		}
+		args := make(map[string]interface{})
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		data, ok = args["data"].([]byte)
+		if !ok {
+			return nil, fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
+		}
+	}
+	if len(data) < 1 {
+		// no data - nothing to do
+		log.Warn("BatchDelivered - no data found", "data", data)
+		return nil, nil
+	}
+	if !arbstate.IsDASMessageHeaderByte(data[0]) {
+		log.Warn("BatchDelivered - data not DAS")
+		return nil, nil
+	}
+	return data, nil
+}
+
 func (s *l1SyncService) processBlockRange(ctx context.Context, lowerBound, higherBound uint64) error {
 	query := ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(lowerBound),
 		ToBlock:   new(big.Int).SetUint64(higherBound),
 		Addresses: []common.Address{s.inboxAddr},
-		Topics:    [][]common.Hash{{batchDeliveredID}},
+		Topics:    [][]common.Hash{{BatchDeliveredID}},
 	}
 	logs, err := s.l1Reader.Client().FilterLogs(ctx, query)
 	if err != nil {
@@ -278,6 +360,10 @@ func (s *l1SyncService) readMore(ctx context.Context) error {
 		return err
 	}
 	s.lowBlockNr = finalizedHighBlockNr + 1
+	err = writeSyncState(s.config.StateDir, s.lowBlockNr)
+	if err != nil {
+		log.Warn("sync-to-storage failed to write next block number to sync.", "err", err, "blockNr", s.lowBlockNr)
+	}
 	return nil
 }
 
@@ -325,6 +411,7 @@ type SyncingFallbackStorageService struct {
 func NewSyncingFallbackStorageService(ctx context.Context,
 	primary StorageService,
 	backup arbstate.DataAvailabilityReader,
+	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	l1Reader *headerreader.HeaderReader,
 	inboxAddr common.Address,
 	syncConf *SyncToStorageConfig) (*SyncingFallbackStorageService, error) {
@@ -337,6 +424,7 @@ func NewSyncingFallbackStorageService(ctx context.Context,
 		FallbackStorageService{
 			primary,
 			backup,
+			backupHealthChecker,
 			uint64(syncConf.RetentionPeriod.Seconds()),
 			syncConf.IgnoreWriteErrors,
 			true,

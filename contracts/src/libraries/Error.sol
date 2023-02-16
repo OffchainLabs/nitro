@@ -102,6 +102,9 @@ error L1Forked();
 /// @dev Thrown when a L1 chainId fork is not detected
 error NotForked();
 
+/// @dev The provided gasLimit is larger than uint64
+error GasLimitTooLarge();
+
 // Outbox Errors
 
 /// @dev The provided proof was too long

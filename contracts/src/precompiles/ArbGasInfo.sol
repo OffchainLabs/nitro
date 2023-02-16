@@ -13,7 +13,7 @@ interface ArbGasInfo {
     /// @return return gas prices in wei
     ///        (
     ///            per L2 tx,
-    ///            per L1 calldata unit, (a byte, non-zero or otherwise, is 16 units)
+    ///            per L1 calldata byte
     ///            per storage allocation,
     ///            per ArbGas base,
     ///            per ArbGas congestion,
@@ -35,7 +35,7 @@ interface ArbGasInfo {
     /// @return return gas prices in wei
     ///        (
     ///            per L2 tx,
-    ///            per L1 calldata unit, (a byte, non-zero or otherwise, is 16 units)
+    ///            per L1 calldata byte
     ///            per storage allocation,
     ///            per ArbGas base,
     ///            per ArbGas congestion,
@@ -54,7 +54,7 @@ interface ArbGasInfo {
         );
 
     /// @notice Get prices in ArbGas for the supplied aggregator
-    /// @return (per L2 tx, per L1 calldata unit, per storage allocation)
+    /// @return (per L2 tx, per L1 calldata byte, per storage allocation)
     function getPricesInArbGasWithAggregator(address aggregator)
         external
         view
@@ -65,7 +65,7 @@ interface ArbGasInfo {
         );
 
     /// @notice Get prices in ArbGas. Assumes the callers preferred validator, or the default if caller doesn't have a preferred one.
-    /// @return (per L2 tx, per L1 calldata unit, per storage allocation)
+    /// @return (per L2 tx, per L1 calldata byte, per storage allocation)
     function getPricesInArbGas()
         external
         view
@@ -118,4 +118,7 @@ interface ArbGasInfo {
 
     /// @notice Returns the cost amortization cap in basis points
     function getAmortizedCostCapBips() external view returns (uint64);
+
+    /// @notice Returns the available funds from L1 fees
+    function getL1FeesAvailable() external view returns (uint256);
 }

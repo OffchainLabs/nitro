@@ -37,6 +37,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
+	version := l2node.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account
@@ -79,8 +80,12 @@ func TestSequencerFeePaid(t *testing.T) {
 		gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
 		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
-		if !arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet)) {
+		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
+		if !gotTip && version == 9 {
 			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
+		}
+		if gotTip && version != 9 {
+			Fail(t, "tips are somehow enabled")
 		}
 
 		txSize := compressedTxSize(t, tx)
@@ -93,6 +98,11 @@ func TestSequencerFeePaid(t *testing.T) {
 			Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
 		}
 		return networkRevenue, tipPaidToNet
+	}
+
+	if version != 9 {
+		testFees(3)
+		return
 	}
 
 	net0, tip0 := testFees(0)
@@ -123,7 +133,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.DelayedSequencer.FinalizeDistance = 1
 
-	l2info, node, l2client, _, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, nil)
+	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 
@@ -166,6 +176,8 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx)
 		header, err := l2client.HeaderByHash(ctx, receipt.BlockHash)
 		Require(t, err)
+
+		TransferBalance(t, "Faucet", "Faucet", common.Big1, l1info, l1client, ctx) // generate l1 traffic
 
 		units := compressedTxSize(t, tx) * params.TxDataNonZeroGasEIP2028
 		estimatedL1FeePerUnit := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, receipt.GasUsedForL1), units)

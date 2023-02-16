@@ -188,6 +188,27 @@ func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 }
 
 func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
+	if c.State.ArbOSVersion() < 10 {
+		return con._preversion10_GetL1PricingSurplus(c, evm)
+	}
+	ps := c.State.L1PricingState()
+	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
+	if err != nil {
+		return nil, err
+	}
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return nil, err
+	}
+	haveFunds, err := ps.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
+}
+
+func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	ps := c.State.L1PricingState()
 	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
 	if err != nil {
@@ -208,4 +229,8 @@ func (con ArbGasInfo) GetPerBatchGasCharge(c ctx, evm mech) (int64, error) {
 
 func (con ArbGasInfo) GetAmortizedCostCapBips(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().AmortizedCostCapBips()
+}
+
+func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
+	return c.State.L1PricingState().L1FeesAvailable()
 }

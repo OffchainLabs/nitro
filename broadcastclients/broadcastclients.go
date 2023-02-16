@@ -22,7 +22,7 @@ type BroadcastClients struct {
 }
 
 func NewBroadcastClients(
-	config broadcastclient.Config,
+	configFetcher broadcastclient.ConfigFetcher,
 	l2ChainId uint64,
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer broadcastclient.TransactionStreamerInterface,
@@ -30,6 +30,7 @@ func NewBroadcastClients(
 	fatalErrChan chan error,
 	bpVerifier contracts.BatchPosterVerifierInterface,
 ) (*BroadcastClients, error) {
+	config := configFetcher()
 	urlCount := len(config.URLs)
 	if urlCount <= 0 {
 		return nil, nil
@@ -40,7 +41,7 @@ func NewBroadcastClients(
 	var lastClientErr error
 	for _, address := range config.URLs {
 		client, err := broadcastclient.NewBroadcastClient(
-			config,
+			configFetcher,
 			address,
 			l2ChainId,
 			currentMessageCount,
@@ -77,8 +78,6 @@ func (bcs *BroadcastClients) Start(ctx context.Context) {
 }
 func (bcs *BroadcastClients) StopAndWait() {
 	for _, client := range bcs.clients {
-		if client.Started() {
-			client.StopAndWait()
-		}
+		client.StopAndWait()
 	}
 }

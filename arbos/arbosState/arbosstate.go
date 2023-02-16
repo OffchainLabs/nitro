@@ -229,7 +229,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		err = aState.UpgradeArbosVersion(desiredArbosVersion, true)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB)
 		if err != nil {
 			return nil, err
 		}
@@ -237,19 +237,19 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return aState, nil
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) error {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, stateDB vm.StateDB) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		return state.UpgradeArbosVersion(upgradeTo, false)
+		return state.UpgradeArbosVersion(upgradeTo, false, stateDB)
 	}
 	return nil
 }
 
-var ErrFatalNodeOutOfDate error = errors.New("please upgrade to latest version of node software")
+var ErrFatalNodeOutOfDate = errors.New("please upgrade to latest version of node software")
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) error {
+func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, stateDB vm.StateDB) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -279,6 +279,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) e
 			// no state changes needed
 		case 8:
 			// no state changes needed
+		case 9:
+			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
 		default:
 			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}

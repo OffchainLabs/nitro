@@ -5,12 +5,10 @@ package validator
 
 import (
 	"context"
-	"math/big"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/solgen/go/challengegen"
-	"github.com/pkg/errors"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type ExecutionChallengeBackend struct {
@@ -21,9 +19,6 @@ type ExecutionChallengeBackend struct {
 	machineCacheEnd   uint64
 	targetNumMachines int
 }
-
-// Assert that ExecutionChallengeBackend implements ChallengeBackend
-var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
@@ -86,26 +81,35 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 	return mach.Hash(), nil
 }
 
-func (b *ExecutionChallengeBackend) IssueOneStepProof(
+func (b *ExecutionChallengeBackend) GetProofAt(
 	ctx context.Context,
-	core *challengeCore,
-	oldState *ChallengeState,
-	startSegment int,
-) (*types.Transaction, error) {
-	mach, err := b.getMachineAt(ctx, oldState.Segments[startSegment].Position)
+	step uint64,
+) ([]byte, error) {
+	mach, err := b.getMachineAt(ctx, step)
 	if err != nil {
 		return nil, err
 	}
-	proof := mach.ProveNextStep()
-	return core.con.OneStepProveExecution(
-		core.auth,
-		core.challengeIndex,
-		challengegen.ChallengeLibSegmentSelection{
-			OldSegmentsStart:  oldState.Start,
-			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
-			OldSegments:       oldState.RawSegments,
-			ChallengePosition: big.NewInt(int64(startSegment)),
-		},
-		proof,
-	)
+	return mach.ProveNextStep(), nil
+}
+
+func (b *ExecutionChallengeBackend) GetFinalState(ctx context.Context) (uint64, GoGlobalState, uint8, error) {
+	// TODO: we might also use HostIoMachineTo Speed things up
+	initialRunMachine := b.initialMachine.CloneMachineInterface()
+	var stepCount uint64
+	for initialRunMachine.IsRunning() {
+		stepsPerLoop := uint64(1_000_000_000)
+		if stepCount > 0 {
+			log.Debug("step count machine", "steps", stepCount)
+		}
+		err := initialRunMachine.Step(ctx, stepsPerLoop)
+		if err != nil {
+			return 0, GoGlobalState{}, 0, err
+		}
+		stepCount += stepsPerLoop
+	}
+	stepCount = initialRunMachine.GetStepCount()
+	computedStatus := initialRunMachine.GetGlobalState()
+	status := initialRunMachine.Status()
+
+	return stepCount, computedStatus, status, nil
 }

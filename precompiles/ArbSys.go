@@ -189,9 +189,9 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32
 	size, rootHash, rawPartials, _ := c.State.SendMerkleAccumulator().StateForExport()
 	partials := make([]bytes32, len(rawPartials))
 	for i, par := range rawPartials {
-		partials[i] = bytes32(par)
+		partials[i] = par
 	}
-	return big.NewInt(int64(size)), bytes32(rootHash), partials, nil
+	return big.NewInt(int64(size)), rootHash, partials, nil
 }
 
 // WithdrawEth send paid eth to the destination on L1

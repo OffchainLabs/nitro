@@ -12,10 +12,10 @@ cargo-fuzz = true
 lazy_static = "1.4.0"
 libfuzzer-sys = "0.4"
 eyre = "0.6.8"
-tokio = { version = "1.18.1", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1.18.5", features = ["rt", "rt-multi-thread"] }
 serde = { version = "1.0.137", features = ["derive"] }
 hex = "0.4.3"
-evm = "0.35.0"
+evm = "0.36.0"
 serde_json = "1.0.81"
 primitive-types = "0.11.1"
 rayon = "1.5.1"

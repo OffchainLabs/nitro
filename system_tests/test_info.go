@@ -9,6 +9,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"math/big"
+	"sync/atomic"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -53,7 +54,7 @@ func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int,
 }
 
 func NewArbTestInfo(t *testing.T, chainId *big.Int) *BlockchainTestInfo {
-	var transferGas uint64 = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	arbinfo := NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(chainId)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -181,7 +182,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string, ctx context.Con
 			if err != nil {
 				return nil, err
 			}
-			info.Nonce += 1 // we don't set Nonce, but try to keep track..
+			atomic.AddUint64(&info.Nonce, 1) // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%
@@ -219,14 +220,14 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 ) *types.Transaction {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
+	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
 	txData := &types.DynamicFeeTx{
 		To:        to,
 		Gas:       gas,
 		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,
-		Nonce:     info.Nonce,
+		Nonce:     txNonce,
 		Data:      data,
 	}
-	info.Nonce += 1
 	return b.SignTxAs(from, txData)
 }

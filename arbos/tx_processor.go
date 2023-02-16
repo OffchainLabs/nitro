@@ -536,6 +536,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		posterFeeDestination = p.evm.Context.Coinbase
 	}
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
+	if p.state.ArbOSVersion() >= 10 {
+		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
+			log.Error("failed to update L1FeesAvailable: ", "err", err)
+		}
+	}
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price could be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
@@ -628,12 +633,14 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 }
 
 func (p *TxProcessor) DropTip() bool {
-	return p.state.ArbOSVersion() < 9 || p.delayedInbox
+	version := p.state.ArbOSVersion()
+	return version != 9 || p.delayedInbox
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	gasPrice := p.evm.GasPrice
-	if p.state.ArbOSVersion() < 9 {
+	version := p.state.ArbOSVersion()
+	if version != 9 {
 		gasPrice = p.evm.Context.BaseFee
 		if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
 			gasPrice.SetInt64(0) // gasprice zero behavior

@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{gostack::GoStack, machine::WasmEnvArc};
+use crate::{gostack::GoStack, machine::WasmEnvMut};
 
 extern "C" {
     pub fn BrotliDecoderDecompress(
@@ -25,8 +25,8 @@ extern "C" {
 const BROTLI_MODE_GENERIC: u32 = 0;
 const BROTLI_RES_SUCCESS: u32 = 1;
 
-pub fn brotli_compress(env: &WasmEnvArc, sp: u32) {
-    let (sp, _) = GoStack::new(sp, env);
+pub fn brotli_compress(mut env: WasmEnvMut, sp: u32) {
+    let (sp, _) = GoStack::new(sp, &mut env);
 
     //(inBuf []byte, outBuf []byte, level int, windowSize int) int
     let in_buf_ptr = sp.read_u64(0);
@@ -61,8 +61,8 @@ pub fn brotli_compress(env: &WasmEnvArc, sp: u32) {
     sp.write_u64(output_arg, output_len as u64);
 }
 
-pub fn brotli_decompress(env: &WasmEnvArc, sp: u32) {
-    let (sp, _) = GoStack::new(sp, env);
+pub fn brotli_decompress(mut env: WasmEnvMut, sp: u32) {
+    let (sp, _) = GoStack::new(sp, &mut env);
 
     //(inBuf []byte, outBuf []byte) int
     let in_buf_ptr = sp.read_u64(0);

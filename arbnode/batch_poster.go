@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbos"
@@ -51,6 +52,7 @@ type BatchPoster struct {
 	streamer     *TransactionStreamer
 	config       BatchPosterConfigFetcher
 	seqInbox     *bridgegen.SequencerInbox
+	bridge       *bridgegen.Bridge
 	syncMonitor  *SyncMonitor
 	seqInboxABI  *abi.ABI
 	seqInboxAddr common.Address
@@ -136,8 +138,12 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	EIP4844:              false,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
-	seqInbox, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+	seqInbox, err := bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
+	if err != nil {
+		return nil, err
+	}
+	bridge, err := bridgegen.NewBridge(deployInfo.Bridge, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +171,10 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		streamer:     streamer,
 		syncMonitor:  syncMonitor,
 		config:       config,
+		bridge:       bridge,
 		seqInbox:     seqInbox,
 		seqInboxABI:  seqInboxABI,
-		seqInboxAddr: contractAddress,
+		seqInboxAddr: deployInfo.SequencerInbox,
 		daWriter:     daWriter,
 		redisLock:    redisLock,
 	}
@@ -475,6 +482,31 @@ func (b *BatchPoster) encodeAddBatch(
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
+	config := b.config()
+	callOpts := &bind.CallOpts{
+		Context: ctx,
+	}
+	if config.DataPoster.WaitForL1Finality {
+		callOpts.BlockNumber = big.NewInt(int64(rpc.SafeBlockNumber))
+	}
+	safeDelayedMessagesBig, err := b.bridge.DelayedMessageCount(callOpts)
+	if err != nil {
+		return 0, err
+	}
+	if !safeDelayedMessagesBig.IsUint64() {
+		return 0, fmt.Errorf("calling delayedMessageCount() on the bridge returned a non-uint64 result %v", safeDelayedMessagesBig)
+	}
+	safeDelayedMessages := safeDelayedMessagesBig.Uint64()
+	if safeDelayedMessages > delayedMessages {
+		// On restart, we may be trying to estimate gas for a batch whose successor has
+		// already made it into pending state, if not latest state.
+		// In that case, we might get a revert with `DelayedBackwards()`.
+		// To avoid that, we artificially increase the delayed messages to `safeDelayedMessages`.
+		// In theory, this might reduce gas usage, but only by a factor that's already
+		// accounted for in `config.ExtraBatchGas`, as that same factor can appear if a user
+		// posts a new delayed message that we didn't see while gas estimating.
+		delayedMessages = safeDelayedMessages
+	}
 	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
 	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
@@ -497,18 +529,19 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 			"error estimating gas for batch",
 			"err", err,
 			"delayedMessages", delayedMessages,
+			"safeDelayedMessages", safeDelayedMessages,
 			"sequencerMessageHeader", hex.EncodeToString(sequencerMessageHeader),
 			"sequencerMessageLen", len(sequencerMessage),
 		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return gas + b.config().ExtraBatchGas, nil
+	return gas + config.ExtraBatchGas, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
@@ -520,15 +553,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if msgCount <= batchPosition.MessageCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
-		return nil
+		return false, nil
 	}
 	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
 	if err != nil {
-		return err
+		return false, err
 	}
 	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
@@ -546,7 +579,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		if err != nil {
 			// Clear our cache
 			b.building = nil
-			return fmt.Errorf("error adding message to batch: %w", err)
+			return false, fmt.Errorf("error adding message to batch: %w", err)
 		}
 		if !success {
 			// this batch is full
@@ -563,25 +596,27 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
-		return nil
+		return false, nil
 	}
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
 		b.building = nil // a closed batchSegments can't be reused
-		return nil
+		return false, nil
 	}
 
 	if b.daWriter != nil {
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
-		if err != nil {
-			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
+		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
-				return errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
 			}
+			log.Warn("Falling back to storing data on chain", "err", err)
+		} else if err != nil {
+			return false, err
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
@@ -589,11 +624,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 
 	gasLimit, err := b.estimateGas(ctx, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	newMeta := batchPosterPosition{
 		MessageCount:        b.building.msgCount,
@@ -602,7 +637,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
-		return err
+		return false, err
 	}
 	log.Info(
 		"BatchPoster: batch sent",
@@ -614,7 +649,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		"total segments", len(b.building.segments.rawSegments),
 	)
 	b.building = nil
-	return nil
+	return true, nil
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
@@ -626,11 +661,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			b.building = nil
 			return b.config().BatchPollDelay
 		}
-		err := b.maybePostSequencerBatch(ctx)
+		posted, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
-			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.StorageRaceErr) {
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.ErrStorageRace) {
 				// Likely the inbox tracker just isn't caught up.
 				// Let's see if this error disappears naturally.
 				if b.firstAccErr == (time.Time{}) {
@@ -644,8 +679,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			}
 			logLevel("error posting batch", "err", err)
 			return b.config().PostingErrorDelay
+		} else if posted {
+			return 0
+		} else {
+			return b.config().BatchPollDelay
 		}
-		return b.config().BatchPollDelay
 	})
 }
 

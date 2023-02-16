@@ -85,7 +85,7 @@ type SequencingHooks struct {
 	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
-func noopSequencingHooks() *SequencingHooks {
+func NoopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
@@ -131,7 +131,7 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	hooks := noopSequencingHooks()
+	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
@@ -199,7 +199,7 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
-		hooks := noopSequencingHooks()
+		hooks := NoopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
 			tx = redeems[0]
@@ -401,7 +401,8 @@ func ProduceBlockAdvanced(
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
-	header.Root = statedb.IntermediateRoot(true)
+
+	FinalizeBlock(header, complete, statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
@@ -413,9 +414,6 @@ func ProduceBlockAdvanced(
 			txLog.BlockHash = blockHash
 		}
 	}
-
-	FinalizeBlock(header, complete, statedb)
-	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
@@ -436,21 +434,40 @@ func ProduceBlockAdvanced(
 	return block, receipts, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
+// Also sets header.Root
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
-		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			panic("cannot finalize blocks before genesis")
+		}
 
-		// Add outbox info to the header for client-side proving
-		acc := state.SendMerkleAccumulator()
-		root, _ := acc.Root()
-		size, _ := acc.Size()
-		nextL1BlockNumber, _ := state.Blockhashes().L1BlockNumber()
+		var sendRoot common.Hash
+		var sendCount uint64
+		var nextL1BlockNumber uint64
+		var arbosVersion uint64
+
+		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+		} else {
+			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
+			// Add outbox info to the header for client-side proving
+			acc := state.SendMerkleAccumulator()
+			sendRoot, _ = acc.Root()
+			sendCount, _ = acc.Size()
+			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
+			arbosVersion = state.ArbOSVersion()
+		}
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           root,
-			SendCount:          size,
+			SendRoot:           sendRoot,
+			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: state.ArbOSVersion(),
+			ArbOSFormatVersion: arbosVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
+		header.Root = statedb.IntermediateRoot(true)
 	}
 }

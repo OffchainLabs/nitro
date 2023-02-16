@@ -20,13 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
 type BlockValidatorAPI struct {
-	val *validator.BlockValidator
+	val *staker.BlockValidator
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
@@ -40,7 +40,7 @@ func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (commo
 }
 
 type BlockValidatorDebugAPI struct {
-	val        *validator.StatelessBlockValidator
+	val        *staker.StatelessBlockValidator
 	blockchain *core.BlockChain
 }
 
@@ -50,13 +50,16 @@ type ValidateBlockResult struct {
 }
 
 func (a *BlockValidatorDebugAPI) ValidateBlock(
-	ctx context.Context, blockNum rpc.BlockNumberOrHash, full bool, moduleRootOptional *common.Hash,
+	ctx context.Context, blockNum rpc.BlockNumber, full bool, moduleRootOptional *common.Hash,
 ) (ValidateBlockResult, error) {
 	result := ValidateBlockResult{}
 
-	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
-	if err != nil {
-		return result, err
+	if blockNum < 0 {
+		return result, errors.New("this method only accepts absolute block numbers")
+	}
+	header := a.blockchain.GetHeaderByNumber(uint64(blockNum))
+	if header == nil {
+		return result, errors.New("block not found")
 	}
 	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
 		return result, types.ErrUseFallback
@@ -162,7 +165,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		L1LastUpdateTime:     make([]uint64, blocks),
 	}
 
-	for i := uint64(0); i < uint64(blocks); i++ {
+	for i := uint64(0); i < blocks; i++ {
 		state, header, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err
@@ -244,7 +247,7 @@ func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.
 		Count: make([]uint64, blocks),
 	}
 
-	for i := uint64(0); i < uint64(blocks); i++ {
+	for i := uint64(0); i < blocks; i++ {
 		state, _, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err

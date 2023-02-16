@@ -45,7 +45,7 @@ type ArbosPrecompile interface {
 		evm *vm.EVM,
 	) (output []byte, gasLeft uint64, err error)
 
-	Precompile() Precompile
+	Precompile() *Precompile
 }
 
 type purity uint8
@@ -117,7 +117,7 @@ func (e *SolError) Error() string {
 
 // MakePrecompile makes a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Precompile) {
+func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Crit("Bad ABI")
@@ -498,7 +498,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		}
 	}
 
-	return address, Precompile{
+	return address, &Precompile{
 		methods,
 		methodsByName,
 		events,
@@ -519,7 +519,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	contracts := make(map[addr]ArbosPrecompile)
 
-	insert := func(address addr, impl ArbosPrecompile) Precompile {
+	insert := func(address addr, impl ArbosPrecompile) *Precompile {
 		contracts[address] = impl
 		return impl.Precompile()
 	}
@@ -529,7 +529,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
 	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
 	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	ArbGasInfo := insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
@@ -573,6 +574,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
+	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
@@ -584,12 +586,13 @@ func Precompiles() map[addr]ArbosPrecompile {
 	return contracts
 }
 
-func (p Precompile) SwapImpl(impl interface{}) Precompile {
-	p.implementer = reflect.ValueOf(impl)
-	return p
+func (p *Precompile) CloneWithImpl(impl interface{}) *Precompile {
+	clone := *p
+	clone.implementer = reflect.ValueOf(impl)
+	return &clone
 }
 
-func (p Precompile) GetMethodID(name string) bytes4 {
+func (p *Precompile) GetMethodID(name string) bytes4 {
 	method, ok := p.methodsByName[name]
 	if !ok {
 		panic(fmt.Sprintf("Precompile %v does not have a method with the name %v", p.name, name))
@@ -598,7 +601,7 @@ func (p Precompile) GetMethodID(name string) bytes4 {
 }
 
 // Call a precompile in typed form, deserializing its inputs and serializing its outputs
-func (p Precompile) Call(
+func (p *Precompile) Call(
 	input []byte,
 	precompileAddress common.Address,
 	actingAsAddress common.Address,
@@ -744,12 +747,12 @@ func (p Precompile) Call(
 	return encoded, callerCtx.gasLeft, nil
 }
 
-func (p Precompile) Precompile() Precompile {
+func (p *Precompile) Precompile() *Precompile {
 	return p
 }
 
 // Get4ByteMethodSignatures is needed for the fuzzing harness
-func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
+func (p *Precompile) Get4ByteMethodSignatures() [][4]byte {
 	ret := make([][4]byte, 0, len(p.methods))
 	for sig := range p.methods {
 		ret = append(ret, sig)
@@ -757,7 +760,7 @@ func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
 	return ret
 }
 
-func (p Precompile) GetErrorABIs() []abi.Error {
+func (p *Precompile) GetErrorABIs() []abi.Error {
 	ret := make([]abi.Error, 0, len(p.errors))
 	for _, solErr := range p.errors {
 		ret = append(ret, solErr.template)

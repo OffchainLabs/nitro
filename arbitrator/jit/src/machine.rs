@@ -6,13 +6,13 @@ use crate::{
     wavmio, wavmio::Bytes32, Opts,
 };
 
+use arbutil::Color;
 use eyre::{bail, Result, WrapErr};
-use parking_lot::Mutex;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{
-    imports, CompilerConfig, Function, Instance, LazyInit, Memory, Module, NativeFunc,
-    RuntimeError, Store, Universal, WasmerEnv,
+    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
+    RuntimeError, Store, TypedFunction,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -22,12 +22,10 @@ use std::{
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
-    ops::Deref,
-    sync::Arc,
     time::Instant,
 };
 
-pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
+pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
     let file = &opts.binary;
 
     let wasm = match std::fs::read(file) {
@@ -35,12 +33,12 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
         Err(err) => panic!("failed to read {}: {err}", file.to_string_lossy()),
     };
 
-    let engine = match opts.cranelift {
+    let mut store = match opts.cranelift {
         true => {
             let mut compiler = Cranelift::new();
             compiler.canonicalize_nans(true);
             compiler.enable_verifier();
-            Universal::new(compiler).engine()
+            Store::new(compiler)
         }
         false => {
             #[cfg(not(feature = "llvm"))]
@@ -51,25 +49,25 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
                 compiler.canonicalize_nans(true);
                 compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
                 compiler.enable_verifier();
-                Universal::new(compiler).engine()
+                Store::new(compiler)
             }
         }
     };
 
-    let store = Store::new(&engine);
-    let module = match Module::new(&store, &wasm) {
+    let module = match Module::new(&store, wasm) {
         Ok(module) => module,
         Err(err) => panic!("{}", err),
     };
 
+    let func_env = FunctionEnv::new(&mut store, env);
     macro_rules! native {
         ($func:expr) => {
-            Function::new_native(&store, $func)
+            Function::new_typed(&mut store, $func)
         };
     }
     macro_rules! func {
         ($func:expr) => {
-            Function::new_native_with_env(&store, env.clone(), $func)
+            Function::new_typed_with_env(&mut store, &func_env, $func)
         };
     }
 
@@ -117,16 +115,28 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
         },
     };
 
-    let instance = match Instance::new(&module, &imports) {
+    let instance = match Instance::new(&mut store, &module, &imports) {
         Ok(instance) => instance,
-        Err(err) => panic!("Failed to create instance: {}", err),
+        Err(err) => panic!("Failed to create instance: {}", err.red()),
     };
     let memory = match instance.exports.get_memory("mem") {
         Ok(memory) => memory.clone(),
-        Err(err) => panic!("Failed to get memory: {}", err),
+        Err(err) => panic!("Failed to get memory: {}", err.red()),
     };
-    env.lock().memory = Some(memory);
-    (instance, env)
+    let resume = match instance.exports.get_typed_function(&store, "resume") {
+        Ok(resume) => resume,
+        Err(err) => panic!("Failed to get the {} func: {}", "resume".red(), err.red()),
+    };
+    let getsp = match instance.exports.get_typed_function(&store, "getsp") {
+        Ok(getsp) => getsp,
+        Err(err) => panic!("Failed to get the {} func: {}", "getsp".red(), err.red()),
+    };
+
+    let env = func_env.as_mut(&mut store);
+    env.memory = Some(memory);
+    env.exports.resume = Some(resume);
+    env.exports.get_stack_pointer = Some(getsp);
+    (instance, func_env, store)
 }
 
 #[derive(Error, Debug)]
@@ -166,6 +176,7 @@ impl From<RuntimeError> for Escape {
     }
 }
 
+pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
 
@@ -189,25 +200,11 @@ pub struct WasmEnv {
     pub delayed_messages: Inbox,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
+    /// The exported funcs callable in hostio
+    pub exports: WasmEnvFuncs,
 }
 
-#[derive(Clone, Default, WasmerEnv)]
-pub struct WasmEnvArc {
-    env: Arc<Mutex<WasmEnv>>,
-    #[wasmer(export(name = "resume"))]
-    resume: LazyInit<NativeFunc<(), ()>>,
-    #[wasmer(export(name = "getsp"))]
-    get_stack_pointer: LazyInit<NativeFunc<(), i32>>,
-}
-
-impl Deref for WasmEnvArc {
-    type Target = Mutex<WasmEnv>;
-    fn deref(&self) -> &Self::Target {
-        &*self.env
-    }
-}
-
-impl WasmEnvArc {
+impl WasmEnv {
     pub fn cli(opts: &Opts) -> Result<Self> {
         let mut env = WasmEnv::default();
         env.process.forks = opts.forks;
@@ -273,20 +270,11 @@ impl WasmEnvArc {
         let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
         env.small_globals = [opts.inbox_position, opts.position_within_message];
         env.large_globals = [last_block_hash, last_send_root];
-        let env = Arc::new(Mutex::new(env));
-        let resume = LazyInit::new();
-        let get_stack_pointer = LazyInit::new();
-        Ok(Self {
-            env,
-            resume,
-            get_stack_pointer,
-        })
+        Ok(env)
     }
 
-    pub fn send_results(self, error: Option<String>) {
-        let env = &mut *self.lock();
-
-        let writer = match &mut env.process.socket {
+    pub fn send_results(&mut self, error: Option<String>) {
+        let writer = match &mut self.process.socket {
             Some((writer, _)) => writer,
             None => return,
         };
@@ -308,10 +296,10 @@ impl WasmEnvArc {
         }
 
         check!(socket::write_u8(writer, socket::SUCCESS));
-        check!(socket::write_u64(writer, env.small_globals[0]));
-        check!(socket::write_u64(writer, env.small_globals[1]));
-        check!(socket::write_bytes32(writer, &env.large_globals[0]));
-        check!(socket::write_bytes32(writer, &env.large_globals[1]));
+        check!(socket::write_u64(writer, self.small_globals[0]));
+        check!(socket::write_u64(writer, self.small_globals[1]));
+        check!(socket::write_bytes32(writer, &self.large_globals[0]));
+        check!(socket::write_bytes32(writer, &self.large_globals[1]));
         check!(writer.flush());
     }
 }
@@ -342,4 +330,12 @@ impl Default for ProcessEnv {
             reached_wavmio: false,
         }
     }
+}
+
+#[derive(Default)]
+pub struct WasmEnvFuncs {
+    /// Calls `resume` from the go runtime
+    pub resume: Option<TypedFunction<(), ()>>,
+    /// Calls `getsp` from the go runtime
+    pub get_stack_pointer: Option<TypedFunction<(), i32>>,
 }

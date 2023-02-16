@@ -2,35 +2,74 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    machine::{WasmEnv, WasmEnvArc},
+    machine::{WasmEnv, WasmEnvMut},
     syscall::JsValue,
 };
 
-use parking_lot::MutexGuard;
+use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
-use wasmer::{Memory, MemoryView, WasmPtr};
+use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
 
 use std::collections::{BTreeSet, BinaryHeap};
 
-#[derive(Clone)]
+#[self_referencing]
+struct MemoryViewContainer {
+    memory: Memory,
+    #[borrows(memory)]
+    #[covariant]
+    view: MemoryView<'this>,
+}
+
+impl MemoryViewContainer {
+    fn create(env: &WasmEnvMut<'_>) -> Self {
+        // this func exists to properly constrain the closure's type
+        fn closure<'a>(
+            store: &'a StoreRef,
+        ) -> impl (for<'b> FnOnce(&'b Memory) -> MemoryView<'b>) + 'a {
+            move |memory: &Memory| memory.view(&store)
+        }
+
+        let store = env.as_store_ref();
+        let memory = env.data().memory.clone().unwrap();
+        let view_builder = closure(&store);
+        MemoryViewContainerBuilder {
+            memory,
+            view_builder,
+        }
+        .build()
+    }
+
+    fn view(&self) -> &MemoryView {
+        self.borrow_view()
+    }
+}
+
 pub struct GoStack {
     start: u32,
-    memory: Memory,
+    memory: MemoryViewContainer,
 }
 
 #[allow(dead_code)]
 impl GoStack {
-    pub fn new(start: u32, env: &WasmEnvArc) -> (Self, MutexGuard<WasmEnv>) {
-        let memory = env.lock().memory.clone().unwrap();
+    pub fn new<'a, 'b: 'a>(start: u32, env: &'a mut WasmEnvMut<'b>) -> (Self, &'a mut WasmEnv) {
+        let memory = MemoryViewContainer::create(env);
         let sp = Self { start, memory };
-        let env = env.lock();
-        (sp, env)
+        (sp, env.data_mut())
+    }
+
+    pub fn simple(start: u32, env: &WasmEnvMut<'_>) -> Self {
+        let memory = MemoryViewContainer::create(env);
+        Self { start, memory }
+    }
+
+    fn view(&self) -> &MemoryView {
+        self.memory.view()
     }
 
     /// Returns the memory size, in bytes.
     /// note: wasmer measures memory in 65536-byte pages.
     pub fn memory_size(&self) -> u64 {
-        self.memory.size().0 as u64 * 65536
+        self.view().size().0 as u64 * 65536
     }
 
     pub fn relative_offset(&self, arg: u32) -> u32 {
@@ -55,17 +94,17 @@ impl GoStack {
 
     pub fn read_u8_ptr(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(&self.memory).unwrap().get()
+        ptr.deref(self.view()).read().unwrap()
     }
 
     pub fn read_u32_ptr(&self, ptr: u32) -> u32 {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(&self.memory).unwrap().get()
+        ptr.deref(self.view()).read().unwrap()
     }
 
     pub fn read_u64_ptr(&self, ptr: u32) -> u64 {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(&self.memory).unwrap().get()
+        ptr.deref(self.view()).read().unwrap()
     }
 
     pub fn write_u8(&self, arg: u32, x: u8) {
@@ -82,30 +121,30 @@ impl GoStack {
 
     pub fn write_u8_ptr(&self, ptr: u32, x: u8) {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(&self.memory).unwrap().set(x);
+        ptr.deref(self.view()).write(x).unwrap();
     }
 
     pub fn write_u32_ptr(&self, ptr: u32, x: u32) {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(&self.memory).unwrap().set(x);
+        ptr.deref(self.view()).write(x).unwrap();
     }
 
     pub fn write_u64_ptr(&self, ptr: u32, x: u64) {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(&self.memory).unwrap().set(x);
+        ptr.deref(self.view()).write(x).unwrap();
     }
 
     pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
-        let ptr = u32::try_from(ptr).expect("Go pointer not a u32") as usize;
+        u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
-        unsafe { self.memory.data_unchecked()[ptr..ptr + len].to_vec() }
+        let mut data = vec![0; len];
+        self.view().read(ptr, &mut data).expect("failed to read");
+        data
     }
 
     pub fn write_slice(&self, ptr: u64, src: &[u8]) {
-        let ptr = u32::try_from(ptr).expect("Go pointer not a u32");
-        let view: MemoryView<u8> = self.memory.view();
-        let view = view.subarray(ptr, ptr + src.len() as u32);
-        unsafe { view.copy_from(src) }
+        u32::try_from(ptr).expect("Go pointer not a u32");
+        self.view().write(ptr, src).unwrap();
     }
 
     pub fn read_value_slice(&self, mut ptr: u64, len: u64) -> Vec<JsValue> {
@@ -119,7 +158,6 @@ impl GoStack {
     }
 }
 
-#[derive(Clone)]
 pub struct GoRuntimeState {
     /// An increasing clock used when Go asks for time, measured in nanoseconds
     pub time: u64,
@@ -163,7 +201,7 @@ impl PartialOrd for TimeoutInfo {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Debug)]
 pub struct TimeoutState {
     /// Contains tuples of (time, id)
     pub times: BinaryHeap<TimeoutInfo>,

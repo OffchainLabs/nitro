@@ -11,28 +11,28 @@ export enum MachineStatus {
 export function hashChallengeState(
   segmentsStart: BigNumber,
   segmentsLength: BigNumber,
-  segments: string[],
+  segments: string[]
 ) {
   return solidityKeccak256(
     ['uint256', 'uint256', 'bytes32[]'],
-    [segmentsStart, segmentsLength, segments],
+    [segmentsStart, segmentsLength, segments]
   )
 }
 
 export function blockStateHash(
   machineStatus: BigNumber,
-  globalStateHash: string,
+  globalStateHash: string
 ) {
   const machineStatusNum = machineStatus.toNumber()
   if (machineStatusNum === MachineStatus.FINISHED) {
     return solidityKeccak256(
       ['string', 'bytes32'],
-      ['Block state:', globalStateHash],
+      ['Block state:', globalStateHash]
     )
   } else if (machineStatusNum === MachineStatus.ERRORED) {
     return solidityKeccak256(
       ['string', 'bytes32'],
-      ['Block state, errored:', globalStateHash],
+      ['Block state, errored:', globalStateHash]
     )
   } else if (machineStatusNum === MachineStatus.TOO_FAR) {
     return solidityKeccak256(['string', 'bytes32'], ['Block state, too far:'])

@@ -1,6 +1,8 @@
 package arbnode
 
 import (
+	"context"
+	"errors"
 	"sync/atomic"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -105,6 +107,18 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 				syncing = true
 			}
 		}
+
+		l1reader := s.inboxReader.l1Reader
+		if l1reader != nil {
+			header, err := l1reader.LastHeaderWithError()
+			if err != nil {
+				res["lastL1HeaderErr"] = err
+			}
+			if header != nil {
+				res["lastL1BlockNum"] = header.Number
+				res["lastl1BlockHash"] = header.Hash()
+			}
+		}
 	}
 
 	if s.coordinator != nil {
@@ -125,6 +139,30 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 
 	return res
+}
+
+func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
+	if s.inboxReader == nil || !s.initialized {
+		return 0, errors.New("not set up for safeblock")
+	}
+	msg, err := s.inboxReader.GetSafeMsgCount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
+	return uint64(block), err
+}
+
+func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
+	if s.inboxReader == nil || !s.initialized {
+		return 0, errors.New("not set up for safeblock")
+	}
+	msg, err := s.inboxReader.GetFinalizedMsgCount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
+	return uint64(block), err
 }
 
 func (s *SyncMonitor) Synced() bool {

@@ -7,11 +7,11 @@
     "avoid-sha3": "warn",
     "max-line-length": "off",
     "compiler-version": "off",
-    "func-visibility": ["warn",{"ignoreConstructors":true}],
+    "func-visibility": ["warn", { "ignoreConstructors": true }],
     "no-empty-blocks": "off",
-    "reason-string": ["warn",{"maxLength":128}],
+    "reason-string": ["warn", { "maxLength": 128 }],
     "not-rely-on-time": "off",
-    "max-states-count": ["warn",30],
+    "max-states-count": ["warn", 30],
     "no-inline-assembly": "off"
   },
   "plugins": ["prettier"]

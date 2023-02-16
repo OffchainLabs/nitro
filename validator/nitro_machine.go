@@ -42,7 +42,7 @@ var DefaultNitroMachineConfig = NitroMachineConfig{
 	WavmBinaryPath:       "machine.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
 
-	JitCranelift:  DefaultBlockValidatorConfig.JitValidatorCranelift,
+	JitCranelift:  false,
 	ProverBinPath: "replay.wasm",
 	LibraryPaths:  []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 }
@@ -156,9 +156,10 @@ type NitroMachineLoader struct {
 	machinesLock sync.Mutex
 	machines     map[nitroMachineRequest]*loaderMachineStatus
 	fatalErrChan chan error
+	stopped      bool
 }
 
-func NewNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
+func newNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
 	return &NitroMachineLoader{
 		config:       config,
 		machines:     make(map[nitroMachineRequest]*loaderMachineStatus),
@@ -319,4 +320,16 @@ func (l *NitroMachineLoader) GetJitMachine(
 
 func (l *NitroMachineLoader) GetConfig() NitroMachineConfig {
 	return l.config
+}
+
+func (l *NitroMachineLoader) Stop() {
+	if l.stopped {
+		return
+	}
+	for _, stat := range l.machines {
+		if stat.jitMachine != nil {
+			stat.jitMachine.close()
+		}
+	}
+	l.stopped = true
 }

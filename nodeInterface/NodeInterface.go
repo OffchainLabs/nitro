@@ -24,9 +24,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 // To avoid creating new RPC methods for client-side tooling, nitro Geth's InterceptRPCMessage() hook provides
@@ -418,7 +418,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	hashes32 := make([]bytes32, len(hashes))
 	for i, hash := range hashes {
-		hashes32[i] = bytes32(hash)
+		hashes32[i] = hash
 	}
 	return send, root, hashes32, nil
 }
@@ -555,7 +555,7 @@ func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) 
 			blockAfterLatestBatch, block, latestBlock, high,
 		)
 	}
-	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
+	return staker.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
 }
 
 func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum huge, index uint64) (

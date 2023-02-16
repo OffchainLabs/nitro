@@ -23,6 +23,9 @@ type node struct {
 	size uint32
 }
 
+// RecordHash chunks the preimage into 64kB bins and generates a recursive hash tree,
+// calling the caller-supplied record function for each hash/preimage pair created in
+// building the tree structure.
 func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 	// Algorithm
 	//  1. split the preimage into 64kB bins and double hash them to produce the tree's leaves
@@ -120,20 +123,22 @@ func ValidHash(hash bytes32, preimage []byte) bool {
 	return false
 }
 
-func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
-	// Reverses hashes to reveal the full preimage under the root using the preimage oracle.
-	// This function also checks that the size-data is consistent and that the hash is canonical.
-	//
-	// Notes
-	//     1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
-	//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
-	//     3. We also accept old-style flat hashes
-	//     4. Only the committee can produce trees unwrapped by this function
-	//     5. Only the replay binary calls this
-	//
+// Reverses hashes to reveal the full preimage under the root using the preimage oracle.
+// This function also checks that the size-data is consistent and that the hash is canonical.
+//
+// Notes
+//  1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
+//  2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
+//  3. We also accept old-style flat hashes
+//  4. Only the committee can produce trees unwrapped by this function
+//  5. When the replay binary calls this, the oracle function must be infallible.
+func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error) {
 
 	unpeal := func(hash bytes32) (byte, []byte, error) {
-		data := oracle(hash)
+		data, err := oracle(hash)
+		if err != nil {
+			return 0, nil, err
+		}
 		size := len(data)
 		if size == 0 {
 			return 0, nil, fmt.Errorf("invalid node %v", hash)
@@ -153,7 +158,7 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	}
 	switch kind {
 	case LeafByte:
-		return oracle(common.BytesToHash(upper)), nil
+		return oracle(common.BytesToHash(upper))
 	case NodeByte:
 		total = binary.BigEndian.Uint32(upper[64:])
 	default:
@@ -203,8 +208,11 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	}
 
 	preimage := []byte{}
-	for i, leaf := range leaves {
-		bin := oracle(leaf.hash)
+	for i, leaf := range leaves { // TODO We can parallelize leaf fetching in future.
+		bin, err := oracle(leaf.hash)
+		if err != nil {
+			return nil, err
+		}
 		if len(bin) != int(leaf.size) {
 			return nil, fmt.Errorf("leaf %v has an incorrectly sized bin: %v vs %v", i, len(bin), leaf.size)
 		}

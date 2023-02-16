@@ -56,7 +56,7 @@ func GenerateAndStoreKeys(keyDir string) (*blsSignatures.PublicKey, *blsSignatur
 	pubKeyBytes := blsSignatures.PublicKeyToBytes(pubKey)
 	encodedPubKey := make([]byte, base64.StdEncoding.EncodedLen(len(pubKeyBytes)))
 	base64.StdEncoding.Encode(encodedPubKey, pubKeyBytes)
-	err = os.WriteFile(pubKeyPath, encodedPubKey, 0600)
+	err = os.WriteFile(pubKeyPath, encodedPubKey, 0o600)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -65,7 +65,7 @@ func GenerateAndStoreKeys(keyDir string) (*blsSignatures.PublicKey, *blsSignatur
 	privKeyBytes := blsSignatures.PrivateKeyToBytes(privKey)
 	encodedPrivKey := make([]byte, base64.StdEncoding.EncodedLen(len(privKeyBytes)))
 	base64.StdEncoding.Encode(encodedPrivKey, privKeyBytes)
-	err = os.WriteFile(privKeyPath, encodedPrivKey, 0600)
+	err = os.WriteFile(privKeyPath, encodedPrivKey, 0o600)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -120,5 +120,5 @@ func GenerateAndStoreECDSAKeys(dir string) error {
 		return err
 	}
 	encodedPubKey := hex.EncodeToString(crypto.FromECDSAPub(&privateKey.PublicKey))
-	return os.WriteFile(dir+"/ecdsa.pub", []byte(encodedPubKey), 0600)
+	return os.WriteFile(dir+"/ecdsa.pub", []byte(encodedPubKey), 0o600)
 }

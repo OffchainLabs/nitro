@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -95,8 +96,8 @@ func CreateChallenge(
 		auth,
 		wasmModuleRoot,
 		[2]uint8{
-			validator.StatusFinished,
-			validator.StatusFinished,
+			staker.StatusFinished,
+			staker.StatusFinished,
 		},
 		[2]mocksgen.GlobalState{
 			{
@@ -324,13 +325,21 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, fatalErrChan)
-	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, nil, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, machineLoader, 0, 4, 0)
+	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, fatalErrChan)
+	Require(t, err)
+	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}
-
-	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, nil, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, machineLoader, 0, 4, 0)
+	asserterManager, err := staker.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, asserterL2.InboxTracker, asserterValidator, 0, 4, 0)
+	if err != nil {
+		Fail(t, err)
+	}
+	challengerValidator, err := staker.NewStatelessBlockValidator(spawner, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
+	if err != nil {
+		Fail(t, err)
+	}
+	challengerManager, err := staker.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, challengerL2.InboxTracker, challengerValidator, 0, 4, 0)
 	if err != nil {
 		Fail(t, err)
 	}

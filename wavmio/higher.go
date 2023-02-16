@@ -61,10 +61,10 @@ func AdvanceInboxMessage() {
 	setGlobalStateU64(IDX_INBOX_POSITION, pos+1)
 }
 
-func ResolvePreImage(hash common.Hash) []byte {
+func ResolvePreImage(hash common.Hash) ([]byte, error) {
 	return readBuffer(func(offset uint32, buf []byte) uint32 {
 		return resolvePreImage(hash[:], offset, buf)
-	})
+	}), nil
 }
 
 func SetLastBlockHash(hash [32]byte) {
