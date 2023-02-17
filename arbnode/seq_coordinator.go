@@ -70,11 +70,6 @@ type SeqCoordinatorConfig struct {
 	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
 	MyUrlImpl             string                     `koanf:"my-url"`
 	Signing               signature.SignVerifyConfig `koanf:"signer"`
-	DbCompactor           DbCompactorConfig          `koanf:"db-compactor" reload:"hot"`
-}
-
-func (c *SeqCoordinatorConfig) Validate() error {
-	return c.DbCompactor.Validate()
 }
 
 func (c *SeqCoordinatorConfig) MyUrl() string {
@@ -99,7 +94,6 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked as wanting the lockout if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
-	DbCompactorConfigAddOptions(prefix+".db-compactor", f)
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -116,7 +110,6 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	MaxMsgPerPoll:         2000,
 	MyUrlImpl:             redisutil.INVALID_URL,
 	Signing:               signature.DefaultSignVerifyConfig,
-	DbCompactor:           DefaultDbCompactorConfig,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -132,14 +125,9 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	MaxMsgPerPoll:     20,
 	MyUrlImpl:         redisutil.INVALID_URL,
 	Signing:           signature.DefaultSignVerifyConfig,
-	DbCompactor:       DefaultDbCompactorConfig,
 }
 
 func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
-	err := config.Validate()
-	if err != nil {
-		return nil, err
-	}
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err

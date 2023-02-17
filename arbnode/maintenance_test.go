@@ -11,7 +11,7 @@ import (
 
 func TestWentPastTimeOfDay(t *testing.T) {
 	checkWentPastTimeOfDay := func(before time.Time, after time.Time, timeOfDay string, expected bool) {
-		config := DbCompactorConfig{
+		config := MaintenanceConfig{
 			TimeOfDay: timeOfDay,
 		}
 		Require(t, config.Validate(), "Failed to validate sample config")

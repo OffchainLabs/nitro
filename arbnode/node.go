@@ -419,6 +419,7 @@ type Config struct {
 	Archive                bool                        `koanf:"archive"`
 	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
 	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance            MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -428,7 +429,7 @@ func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
-	if err := c.SeqCoordinator.Validate(); err != nil {
+	if err := c.Maintenance.Validate(); err != nil {
 		return err
 	}
 	if err := c.InboxReader.Validate(); err != nil {
@@ -487,6 +488,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
+	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -698,7 +700,7 @@ type Node struct {
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
-	DbCompactor             *DbCompactor
+	DbCompactor             *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
@@ -828,7 +830,6 @@ func createNodeImpl(
 	}
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
-	var dbCompactor *DbCompactor
 	var sequencer *Sequencer
 	var bpVerifier *contracts.BatchPosterVerifier
 	if deployInfo != nil && l1client != nil {
@@ -880,8 +881,11 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		dbs := []ethdb.Database{chainDb, arbDb}
-		dbCompactor = NewDbCompactor(func() *DbCompactorConfig { return &configFetcher.Get().SeqCoordinator.DbCompactor }, coordinator, dbs)
+	}
+	dbs := []ethdb.Database{chainDb, arbDb}
+	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs)
+	if err != nil {
+		return nil, err
 	}
 	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
@@ -939,7 +943,7 @@ func createNodeImpl(
 			broadcastServer,
 			broadcastClients,
 			coordinator,
-			dbCompactor,
+			maintenanceRunner,
 			nil,
 			classicOutbox,
 			syncMonitor,
@@ -1137,7 +1141,7 @@ func createNodeImpl(
 		broadcastServer,
 		broadcastClients,
 		coordinator,
-		dbCompactor,
+		maintenanceRunner,
 		dasLifecycleManager,
 		classicOutbox,
 		syncMonitor,

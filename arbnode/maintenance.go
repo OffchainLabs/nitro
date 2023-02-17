@@ -16,25 +16,26 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-// Regularly runs db compaction on sequencers avoiding downtime
-type DbCompactor struct {
+// Regularly runs db compaction if configured
+type MaintenanceRunner struct {
 	stopwaiter.StopWaiter
 
-	config         DbCompactorConfigFetcher
+	config         MaintenanceConfigFetcher
 	seqCoordinator *SeqCoordinator
 	dbs            []ethdb.Database
 	lastCheck      time.Time
 }
 
-type DbCompactorConfig struct {
+type MaintenanceConfig struct {
 	TimeOfDay string `koanf:"time-of-day" reload:"hot"`
 
 	// Generated: the minutes since start of UTC day to compact at
 	minutesAfterMidnight int
+	enabled              bool
 }
 
 // Returns true if successful
-func (c *DbCompactorConfig) parseDbCompactionTime() bool {
+func (c *MaintenanceConfig) parseDbCompactionTime() bool {
 	if c.TimeOfDay == "" {
 		return true
 	}
@@ -50,41 +51,46 @@ func (c *DbCompactorConfig) parseDbCompactionTime() bool {
 	if err != nil || minutes >= 60 {
 		return false
 	}
+	c.enabled = true
 	c.minutesAfterMidnight = hours*60 + minutes
 	return true
 }
 
-func (c *DbCompactorConfig) Validate() error {
+func (c *MaintenanceConfig) Validate() error {
 	if !c.parseDbCompactionTime() {
 		return fmt.Errorf("expected sequencer coordinator db compaction time to be in 24-hour HH:MM format but got \"%v\"", c.TimeOfDay)
 	}
 	return nil
 }
 
-func DbCompactorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".time-of-day", DefaultDbCompactorConfig.TimeOfDay, "UTC 24-hour time of day to run database compaction at (e.g. 15:00)")
+func MaintenanceConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".time-of-day", DefaultMaintenanceConfig.TimeOfDay, "UTC 24-hour time of day to run maintenance (currently only db compaction) at (e.g. 15:00)")
 }
 
-var DefaultDbCompactorConfig = DbCompactorConfig{
+var DefaultMaintenanceConfig = MaintenanceConfig{
 	TimeOfDay: "",
 
 	minutesAfterMidnight: 0,
 }
 
-type DbCompactorConfigFetcher func() *DbCompactorConfig
+type MaintenanceConfigFetcher func() *MaintenanceConfig
 
-func NewDbCompactor(config DbCompactorConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database) *DbCompactor {
-	return &DbCompactor{
+func NewMaintenanceRunner(config MaintenanceConfigFetcher, seqCoordinator *SeqCoordinator, dbs []ethdb.Database) (*MaintenanceRunner, error) {
+	err := config().Validate()
+	if err != nil {
+		return nil, err
+	}
+	return &MaintenanceRunner{
 		config:         config,
 		seqCoordinator: seqCoordinator,
 		dbs:            dbs,
 		lastCheck:      time.Now().UTC(),
-	}
+	}, nil
 }
 
-func (c *DbCompactor) Start(ctxIn context.Context) {
+func (c *MaintenanceRunner) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn, c)
-	c.CallIteratively(c.maybeCompactDb)
+	c.CallIteratively(c.maybeRunMaintenance)
 }
 
 func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
@@ -106,21 +112,26 @@ func wentPastTimeOfDay(before time.Time, after time.Time, timeOfDay int) bool {
 	return prevMinutes < dbCompactionMinutes && newMinutes >= dbCompactionMinutes
 }
 
-func (c *DbCompactor) maybeCompactDb(ctx context.Context) time.Duration {
+func (c *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Duration {
 	config := c.config()
-	if config.TimeOfDay == "" {
+	if !config.enabled {
 		return time.Minute
 	}
 	now := time.Now().UTC()
 	if wentPastTimeOfDay(c.lastCheck, now, config.minutesAfterMidnight) {
 		log.Info("attempting to release sequencer lockout to run database compaction", "targetTime", config.TimeOfDay)
-		success := c.seqCoordinator.AvoidLockout(ctx)
-		defer c.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
-		if success {
-			// We've unset the wants lockout key, now wait for the handoff
-			success = c.seqCoordinator.TryToHandoffChosenOne(ctx)
+		if c.seqCoordinator == nil {
+			c.runMaintenance()
+		} else {
+			// We want to switch sequencers before running maintenance
+			success := c.seqCoordinator.AvoidLockout(ctx)
+			defer c.seqCoordinator.SeekLockout(ctx) // needs called even if c.Zombify returns false
 			if success {
-				c.compactDb()
+				// We've unset the wants lockout key, now wait for the handoff
+				success = c.seqCoordinator.TryToHandoffChosenOne(ctx)
+				if success {
+					c.runMaintenance()
+				}
 			}
 		}
 	}
@@ -128,7 +139,7 @@ func (c *DbCompactor) maybeCompactDb(ctx context.Context) time.Duration {
 	return time.Minute
 }
 
-func (c *DbCompactor) compactDb() {
+func (c *MaintenanceRunner) runMaintenance() {
 	log.Info("compacting databases (this may take a while...)")
 	results := make(chan error, len(c.dbs))
 	for _, db := range c.dbs {
