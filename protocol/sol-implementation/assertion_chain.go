@@ -120,9 +120,9 @@ func NewAssertionChain(
 func (ac *AssertionChain) AssertionBySequenceNum(
 	ctx context.Context,
 	tx protocol.ActiveTx,
-	assertionNum uint64,
+	assertionNum protocol.AssertionSequenceNumber,
 ) (protocol.Assertion, error) {
-	res, err := ac.userLogic.GetAssertion(ac.callOpts, assertionNum)
+	res, err := ac.userLogic.GetAssertion(ac.callOpts, uint64(assertionNum))
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 		)
 	}
 	return &Assertion{
-		id:    assertionNum,
+		id:    uint64(assertionNum),
 		chain: ac,
 		inner: res,
 		StateCommitment: util.StateCommitment{
