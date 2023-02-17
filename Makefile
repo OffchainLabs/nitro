@@ -182,13 +182,15 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
 	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
 
-$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/src/bulk_memory_internal.wat
+arbitrator/prover/src/bulk_memory_internal.wasm: arbitrator/prover/src/bulk_memory_internal.wat
 	wat2wasm -o arbitrator/prover/src/bulk_memory_internal.wasm arbitrator/prover/src/bulk_memory_internal.wat
+
+$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/src/bulk_memory_internal.wasm
 	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/src/bulk_memory_internal.wasm
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
 	install arbitrator/target/release/libprover.a $@
