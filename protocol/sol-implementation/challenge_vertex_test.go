@@ -3,10 +3,8 @@ package solimpl
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -33,14 +31,14 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("vertex ps timer has not exceeded challenge duration", func(t *testing.T) {
-		t.Skip("Needs investigation")
 		require.ErrorIs(t, v1.ConfirmPsTimer(ctx), ErrPsTimerNotYet)
 	})
 	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
-		t.Skip("Needs investigation")
 		backend, ok := chain1.backend.(*backends.SimulatedBackend)
 		require.Equal(t, true, ok)
-		require.NoError(t, backend.AdjustTime(time.Second*2000))
+		for i := 0; i < 1000; i++ {
+			backend.Commit()
+		}
 		require.NoError(t, v1.ConfirmPsTimer(ctx))
 	})
 }
@@ -162,13 +160,6 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		curr, err := manager.caller.GetCurrentPsTimer(&bind.CallOpts{}, v1.id)
-		require.NoError(t, err)
-		t.Logf("V1 ps is %d", curr.Uint64())
-		curr, err = manager.caller.GetCurrentPsTimer(&bind.CallOpts{}, v2.id)
-		require.NoError(t, err)
-		t.Logf("V2 ps is %d", curr.Uint64())
-
 		wantCommit := common.BytesToHash([]byte("nyan4"))
 		bisectedTo, err := v2.Bisect(
 			ctx,
@@ -225,7 +216,6 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.ErrorContains(t, err, "execution reverted: Leaf can never be a fork candidate")
 	})
 	t.Run("Error: lowest height not one above the current height", func(t *testing.T) {
-		t.Skip("Failing due to ps check, need investigation")
 		a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 		// We add two leaves to the challenge.
@@ -265,7 +255,6 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.ErrorContains(t, bisectedTo.CreateSubChallenge(context.Background()), "execution reverted: Lowest height not one above the current height")
 	})
 	t.Run("Error: has presumptive successor", func(t *testing.T) {
-		t.Skip("Failing due to ps check, need investigation")
 		a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 		// We add two leaves to the challenge.
@@ -354,7 +343,6 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.ErrorContains(t, v1Height1.CreateSubChallenge(context.Background()), "execution reverted: Has presumptive successor")
 	})
 	t.Run("Can create succession challenge", func(t *testing.T) {
-		t.Skip("Failing due to ps check, need investigation")
 		a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 		// We add two leaves to the challenge.

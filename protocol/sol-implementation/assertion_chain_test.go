@@ -325,10 +325,6 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
-			backend.Commit()
-		}
-
 		postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
 		_, err = chain.CreateAssertion(
 			ctx,
