@@ -69,8 +69,8 @@ type AssertionChain interface {
 		tx ActiveTx,
 		height uint64,
 		prevAssertionId uint64,
-		//prevAssertionState *ExecutionState,
-		//postState *ExecutionState,
+		prevAssertionState *ExecutionState,
+		postState *ExecutionState,
 		prevInboxMaxCount *big.Int,
 	) (Assertion, error)
 	CreateSuccessionChallenge(
@@ -111,7 +111,12 @@ type ChallengeManager interface {
 // Assertion represents a top-level claim in the protocol about the
 // chain state created by a validator that stakes on their claim.
 // Assertions can be challenged.
-type Assertion interface{}
+type Assertion interface {
+	Height() uint64
+	SeqNum() AssertionSequenceNumber
+	PrevSeqNum() AssertionSequenceNumber
+	StateHash() common.Hash
+}
 
 // ChallengeType represents the enum with the same name
 // in the protocol smart contracts.

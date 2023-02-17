@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"strings"
 
-	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -117,24 +116,7 @@ func NewAssertionChain(
 	return chain, nil
 }
 
-<<<<<<< HEAD
-=======
-// ChallengePeriodSeconds
-func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
-	manager, err := ac.ChallengeManager()
-	if err != nil {
-		return time.Second, err
-	}
-	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
-	if err != nil {
-		return time.Second, err
-	}
-	return time.Second * time.Duration(res.Uint64()), nil
-}
-
-
->>>>>>> main
-// AssertionByID --
+// AssertionBySequenceNum --
 func (ac *AssertionChain) AssertionBySequenceNum(
 	ctx context.Context,
 	tx protocol.ActiveTx,
@@ -173,15 +155,15 @@ func (ac *AssertionChain) CreateAssertion(
 	tx protocol.ActiveTx,
 	height uint64,
 	prevAssertionId uint64,
-	//prevAssertionState *ExecutionState,
-	//postState *ExecutionState,
+	prevAssertionState *protocol.ExecutionState,
+	postState *protocol.ExecutionState,
 	prevInboxMaxCount *big.Int,
 ) (protocol.Assertion, error) {
-	prev, err := ac.AssertionByID(prevAssertionId)
+	prev, err := ac.AssertionBySequenceNum(ctx, tx, prevAssertionId)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
-	prevHeight := prev.inner.Height.Uint64()
+	prevHeight := prev.Height()
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}
@@ -214,7 +196,7 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse assertion creation log")
 	}
-	return ac.AssertionByID(assertionCreated.AssertionNum)
+	return ac.AssertionBySequenceNum(ctx, tx, assertionCreated.AssertionNum)
 }
 
 // CreateSuccessionChallenge creates a succession challenge
@@ -226,21 +208,26 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
 		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
-			assertionNum,
+			uint64(seqNum),
 		)
 	})
-	if err2 := handleCreateSuccessionChallengeError(err, assertionNum); err2 != nil {
+	if err2 := handleCreateSuccessionChallengeError(err, uint64(seqNum)); err2 != nil {
 		return nil, err2
 	}
-	manager, err := ac.ChallengeManager()
+	manager, err := ac.CurrentChallengeManager(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(ctx, assertionHash, BlockChallenge)
+	// TODO: FIX UP to use assertion hash.
+	challengeId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash{}, protocol.BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
-	return manager.ChallengeByID(ctx, challengeId)
+	chal, err := manager.GetChallenge(ctx, tx, challengeId)
+	if err != nil {
+		return nil, err
+	}
+	return chal.Unwrap(), nil
 }
 
 // Confirm creates a confirmation for an assertion at the block hash and send root.

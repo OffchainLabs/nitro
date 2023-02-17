@@ -67,11 +67,11 @@ func (c *Challenge) AddLeaf(
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
 	callOpts := c.manager.assertionChain.callOpts
-	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, assertion.id)
+	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
 	if err != nil {
 		return nil, err
 	}
-	prevAssertion, err := c.manager.assertionChain.AssertionByID(assertion.inner.PrevNum)
+	prevAssertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, uint64(assertion.PrevSeqNum()))
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (c *Challenge) AddLeaf(
 		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             prevAssertion.inner.StateHash,
+		FirstState:             prevAssertion.StateHash(),
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
