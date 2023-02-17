@@ -535,6 +535,12 @@ func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
 
 func (s *Sequencer) expireNonceFailures() *time.Timer {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
+	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
+		// If we're not chosen, we should clear out all any pending nonce failures.
+		// The expiry function will forward them to the new sequencer.
+		s.nonceFailures.Clear()
+		return nil
+	}
 	for {
 		_, failure, ok := s.nonceFailures.GetOldest()
 		if !ok {
