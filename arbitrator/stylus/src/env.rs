@@ -1,13 +1,21 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::ErrReport;
+use eyre::{eyre, ErrReport};
 use ouroboros::self_referencing;
-use prover::programs::{
-    config::{PricingParams, StylusConfig},
-    meter::{MachineMeter, MeteredMachine},
+use parking_lot::Mutex;
+use prover::{
+    programs::{
+        config::{PricingParams, StylusConfig},
+        meter::{MachineMeter, MeteredMachine},
+    },
+    utils::Bytes32,
 };
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 use thiserror::Error;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView,
@@ -51,6 +59,11 @@ impl MemoryViewContainer {
         Ok(data)
     }
 
+    pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
+        let data = self.read_slice(ptr, 32)?;
+        Ok(data.try_into()?)
+    }
+
     pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
         self.view().write(ptr.into(), src)
     }
@@ -68,6 +81,8 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Mechanism for accessing stylus-specific global state
     pub state: Option<SystemStateData>,
+    /// Mechanism for reading and writing permanent storage
+    pub storage: Option<StorageAPI>,
     /// The instance's config
     pub config: StylusConfig,
 }
@@ -82,12 +97,31 @@ pub struct SystemStateData {
     pub pricing: PricingParams,
 }
 
+type LoadBytes32 = Box<dyn Fn(Bytes32) -> Bytes32 + Send>;
+type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) + Send>;
+
+pub struct StorageAPI {
+    load_bytes32: LoadBytes32,
+    store_bytes32: StoreBytes32,
+}
+
 impl WasmEnv {
     pub fn new(config: StylusConfig) -> Self {
         Self {
             config,
             ..Default::default()
         }
+    }
+
+    pub fn set_storage_api(&mut self, load_bytes32: LoadBytes32, store_bytes32: StoreBytes32) {
+        self.storage = Some(StorageAPI {
+            load_bytes32,
+            store_bytes32,
+        })
+    }
+
+    pub fn storage(&mut self) -> eyre::Result<&mut StorageAPI> {
+        self.storage.as_mut().ok_or_else(|| eyre!("no storage api"))
     }
 
     pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
@@ -151,6 +185,16 @@ impl<'a> SystemState<'a> {
     }
 }
 
+impl StorageAPI {
+    pub fn load_bytes32(&self, key: Bytes32) -> Bytes32 {
+        (self.load_bytes32)(key)
+    }
+
+    pub fn store_bytes32(&self, key: Bytes32, value: Bytes32) {
+        (self.store_bytes32)(key, value)
+    }
+}
+
 impl<'a> MeteredMachine for SystemState<'a> {
     fn gas_left(&mut self) -> MachineMeter {
         let store = &mut self.store;
@@ -175,6 +219,29 @@ impl<'a> MeteredMachine for SystemState<'a> {
     }
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct SimpleStorageAPI(Arc<Mutex<HashMap<Bytes32, Bytes32>>>);
+
+impl SimpleStorageAPI {
+    pub fn get(&self, key: &Bytes32) -> Option<Bytes32> {
+        self.0.lock().get(key).cloned()
+    }
+
+    pub fn set(&self, key: Bytes32, value: Bytes32) {
+        self.0.lock().insert(key, value);
+    }
+
+    pub fn getter(&self) -> LoadBytes32 {
+        let storage = self.clone();
+        Box::new(move |key| storage.get(&key).unwrap().to_owned())
+    }
+
+    pub fn setter(&self) -> StoreBytes32 {
+        let storage = self.clone();
+        Box::new(move |key, value| drop(storage.set(key, value)))
+    }
+}
+
 pub type MaybeEscape = Result<(), Escape>;
 
 #[derive(Error, Debug)]
@@ -188,6 +255,10 @@ pub enum Escape {
 }
 
 impl Escape {
+    pub fn internal(error: &'static str) -> MaybeEscape {
+        Err(Self::Internal(eyre!(error)))
+    }
+
     pub fn out_of_gas() -> MaybeEscape {
         Err(Self::OutOfGas)
     }

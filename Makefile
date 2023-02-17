@@ -103,10 +103,12 @@ stylus_test_keccak-100_wasm = $(call get_stylus_test_wasm,keccak-100)
 stylus_test_keccak-100_src  = $(call get_stylus_test_rust,keccak-100)
 stylus_test_fallible_wasm   = $(call get_stylus_test_wasm,fallible)
 stylus_test_fallible_src    = $(call get_stylus_test_rust,fallible)
+stylus_test_storage_wasm    = $(call get_stylus_test_wasm,storage)
+stylus_test_storage_src     = $(call get_stylus_test_rust,storage)
 stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_siphash_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -248,10 +250,11 @@ $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin
 $(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go $(arbitrator_cases)/go/go.mod $(arbitrator_cases)/go/go.sum
 	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
 
-$(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
+$(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
-	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
+	cd arbitrator/stylus && cbindgen --config cbindgen.toml --crate stylus --output ../../$(arbitrator_generated_header)
+	@touch -c $@ # cargo might decide to not rebuild the header
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
@@ -335,6 +338,10 @@ $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
+$(stylus_test_storage_wasm): $(stylus_test_storage_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
 	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
@@ -359,7 +366,7 @@ contracts/test/prover/proofs/global-state.json:
 
 contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test.wasm $(arbitrator_tests_forward_deps) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize \
-        $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
+        $(patsubstq %,-l %, $(arbitrator_tests_forward_deps))
 
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)

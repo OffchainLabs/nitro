@@ -3,7 +3,7 @@
 
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::programs::prelude::*;
+use prover::{programs::prelude::*, utils::Bytes32};
 use run::RunProgram;
 use std::mem;
 
@@ -37,12 +37,12 @@ impl GoParams {
 }
 
 #[repr(C)]
-pub struct GoSlice {
+pub struct GoSliceData {
     ptr: *const u8,
     len: usize,
 }
 
-impl GoSlice {
+impl GoSliceData {
     unsafe fn slice(&self) -> &[u8] {
         std::slice::from_raw_parts(self.ptr, self.len)
     }
@@ -75,7 +75,7 @@ impl RustVec {
 
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
-    wasm: GoSlice,
+    wasm: GoSliceData,
     version: u32,
     mut output: RustVec,
 ) -> UserOutcomeKind {
@@ -94,11 +94,19 @@ pub unsafe extern "C" fn stylus_compile(
     }
 }
 
+#[repr(C)]
+pub struct GoAPI {
+    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32) -> Bytes32,
+    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32),
+    pub id: usize,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
-    module: GoSlice,
-    calldata: GoSlice,
+    module: GoSliceData,
+    calldata: GoSliceData,
     params: GoParams,
+    go_api: GoAPI,
     mut output: RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
@@ -125,6 +133,7 @@ pub unsafe extern "C" fn stylus_call(
         Ok(instance) => instance,
         Err(error) => error!("failed to instantiate program", error),
     };
+    instance.set_go_api(go_api);
     instance.set_gas(wasm_gas);
 
     let (status, outs) = match instance.run_main(&calldata, &config) {

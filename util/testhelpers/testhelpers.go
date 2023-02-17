@@ -36,6 +36,12 @@ func RandomizeSlice(slice []byte) []byte {
 	return slice
 }
 
+func RandomHash() common.Hash {
+	var hash common.Hash
+	RandomizeSlice(hash[:])
+	return hash
+}
+
 func RandomAddress() common.Address {
 	var address common.Address
 	RandomizeSlice(address[:])

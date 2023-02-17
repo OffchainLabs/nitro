@@ -83,6 +83,14 @@ impl TryFrom<&[u8]> for Bytes32 {
     }
 }
 
+impl TryFrom<Vec<u8>> for Bytes32 {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_slice())
+    }
+}
+
 impl IntoIterator for Bytes32 {
     type Item = u8;
     type IntoIter = std::array::IntoIter<u8, 32>;

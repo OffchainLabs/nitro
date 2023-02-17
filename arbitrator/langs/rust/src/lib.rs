@@ -1,5 +1,7 @@
-// Copyright 2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2022-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+use std::array::TryFromSliceError;
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
@@ -36,4 +38,36 @@ macro_rules! arbitrum_main {
             status
         }
     };
+}
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub fn account_load_bytes32(key: *const u8, dest: *mut u8);
+    pub fn account_store_bytes32(key: *const u8, value: *const u8);
+}
+
+#[derive(Default)]
+#[repr(C)]
+pub struct Bytes32(pub [u8; 32]);
+
+impl Bytes32 {
+    pub fn ptr(&self) -> *const u8 {
+        self.0.as_ptr()
+    }
+}
+
+pub fn load_bytes32(key: Bytes32) -> Bytes32 {
+    let mut data = [0; 32];
+    unsafe { account_load_bytes32(key.ptr(), data.as_mut_ptr()) };
+    Bytes32(data)
+}
+
+pub fn store_bytes32(key: Bytes32, data: Bytes32) {
+    unsafe { account_store_bytes32(key.ptr(), data.ptr()) };
+}
+
+impl Bytes32 {
+    pub fn from_slice(data: &[u8]) -> Result<Self, TryFromSliceError> {
+        Ok(Self(data.try_into()?))
+    }
 }

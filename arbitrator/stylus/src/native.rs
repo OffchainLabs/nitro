@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{SystemStateData, WasmEnv},
-    host,
+    env::{SimpleStorageAPI, SystemStateData, WasmEnv},
+    host, GoAPI,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
@@ -48,6 +48,10 @@ impl NativeInstance {
         self.env.as_ref(&self.store)
     }
 
+    pub fn env_mut(&mut self) -> &mut WasmEnv {
+        self.env.as_mut(&mut self.store)
+    }
+
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
     pub unsafe fn deserialize(module: &[u8], config: StylusConfig) -> Result<Self> {
@@ -71,6 +75,8 @@ impl NativeInstance {
             "forward" => {
                 "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
                 "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
+                "account_load_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_load_bytes32),
+                "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
             },
         };
         let instance = Instance::new(&mut store, &module, &imports)?;
@@ -115,6 +121,26 @@ impl NativeInstance {
             bail!("global {} does not exist", name.red())
         };
         global.set(store, value.into()).map_err(ErrReport::msg)
+    }
+
+    pub fn set_go_api(&mut self, api: GoAPI) {
+        let env = self.env.as_mut(&mut self.store);
+
+        let get = api.get_bytes32;
+        let set = api.set_bytes32;
+        let id = api.id;
+
+        let get_bytes32 = Box::new(move |key| unsafe { get(id, key) });
+        let set_bytes32 = Box::new(move |key, value| unsafe { set(id, key, value) });
+
+        env.set_storage_api(get_bytes32, set_bytes32)
+    }
+
+    pub(crate) fn set_simple_storage_api(&mut self) -> SimpleStorageAPI {
+        let storage = SimpleStorageAPI::default();
+        self.env_mut()
+            .set_storage_api(storage.getter(), storage.setter());
+        storage
     }
 }
 
@@ -186,10 +212,17 @@ impl StartlessMachine for NativeInstance {
 pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
     let module = Module::new(&store, wasm)?;
+    macro_rules! stub {
+        ($($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
+        };
+    }
     let imports = imports! {
         "forward" => {
-            "read_args" => Function::new_typed(&mut store, |_: u32| {}),
-            "return_data" => Function::new_typed(&mut store, |_: u32, _: u32| {}),
+            "read_args" => stub!(|_: u32|),
+            "return_data" => stub!(|_: u32, _: u32|),
+            "account_load_bytes32" => stub!(|_: u32, _: u32|),
+            "account_store_bytes32" => stub!(|_: u32, _: u32|),
         },
     };
     Instance::new(&mut store, &module, &imports)?;

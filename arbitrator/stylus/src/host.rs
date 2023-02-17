@@ -22,3 +22,29 @@ pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscap
     env.outs = memory.read_slice(ptr, len)?;
     Ok(())
 }
+
+pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> MaybeEscape {
+    let mut state = WasmEnv::begin(&mut env)?;
+    state.buy_evm_gas(800)?; // cold SLOAD
+
+    let (env, memory) = WasmEnv::data(&mut env);
+    let storage = env.storage()?;
+
+    let key = memory.read_bytes32(key)?;
+    let value = storage.load_bytes32(key);
+    memory.write_slice(dest, &value.0)?;
+    Ok(())
+}
+
+pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -> MaybeEscape {
+    let mut state = WasmEnv::begin(&mut env)?;
+    state.buy_evm_gas(20000)?; // cold SSTORE
+
+    let (env, memory) = WasmEnv::data(&mut env);
+    let storage = env.storage()?;
+
+    let key = memory.read_bytes32(key)?;
+    let value = memory.read_bytes32(value)?;
+    storage.store_bytes32(key, value);
+    Ok(())
+}
