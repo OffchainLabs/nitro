@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
+	goimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/OffchainLabs/challenge-protocol-v2/validator"
@@ -53,15 +53,15 @@ func defaultConfig() *config {
 }
 
 type server struct {
-	lock       sync.RWMutex
-	ctx        context.Context
-	cancelFn   context.CancelFunc
-	cfg        *config
-	port       uint
-	chain      *goimpl.AssertionChain
-	validators []*validator.Validator
-	timeRef    *util.ArtificialTimeReference
-	wsClients  map[*websocket.Conn]bool
+	lock             sync.RWMutex
+	ctx              context.Context
+	cancelFn         context.CancelFunc
+	cfg              *config
+	port             uint
+	challengeManager goimpl.ChallengeManagerInterface
+	validators       []*validator.Validator
+	timeRef          *util.ArtificialTimeReference
+	wsClients        map[*websocket.Conn]bool
 }
 
 func (s *server) renderConfig(c echo.Context) error {
@@ -147,16 +147,16 @@ func (s *server) stepTimeReference(c echo.Context) error {
 
 func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 	s.timeRef = util.NewArtificialTimeReference()
-	validators, chain, err := initializeSystem(ctx, s.timeRef, cfg)
+	validators, challengeManager, err := initializeSystem(ctx, s.timeRef, cfg)
 	if err != nil {
 		panic(err)
 	}
 	s.validators = validators
-	s.chain = chain
+	s.challengeManager = challengeManager
 	challengeObserver := make(chan goimpl.ChallengeEvent, 100)
 	chainObserver := make(chan goimpl.AssertionChainEvent, 100)
-	s.chain.SubscribeChallengeEvents(ctx, challengeObserver)
-	s.chain.SubscribeChainEvents(ctx, chainObserver)
+	s.challengeManager.SubscribeChallengeEvents(ctx, challengeObserver)
+	s.challengeManager.SubscribeChainEvents(ctx, chainObserver)
 
 	go s.sendChainEventsToClients(ctx, challengeObserver, chainObserver)
 
@@ -167,11 +167,11 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 }
 
 type event struct {
-	Typ       string                  `json:"typ"`
-	To        string                  `json:"to"`
-	From      string                  `json:"from"`
-	BecomesPS bool                    `json:"becomes_ps"`
-	Validator string                  `json:"validator"`
+	Typ       string                `json:"typ"`
+	To        string                `json:"to"`
+	From      string                `json:"from"`
+	BecomesPS bool                  `json:"becomes_ps"`
+	Validator string                `json:"validator"`
 	Vis       *goimpl.Visualization `json:"vis"`
 }
 
@@ -184,7 +184,7 @@ func (s *server) sendChainEventsToClients(
 		select {
 		case ev := <-chalEvs:
 			log.Infof("Got challenge event: %+T, and %+v", ev, ev)
-			vis := s.chain.Visualize(ctx, &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
+			vis := s.challengeManager.Visualize(ctx, &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ: fmt.Sprintf("%+T", ev),
@@ -227,7 +227,7 @@ func (s *server) sendChainEventsToClients(
 			s.lock.RUnlock()
 		case ev := <-chainEvs:
 			log.Infof("Got chain event: %+T, and %+v", ev, ev)
-			vis := s.chain.Visualize(ctx, &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
+			vis := s.challengeManager.Visualize(ctx, &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus})
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ: fmt.Sprintf("%+T", ev),
@@ -289,8 +289,8 @@ func initializeSystem(
 	ctx context.Context,
 	timeRef util.TimeReference,
 	cfg *config,
-) ([]*validator.Validator, *goimpl.AssertionChain, error) {
-	chain := goimpl.NewAssertionChain(ctx, timeRef, time.Duration(cfg.ChallengePeriodSeconds)*time.Second)
+) ([]*validator.Validator, goimpl.ChallengeManagerInterface, error) {
+	challengeManager := goimpl.NewAssertionChain(ctx, timeRef, time.Duration(cfg.ChallengePeriodSeconds)*time.Second)
 
 	validatorAddrs := make([]common.Address, cfg.NumValidators)
 	for i := uint8(0); i < cfg.NumValidators; i++ {
@@ -300,9 +300,9 @@ func initializeSystem(
 
 	// Increase the balance for each validator in the test.
 	bal := big.NewInt(0).Add(goimpl.AssertionStake, goimpl.ChallengeVertexStake)
-	err := chain.Tx(func(tx *goimpl.ActiveTx) error {
+	err := challengeManager.Tx(func(tx *goimpl.ActiveTx) error {
 		for _, addr := range validatorAddrs {
-			chain.AddToBalance(tx, addr, bal)
+			challengeManager.AddToBalance(tx, addr, bal)
 		}
 		return nil
 	})
@@ -338,7 +338,7 @@ func initializeSystem(
 		addr := validatorAddrs[i]
 		v, valErr := validator.New(
 			ctx,
-			chain,
+			challengeManager,
 			manager,
 			validator.WithName(fmt.Sprintf("%d", i)),
 			validator.WithAddress(addr),
@@ -351,7 +351,7 @@ func initializeSystem(
 		}
 		validators[i] = v
 	}
-	return validators, chain, nil
+	return validators, challengeManager, nil
 }
 
 // Initializes a server that is able to start validators, trigger

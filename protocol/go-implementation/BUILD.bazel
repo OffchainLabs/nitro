@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//util",
         "@com_github_emicklei_dot//:dot",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//common/hexutil",
         "@com_github_ethereum_go_ethereum//crypto",

@@ -3,34 +3,38 @@ package solimpl
 import (
 	"math/big"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"context"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // AddLeaf vertex to a BlockChallenge using an assertion and a history commitment.
 func (c *Challenge) AddLeaf(
+	ctx context.Context,
 	assertion *Assertion,
 	history util.HistoryCommitment,
 ) (*ChallengeVertex, error) {
-	// Refresh the inner fields of our before making on-chain calls.
-	if err := assertion.invalidate(); err != nil {
-		return nil, err
-	}
-	if err := c.invalidate(); err != nil {
-		return nil, err
-	}
-
 	// Flatten the last leaf proof for submission to the chain.
 	lastLeafProof := make([]byte, 0)
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
-	leafData := outgen.AddLeafArgs{
+	callOpts := c.manager.assertionChain.callOpts
+	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, assertion.id)
+	if err != nil {
+		return nil, err
+	}
+	prevAssertion, err := c.manager.assertionChain.AssertionByID(assertion.inner.PrevNum)
+	if err != nil {
+		return nil, err
+	}
+	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
-		ClaimId:                assertion.id,
+		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
-		HistoryCommitment:      history.Merkle,
-		FirstState:             history.FirstLeaf,
+		HistoryRoot:            history.Merkle,
+		FirstState:             prevAssertion.inner.StateHash,
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
@@ -44,17 +48,18 @@ func (c *Challenge) AddLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	if err2 := withChainCommitment(c.manager.assertionChain.backend, func() error {
-		_, err3 := c.manager.writer.AddLeaf(
+	_, err = transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
 			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
-		return err3
-	}); err2 != nil {
-		return nil, err2
+	})
+	if err != nil {
+		return nil, err
 	}
+
 	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
 		c.manager.assertionChain.callOpts,
 		c.id,

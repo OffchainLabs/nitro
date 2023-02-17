@@ -10,7 +10,16 @@ import prodConfig from './hardhat.prod-config'
 const solidity = {
   compilers: [
     {
-      version: '0.8.9',
+      version: '0.8.17',
+      settings: {
+        optimizer: {
+          enabled: true,
+          runs: 100,
+        },
+      },
+    },
+    {
+      version: '0.8.0',
       settings: {
         optimizer: {
           enabled: true,

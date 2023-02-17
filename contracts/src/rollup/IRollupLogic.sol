@@ -59,16 +59,6 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function withdrawStakerFunds() external returns (uint256);
 
-    function createChallenge(
-        address[2] calldata stakers,
-        uint64[2] calldata assertionNums,
-        MachineStatus[2] calldata machineStatuses,
-        GlobalState[2] calldata globalStates,
-        uint64 numBlocks,
-        bytes32 secondExecutionHash,
-        uint256[2] calldata proposedTimes,
-        bytes32[2] calldata wasmModuleRoots
-    ) external;
 }
 
 interface IRollupUser is IRollupUserAbs {

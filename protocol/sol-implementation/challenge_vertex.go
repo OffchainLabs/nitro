@@ -1,38 +1,39 @@
 package solimpl
 
 import (
+	"context"
 	"math/big"
+	"strings"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/pkg/errors"
 )
 
 // Merge a challenge vertex to another by providing its history
 // commitment and a prefix proof.
 func (v *ChallengeVertex) Merge(
+	ctx context.Context,
 	mergingToHistory util.HistoryCommitment,
 	proof []common.Hash,
-) error {
-	// Refresh the inner fields of vertices before making calls.
-	if err := v.invalidate(); err != nil {
-		return err
-	}
+) (*ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
 		flatProof = append(flatProof, h[:]...)
 	}
-	if err := withChainCommitment(v.manager.assertionChain.backend, func() error {
-		_, mergeErr := v.manager.writer.Merge(
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.Merge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 			mergingToHistory.Merkle,
 			flatProof,
 		)
-		return mergeErr
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	return getBisectedToVertex(
 		v.manager,
@@ -44,29 +45,25 @@ func (v *ChallengeVertex) Merge(
 
 // Bisect a challenge vertex by providing a history commitment.
 func (v *ChallengeVertex) Bisect(
+	ctx context.Context,
 	history util.HistoryCommitment,
 	proof []common.Hash,
 ) (*ChallengeVertex, error) {
-	// Refresh the inner fields of our before making on-chain calls.
-	if err := v.invalidate(); err != nil {
-		return nil, err
-	}
-
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
 		flatProof = append(flatProof, h[:]...)
 	}
-	if err2 := withChainCommitment(v.manager.assertionChain.backend, func() error {
-		_, err3 := v.manager.writer.Bisect(
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.Bisect(
 			v.manager.assertionChain.txOpts,
 			v.id,
 			history.Merkle,
 			flatProof,
 		)
-		return err3
-	}); err2 != nil {
-		return nil, err2
+	})
+	if err != nil {
+		return nil, err
 	}
 	return getBisectedToVertex(
 		v.manager,
@@ -103,4 +100,32 @@ func getBisectedToVertex(
 		inner:   bisectedTo,
 		manager: manager,
 	}, nil
+}
+
+func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.ConfirmForPsTimer(
+			v.manager.assertionChain.txOpts,
+			v.id,
+		)
+	})
+	if err == nil {
+		return nil
+	}
+	switch {
+	case strings.Contains(err.Error(), "PsTimer not greater than challenge period"):
+		return errors.Wrapf(ErrPsTimerNotYet, "vertex id %#v", v.id)
+	default:
+		return err
+	}
+}
+
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) error {
+	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+		return v.manager.writer.CreateSubChallenge(
+			v.manager.assertionChain.txOpts,
+			v.id,
+		)
+	})
+	return err
 }

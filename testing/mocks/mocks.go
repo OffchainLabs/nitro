@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
+	goimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -109,7 +109,7 @@ func (m *MockProtocol) IsAtOneStepFork(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeByCommitHash(tx *goimpl.ActiveTx, commitHash goimpl.ChallengeCommitHash) (*goimpl.Challenge, error) {
+func (m *MockProtocol) ChallengeByCommitHash(tx *goimpl.ActiveTx, commitHash goimpl.ChallengeCommitHash) (goimpl.ChallengeInterface, error) {
 	args := m.Called(tx, commitHash)
 	return args.Get(0).(*goimpl.Challenge), args.Error(1)
 }

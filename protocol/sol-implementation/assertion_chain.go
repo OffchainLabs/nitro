@@ -10,27 +10,35 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
+	"fmt"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
 
 var (
-	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
-	ErrRejectedAssertion = errors.New("assertion already rejected")
-	ErrInvalidChildren   = errors.New("invalid children")
-	ErrNotFound          = errors.New("item not found on-chain")
-	ErrAlreadyExists     = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
-	ErrTooLate           = errors.New("too late to create assertion sibling")
-	ErrInvalidHeight     = errors.New("invalid assertion height")
-	uint256Ty, _         = abi.NewType("uint256", "", nil)
-	hashTy, _            = abi.NewType("bytes32", "", nil)
+	ErrUnconfirmedParent   = errors.New("parent assertion is not confirmed")
+	ErrNoUnresolved        = errors.New("no assertion to resolve")
+	ErrNonPendingAssertion = errors.New("assertion is not pending")
+	ErrRejectedAssertion   = errors.New("assertion already rejected")
+	ErrInvalidChildren     = errors.New("invalid children")
+	ErrNotFound            = errors.New("item not found on-chain")
+	ErrAlreadyExists       = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist    = errors.New("assertion predecessor does not exist")
+	ErrTooLate             = errors.New("too late to create assertion sibling")
+	ErrTooSoon             = errors.New("too soon to confirm assertion")
+	ErrInvalidHeight       = errors.New("invalid assertion height")
 )
+
+// ChainBackend to interact with the underlying blockchain.
+type ChainBackend interface {
+	bind.ContractBackend
+	ReceiptFetcher
+}
 
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
@@ -39,12 +47,17 @@ type ChainCommiter interface {
 	Commit() common.Hash
 }
 
+// ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
+type ReceiptFetcher interface {
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend    bind.ContractBackend
-	caller     *outgen.AssertionChainCaller
-	writer     *outgen.AssertionChainTransactor
+	backend    ChainBackend
+	rollup     *rollupgen.RollupCore
+	userLogic  *rollupgen.RollupUserLogic
 	callOpts   *bind.CallOpts
 	txOpts     *bind.TransactOpts
 	stakerAddr common.Address
@@ -54,11 +67,11 @@ type AssertionChain struct {
 // instance from a chain backend and provided options.
 func NewAssertionChain(
 	ctx context.Context,
-	contractAddr common.Address,
+	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
-	backend bind.ContractBackend,
+	backend ChainBackend,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
 		backend:    backend,
@@ -66,20 +79,30 @@ func NewAssertionChain(
 		txOpts:     txOpts,
 		stakerAddr: stakerAddr,
 	}
-	assertionChainBinding, err := outgen.NewAssertionChain(
-		contractAddr, chain.backend,
+	coreBinding, err := rollupgen.NewRollupCore(
+		rollupAddr, chain.backend,
 	)
 	if err != nil {
 		return nil, err
 	}
-	chain.caller = &assertionChainBinding.AssertionChainCaller
-	chain.writer = &assertionChainBinding.AssertionChainTransactor
+	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
+		rollupAddr, chain.backend,
+	)
+	if err != nil {
+		return nil, err
+	}
+	chain.rollup = coreBinding
+	chain.userLogic = assertionChainBinding
 	return chain, nil
 }
 
 // ChallengePeriodSeconds
 func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
-	res, err := ac.caller.ChallengePeriodSeconds(ac.callOpts)
+	manager, err := ac.ChallengeManager()
+	if err != nil {
+		return time.Second, err
+	}
+	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
 	if err != nil {
 		return time.Second, err
 	}
@@ -87,20 +110,20 @@ func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
 }
 
 // AssertionByID --
-func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, error) {
-	res, err := ac.caller.GetAssertion(ac.callOpts, assertionId)
+func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error) {
+	res, err := ac.userLogic.GetAssertion(ac.callOpts, assertionNum)
 	if err != nil {
 		return nil, err
 	}
 	if bytes.Equal(res.StateHash[:], make([]byte, 32)) {
 		return nil, errors.Wrapf(
 			ErrNotFound,
-			"assertion with id %#x",
-			assertionId,
+			"assertion with id %d",
+			assertionNum,
 		)
 	}
 	return &Assertion{
-		id:    assertionId,
+		id:    assertionNum,
 		chain: ac,
 		inner: res,
 		StateCommitment: util.StateCommitment{
@@ -110,101 +133,162 @@ func (ac *AssertionChain) AssertionByID(assertionId common.Hash) (*Assertion, er
 	}, nil
 }
 
-// CreateAssertion provided a state commitment and the previous
-// assertion's ID. Then, if the creation was successful,
-// returns the newly created assertion.
+// CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
+// and a commitment to a post-state.
 func (ac *AssertionChain) CreateAssertion(
-	commitment util.StateCommitment,
-	prevAssertionId common.Hash,
+	ctx context.Context,
+	height uint64,
+	prevAssertionId uint64,
+	prevAssertionState *ExecutionState,
+	postState *ExecutionState,
+	prevInboxMaxCount *big.Int,
 ) (*Assertion, error) {
-	err := withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.CreateNewAssertion(
-			ac.txOpts,
-			commitment.StateRoot,
-			big.NewInt(int64(commitment.Height)),
-			prevAssertionId,
-		)
-		return err
-	})
-	if err2 := handleCreateAssertionError(err, commitment); err2 != nil {
-		return nil, err2
+	prev, err := ac.AssertionByID(prevAssertionId)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
-	assertionId := getAssertionId(commitment, prevAssertionId)
-	return ac.AssertionByID(assertionId)
-}
+	prevHeight := prev.inner.Height.Uint64()
+	if prevHeight >= height {
+		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
+	}
+	stake, err := ac.userLogic.CurrentRequiredStake(ac.callOpts)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get current required stake")
+	}
+	newOpts := copyTxOpts(ac.txOpts)
+	newOpts.Value = stake
 
-func (ac *AssertionChain) UpdateChallengeManager(a common.Address) error {
-	return withChainCommitment(ac.backend, func() error {
-		_, err := ac.writer.UpdateChallengeManager(ac.txOpts, a)
-		return err
+	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.userLogic.NewStakeOnNewAssertion(
+			newOpts,
+			rollupgen.AssertionInputs{
+				BeforeState: prevAssertionState.AsSolidityStruct(),
+				AfterState:  postState.AsSolidityStruct(),
+				NumBlocks:   height - prevHeight,
+			},
+			common.Hash{}, // Expected hash. TODO: Is this fine as empty?
+			prevInboxMaxCount,
+		)
 	})
+	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
+		return nil, createErr
+	}
+	if len(receipt.Logs) == 0 {
+		return nil, errors.New("no logs observed from assertion creation")
+	}
+	assertionCreated, err := ac.rollup.ParseAssertionCreated(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse assertion creation log")
+	}
+	return ac.AssertionByID(assertionCreated.AssertionNum)
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(assertionId common.Hash) (*Challenge, error) {
-	err := withChainCommitment(ac.backend, func() error {
-		_, err2 := ac.writer.CreateSuccessionChallenge(
+func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, assertionId uint64) (*Challenge, error) {
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
 			assertionId,
 		)
-		return err2
 	})
-	if err3 := handleCreateSuccessionChallengeError(err, assertionId); err3 != nil {
-		return nil, err3
+	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
+		return nil, err2
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(assertionId, BlockChallenge)
+	challengeId, err := manager.CalculateChallengeId(ctx, common.Hash{}, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
-	return manager.ChallengeByID(challengeId)
+	return manager.ChallengeByID(ctx, challengeId)
 }
 
-// Confirm creates a confirmation for the given assertion.
-func (a *Assertion) Confirm() error {
-	// Refresh the inner fields of our before making on-chain calls.
-	if err := a.invalidate(); err != nil {
-		return err
+// Confirm creates a confirmation for an assertion at the block hash and send root.
+func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
+	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot)
+	})
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "Assertion does not exist"):
+			return errors.Wrapf(ErrNotFound, "block hash %#x", blockHash)
+		case strings.Contains(err.Error(), "Previous assertion not confirmed"):
+			return errors.Wrapf(ErrUnconfirmedParent, "previous assertion not confirmed")
+		case strings.Contains(err.Error(), "NO_UNRESOLVED"):
+			return ErrNoUnresolved
+		case strings.Contains(err.Error(), "CHILD_TOO_RECENT"):
+			return ErrTooSoon
+		default:
+			return err
+		}
 	}
+	if len(receipt.Logs) == 0 {
+		return errors.New("no logs observed from assertion confirmation")
+	}
+	confirmed, err := ac.rollup.ParseAssertionConfirmed(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return errors.Wrap(err, "could not parse assertion confirmation log")
+	}
+	if confirmed.BlockHash != blockHash {
+		return fmt.Errorf(
+			"Wanted assertion at block hash %#x confirmed, but block hash was %#x",
+			blockHash,
+			confirmed.BlockHash,
+		)
+	}
+	if confirmed.SendRoot != sendRoot {
+		return fmt.Errorf(
+			"Wanted assertion at send root %#x confirmed, but send root was %#x",
+			sendRoot,
+			confirmed.SendRoot,
+		)
+	}
+	return nil
+}
 
-	_, err := a.chain.writer.ConfirmAssertion(a.chain.txOpts, a.id)
+// Reject creates a rejection for the given assertion.
+func (ac *AssertionChain) Reject(ctx context.Context, staker common.Address) error {
+	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+		return ac.userLogic.RejectNextAssertion(ac.txOpts, staker)
+	})
 	switch {
 	case err == nil:
 		return nil
-	case strings.Contains(err.Error(), "Assertion does not exist"):
-		return errors.Wrapf(ErrNotFound, "assertion with id %#x", a.id)
-	case strings.Contains(err.Error(), "Previous assertion not confirmed"):
-		return errors.Wrapf(ErrUnconfirmedParent, "previous assertion not confirmed")
+	case strings.Contains(err.Error(), "NO_UNRESOLVED"):
+		return ErrNoUnresolved
 	default:
 		return err
 	}
 }
 
-func handleCreateSuccessionChallengeError(err error, assertionId common.Hash) error {
+func handleCreateSuccessionChallengeError(err error, assertionId uint64) error {
 	if err == nil {
 		return nil
 	}
 	errS := err.Error()
 	switch {
 	case strings.Contains(errS, "Assertion does not exist"):
-		return errors.Wrapf(ErrNotFound, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrNotFound, "assertion id %d", assertionId)
 	case strings.Contains(errS, "Assertion already rejected"):
-		return errors.Wrapf(ErrRejectedAssertion, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrRejectedAssertion, "assertion id %d", assertionId)
 	case strings.Contains(errS, "Challenge already created"):
-		return errors.Wrapf(ErrAlreadyExists, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
+	case strings.Contains(errS, "ALREADY_CHALLENGED"):
+		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
 	case strings.Contains(errS, "At least two children not created"):
-		return errors.Wrapf(ErrInvalidChildren, "assertion id %#x", assertionId)
-	case strings.Contains(errS, "Too late to challenge"):
-		return errors.Wrapf(ErrTooLate, "assertion id %#x", assertionId)
+		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
+	case strings.Contains(errS, "NO_SECOND_CHILD"):
+		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
+	case strings.Contains(errS, "too late"):
+		return errors.Wrapf(ErrTooLate, "assertion id %d", assertionId)
 	default:
-		return nil
+		return err
 	}
 }
 
-func handleCreateAssertionError(err error, commitment util.StateCommitment) error {
+func handleCreateAssertionError(err error, height uint64, blockHash common.Hash) error {
 	if err == nil {
 		return nil
 	}
@@ -213,64 +297,49 @@ func handleCreateAssertionError(err error, commitment util.StateCommitment) erro
 	case strings.Contains(errS, "Assertion already exists"):
 		return errors.Wrapf(
 			ErrAlreadyExists,
-			"commit state root %#x and height %d",
-			commitment.StateRoot,
-			commitment.Height,
+			"commit block hash %#x and height %d",
+			blockHash,
+			height,
 		)
 	case strings.Contains(errS, "Height not greater than predecessor"):
 		return errors.Wrapf(
 			ErrInvalidHeight,
-			"commit state root %#x and height %d",
-			commitment.StateRoot,
-			commitment.Height,
+			"commit block hash %#x and height %d",
+			blockHash,
+			height,
 		)
 	case strings.Contains(errS, "Previous assertion does not exist"):
 		return ErrPrevDoesNotExist
 	case strings.Contains(errS, "Too late to create sibling"):
 		return ErrTooLate
 	default:
-		return nil
+		return err
 	}
 }
 
-// Runs a callback function meant to write to a contract backend, and if the
+// Runs a callback function meant to write to a chain backend, and if the
 // chain backend supports committing directly, we call the commit function before
-// returning.
-func withChainCommitment(backend bind.ContractBackend, fn func() error) error {
-	if err := fn(); err != nil {
-		return err
+// returning. This function additionally waits for the transaction to complete and returns
+// an optional transaction receipt. It returns an error if the
+// transaction had a failed status on-chain, or if the execution of the callback
+// failed directly.
+// TODO(RJ): Add logic of waiting for transactions to complete.
+func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+	tx, err := fn()
+	if err != nil {
+		return nil, err
 	}
 	if commiter, ok := backend.(ChainCommiter); ok {
 		commiter.Commit()
 	}
-	return nil
-}
-
-// Constructs and assertion ID which is built as
-// keccak256(abi.encodePacked(stateRoot,height,prevAssertionId)).
-func getAssertionId(
-	commitment util.StateCommitment,
-	prevAssertionId common.Hash,
-) common.Hash {
-	arguments := abi.Arguments{
-		{
-			Type: hashTy,
-		},
-		{
-			Type: uint256Ty,
-		},
-		{
-			Type: hashTy,
-		},
+	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+	if err != nil {
+		return nil, err
 	}
-
-	height := big.NewInt(int64(commitment.Height))
-	packed, _ := arguments.Pack(
-		commitment.StateRoot,
-		height,
-		prevAssertionId,
-	)
-	return crypto.Keccak256Hash(packed)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		return nil, fmt.Errorf("receipt status shows failing transaction: %+v", receipt)
+	}
+	return receipt, nil
 }
 
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {

@@ -2,392 +2,376 @@ package solimpl
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/outgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		big.NewInt(10), // 10 second challenge period.
-	)
-	require.NoError(t, err)
-
-	acc.backend.Commit()
-
-	chain, err := NewAssertionChain(
-		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
-
-	commit := util.StateCommitment{
-		Height:    1,
-		StateRoot: common.BytesToHash([]byte{1}),
-	}
-	genesisId := common.Hash{}
+	chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
 
 	t.Run("OK", func(t *testing.T) {
-		created, err2 := chain.CreateAssertion(commit, genesisId)
-		require.NoError(t, err2)
-		require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
-	})
-	t.Run("already exists", func(t *testing.T) {
-		_, err = chain.CreateAssertion(commit, genesisId)
-		require.ErrorIs(t, err, ErrAlreadyExists)
-	})
-	t.Run("previous assertion does not exist", func(t *testing.T) {
-		commit := util.StateCommitment{
-			Height:    2,
-			StateRoot: common.BytesToHash([]byte{2}),
-		}
-		_, err = chain.CreateAssertion(commit, common.BytesToHash([]byte("nyan")))
-		require.ErrorIs(t, err, ErrPrevDoesNotExist)
-	})
-	t.Run("invalid height", func(t *testing.T) {
-		commit := util.StateCommitment{
-			Height:    0,
-			StateRoot: common.BytesToHash([]byte{3}),
-		}
-		_, err = chain.CreateAssertion(commit, genesisId)
-		require.ErrorIs(t, err, ErrInvalidHeight)
-	})
-	t.Run("too late to create sibling", func(t *testing.T) {
-		// Adds two challenge periods to the chain timestamp.
-		err = acc.backend.AdjustTime(time.Second * 20)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
 		require.NoError(t, err)
-		commit := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte("forked")),
+
+		latestBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			latestBlockHash = backend.Commit()
 		}
-		_, err = chain.CreateAssertion(commit, genesisId)
-		require.ErrorIs(t, err, ErrTooLate)
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  latestBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
+
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.ErrorContains(t, err, "ALREADY_STAKED")
+	})
+	t.Run("can create fork", func(t *testing.T) {
+		chain, err := NewAssertionChain(
+			ctx,
+			addresses.Rollup,
+			accs[2].txOpts,
+			&bind.CallOpts{},
+			accs[2].accountAddr,
+			backend,
+		)
+		require.NoError(t, err)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  common.BytesToHash([]byte("evil hash")),
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		chain.txOpts.From = accs[2].accountAddr
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
 	})
 }
 
 func TestAssertionByID(t *testing.T) {
-	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		big.NewInt(1), // 1 second challenge period.
-	)
+	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+
+	resp, err := chain.AssertionByID(0)
 	require.NoError(t, err)
 
-	acc.backend.Commit()
+	require.Equal(t, true, resp.inner.StateHash != [32]byte{})
 
-	chain, err := NewAssertionChain(
-		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
-
-	genesisId := common.Hash{}
-	resp, err := chain.AssertionByID(genesisId)
-	require.NoError(t, err)
-
-	require.Equal(t, genesisStateRoot[:], resp.inner.StateHash[:])
-
-	_, err = chain.AssertionByID(common.BytesToHash([]byte("bar")))
+	_, err = chain.AssertionByID(1)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
+	t.Run("OK", func(t *testing.T) {
+		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
 
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		big.NewInt(10), // 10 second challenge period.
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	chain, err := NewAssertionChain(
-		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
-
-	commit := util.StateCommitment{
-		Height:    1,
-		StateRoot: common.BytesToHash([]byte{1}),
-	}
-	genesisId := common.Hash{}
-
-	created, err := chain.CreateAssertion(commit, genesisId)
-	require.NoError(t, err)
-	require.Equal(t, commit.StateRoot[:], created.inner.StateHash[:])
-	acc.backend.Commit()
-
-	t.Run("Can confirm assertion", func(t *testing.T) {
-		require.Equal(t, uint8(0), created.inner.Status) // Pending.
-		require.NoError(t, created.Confirm())
-		acc.backend.Commit()
-		created, err = chain.AssertionByID(created.id)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
 		require.NoError(t, err)
-		require.Equal(t, uint8(1), created.inner.Status) // Confirmed.
+
+		assertionBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			assertionBlockHash = backend.Commit()
+		}
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  assertionBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
+
+		err = chain.Confirm(ctx, assertionBlockHash, common.Hash{})
+		require.ErrorIs(t, err, ErrTooSoon)
+
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+	})
+}
+
+func TestAssertion_Reject(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Can reject assertion", func(t *testing.T) {
+		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
 	})
 
-	t.Run("Unknown assertion", func(t *testing.T) {
-		created.id = common.BytesToHash([]byte("meow"))
-		require.ErrorIs(t, created.Confirm(), ErrNotFound)
+	t.Run("Already confirmed assertion", func(t *testing.T) {
+		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		assertionBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			assertionBlockHash = backend.Commit()
+		}
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  assertionBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
+
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Reject(ctx, chain.stakerAddr))
 	})
 }
 
 func TestChallengePeriodSeconds(t *testing.T) {
-	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	addr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		big.NewInt(1), // 1 second challenge period.
-	)
-	require.NoError(t, err)
-
-	acc.backend.Commit()
-
-	chain, err := NewAssertionChain(
-		ctx, addr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
-	)
-	require.NoError(t, err)
+	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
-	require.Equal(t, time.Second, chalPeriod)
+	require.Equal(t, time.Second*100, chalPeriod)
 }
 
 func TestCreateSuccessionChallenge(t *testing.T) {
-	genesisId := common.Hash{}
-
+	ctx := context.Background()
 	t.Run("assertion does not exist", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
-		_, err := chain.CreateSuccessionChallenge([32]byte{9})
-		require.ErrorIs(t, err, ErrNotFound)
+		chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+		_, err := chain.CreateSuccessionChallenge(ctx, 2)
+		require.ErrorIs(t, err, ErrInvalidChildren)
+	})
+	t.Run("at least two children required", func(t *testing.T) {
+		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		latestBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			latestBlockHash = backend.Commit()
+		}
+
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
+		}
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  latestBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
+		require.NoError(t, err)
+
+		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 	t.Run("assertion already rejected", func(t *testing.T) {
 		t.Skip(
 			"Needs a challenge manager to provide a winning claim first",
 		)
 	})
-	t.Run("at least two children required", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
-		_, err := chain.CreateSuccessionChallenge(genesisId)
-		require.ErrorIs(t, err, ErrInvalidChildren)
-
-		commit1 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{1}),
-		}
-
-		_, err = chain.CreateAssertion(commit1, genesisId)
-		require.NoError(t, err)
-
-		_, err = chain.CreateSuccessionChallenge(genesisId)
-		require.ErrorIs(t, err, ErrInvalidChildren)
-	})
-
-	t.Run("too late to challenge", func(t *testing.T) {
-		chain, acc := setupAssertionChainWithChallengeManager(t)
-		commit1 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{1}),
-		}
-
-		_, err := chain.CreateAssertion(commit1, genesisId)
-		require.NoError(t, err)
-
-		commit2 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{2}),
-		}
-
-		_, err = chain.CreateAssertion(commit2, genesisId)
-		require.NoError(t, err)
-
-		challengePeriod, err := chain.ChallengePeriodSeconds()
-		require.NoError(t, err)
-
-		// Adds two challenge periods to the chain timestamp.
-		err = acc.backend.AdjustTime(challengePeriod * 2)
-		require.NoError(t, err)
-
-		_, err = chain.CreateSuccessionChallenge(genesisId)
-		require.ErrorIs(t, err, ErrTooLate)
-	})
 	t.Run("OK", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
-		commit1 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{1}),
+		chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		latestBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			latestBlockHash = backend.Commit()
 		}
 
-		_, err := chain.CreateAssertion(commit1, genesisId)
-		require.NoError(t, err)
-
-		commit2 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{2}),
+		prevState := &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
 		}
-
-		_, err = chain.CreateAssertion(commit2, genesisId)
-		require.NoError(t, err)
-
-		_, err = chain.CreateSuccessionChallenge(genesisId)
-		require.NoError(t, err)
-	})
-	t.Run("challenge already exists", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
-		commit1 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{1}),
+		postState := &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  latestBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
 		}
-
-		_, err := chain.CreateAssertion(commit1, genesisId)
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
 		require.NoError(t, err)
 
-		commit2 := util.StateCommitment{
-			Height:    1,
-			StateRoot: common.BytesToHash([]byte{2}),
-		}
-
-		_, err = chain.CreateAssertion(commit2, genesisId)
+		chain, err = NewAssertionChain(
+			ctx,
+			addresses.Rollup,
+			accs[2].txOpts,
+			&bind.CallOpts{},
+			accs[2].accountAddr,
+			backend,
+		)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
+		_, err = chain.CreateAssertion(
+			ctx,
+			height,
+			prev,
+			prevState,
+			postState,
+			prevInboxMaxCount,
+		)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(genesisId)
+		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		require.NoError(t, err)
+
+		_, err = chain.CreateSuccessionChallenge(ctx, 0)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 }
 
-func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, *testAccount) {
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
 	t.Helper()
 	ctx := context.Background()
-	acc, err := setupAccount()
-	require.NoError(t, err)
-
-	genesisStateRoot := common.BytesToHash([]byte("foo"))
-	challengePeriodSeconds := big.NewInt(1000)
-	assertionChainAddr, _, _, err := outgen.DeployAssertionChain(
-		acc.txOpts,
-		acc.backend,
-		genesisStateRoot,
-		challengePeriodSeconds,
+	accs, backend := setupAccounts(t, 3)
+	prod := false
+	wasmModuleRoot := common.Hash{}
+	rollupOwner := accs[0].accountAddr
+	chainId := big.NewInt(1337)
+	loserStakeEscrow := common.Address{}
+	challengePeriodSeconds := big.NewInt(100)
+	miniStake := big.NewInt(1)
+	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
+	addresses := deployFullRollupStack(
+		t,
+		ctx,
+		backend,
+		accs[0].txOpts,
+		common.Address{}, // Sequencer addr.
+		cfg,
 	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	// Chain contract should be deployed.
-	code, err := acc.backend.CodeAt(ctx, assertionChainAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
-
-	ospAddr, _, _, err := outgen.DeployMockOneStepProofEntry(
-		acc.txOpts,
-		acc.backend,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	code, err = acc.backend.CodeAt(ctx, ospAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
-
-	miniStakeValue := big.NewInt(1)
-	chalManagerAddr, _, _, err := outgen.DeployChallengeManagerImpl(
-		acc.txOpts,
-		acc.backend,
-		assertionChainAddr,
-		miniStakeValue,
-		challengePeriodSeconds,
-		ospAddr,
-	)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	code, err = acc.backend.CodeAt(ctx, chalManagerAddr, nil)
-	require.NoError(t, err)
-	require.Equal(t, true, len(code) > 0)
-
 	chain, err := NewAssertionChain(
-		ctx, assertionChainAddr, acc.txOpts, &bind.CallOpts{}, acc.accountAddr, acc.backend,
+		ctx,
+		addresses.Rollup,
+		accs[1].txOpts,
+		&bind.CallOpts{},
+		accs[1].accountAddr,
+		backend,
 	)
 	require.NoError(t, err)
-	err = chain.UpdateChallengeManager(chalManagerAddr)
-	require.NoError(t, err)
-	acc.backend.Commit()
-
-	return chain, acc
-}
-
-// Represents a test EOA account in the simulated backend,
-type testAccount struct {
-	accountAddr common.Address
-	backend     *backends.SimulatedBackend
-	txOpts      *bind.TransactOpts
-}
-
-func setupAccount() (*testAccount, error) {
-	genesis := make(core.GenesisAlloc)
-	privKey, err := crypto.GenerateKey()
-	if err != nil {
-		return nil, err
-	}
-	pubKeyECDSA, ok := privKey.Public().(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("error casting public key to ECDSA")
-	}
-
-	// Strip off the 0x and the first 2 characters 04 which is always the
-	// EC prefix and is not required.
-	publicKeyBytes := crypto.FromECDSAPub(pubKeyECDSA)[4:]
-	var pubKey = make([]byte, 48)
-	copy(pubKey, publicKeyBytes)
-
-	addr := crypto.PubkeyToAddress(privKey.PublicKey)
-	chainID := big.NewInt(1337)
-	txOpts, err := bind.NewKeyedTransactorWithChainID(privKey, chainID)
-	if err != nil {
-		return nil, err
-	}
-	startingBalance, _ := new(big.Int).SetString(
-		"100000000000000000000000000000000000000",
-		10,
-	)
-	genesis[addr] = core.GenesisAccount{Balance: startingBalance}
-	gasLimit := uint64(100000000)
-	backend := backends.NewSimulatedBackend(genesis, gasLimit)
-	return &testAccount{
-		accountAddr: addr,
-		backend:     backend,
-		txOpts:      txOpts,
-	}, nil
+	return chain, accs, addresses, backend
 }
