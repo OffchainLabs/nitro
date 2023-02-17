@@ -6,11 +6,11 @@ package solimpl
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
 	"strings"
 
 	"fmt"
-
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -117,6 +117,23 @@ func NewAssertionChain(
 	return chain, nil
 }
 
+<<<<<<< HEAD
+=======
+// ChallengePeriodSeconds
+func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
+	manager, err := ac.ChallengeManager()
+	if err != nil {
+		return time.Second, err
+	}
+	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
+	if err != nil {
+		return time.Second, err
+	}
+	return time.Second * time.Duration(res.Uint64()), nil
+}
+
+
+>>>>>>> main
 // AssertionByID --
 func (ac *AssertionChain) AssertionBySequenceNum(
 	ctx context.Context,
@@ -209,17 +226,17 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
 		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
-			assertionId,
+			assertionNum,
 		)
 	})
-	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
+	if err2 := handleCreateSuccessionChallengeError(err, assertionNum); err2 != nil {
 		return nil, err2
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(ctx, common.Hash{}, BlockChallenge)
+	challengeId, err := manager.CalculateChallengeId(ctx, assertionHash, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}

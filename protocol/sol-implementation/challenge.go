@@ -27,7 +27,7 @@ func (c *Challenge) RootVertex(
 func (c *Challenge) GetType(
 	ctx context.Context, tx protocol.ActiveTx,
 ) (protocol.ChallengeType, error) {
-	return nil, errors.New("unimplemented")
+	return protocol.BlockChallenge, errors.New("unimplemented")
 }
 
 func (c *Challenge) GetCreationTime(
@@ -46,6 +46,12 @@ func (c *Challenge) WinnerVertex(
 	ctx context.Context, tx protocol.ActiveTx,
 ) (util.Option[protocol.ChallengeVertex], error) {
 	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
+}
+
+func (c *Challenge) Completed(
+	ctx context.Context, tx protocol.ActiveTx,
+) (bool, error) {
+	return false, errors.New("unimplemented")
 }
 
 // AddLeaf vertex to a BlockChallenge using an assertion and a history commitment.

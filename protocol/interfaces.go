@@ -145,20 +145,7 @@ type Challenge interface {
 	GetCreationTime(ctx context.Context, tx ActiveTx) (time.Time, error)
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
-
-	// Readers.
-	HasConfirmedSibling(
-		ctx context.Context,
-		tx ActiveTx,
-		vertex ChallengeVertex,
-	) (bool, error)
-	// TODO: Deduplicate?
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
-	HasEnded(
-		ctx context.Context,
-		tx ActiveTx,
-		challengeManager ChallengeManager,
-	) (bool, error)
 
 	// Mutating calls.
 	AddLeaf(
@@ -186,6 +173,11 @@ type ChallengeVertex interface {
 	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
 	MiniStaker(ctx context.Context, tx ActiveTx) (common.Address, error)
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
+	HasConfirmedSibling(
+		ctx context.Context,
+		tx ActiveTx,
+		vertex ChallengeVertex,
+	) (bool, error)
 
 	// Presumptive status / timer readers.
 	EligibleForNewSuccessor(ctx context.Context, tx ActiveTx) (bool, error)

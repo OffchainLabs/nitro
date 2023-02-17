@@ -237,7 +237,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	ctx := context.Background()
 	t.Run("assertion does not exist", func(t *testing.T) {
 		chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
-		_, err := chain.CreateSuccessionChallenge(ctx, 2)
+		_, err := chain.CreateSuccessionChallenge(ctx, 2, common.Hash{})
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 	t.Run("at least two children required", func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		_, err = chain.CreateSuccessionChallenge(ctx, 0, common.Hash{})
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 	t.Run("assertion already rejected", func(t *testing.T) {
@@ -341,10 +341,10 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		_, err = chain.CreateSuccessionChallenge(ctx, 0, common.Hash{})
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(ctx, 0)
+		_, err = chain.CreateSuccessionChallenge(ctx, 0, common.Hash{})
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 }
