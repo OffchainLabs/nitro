@@ -5,34 +5,72 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
+	"time"
 )
 
-func (v *ChallengeVertex) SequenceNum(ctx context.Context, tx protocol.ActiveTx) (protocol.VertexSequenceNumber, error)
-func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error)
-func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (protocol.AssertionState, error)
-func (v *ChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) (util.HistoryCommitment, error)
-func (v *ChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error)
-func (v *ChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error)
-func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error)
+func (v *ChallengeVertex) SequenceNum(ctx context.Context, tx protocol.ActiveTx) (protocol.VertexSequenceNumber, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
+	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (protocol.AssertionState, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) (util.HistoryCommitment, error) {
+	return util.HistoryCommitment{}, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
+	return common.Address{}, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error) {
+	return util.None[protocol.Challenge](), errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
 func (v *ChallengeVertex) PresumptiveSuccessor(
 	ctx context.Context, tx protocol.ActiveTx,
-) (util.Option[ChallengeVertex], error)
-func (v *ChallengeVertex) PsTimer(ctx context.Context, tx protocol.ActiveTx) (uint64, error)
+) (util.Option[protocol.ChallengeVertex], error) {
+	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) PsTimer(ctx context.Context, tx protocol.ActiveTx) (uint64, error) {
+	return 0, errors.New("unimplemented")
+}
+
 func (v *ChallengeVertex) ChessClockExpired(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	challengePeriodSeconds time.Duration,
-) (bool, error)
+) (bool, error) {
+	return false, errors.New("unimplemented")
+}
 
-// Mutating calls for confirmations.
-func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error
-func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error
-func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx protocol.ActiveTx) error
+func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
+	return errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error {
+	return errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx protocol.ActiveTx) error {
+	return errors.New("unimplemented")
+}
 
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
 func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
