@@ -274,6 +274,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 					requestedSeqNum = arbutil.MessageIndex(num)
 				} else if headerName == HTTPHeaderCloudflareConnectingIP {
 					connectingIP = net.ParseIP(string(value))
+					log.Trace("Client IP parsed from header", "ip", connectingIP, "header", headerName, "value", string(value))
 				}
 
 				return nil
@@ -288,6 +289,9 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				if connectingIP == nil {
 					if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 						connectingIP = addr.IP
+						log.Trace("Client IP taken from socket", "ip", connectingIP, "remoteAddr", conn.RemoteAddr())
+					} else {
+						log.Warn("No client IP could be determined from socket", "remoteAddr", conn.RemoteAddr())
 					}
 				}
 
