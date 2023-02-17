@@ -78,10 +78,10 @@ type AssertionChain interface {
 	) (Challenge, error)
 	Confirm(
 		ctx context.Context, tx ActiveTx, blockHash, sendRoot common.Hash,
-	) (Challenge, error)
+	) error
 	Reject(
 		ctx context.Context, tx ActiveTx, staker common.Address,
-	) (Challenge, error)
+	) error
 }
 
 // ChallengeManager allows for retrieving details of challenges such
@@ -166,14 +166,12 @@ type Challenge interface {
 		tx ActiveTx,
 		assertion Assertion,
 		history util.HistoryCommitment,
-		validator common.Address,
 	) (ChallengeVertex, error)
 	AddSubchallengeLeaf(
 		ctx context.Context,
 		tx ActiveTx,
 		vertex ChallengeVertex,
 		history util.HistoryCommitment,
-		validator common.Address,
 	) (ChallengeVertex, error)
 }
 

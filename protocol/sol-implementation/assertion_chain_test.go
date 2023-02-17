@@ -6,10 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	_ = protocol.AssertionChain(&AssertionChain{})
 )
 
 func TestCreateAssertion(t *testing.T) {

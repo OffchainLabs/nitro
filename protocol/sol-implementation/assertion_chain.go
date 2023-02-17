@@ -8,7 +8,6 @@ import (
 	"context"
 	"math/big"
 	"strings"
-	"time"
 
 	"fmt"
 
@@ -118,19 +117,6 @@ func NewAssertionChain(
 	return chain, nil
 }
 
-// // ChallengePeriodSeconds
-// func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
-// 	manager, err := ac.ChallengeManager()
-// 	if err != nil {
-// 		return time.Second, err
-// 	}
-// 	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
-// 	if err != nil {
-// 		return time.Second, err
-// 	}
-// 	return time.Second * time.Duration(res.Uint64()), nil
-// }
-
 // AssertionByID --
 func (ac *AssertionChain) AssertionBySequenceNum(
 	ctx context.Context,
@@ -167,12 +153,13 @@ func (ac *AssertionChain) LatestConfirmed(_ context.Context, _ protocol.ActiveTx
 // and a commitment to a post-state.
 func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	height uint64,
 	prevAssertionId uint64,
-	prevAssertionState *ExecutionState,
-	postState *ExecutionState,
+	//prevAssertionState *ExecutionState,
+	//postState *ExecutionState,
 	prevInboxMaxCount *big.Int,
-) (*Assertion, error) {
+) (protocol.Assertion, error) {
 	prev, err := ac.AssertionByID(prevAssertionId)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
@@ -214,7 +201,11 @@ func (ac *AssertionChain) CreateAssertion(
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, assertionId uint64) (*Challenge, error) {
+func (ac *AssertionChain) CreateSuccessionChallenge(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	seqNum protocol.AssertionSequenceNumber,
+) (protocol.Challenge, error) {
 	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
 		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
@@ -236,7 +227,9 @@ func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, asserti
 }
 
 // Confirm creates a confirmation for an assertion at the block hash and send root.
-func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
+func (ac *AssertionChain) Confirm(
+	ctx context.Context, tx protocol.ActiveTx, blockHash, sendRoot common.Hash,
+) error {
 	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
 		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot)
 	})
@@ -279,7 +272,9 @@ func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot commo
 }
 
 // Reject creates a rejection for the given assertion.
-func (ac *AssertionChain) Reject(ctx context.Context, staker common.Address) error {
+func (ac *AssertionChain) Reject(
+	ctx context.Context, tx protocol.ActiveTx, staker common.Address,
+) error {
 	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
 		return ac.userLogic.RejectNextAssertion(ac.txOpts, staker)
 	})
