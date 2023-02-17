@@ -100,8 +100,8 @@ contract RollupCreator is Ownable {
         
         challengeManager.initialize({
             _assertionChain: IAssertionChain(expectedRollupAddr),
-            _miniStakeValue: 1, // HN: TODO: set this 
-            _challengePeriod: 1, // HN: TODO: set this
+            _miniStakeValue: config.miniStakeValue,
+            _challengePeriod: config.challengePeriodSeconds,
             _oneStepProofEntry: osp
         });
         // oldChallengeManager.initialize(

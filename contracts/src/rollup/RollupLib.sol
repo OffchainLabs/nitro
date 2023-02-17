@@ -37,6 +37,8 @@ struct Config {
     address loserStakeEscrow;
     uint256 chainId;
     uint64 genesisBlockNum;
+    uint256 challengePeriodSeconds;
+    uint256 miniStakeValue;
     ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
 }
 

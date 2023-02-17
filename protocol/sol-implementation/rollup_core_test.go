@@ -30,7 +30,7 @@ func TestDeployFullRollupStack(t *testing.T) {
 	rollupOwner := accs[0].accountAddr
 	chainId := big.NewInt(1337)
 	loserStakeEscrow := common.Address{}
-	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow)
+	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, big.NewInt(1), big.NewInt(1))
 	deployFullRollupStack(
 		t,
 		ctx,
@@ -202,9 +202,8 @@ func deployChallengeFactory(
 
 	// TODO(RJ): This assertion chain is not used, but still needed by challenge manager. Need to remove.
 	genesisStateHash := common.BytesToHash([]byte("nyan"))
-	challengePeriodSeconds := big.NewInt(100)
 
-	assertionChainAddr, tx, _, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, challengePeriodSeconds)
+	assertionChainAddr, tx, _, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, big.NewInt(1))
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, assertionChainAddr, backend, err)
 	require.NoError(t, err)
@@ -215,7 +214,7 @@ func deployChallengeFactory(
 		backend,
 		assertionChainAddr,
 		miniStakeValue,
-		challengePeriodSeconds,
+		big.NewInt(1),
 		ospEntryAddr,
 	)
 	backend.Commit()
@@ -285,6 +284,8 @@ func generateRollupConfig(
 	rollupOwner common.Address,
 	chainId *big.Int,
 	loserStakeEscrow common.Address,
+	challengePeriodSeconds *big.Int,
+	miniStakeValue *big.Int,
 ) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
@@ -293,6 +294,8 @@ func generateRollupConfig(
 		confirmPeriod = 20
 	}
 	return rollupgen.Config{
+		ChallengePeriodSeconds:   challengePeriodSeconds,
+		MiniStakeValue:           miniStakeValue,
 		ConfirmPeriodBlocks:      confirmPeriod,
 		ExtraChallengeTimeBlocks: 200,
 		StakeToken:               common.Address{},

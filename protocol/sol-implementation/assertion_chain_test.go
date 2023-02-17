@@ -225,7 +225,7 @@ func TestChallengePeriodSeconds(t *testing.T) {
 	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	chalPeriod, err := chain.ChallengePeriodSeconds()
 	require.NoError(t, err)
-	require.Equal(t, time.Second, chalPeriod)
+	require.Equal(t, time.Second*100, chalPeriod)
 }
 
 func TestCreateSuccessionChallenge(t *testing.T) {
@@ -325,10 +325,6 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
-			backend.Commit()
-		}
-
 		postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
 		_, err = chain.CreateAssertion(
 			ctx,
@@ -357,7 +353,9 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 	rollupOwner := accs[0].accountAddr
 	chainId := big.NewInt(1337)
 	loserStakeEscrow := common.Address{}
-	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow)
+	challengePeriodSeconds := big.NewInt(100)
+	miniStake := big.NewInt(1)
+	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
 	addresses := deployFullRollupStack(
 		t,
 		ctx,
