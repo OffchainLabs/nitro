@@ -60,7 +60,7 @@ func NewClientConnection(
 		clientIp:        connectingIP,
 		desc:            desc,
 		creation:        time.Now(),
-		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr().String(), rand.Intn(10)),
+		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
