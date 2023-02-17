@@ -95,12 +95,19 @@ func (c *Challenge) AddBigStepChallengeLeaf(
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
 
+	parentVertex, err := c.manager.caller.GetVertex(
+		c.manager.assertionChain.callOpts,
+		vertex.inner.PredecessorId,
+	)
+	if err != nil {
+		return nil, err
+	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
 		ClaimId:                vertex.id,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             [32]byte{},      // TODO: What to do with this
+		FirstState:             parentVertex.HistoryRoot,
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
