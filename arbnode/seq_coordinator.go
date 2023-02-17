@@ -51,7 +51,7 @@ type SeqCoordinator struct {
 	lockoutUntil int64 // atomic
 
 	wantsLockoutMutex sync.Mutex // manages access to chosenOneUpdate and generally the wants lockout key
-	avoidLockout      int32      // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
+	avoidLockout      int        // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
 
 	redisErrors int // error counter, from workthread
 }
@@ -232,7 +232,8 @@ func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte)
 	return arbutil.MessageIndex(binary.BigEndian.Uint64(msgCountBytes)), nil
 }
 
-func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
+// Acquires or refreshes the chosen one lockout and optionally writes a message into redis atomically.
+func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
 	var messageData *string
 	var messageSigData *string
 	if lastmsg != nil {
@@ -443,7 +444,7 @@ func (c *SeqCoordinator) noRedisError() time.Duration {
 }
 
 // update for the prev known-chosen sequencer (no need to load new messages)
-func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen string) time.Duration {
+func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen string) time.Duration {
 	if nextChosen != "" && nextChosen != c.config.MyUrl() {
 		// was the active sequencer, but no longer
 		// we maintain chosen status if we had it and nobody in the priorities wants the lockout
@@ -474,7 +475,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Error("coordinator cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
-	err = c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
+	err = c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil)
 	if err != nil {
 		log.Warn("coordinator failed chosen-one keepalive", "err", err)
 		return c.retryAfterRedisError()
@@ -489,7 +490,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.retryAfterRedisError()
 	}
 	if c.prevChosenSequencer == c.config.MyUrl() {
-		return c.updatePrevKnownChosen(ctx, chosenSeq)
+		return c.updateWithLockout(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl() && chosenSeq != c.prevChosenSequencer {
 		var err error
@@ -604,7 +605,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		// we're here because we don't currently hold the lock
 		// sequencer is already either paused or forwarding
 		c.sequencer.Pause()
-		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
+		err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
 			log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
@@ -629,7 +630,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// update wanting the lockout
 	var wantsLockoutErr error
-	if c.sync.Synced() {
+	if c.sync.Synced() && !c.AvoidingLockout() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
@@ -644,6 +645,14 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	return c.noRedisError()
 }
 
+// Warning: acquires the wantsLockoutMutex
+func (c *SeqCoordinator) AvoidingLockout() bool {
+	c.wantsLockoutMutex.Lock()
+	defer c.wantsLockoutMutex.Unlock()
+	return c.avoidLockout > 0
+}
+
+// Warning: acquires the wantsLockoutMutex
 func (c *SeqCoordinator) DebugPrint() string {
 	c.wantsLockoutMutex.Lock()
 	defer c.wantsLockoutMutex.Unlock()
@@ -714,13 +723,8 @@ func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) bool {
 
 func (c *SeqCoordinator) PrepareForShutdown() {
 	ctx := c.StopWaiter.GetContext()
-	success := c.AvoidLockout(ctx)
-	if !success {
-		// trying to release the chosen one status is pointless if we still are marked as wanting the lockout
-		// the error was already logged in Zombify
-		return
-	}
-	// Any errors/failures here are logged in the method
+	// Any errors/failures here are logged in these methods
+	c.AvoidLockout(ctx)
 	c.TryToHandoffChosenOne(ctx)
 }
 
@@ -747,7 +751,7 @@ func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbsta
 	if !c.CurrentlyChosen() {
 		return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
 	}
-	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {
+	if err := c.acquireLockoutAndWriteMessage(c.GetContext(), pos, pos+1, msg); err != nil {
 		return err
 	}
 	return nil
@@ -800,7 +804,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx)
 		if err != nil {
-			log.Warn("failed to set wants lockout key in redis after unzombifying", "err", err)
+			log.Warn("failed to set wants lockout key in redis after seeking lockout again", "err", err)
 		}
 	}
 }

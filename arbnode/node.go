@@ -700,7 +700,7 @@ type Node struct {
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
-	DbCompactor             *MaintenanceRunner
+	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
@@ -1270,8 +1270,8 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	}
-	if n.DbCompactor != nil {
-		n.DbCompactor.Start(ctx)
+	if n.MaintenanceRunner != nil {
+		n.MaintenanceRunner.Start(ctx)
 	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
@@ -1326,8 +1326,8 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	if n.DbCompactor != nil && n.DbCompactor.Started() {
-		n.DbCompactor.StopAndWait()
+	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
+		n.MaintenanceRunner.StopAndWait()
 	}
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
