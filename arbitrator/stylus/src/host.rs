@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::env::{MaybeEscape, WasmEnv, WasmEnvMut};
+use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
@@ -25,26 +25,26 @@ pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscap
 
 pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> MaybeEscape {
     let mut state = WasmEnv::begin(&mut env)?;
-    state.buy_evm_gas(800)?; // cold SLOAD
+    state.buy_evm_gas(100)?;
 
-    let (env, memory) = WasmEnv::data(&mut env);
-    let storage = env.storage()?;
-
+    let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
-    let value = storage.load_bytes32(key);
+    let (value, cost) = data.storage()?.load_bytes32(key);
     memory.write_slice(dest, &value.0)?;
-    Ok(())
+
+    let mut state = WasmEnv::state(&mut env);
+    state.buy_evm_gas(cost)
 }
 
 pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -> MaybeEscape {
     let mut state = WasmEnv::begin(&mut env)?;
-    state.buy_evm_gas(20000)?; // cold SSTORE
+    state.require_evm_gas(2300)?; // params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
 
-    let (env, memory) = WasmEnv::data(&mut env);
-    let storage = env.storage()?;
-
+    let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
     let value = memory.read_bytes32(value)?;
-    storage.store_bytes32(key, value);
-    Ok(())
+    let cost = data.storage()?.store_bytes32(key, value);
+
+    let mut state = WasmEnv::state(&mut env);
+    state.buy_evm_gas(cost)
 }

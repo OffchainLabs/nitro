@@ -50,11 +50,12 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 
 	module := db.GetCompiledWasmCode(program, params.version)
 
-	getBytes32 := func(key common.Hash) common.Hash {
-		return db.GetState(program, key)
+	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
+		return db.GetState(program, key), 0
 	}
-	setBytes32 := func(key, value common.Hash) {
+	setBytes32 := func(key, value common.Hash) uint64 {
 		db.SetState(program, key, value)
+		return vm.WasmStateStoreCost(db, program, key, value)
 	}
 
 	output := rustVec()

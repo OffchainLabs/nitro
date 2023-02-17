@@ -7,6 +7,8 @@ use prover::{programs::prelude::*, utils::Bytes32};
 use run::RunProgram;
 use std::mem;
 
+pub use prover;
+
 mod env;
 pub mod host;
 pub mod native;
@@ -96,8 +98,8 @@ pub unsafe extern "C" fn stylus_compile(
 
 #[repr(C)]
 pub struct GoAPI {
-    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32) -> Bytes32,
-    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32),
+    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32) -> (Bytes32, u64),
+    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32) -> u64,
     pub id: usize,
 }
 

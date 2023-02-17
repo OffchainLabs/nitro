@@ -97,8 +97,8 @@ pub struct SystemStateData {
     pub pricing: PricingParams,
 }
 
-type LoadBytes32 = Box<dyn Fn(Bytes32) -> Bytes32 + Send>;
-type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) + Send>;
+type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
+type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> u64 + Send>;
 
 pub struct StorageAPI {
     load_bytes32: LoadBytes32,
@@ -128,15 +128,19 @@ impl WasmEnv {
         MemoryViewContainer::create(env)
     }
 
-    pub fn data<'a, 'b: 'a>(env: &'a mut WasmEnvMut<'b>) -> (&'a mut WasmEnv, MemoryViewContainer) {
+    pub fn data<'a, 'b: 'a>(env: &'a mut WasmEnvMut<'b>) -> (&'a mut Self, MemoryViewContainer) {
         let memory = MemoryViewContainer::create(env);
         (env.data_mut(), memory)
     }
 
-    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<SystemState<'a>, Escape> {
+    pub fn state<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> SystemState<'a> {
         let state = env.data().state.clone().unwrap();
         let store = env.as_store_mut();
-        let mut state = SystemState::new(state, store);
+        SystemState::new(state, store)
+    }
+
+    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<SystemState<'a>, Escape> {
+        let mut state = Self::state(env);
         state.buy_gas(state.pricing.hostio_cost)?;
         Ok(state)
     }
@@ -183,15 +187,19 @@ impl<'a> SystemState<'a> {
         }
         Ok(())
     }
-}
 
-impl StorageAPI {
-    pub fn load_bytes32(&self, key: Bytes32) -> Bytes32 {
-        (self.load_bytes32)(key)
-    }
-
-    pub fn store_bytes32(&self, key: Bytes32, value: Bytes32) {
-        (self.store_bytes32)(key, value)
+    /// Checks if the user has enough evm gas, but doesn't burn any
+    pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
+        let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) else {
+            return Ok(())
+        };
+        let MachineMeter::Ready(gas_left) = self.gas_left() else {
+            return Escape::out_of_gas();
+        };
+        match gas_left < wasm_gas {
+            true => Escape::out_of_gas(),
+            false => Ok(()),
+        }
     }
 }
 
@@ -219,6 +227,16 @@ impl<'a> MeteredMachine for SystemState<'a> {
     }
 }
 
+impl StorageAPI {
+    pub fn load_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
+        (self.load_bytes32)(key)
+    }
+
+    pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
+        (self.store_bytes32)(key, value)
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct SimpleStorageAPI(Arc<Mutex<HashMap<Bytes32, Bytes32>>>);
 
@@ -233,12 +251,15 @@ impl SimpleStorageAPI {
 
     pub fn getter(&self) -> LoadBytes32 {
         let storage = self.clone();
-        Box::new(move |key| storage.get(&key).unwrap().to_owned())
+        Box::new(move |key| (storage.get(&key).unwrap().to_owned(), 0))
     }
 
     pub fn setter(&self) -> StoreBytes32 {
         let storage = self.clone();
-        Box::new(move |key, value| drop(storage.set(key, value)))
+        Box::new(move |key, value| {
+            drop(storage.set(key, value));
+            0
+        })
     }
 }
 
