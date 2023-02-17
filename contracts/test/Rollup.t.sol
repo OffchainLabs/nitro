@@ -96,6 +96,8 @@ contract RollupTest is Test {
             wasmModuleRoot: WASM_MODULE_ROOT,
             loserStakeEscrow: address(0),
             genesisBlockNum: 0
+            challengePeriodSeconds: 100,
+            miniStakeValue: 1
         });
 
         address expectedRollupAddr = address(
