@@ -297,6 +297,10 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 	var redisErr error
 	if f.redisCoordinator != nil {
 		newSequencerUrl, redisErr = f.redisCoordinator.CurrentChosenSequencer(ctx)
+		if redisErr == nil && newSequencerUrl == "" {
+			log.Info("no sequencer is currently chosen, using recommended sequencer instead")
+			newSequencerUrl, redisErr = f.redisCoordinator.RecommendSequencerWantingLockout(ctx)
+		}
 		if redisErr != nil || newSequencerUrl == "" {
 			if f.shouldFallbackToStatic() && f.fallbackTarget != "" {
 				log.Warn("coordinator failed to find live sequencer, falling back to static url", "err", redisErr, "fallback", f.fallbackTarget)
