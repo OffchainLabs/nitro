@@ -695,7 +695,7 @@ func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) {
 func (c *SeqCoordinator) PrepareForShutdown() {
 	// normal context will be closed, use parent context
 	parentCtx := c.StopWaiter.GetParentContext()
-	handoffCtx, cancel := context.WithTimeout(c.StopWaiter.GetContext(), c.config.ShutdownHandoffTimeout)
+	handoffCtx, cancel := context.WithTimeout(parentCtx, c.config.ShutdownHandoffTimeout)
 	defer cancel()
 	wasChosen := c.CurrentlyChosen()
 	if wasChosen && c.config.ShutdownHandoffTimeout != time.Duration(0) {
