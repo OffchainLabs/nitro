@@ -59,7 +59,7 @@ type AssertionChain interface {
 		ctx context.Context,
 		tx ActiveTx,
 		seqNum AssertionSequenceNumber,
-	) (*Assertion, error)
+	) (Assertion, error)
 	LatestConfirmed(ctx context.Context, tx ActiveTx) (Assertion, error)
 	CurrentChallengeManager(ctx context.Context, tx ActiveTx) (ChallengeManager, error)
 
@@ -181,7 +181,6 @@ type ChallengeVertex interface {
 	HasConfirmedSibling(
 		ctx context.Context,
 		tx ActiveTx,
-		vertex ChallengeVertex,
 	) (bool, error)
 
 	// Presumptive status / timer readers.
@@ -208,14 +207,12 @@ type ChallengeVertex interface {
 		tx ActiveTx,
 		history util.HistoryCommitment,
 		proof []common.Hash,
-		validator common.Address,
 	) (ChallengeVertex, error)
 	Merge(
 		ctx context.Context,
 		tx ActiveTx,
-		mergingTo ChallengeVertex,
+		mergingToHistory util.HistoryCommitment,
 		proof []common.Hash,
-		validator common.Address,
 	) (ChallengeVertex, error)
 
 	// Mutating calls for confirmations.

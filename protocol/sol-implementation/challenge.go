@@ -71,7 +71,7 @@ func (c *Challenge) AddLeaf(
 	if err != nil {
 		return nil, err
 	}
-	prevAssertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, uint64(assertion.PrevSeqNum()))
+	prevAssertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
 	if err != nil {
 		return nil, err
 	}

@@ -159,7 +159,7 @@ func (ac *AssertionChain) CreateAssertion(
 	postState *protocol.ExecutionState,
 	prevInboxMaxCount *big.Int,
 ) (protocol.Assertion, error) {
-	prev, err := ac.AssertionBySequenceNum(ctx, tx, prevAssertionId)
+	prev, err := ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(prevAssertionId))
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
@@ -196,7 +196,7 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse assertion creation log")
 	}
-	return ac.AssertionBySequenceNum(ctx, tx, assertionCreated.AssertionNum)
+	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
 }
 
 // CreateSuccessionChallenge creates a succession challenge

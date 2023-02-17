@@ -73,19 +73,19 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx prot
 }
 
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
-func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
+func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	return v.manager.caller.HasConfirmedSibling(v.manager.assertionChain.callOpts, v.id)
 }
 
 // IsPresumptiveSuccessor checks if a vertex is the presumptive successor
 // within its challenge.
-func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, error) {
+func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	return v.manager.caller.IsPresumptiveSuccessor(v.manager.assertionChain.callOpts, v.id)
 }
 
 // ChildrenAreAtOneStepFork checks if child vertices are at a one-step-fork in the challenge
 // it is contained in.
-func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, error) {
+func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	atFork, err := v.manager.caller.ChildrenAreAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
 	if err != nil {
 		errS := err.Error()
@@ -103,9 +103,10 @@ func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, e
 // commitment and a prefix proof.
 func (v *ChallengeVertex) Merge(
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	mergingToHistory util.HistoryCommitment,
 	proof []common.Hash,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
@@ -133,9 +134,10 @@ func (v *ChallengeVertex) Merge(
 // Bisect a challenge vertex by providing a history commitment.
 func (v *ChallengeVertex) Bisect(
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	history util.HistoryCommitment,
 	proof []common.Hash,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
@@ -165,7 +167,7 @@ func getVertexFromComponents(
 	opts *bind.CallOpts,
 	challengeId [32]byte,
 	history util.HistoryCommitment,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	vertexId, err := manager.caller.CalculateChallengeVertexId(
 		opts,
 		challengeId,
@@ -207,12 +209,12 @@ func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
 	}
 }
 
-func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) error {
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.ActiveTx) (protocol.Challenge, error) {
 	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return v.manager.writer.CreateSubChallenge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 		)
 	})
-	return err
+	return nil, err
 }
