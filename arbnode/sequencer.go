@@ -245,6 +245,7 @@ type Sequencer struct {
 	senderWhitelist map[common.Address]struct{}
 	nonceCache      *nonceCache
 	nonceFailures   *containers.LruCache[addressAndNonce, *nonceFailure]
+	onForwarderSet  chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -281,6 +282,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
 		pauseChan:       nil,
+		onForwarderSet:  make(chan struct{}, 1),
 	}
 	s.nonceFailures = containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict)
 	txStreamer.EnableReorgSequencing()
@@ -455,6 +457,13 @@ func (s *Sequencer) ForwardTo(url string) error {
 		close(s.pauseChan)
 		s.pauseChan = nil
 	}
+	if err == nil {
+		// If createBlocks is waiting for a new queue item, notify it that it needs to clear the nonceFailures.
+		select {
+		case s.onForwarderSet <- struct{}{}:
+		default:
+		}
+	}
 	return err
 }
 
@@ -511,14 +520,27 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 		case <-pause:
 		}
 	}
+	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
-		res := forwarder.PublishTransaction(item.ctx, item.tx)
-		if errors.Is(res, ErrNoSequencer) {
-			s.txRetryQueue.Push(item)
-		} else {
-			item.returnResult(res)
+		item := item
+		go func() {
+			res := forwarder.PublishTransaction(item.ctx, item.tx)
+			if errors.Is(res, ErrNoSequencer) {
+				publishResults <- &item
+			} else {
+				publishResults <- nil
+				item.returnResult(res)
+			}
+		}()
+	}
+	for range queueItems {
+		remainingItem := <-publishResults
+		if remainingItem != nil {
+			s.txRetryQueue.Push(*remainingItem)
 		}
 	}
+	// Evict any leftover nonce failures, forwarding them
+	s.nonceFailures.Clear()
 	return true
 }
 
@@ -535,12 +557,6 @@ func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
 
 func (s *Sequencer) expireNonceFailures() *time.Timer {
 	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
-	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
-		// If we're not chosen, we should clear out all any pending nonce failures.
-		// The expiry function will forward them to the new sequencer.
-		s.nonceFailures.Clear()
-		return nil
-	}
 	for {
 		_, failure, ok := s.nonceFailures.GetOldest()
 		if !ok {
@@ -684,6 +700,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			case <-nextNonceExpiryChan:
 				// No need to stop the previous timer since it already elapsed
 				nextNonceExpiryTimer = s.expireNonceFailures()
+				continue
+			case <-s.onForwarderSet:
+				// Make sure this notification isn't outdated
+				_, forwarder := s.GetPauseAndForwarder()
+				if forwarder != nil {
+					s.nonceFailures.Clear()
+				}
 				continue
 			case <-ctx.Done():
 				return false
