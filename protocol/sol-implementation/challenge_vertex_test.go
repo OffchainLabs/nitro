@@ -462,6 +462,160 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 	})
 }
 
+func TestChallengeVertex_Merge(t *testing.T) {
+	ctx := context.Background()
+	height1 := uint64(6)
+	height2 := uint64(7)
+	a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
+
+	// We add two leaves to the challenge.
+	manager, err := chain1.ChallengeManager()
+	require.NoError(t, err)
+	challenge.manager = manager
+	v1, err := challenge.AddLeaf(
+		ctx,
+		a1,
+		util.HistoryCommitment{
+			Height: height1,
+			Merkle: common.BytesToHash([]byte("nyan")),
+		},
+	)
+	require.NoError(t, err)
+
+	manager, err = chain2.ChallengeManager()
+	require.NoError(t, err)
+	challenge.manager = manager
+	v2, err := challenge.AddLeaf(
+		ctx,
+		a2,
+		util.HistoryCommitment{
+			Height: height2,
+			Merkle: common.BytesToHash([]byte("nyan2")),
+		},
+	)
+	require.NoError(t, err)
+
+	t.Run("vertex does not exist", func(t *testing.T) {
+		vertex := &ChallengeVertex{
+			id:      common.BytesToHash([]byte("junk")),
+			manager: challenge.manager,
+		}
+		_, err = vertex.Merge(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: common.BytesToHash([]byte("nyan4")),
+			},
+			make([]common.Hash, 0),
+		)
+		require.ErrorContains(t, err, "does not exist")
+	})
+	t.Run("winner already declared", func(t *testing.T) {
+		t.Skip("Need to add winner capabilities in order to test")
+	})
+	t.Run("cannot merge presumptive successor", func(t *testing.T) {
+		// V1 should be the presumptive successor here.
+		_, err = v1.Merge(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: common.BytesToHash([]byte("nyan4")),
+			},
+			make([]common.Hash, 0),
+		)
+		require.ErrorContains(t, err, "Cannot bisect presumptive")
+	})
+	t.Run("presumptive successor already confirmable", func(t *testing.T) {
+		backend, ok := chain1.backend.(*backends.SimulatedBackend)
+		require.Equal(t, true, ok)
+
+		wantCommit := common.BytesToHash([]byte("nyan4"))
+		_, err = v2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: wantCommit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+
+		for i := 0; i < 1000; i++ {
+			backend.Commit()
+		}
+
+		_, err = v1.Merge(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: wantCommit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.ErrorContains(t, err, "cannot set lower ps")
+	})
+	t.Run("invalid prefix history", func(t *testing.T) {
+		t.Skip("Need to add proof capabilities in solidity in order to test")
+	})
+	t.Run("OK", func(t *testing.T) {
+		height1 := uint64(6)
+		height2 := uint64(7)
+		a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
+
+		// We add two leaves to the challenge.
+		manager, err := chain1.ChallengeManager()
+		require.NoError(t, err)
+		challenge.manager = manager
+		v1, err := challenge.AddLeaf(
+			ctx,
+			a1,
+			util.HistoryCommitment{
+				Height: height1,
+				Merkle: common.BytesToHash([]byte("nyan")),
+			},
+		)
+		require.NoError(t, err)
+
+		manager, err = chain2.ChallengeManager()
+		require.NoError(t, err)
+		challenge.manager = manager
+		v2, err := challenge.AddLeaf(
+			ctx,
+			a2,
+			util.HistoryCommitment{
+				Height: height2,
+				Merkle: common.BytesToHash([]byte("nyan2")),
+			},
+		)
+		require.NoError(t, err)
+
+		wantCommit := common.BytesToHash([]byte("nyan4"))
+		bisectedTo, err := v2.Bisect(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: wantCommit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
+		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
+
+		mergedTo, err := v1.Merge(
+			ctx,
+			util.HistoryCommitment{
+				Height: 4,
+				Merkle: wantCommit,
+			},
+			make([]common.Hash, 0),
+		)
+		require.NoError(t, err)
+
+		require.Equal(t, bisectedTo.inner.HistoryRoot, mergedTo.inner.HistoryRoot)
+	})
+}
+
 func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 	ctx := context.Background()
 	height1 := uint64(6)
