@@ -7,10 +7,10 @@ import (
 	"compress/flate"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/rand"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,7 +60,7 @@ func NewClientConnection(
 		clientIp:        connectingIP,
 		desc:            desc,
 		creation:        time.Now(),
-		Name:            string(connectingIP) + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr().String(), rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
