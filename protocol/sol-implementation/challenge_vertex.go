@@ -35,7 +35,7 @@ func (v *ChallengeVertex) Merge(
 	if err != nil {
 		return nil, err
 	}
-	return getBisectedToVertex(
+	return getVertexFromComponents(
 		v.manager,
 		v.manager.assertionChain.callOpts,
 		v.inner.ChallengeId,
@@ -65,7 +65,7 @@ func (v *ChallengeVertex) Bisect(
 	if err != nil {
 		return nil, err
 	}
-	return getBisectedToVertex(
+	return getVertexFromComponents(
 		v.manager,
 		v.manager.assertionChain.callOpts,
 		v.inner.ChallengeId,
@@ -73,13 +73,13 @@ func (v *ChallengeVertex) Bisect(
 	)
 }
 
-func getBisectedToVertex(
+func getVertexFromComponents(
 	manager *ChallengeManager,
 	opts *bind.CallOpts,
 	challengeId [32]byte,
 	history util.HistoryCommitment,
 ) (*ChallengeVertex, error) {
-	bisectedToId, err := manager.caller.CalculateChallengeVertexId(
+	vertexId, err := manager.caller.CalculateChallengeVertexId(
 		opts,
 		challengeId,
 		history.Merkle,
@@ -88,16 +88,16 @@ func getBisectedToVertex(
 	if err != nil {
 		return nil, err
 	}
-	bisectedTo, err := manager.caller.GetVertex(
+	vertex, err := manager.caller.GetVertex(
 		opts,
-		bisectedToId,
+		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeVertex{
-		id:      bisectedToId,
-		inner:   bisectedTo,
+		id:      vertexId,
+		inner:   vertex,
 		manager: manager,
 	}, nil
 }
