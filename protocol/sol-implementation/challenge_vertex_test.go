@@ -14,7 +14,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	ctx := context.Background()
 	height1 := uint64(6)
 	height2 := uint64(7)
-	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
+	a1, a2, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	genesis, err := chain1.AssertionByID(0)
 	require.NoError(t, err)
@@ -31,6 +31,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	)
 	require.NoError(t, err)
 	_, err = challenge.AddLeaf(
+		ctx,
 		a2,
 		util.HistoryCommitment{
 			Height:    height2,
@@ -55,16 +56,16 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 
 func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 	ctx := context.Background()
-	chain, acc := setupAssertionChainWithChallengeManager(t)
 	height1 := uint64(6)
 	height2 := uint64(7)
-	a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-	genesis, err := chain.AssertionByID(common.Hash{})
+	genesis, err := chain.AssertionByID(0)
 	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
 	v1, err := challenge.AddLeaf(
+		ctx,
 		a1,
 		util.HistoryCommitment{
 			Height:    height1,
@@ -74,6 +75,7 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 	)
 	require.NoError(t, err)
 	v2, err := challenge.AddLeaf(
+		ctx,
 		a2,
 		util.HistoryCommitment{
 			Height:    height2,
@@ -82,7 +84,8 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.NoError(t, acc.backend.AdjustTime(time.Second*2000))
+
+	// TODO: Advance.
 	require.NoError(t, v1.ConfirmPsTimer(ctx))
 
 	manager, err := chain.ChallengeManager()
@@ -99,16 +102,16 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 
 func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	ctx := context.Background()
-	chain, _ := setupAssertionChainWithChallengeManager(t)
 	height1 := uint64(6)
 	height2 := uint64(7)
-	a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-	genesis, err := chain.AssertionByID(common.Hash{})
+	genesis, err := chain.AssertionByID(0)
 	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
 	v1, err := challenge.AddLeaf(
+		ctx,
 		a1,
 		util.HistoryCommitment{
 			Height:    height1,
@@ -118,6 +121,7 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	)
 	require.NoError(t, err)
 	v2, err := challenge.AddLeaf(
+		ctx,
 		a2,
 		util.HistoryCommitment{
 			Height:    height2,
@@ -139,6 +143,7 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	t.Run("the newly bisected vertex is now presumptive", func(t *testing.T) {
 		wantCommit := common.BytesToHash([]byte("nyan2"))
 		bisectedTo, err := v2.Bisect(
+			ctx,
 			util.HistoryCommitment{
 				Height:    4,
 				Merkle:    wantCommit,
@@ -148,13 +153,6 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
-
-		manager, err := chain.ChallengeManager()
-		require.NoError(t, err)
-		v1, err = manager.vertexById(v1.id)
-		require.NoError(t, err)
-		v2, err = manager.vertexById(v2.id)
-		require.NoError(t, err)
 
 		// V1 and V2 should not longer be presumptive.
 		isPs, err := v1.IsPresumptiveSuccessor(ctx)
@@ -175,16 +173,16 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 	ctx := context.Background()
 	t.Run("children are one step away", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
 		height1 := uint64(1)
 		height2 := uint64(1)
-		a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(0)
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
 		_, err = challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -194,6 +192,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = challenge.AddLeaf(
+			ctx,
 			a2,
 			util.HistoryCommitment{
 				Height:    height2,
@@ -205,7 +204,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 
 		manager, err := chain.ChallengeManager()
 		require.NoError(t, err)
-		rootV, err := manager.vertexById(challenge.inner.RootId)
+		rootV, err := manager.GetVertex(challenge.inner.RootId)
 		require.NoError(t, err)
 
 		atOSF, err := rootV.ChildrenAreAtOneStepFork(ctx)
@@ -213,16 +212,16 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		require.Equal(t, true, atOSF)
 	})
 	t.Run("different heights", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
 		height1 := uint64(6)
 		height2 := uint64(7)
-		a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(0)
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
 		_, err = challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -232,6 +231,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		)
 		require.NoError(t, err)
 		_, err = challenge.AddLeaf(
+			ctx,
 			a2,
 			util.HistoryCommitment{
 				Height:    height2,
@@ -251,16 +251,16 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		require.Equal(t, false, atOSF)
 	})
 	t.Run("two bisection leading to one step fork", func(t *testing.T) {
-		chain, _ := setupAssertionChainWithChallengeManager(t)
 		height1 := uint64(2)
 		height2 := uint64(2)
-		a1, a2, challenge := setupTopLevelFork(t, chain, height1, height2)
+		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-		genesis, err := chain.AssertionByID(common.Hash{})
+		genesis, err := chain.AssertionByID(0)
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
 		v1, err := challenge.AddLeaf(
+			ctx,
 			a1,
 			util.HistoryCommitment{
 				Height:    height1,
@@ -270,6 +270,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		)
 		require.NoError(t, err)
 		v2, err := challenge.AddLeaf(
+			ctx,
 			a2,
 			util.HistoryCommitment{
 				Height:    height2,
@@ -293,6 +294,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		// parent is at height 0.
 		commit := common.BytesToHash([]byte("nyan2"))
 		bisectedTo2, err := v2.Bisect(
+			ctx,
 			util.HistoryCommitment{
 				Height:    1,
 				Merkle:    commit,
@@ -303,13 +305,9 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(1), bisectedTo2.inner.Height.Uint64())
 
-		v1, err = manager.vertexById(v1.id)
-		require.NoError(t, err)
-		_, err = manager.vertexById(v2.id)
-		require.NoError(t, err)
-
 		commit = common.BytesToHash([]byte("nyan2fork"))
 		bisectedTo1, err := v1.Bisect(
+			ctx,
 			util.HistoryCommitment{
 				Height:    1,
 				Merkle:    commit,
