@@ -50,7 +50,7 @@ type SeqCoordinator struct {
 
 	lockoutUntil int64 // atomic
 
-	wantsLockoutMutex sync.Mutex // manages access to chosenOneUpdate and generally the wants lockout key
+	wantsLockoutMutex sync.Mutex // manages access to acquireLockoutAndWriteMessage and generally the wants lockout key
 	avoidLockout      int        // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
 
 	redisErrors int // error counter, from workthread
