@@ -84,6 +84,8 @@ type AssertionChain interface {
 	) (Challenge, error)
 }
 
+// ChallengeManager allows for retrieving details of challenges such
+// as challenges themselves, vertices, or constants such as the challenge period seconds.
 type ChallengeManager interface {
 	ChallengePeriodSeconds(
 		ctx context.Context, tx ActiveTx,
@@ -106,6 +108,9 @@ type ChallengeManager interface {
 	) (util.Option[Challenge], error)
 }
 
+// Assertion represents a top-level claim in the protocol about the
+// chain state created by a validator that stakes on their claim.
+// Assertions can be challenged.
 type Assertion interface{}
 
 // ChallengeType represents the enum with the same name
@@ -128,6 +133,10 @@ const (
 	AssertionRejected AssertionState
 )
 
+// Challenge represents a challenge instance in the protocol, with associated
+// methods about its lifecycle, getters of its internals, and methods that
+// make mutating calls to the chain for adding leaves and confirming / rejecting
+// a challenge.
 type Challenge interface {
 	// Getters.
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
@@ -168,6 +177,9 @@ type Challenge interface {
 	) (ChallengeVertex, error)
 }
 
+// ChallengeVertex represents a challenge vertex instance in the protocol, with associated
+// methods about its lifecycle, getters of its internals, and methods that
+// make mutating calls to the chain for making challenge moves.
 type ChallengeVertex interface {
 	// Getters.
 	SequenceNum(ctx context.Context, tx ActiveTx) (VertexSequenceNumber, error)
@@ -192,6 +204,10 @@ type ChallengeVertex interface {
 	ChildrenAreAtOneStepFork(ctx context.Context, tx ActiveTx) (bool, error)
 
 	// Mutating calls for challenge moves.
+	CreateSubChallenge(
+		ctx context.Context,
+		tx ActiveTx,
+	) (Challenge, error)
 	Bisect(
 		ctx context.Context,
 		tx ActiveTx,
