@@ -119,8 +119,8 @@ type ChallengeType uint8
 
 const (
 	BlockChallenge ChallengeType = iota
-	BigStepChallenge ChallengeType
-	SmallStepChallenge ChallengeType
+	BigStepChallenge
+	SmallStepChallenge
 )
 
 // AssertionState represents the enum with the same name
@@ -129,8 +129,8 @@ type AssertionState uint8
 
 const (
 	AssertionPending AssertionState = iota
-	AssertionConfirmed AssertionState
-	AssertionRejected AssertionState
+	AssertionConfirmed
+	AssertionRejected
 )
 
 // Challenge represents a challenge instance in the protocol, with associated
