@@ -137,9 +137,6 @@ func ProduceBlock(
 	)
 }
 
-// A marker for the sequencer that an ErrGasLimitReached is permanent
-var ErrMaxGasLimitReached = fmt.Errorf("%w", core.ErrGasLimitReached)
-
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
 	l1Header *L1IncomingMessageHeader,
@@ -174,7 +171,6 @@ func ProduceBlockAdvanced(
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
-	initialBlockGasLeft := blockGasLeft
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -270,9 +266,6 @@ func ProduceBlockAdvanced(
 			}
 
 			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
-				if computeGas > initialBlockGasLeft {
-					return nil, nil, ErrMaxGasLimitReached
-				}
 				return nil, nil, core.ErrGasLimitReached
 			}
 

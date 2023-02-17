@@ -789,7 +789,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
-			if madeBlock && !errors.Is(err, arbos.ErrMaxGasLimitReached) {
+			if madeBlock {
 				// There was already an earlier tx in the block; retry in a fresh block.
 				s.txRetryQueue.Push(queueItem)
 				continue
