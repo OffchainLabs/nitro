@@ -2,13 +2,14 @@ package solimpl
 
 import (
 	"context"
+	"math/big"
+	"testing"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"testing"
 )
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
@@ -161,7 +162,7 @@ func setupTopLevelFork(
 	)
 	require.NoError(t, err)
 
-	challenge, err := chain2.CreateSuccessionChallenge(ctx, 0)
+	challenge, err := chain2.CreateSuccessionChallenge(ctx, 0, common.Hash{})
 	require.NoError(t, err)
 	return a1, a2, challenge, chain1, chain2
 }
