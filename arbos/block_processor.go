@@ -85,7 +85,7 @@ type SequencingHooks struct {
 	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
-func noopSequencingHooks() *SequencingHooks {
+func NoopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
@@ -131,7 +131,7 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	hooks := noopSequencingHooks()
+	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
@@ -192,7 +192,7 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
-		hooks := noopSequencingHooks()
+		hooks := NoopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
 			tx = redeems[0]
