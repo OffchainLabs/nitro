@@ -410,7 +410,7 @@ type Config struct {
 	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
 	Validator              staker.L1ValidatorConfig    `koanf:"validator"`
-	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator" reload:"hot"`
+	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
 	Wasm                   WasmConfig                  `koanf:"wasm"`
 	SyncMonitor            SyncMonitorConfig           `koanf:"sync-monitor"`
