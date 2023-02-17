@@ -93,7 +93,7 @@ type ChallengeManager interface {
 	CalculateChallengeHash(
 		ctx context.Context,
 		tx ActiveTx,
-		assertionId AssertionHash,
+		itemId common.Hash,
 		challengeType ChallengeType,
 	) (ChallengeHash, error)
 	GetVertex(
