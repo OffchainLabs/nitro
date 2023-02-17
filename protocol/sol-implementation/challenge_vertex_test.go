@@ -236,7 +236,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 
 		manager, err := chain.ChallengeManager()
 		require.NoError(t, err)
-		rootV, err := manager.vertexById(challenge.inner.RootId)
+		rootV, err := manager.GetVertex(challenge.inner.RootId)
 		require.NoError(t, err)
 
 		atOSF, err := rootV.ChildrenAreAtOneStepFork(ctx)
@@ -275,7 +275,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 
 		manager, err := chain.ChallengeManager()
 		require.NoError(t, err)
-		rootV, err := manager.vertexById(challenge.inner.RootId)
+		rootV, err := manager.GetVertex(challenge.inner.RootId)
 		require.NoError(t, err)
 
 		atOSF, err := rootV.ChildrenAreAtOneStepFork(ctx)
@@ -311,7 +311,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(1), bisectedTo1.inner.Height.Uint64())
 
-		rootV, err = manager.vertexById(challenge.inner.RootId)
+		rootV, err = manager.GetVertex(challenge.inner.RootId)
 		require.NoError(t, err)
 
 		atOSF, err = rootV.ChildrenAreAtOneStepFork(ctx)

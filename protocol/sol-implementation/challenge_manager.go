@@ -112,27 +112,6 @@ func (cm *ChallengeManager) ChallengeByID(ctx context.Context, challengeID commo
 	}
 }
 
-// Returns a challenge vertex by its iD.
-func (cm *ChallengeManager) vertexById(vertexId common.Hash) (*ChallengeVertex, error) {
-	v, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
-	switch {
-	case err == nil:
-		return &ChallengeVertex{
-			id:      vertexId,
-			inner:   v,
-			manager: cm,
-		}, nil
-	case strings.Contains(err.Error(), "Vertex does not exist"):
-		return nil, errors.Wrapf(
-			ErrNotFound,
-			"vertex id %#x",
-			vertexId,
-		)
-	default:
-		return nil, err
-	}
-}
-
 //nolint:unused
 func (cm *ChallengeManager) miniStakeAmount() (*big.Int, error) {
 	return cm.caller.MiniStakeValue(cm.assertionChain.callOpts)
