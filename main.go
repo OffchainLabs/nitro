@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
+	goimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/OffchainLabs/challenge-protocol-v2/validator"

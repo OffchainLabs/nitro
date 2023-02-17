@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
+	goimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 

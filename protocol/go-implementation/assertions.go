@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -162,7 +161,6 @@ type ChallengeManagerInterface interface {
 
 type ChallengeImpl struct {
 	//nolint:unused
-	inner *solimpl.Challenge
 }
 
 //nolint:unused
@@ -175,19 +173,7 @@ func newChallengeImpl(
 	backend bind.ContractBackend,
 	challengeId common.Hash,
 ) (ChallengeInterface, error) {
-	assertionManager, err := solimpl.NewAssertionChain(ctx, contractAddr, txOpts, callOpts, stakerAddr, backend)
-	if err != nil {
-		return nil, err
-	}
-	challengeManager, err := assertionManager.ChallengeManager()
-	if err != nil {
-		return nil, err
-	}
-	challenge, err := challengeManager.GetChallenge(challengeId)
-	if err != nil {
-		return nil, err
-	}
-	return &ChallengeImpl{challenge}, nil
+	return &ChallengeImpl{}, nil
 }
 
 func (c *ChallengeImpl) RootAssertion(ctx context.Context, tx *ActiveTx) (*Assertion, error) {
@@ -242,7 +228,6 @@ func (c *ChallengeImpl) GetCreationTime(ctx context.Context, tx *ActiveTx) (time
 
 type ChallengeVertexImpl struct {
 	//nolint:unused
-	inner *solimpl.ChallengeVertex
 }
 
 //nolint:unused
@@ -255,19 +240,7 @@ func newChallengeVertexImpl(
 	backend bind.ContractBackend,
 	vertexId common.Hash,
 ) (ChallengeVertexInterface, error) {
-	assertionManager, err := solimpl.NewAssertionChain(ctx, contractAddr, txOpts, callOpts, stakerAddr, backend)
-	if err != nil {
-		return nil, err
-	}
-	challengeManager, err := assertionManager.ChallengeManager()
-	if err != nil {
-		return nil, err
-	}
-	vertex, err := challengeManager.GetVertex(vertexId)
-	if err != nil {
-		return nil, err
-	}
-	return &ChallengeVertexImpl{vertex}, nil
+	return &ChallengeVertexImpl{}, nil
 }
 
 func (c *ChallengeVertexImpl) ConfirmForPsTimer(ctx context.Context, tx *ActiveTx) error {
@@ -351,7 +324,6 @@ func (c *ChallengeVertexImpl) ChessClockExpired(ctx context.Context, tx *ActiveT
 }
 
 type ChallengeManagerImpl struct {
-	inner *solimpl.ChallengeManager
 }
 
 //nolint:unused
@@ -363,15 +335,7 @@ func newChallengeManagerImpl(
 	stakerAddr common.Address,
 	backend bind.ContractBackend,
 ) (ChallengeManagerInterface, error) {
-	assertionManager, err := solimpl.NewAssertionChain(ctx, contractAddr, txOpts, callOpts, stakerAddr, backend)
-	if err != nil {
-		return nil, err
-	}
-	challengeManager, err := assertionManager.ChallengeManager()
-	if err != nil {
-		return nil, err
-	}
-	return &ChallengeManagerImpl{challengeManager}, nil
+	return &ChallengeManagerImpl{}, nil
 }
 
 func (c *ChallengeManagerImpl) GetChallengeVerticesByCommitHashmap() map[ChallengeCommitHash]map[VertexCommitHash]ChallengeVertexInterface {
@@ -386,11 +350,7 @@ func (c *ChallengeManagerImpl) GetChallengesByCommitHash() map[ChallengeCommitHa
 
 func (c *ChallengeManagerImpl) ChallengePeriodLength(tx *ActiveTx) time.Duration {
 	tx.verifyRead()
-	sec, err := c.inner.ChallengePeriodSec()
-	if err != nil {
-		return 0
-	}
-	return time.Second * time.Duration(sec.Uint64())
+	panic("implement me")
 }
 
 func (c *ChallengeManagerImpl) AddToBalance(tx *ActiveTx, addr common.Address, amount *big.Int) {
