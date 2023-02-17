@@ -6,11 +6,10 @@ package solimpl
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
 	"strings"
 	"time"
-
-	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -184,21 +183,21 @@ func (ac *AssertionChain) CreateAssertion(
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, assertionId uint64) (*Challenge, error) {
+func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, assertionNum uint64, assertionHash common.Hash) (*Challenge, error) {
 	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
 		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
-			assertionId,
+			assertionNum,
 		)
 	})
-	if err2 := handleCreateSuccessionChallengeError(err, assertionId); err2 != nil {
+	if err2 := handleCreateSuccessionChallengeError(err, assertionNum); err2 != nil {
 		return nil, err2
 	}
 	manager, err := ac.ChallengeManager()
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeId(ctx, common.Hash{}, BlockChallenge)
+	challengeId, err := manager.CalculateChallengeId(ctx, assertionHash, BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
