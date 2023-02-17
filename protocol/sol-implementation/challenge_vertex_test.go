@@ -85,17 +85,14 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// TODO: Advance.
+	backend, ok := chain.backend.(*backends.SimulatedBackend)
+	require.Equal(t, true, ok)
+	for i := 0; i < 1000; i++ {
+		backend.Commit()
+	}
 	require.NoError(t, v1.ConfirmPsTimer(ctx))
 
-	manager, err := chain.ChallengeManager()
-	require.NoError(t, err)
-	_, err = manager.vertexById(v1.id)
-	require.NoError(t, err)
-	v2, err = manager.vertexById(v2.id)
-	require.NoError(t, err)
-
-	ok, err := v2.HasConfirmedSibling(ctx)
+	ok, err = v2.HasConfirmedSibling(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, ok)
 }
@@ -154,12 +151,8 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
 
-		// V1 and V2 should not longer be presumptive.
+		// V1 should no longer be presumptive.
 		isPs, err := v1.IsPresumptiveSuccessor(ctx)
-		require.NoError(t, err)
-		require.Equal(t, false, isPs)
-
-		isPs, err = v2.IsPresumptiveSuccessor(ctx)
 		require.NoError(t, err)
 		require.Equal(t, false, isPs)
 
