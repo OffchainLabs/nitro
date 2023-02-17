@@ -35,7 +35,7 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 
 	for _, name := range nodeNames {
 		priorities = priorities + name + ","
-		redisClient.Del(ctx, redisutil.LIVELINESS_KEY_PREFIX+name)
+		redisClient.Del(ctx, redisutil.WANTS_LOCKOUT_KEY_PREFIX+name)
 	}
 	priorities = priorities[:len(priorities)-1] // remove last ","
 	Require(t, redisClient.Set(ctx, redisutil.PRIORITIES_KEY, priorities, time.Duration(0)).Err())
@@ -137,8 +137,14 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 		}
 	}
 
+	var needsStop []*arbnode.Node
 	killNode := func(nodeNum int) {
-		nodes[nodeNum].StopAndWait()
+		if nodeNum%3 == 0 {
+			nodes[nodeNum].SeqCoordinator.PrepareForShutdown()
+			needsStop = append(needsStop, nodes[nodeNum])
+		} else {
+			nodes[nodeNum].StopAndWait()
+		}
 		nodes[nodeNum] = nil
 	}
 
@@ -257,6 +263,9 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	for nodeNum := range nodes {
 		killNode(nodeNum)
 	}
+	for _, node := range needsStop {
+		node.StopAndWait()
+	}
 
 }
 
@@ -294,6 +303,9 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	}
 
 	l2Info.GenerateAccount("User2")
+
+	nodeConfigDup := *nodeConfig
+	nodeConfig = &nodeConfigDup
 
 	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[1]
 	if !successCase {
