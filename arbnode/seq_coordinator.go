@@ -50,7 +50,7 @@ type SeqCoordinator struct {
 
 	lockoutUntil int64 // atomic
 
-	chosenUpdateMutex sync.Mutex // manages access to chosenOneUpdate
+	wantsLockoutMutex sync.Mutex // manages access to chosenOneUpdate and generally the wants lockout key
 	avoidLockout      int32      // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
 
 	redisErrors int // error counter, from workthread
@@ -258,8 +258,9 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 	if err != nil {
 		return err
 	}
-	c.chosenUpdateMutex.Lock()
-	defer c.chosenUpdateMutex.Unlock()
+	c.wantsLockoutMutex.Lock()
+	defer c.wantsLockoutMutex.Unlock()
+	setWantsLockout := c.avoidLockout <= 0
 	lockoutUntil := time.Now().Add(c.config.LockoutDuration)
 	err = c.Client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
@@ -303,7 +304,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			}
 		}
 		pipe.PExpireAt(ctx, redisutil.CHOSENSEQ_KEY, lockoutUntil)
-		if c.avoidLockout <= 0 {
+		if setWantsLockout {
 			myWantsLockoutKey := redisutil.WantsLockoutKeyFor(c.config.MyUrl())
 			pipe.Set(ctx, myWantsLockoutKey, redisutil.WANTS_LOCKOUT_VAL, initialDuration)
 			pipe.PExpireAt(ctx, myWantsLockoutKey, lockoutUntil)
@@ -320,6 +321,9 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 
 	if err != nil {
 		return err
+	}
+	if setWantsLockout {
+		c.reportedWantsLockout = true
 	}
 	isActiveSequencer.Update(1)
 	atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
@@ -342,12 +346,13 @@ func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
 }
 
 func (c *SeqCoordinator) wantsLockoutUpdate(ctx context.Context) error {
-	c.chosenUpdateMutex.Lock()
-	defer c.chosenUpdateMutex.Unlock()
-	return c.wantsLockoutUpdateWithChosenUpdateMutex(ctx)
+	c.wantsLockoutMutex.Lock()
+	defer c.wantsLockoutMutex.Unlock()
+	return c.wantsLockoutUpdateWithMutex(ctx)
 }
 
-func (c *SeqCoordinator) wantsLockoutUpdateWithChosenUpdateMutex(ctx context.Context) error {
+// Requires the caller hold the wantsLockoutMutex
+func (c *SeqCoordinator) wantsLockoutUpdateWithMutex(ctx context.Context) error {
 	if c.avoidLockout > 0 {
 		return nil
 	}
@@ -364,6 +369,7 @@ func (c *SeqCoordinator) wantsLockoutUpdateWithChosenUpdateMutex(ctx context.Con
 	if err != nil {
 		return fmt.Errorf("failed to update wants lockout key in redis: %w", err)
 	}
+	c.reportedWantsLockout = true
 	return nil
 }
 
@@ -404,17 +410,22 @@ func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) wantsLockoutRelease(ctx context.Context) error {
+	c.wantsLockoutMutex.Lock()
+	defer c.wantsLockoutMutex.Unlock()
+	if !c.reportedWantsLockout {
+		return nil
+	}
 	myWantsLockoutKey := redisutil.WantsLockoutKeyFor(c.config.MyUrl())
 	releaseErr := c.Client.Del(ctx, myWantsLockoutKey).Err()
-	if releaseErr == nil {
-		return nil
+	if releaseErr != nil {
+		// got error - was it still deleted?
+		readErr := c.Client.Get(ctx, myWantsLockoutKey).Err()
+		if !errors.Is(readErr, redis.Nil) {
+			return releaseErr
+		}
 	}
-	// got error - was it still deleted?
-	readErr := c.Client.Get(ctx, myWantsLockoutKey).Err()
-	if errors.Is(readErr, redis.Nil) {
-		return nil
-	}
-	return releaseErr
+	c.reportedWantsLockout = false
+	return nil
 }
 
 func (c *SeqCoordinator) retryAfterRedisError() time.Duration {
@@ -468,7 +479,6 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Warn("coordinator failed chosen-one keepalive", "err", err)
 		return c.retryAfterRedisError()
 	}
-	c.reportedWantsLockout = true
 	return c.noRedisError()
 }
 
@@ -621,14 +631,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	var wantsLockoutErr error
 	if c.sync.Synced() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
-		if wantsLockoutErr == nil {
-			c.reportedWantsLockout = true
-		}
-	} else if c.reportedWantsLockout {
+	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
-		if wantsLockoutErr == nil {
-			c.reportedWantsLockout = false
-		}
 	}
 	if wantsLockoutErr != nil {
 		log.Warn("coordinator failed to update its wanting lockout status", "err", wantsLockoutErr)
@@ -641,6 +645,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 }
 
 func (c *SeqCoordinator) DebugPrint() string {
+	c.wantsLockoutMutex.Lock()
+	defer c.wantsLockoutMutex.Unlock()
 	return fmt.Sprint("Url:", c.config.MyUrl(),
 		" prevChosenSequencer:", c.prevChosenSequencer,
 		" reportedWantsLockout:", c.reportedWantsLockout,
@@ -750,9 +756,9 @@ func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbsta
 // Returns true if the wanting the lockout key was released.
 // The seq coordinator is internally marked as disliking the lockout regardless, so you might want to call SeekLockout on error.
 func (c *SeqCoordinator) AvoidLockout(ctx context.Context) bool {
-	c.chosenUpdateMutex.Lock()
+	c.wantsLockoutMutex.Lock()
 	c.avoidLockout++
-	c.chosenUpdateMutex.Unlock()
+	c.wantsLockoutMutex.Unlock()
 	err := c.wantsLockoutRelease(ctx)
 	if err != nil {
 		log.Error("failed to release wanting the lockout in redis", "err", err)
@@ -787,12 +793,12 @@ func (c *SeqCoordinator) TryToHandoffChosenOne(ctx context.Context) bool {
 
 // Undoes the effects of AvoidLockout. AvoidLockout must've been called before an equal number of times.
 func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
-	c.chosenUpdateMutex.Lock()
-	defer c.chosenUpdateMutex.Unlock()
+	c.wantsLockoutMutex.Lock()
+	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
 	if c.sync.Synced() {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
-		err := c.wantsLockoutUpdateWithChosenUpdateMutex(ctx)
+		err := c.wantsLockoutUpdateWithMutex(ctx)
 		if err != nil {
 			log.Warn("failed to set wants lockout key in redis after unzombifying", "err", err)
 		}
