@@ -67,6 +67,7 @@ type SeqCoordinatorConfig struct {
 	RetryInterval         time.Duration              `koanf:"retry-interval"`
 	HandoffTimeout        time.Duration              `koanf:"handoff-timeout"`
 	SafeShutdownDelay     time.Duration              `koanf:"safe-shutdown-delay"`
+	ReleaseRetries        int                        `koanf:"release-retries"`
 	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
 	MyUrlImpl             string                     `koanf:"my-url"`
 	Signing               signature.SignVerifyConfig `koanf:"signer"`
@@ -91,6 +92,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
 	f.Duration(prefix+".handoff-timeout", DefaultSeqCoordinatorConfig.HandoffTimeout, "the maximum amount of time to spend waiting for another sequencer to accept the lockout when handing it off on shutdown or db compaction")
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
+	f.Int(prefix+".release-retries", DefaultSeqCoordinatorConfig.ReleaseRetries, "the number of times to retry releasing the wants lockout and chosen one status on shutdown")
 	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked as wanting the lockout if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
@@ -106,7 +108,8 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	UpdateInterval:        250 * time.Millisecond,
 	HandoffTimeout:        30 * time.Second,
 	SafeShutdownDelay:     5 * time.Second,
-	RetryInterval:         time.Second,
+	ReleaseRetries:        4,
+	RetryInterval:         50 * time.Millisecond,
 	MaxMsgPerPoll:         2000,
 	MyUrlImpl:             redisutil.INVALID_URL,
 	Signing:               signature.DefaultSignVerifyConfig,
@@ -119,8 +122,9 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	LockoutSpare:      time.Millisecond * 10,
 	SeqNumDuration:    time.Minute * 10,
 	UpdateInterval:    time.Millisecond * 10,
-	HandoffTimeout:    time.Duration(0),
-	SafeShutdownDelay: time.Duration(0),
+	HandoffTimeout:    time.Millisecond * 200,
+	SafeShutdownDelay: time.Millisecond * 100,
+	ReleaseRetries:    4,
 	RetryInterval:     time.Millisecond * 3,
 	MaxMsgPerPoll:     20,
 	MyUrlImpl:         redisutil.INVALID_URL,
@@ -462,7 +466,7 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 			return c.retryAfterRedisError()
 		}
 		c.prevChosenSequencer = setPrevChosenTo
-		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
+		log.Info("released chosen-coordinator lock", "myUrl", c.config.MyUrl(), "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
 	// Was, and still, the active sequencer
@@ -499,7 +503,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 		if err == nil {
 			c.prevChosenSequencer = chosenSeq
-			log.Info("chosen sequencer changed", "chosen", chosenSeq)
+			log.Info("chosen sequencer changing", "recommended", chosenSeq)
 		} else {
 			// The error was already logged in ForwardTo, just clean up state.
 			// Next run this will attempt to reconnect.
@@ -616,7 +620,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			c.prevChosenSequencer = ""
 			return c.retryAfterRedisError()
 		}
-		log.Info("caught chosen-coordinator lock")
+		log.Info("caught chosen-coordinator lock", "myUrl", c.config.MyUrl())
 		if c.delayedSequencer != nil {
 			err = c.delayedSequencer.ForceSequenceDelayed(ctx)
 			if err != nil {
@@ -714,7 +718,6 @@ func (c *SeqCoordinator) waitFor(ctx context.Context, check func() bool) bool {
 		select {
 		case <-ctx.Done():
 			// The caller should've already logged an info line with context about what it's waiting on
-			log.Warn("timed out waiting")
 			return false
 		case <-time.After(c.config.RetryInterval):
 		}
@@ -732,13 +735,27 @@ func (c *SeqCoordinator) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 	// We've just stopped our normal context so we need to use our parent's context.
 	parentCtx := c.StopWaiter.GetParentContext()
-	err := c.wantsLockoutRelease(parentCtx)
-	if err != nil {
-		log.Error("failed to release wanting the lockout on shutdown", "err", err)
+	for i := 0; i <= c.config.ReleaseRetries || c.config.ReleaseRetries < 0; i++ {
+		log.Info("releasing wants lockout key", "myUrl", c.config.MyUrl(), "attempt", i)
+		err := c.wantsLockoutRelease(parentCtx)
+		if err == nil {
+			c.noRedisError()
+			break
+		} else {
+			log.Error("failed to release wanting the lockout on shutdown", "err", err)
+			time.Sleep(c.retryAfterRedisError())
+		}
 	}
-	err = c.chosenOneRelease(parentCtx)
-	if err != nil {
-		log.Error("failed to release chosen one status on shutdown", "err", err)
+	for i := 0; i < c.config.ReleaseRetries || c.config.ReleaseRetries < 0; i++ {
+		log.Info("releasing chosen one", "myUrl", c.config.MyUrl(), "attempt", i)
+		err := c.chosenOneRelease(parentCtx)
+		if err == nil {
+			c.noRedisError()
+			break
+		} else {
+			log.Error("failed to release chosen one status on shutdown", "err", err)
+			time.Sleep(c.retryAfterRedisError())
+		}
 	}
 	_ = c.Client.Close()
 }
@@ -763,6 +780,7 @@ func (c *SeqCoordinator) AvoidLockout(ctx context.Context) bool {
 	c.wantsLockoutMutex.Lock()
 	c.avoidLockout++
 	c.wantsLockoutMutex.Unlock()
+	log.Info("avoiding lockout", "myUrl", c.config.MyUrl())
 	err := c.wantsLockoutRelease(ctx)
 	if err != nil {
 		log.Error("failed to release wanting the lockout in redis", "err", err)
@@ -776,7 +794,7 @@ func (c *SeqCoordinator) TryToHandoffChosenOne(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, c.config.HandoffTimeout)
 	defer cancel()
 	if c.CurrentlyChosen() {
-		log.Info("waiting for another sequencer to become chosen...", "timeout", c.config.HandoffTimeout)
+		log.Info("waiting for another sequencer to become chosen...", "timeout", c.config.HandoffTimeout, "myUrl", c.config.MyUrl())
 		success := c.waitFor(ctx, func() bool {
 			return !c.CurrentlyChosen()
 		})
@@ -800,6 +818,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	c.wantsLockoutMutex.Lock()
 	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
+	log.Info("seeking lockout", "myUrl", c.config.MyUrl())
 	if c.sync.Synced() {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx)
