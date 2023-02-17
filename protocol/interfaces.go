@@ -1,4 +1,4 @@
-package interfaces
+package protocol
 
 import (
 	"context"
@@ -60,7 +60,7 @@ type AssertionChain interface {
 		tx ActiveTx,
 		seqNum AssertionSequenceNumber,
 	) (*Assertion, error)
-	LatestConfirmed(ctx context.Context, tx ActiveTx) Assertion
+	LatestConfirmed(ctx context.Context, tx ActiveTx) (Assertion, error)
 	CurrentChallengeManager(ctx context.Context, tx ActiveTx) (ChallengeManager, error)
 
 	// Mutating methods.

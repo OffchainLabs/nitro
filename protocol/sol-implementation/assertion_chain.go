@@ -12,6 +12,7 @@ import (
 
 	"fmt"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -33,6 +34,27 @@ var (
 	ErrTooSoon             = errors.New("too soon to confirm assertion")
 	ErrInvalidHeight       = errors.New("invalid assertion height")
 )
+
+type activeTx struct {
+	readWriteTx bool
+	finalized   *big.Int
+	head        *big.Int
+}
+
+// FinalizedBlockNumber --
+func (a *activeTx) FinalizedBlockNumber() *big.Int {
+	return a.finalized
+}
+
+// HeadBlockNumber --
+func (a *activeTx) HeadBlockNumber() *big.Int {
+	return a.head
+}
+
+// ReadOnly --
+func (a *activeTx) ReadOnly() bool {
+	return !a.readWriteTx
+}
 
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
@@ -96,21 +118,25 @@ func NewAssertionChain(
 	return chain, nil
 }
 
-// ChallengePeriodSeconds
-func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
-	manager, err := ac.ChallengeManager()
-	if err != nil {
-		return time.Second, err
-	}
-	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
-	if err != nil {
-		return time.Second, err
-	}
-	return time.Second * time.Duration(res.Uint64()), nil
-}
+// // ChallengePeriodSeconds
+// func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
+// 	manager, err := ac.ChallengeManager()
+// 	if err != nil {
+// 		return time.Second, err
+// 	}
+// 	res, err := manager.caller.ChallengePeriodSec(ac.callOpts)
+// 	if err != nil {
+// 		return time.Second, err
+// 	}
+// 	return time.Second * time.Duration(res.Uint64()), nil
+// }
 
 // AssertionByID --
-func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error) {
+func (ac *AssertionChain) AssertionBySequenceNum(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	assertionNum uint64,
+) (protocol.Assertion, error) {
 	res, err := ac.userLogic.GetAssertion(ac.callOpts, assertionNum)
 	if err != nil {
 		return nil, err
@@ -131,6 +157,10 @@ func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error)
 			StateRoot: res.StateHash,
 		},
 	}, nil
+}
+
+func (ac *AssertionChain) LatestConfirmed(_ context.Context, _ protocol.ActiveTx) (protocol.Assertion, error) {
+	return nil, errors.New("unimplemented")
 }
 
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
