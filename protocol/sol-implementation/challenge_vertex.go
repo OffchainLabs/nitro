@@ -12,6 +12,33 @@ import (
 	"github.com/pkg/errors"
 )
 
+// HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
+func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
+	return v.manager.caller.HasConfirmedSibling(v.manager.assertionChain.callOpts, v.id)
+}
+
+// IsPresumptiveSuccessor checks if a vertex is the presumptive successor
+// within its challenge.
+func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, error) {
+	return v.manager.caller.IsPresumptiveSuccessor(v.manager.assertionChain.callOpts, v.id)
+}
+
+// ChildrenAreAtOneStepFork checks if child vertices are at a one-step-fork in the challenge
+// it is contained in.
+func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, error) {
+	atFork, err := v.manager.caller.ChildrenAreAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
+	if err != nil {
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "Lowest height not one above"):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+	return atFork, nil
+}
+
 // Merge a challenge vertex to another by providing its history
 // commitment and a prefix proof.
 func (v *ChallengeVertex) Merge(

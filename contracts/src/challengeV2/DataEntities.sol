@@ -83,7 +83,7 @@ interface IChallengeManagerExternalView {
 
     function hasConfirmedSibling(bytes32 vId) external view returns (bool);
 
-    function isAtOneStepFork(bytes32 vId) external view returns (bool);
+    function childrenAreAtOneStepFork(bytes32 vId) external view returns (bool);
 }
 
 interface IChallengeManagerCore {

@@ -545,6 +545,13 @@ contract ChallengeManagerImpl is IChallengeManager {
         return vertices.getCurrentPsTimer(vId);
     }
 
+    function isPresumptiveSuccessor(bytes32 vId) external view returns (bool) {
+        require(vertices[vId].exists(), "Vertex does not exist");
+        bytes32 predecessorId = vertices[vId].predecessorId;
+        require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
+        return vertices[predecessorId].psId == vId;
+    }
+
     // CHRIS: TODO: move to lib?
     function hasConfirmedSibling(bytes32 vId) external view returns (bool) {
         // CHRIS: TODO: consider removal - or put in a lib. COuld be a nice chec in the confirms?
@@ -578,7 +585,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         return false;
     }
 
-    function isAtOneStepFork(bytes32 vId) external view returns (bool) {
+    function childrenAreAtOneStepFork(bytes32 vId) external view returns (bool) {
         // CHRIS: TODO: remove this function - it hides error messages
         vertices.checkAtOneStepFork(vId);
         return true;

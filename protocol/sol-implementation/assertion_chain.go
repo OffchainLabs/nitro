@@ -108,6 +108,7 @@ func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
 	return time.Second * time.Duration(res.Uint64()), nil
 }
 
+
 // AssertionByID --
 func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error) {
 	res, err := ac.userLogic.GetAssertion(ac.callOpts, assertionNum)
