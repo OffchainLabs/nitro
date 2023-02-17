@@ -108,13 +108,6 @@ func (ac *AssertionChain) ChallengePeriodSeconds() (time.Duration, error) {
 	return time.Second * time.Duration(res.Uint64()), nil
 }
 
-func (ac *AssertionChain) NumAssertions() (uint64, error) {
-	return 0, nil
-}
-
-func (ac *AssertionChain) InboxAddress() (common.Address, error) {
-	return common.Address{}, nil
-}
 
 // AssertionByID --
 func (ac *AssertionChain) AssertionByID(assertionNum uint64) (*Assertion, error) {
