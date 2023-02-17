@@ -95,7 +95,7 @@ contract RollupTest is Test {
             stakeToken: address(0),
             wasmModuleRoot: WASM_MODULE_ROOT,
             loserStakeEscrow: address(0),
-            genesisBlockNum: 0
+            genesisBlockNum: 0,
             challengePeriodSeconds: 100,
             miniStakeValue: 1
         });
