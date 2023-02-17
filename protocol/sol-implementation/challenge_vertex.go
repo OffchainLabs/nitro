@@ -147,12 +147,16 @@ func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
 	}
 }
 
-func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) error {
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (*Challenge, error) {
 	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return v.manager.writer.CreateSubChallenge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 		)
 	})
-	return err
+	id, err := v.manager.CalculateChallengeId(ctx, v.id, BigStepChallenge)
+	if err != nil {
+		return nil, err
+	}
+	return v.manager.GetChallenge(id)
 }
