@@ -449,9 +449,8 @@ func (m *ChallengeManager) IssueOneStepProof(
 	)
 }
 
-// count is for the initial machine, which also means it's the position of the challenged machine
+// count is for the initial machine, which also means it's the position of the message that's digested in the challenge
 func (m *ChallengeManager) createExecutionBackend(ctx context.Context, initialCount arbutil.MessageIndex, tooFar bool) error {
-	// Get the next message and block header, and record the full block creation
 	if m.initialMachineMessageCount == initialCount && m.executionChallengeBackend != nil {
 		return nil
 	}
@@ -541,11 +540,11 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, fmt.Errorf("error getting execution challenge final state: %w", err)
 	}
 	if expectedStatus != computedStatus {
-		return nil, fmt.Errorf("after block %v expected status %v but got %v", initialCount, expectedStatus, computedStatus)
+		return nil, fmt.Errorf("after msg %d expected status %v but got %v", initialCount, expectedStatus, computedStatus)
 	}
 	if computedStatus == StatusFinished {
 		if computedState != expectedState {
-			return nil, fmt.Errorf("after block %v expected global state %v but got %v", initialCount, expectedState, computedState)
+			return nil, fmt.Errorf("after msg %d expected global state %v but got %v", initialCount, expectedState, computedState)
 		}
 	}
 	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "initial count", initialCount)

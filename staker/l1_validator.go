@@ -256,7 +256,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		} else {
 			log.Info("catching up to chain blocks", "target", target, "current", current)
 		}
-		return nil, false, err
+		return nil, false, nil
 	}
 
 	var validatedCount arbutil.MessageIndex
@@ -272,7 +272,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			return nil, false, fmt.Errorf("%w: not found validated block in blockchain", err)
 		}
 		if !caughtUp {
-			log.Info("catching up to laste validated block", "target", valInfo.GlobalState)
+			log.Info("catching up to last validated block", "target", valInfo.GlobalState)
+			return nil, false, nil
 		}
 		if err := v.updateBlockValidatorModuleRoot(ctx); err != nil {
 			return nil, false, fmt.Errorf("error updating block validator module root: %w", err)
@@ -353,21 +354,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			wrongNodesExist = true
 			continue
 		}
-		afterGs := nd.AfterState().GlobalState
-		requiredBatches := nd.AfterState().RequiredBatches()
-		if localBatchCount < requiredBatches {
-			return nil, false, fmt.Errorf("waiting for validator to catch up to assertion batches: %v/%v", localBatchCount, requiredBatches)
-		}
-		if requiredBatches > 0 {
-			haveAcc, err := v.inboxTracker.GetBatchAcc(requiredBatches - 1)
-			if err != nil {
-				return nil, false, fmt.Errorf("%w: error getting batch %v accumulator: localBatchCount: %d", err, requiredBatches-1, localBatchCount)
-			}
-			if haveAcc != nd.AfterInboxBatchAcc {
-				return nil, false, fmt.Errorf("missed sequencer batches reorg: at seq num %v have acc %v but assertion has acc %v", requiredBatches-1, haveAcc, nd.AfterInboxBatchAcc)
-			}
-		}
-		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, startState.GlobalState)
+		afterGS := nd.AfterState().GlobalState
+		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, ErrGlobalStateNotInChain) {
 			wrongNodesExist = true
 			log.Error("Found incorrect assertion", "err", err)
@@ -377,7 +365,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			return nil, false, fmt.Errorf("error getting block number from global state: %w", err)
 		}
 		if !caughtUp {
-			return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks. Current: %d target: %v", validatedCount, startState.GlobalState)
+			return nil, false, fmt.Errorf("waiting for node to catch up to assertion blocks. Current: %d target: %v", validatedCount, afterGS)
 		}
 		if validatedCount < nodeMsgCount {
 			return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks. %d / %d", validatedCount, nodeMsgCount)
@@ -386,7 +374,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			"found correct assertion",
 			"node", nd.NodeNum,
 			"count", validatedCount,
-			"blockHash", afterGs.BlockHash,
+			"blockHash", afterGS.BlockHash,
 		)
 		correctNode = existingNodeAction{
 			number: nd.NodeNum,
@@ -404,7 +392,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		if len(successorNodes) > 0 {
 			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
 		}
-		action, err := v.createNewNodeAction(ctx, stakerInfo, localBatchCount, prevInboxMaxCount, startCount, startState, validatedCount, validatedGlobalState, lastNodeHashIfExists)
+		action, err := v.createNewNodeAction(ctx, stakerInfo, prevInboxMaxCount, startCount, startState, validatedCount, validatedGlobalState, lastNodeHashIfExists)
 		if err != nil {
 			return nil, wrongNodesExist, fmt.Errorf("error generating create new node action (from pos %d to %d): %w", startCount, validatedCount, err)
 		}
@@ -417,7 +405,6 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 func (v *L1Validator) createNewNodeAction(
 	ctx context.Context,
 	stakerInfo *OurStakerInfo,
-	localBatchCount uint64,
 	prevInboxMaxCount *big.Int,
 	startCount arbutil.MessageIndex,
 	startState *validator.ExecutionState,
@@ -428,23 +415,13 @@ func (v *L1Validator) createNewNodeAction(
 	if !prevInboxMaxCount.IsUint64() {
 		return nil, fmt.Errorf("inbox max count %v isn't a uint64", prevInboxMaxCount)
 	}
-	minBatchCount := prevInboxMaxCount.Uint64()
-	if localBatchCount < minBatchCount {
-		// not enough batches in database
-		return nil, nil
-	}
-
-	if localBatchCount == 0 {
-		// we haven't validated anything
-		return nil, nil
-	}
 	if validatedCount < startCount {
 		// we haven't validated any new blocks
 		return nil, nil
 	}
-	if validatedGS.Batch < minBatchCount {
+	if validatedGS.Batch < prevInboxMaxCount.Uint64() {
 		// didn't validate enough batches
-		return nil, nil
+		return nil, fmt.Errorf("waiting for validator to validate enough batches %d/%d", validatedGS.Batch, prevInboxMaxCount)
 	}
 	batchValidated := validatedGS.Batch
 	if validatedGS.PosInBatch == 0 {
