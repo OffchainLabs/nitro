@@ -18,7 +18,7 @@ on:
 env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
-  WABT_VERSION: 1.0.24
+  WABT_VERSION: 1.0.32
 
 jobs:
   coverage:
