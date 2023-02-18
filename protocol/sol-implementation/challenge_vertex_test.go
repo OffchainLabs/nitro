@@ -880,8 +880,155 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			id:      v2Height1.inner.PredecessorId,
 			manager: challenge.manager,
 		}
-		bigStepChal, err := genesis.CreateSubChallenge(context.Background())
+		_, err = genesis.CreateSubChallenge(context.Background())
 		require.NoError(t, err)
-		t.Log(bigStepChal.id)
+	})
+}
+
+func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
+	ctx := context.Background()
+	height1 := uint64(6)
+	height2 := uint64(7)
+	a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
+
+	v1, err := challenge.AddBlockChallengeLeaf(
+		ctx,
+		a1,
+		util.HistoryCommitment{
+			Height: height1,
+			Merkle: common.BytesToHash([]byte("nyan")),
+		},
+	)
+	require.NoError(t, err)
+
+	v2, err := challenge.AddBlockChallengeLeaf(
+		ctx,
+		a2,
+		util.HistoryCommitment{
+			Height: height2,
+			Merkle: common.BytesToHash([]byte("nyan2")),
+		},
+	)
+	require.NoError(t, err)
+
+	v1Commit := common.BytesToHash([]byte("nyan"))
+	v2Commit := common.BytesToHash([]byte("nyan2"))
+	v2Height4, err := v2.Bisect(
+		ctx,
+		util.HistoryCommitment{
+			Height: 4,
+			Merkle: v2Commit,
+		},
+		make([]common.Hash, 0),
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
+	require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
+
+	v1Height4, err := v1.Bisect(
+		ctx,
+		util.HistoryCommitment{
+			Height: 4,
+			Merkle: v1Commit,
+		},
+		make([]common.Hash, 0),
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
+	require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
+
+	v2Height2, err := v2Height4.Bisect(
+		ctx,
+		util.HistoryCommitment{
+			Height: 2,
+			Merkle: v2Commit,
+		},
+		make([]common.Hash, 0),
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
+	require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
+
+	v1Height2, err := v1Height4.Bisect(
+		ctx,
+		util.HistoryCommitment{
+			Height: 2,
+			Merkle: v1Commit,
+		},
+		make([]common.Hash, 0),
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
+	require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
+
+	v1Height1, err := v1Height2.Bisect(
+		ctx,
+		util.HistoryCommitment{
+			Height: 1,
+			Merkle: v1Commit,
+		},
+		make([]common.Hash, 0),
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
+	require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
+
+	v2Height1, err := v2Height2.Bisect(
+		ctx,
+		util.HistoryCommitment{
+			Height: 1,
+			Merkle: v2Commit,
+		},
+		make([]common.Hash, 0),
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
+	require.Equal(t, v2Commit[:], v2Height1.inner.HistoryRoot[:])
+
+	genesisVertex, err := challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, v2Height1.inner.PredecessorId)
+	require.NoError(t, err)
+	genesis := &ChallengeVertex{
+		inner:   genesisVertex,
+		id:      v2Height1.inner.PredecessorId,
+		manager: challenge.manager,
+	}
+	bigStepChal, err := genesis.CreateSubChallenge(context.Background())
+	require.NoError(t, err)
+
+	t.Run("empty history root", func(t *testing.T) {
+		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, v1Height1, util.HistoryCommitment{})
+		require.ErrorContains(t, err, "execution reverted: Empty historyRoot")
+	})
+	t.Run("vertex does not exist", func(t *testing.T) {
+		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, &ChallengeVertex{
+			id: [32]byte{},
+		}, util.HistoryCommitment{
+			Height: 2,
+			Merkle: v1Commit,
+		})
+		require.ErrorContains(t, err, "execution reverted: Vertex does not exist")
+	})
+	t.Run("claim has invalid succession challenge", func(t *testing.T) {
+		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, v1Height2, util.HistoryCommitment{
+			Height: 2,
+			Merkle: v1Commit,
+		})
+		require.ErrorContains(t, err, "execution reverted: Claim has invalid succession challenge")
+	})
+	t.Run("create sub challenge leaf rival 1", func(t *testing.T) {
+		v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, v1Height1, util.HistoryCommitment{
+			Height: 1,
+			Merkle: v1Commit,
+		})
+		require.NoError(t, err)
+		require.False(t, v.id == [32]byte{}) // Should have a non-empty ID
+	})
+	t.Run("create sub challenge leaf rival 2", func(t *testing.T) {
+		v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, v2Height1, util.HistoryCommitment{
+			Height: 1,
+			Merkle: v2Commit,
+		})
+		require.NoError(t, err)
+		require.False(t, v.id == [32]byte{}) // Should have a non-empty ID
 	})
 }
