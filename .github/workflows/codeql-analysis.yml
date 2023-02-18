@@ -30,6 +30,7 @@ jobs:
       security-events: write
     env:
       CODEQL_EXTRACTOR_GO_BUILD_TRACING: 'on'
+      WABT_VERSION: 1.0.32
 
     strategy:
       fail-fast: false
