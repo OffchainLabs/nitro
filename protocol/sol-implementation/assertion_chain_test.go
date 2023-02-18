@@ -32,18 +32,18 @@ func TestCreateAssertion(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
@@ -85,18 +85,18 @@ func TestCreateAssertion(t *testing.T) {
 			backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  common.BytesToHash([]byte("evil hash")),
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		chain.txOpts.From = accs[2].accountAddr
@@ -139,18 +139,18 @@ func TestAssertion_Confirm(t *testing.T) {
 			assertionBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  assertionBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
@@ -194,18 +194,18 @@ func TestAssertion_Reject(t *testing.T) {
 			assertionBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  assertionBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
@@ -252,18 +252,18 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
@@ -296,18 +296,18 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
