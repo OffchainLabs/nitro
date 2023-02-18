@@ -3,7 +3,6 @@
 
 use eyre::{eyre, ErrReport};
 use ouroboros::self_referencing;
-use parking_lot::Mutex;
 use prover::{
     programs::{
         config::{PricingParams, StylusConfig},
@@ -11,11 +10,7 @@ use prover::{
     },
     utils::Bytes32,
 };
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView,
@@ -97,8 +92,8 @@ pub struct SystemStateData {
     pub pricing: PricingParams,
 }
 
-type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
-type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> u64 + Send>;
+pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
+pub type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> u64 + Send>;
 
 pub struct StorageAPI {
     load_bytes32: LoadBytes32,
@@ -234,32 +229,6 @@ impl StorageAPI {
 
     pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
         (self.store_bytes32)(key, value)
-    }
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct SimpleStorageAPI(Arc<Mutex<HashMap<Bytes32, Bytes32>>>);
-
-impl SimpleStorageAPI {
-    pub fn get(&self, key: &Bytes32) -> Option<Bytes32> {
-        self.0.lock().get(key).cloned()
-    }
-
-    pub fn set(&self, key: Bytes32, value: Bytes32) {
-        self.0.lock().insert(key, value);
-    }
-
-    pub fn getter(&self) -> LoadBytes32 {
-        let storage = self.clone();
-        Box::new(move |key| (storage.get(&key).unwrap().to_owned(), 0))
-    }
-
-    pub fn setter(&self) -> StoreBytes32 {
-        let storage = self.clone();
-        Box::new(move |key, value| {
-            drop(storage.set(key, value));
-            0
-        })
     }
 }
 

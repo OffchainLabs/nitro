@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
+use crate::env::{MaybeEscape, WasmEnv, WasmEnvMut};
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
@@ -24,8 +24,7 @@ pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscap
 }
 
 pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> MaybeEscape {
-    let mut state = WasmEnv::begin(&mut env)?;
-    state.buy_evm_gas(100)?;
+    WasmEnv::begin(&mut env)?;
 
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;

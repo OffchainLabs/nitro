@@ -98,7 +98,7 @@ pub unsafe extern "C" fn stylus_compile(
 
 #[repr(C)]
 pub struct GoAPI {
-    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32) -> (Bytes32, u64),
+    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
     pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32) -> u64,
     pub id: usize,
 }

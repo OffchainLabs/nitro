@@ -11,8 +11,8 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
-Bytes32 getBytes32WrapperC(size_t api, Bytes32 key);
-void    setBytes32WrapperC(size_t api, Bytes32 key, Bytes32 value);
+Bytes32  getBytes32WrapperC(size_t api, Bytes32 key, uint64_t * cost);
+uint64_t setBytes32WrapperC(size_t api, Bytes32 key, Bytes32 value);
 */
 import "C"
 import (
@@ -51,7 +51,7 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 	module := db.GetCompiledWasmCode(program, params.version)
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
-		return db.GetState(program, key), 0
+		return db.GetState(program, key), vm.WasmStateLoadCost(db, program, key)
 	}
 	setBytes32 := func(key, value common.Hash) uint64 {
 		db.SetState(program, key, value)
@@ -75,23 +75,25 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 }
 
 //export getBytes32API
-func getBytes32API(api usize, key bytes32) bytes32 {
+func getBytes32API(api usize, key bytes32, cost *uint64) bytes32 {
 	closure, err := getAPI(api)
 	if err != nil {
 		log.Error(err.Error())
 		return bytes32{}
 	}
-	return hashToBytes32(closure.getBytes32(key.toHash()))
+	value, gas := closure.getBytes32(key.toHash())
+	*cost = gas
+	return hashToBytes32(value)
 }
 
 //export setBytes32API
-func setBytes32API(api usize, key, value bytes32) {
+func setBytes32API(api usize, key, value bytes32) uint64 {
 	closure, err := getAPI(api)
 	if err != nil {
 		log.Error(err.Error())
-		return
+		return 0
 	}
-	closure.setBytes32(key.toHash(), value.toHash())
+	return closure.setBytes32(key.toHash(), value.toHash())
 }
 
 func (value bytes32) toHash() common.Hash {

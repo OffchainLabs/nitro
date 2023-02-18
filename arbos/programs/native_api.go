@@ -11,14 +11,14 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
-extern Bytes32 getBytes32API(size_t api, Bytes32 key);
-extern void    setBytes32API(size_t api, Bytes32 key, Bytes32 value);
+extern Bytes32  getBytes32API(size_t api, Bytes32 key, uint64_t * cost);
+extern uint64_t setBytes32API(size_t api, Bytes32 key, Bytes32 value);
 
-Bytes32 getBytes32WrapperC(size_t api, Bytes32 key) {
-    return getBytes32API(api, key);
+Bytes32 getBytes32WrapperC(size_t api, Bytes32 key, uint64_t * cost) {
+    return getBytes32API(api, key, cost);
 }
-void setBytes32WrapperC(size_t api, Bytes32 key, Bytes32 value) {
-    setBytes32API(api, key, value);
+uint64_t setBytes32WrapperC(size_t api, Bytes32 key, Bytes32 value) {
+    return setBytes32API(api, key, value);
 }
 */
 import "C"
@@ -34,8 +34,8 @@ import (
 var apiClosures sync.Map
 var apiIds int64 // atomic
 
-type getBytes32Type func(key common.Hash) common.Hash
-type setBytes32Type func(key, value common.Hash)
+type getBytes32Type func(key common.Hash) (common.Hash, uint64)
+type setBytes32Type func(key, value common.Hash) uint64
 
 type apiClosure struct {
 	getBytes32 getBytes32Type

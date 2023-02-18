@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{SimpleStorageAPI, SystemStateData, WasmEnv},
+    env::{SystemStateData, WasmEnv},
     host, GoAPI,
 };
 use arbutil::{operator::OperatorCode, Color};
@@ -130,17 +130,14 @@ impl NativeInstance {
         let set = api.set_bytes32;
         let id = api.id;
 
-        let get_bytes32 = Box::new(move |key| unsafe { get(id, key) });
+        let get_bytes32 = Box::new(move |key| unsafe {
+            let mut cost = 0;
+            let value = get(id, key, &mut cost as *mut _);
+            (value, cost)
+        });
         let set_bytes32 = Box::new(move |key, value| unsafe { set(id, key, value) });
 
         env.set_storage_api(get_bytes32, set_bytes32)
-    }
-
-    pub(crate) fn set_simple_storage_api(&mut self) -> SimpleStorageAPI {
-        let storage = SimpleStorageAPI::default();
-        self.env_mut()
-            .set_storage_api(storage.getter(), storage.setter());
-        storage
     }
 }
 
