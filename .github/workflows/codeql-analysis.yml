@@ -110,6 +110,9 @@ jobs:
         make -j
         make install
 
+    - name: Add wabt to path
+      run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
+      
     - name: Cache cbrotli
       uses: actions/cache@v3
       id: cache-cbrotli
