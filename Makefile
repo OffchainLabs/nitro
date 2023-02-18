@@ -132,7 +132,7 @@ test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
 
-wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms)
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) arbitrator/prover/src/bulk_memory_internal.wasm
 	@printf $(done)
 
 clean:
