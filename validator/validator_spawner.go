@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/pkg/errors"
 )
 
@@ -71,9 +72,9 @@ func (v *ValidationSpawner) loadEntryToMachine(ctx context.Context, entry *Valid
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",
-				"err", err, "address", call.Address, "blockNr", entry.Id,
+				"err", colors.Uncolor(err.Error()), "address", call.Address, "blockNr", entry.Id,
 			)
-			return fmt.Errorf("error adding user wasm for proving: %w", err)
+			return fmt.Errorf("error adding user wasm for proving:\n%w", err)
 		}
 	}
 	if entry.HasDelayedMsg {

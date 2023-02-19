@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{SystemStateData, WasmEnv},
+    env::{MeterData, WasmEnv},
     host, GoAPI,
 };
 use arbutil::{operator::OperatorCode, Color};
@@ -89,7 +89,7 @@ impl NativeInstance {
 
         let env = func_env.as_mut(&mut store);
         env.memory = Some(memory);
-        env.state = Some(SystemStateData {
+        env.meter = Some(MeterData {
             gas_left,
             gas_status,
             pricing: env.config.pricing,

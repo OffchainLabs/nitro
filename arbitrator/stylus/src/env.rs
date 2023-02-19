@@ -74,8 +74,8 @@ pub struct WasmEnv {
     pub outs: Vec<u8>,
     /// Mechanism for reading and writing the module's memory
     pub memory: Option<Memory>,
-    /// Mechanism for accessing stylus-specific global state
-    pub state: Option<SystemStateData>,
+    /// Mechanism for accessing metering-specific global state
+    pub meter: Option<MeterData>,
     /// Mechanism for reading and writing permanent storage
     pub storage: Option<StorageAPI>,
     /// The instance's config
@@ -83,7 +83,7 @@ pub struct WasmEnv {
 }
 
 #[derive(Clone, Debug)]
-pub struct SystemStateData {
+pub struct MeterData {
     /// The amount of wasm gas left
     pub gas_left: Global,
     /// Whether the instance has run out of gas
@@ -128,40 +128,40 @@ impl WasmEnv {
         (env.data_mut(), memory)
     }
 
-    pub fn state<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> SystemState<'a> {
-        let state = env.data().state.clone().unwrap();
+    pub fn meter<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> MeterState<'a> {
+        let state = env.data().meter.clone().unwrap();
         let store = env.as_store_mut();
-        SystemState::new(state, store)
+        MeterState::new(state, store)
     }
 
-    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<SystemState<'a>, Escape> {
-        let mut state = Self::state(env);
+    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<MeterState<'a>, Escape> {
+        let mut state = Self::meter(env);
         state.buy_gas(state.pricing.hostio_cost)?;
         Ok(state)
     }
 }
 
-pub struct SystemState<'a> {
-    state: SystemStateData,
+pub struct MeterState<'a> {
+    state: MeterData,
     store: StoreMut<'a>,
 }
 
-impl<'a> Deref for SystemState<'a> {
-    type Target = SystemStateData;
+impl<'a> Deref for MeterState<'a> {
+    type Target = MeterData;
 
     fn deref(&self) -> &Self::Target {
         &self.state
     }
 }
 
-impl<'a> DerefMut for SystemState<'a> {
+impl<'a> DerefMut for MeterState<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state
     }
 }
 
-impl<'a> SystemState<'a> {
-    fn new(state: SystemStateData, store: StoreMut<'a>) -> Self {
+impl<'a> MeterState<'a> {
+    fn new(state: MeterData, store: StoreMut<'a>) -> Self {
         Self { state, store }
     }
 
@@ -198,7 +198,7 @@ impl<'a> SystemState<'a> {
     }
 }
 
-impl<'a> MeteredMachine for SystemState<'a> {
+impl<'a> MeteredMachine for MeterState<'a> {
     fn gas_left(&mut self) -> MachineMeter {
         let store = &mut self.store;
         let state = &self.state;
