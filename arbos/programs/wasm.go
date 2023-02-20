@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -40,7 +41,15 @@ func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) e
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+func callUserWasm(
+	db vm.StateDB,
+	_ *vm.EVMInterpreter,
+	_ *util.TracingInfo,
+	program addr,
+	calldata []byte,
+	gas *uint64,
+	params *goParams,
+) ([]byte, error) {
 	wasm, err := getWasm(db, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)

@@ -135,7 +135,11 @@ impl NativeInstance {
             let value = get(id, key, &mut cost as *mut _);
             (value, cost)
         });
-        let set_bytes32 = Box::new(move |key, value| unsafe { set(id, key, value) });
+        let set_bytes32 = Box::new(move |key, value| unsafe {
+            let mut cost = 0;
+            let status = set(id, key, value, &mut cost as *mut _);
+            (cost, status != 0)
+        });
 
         env.set_storage_api(get_bytes32, set_bytes32)
     }

@@ -53,8 +53,8 @@ func PrintYellow(args ...interface{}) {
 }
 
 func Uncolor(text string) string {
-	uncolor, _ := regexp.Compile("\x1b\\[([0-9]+;)*[0-9]+m")
-	unwhite, _ := regexp.Compile("\\s+")
+	uncolor := regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
+	unwhite := regexp.MustCompile(`\s+`)
 
 	text = uncolor.ReplaceAllString(text, "")
 	return unwhite.ReplaceAllString(text, " ")

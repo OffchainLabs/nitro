@@ -1,8 +1,6 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use wasmer::AsStoreMut;
-
 use crate::env::{MaybeEscape, WasmEnv, WasmEnvMut};
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
@@ -44,7 +42,7 @@ pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
     let value = memory.read_bytes32(value)?;
-    let cost = data.storage()?.store_bytes32(key, value);
+    let cost = data.storage()?.store_bytes32(key, value)?;
 
     let mut meter = WasmEnv::meter(&mut env);
     meter.buy_evm_gas(cost)

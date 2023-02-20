@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -43,7 +44,15 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+func callUserWasm(
+	db vm.StateDB,
+	interpreter *vm.EVMInterpreter,
+	tracingInfo *util.TracingInfo,
+	program common.Address,
+	calldata []byte,
+	gas *uint64,
+	params *goParams,
+) ([]byte, error) {
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program, params.version)
 	}
@@ -51,13 +60,22 @@ func callUserWasm(db vm.StateDB, program common.Address, calldata []byte, gas *u
 	module := db.GetCompiledWasmCode(program, params.version)
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
+		if tracingInfo != nil {
+			tracingInfo.RecordStorageGet(key)
+		}
 		cost := vm.WasmStateLoadCost(db, program, key)
 		return db.GetState(program, key), cost
 	}
-	setBytes32 := func(key, value common.Hash) uint64 {
+	setBytes32 := func(key, value common.Hash) (uint64, error) {
+		if tracingInfo != nil {
+			tracingInfo.RecordStorageSet(key, value)
+		}
+		if interpreter.ReadOnly() {
+			return 0, vm.ErrWriteProtection
+		}
 		cost := vm.WasmStateStoreCost(db, program, key, value)
 		db.SetState(program, key, value)
-		return cost
+		return cost, nil
 	}
 
 	output := rustVec()
@@ -89,13 +107,18 @@ func getBytes32API(api usize, key bytes32, cost *uint64) bytes32 {
 }
 
 //export setBytes32API
-func setBytes32API(api usize, key, value bytes32) uint64 {
+func setBytes32API(api usize, key, value bytes32, cost *uint64) usize {
 	closure, err := getAPI(api)
 	if err != nil {
 		log.Error(err.Error())
-		return 0
+		return 1
 	}
-	return closure.setBytes32(key.toHash(), value.toHash())
+	gas, err := closure.setBytes32(key.toHash(), value.toHash())
+	if err != nil {
+		return 1
+	}
+	*cost = gas
+	return 0
 }
 
 func (value bytes32) toHash() common.Hash {

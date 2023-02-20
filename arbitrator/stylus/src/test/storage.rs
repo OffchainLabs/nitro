@@ -30,7 +30,7 @@ impl TestStorageAPI {
         let storage = self.clone();
         Box::new(move |key, value| {
             drop(storage.set(key, value));
-            22100
+            (22100, false)
         })
     }
 }

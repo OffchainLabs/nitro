@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::{eyre, ErrReport};
+use eyre::{bail, eyre, ErrReport};
 use ouroboros::self_referencing;
 use prover::{
     programs::{
@@ -93,7 +93,7 @@ pub struct MeterData {
 }
 
 pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
-pub type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> u64 + Send>;
+pub type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> (u64, bool) + Send>;
 
 pub struct StorageAPI {
     load_bytes32: LoadBytes32,
@@ -227,8 +227,12 @@ impl StorageAPI {
         (self.load_bytes32)(key)
     }
 
-    pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
-        (self.store_bytes32)(key, value)
+    pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> eyre::Result<u64> {
+        let (cost, err) = (self.store_bytes32)(key, value);
+        if err {
+            bail!("write protection");
+        }
+        Ok(cost)
     }
 }
 

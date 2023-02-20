@@ -2221,26 +2221,26 @@ impl Machine {
                 Opcode::ReadPreImage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) = self.preimage_resolver.get(self.context, hash) {
-                            let offset = usize::try_from(offset).unwrap();
-                            let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
-                            let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-                            let success = module.memory.store_slice_aligned(ptr.into(), read);
-                            assert!(success, "Failed to write to previously read memory");
-                            self.value_stack.push(Value::I32(len as u32));
-                        } else {
-                            eprintln!(
-                                "{} for hash {}",
-                                "Missing requested preimage".red(),
-                                hash.red(),
-                            );
-                            self.print_backtrace(true);
-                            bail!("missing requested preimage for hash {}", hash);
-                        }
-                    } else {
-                        error!();
-                    }
+
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!()
+                    };
+                    let Some(preimage) = self.preimage_resolver.get(self.context, hash) else {
+                        eprintln!(
+                            "{} for hash {}",
+                            "Missing requested preimage".red(),
+                            hash.red(),
+                        );
+                        self.print_backtrace(true);
+                        bail!("missing requested preimage for hash {}", hash)
+                    };
+
+                    let offset = usize::try_from(offset).unwrap();
+                    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
+                    let read = preimage.get(offset..(offset + len)).unwrap_or_default();
+                    let success = module.memory.store_slice_aligned(ptr.into(), read);
+                    assert!(success, "Failed to write to previously read memory");
+                    self.value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadInboxMessage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();

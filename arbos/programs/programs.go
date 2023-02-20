@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -111,6 +112,8 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 
 func (p Programs) CallProgram(
 	statedb vm.StateDB,
+	interpreter *vm.EVMInterpreter,
+	tracingInfo *util.TracingInfo,
 	program common.Address,
 	calldata []byte,
 	gas *uint64,
@@ -133,7 +136,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(statedb, program, calldata, gas, params)
+	return callUserWasm(statedb, interpreter, tracingInfo, program, calldata, gas, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
