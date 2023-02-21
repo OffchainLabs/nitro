@@ -28,6 +28,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
+	var delayEvery int
+	if simpletxloops > 1 {
+		l1NodeConfigA.BatchPoster.MaxBatchPostInterval = time.Millisecond * 500
+		delayEvery = simpletxloops / 3
+	}
+
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
@@ -76,7 +82,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 			_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 			Require(t, err)
 		}
-
+		if delayEvery > 0 && i%delayEvery == (delayEvery-1) {
+			<-time.After(time.Second)
+		}
 	}
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, perTransfer, nil)
