@@ -154,6 +154,9 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (*Challenge, e
 			v.id,
 		)
 	})
+	if err != nil {
+		return nil, err
+	}
 	id, err := v.manager.CalculateChallengeId(ctx, v.id, BigStepChallenge)
 	if err != nil {
 		return nil, err
