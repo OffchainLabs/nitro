@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::env::{MaybeEscape, WasmEnv, WasmEnvMut};
+use prover::programs::prelude::*;
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
@@ -28,7 +29,7 @@ pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> 
 
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
-    let (value, cost) = data.storage()?.load_bytes32(key);
+    let (value, cost) = data.evm()?.load_bytes32(key);
     memory.write_slice(dest, &value.0)?;
 
     let mut meter = WasmEnv::meter(&mut env);
@@ -36,14 +37,37 @@ pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> 
 }
 
 pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -> MaybeEscape {
-    let mut state = WasmEnv::begin(&mut env)?;
-    state.require_evm_gas(2300)?; // params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
+    let mut meter = WasmEnv::begin(&mut env)?;
+    meter.require_evm_gas(2300)?; // params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
 
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
     let value = memory.read_bytes32(value)?;
-    let cost = data.storage()?.store_bytes32(key, value)?;
+    let cost = data.evm()?.store_bytes32(key, value)?;
 
     let mut meter = WasmEnv::meter(&mut env);
     meter.buy_evm_gas(cost)
+}
+
+pub(crate) fn call_contract(
+    mut env: WasmEnvMut,
+    contract: u32,
+    calldata: u32,
+    calldata_len: u32,
+    value: u32,
+) -> MaybeEscape {
+    let mut meter = WasmEnv::begin(&mut env)?;
+    let gas = meter.gas_left().into();
+
+    let (data, memory) = WasmEnv::data(&mut env);
+    let contract = memory.read_bytes20(contract)?;
+    let input = memory.read_slice(calldata, calldata_len)?;
+    let value = memory.read_bytes32(value)?;
+
+    let (output, cost, status) = data.evm()?.call_contract(contract, input, gas, value);
+
+    let mut meter = WasmEnv::meter(&mut env);
+    meter.buy_gas(cost)?;
+
+    Ok(())
 }

@@ -442,7 +442,7 @@ fn test_storage() -> Result<()> {
     args.extend(value);
 
     let mut native = NativeInstance::from_path(filename, &config)?;
-    let storage = native.set_test_storage_api();
+    let storage = native.set_test_evm_api();
 
     run_native(&mut native, &args)?;
     assert_eq!(storage.get(&Bytes32(key)), Some(Bytes32(value)));

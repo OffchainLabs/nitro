@@ -97,8 +97,9 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 }
 
-func (p *TxProcessor) ExecuteWASM(contract *vm.Contract, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
 
+	contract := scope.Contract
 	program := contract.Address()
 
 	var tracingInfo *util.TracingInfo
@@ -108,10 +109,10 @@ func (p *TxProcessor) ExecuteWASM(contract *vm.Contract, input []byte, interpret
 	}
 
 	return p.state.Programs().CallProgram(
+		scope,
 		p.evm.StateDB,
 		interpreter,
 		tracingInfo,
-		contract.Address(),
 		input,
 		&contract.Gas,
 	)

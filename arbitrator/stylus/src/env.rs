@@ -7,8 +7,9 @@ use prover::{
     programs::{
         config::{PricingParams, StylusConfig},
         meter::{MachineMeter, MeteredMachine},
+        run::UserOutcomeKind,
     },
-    utils::Bytes32,
+    utils::{Bytes20, Bytes32},
 };
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
@@ -54,6 +55,11 @@ impl MemoryViewContainer {
         Ok(data)
     }
 
+    pub fn read_bytes20(&self, ptr: u32) -> eyre::Result<Bytes20> {
+        let data = self.read_slice(ptr, 20)?;
+        Ok(data.try_into()?)
+    }
+
     pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
         let data = self.read_slice(ptr, 32)?;
         Ok(data.try_into()?)
@@ -76,8 +82,8 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Mechanism for accessing metering-specific global state
     pub meter: Option<MeterData>,
-    /// Mechanism for reading and writing permanent storage
-    pub storage: Option<StorageAPI>,
+    /// Mechanism for reading and writing permanent storage, and doing calls
+    pub evm: Option<EvmAPI>,
     /// The instance's config
     pub config: StylusConfig,
 }
@@ -94,10 +100,13 @@ pub struct MeterData {
 
 pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 pub type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> (u64, bool) + Send>;
+pub type CallContract =
+    Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (Vec<u8>, u64, UserOutcomeKind) + Send>;
 
-pub struct StorageAPI {
+pub struct EvmAPI {
     load_bytes32: LoadBytes32,
     store_bytes32: StoreBytes32,
+    call_contract: CallContract,
 }
 
 impl WasmEnv {
@@ -108,15 +117,21 @@ impl WasmEnv {
         }
     }
 
-    pub fn set_storage_api(&mut self, load_bytes32: LoadBytes32, store_bytes32: StoreBytes32) {
-        self.storage = Some(StorageAPI {
+    pub fn set_evm_api(
+        &mut self,
+        load_bytes32: LoadBytes32,
+        store_bytes32: StoreBytes32,
+        call_contract: CallContract,
+    ) {
+        self.evm = Some(EvmAPI {
             load_bytes32,
             store_bytes32,
+            call_contract,
         })
     }
 
-    pub fn storage(&mut self) -> eyre::Result<&mut StorageAPI> {
-        self.storage.as_mut().ok_or_else(|| eyre!("no storage api"))
+    pub fn evm(&mut self) -> eyre::Result<&mut EvmAPI> {
+        self.evm.as_mut().ok_or_else(|| eyre!("no evm api"))
     }
 
     pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
@@ -222,7 +237,7 @@ impl<'a> MeteredMachine for MeterState<'a> {
     }
 }
 
-impl StorageAPI {
+impl EvmAPI {
     pub fn load_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         (self.load_bytes32)(key)
     }
@@ -233,6 +248,16 @@ impl StorageAPI {
             bail!("write protection");
         }
         Ok(cost)
+    }
+
+    pub fn call_contract(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        gas: u64,
+        value: Bytes32,
+    ) -> (Vec<u8>, u64, UserOutcomeKind) {
+        (self.call_contract)(contract, input, gas, value)
     }
 }
 

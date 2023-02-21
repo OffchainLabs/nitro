@@ -10,9 +10,9 @@ use prover::utils::Bytes32;
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone, Default)]
-pub(crate) struct TestStorageAPI(Arc<Mutex<HashMap<Bytes32, Bytes32>>>);
+pub(crate) struct TestEvmAPI(Arc<Mutex<HashMap<Bytes32, Bytes32>>>);
 
-impl TestStorageAPI {
+impl TestEvmAPI {
     pub fn get(&self, key: &Bytes32) -> Option<Bytes32> {
         self.0.lock().get(key).cloned()
     }
@@ -36,9 +36,10 @@ impl TestStorageAPI {
 }
 
 impl NativeInstance {
-    pub(crate) fn set_test_storage_api(&mut self) -> TestStorageAPI {
-        let api = TestStorageAPI::default();
-        self.env_mut().set_storage_api(api.getter(), api.setter());
+    pub(crate) fn set_test_evm_api(&mut self) -> TestEvmAPI {
+        let api = TestEvmAPI::default();
+        let call = Box::new(|_, _, _, _| panic!("can't call contracts"));
+        self.env_mut().set_evm_api(api.getter(), api.setter(), call);
         api
     }
 }

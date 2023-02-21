@@ -111,10 +111,10 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 }
 
 func (p Programs) CallProgram(
+	scope *vm.ScopeContext,
 	statedb vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
-	program common.Address,
 	calldata []byte,
 	gas *uint64,
 ) ([]byte, error) {
@@ -122,7 +122,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	programVersion, err := p.machineVersions.GetUint32(program.Hash())
+	programVersion, err := p.machineVersions.GetUint32(scope.Contract.Address().Hash())
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(statedb, interpreter, tracingInfo, program, calldata, gas, params)
+	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, gas, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {

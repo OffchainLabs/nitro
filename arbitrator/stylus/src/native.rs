@@ -3,7 +3,7 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    host, GoAPI,
+    host, GoAPI, RustVec,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
@@ -128,6 +128,7 @@ impl NativeInstance {
 
         let get = api.get_bytes32;
         let set = api.set_bytes32;
+        let call = api.call_contract;
         let id = api.id;
 
         let get_bytes32 = Box::new(move |key| unsafe {
@@ -140,8 +141,19 @@ impl NativeInstance {
             let status = set(id, key, value, &mut cost as *mut _);
             (cost, status != 0)
         });
+        let call_contract = Box::new(move |contract, input, gas: u64, value| unsafe {
+            let data_ptr = std::ptr::null_mut();
+            let data_len = std::ptr::null_mut();
+            let data_cap = std::ptr::null_mut();
 
-        env.set_storage_api(get_bytes32, set_bytes32)
+            let mut gas_left = gas;
+            let data = RustVec::new(input, data_ptr, data_len, data_cap);
+            let status = call(id, contract, data, &mut gas_left as *mut _, value);
+            let output = Vec::from_raw_parts(*data_ptr, *data_len, *data_cap);
+            (output, gas - gas_left, status)
+        });
+
+        env.set_evm_api(get_bytes32, set_bytes32, call_contract)
     }
 }
 

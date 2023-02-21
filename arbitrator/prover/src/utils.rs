@@ -120,6 +120,113 @@ impl fmt::Debug for Bytes32 {
     }
 }
 
+/// cbindgen:field-names=[bytes]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(C)]
+pub struct Bytes20(pub [u8; 20]);
+
+impl Deref for Bytes20 {
+    type Target = [u8; 20];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Bytes20 {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl AsRef<[u8]> for Bytes20 {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Borrow<[u8]> for Bytes20 {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<[u8; 20]> for Bytes20 {
+    fn from(x: [u8; 20]) -> Self {
+        Self(x)
+    }
+}
+
+impl From<u32> for Bytes20 {
+    fn from(x: u32) -> Self {
+        let mut b = [0u8; 20];
+        b[(32 - 4)..].copy_from_slice(&x.to_be_bytes());
+        Self(b)
+    }
+}
+
+impl From<u64> for Bytes20 {
+    fn from(x: u64) -> Self {
+        let mut b = [0u8; 20];
+        b[(32 - 8)..].copy_from_slice(&x.to_be_bytes());
+        Self(b)
+    }
+}
+
+impl From<usize> for Bytes20 {
+    fn from(x: usize) -> Self {
+        let mut b = [0u8; 20];
+        b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
+        Self(b)
+    }
+}
+
+impl TryFrom<&[u8]> for Bytes20 {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let value: [u8; 20] = value.try_into()?;
+        Ok(Self(value))
+    }
+}
+
+impl TryFrom<Vec<u8>> for Bytes20 {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_slice())
+    }
+}
+
+impl IntoIterator for Bytes20 {
+    type Item = u8;
+    type IntoIter = std::array::IntoIter<u8, 20>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIterator::into_iter(self.0)
+    }
+}
+
+type GenericBytes20 = digest::generic_array::GenericArray<u8, digest::generic_array::typenum::U20>;
+
+impl From<GenericBytes20> for Bytes20 {
+    fn from(x: GenericBytes20) -> Self {
+        <[u8; 20]>::from(x).into()
+    }
+}
+
+impl fmt::Display for Bytes20 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(self))
+    }
+}
+
+impl fmt::Debug for Bytes20 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(self))
+    }
+}
+
 /// A Vec<u8> allocated with libc::malloc
 pub struct CBytes {
     ptr: *mut u8,

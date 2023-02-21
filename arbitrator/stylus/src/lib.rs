@@ -3,7 +3,10 @@
 
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::{programs::prelude::*, utils::Bytes32};
+use prover::{
+    programs::prelude::*,
+    utils::{Bytes20, Bytes32},
+};
 use run::RunProgram;
 use std::mem;
 
@@ -58,6 +61,12 @@ pub struct RustVec {
 }
 
 impl RustVec {
+    fn new(vec: Vec<u8>, ptr: *mut *mut u8, len: *mut usize, cap: *mut usize) -> Self {
+        let mut rust_vec = Self { ptr, len, cap };
+        unsafe { rust_vec.write(vec) };
+        rust_vec
+    }
+
     unsafe fn write(&mut self, mut vec: Vec<u8>) {
         let ptr = vec.as_mut_ptr();
         let len = vec.len();
@@ -99,7 +108,9 @@ pub unsafe extern "C" fn stylus_compile(
 #[repr(C)]
 pub struct GoAPI {
     pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
-    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64) -> usize,
+    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64) -> u8,
+    pub call_contract:
+        unsafe extern "C" fn(usize, Bytes20, RustVec, *mut u64, Bytes32) -> UserOutcomeKind,
     pub id: usize,
 }
 
@@ -157,4 +168,12 @@ pub unsafe extern "C" fn stylus_call(
 pub unsafe extern "C" fn stylus_free(vec: RustVec) {
     let vec = Vec::from_raw_parts(*vec.ptr, *vec.len, *vec.cap);
     mem::drop(vec)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn stylus_overwrite_vec(vec: RustVec, data: GoSliceData) {
+    let mut vec = Vec::from_raw_parts(*vec.ptr, *vec.len, *vec.cap);
+    vec.clear();
+    vec.extend(data.slice());
+    mem::forget(vec)
 }

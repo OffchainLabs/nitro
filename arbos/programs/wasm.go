@@ -42,14 +42,15 @@ func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) e
 }
 
 func callUserWasm(
+	scope *vm.ScopeContext,
 	db vm.StateDB,
 	_ *vm.EVMInterpreter,
 	_ *util.TracingInfo,
-	program addr,
 	calldata []byte,
 	gas *uint64,
 	params *goParams,
 ) ([]byte, error) {
+	program := scope.Contract.Address()
 	wasm, err := getWasm(db, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
