@@ -257,6 +257,19 @@ func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack
 	clientConfig.BlockValidator.JWTSecret = ""
 }
 
+func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
+	if !nodeConfig.ValidatorRequired() {
+		return
+	}
+	if nodeConfig.BlockValidator.URL != "" {
+		return
+	}
+	conf := valnode.TestValidationConfig
+	conf.UseJit = useJit
+	_, valStack := createTestValidationNode(t, ctx, &conf)
+	configByValidationNode(t, nodeConfig, valStack)
+}
+
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
@@ -436,10 +449,7 @@ func createTestNodeOnL1WithConfigImpl(
 		nodeConfig.DelayedSequencer.Enable = false
 	}
 
-	if nodeConfig.ValidatorRequired() {
-		_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-		configByValidationNode(t, nodeConfig, valStack)
-	}
+	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	var err error
 	currentNode, err = arbnode.CreateNode(
@@ -468,10 +478,7 @@ func CreateTestL2WithConfig(
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
 
-	if nodeConfig.ValidatorRequired() {
-		_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-		configByValidationNode(t, nodeConfig, valStack)
-	}
+	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
 	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
@@ -575,10 +582,7 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	if nodeConfig.ValidatorRequired() {
-		_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-		configByValidationNode(t, nodeConfig, valStack)
-	}
+	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)

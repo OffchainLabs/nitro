@@ -111,7 +111,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "ws://localhost/",
+	URL:                      "",
 	JWTSecret:                "",
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
