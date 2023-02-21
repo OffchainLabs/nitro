@@ -18,7 +18,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	height2 := uint64(1)
 	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
-		_, err := challenge.AddLeaf(
+		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
 			&Assertion{
 				chain: chain1,
@@ -36,7 +36,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	})
 	t.Run("invalid height", func(t *testing.T) {
 		// Pass in a junk assertion that has no predecessor.
-		_, err := challenge.AddLeaf(
+		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
 			&Assertion{
 				chain: chain1,
@@ -56,7 +56,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		t.Skip("Needs proofs implemented in solidity")
 	})
 	t.Run("empty history commitment", func(t *testing.T) {
-		_, err := challenge.AddLeaf(
+		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
 			a1,
 			util.HistoryCommitment{
@@ -76,7 +76,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		t.Skip()
 	})
 	t.Run("OK", func(t *testing.T) {
-		_, err := challenge.AddLeaf(
+		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
 			a1,
 			util.HistoryCommitment{
@@ -87,7 +87,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("already exists", func(t *testing.T) {
-		_, err := challenge.AddLeaf(
+		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
 			a1,
 			util.HistoryCommitment{

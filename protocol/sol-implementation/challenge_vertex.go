@@ -216,5 +216,12 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 			v.id,
 		)
 	})
-	return nil, err
+	if err != nil {
+		return nil, err
+	}
+	id, err := v.manager.CalculateChallengeId(ctx, v.id, BigStepChallenge)
+	if err != nil {
+		return nil, err
+	}
+	return v.manager.GetChallenge(id)
 }
