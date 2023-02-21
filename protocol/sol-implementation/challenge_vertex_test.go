@@ -1139,12 +1139,14 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 
 func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
 	height1 := uint64(6)
 	height2 := uint64(7)
 	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	v1, err := challenge.AddBlockChallengeLeaf(
 		ctx,
+		tx,
 		a1,
 		util.HistoryCommitment{
 			Height: height1,
@@ -1155,6 +1157,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 
 	v2, err := challenge.AddBlockChallengeLeaf(
 		ctx,
+		tx,
 		a2,
 		util.HistoryCommitment{
 			Height: height2,
@@ -1165,8 +1168,9 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 
 	v1Commit := common.BytesToHash([]byte("nyan"))
 	v2Commit := common.BytesToHash([]byte("nyan2"))
-	v2Height4, err := v2.Bisect(
+	v2Height4V, err := v2.Bisect(
 		ctx,
+		tx,
 		util.HistoryCommitment{
 			Height: 4,
 			Merkle: v2Commit,
@@ -1174,11 +1178,13 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		make([]common.Hash, 0),
 	)
 	require.NoError(t, err)
+	v2Height4 := v2Height4V.(*ChallengeVertex)
 	require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
 	require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
 
-	v1Height4, err := v1.Bisect(
+	v1Height4V, err := v1.Bisect(
 		ctx,
+		tx,
 		util.HistoryCommitment{
 			Height: 4,
 			Merkle: v1Commit,
@@ -1186,11 +1192,13 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		make([]common.Hash, 0),
 	)
 	require.NoError(t, err)
+	v1Height4 := v1Height4V.(*ChallengeVertex)
 	require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
 	require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
 
-	v2Height2, err := v2Height4.Bisect(
+	v2Height2V, err := v2Height4.Bisect(
 		ctx,
+		tx,
 		util.HistoryCommitment{
 			Height: 2,
 			Merkle: v2Commit,
@@ -1198,11 +1206,13 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		make([]common.Hash, 0),
 	)
 	require.NoError(t, err)
+	v2Height2 := v2Height2V.(*ChallengeVertex)
 	require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
 	require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
 
-	v1Height2, err := v1Height4.Bisect(
+	v1Height2V, err := v1Height4.Bisect(
 		ctx,
+		tx,
 		util.HistoryCommitment{
 			Height: 2,
 			Merkle: v1Commit,
@@ -1210,11 +1220,13 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		make([]common.Hash, 0),
 	)
 	require.NoError(t, err)
+	v1Height2 := v1Height2V.(*ChallengeVertex)
 	require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
 	require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
 
-	v1Height1, err := v1Height2.Bisect(
+	v1Height1V, err := v1Height2.Bisect(
 		ctx,
+		tx,
 		util.HistoryCommitment{
 			Height: 1,
 			Merkle: v1Commit,
@@ -1222,11 +1234,13 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		make([]common.Hash, 0),
 	)
 	require.NoError(t, err)
+	v1Height1 := v1Height1V.(*ChallengeVertex)
 	require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
 	require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
 
-	v2Height1, err := v2Height2.Bisect(
+	v2Height1V, err := v2Height2.Bisect(
 		ctx,
+		tx,
 		util.HistoryCommitment{
 			Height: 1,
 			Merkle: v2Commit,
@@ -1234,6 +1248,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		make([]common.Hash, 0),
 	)
 	require.NoError(t, err)
+	v2Height1 := v2Height1V.(*ChallengeVertex)
 	require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
 	require.Equal(t, v2Commit[:], v2Height1.inner.HistoryRoot[:])
 
@@ -1244,17 +1259,17 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		id:      v2Height1.inner.PredecessorId,
 		manager: challenge.manager,
 	}
-	bigStepChal, err := genesis.CreateSubChallenge(context.Background())
+	bigStepChal, err := genesis.CreateSubChallenge(context.Background(), tx)
 	require.NoError(t, err)
 
-	v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, v1Height1, util.HistoryCommitment{
+	v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
 		Height: 1,
 		Merkle: v1Commit,
 	})
 	require.NoError(t, err)
 
 	t.Run("can't confirm sub challenge", func(t *testing.T) {
-		require.ErrorContains(t, v.ConfirmPsTimer(ctx), "ps timer has not exceeded challenge period")
+		require.ErrorContains(t, v.ConfirmForPsTimer(ctx, tx), "ps timer has not exceeded challenge period")
 	})
 	t.Run("can confirm sub challenge", func(t *testing.T) {
 		backend, ok := chain.backend.(*backends.SimulatedBackend)
@@ -1262,6 +1277,6 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			backend.Commit()
 		}
-		require.NoError(t, v.ConfirmPsTimer(ctx))
+		require.NoError(t, v.ConfirmForPsTimer(ctx, tx))
 	})
 }
