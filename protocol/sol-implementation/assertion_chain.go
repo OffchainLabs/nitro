@@ -15,6 +15,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
@@ -37,26 +38,29 @@ type activeTx struct {
 	readWriteTx bool
 	finalized   *big.Int
 	head        *big.Int
+	sender      common.Address
 }
 
-// FinalizedBlockNumber --
 func (a *activeTx) FinalizedBlockNumber() *big.Int {
 	return a.finalized
 }
 
-// HeadBlockNumber --
 func (a *activeTx) HeadBlockNumber() *big.Int {
 	return a.head
 }
 
-// ReadOnly --
 func (a *activeTx) ReadOnly() bool {
 	return !a.readWriteTx
+}
+
+func (a *activeTx) Sender() common.Address {
+	return a.sender
 }
 
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
 	bind.ContractBackend
+	BlockchainReader
 	ReceiptFetcher
 }
 
@@ -70,6 +74,11 @@ type ChainCommiter interface {
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
+// BlockchainReader --
+type BlockchainReader interface {
+	Blockchain() *core.BlockChain
 }
 
 // AssertionChain is a wrapper around solgen bindings
@@ -114,6 +123,34 @@ func NewAssertionChain(
 	chain.rollup = coreBinding
 	chain.userLogic = assertionChainBinding
 	return chain, nil
+}
+
+// Tx enables a mutating call to the chain.
+func (chain *AssertionChain) Tx(clo func(tx protocol.ActiveTx) error) error {
+	head := chain.backend.Blockchain().CurrentHeader()
+	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
+	tx := &activeTx{
+		readWriteTx: true,
+		head:        head.Number,
+		finalized:   finalized.Number(),
+		sender:      chain.stakerAddr,
+	}
+	err := clo(tx)
+	return err
+}
+
+// Call enables a non-mutating call to the chain.
+func (chain *AssertionChain) Call(clo func(tx protocol.ActiveTx) error) error {
+	head := chain.backend.Blockchain().CurrentHeader()
+	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
+	tx := &activeTx{
+		readWriteTx: false,
+		head:        head.Number,
+		finalized:   finalized.Number(),
+		sender:      chain.stakerAddr,
+	}
+	err := clo(tx)
+	return err
 }
 
 // AssertionBySequenceNum --
