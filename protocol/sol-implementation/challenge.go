@@ -133,25 +133,32 @@ func (c *Challenge) AddBlockChallengeLeaf(
 func (c *Challenge) AddBigStepChallengeLeaf(
 	ctx context.Context,
 	tx protocol.ActiveTx,
-	vertex *ChallengeVertex,
+	vertex protocol.ChallengeVertex,
 	history util.HistoryCommitment,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	lastLeafProof := make([]byte, 0)
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
 
+	prev, err := vertex.Prev(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if prev.IsNone() {
+		return nil, errors.New("no prev vertex")
+	}
 	parentVertex, err := c.manager.caller.GetVertex(
 		c.manager.assertionChain.callOpts,
-		vertex.inner.PredecessorId,
+		prev.Unwrap().Id(),
 	)
 	if err != nil {
 		return nil, err
 	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
-		ClaimId:                vertex.id,
+		ClaimId:                vertex.Id(),
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
 		FirstState:             parentVertex.HistoryRoot,

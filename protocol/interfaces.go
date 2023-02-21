@@ -153,13 +153,13 @@ type Challenge interface {
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
 
 	// Mutating calls.
-	AddLeaf(
+	AddBlockChallengeLeaf(
 		ctx context.Context,
 		tx ActiveTx,
 		assertion Assertion,
 		history util.HistoryCommitment,
 	) (ChallengeVertex, error)
-	AddSubchallengeLeaf(
+	AddBigStepChallengeLeaf(
 		ctx context.Context,
 		tx ActiveTx,
 		vertex ChallengeVertex,
@@ -172,6 +172,7 @@ type Challenge interface {
 // make mutating calls to the chain for making challenge moves.
 type ChallengeVertex interface {
 	// Getters.
+	Id() [32]byte
 	SequenceNum(ctx context.Context, tx ActiveTx) (VertexSequenceNumber, error)
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)

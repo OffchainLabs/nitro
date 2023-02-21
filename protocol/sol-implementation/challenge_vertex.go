@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+func (v *ChallengeVertex) Id() [32]byte {
+	return v.id
+}
+
 func (v *ChallengeVertex) SequenceNum(ctx context.Context, tx protocol.ActiveTx) (protocol.VertexSequenceNumber, error) {
 	return 0, errors.New("unimplemented")
 }
@@ -219,9 +223,17 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 	if err != nil {
 		return nil, err
 	}
-	id, err := v.manager.CalculateChallengeId(ctx, v.id, BigStepChallenge)
+	// TODO: DO not use empty assertion
+	challengeId, err := v.manager.CalculateChallengeHash(ctx, tx, v.id, protocol.BigStepChallenge)
 	if err != nil {
 		return nil, err
 	}
-	return v.manager.GetChallenge(id)
+	chal, err := v.manager.GetChallenge(ctx, tx, challengeId)
+	if err != nil {
+		return nil, err
+	}
+	if chal.IsNone() {
+		return nil, errors.New("no challenge found after subchallenge creation")
+	}
+	return chal.Unwrap(), nil
 }
