@@ -53,7 +53,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			}
 			asIndex := arbutil.MessageIndex(messageCount)
 			holdingLockout := atomicTimeRead(&coord.lockoutUntil)
-			err := coord.chosenOneUpdate(ctx, asIndex, asIndex+1, &arbstate.EmptyTestMessageWithMetadata)
+			err := coord.acquireLockoutAndWriteMessage(ctx, asIndex, asIndex+1, &arbstate.EmptyTestMessageWithMetadata)
 			if err == nil {
 				sequenced[messageCount] = true
 				atomic.StoreUint64(&data.messageCount, messageCount+1)
