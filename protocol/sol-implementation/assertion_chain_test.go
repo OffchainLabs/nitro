@@ -15,6 +15,7 @@ import (
 
 var (
 	_ = protocol.AssertionChain(&AssertionChain{})
+	_ = protocol.ChainReadWriter(&AssertionChain{})
 	_ = protocol.Assertion(&Assertion{})
 )
 

@@ -40,7 +40,7 @@ type ActiveTx interface {
 // It executes a callback and feeds it an ActiveTx type which includes relevant
 // data about the chain, such as the finalized block number and head block number.
 type ChainReader interface {
-	Call(ctx context.Context, callback func(ActiveTx) error) error
+	Call(ctx context.Context, callback func(context.Context, ActiveTx) error) error
 }
 
 // ChainReadWriter can make mutating and non-mutating calls to a backing blockchain.
@@ -48,7 +48,7 @@ type ChainReader interface {
 // data about the chain, such as the finalized block number and head block number.
 type ChainReadWriter interface {
 	ChainReader
-	Tx(ctx context.Context, callback func(ActiveTx) error) error
+	Tx(ctx context.Context, callback func(context.Context, ActiveTx) error) error
 }
 
 // AssertionChain can manage assertions in the protocol and retrieve

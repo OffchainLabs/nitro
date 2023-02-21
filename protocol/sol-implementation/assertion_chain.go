@@ -126,7 +126,7 @@ func NewAssertionChain(
 }
 
 // Tx enables a mutating call to the chain.
-func (chain *AssertionChain) Tx(clo func(tx protocol.ActiveTx) error) error {
+func (chain *AssertionChain) Tx(ctx context.Context, cb func(context.Context, protocol.ActiveTx) error) error {
 	head := chain.backend.Blockchain().CurrentHeader()
 	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
 	tx := &activeTx{
@@ -135,12 +135,11 @@ func (chain *AssertionChain) Tx(clo func(tx protocol.ActiveTx) error) error {
 		finalized:   finalized.Number(),
 		sender:      chain.stakerAddr,
 	}
-	err := clo(tx)
-	return err
+	return cb(ctx, tx)
 }
 
 // Call enables a non-mutating call to the chain.
-func (chain *AssertionChain) Call(clo func(tx protocol.ActiveTx) error) error {
+func (chain *AssertionChain) Call(ctx context.Context, cb func(context.Context, protocol.ActiveTx) error) error {
 	head := chain.backend.Blockchain().CurrentHeader()
 	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
 	tx := &activeTx{
@@ -149,8 +148,7 @@ func (chain *AssertionChain) Call(clo func(tx protocol.ActiveTx) error) error {
 		finalized:   finalized.Number(),
 		sender:      chain.stakerAddr,
 	}
-	err := clo(tx)
-	return err
+	return cb(ctx, tx)
 }
 
 // AssertionBySequenceNum --
