@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var _ = protocol.Challenge(&Challenge{})
+
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}

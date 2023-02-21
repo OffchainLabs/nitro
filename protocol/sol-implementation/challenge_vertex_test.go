@@ -4,11 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
+
+var _ = protocol.ChallengeVertex(&ChallengeVertex{})
 
 func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	ctx := context.Background()

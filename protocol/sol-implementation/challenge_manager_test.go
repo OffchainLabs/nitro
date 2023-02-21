@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+var _ = protocol.ChallengeManager(&ChallengeManager{})
+
 func TestGetChallengeByID(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}

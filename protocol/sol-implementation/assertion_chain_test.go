@@ -15,6 +15,7 @@ import (
 
 var (
 	_ = protocol.AssertionChain(&AssertionChain{})
+	_ = protocol.Assertion(&Assertion{})
 )
 
 func TestCreateAssertion(t *testing.T) {
