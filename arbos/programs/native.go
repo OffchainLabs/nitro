@@ -11,8 +11,9 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
-Bytes32  getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost);
-uint64_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value);
+Bytes32 getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost);
+uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost);
+uint8_t callContractWrap(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value);
 */
 import "C"
 import (
@@ -118,8 +119,10 @@ func callUserWasm(
 	return data, err
 }
 
-const apiSuccess u8 = 0
-const apiFailure u8 = 1
+const (
+	apiSuccess u8 = iota
+	apiFailure
+)
 
 //export getBytes32Impl
 func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {

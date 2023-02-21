@@ -58,9 +58,10 @@ func newAPI(getBytes32 getBytes32Type, setBytes32 setBytes32Type, callContract c
 		callContract: callContract,
 	})
 	return C.GoAPI{
-		get_bytes32: (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32: (*[0]byte)(C.setBytes32Wrap),
-		id:          u64(id),
+		get_bytes32:   (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:   (*[0]byte)(C.setBytes32Wrap),
+		call_contract: (*[0]byte)(C.callContractWrap),
+		id:            u64(id),
 	}
 }
 
