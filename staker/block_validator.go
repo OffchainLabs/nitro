@@ -117,7 +117,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "ws://localhost/",
+	URL:                      "",
 	JWTSecret:                "",
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
@@ -908,9 +908,6 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 		case <-timer.C:
 			lastLoop = true
 		case <-trigerchan:
-			if pos+1 >= v.validated() {
-				return true
-			}
 		case <-ctx.Done():
 			lastLoop = true
 		}

@@ -47,6 +47,7 @@ var DefaultValidationConfig = Config{
 }
 
 var TestValidationConfig = Config{
+	UseJit:     true,
 	Jit:        server_jit.DefaultJitSpawnerConfig,
 	ApiAuth:    false,
 	ApiPublic:  true,
