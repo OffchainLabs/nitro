@@ -23,7 +23,8 @@ func (v *ChallengeVertex) SequenceNum(ctx context.Context, tx protocol.ActiveTx)
 }
 
 func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
-	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
+
+	return v.manager.GetVertex(ctx, tx, v.inner.PredecessorId)
 }
 
 func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (protocol.AssertionState, error) {
@@ -62,10 +63,6 @@ func (v *ChallengeVertex) ChessClockExpired(
 	challengePeriodSeconds time.Duration,
 ) (bool, error) {
 	return false, errors.New("unimplemented")
-}
-
-func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
-	return errors.New("unimplemented")
 }
 
 func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error {
@@ -195,7 +192,7 @@ func getVertexFromComponents(
 	}, nil
 }
 
-func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
+func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
 	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return v.manager.writer.ConfirmForPsTimer(
 			v.manager.assertionChain.txOpts,

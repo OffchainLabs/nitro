@@ -1104,7 +1104,8 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 	})
 	t.Run("vertex does not exist", func(t *testing.T) {
 		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, tx, &ChallengeVertex{
-			id: [32]byte{},
+			id:      [32]byte{},
+			manager: challenge.manager,
 		}, util.HistoryCommitment{
 			Height: 2,
 			Merkle: v1Commit,

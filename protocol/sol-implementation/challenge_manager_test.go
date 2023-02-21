@@ -18,9 +18,9 @@ func TestGetChallengeByID(t *testing.T) {
 	cm, err := chain.CurrentChallengeManager(ctx, tx)
 	require.NoError(t, err)
 
-	t.Run("challenge does not exists", func(t *testing.T) {
+	t.Run("challenge does not exist", func(t *testing.T) {
 		_, err = cm.GetChallenge(ctx, tx, protocol.ChallengeHash(common.Hash{}))
-		require.ErrorContains(t, err, "challenge not found")
+		require.ErrorContains(t, err, "does not exist")
 	})
 
 	t.Run("challenge exists", func(t *testing.T) {
