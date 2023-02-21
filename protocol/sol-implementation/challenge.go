@@ -24,10 +24,15 @@ func (c *Challenge) RootVertex(
 	return nil, errors.New("unimplemented")
 }
 
-func (c *Challenge) GetType(
-	ctx context.Context, tx protocol.ActiveTx,
-) (protocol.ChallengeType, error) {
-	return protocol.BlockChallenge, errors.New("unimplemented")
+func (c *Challenge) WinningClaim() util.Option[protocol.AssertionHash] {
+	if c.inner.WinningClaim == [32]byte{} {
+		return util.None[protocol.AssertionHash]()
+	}
+	return util.Some(protocol.AssertionHash(c.inner.WinningClaim))
+}
+
+func (c *Challenge) GetType() protocol.ChallengeType {
+	return protocol.ChallengeType(c.inner.ChallengeType)
 }
 
 func (c *Challenge) GetCreationTime(

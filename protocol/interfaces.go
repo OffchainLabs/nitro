@@ -144,9 +144,10 @@ const (
 // a challenge.
 type Challenge interface {
 	// Getters.
+	GetType() ChallengeType
+	WinningClaim() util.Option[AssertionHash]
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
 	RootVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
-	GetType(ctx context.Context, tx ActiveTx) (ChallengeType, error)
 	GetCreationTime(ctx context.Context, tx ActiveTx) (time.Time, error)
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)

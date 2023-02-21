@@ -1,18 +1,15 @@
 package solimpl
 
 import (
-	"bytes"
-	"math/big"
-	"strings"
-
 	"context"
+	"math/big"
+	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
-	"time"
 )
 
 var (
