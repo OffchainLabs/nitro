@@ -1,5 +1,5 @@
 // From: Nitro validator/execution_state.go
-package solimpl
+package protocol
 
 import (
 	"encoding/binary"

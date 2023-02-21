@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -12,14 +13,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var _ = protocol.Challenge(&Challenge{})
+
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
 	height1 := uint64(1)
 	height2 := uint64(1)
 	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
+			tx,
 			&Assertion{
 				chain: chain1,
 				id:    20,
@@ -38,6 +43,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		// Pass in a junk assertion that has no predecessor.
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
+			tx,
 			&Assertion{
 				chain: chain1,
 				id:    1,
@@ -58,6 +64,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("empty history commitment", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
+			tx,
 			a1,
 			util.HistoryCommitment{
 				Height: height1,
@@ -78,6 +85,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("OK", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
+			tx,
 			a1,
 			util.HistoryCommitment{
 				Height: height1,
@@ -89,6 +97,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("already exists", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
+			tx,
 			a1,
 			util.HistoryCommitment{
 				Height: height2,
@@ -106,6 +115,7 @@ func setupTopLevelFork(
 	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
 	t.Helper()
+	tx := &activeTx{readWriteTx: true}
 	chain1, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
 	prev := uint64(0)
 
@@ -117,22 +127,23 @@ func setupTopLevelFork(
 		latestBlockHash = backend.Commit()
 	}
 
-	prevState := &ExecutionState{
-		GlobalState:   GoGlobalState{},
-		MachineStatus: MachineStatusFinished,
+	prevState := &protocol.ExecutionState{
+		GlobalState:   protocol.GoGlobalState{},
+		MachineStatus: protocol.MachineStatusFinished,
 	}
-	postState := &ExecutionState{
-		GlobalState: GoGlobalState{
+	postState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
 			BlockHash:  latestBlockHash,
 			SendRoot:   common.Hash{},
 			Batch:      1,
 			PosInBatch: 0,
 		},
-		MachineStatus: MachineStatusFinished,
+		MachineStatus: protocol.MachineStatusFinished,
 	}
 	prevInboxMaxCount := big.NewInt(1)
 	a1, err := chain1.CreateAssertion(
 		ctx,
+		tx,
 		height1,
 		prev,
 		prevState,
@@ -154,6 +165,7 @@ func setupTopLevelFork(
 	postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
 	a2, err := chain2.CreateAssertion(
 		ctx,
+		tx,
 		height2,
 		prev,
 		prevState,
@@ -162,7 +174,7 @@ func setupTopLevelFork(
 	)
 	require.NoError(t, err)
 
-	challenge, err := chain2.CreateSuccessionChallenge(ctx, 0, common.Hash{})
+	challenge, err := chain2.CreateSuccessionChallenge(ctx, tx, 0)
 	require.NoError(t, err)
-	return a1, a2, challenge, chain1, chain2
+	return a1.(*Assertion), a2.(*Assertion), challenge.(*Challenge), chain1, chain2
 }

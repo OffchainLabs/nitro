@@ -5,27 +5,88 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
+	"time"
 )
 
+func (v *ChallengeVertex) Id() [32]byte {
+	return v.id
+}
+
+func (v *ChallengeVertex) SequenceNum(ctx context.Context, tx protocol.ActiveTx) (protocol.VertexSequenceNumber, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
+
+	return v.manager.GetVertex(ctx, tx, v.inner.PredecessorId)
+}
+
+func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (protocol.AssertionState, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) (util.HistoryCommitment, error) {
+	return util.HistoryCommitment{}, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
+	return common.Address{}, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error) {
+	return util.None[protocol.Challenge](), errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) PresumptiveSuccessor(
+	ctx context.Context, tx protocol.ActiveTx,
+) (util.Option[protocol.ChallengeVertex], error) {
+	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) PsTimer(ctx context.Context, tx protocol.ActiveTx) (uint64, error) {
+	return 0, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) ChessClockExpired(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengePeriodSeconds time.Duration,
+) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error {
+	return errors.New("unimplemented")
+}
+
+func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx protocol.ActiveTx) error {
+	return errors.New("unimplemented")
+}
+
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
-func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
+func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	return v.manager.caller.HasConfirmedSibling(v.manager.assertionChain.callOpts, v.id)
 }
 
 // IsPresumptiveSuccessor checks if a vertex is the presumptive successor
 // within its challenge.
-func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, error) {
+func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	return v.manager.caller.IsPresumptiveSuccessor(v.manager.assertionChain.callOpts, v.id)
 }
 
 // ChildrenAreAtOneStepFork checks if child vertices are at a one-step-fork in the challenge
 // it is contained in.
-func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, error) {
+func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	atFork, err := v.manager.caller.ChildrenAreAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
 	if err != nil {
 		errS := err.Error()
@@ -43,9 +104,10 @@ func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, e
 // commitment and a prefix proof.
 func (v *ChallengeVertex) Merge(
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	mergingToHistory util.HistoryCommitment,
 	proof []common.Hash,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
@@ -73,9 +135,10 @@ func (v *ChallengeVertex) Merge(
 // Bisect a challenge vertex by providing a history commitment.
 func (v *ChallengeVertex) Bisect(
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	history util.HistoryCommitment,
 	proof []common.Hash,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatProof := make([]byte, 0)
 	for _, h := range proof {
@@ -105,7 +168,7 @@ func getVertexFromComponents(
 	opts *bind.CallOpts,
 	challengeId [32]byte,
 	history util.HistoryCommitment,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	vertexId, err := manager.caller.CalculateChallengeVertexId(
 		opts,
 		challengeId,
@@ -129,7 +192,7 @@ func getVertexFromComponents(
 	}, nil
 }
 
-func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
+func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
 	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return v.manager.writer.ConfirmForPsTimer(
 			v.manager.assertionChain.txOpts,
@@ -147,7 +210,7 @@ func (v *ChallengeVertex) ConfirmPsTimer(ctx context.Context) error {
 	}
 }
 
-func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (*Challenge, error) {
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.ActiveTx) (protocol.Challenge, error) {
 	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return v.manager.writer.CreateSubChallenge(
 			v.manager.assertionChain.txOpts,
@@ -157,9 +220,17 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (*Challenge, e
 	if err != nil {
 		return nil, err
 	}
-	id, err := v.manager.CalculateChallengeId(ctx, v.id, BigStepChallenge)
+	// TODO: DO not use empty assertion
+	challengeId, err := v.manager.CalculateChallengeHash(ctx, tx, v.id, protocol.BigStepChallenge)
 	if err != nil {
 		return nil, err
 	}
-	return v.manager.GetChallenge(id)
+	chal, err := v.manager.GetChallenge(ctx, tx, challengeId)
+	if err != nil {
+		return nil, err
+	}
+	if chal.IsNone() {
+		return nil, errors.New("no challenge found after subchallenge creation")
+	}
+	return chal.Unwrap(), nil
 }

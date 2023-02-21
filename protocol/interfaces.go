@@ -1,4 +1,4 @@
-package interfaces
+package protocol
 
 import (
 	"context"
@@ -59,8 +59,8 @@ type AssertionChain interface {
 		ctx context.Context,
 		tx ActiveTx,
 		seqNum AssertionSequenceNumber,
-	) (*Assertion, error)
-	LatestConfirmed(ctx context.Context, tx ActiveTx) Assertion
+	) (Assertion, error)
+	LatestConfirmed(ctx context.Context, tx ActiveTx) (Assertion, error)
 	CurrentChallengeManager(ctx context.Context, tx ActiveTx) (ChallengeManager, error)
 
 	// Mutating methods.
@@ -69,8 +69,8 @@ type AssertionChain interface {
 		tx ActiveTx,
 		height uint64,
 		prevAssertionId uint64,
-		//prevAssertionState *ExecutionState,
-		//postState *ExecutionState,
+		prevAssertionState *ExecutionState,
+		postState *ExecutionState,
 		prevInboxMaxCount *big.Int,
 	) (Assertion, error)
 	CreateSuccessionChallenge(
@@ -78,10 +78,10 @@ type AssertionChain interface {
 	) (Challenge, error)
 	Confirm(
 		ctx context.Context, tx ActiveTx, blockHash, sendRoot common.Hash,
-	) (Challenge, error)
+	) error
 	Reject(
 		ctx context.Context, tx ActiveTx, staker common.Address,
-	) (Challenge, error)
+	) error
 }
 
 // ChallengeManager allows for retrieving details of challenges such
@@ -111,7 +111,12 @@ type ChallengeManager interface {
 // Assertion represents a top-level claim in the protocol about the
 // chain state created by a validator that stakes on their claim.
 // Assertions can be challenged.
-type Assertion interface{}
+type Assertion interface {
+	Height() uint64
+	SeqNum() AssertionSequenceNumber
+	PrevSeqNum() AssertionSequenceNumber
+	StateHash() common.Hash
+}
 
 // ChallengeType represents the enum with the same name
 // in the protocol smart contracts.
@@ -139,41 +144,27 @@ const (
 // a challenge.
 type Challenge interface {
 	// Getters.
+	GetType() ChallengeType
+	WinningClaim() util.Option[AssertionHash]
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
 	RootVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
-	GetType(ctx context.Context, tx ActiveTx) (ChallengeType, error)
 	GetCreationTime(ctx context.Context, tx ActiveTx) (time.Time, error)
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
-
-	// Readers.
-	HasConfirmedSibling(
-		ctx context.Context,
-		tx ActiveTx,
-		vertex ChallengeVertex,
-	) (bool, error)
-	// TODO: Deduplicate?
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
-	HasEnded(
-		ctx context.Context,
-		tx ActiveTx,
-		challengeManager ChallengeManager,
-	) (bool, error)
 
 	// Mutating calls.
-	AddLeaf(
+	AddBlockChallengeLeaf(
 		ctx context.Context,
 		tx ActiveTx,
 		assertion Assertion,
 		history util.HistoryCommitment,
-		validator common.Address,
 	) (ChallengeVertex, error)
-	AddSubchallengeLeaf(
+	AddBigStepChallengeLeaf(
 		ctx context.Context,
 		tx ActiveTx,
 		vertex ChallengeVertex,
 		history util.HistoryCommitment,
-		validator common.Address,
 	) (ChallengeVertex, error)
 }
 
@@ -182,12 +173,17 @@ type Challenge interface {
 // make mutating calls to the chain for making challenge moves.
 type ChallengeVertex interface {
 	// Getters.
+	Id() [32]byte
 	SequenceNum(ctx context.Context, tx ActiveTx) (VertexSequenceNumber, error)
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)
 	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
 	MiniStaker(ctx context.Context, tx ActiveTx) (common.Address, error)
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
+	HasConfirmedSibling(
+		ctx context.Context,
+		tx ActiveTx,
+	) (bool, error)
 
 	// Presumptive status / timer readers.
 	EligibleForNewSuccessor(ctx context.Context, tx ActiveTx) (bool, error)
@@ -213,14 +209,12 @@ type ChallengeVertex interface {
 		tx ActiveTx,
 		history util.HistoryCommitment,
 		proof []common.Hash,
-		validator common.Address,
 	) (ChallengeVertex, error)
 	Merge(
 		ctx context.Context,
 		tx ActiveTx,
-		mergingTo ChallengeVertex,
+		mergingToHistory util.HistoryCommitment,
 		proof []common.Hash,
-		validator common.Address,
 	) (ChallengeVertex, error)
 
 	// Mutating calls for confirmations.

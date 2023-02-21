@@ -4,28 +4,79 @@ import (
 	"context"
 	"math/big"
 
+	"errors"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/core/types"
+	"time"
 )
+
+func (c *Challenge) RootAssertion(
+	ctx context.Context, tx protocol.ActiveTx,
+) (protocol.Assertion, error) {
+	return nil, errors.New("unimplemented")
+}
+
+func (c *Challenge) RootVertex(
+	ctx context.Context, tx protocol.ActiveTx,
+) (protocol.ChallengeVertex, error) {
+	return nil, errors.New("unimplemented")
+}
+
+func (c *Challenge) WinningClaim() util.Option[protocol.AssertionHash] {
+	if c.inner.WinningClaim == [32]byte{} {
+		return util.None[protocol.AssertionHash]()
+	}
+	return util.Some(protocol.AssertionHash(c.inner.WinningClaim))
+}
+
+func (c *Challenge) GetType() protocol.ChallengeType {
+	return protocol.ChallengeType(c.inner.ChallengeType)
+}
+
+func (c *Challenge) GetCreationTime(
+	ctx context.Context, tx protocol.ActiveTx,
+) (time.Time, error) {
+	return time.Time{}, errors.New("unimplemented")
+}
+
+func (c *Challenge) ParentStateCommitment(
+	ctx context.Context, tx protocol.ActiveTx,
+) (util.StateCommitment, error) {
+	return util.StateCommitment{}, errors.New("unimplemented")
+}
+
+func (c *Challenge) WinnerVertex(
+	ctx context.Context, tx protocol.ActiveTx,
+) (util.Option[protocol.ChallengeVertex], error) {
+	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
+}
+
+func (c *Challenge) Completed(
+	ctx context.Context, tx protocol.ActiveTx,
+) (bool, error) {
+	return false, errors.New("unimplemented")
+}
 
 // AddBlockChallengeLeaf vertex to a BlockChallenge using an assertion and a history commitment.
 func (c *Challenge) AddBlockChallengeLeaf(
 	ctx context.Context,
-	assertion *Assertion,
+	tx protocol.ActiveTx,
+	assertion protocol.Assertion,
 	history util.HistoryCommitment,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	lastLeafProof := make([]byte, 0)
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
 	callOpts := c.manager.assertionChain.callOpts
-	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, assertion.id)
+	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
 	if err != nil {
 		return nil, err
 	}
-	prevAssertion, err := c.manager.assertionChain.AssertionByID(assertion.inner.PrevNum)
+	prevAssertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +85,7 @@ func (c *Challenge) AddBlockChallengeLeaf(
 		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             prevAssertion.inner.StateHash,
+		FirstState:             prevAssertion.StateHash(),
 		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
@@ -86,25 +137,33 @@ func (c *Challenge) AddBlockChallengeLeaf(
 // AddBigStepChallengeLeaf vertex to a BigStepChallenge using a vertex and a history commitment.
 func (c *Challenge) AddBigStepChallengeLeaf(
 	ctx context.Context,
-	vertex *ChallengeVertex,
+	tx protocol.ActiveTx,
+	vertex protocol.ChallengeVertex,
 	history util.HistoryCommitment,
-) (*ChallengeVertex, error) {
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	lastLeafProof := make([]byte, 0)
 	for _, h := range history.LastLeafProof {
 		lastLeafProof = append(lastLeafProof, h[:]...)
 	}
 
+	prev, err := vertex.Prev(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if prev.IsNone() {
+		return nil, errors.New("no prev vertex")
+	}
 	parentVertex, err := c.manager.caller.GetVertex(
 		c.manager.assertionChain.callOpts,
-		vertex.inner.PredecessorId,
+		prev.Unwrap().Id(),
 	)
 	if err != nil {
 		return nil, err
 	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
-		ClaimId:                vertex.id,
+		ClaimId:                vertex.Id(),
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
 		FirstState:             parentVertex.HistoryRoot,

@@ -1,12 +1,13 @@
 package solimpl
 
 import (
-	"bytes"
-	"math/big"
-	"strings"
-
 	"context"
+	"math/big"
+	"time"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
@@ -25,7 +26,9 @@ type ChallengeManager struct {
 
 // ChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
-func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
+func (ac *AssertionChain) CurrentChallengeManager(
+	ctx context.Context, tx protocol.ActiveTx,
+) (protocol.ChallengeManager, error) {
 	addr, err := ac.userLogic.ChallengeManager(ac.callOpts)
 	if err != nil {
 		return nil, err
@@ -41,75 +44,63 @@ func (ac *AssertionChain) ChallengeManager() (*ChallengeManager, error) {
 	}, nil
 }
 
-// CalculateChallengeId calculates the challenge ID for a given assertion and challenge type.
-func (cm *ChallengeManager) CalculateChallengeId(ctx context.Context, assertionId common.Hash, cType ChallengeType) (common.Hash, error) {
-	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, assertionId, uint8(cType))
+// ChallengePeriodSeconds --
+func (cm *ChallengeManager) ChallengePeriodSeconds(
+	ctx context.Context, tx protocol.ActiveTx,
+) (time.Duration, error) {
+	res, err := cm.caller.ChallengePeriodSec(cm.assertionChain.callOpts)
 	if err != nil {
-		return common.Hash{}, err
+		return time.Second, err
+	}
+	return time.Second * time.Duration(res.Uint64()), nil
+}
+
+// CalculateChallengeId calculates the challenge hash for a given assertion and challenge type.
+func (cm *ChallengeManager) CalculateChallengeHash(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	itemId common.Hash,
+	cType protocol.ChallengeType,
+) (protocol.ChallengeHash, error) {
+	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, itemId, uint8(cType))
+	if err != nil {
+		return protocol.ChallengeHash{}, err
 	}
 	return c, nil
 }
 
-// ChallengePeriodSec returns the challenge period in seconds.
-func (cm *ChallengeManager) ChallengePeriodSec() (*big.Int, error) {
-	challengePeriodSec, err := cm.caller.ChallengePeriodSec(cm.assertionChain.callOpts)
-	if err != nil {
-		return big.NewInt(0), err
-	}
-	return challengePeriodSec, nil
-}
-
 // GetVertex returns the challenge vertex for the given vertexId.
-func (cm *ChallengeManager) GetVertex(vertexId common.Hash) (*ChallengeVertex, error) {
+func (cm *ChallengeManager) GetVertex(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	vertexId protocol.VertexHash,
+) (util.Option[protocol.ChallengeVertex], error) {
 	vertex, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
 	if err != nil {
-		return nil, err
+		return util.None[protocol.ChallengeVertex](), err
 	}
-	return &ChallengeVertex{
+	return util.Some[protocol.ChallengeVertex](&ChallengeVertex{
 		manager: cm,
 		id:      vertexId,
 		inner:   vertex,
-	}, nil
+	}), nil
 }
 
 // GetChallenge returns the challenge for the given challengeId.
-func (cm *ChallengeManager) GetChallenge(challengeId common.Hash) (*Challenge, error) {
+func (cm *ChallengeManager) GetChallenge(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengeId protocol.ChallengeHash,
+) (util.Option[protocol.Challenge], error) {
 	challenge, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
 	if err != nil {
-		return nil, err
+		return util.None[protocol.Challenge](), err
 	}
-	return &Challenge{
+	return util.Some[protocol.Challenge](&Challenge{
 		manager: cm,
 		id:      challengeId,
 		inner:   challenge,
-	}, nil
-}
-
-// ChallengeByID returns a challenge by its challenge ID.
-func (cm *ChallengeManager) ChallengeByID(ctx context.Context, challengeID common.Hash) (*Challenge, error) {
-	c, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeID)
-	switch {
-	case bytes.Equal(c.RootId[:], make([]byte, 32)):
-		return nil, errors.Wrapf(
-			ErrChallengeNotFound,
-			"challenge with id %#x",
-			challengeID,
-		)
-	case err == nil:
-		return &Challenge{
-			id:      challengeID,
-			inner:   c,
-			manager: cm,
-		}, nil
-	case strings.Contains(err.Error(), "Vertex does not exist"):
-		return nil, errors.Wrapf(
-			ErrChallengeNotFound,
-			"challenge id %#x",
-			challengeID,
-		)
-	default:
-		return nil, err
-	}
+	}), nil
 }
 
 //nolint:unused

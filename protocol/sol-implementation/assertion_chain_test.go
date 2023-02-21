@@ -6,15 +6,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	_ = protocol.AssertionChain(&AssertionChain{})
+	_ = protocol.Assertion(&Assertion{})
+)
+
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+	tx := &activeTx{readWriteTx: true}
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
@@ -27,22 +34,23 @@ func TestCreateAssertion(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -53,6 +61,7 @@ func TestCreateAssertion(t *testing.T) {
 
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -80,23 +89,24 @@ func TestCreateAssertion(t *testing.T) {
 			backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  common.BytesToHash([]byte("evil hash")),
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		chain.txOpts.From = accs[2].accountAddr
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -107,20 +117,23 @@ func TestCreateAssertion(t *testing.T) {
 	})
 }
 
-func TestAssertionByID(t *testing.T) {
+func TestAssertionBySequenceNum(t *testing.T) {
+	ctx := context.Background()
 	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+	tx := &activeTx{readWriteTx: true}
 
-	resp, err := chain.AssertionByID(0)
+	resp, err := chain.AssertionBySequenceNum(ctx, tx, 0)
 	require.NoError(t, err)
 
-	require.Equal(t, true, resp.inner.StateHash != [32]byte{})
+	require.Equal(t, true, resp.StateHash() != [32]byte{})
 
-	_, err = chain.AssertionByID(1)
+	_, err = chain.AssertionBySequenceNum(ctx, tx, 1)
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
 		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
 
@@ -134,22 +147,23 @@ func TestAssertion_Confirm(t *testing.T) {
 			assertionBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  assertionBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -158,19 +172,20 @@ func TestAssertion_Confirm(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		err = chain.Confirm(ctx, assertionBlockHash, common.Hash{})
+		err = chain.Confirm(ctx, tx, assertionBlockHash, common.Hash{})
 		require.ErrorIs(t, err, ErrTooSoon)
 
 		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
 			backend.Commit()
 		}
-		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
-		require.ErrorIs(t, ErrNoUnresolved, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+		require.NoError(t, chain.Confirm(ctx, tx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Confirm(ctx, tx, assertionBlockHash, common.Hash{}))
 	})
 }
 
 func TestAssertion_Reject(t *testing.T) {
 	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
 
 	t.Run("Can reject assertion", func(t *testing.T) {
 		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
@@ -189,22 +204,23 @@ func TestAssertion_Reject(t *testing.T) {
 			assertionBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  assertionBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -216,23 +232,29 @@ func TestAssertion_Reject(t *testing.T) {
 		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
 			backend.Commit()
 		}
-		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
-		require.ErrorIs(t, ErrNoUnresolved, chain.Reject(ctx, chain.stakerAddr))
+		require.NoError(t, chain.Confirm(ctx, tx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Reject(ctx, tx, chain.stakerAddr))
 	})
 }
 
 func TestChallengePeriodSeconds(t *testing.T) {
 	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	chalPeriod, err := chain.ChallengePeriodSeconds()
+	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
+	manager, err := chain.CurrentChallengeManager(ctx, tx)
+	require.NoError(t, err)
+
+	chalPeriod, err := manager.ChallengePeriodSeconds(ctx, tx)
 	require.NoError(t, err)
 	require.Equal(t, time.Second*100, chalPeriod)
 }
 
 func TestCreateSuccessionChallenge(t *testing.T) {
 	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
 	t.Run("assertion does not exist", func(t *testing.T) {
 		chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
-		_, err := chain.CreateSuccessionChallenge(ctx, 2, common.Hash{})
+		_, err := chain.CreateSuccessionChallenge(ctx, tx, 2)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 	t.Run("at least two children required", func(t *testing.T) {
@@ -247,22 +269,23 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -271,7 +294,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(ctx, 0, common.Hash{})
+		_, err = chain.CreateSuccessionChallenge(ctx, tx, 0)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 	t.Run("assertion already rejected", func(t *testing.T) {
@@ -291,22 +314,23 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			latestBlockHash = backend.Commit()
 		}
 
-		prevState := &ExecutionState{
-			GlobalState:   GoGlobalState{},
-			MachineStatus: MachineStatusFinished,
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
 		}
-		postState := &ExecutionState{
-			GlobalState: GoGlobalState{
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
 				BlockHash:  latestBlockHash,
 				SendRoot:   common.Hash{},
 				Batch:      1,
 				PosInBatch: 0,
 			},
-			MachineStatus: MachineStatusFinished,
+			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -328,6 +352,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
 		_, err = chain.CreateAssertion(
 			ctx,
+			tx,
 			height,
 			prev,
 			prevState,
@@ -336,10 +361,10 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(ctx, 0, common.Hash{})
+		_, err = chain.CreateSuccessionChallenge(ctx, tx, 0)
 		require.NoError(t, err)
 
-		_, err = chain.CreateSuccessionChallenge(ctx, 0, common.Hash{})
+		_, err = chain.CreateSuccessionChallenge(ctx, tx, 0)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
 }
