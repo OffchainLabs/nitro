@@ -118,10 +118,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 			return ErrPrevNone
 		}
 		prev = prevV.Unwrap()
-		status, err := v.vertex.Status()
-		if err != nil {
-			return err
-		}
+		status := v.vertex.Status()
 		if status == protocol.AssertionConfirmed {
 			return ErrConfirmed
 		}
@@ -290,10 +287,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 
 func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 	// Can't confirm if the vertex is not in correct state.
-	status, err := v.vertex.Status()
-	if err != nil {
-		return false, err
-	}
+	status := v.vertex.Status()
 	if status != protocol.AssertionPending {
 		return false, nil
 	}
@@ -309,10 +303,7 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 		if prev.IsNone() {
 			return errors.New("no prev vertex")
 		}
-		prevStatus, err := prev.Unwrap().Status()
-		if err != nil {
-			return err
-		}
+		prevStatus := prev.Unwrap().Status()
 		// TODO: Vertex status different from assertion status.
 		if prevStatus != protocol.AssertionConfirmed {
 			return nil

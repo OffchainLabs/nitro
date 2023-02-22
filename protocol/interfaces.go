@@ -186,7 +186,7 @@ type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
 	SequenceNum() VertexSequenceNumber
-	Status() (AssertionState, error)
+	Status() AssertionState
 	HistoryCommitment() util.HistoryCommitment
 	MiniStaker() common.Address
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
