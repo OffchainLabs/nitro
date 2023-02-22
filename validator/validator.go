@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -125,12 +125,14 @@ func New(
 	for _, o := range opts {
 		o(v)
 	}
-	v.assertions[0] = &goimpl.CreateLeafEvent{
-		PrevSeqNum:          0,
-		PrevStateCommitment: util.StateCommitment{},
-		SeqNum:              0,
-		StateCommitment:     util.StateCommitment{},
-		Validator:           common.Address{},
+	v.assertions[0] = &protocol.CreateLeafEvent{
+		PrevSeqNum:    0,
+		SeqNum:        0,
+		PrevStateHash: common.Hash{},
+		PrevHeight:    0,
+		Height:        0,
+		StateHash:     common.Hash{},
+		Validator:     common.Address{},
 	}
 	//v.chain.SubscribeChainEvents(ctx, v.assertionEvents)
 	return v, nil
@@ -167,27 +169,26 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 
 func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 	for {
-		tx := &goimpl.ActiveTx{}
 		select {
 		case genericEvent := <-v.assertionEvents:
 			switch ev := genericEvent.(type) {
-			case *goimpl.CreateLeafEvent:
+			case *protocol.CreateLeafEvent:
 				go func() {
 					if err := v.onLeafCreated(ctx, tx, ev); err != nil {
 						log.WithError(err).Error("Could not process leaf creation event")
 					}
 				}()
-			case *goimpl.StartChallengeEvent:
+			case *protocol.StartChallengeEvent:
 				go func() {
 					if err := v.onChallengeStarted(ctx, tx, ev); err != nil {
 						log.WithError(err).Error("Could not process challenge start event")
 					}
 				}()
-			case *goimpl.ConfirmEvent:
+			case *protocol.ConfirmEvent:
 				log.WithField(
 					"sequenceNum", ev.SeqNum,
 				).Info("Leaf with sequence number confirmed on-chain")
-			case *goimpl.SetBalanceEvent:
+			case *protocol.SetBalanceEvent:
 			default:
 				log.WithField("ev", fmt.Sprintf("%+v", ev)).Error("Not a recognized chain event")
 			}
@@ -200,7 +201,7 @@ func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 // TODO: Include leaf creation validity conditions which are more complex than this.
 // For example, a validator must include messages from the inbox that were not included
 // by the last validator in the last leaf's creation.
-func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion, error) {
+func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion, error) {
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
@@ -216,6 +217,7 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 	}); err != nil {
 		return nil, err
 	}
+	// TODO: This should return the pre, post-state and a height.
 	currentCommit, err := v.stateManager.LatestStateCommitment(ctx)
 	if err != nil {
 		return nil, err
@@ -225,18 +227,16 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 		StateRoot: currentCommit.StateRoot,
 	}
 	var leaf protocol.Assertion
-	err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
-		leaf, err = v.chain.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
+	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
+		leaf, err = v.chain.CreateAssertion(ctx, tx, stateCommit.Height, parentAssertionSeq, nil, nil, nil)
 		if err != nil {
 			return err
 		}
 		return nil
 	})
 	switch {
-	case errors.Is(err, goimpl.ErrVertexAlreadyExists):
+	case errors.Is(err, solimpl.ErrAlreadyExists):
 		return nil, errors.Wrap(err, "vertex already exists, unable to create new leaf")
-	case errors.Is(err, goimpl.ErrInvalidOp):
-		return nil, errors.Wrap(err, "not allowed to create new leaf")
 	case err != nil:
 		return nil, err
 	}
@@ -251,22 +251,24 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (*protocol.Assertion
 
 	// Keep track of the created assertion locally.
 	v.assertionsLock.Lock()
-	v.assertions[leaf.SequenceNum] = &protocol.CreateLeafEvent{
-		PrevSeqNum:          protocol.AssertionSequenceNumber(leaf.PrevSeqNum()),
-		SeqNum:              protocol.AssertionSequenceNumber(leaf.SeqNum()),
-		PrevStateCommitment: prev.StateCommitment,
-		StateCommitment:     leaf.StateCommitment,
-		Validator:           v.address,
+	v.assertions[leaf.SeqNum()] = &protocol.CreateLeafEvent{
+		PrevSeqNum:    protocol.AssertionSequenceNumber(leaf.PrevSeqNum()),
+		SeqNum:        protocol.AssertionSequenceNumber(leaf.SeqNum()),
+		PrevHeight:    parentAssertion.Height(),
+		PrevStateHash: parentAssertion.StateHash(),
+		Height:        leaf.Height(),
+		StateHash:     leaf.StateHash(),
+		Validator:     v.address,
 	}
-	key := prev.StateCommitment.Hash()
+	key := parentAssertion.StateHash()
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
-		leaf.SequenceNum,
+		leaf.SeqNum(),
 	)
 	v.assertionsLock.Unlock()
 
 	v.leavesLock.Lock()
-	v.createdLeaves[leaf.StateCommitment.StateRoot] = leaf
+	v.createdLeaves[protocol.AssertionHash(leaf.StateHash())] = leaf
 	v.leavesLock.Unlock()
 	return leaf, nil
 }
@@ -297,7 +299,10 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Asser
 		if !ok {
 			continue
 		}
-		if v.stateManager.HasStateCommitment(ctx, a.StateCommitment) {
+		if v.stateManager.HasStateCommitment(ctx, util.StateCommitment{
+			Height:    a.Height,
+			StateRoot: a.StateHash,
+		}) {
 			return a.SeqNum
 		}
 	}
@@ -306,9 +311,9 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Asser
 
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
-func (v *Validator) confirmLeafAfterChallengePeriod(leaf protocol.Assertion) {
+func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf protocol.Assertion) {
 	var chalPeriod time.Duration
-	if err := v.chain.Call(context.TODO(), func(ctx context.Context, tx protocol.ActiveTx) error {
+	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
 		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
 		if err != nil {
 			return err
@@ -329,7 +334,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf protocol.Assertion) {
 		"height":      leaf.Height(),
 		"sequenceNum": leaf.SeqNum(),
 	}
-	if err := v.chain.Tx(context.TODO(), func(ctx context.Context, tx protocol.ActiveTx) error {
+	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
 		// TODO: Add fields.
 		return v.chain.Confirm(ctx, tx, common.Hash{}, common.Hash{})
 	}); err != nil {
@@ -340,7 +345,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf protocol.Assertion) {
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
-func (v *Validator) onLeafCreated(ctx context.Context, tx protocol.ActiveTx, ev *protocol.CreateLeafEvent) error {
+func (v *Validator) onLeafCreated(ctx context.Context, ev *protocol.CreateLeafEvent) error {
 	if ev == nil {
 		return nil
 	}
@@ -348,12 +353,11 @@ func (v *Validator) onLeafCreated(ctx context.Context, tx protocol.ActiveTx, ev 
 		return nil
 	}
 	seqNum := ev.SeqNum
-	stateCommit := ev.StateCommitment
 
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
-		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
-		"height":    stateCommit.Height,
+		"stateRoot": fmt.Sprintf("%#x", ev.StateHash),
+		"height":    ev.Height,
 	}).Info("New leaf appended to protocol")
 	// Detect if there is a fork, then decide if we want to challenge.
 	// We check if the parent assertion has > 1 child.
@@ -362,7 +366,7 @@ func (v *Validator) onLeafCreated(ctx context.Context, tx protocol.ActiveTx, ev 
 	v.assertions[seqNum] = ev
 
 	// Keep track of assertions by parent state root to more easily detect forks.
-	key := ev.PrevStateCommitment.Hash()
+	key := ev.PrevStateHash
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
 		ev.SeqNum,
@@ -376,7 +380,7 @@ func (v *Validator) onLeafCreated(ctx context.Context, tx protocol.ActiveTx, ev 
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, tx, ev)
+	return v.challengeAssertion(ctx, ev)
 }
 
 func isFromSelf(self, staker common.Address) bool {

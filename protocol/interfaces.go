@@ -40,7 +40,7 @@ type ActiveTx interface {
 // It executes a callback and feeds it an ActiveTx type which includes relevant
 // data about the chain, such as the finalized block number and head block number.
 type ChainReader interface {
-	Call(ctx context.Context, callback func(context.Context, ActiveTx) error) error
+	Call(callback func(ActiveTx) error) error
 }
 
 // ChainReadWriter can make mutating and non-mutating calls to a backing blockchain.
@@ -48,7 +48,7 @@ type ChainReader interface {
 // data about the chain, such as the finalized block number and head block number.
 type ChainReadWriter interface {
 	ChainReader
-	Tx(ctx context.Context, callback func(context.Context, ActiveTx) error) error
+	Tx(callback func(ActiveTx) error) error
 }
 
 // Protocol --
@@ -79,7 +79,7 @@ type AssertionChain interface {
 		ctx context.Context,
 		tx ActiveTx,
 		height uint64,
-		prevAssertionId uint64,
+		prevSeqNum AssertionSequenceNumber,
 		prevAssertionState *ExecutionState,
 		postState *ExecutionState,
 		prevInboxMaxCount *big.Int,
@@ -244,11 +244,13 @@ func (ev *genericAssertionChainEvent) IsAssertionChainEvent() bool { return true
 
 type CreateLeafEvent struct {
 	genericAssertionChainEvent
-	PrevSeqNum          AssertionSequenceNumber
-	PrevStateCommitment util.StateCommitment
-	SeqNum              AssertionSequenceNumber
-	StateCommitment     util.StateCommitment
-	Validator           common.Address
+	PrevSeqNum    AssertionSequenceNumber
+	SeqNum        AssertionSequenceNumber
+	PrevHeight    uint64
+	PrevStateHash common.Hash
+	Height        uint64
+	StateHash     common.Hash
+	Validator     common.Address
 }
 
 type ConfirmEvent struct {

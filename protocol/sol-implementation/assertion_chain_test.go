@@ -17,6 +17,7 @@ var (
 	_ = protocol.AssertionChain(&AssertionChain{})
 	_ = protocol.ChainReadWriter(&AssertionChain{})
 	_ = protocol.Assertion(&Assertion{})
+	_ = protocol.ActiveTx(&activeTx{})
 )
 
 func TestCreateAssertion(t *testing.T) {
