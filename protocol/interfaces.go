@@ -185,11 +185,11 @@ type Challenge interface {
 type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
-	SequenceNum(ctx context.Context, tx ActiveTx) (VertexSequenceNumber, error)
-	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
-	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)
-	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
+	SequenceNum() VertexSequenceNumber
+	Status() (AssertionState, error)
+	HistoryCommitment() util.HistoryCommitment
 	MiniStaker() common.Address
+	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
 	HasConfirmedSibling(
 		ctx context.Context,

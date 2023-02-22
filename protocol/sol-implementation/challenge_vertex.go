@@ -18,8 +18,8 @@ func (v *ChallengeVertex) Id() [32]byte {
 	return v.id
 }
 
-func (v *ChallengeVertex) SequenceNum(ctx context.Context, tx protocol.ActiveTx) (protocol.VertexSequenceNumber, error) {
-	return 0, errors.New("unimplemented")
+func (v *ChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
+	return 0
 }
 
 func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
@@ -27,12 +27,16 @@ func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.
 	return v.manager.GetVertex(ctx, tx, v.inner.PredecessorId)
 }
 
-func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (protocol.AssertionState, error) {
-	return 0, errors.New("unimplemented")
+func (v *ChallengeVertex) Status() protocol.AssertionState {
+	// TODO: Should be vertex status.
+	return protocol.AssertionState(v.inner.Status)
 }
 
-func (v *ChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) (util.HistoryCommitment, error) {
-	return util.HistoryCommitment{}, errors.New("unimplemented")
+func (v *ChallengeVertex) HistoryCommitment() util.HistoryCommitment {
+	return util.HistoryCommitment{
+		Height: v.inner.Height.Uint64(),
+		Merkle: v.inner.HistoryRoot,
+	}
 }
 
 func (v *ChallengeVertex) MiniStaker() common.Address {

@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -59,18 +58,12 @@ func newVertexTracker(
 }
 
 func (v *vertexTracker) track(ctx context.Context) {
-	commitment, err := v.vertex.HistoryCommitment(ctx, tx)
-	if err != nil {
-		return
-	}
-	validator, err := v.vertex.MiniStaker(ctx, tx)
-	if err != nil {
-		return
-	}
+	commitment := v.vertex.HistoryCommitment()
+	miniStakerAddr := v.vertex.MiniStaker()
 	log.WithFields(logrus.Fields{
-		"height":    commitment.Height,
-		"merkle":    fmt.Sprintf("%#x", commitment.Merkle),
-		"validator": validator,
+		"height":     commitment.Height,
+		"merkle":     fmt.Sprintf("%#x", commitment.Merkle),
+		"miniStaker": miniStakerAddr,
 	}).Info("Tracking challenge vertex")
 
 	t := v.timeRef.NewTicker(v.actEveryNSeconds)
@@ -108,32 +101,30 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}
 	// Refresh the vertex by reading it again from the protocol as some of its fields may have changed.
-	commitment, err := v.vertex.HistoryCommitment(ctx, tx)
-	if err != nil {
-		return err
-	}
-	vertex, err := v.fetchVertexByHistoryCommit(ctx, protocol.VertexHash(commitment.Hash()))
+	vertex, err := v.fetchVertexByHistoryCommit(ctx, v.vertex.Id())
 	if err != nil {
 		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}
 	v.vertex = vertex
-	prev, err := v.vertex.Prev(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if prev.IsNone() {
-		return ErrPrevNone
-	}
-	status, err := v.vertex.Status(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if status == protocol.AssertionConfirmed {
-		return ErrConfirmed
-	}
 	var challengeCompleted bool
 	var siblingConfirmed bool
+	var prev protocol.ChallengeVertex
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
+		prevV, err := v.vertex.Prev(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if prevV.IsNone() {
+			return ErrPrevNone
+		}
+		prev = prevV.Unwrap()
+		status, err := v.vertex.Status()
+		if err != nil {
+			return err
+		}
+		if status == protocol.AssertionConfirmed {
+			return ErrConfirmed
+		}
 		challengeCompleted, err = v.challenge.Completed(ctx, tx)
 		if err != nil {
 			return nil
@@ -153,7 +144,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return ErrSiblingConfirmed
 	}
 
-	confirmed, err := v.confirmed(ctx, tx)
+	confirmed, err := v.confirmed(ctx)
 	if err != nil {
 		log.WithError(err).Error("Could not check if vertex is confirmed")
 	} else if confirmed {
@@ -162,13 +153,11 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 
 	// We check if we are one-step away from the parent, in which case we then
 	// await the resolution of any one-step fork if needed, or confirm once time passes.
-	prevCommitment, err := prev.Unwrap().HistoryCommitment(ctx, tx)
-	if err != nil {
-		return err
-	}
+	commitment := v.vertex.HistoryCommitment()
+	prevCommitment := prev.HistoryCommitment()
 	if commitment.Height == prevCommitment.Height+1 {
 		// Check if in a one-step fork.
-		atOneStepFork, fetchErr := prev.Unwrap().ChildrenAreAtOneStepFork(ctx, tx)
+		atOneStepFork, fetchErr := prev.ChildrenAreAtOneStepFork(ctx, tx)
 		if fetchErr != nil {
 			return fetchErr
 		}
@@ -219,55 +208,12 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	return nil
 }
 
-// Checks if the vertex is at a one-step-fork.
-func (v *vertexTracker) isAtOneStepFork(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
-	var atOneStepFork bool
-	var err error
-	commitment, err := v.vertex.HistoryCommitment(ctx, tx)
-	if err != nil {
-		return false, err
-	}
-	prev, err := v.vertex.Prev(ctx, tx)
-	if err != nil {
-		return false, err
-	}
-	prevCommitment, err := prev.Unwrap().GetCommitment(ctx, tx)
-	if err != nil {
-		return false, err
-	}
-	challengeParentStateCommitment, err := v.challenge.ParentStateCommitment(ctx, tx)
-	if err != nil {
-		return false, err
-	}
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		atOneStepFork, err = prev.Unwrap().ChildrenAreAtOneStepFork(
-			ctx,
-			tx,
-			protocol.ChallengeHash(challengeParentStateCommitment.Hash()),
-			commitment,
-			prevCommitment,
-		)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return false, err
-	}
-	return atOneStepFork, nil
-}
-
 // Obtains a challenge vertex we should perform move into given its corresponding challenge ID
 // and the history commitment of the vertex itself from the chain.
 func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash protocol.VertexHash) (protocol.ChallengeVertex, error) {
 	var mergingTo util.Option[protocol.ChallengeVertex]
 	var err error
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		var parentStateCommitment util.StateCommitment
-		parentStateCommitment, err = v.challenge.ParentStateCommitment(ctx, tx)
-		if err != nil {
-			return err
-		}
 		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
 		if err != nil {
 			return err
