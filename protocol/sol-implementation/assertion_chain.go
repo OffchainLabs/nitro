@@ -261,6 +261,14 @@ func (ac *AssertionChain) CreateAssertion(
 	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
 }
 
+func (ac *AssertionChain) GetAssertionId(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	seqNum protocol.AssertionSequenceNumber,
+) (protocol.AssertionHash, error) {
+	return ac.userLogic.GetAssertionId(ac.callOpts, uint64(seqNum))
+}
+
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(
 	ctx context.Context,
@@ -280,8 +288,11 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: FIX UP to use assertion hash.
-	challengeId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash{}, protocol.BlockChallenge)
+	assertionId, err := ac.rollup.GetAssertionId(ac.callOpts, uint64(seqNum))
+	if err != nil {
+		return nil, err
+	}
+	challengeId, err := manager.CalculateChallengeHash(ctx, tx, assertionId, protocol.BlockChallenge)
 	if err != nil {
 		return nil, err
 	}

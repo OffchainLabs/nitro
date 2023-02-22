@@ -29,7 +29,6 @@ func (v *Validator) onChallengeStarted(
 	challenge, err := v.fetchProtocolChallenge(
 		ctx,
 		ev.ParentSeqNum,
-		ev.ParentStateHash,
 	)
 	if err != nil {
 		return err
@@ -75,7 +74,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum)
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
-			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateHash)
+			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum)
 			if fetchErr != nil {
 				return fetchErr
 			}
@@ -108,7 +107,6 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	logFields["parentAssertionSeqNum"] = ev.PrevSeqNum
 	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", ev.PrevStateHash)
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
-	fmt.Println("Success")
 
 	return nil
 }
@@ -156,7 +154,6 @@ func (v *Validator) addChallengeVertex(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Latest valid", latestValidAssertionSeq)
 	var createdVertex protocol.ChallengeVertex
 	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
 		assertion, err := v.chain.AssertionBySequenceNum(ctx, tx, latestValidAssertionSeq)
@@ -202,20 +199,26 @@ func (v *Validator) submitProtocolChallenge(
 func (v *Validator) fetchProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.AssertionSequenceNumber,
-	parentStateHash common.Hash,
 ) (protocol.Challenge, error) {
 	var err error
 	var challenge util.Option[protocol.Challenge]
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
+		assertionId, err := v.chain.GetAssertionId(ctx, tx, parentAssertionSeqNum)
+		if err != nil {
+			return err
+		}
 		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+		if err != nil {
+			return err
+		}
+		chalHash, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(assertionId), protocol.BlockChallenge)
 		if err != nil {
 			return err
 		}
 		challenge, err = manager.GetChallenge(
 			ctx,
 			tx,
-			// TODO: Compute challenge hash.
-			protocol.ChallengeHash(parentStateHash),
+			chalHash,
 		)
 		if err != nil {
 			return err

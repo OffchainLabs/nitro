@@ -73,6 +73,11 @@ type AssertionChain interface {
 	) (Assertion, error)
 	LatestConfirmed(ctx context.Context, tx ActiveTx) (Assertion, error)
 	CurrentChallengeManager(ctx context.Context, tx ActiveTx) (ChallengeManager, error)
+	GetAssertionId(
+		ctx context.Context,
+		tx ActiveTx,
+		seqNum AssertionSequenceNumber,
+	) (AssertionHash, error)
 
 	// Mutating methods.
 	CreateAssertion(
