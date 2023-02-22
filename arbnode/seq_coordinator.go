@@ -600,8 +600,18 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
+	syncProgress := c.sync.SyncProgressMap()
+	synced := len(syncProgress) == 0
+	if !synced {
+		var detailsList []interface{}
+		for key, value := range syncProgress {
+			detailsList = append(detailsList, key, value)
+		}
+		log.Warn("sequencer is not synced", detailsList...)
+	}
+
 	// can take over as main sequencer?
-	if c.sync.Synced() && localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl() {
+	if synced && localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl() {
 		if c.sequencer == nil {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
@@ -634,7 +644,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// update wanting the lockout
 	var wantsLockoutErr error
-	if c.sync.Synced() && !c.AvoidingLockout() {
+	if synced && !c.AvoidingLockout() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
