@@ -237,7 +237,9 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return aState, nil
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, stateDB vm.StateDB, chainConfig *params.ChainConfig) error {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(
+	currentTimestamp uint64, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
@@ -249,7 +251,9 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 
 var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig) error {
+func (state *ArbosState) UpgradeArbosVersion(
+	upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -280,15 +284,25 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 		case 8:
 			// no state changes needed
 		case 9:
-			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
+			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
+				l1pricing.L1PricerFundsPoolAddress,
+			)))
 		case 10:
-			if !chainConfig.ArbitrumChainParams.AllowDebugPrecompiles {
+			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
-				return fmt.Errorf("the chain is upgrading to unsupported ArbOS version %v, %w", state.arbosVersion+1, ErrFatalNodeOutOfDate)
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					state.arbosVersion+1,
+					ErrFatalNodeOutOfDate,
+				)
 			}
 			// no state changes needed
 		default:
-			return fmt.Errorf("the chain is upgrading to unsupported ArbOS version %v, %w", state.arbosVersion+1, ErrFatalNodeOutOfDate)
+			return fmt.Errorf(
+				"the chain is upgrading to unsupported ArbOS version %v, %w",
+				state.arbosVersion+1,
+				ErrFatalNodeOutOfDate,
+			)
 		}
 		state.arbosVersion++
 	}

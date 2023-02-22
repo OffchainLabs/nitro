@@ -348,7 +348,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
-		return nil, fmt.Errorf("%s. %w", err.Error(), BatchToDasFailed)
+		return nil, fmt.Errorf("%w. %w", err, BatchToDasFailed)
 	}
 	if !verified {
 		return nil, fmt.Errorf("failed aggregate signature check. %w", BatchToDasFailed)
