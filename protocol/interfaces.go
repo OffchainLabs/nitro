@@ -189,7 +189,7 @@ type ChallengeVertex interface {
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)
 	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
-	MiniStaker(ctx context.Context, tx ActiveTx) (common.Address, error)
+	MiniStaker() common.Address
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
 	HasConfirmedSibling(
 		ctx context.Context,
@@ -265,10 +265,10 @@ type RejectEvent struct {
 
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
-	ParentSeqNum          AssertionSequenceNumber
-	ParentStateCommitment util.StateCommitment
-	ParentStaker          common.Address
-	Validator             common.Address
+	ParentSeqNum    AssertionSequenceNumber
+	ParentStateHash common.Hash
+	ParentStaker    common.Address
+	Validator       common.Address
 }
 
 type SetBalanceEvent struct {

@@ -161,7 +161,7 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 				log.WithError(err).Error("Could not submit leaf to protocol")
 				continue
 			}
-			go v.confirmLeafAfterChallengePeriod(leaf)
+			go v.confirmLeafAfterChallengePeriod(ctx, leaf)
 		case <-ctx.Done():
 			return
 		}
@@ -175,13 +175,13 @@ func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 			switch ev := genericEvent.(type) {
 			case *protocol.CreateLeafEvent:
 				go func() {
-					if err := v.onLeafCreated(ctx, tx, ev); err != nil {
+					if err := v.onLeafCreated(ctx, ev); err != nil {
 						log.WithError(err).Error("Could not process leaf creation event")
 					}
 				}()
 			case *protocol.StartChallengeEvent:
 				go func() {
-					if err := v.onChallengeStarted(ctx, tx, ev); err != nil {
+					if err := v.onChallengeStarted(ctx, ev); err != nil {
 						log.WithError(err).Error("Could not process challenge start event")
 					}
 				}()
@@ -209,7 +209,7 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	parentAssertionSeq := v.findLatestValidAssertion(ctx)
 	var parentAssertion protocol.Assertion
 	var err error
-	if err = v.chain.Call(ctx, func(ctx context.Context, tx protocol.ActiveTx) error {
+	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
 		parentAssertion, err = v.chain.AssertionBySequenceNum(ctx, tx, parentAssertionSeq)
 		if err != nil {
 			return err
@@ -285,7 +285,7 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Asser
 	var numAssertions uint64
 	var latestConfirmed protocol.AssertionSequenceNumber
 	var err error
-	_ = v.chain.Call(ctx, func(ctx context.Context, tx protocol.ActiveTx) error {
+	_ = v.chain.Call(func(tx protocol.ActiveTx) error {
 		numAssertions, err = v.chain.NumAssertions(ctx, tx)
 		if err != nil {
 			return err
@@ -334,6 +334,8 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 	}
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(chalPeriod))
 	defer cancel()
+
+	// TODO: Handle validator process dying here.
 	<-ctx.Done()
 	logFields := logrus.Fields{
 		"height":      leaf.Height(),

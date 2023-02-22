@@ -35,8 +35,8 @@ func (v *ChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.Act
 	return util.HistoryCommitment{}, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
-	return common.Address{}, errors.New("unimplemented")
+func (v *ChallengeVertex) MiniStaker() common.Address {
+	return v.inner.Staker
 }
 
 func (v *ChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error) {

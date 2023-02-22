@@ -29,7 +29,7 @@ func (v *Validator) onChallengeStarted(
 	challenge, err := v.fetchProtocolChallenge(
 		ctx,
 		ev.ParentSeqNum,
-		ev.ParentStateCommitment,
+		ev.ParentStateHash,
 	)
 	if err != nil {
 		return err
@@ -38,13 +38,11 @@ func (v *Validator) onChallengeStarted(
 	// We then add a challenge vertex to the challenge.
 	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
 	if err != nil {
-		parentStateCommitment, _ := challenge.ParentStateCommitment(ctx, tx)
-		if errors.Is(err, solimpl.ErrVertexAlreadyExists) {
+		if errors.Is(err, solimpl.ErrAlreadyExists) {
+			// TODO: Should we return error here instead of a log and nil?
 			log.Infof(
-				"Attempted to add a challenge leaf that already exists to challenge with "+
-					"parent state commit: height=%d, stateRoot=%#x",
-				parentStateCommitment.Height,
-				parentStateCommitment.StateRoot,
+				"Attempted to add a challenge leaf that already exists with state hash %#x",
+				ev.ParentStateHash,
 			)
 			return nil
 		}
@@ -52,10 +50,7 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker, err := challengeVertex.GetValidator(ctx, tx)
-	if err != nil {
-		return err
-	}
+	staker := challengeVertex.MiniStaker()
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
@@ -71,7 +66,7 @@ func (v *Validator) onChallengeStarted(
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx, tx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
 
 	return nil
 }
@@ -84,7 +79,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	var err error
 	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum)
 	if err != nil {
-		if errors.Is(err, solimpl.ErrChallengeAlreadyExists) {
+		if errors.Is(err, solimpl.ErrAlreadyExists) {
 			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateHash)
 			if fetchErr != nil {
 				return fetchErr
@@ -98,20 +93,16 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	// We then add a challenge vertex to the challenge.
 	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
 	if err != nil {
-		return err
-	}
-	if errors.Is(err, solimpl.ErrVertexAlreadyExists) {
-		parentStateCommitment, err := challenge.ParentStateCommitment(ctx)
-		if err != nil {
-			return err
+		if errors.Is(err, solimpl.ErrAlreadyExists) {
+			// TODO: Should we return error here instead of a log and nil?
+			log.Infof(
+				"Attempted to add a challenge leaf that already exists with height %d and state hash %#x",
+				ev.Height,
+				ev.StateHash,
+			)
+			return nil
 		}
-		log.Infof(
-			"Attempted to add a challenge leaf that already exists to challenge with "+
-				"parent state commit: height=%d, stateRoot=%#x",
-			parentStateCommitment.Height,
-			parentStateCommitment.StateRoot,
-		)
-		return nil
+		return err
 	}
 
 	// Start tracking the challenge.
@@ -129,41 +120,38 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 }
 
 func (v *Validator) verifyAddLeafConditions(ctx context.Context, a protocol.Assertion, c protocol.Challenge) error {
-	if a.Prev.IsNone() {
-		return errors.Wrap(solimpl.ErrInvalidOp, "Can not add leaf on root assertion")
-	}
-	rootAssertion, err := c.RootAssertion(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if a.Prev.Unwrap() != rootAssertion {
-		return errors.Wrap(solimpl.ErrInvalidOp, "Challenge and assertion parent mismatch")
-	}
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		var completed bool
-		completed, err = c.Completed(ctx, tx)
+	return v.chain.Call(func(tx protocol.ActiveTx) error {
+		prev, err := v.chain.AssertionBySequenceNum(ctx, tx, a.PrevSeqNum())
+		if err != nil {
+			return err
+		}
+		rootAssertion, err := c.RootAssertion(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if prev != rootAssertion {
+			return errors.New("challenge and assertion parent mismatch")
+		}
+		completed, err := c.Completed(ctx, tx)
 		if err != nil {
 			return nil
 		}
 		if completed {
-			return errors.New("Challenge has been completed")
+			return errors.New("challenge has been completed")
+		}
+		rootVertex, err := c.RootVertex(ctx, tx)
+		if err != nil {
+			return err
+		}
+		eligibleForNewSuccessor, err := rootVertex.EligibleForNewSuccessor(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if !eligibleForNewSuccessor {
+			return errors.New("root vertex is not eligible for new successor")
 		}
 		return nil
-	}); err != nil {
-		return errors.Wrap(solimpl.ErrInvalidOp, err.Error())
-	}
-	rootVertex, err := c.RootVertex(ctx, tx)
-	if err != nil {
-		return err
-	}
-	eligibleForNewSuccessor, err := rootVertex.EligibleForNewSuccessor(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if !eligibleForNewSuccessor {
-		return errors.Wrap(solimpl.ErrInvalidOp, "Root vertex is not eligible for new successor")
-	}
-	return nil
+	})
 }
 
 func (v *Validator) addChallengeVertex(
