@@ -98,6 +98,13 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     }
 
     /**
+     * @notice Get the total number of assertions
+     */
+    function numAssertions() public view returns (uint64) {
+        return _latestAssertionCreated + 1;
+    }
+
+    /**
      * @notice Check if the specified assertion has been staked on by the provided staker.
      * Only accurate at the latest confirmed assertion and afterwards.
      */

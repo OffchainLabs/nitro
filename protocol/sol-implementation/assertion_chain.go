@@ -171,7 +171,7 @@ func (ac *AssertionChain) NumAssertions(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 ) (uint64, error) {
-	return 0, nil
+	return 0, errors.New("unimplemented")
 }
 
 // AssertionBySequenceNum --
@@ -202,8 +202,12 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 	}, nil
 }
 
-func (ac *AssertionChain) LatestConfirmed(_ context.Context, _ protocol.ActiveTx) (protocol.Assertion, error) {
-	return nil, errors.New("unimplemented")
+func (ac *AssertionChain) LatestConfirmed(ctx context.Context, tx protocol.ActiveTx) (protocol.Assertion, error) {
+	res, err := ac.rollup.LatestConfirmed(ac.callOpts)
+	if err != nil {
+		return nil, err
+	}
+	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(res))
 }
 
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
