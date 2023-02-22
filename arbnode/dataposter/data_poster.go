@@ -361,7 +361,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.FullTx.GasTipCap(), prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.FullTx.Gas(), prevTx.FullTx.GasTipCap(), prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
