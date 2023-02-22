@@ -107,9 +107,8 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	logFields["name"] = v.name
 	logFields["parentAssertionSeqNum"] = ev.PrevSeqNum
 	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", ev.PrevStateHash)
-	// TODO: Compute challenge ID properly.
-	//logFields["challengeID"] = fmt.Sprintf("%#x", ev.PrevStateCommitment.Hash())
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
+	fmt.Println("Success")
 
 	return nil
 }
@@ -153,14 +152,16 @@ func (v *Validator) addChallengeVertex(
 	ctx context.Context,
 	challenge protocol.Challenge,
 ) (protocol.ChallengeVertex, error) {
-	latestValidAssertionSeq := v.findLatestValidAssertion(ctx)
+	latestValidAssertionSeq, err := v.findLatestValidAssertion(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var createdVertex protocol.ChallengeVertex
 	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
 		assertion, err := v.chain.AssertionBySequenceNum(ctx, tx, latestValidAssertionSeq)
 		if err != nil {
 			return err
 		}
-		return nil
 		historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
 		if err != nil {
 			return err

@@ -129,10 +129,18 @@ func NewAssertionChain(
 func (chain *AssertionChain) Tx(cb func(protocol.ActiveTx) error) error {
 	head := chain.backend.Blockchain().CurrentHeader()
 	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
+	var headNum *big.Int
+	var finalizedNum *big.Int
+	if finalized != nil {
+		finalizedNum = finalized.Number()
+	}
+	if head != nil {
+		headNum = head.Number
+	}
 	tx := &activeTx{
 		readWriteTx: true,
-		head:        head.Number,
-		finalized:   finalized.Number(),
+		head:        headNum,
+		finalized:   finalizedNum,
 		sender:      chain.stakerAddr,
 	}
 	return cb(tx)
@@ -142,10 +150,18 @@ func (chain *AssertionChain) Tx(cb func(protocol.ActiveTx) error) error {
 func (chain *AssertionChain) Call(cb func(protocol.ActiveTx) error) error {
 	head := chain.backend.Blockchain().CurrentHeader()
 	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
+	var headNum *big.Int
+	var finalizedNum *big.Int
+	if finalized != nil {
+		finalizedNum = finalized.Number()
+	}
+	if head != nil {
+		headNum = head.Number
+	}
 	tx := &activeTx{
 		readWriteTx: false,
-		head:        head.Number,
-		finalized:   finalized.Number(),
+		head:        headNum,
+		finalized:   finalizedNum,
 		sender:      chain.stakerAddr,
 	}
 	return cb(tx)

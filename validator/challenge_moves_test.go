@@ -1,5 +1,10 @@
 package validator
 
+import (
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
+)
+
 // import (
 // 	"context"
 // 	"testing"
@@ -289,10 +294,10 @@ package validator
 // 	return bisectedVertex
 // }
 
-// func generateStateRoots(numBlocks uint64) []common.Hash {
-// 	var ret []common.Hash
-// 	for i := uint64(0); i < numBlocks; i++ {
-// 		ret = append(ret, util.HashForUint(i))
-// 	}
-// 	return ret
-// }
+func generateStateRoots(numBlocks uint64) []common.Hash {
+	var ret []common.Hash
+	for i := uint64(0); i < numBlocks; i++ {
+		ret = append(ret, util.HashForUint(i))
+	}
+	return ret
+}

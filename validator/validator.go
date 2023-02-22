@@ -206,9 +206,11 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
-	parentAssertionSeq := v.findLatestValidAssertion(ctx)
+	parentAssertionSeq, err := v.findLatestValidAssertion(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var parentAssertion protocol.Assertion
-	var err error
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
 		parentAssertion, err = v.chain.AssertionBySequenceNum(ctx, tx, parentAssertionSeq)
 		if err != nil {
@@ -281,11 +283,11 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 // Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
-func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.AssertionSequenceNumber {
+func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.AssertionSequenceNumber, error) {
 	var numAssertions uint64
 	var latestConfirmed protocol.AssertionSequenceNumber
 	var err error
-	_ = v.chain.Call(func(tx protocol.ActiveTx) error {
+	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
 		numAssertions, err = v.chain.NumAssertions(ctx, tx)
 		if err != nil {
 			return err
@@ -296,7 +298,9 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Asser
 		}
 		latestConfirmed = latestConfirmedFetched.SeqNum()
 		return nil
-	})
+	}); err != nil {
+		return 0, err
+	}
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
 	for s := protocol.AssertionSequenceNumber(numAssertions); s > latestConfirmed; s-- {
@@ -308,10 +312,10 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Asser
 			Height:    a.Height,
 			StateRoot: a.StateHash,
 		}) {
-			return a.SeqNum
+			return a.SeqNum, nil
 		}
 	}
-	return latestConfirmed
+	return latestConfirmed, nil
 }
 
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
