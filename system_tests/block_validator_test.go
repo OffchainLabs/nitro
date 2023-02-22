@@ -39,7 +39,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	validatorConfig.BlockValidator.JitValidator = !arbitrator
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil)
 	defer nodeB.StopAndWait()
 	l2info.GenerateAccount("User2")
 
