@@ -146,7 +146,7 @@ func (c *MachineCache) populateInitialCache(ctx context.Context, target_step uin
 			// Double the step interval between machines, which halves the number of machines.
 			var pruned []MachineInterface
 			for i, mach := range c.machines {
-				// If i%2 == 0, this machine is no longer on the step interval.
+				// If i%2 == 1, this machine is no longer on the step interval.
 				if i%2 == 0 {
 					pruned = append(pruned, mach)
 				} else {

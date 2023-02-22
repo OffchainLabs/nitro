@@ -910,7 +910,6 @@ func createNodeImpl(
 	txStreamer.SetInboxReader(inboxReader)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	err = nil
 	if config.BlockValidator.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
@@ -922,10 +921,14 @@ func createNodeImpl(
 			daReader,
 			&configFetcher.Get().BlockValidator,
 		)
+	} else {
+		err = errors.New("no validator url specified")
 	}
 	if err != nil {
 		if config.ValidatorRequired() {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
+		} else {
+			log.Warn("validation not supported", "err", err)
 		}
 		statelessBlockValidator = nil
 	}
@@ -1397,6 +1400,8 @@ func (n *Node) Start(ctx context.Context) error {
 			} else {
 				log.Info("validation not set up", "err", err)
 			}
+			n.StatelessBlockValidator = nil
+			n.BlockValidator = nil
 		}
 	}
 	if n.BlockValidator != nil {

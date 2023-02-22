@@ -82,7 +82,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	f.String(prefix+".url", DefaultBlockValidatorConfig.URL, "url for valiation")
-	f.String(prefix+".jwtsecret", DefaultBlockValidatorConfig.JWTSecret, "path to file with jwtsecret for validation - empty disables jwt")
+	f.String(prefix+".jwtsecret", DefaultBlockValidatorConfig.JWTSecret, "path to file with jwtsecret for validation - empty disables jwt, 'self' uses the server's jwt")
 	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -99,7 +99,7 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	URL:                      "ws://127.0.0.1:8549/",
-	JWTSecret:                "",
+	JWTSecret:                "self",
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,

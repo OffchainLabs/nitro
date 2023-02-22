@@ -50,7 +50,7 @@ type ExecServerAPI struct {
 }
 
 func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner) *ExecServerAPI {
-	time.Now().Unix()
+	rand.Seed(time.Now().UnixNano())
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
@@ -89,14 +89,14 @@ func (a *ExecServerAPI) WriteToFile(jsonInput *ValidationInputJson, expOut valid
 	return a.execSpawner.WriteToFile(input, expOut, moduleRoot)
 }
 
-var ErrRunNotFound error = errors.New("run not found")
+var errRunNotFound error = errors.New("run not found")
 
 func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
 	run, found := a.runs[id]
 	if !found {
-		return nil, ErrRunNotFound
+		return nil, errRunNotFound
 	}
 	return run, nil
 }

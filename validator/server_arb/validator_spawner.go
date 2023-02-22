@@ -37,7 +37,7 @@ var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of cuncurrent validation runs")
+	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 }

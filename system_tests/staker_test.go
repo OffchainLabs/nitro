@@ -128,7 +128,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-	blockValidatorConfig := staker.DefaultBlockValidatorConfig
+	blockValidatorConfig := staker.TestBlockValidatorConfig
 	blockValidatorConfig.URL = valStack.WSEndpoint()
 
 	statelessA, err := staker.NewStatelessBlockValidator(
@@ -166,7 +166,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.ChainDB,
 		l2nodeB.ArbDB,
 		nil,
-		&staker.DefaultBlockValidatorConfig,
+		&blockValidatorConfig,
 	)
 	Require(t, err)
 	stakerB, err := staker.NewStaker(

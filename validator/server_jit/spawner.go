@@ -29,7 +29,7 @@ var DefaultJitSpawnerConfig = JitSpawnerConfig{
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of cuncurrent runs")
+	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 }
 

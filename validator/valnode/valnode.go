@@ -20,7 +20,7 @@ type WasmConfig struct {
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (machine.wavm.br, replay.wasm)")
 }
 
 var DefaultWasmConfig = WasmConfig{
@@ -39,6 +39,7 @@ type Config struct {
 type ValidationConfigFetcher func() *Config
 
 var DefaultValidationConfig = Config{
+	UseJit:     true,
 	Jit:        server_jit.DefaultJitSpawnerConfig,
 	ApiAuth:    true,
 	ApiPublic:  false,
@@ -113,11 +114,10 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	if err := v.arbSpawner.Start(ctx); err != nil {
 		return err
 	}
-	if v.jitSpawner == nil {
-		return nil
-	}
-	if err := v.jitSpawner.Start(ctx); err != nil {
-		return err
+	if v.jitSpawner != nil {
+		if err := v.jitSpawner.Start(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
