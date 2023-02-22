@@ -1,41 +1,45 @@
 package validator
 
-// import (
-// 	"context"
-// 	"errors"
-// 	"io"
-// 	"testing"
-// 	"time"
+import (
+	"context"
+	"io"
+	"testing"
+	"time"
 
-// 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
-// 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-// 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-// 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-// 	"github.com/ethereum/go-ethereum/common"
-// 	"github.com/sirupsen/logrus"
-// 	"github.com/sirupsen/logrus/hooks/test"
-// 	"github.com/stretchr/testify/require"
-// )
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
+)
 
-// func init() {
-// 	logrus.SetLevel(logrus.DebugLevel)
-// 	logrus.SetOutput(io.Discard)
-// }
+func init() {
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetOutput(io.Discard)
+}
 
-// func Test_track(t *testing.T) {
-// 	tx := &goimpl.ActiveTx{}
-// 	hook := test.NewGlobal()
-// 	tkr := newVertexTracker(util.NewArtificialTimeReference(), time.Millisecond, &goimpl.Challenge{}, &goimpl.ChallengeVertex{
-// 		Commitment: util.HistoryCommitment{},
-// 		Validator:  common.Address{},
-// 	}, nil, nil, "", common.Address{})
-// 	tkr.awaitingOneStepFork = true
-// 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
-// 	defer cancel()
-// 	tkr.track(ctx, tx)
-// 	AssertLogsContain(t, hook, "Tracking challenge vertex")
-// 	AssertLogsContain(t, hook, "Challenge goroutine exiting")
-// }
+func Test_track(t *testing.T) {
+	t.Skip("Needs mocks")
+	hook := test.NewGlobal()
+	tkr := newVertexTracker(
+		util.NewArtificialTimeReference(),
+		time.Millisecond,
+		&solimpl.Challenge{},
+		&solimpl.ChallengeVertex{},
+		&solimpl.AssertionChain{},
+		&mocks.MockStateManager{},
+		"mock-validator",
+		common.Address{},
+	)
+
+	tkr.awaitingOneStepFork = true
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
+	defer cancel()
+	tkr.track(ctx)
+	AssertLogsContain(t, hook, "Tracking challenge vertex")
+	AssertLogsContain(t, hook, "Challenge goroutine exiting")
+}
 
 // func Test_actOnBlockChallenge(t *testing.T) {
 // 	tx := &goimpl.ActiveTx{}

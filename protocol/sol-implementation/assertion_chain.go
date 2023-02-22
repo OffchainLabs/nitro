@@ -196,7 +196,7 @@ func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	height uint64,
-	prevAssertionId uint64,
+	prevAssertionId protocol.AssertionSequenceNumber,
 	prevAssertionState *protocol.ExecutionState,
 	postState *protocol.ExecutionState,
 	prevInboxMaxCount *big.Int,
