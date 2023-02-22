@@ -151,6 +151,13 @@ func (chain *AssertionChain) Call(ctx context.Context, cb func(context.Context, 
 	return cb(ctx, tx)
 }
 
+func (ac *AssertionChain) NumAssertions(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+) (uint64, error) {
+	return 0, nil
+}
+
 // AssertionBySequenceNum --
 func (ac *AssertionChain) AssertionBySequenceNum(
 	ctx context.Context,
