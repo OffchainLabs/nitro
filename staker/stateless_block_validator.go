@@ -194,13 +194,21 @@ func newValidationEntry(
 		Number: start.Batch,
 		Data:   batch,
 	}
+	hasDelayed := false
+	var delayedNum uint64
+	if msg.DelayedMessagesRead == prevDelayed+1 {
+		hasDelayed = true
+		delayedNum = prevDelayed
+	} else if msg.DelayedMessagesRead != prevDelayed {
+		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
+	}
 	return &validationEntry{
 		Stage:         ReadyForRecord,
 		Pos:           pos,
 		Start:         start,
 		End:           end,
-		HasDelayedMsg: (msg.DelayedMessagesRead > prevDelayed),
-		DelayedMsgNr:  msg.DelayedMessagesRead,
+		HasDelayedMsg: hasDelayed,
+		DelayedMsgNr:  delayedNum,
 		msg:           msg,
 		BatchInfo:     []validator.BatchInfo{batchInfo},
 	}, nil

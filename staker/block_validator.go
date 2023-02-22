@@ -464,10 +464,10 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		BlockHash: endRes.BlockHash,
 		SendRoot:  endRes.SendRoot,
 	}
-	if pos < v.nextCreateBatchMsgCount {
+	if pos+1 < v.nextCreateBatchMsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch
 		endGS.PosInBatch = v.nextCreateStartGS.PosInBatch + 1
-	} else if pos == v.nextCreateBatchMsgCount {
+	} else if pos+1 == v.nextCreateBatchMsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch + 1
 		endGS.PosInBatch = 0
 	} else {
@@ -898,7 +898,7 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 	defer timer.Stop()
 	lastLoop := false
 	for {
-		if pos >= v.validated() {
+		if v.validated() > pos {
 			return true
 		}
 		if lastLoop {
