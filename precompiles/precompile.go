@@ -725,7 +725,9 @@ func (p *Precompile) Call(
 			}
 			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
-		log.Debug("precompile reverted with non-solidity error", "precompile", precompileAddress, "input", input, "err", errRet)
+		if !errors.Is(errRet, vm.ErrOutOfGas) {
+			log.Debug("precompile reverted with non-solidity error", "precompile", precompileAddress, "input", input, "err", errRet)
+		}
 		// nolint:errorlint
 		if arbosVersion >= 11 || errRet == vm.ErrExecutionReverted {
 			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted

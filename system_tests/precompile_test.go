@@ -57,7 +57,7 @@ func TestCustomSolidityErrors(t *testing.T) {
 	Require(t, err, "could not bind ArbSys contract")
 	_, customError = arbSys.ArbBlockHash(callOpts, big.NewInt(1e9))
 	if customError == nil {
-		Fail(t, "out of range ArbBlockHash call have errored")
+		Fail(t, "out of range ArbBlockHash call should have errored")
 	}
 	observedMessage = customError.Error()
 	expectedMessage = "execution reverted: error InvalidBlockNumber(1000000000, 1)"
