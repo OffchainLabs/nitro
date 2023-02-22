@@ -33,6 +33,7 @@ type Context struct {
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
+	version     uint64 // set during OpenArbosState
 }
 
 func (c *Context) Burn(amount uint64) error {
@@ -63,6 +64,22 @@ func (c *Context) ReadOnly() bool {
 
 func (c *Context) TracingInfo() *util.TracingInfo {
 	return c.tracingInfo
+}
+
+func (c *Context) ChargeWithVersion(temporaryVersion uint64, closure func() error) error {
+	current := c.version
+	c.version = temporaryVersion
+	err := closure()
+	c.version = current
+	return err
+}
+
+func (c *Context) Version() uint64 {
+	return c.version
+}
+
+func (c *Context) SetVersion(version uint64) {
+	c.version = version
 }
 
 func testContext(caller addr, evm mech) *Context {

@@ -65,7 +65,7 @@ func TestEvents(t *testing.T) {
 	)
 	Require(t, err, "call failed")
 
-	burnedToStorage := storage.StorageReadCost                      // the ArbOS version check costs a read
+	burnedToStorage := storage.DeprecatedStorageReadCost            // the ArbOS version check costs a read
 	burnedToArgs := arbmath.WordsForBytes(32+32) * params.CopyGas   // bool and a bytes32
 	burnedToResult := arbmath.WordsForBytes(32+32) * params.CopyGas // addr and a huge
 	burnedToEvents := ^uint64(0) - gasLeft - (burnedToStorage + burnedToArgs + burnedToResult)

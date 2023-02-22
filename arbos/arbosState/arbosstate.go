@@ -64,6 +64,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	if arbosVersion == 0 {
 		return nil, ErrUninitializedArbOS
 	}
+	burner.SetVersion(arbosVersion)
 	return &ArbosState{
 		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
@@ -169,10 +170,6 @@ func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Addres
 	}
 	return arbOnlyPrecompiles
 }
-
-// During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
-// start running long-lived chains, every change to the storage format will require defining a new version and
-// providing upgrade code.
 
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)

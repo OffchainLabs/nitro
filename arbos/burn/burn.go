@@ -17,12 +17,15 @@ type Burner interface {
 	HandleError(err error) error
 	ReadOnly() bool
 	TracingInfo() *util.TracingInfo
+	SetVersion(version uint64)
+	Version() uint64
 }
 
 type SystemBurner struct {
 	gasBurnt    uint64
 	tracingInfo *util.TracingInfo
 	readOnly    bool
+	version     uint64 // set during OpenArbosState
 }
 
 func NewSystemBurner(tracingInfo *util.TracingInfo, readOnly bool) *SystemBurner {
@@ -57,4 +60,12 @@ func (burner *SystemBurner) ReadOnly() bool {
 
 func (burner *SystemBurner) TracingInfo() *util.TracingInfo {
 	return burner.tracingInfo
+}
+
+func (burner *SystemBurner) SetVersion(version uint64) {
+	burner.version = version
+}
+
+func (burner *SystemBurner) Version() uint64 {
+	return burner.version
 }

@@ -45,16 +45,18 @@ type Storage struct {
 	burner     burn.Burner
 }
 
-const StorageReadCost = params.SloadGasEIP2200
-const StorageWriteCost = params.SstoreSetGasEIP2200
-const StorageWriteZeroCost = params.SstoreResetGasEIP2200
+// the following constants have been deprecated as of ArbOS v11
+const DeprecatedStorageReadCost = params.SloadGasEIP2200
+const DeprecatedStorageWriteCost = params.SstoreSetGasEIP2200
+const DeprecatedStorageWriteZeroCost = params.SstoreResetGasEIP2200
+
+var arbosAccount = common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
-	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
+	statedb.SetNonce(arbosAccount, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
-		account:    account,
+		account:    arbosAccount,
 		db:         statedb,
 		storageKey: []byte{},
 		burner:     burner,
@@ -92,11 +94,21 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	)
 }
 
-func writeCost(value common.Hash) uint64 {
-	if value == (common.Hash{}) {
-		return StorageWriteZeroCost
+func readCost(db vm.StateDB, burner burn.Burner, key common.Hash) uint64 {
+	if burner.Version() < 11 {
+		return DeprecatedStorageReadCost
 	}
-	return StorageWriteCost
+	return vm.StateLoadCost(db, arbosAccount, key)
+}
+
+func writeCost(db vm.StateDB, burner burn.Burner, key, value common.Hash) uint64 {
+	if burner.Version() < 11 {
+		if value == (common.Hash{}) {
+			return DeprecatedStorageWriteZeroCost
+		}
+		return DeprecatedStorageWriteCost
+	}
+	return vm.StateStoreCost(db, arbosAccount, key, value)
 }
 
 func (store *Storage) Account() common.Address {
@@ -104,7 +116,7 @@ func (store *Storage) Account() common.Address {
 }
 
 func (store *Storage) Get(key common.Hash) (common.Hash, error) {
-	err := store.burner.Burn(StorageReadCost)
+	err := store.burner.Burn(readCost(store.db, store.burner, key))
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -136,7 +148,7 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := store.burner.Burn(writeCost(value))
+	err := store.burner.Burn(writeCost(store.db, store.burner, key, value))
 	if err != nil {
 		return err
 	}
@@ -283,7 +295,7 @@ func (store *Storage) NewSlot(offset uint64) StorageSlot {
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
-	err := ss.burner.Burn(StorageReadCost)
+	err := ss.burner.Burn(readCost(ss.db, ss.burner, ss.slot))
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -298,7 +310,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(writeCost(value))
+	err := ss.burner.Burn(writeCost(ss.db, ss.burner, ss.slot, value))
 	if err != nil {
 		return err
 	}

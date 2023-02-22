@@ -18,7 +18,7 @@ type ArbGasInfo struct {
 	Address addr // 0x6c
 }
 
-var storageArbGas = big.NewInt(int64(storage.StorageWriteCost))
+var storageArbGas = big.NewInt(int64(storage.DeprecatedStorageWriteCost))
 
 const AssumedSimpleTxSize = 140
 
