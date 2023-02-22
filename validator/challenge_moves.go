@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -31,19 +32,18 @@ func (v *vertexTracker) determineBisectionPointWithHistory(
 // the validator wants to bisect to and an associated proof for submitting to the goimpl.
 func (v *vertexTracker) bisect(
 	ctx context.Context,
-	tx *goimpl.ActiveTx,
-	validatorChallengeVertex goimpl.ChallengeVertexInterface,
-) (goimpl.ChallengeVertexInterface, error) {
-	commitment, err := validatorChallengeVertex.GetCommitment(ctx, tx)
+	validatorChallengeVertex protocol.ChallengeVertex,
+) (protocol.ChallengeVertex, error) {
+	commitment, err := validatorChallengeVertex.HistoryCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
 	toHeight := commitment.Height
-	prev, err := validatorChallengeVertex.GetPrev(ctx, tx)
+	prev, err := validatorChallengeVertex.Prev(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	prevCommitment, err := prev.Unwrap().GetCommitment(ctx, tx)
+	prevCommitment, err := prev.Unwrap().HistoryCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -68,17 +68,17 @@ func (v *vertexTracker) bisect(
 			commitment,
 		)
 	}
-	var bisectedVertex goimpl.ChallengeVertexInterface
-	err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
-		bisectedVertex, err = validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof, v.validatorAddress)
+	var bisectedVertex protocol.ChallengeVertex
+	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
+		bisectedVertex, err = validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof)
 		if err != nil {
 			return err
 		}
 		return nil
 	})
 	if err != nil {
-		seqNum, _ := validatorChallengeVertex.GetSequenceNum(ctx, tx)
-		validator, _ := validatorChallengeVertex.GetValidator(ctx, tx)
+		seqNum, _ := validatorChallengeVertex.SequenceNum(ctx, tx)
+		validator, _ := validatorChallengeVertex.MiniStaker(ctx, tx)
 		return nil, errors.Wrapf(
 			err,
 			"could not bisect vertex with sequence %d and validator %#x to height %d with history %d and %#x",
@@ -89,7 +89,7 @@ func (v *vertexTracker) bisect(
 			historyCommit.Merkle,
 		)
 	}
-	bisectedVertexCommitment, err := bisectedVertex.GetCommitment(ctx, tx)
+	bisectedVertexCommitment, err := bisectedVertex.HistoryCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,12 +111,11 @@ func (v *vertexTracker) bisect(
 // also need to fetch vertex we are merging to by reading it from the goimpl.
 func (v *vertexTracker) merge(
 	ctx context.Context,
-	tx *goimpl.ActiveTx,
-	challengeCommitHash goimpl.ChallengeCommitHash,
-	mergingTo goimpl.ChallengeVertexInterface,
-	mergingFrom goimpl.ChallengeVertexInterface,
-) (goimpl.ChallengeVertexInterface, error) {
-	mergingToCommit, err := mergingTo.GetCommitment(ctx, tx)
+	challengeCommitHash protocol.ChallengeHash,
+	mergingTo protocol.ChallengeVertex,
+	mergingFrom protocol.ChallengeVertex,
+) (protocol.ChallengeVertex, error) {
+	mergingToCommit, err := mergingTo.HistoryCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +124,7 @@ func (v *vertexTracker) merge(
 	if err != nil {
 		return nil, err
 	}
-	currentCommit, err := mergingFrom.GetCommitment(ctx, tx)
+	currentCommit, err := mergingFrom.HistoryCommitment(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -136,8 +135,8 @@ func (v *vertexTracker) merge(
 	if err = util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
 		return nil, err
 	}
-	if err = v.chain.Tx(func(tx *goimpl.ActiveTx) error {
-		if err = mergingFrom.Merge(ctx, tx, mergingTo, proof, v.validatorAddress); err != nil {
+	if err = v.chain.Tx(func(tx protocol.ActiveTx) error {
+		if err = mergingFrom.Merge(ctx, tx, mergingTo, proof); err != nil {
 			return err
 		}
 		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
@@ -145,7 +144,11 @@ func (v *vertexTracker) merge(
 		if err != nil {
 			return err
 		}
-		mergingTo, err = v.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, goimpl.VertexCommitHash(mergingToCommit.Hash()))
+		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+		if err != nil {
+			return err
+		}
+		mergingTo, err = manager.GetVertex(tx, challengeCommitHash, protocol.VertexHash(mergingToCommit.Hash()))
 		if err != nil {
 			return err
 		}

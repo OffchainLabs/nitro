@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"math/big"
 )
 
 const defaultCreateLeafInterval = time.Second * 5
@@ -218,17 +219,21 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 		return nil, err
 	}
 	// TODO: This should return the pre, post-state and a height.
-	currentCommit, err := v.stateManager.LatestStateCommitment(ctx)
+	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx)
 	if err != nil {
 		return nil, err
 	}
-	stateCommit := util.StateCommitment{
-		Height:    currentCommit.Height,
-		StateRoot: currentCommit.StateRoot,
-	}
 	var leaf protocol.Assertion
 	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		leaf, err = v.chain.CreateAssertion(ctx, tx, stateCommit.Height, parentAssertionSeq, nil, nil, nil)
+		leaf, err = v.chain.CreateAssertion(
+			ctx,
+			tx,
+			assertionToCreate.Height,
+			parentAssertionSeq,
+			assertionToCreate.PreState,
+			assertionToCreate.PostState,
+			big.NewInt(0), // TODO: Get from inbox
+		)
 		if err != nil {
 			return err
 		}
@@ -241,11 +246,11 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 		return nil, err
 	}
 	logFields := logrus.Fields{
-		"name":                       v.name,
-		"latestValidParentHeight":    fmt.Sprintf("%+v", parentAssertion.Height()),
-		"latestValidParentStateRoot": fmt.Sprintf("%#x", parentAssertion.StateHash()),
-		"leafHeight":                 currentCommit.Height,
-		"leafCommitmentMerkle":       fmt.Sprintf("%#x", currentCommit.StateRoot),
+		"name":                         v.name,
+		"latestValidParentHeight":      fmt.Sprintf("%+v", parentAssertion.Height()),
+		"latestValidParentStateRoot":   fmt.Sprintf("%#x", parentAssertion.StateHash()),
+		"leafHeight":                   assertionToCreate.Height,
+		"leafCommitmentBlockStateHash": fmt.Sprintf("%#x", assertionToCreate.PostState.BlockStateHash()),
 	}
 	log.WithFields(logFields).Info("Submitted leaf creation")
 

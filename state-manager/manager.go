@@ -3,13 +3,21 @@ package statemanager
 import (
 	"context"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 )
 
 // Manager defines a struct that can provide local state data and historical
 // Merkle commitments to L2 state for the validator.
+type AssertionToCreate struct {
+	PreState  *protocol.ExecutionState
+	PostState *protocol.ExecutionState
+	Height    uint64
+}
+
 type Manager interface {
+	LatestAssertionCreationData(ctx context.Context) (*AssertionToCreate, error)
 	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
 	StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error)
 	LatestStateCommitment(ctx context.Context) (util.StateCommitment, error)
@@ -31,6 +39,22 @@ func New(stateRoots []common.Hash) *Simulated {
 		panic("must have state roots")
 	}
 	return &Simulated{stateRoots}
+}
+
+// LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has.
+func (s *Simulated) LatestAssertionCreationData(ctx context.Context) (*AssertionToCreate, error) {
+	return &AssertionToCreate{
+		// TODO: Fill in.
+		PreState: &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
+		},
+		PostState: &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
+		},
+		Height: uint64(len(s.stateRoots)) - 1,
+	}, nil
 }
 
 // HasStateCommitment checks if a state commitment is found in our local list of state roots.
