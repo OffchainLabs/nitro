@@ -171,7 +171,7 @@ func (ac *AssertionChain) NumAssertions(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 ) (uint64, error) {
-	return 0, errors.New("unimplemented")
+	return ac.rollup.NumAssertions(ac.callOpts)
 }
 
 // AssertionBySequenceNum --

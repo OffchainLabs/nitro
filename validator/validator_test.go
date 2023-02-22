@@ -65,7 +65,7 @@ func Test_onLeafCreation(t *testing.T) {
 		manager.On(
 			"HistoryCommitmentUpTo",
 			ctx,
-			uint64(6),
+			uint64(leaf1.Height),
 		).Return(util.HistoryCommitment{
 			Height: leaf1.Height,
 			Merkle: leaf1.StateHash, // TODO: Change
@@ -280,6 +280,8 @@ func createTwoValidatorFork(
 	ev1 := &protocol.CreateLeafEvent{
 		PrevSeqNum:    genesis.PrevSeqNum(),
 		PrevStateHash: genesis.StateHash(),
+		PrevHeight:    0,
+		Height:        assertion.Height(),
 		SeqNum:        assertion.SeqNum(),
 		StateHash:     assertion.StateHash(),
 		Validator:     accs[1].accountAddr,
@@ -287,6 +289,8 @@ func createTwoValidatorFork(
 	ev2 := &protocol.CreateLeafEvent{
 		PrevSeqNum:    genesis.PrevSeqNum(),
 		PrevStateHash: genesis.StateHash(),
+		PrevHeight:    0,
+		Height:        forkedAssertion.Height(),
 		SeqNum:        forkedAssertion.SeqNum(),
 		StateHash:     forkedAssertion.StateHash(),
 		Validator:     accs[2].accountAddr,

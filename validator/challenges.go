@@ -156,6 +156,7 @@ func (v *Validator) addChallengeVertex(
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("Latest valid", latestValidAssertionSeq)
 	var createdVertex protocol.ChallengeVertex
 	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
 		assertion, err := v.chain.AssertionBySequenceNum(ctx, tx, latestValidAssertionSeq)
