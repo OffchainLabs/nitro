@@ -132,7 +132,7 @@ test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
 
-wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) arbitrator/prover/src/bulk_memory_internal.wasm
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) arbitrator/prover/bulk_memory_internal.wasm
 	@printf $(done)
 
 clean:
@@ -182,15 +182,15 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
 	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
 
-arbitrator/prover/src/bulk_memory_internal.wasm: arbitrator/prover/src/bulk_memory_internal.wat
-	wat2wasm -o arbitrator/prover/src/bulk_memory_internal.wasm arbitrator/prover/src/bulk_memory_internal.wat
+arbitrator/prover/bulk_memory_internal.wasm: arbitrator/prover/bulk_memory_internal.wat
+	wat2wasm -o arbitrator/prover/bulk_memory_internal.wasm arbitrator/prover/bulk_memory_internal.wat
 
-$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/src/bulk_memory_internal.wasm
+$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/bulk_memory_internal.wasm
 	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/src/bulk_memory_internal.wasm
+$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml arbitrator/prover/bulk_memory_internal.wasm
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
 	install arbitrator/target/release/libprover.a $@

@@ -37,7 +37,7 @@ use std::{
 use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
 
 lazy_static! {
-    static ref BULK_MEM_WASM_BYTES: &'static [u8] = include_bytes!("bulk_memory_internal.wasm");
+    static ref BULK_MEM_WASM_BYTES: &'static [u8] = include_bytes!("../bulk_memory_internal.wasm");
     static ref BULK_MEM_WASM: WasmBinary<'static> = binary::parse(&BULK_MEM_WASM_BYTES)
         .expect("bulk_memory_internal.wasm was not a valid wasm binary");
 }
