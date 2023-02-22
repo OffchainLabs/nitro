@@ -54,15 +54,10 @@ func (v *Validator) onChallengeStarted(
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
-	parentStateCommitment, err := challenge.ParentStateCommitment(ctx, tx)
-	if err != nil {
-		return err
-	}
 	log.WithFields(logrus.Fields{
 		"name":                 v.name,
 		"challenger":           challengerName,
-		"challengingStateRoot": fmt.Sprintf("%#x", parentStateCommitment.StateRoot),
-		"challengingHeight":    parentStateCommitment.Height,
+		"challengingStateRoot": fmt.Sprintf("%#x", ev.ParentStateHash),
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
@@ -159,41 +154,27 @@ func (v *Validator) addChallengeVertex(
 	challenge protocol.Challenge,
 ) (protocol.ChallengeVertex, error) {
 	latestValidAssertionSeq := v.findLatestValidAssertion(ctx)
-
-	var assertion protocol.Assertion
-	var err error
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		assertion, err = v.chain.AssertionBySequenceNum(tx, latestValidAssertionSeq)
+	var createdVertex protocol.ChallengeVertex
+	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
+		assertion, err := v.chain.AssertionBySequenceNum(ctx, tx, latestValidAssertionSeq)
 		if err != nil {
 			return err
 		}
 		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
-	if err != nil {
-		return nil, err
-	}
-
-	var challengeVertex protocol.ChallengeVertex
-	if err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		challengeVertex, err = challenge.AddLeaf(ctx, tx, assertion, historyCommit, v.address)
+		historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
 		if err != nil {
 			return err
 		}
+		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, assertion, historyCommit)
+		if err != nil {
+			return errors.Wrap(err, "could not add challenge leaf to challenge")
+		}
+		createdVertex = leaf
 		return nil
 	}); err != nil {
-		parentStateCommitment, _ := challenge.ParentStateCommitment(ctx, tx)
-		return nil, errors.Wrapf(
-			err,
-			"could add challenge vertex to challenge with parent state commitment: height=%d, stateRoot=%#x",
-			parentStateCommitment.Height,
-			parentStateCommitment.StateRoot,
-		)
+		return nil, err
 	}
-	return challengeVertex, nil
+	return createdVertex, nil
 }
 
 func (v *Validator) submitProtocolChallenge(
@@ -203,11 +184,7 @@ func (v *Validator) submitProtocolChallenge(
 	var challenge protocol.Challenge
 	var err error
 	if err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		parentAssertion, readErr := v.chain.AssertionBySequenceNum(tx, parentAssertionSeqNum)
-		if readErr != nil {
-			return readErr
-		}
-		challenge, err = parentAssertion.CreateChallenge(tx, ctx, v.address)
+		challenge, err = v.chain.CreateSuccessionChallenge(ctx, tx, parentAssertionSeqNum)
 		if err != nil {
 			return errors.Wrap(err, "could not submit challenge")
 		}
@@ -236,7 +213,7 @@ func (v *Validator) fetchProtocolChallenge(
 			ctx,
 			tx,
 			// TODO: Compute challenge hash.
-			protocol.ChallengeHash(parentAssertionCommit.Hash()),
+			protocol.ChallengeHash(parentStateHash),
 		)
 		if err != nil {
 			return err
