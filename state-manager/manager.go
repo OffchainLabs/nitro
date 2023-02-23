@@ -99,7 +99,7 @@ func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Ha
 	return util.GeneratePrefixProof(
 		lo,
 		exp,
-		s.stateRoots[lo:hi],
+		s.stateRoots[lo:hi+1],
 	), nil
 }
 

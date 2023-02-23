@@ -28,16 +28,8 @@ func Test_computePrefixProof(t *testing.T) {
 	require.NoError(t, err)
 
 	bisectToHeight := bisectToCommit.Height
-	t.Log(len(stateRoots[:bisectToHeight+1]))
-	exp := util.ExpansionFromLeaves(stateRoots[:bisectToHeight+1])
-	proof, err := util.GeneratePrefixProof(
-		bisectToHeight,
-		exp,
-		stateRoots[bisectToHeight:7],
-	), nil
-	// proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
-	// require.NoError(t, err)
-
+	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	require.NoError(t, err)
 	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
 	require.NoError(t, err)
 }
@@ -45,7 +37,7 @@ func Test_computePrefixProof(t *testing.T) {
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
-		createdData := createTwoValidatorFork(t, ctx)
+		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 		validator, err := New(ctx, createdData.assertionChains[1], &mocks.MockStateManager{})
 		require.NoError(t, err)
 
@@ -71,7 +63,7 @@ func Test_bisect(t *testing.T) {
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("fails to verify prefix proof", func(t *testing.T) {
-		createdData := createTwoValidatorFork(t, ctx)
+		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 		manager := &mocks.MockStateManager{}
 		manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(util.HistoryCommitment{}, nil)
 		manager.On("PrefixProof", ctx, uint64(0), uint64(7)).Return(make([]common.Hash, 0), nil)
@@ -101,25 +93,29 @@ func Test_bisect(t *testing.T) {
 	})
 	t.Run("OK", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		createdData := createTwoValidatorFork(t, ctx)
+		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 
-		manager := statemanager.New(createdData.stateRoots)
-		validator, err := New(ctx, createdData.assertionChains[1], manager)
+		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+		honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
 		require.NoError(t, err)
 
-		_ = runBisectionTest(
+		evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+		evilValidator, err := New(ctx, createdData.assertionChains[2], evilManager)
+		require.NoError(t, err)
+
+		bisectedTo := runBisectionTest(
 			t,
 			logsHook,
 			ctx,
-			validator,
-			createdData.stateRoots,
+			honestValidator,
+			evilValidator,
 			createdData.leaf1,
 			createdData.leaf2,
 		)
 
-		// // Expect to bisect to 4.
-		// commitment := bisectedVertex.HistoryCommitment()
-		// require.Equal(t, uint64(4), commitment.Height)
+		// Expect to bisect to 64.
+		commitment := bisectedTo.HistoryCommitment()
+		require.Equal(t, uint64(64), commitment.Height)
 	})
 }
 
@@ -230,14 +226,14 @@ func runBisectionTest(
 	t *testing.T,
 	logsHook *test.Hook,
 	ctx context.Context,
-	validator *Validator,
-	stateRoots []common.Hash,
+	honestValidator,
+	evilValidator *Validator,
 	leaf1,
 	leaf2 *protocol.CreateLeafEvent,
 ) protocol.ChallengeVertex {
-	err := validator.onLeafCreated(ctx, leaf1)
+	err := honestValidator.onLeafCreated(ctx, leaf1)
 	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, leaf2)
+	err = honestValidator.onLeafCreated(ctx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "New leaf appended")
@@ -246,10 +242,10 @@ func runBisectionTest(
 	var vertexToBisect protocol.ChallengeVertex
 	var chalId protocol.ChallengeHash
 
-	err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
-		genesisId, err := validator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
+	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
+		genesisId, err := evilValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
 		require.NoError(t, err)
-		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
+		manager, err := evilValidator.chain.CurrentChallengeManager(ctx, tx)
 		require.NoError(t, err)
 		chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
 		require.NoError(t, err)
@@ -259,14 +255,12 @@ func runBisectionTest(
 		challenge, err := manager.GetChallenge(ctx, tx, chalId)
 		require.NoError(t, err)
 		require.Equal(t, false, challenge.IsNone())
-		assertion, err := validator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(1))
+		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
 		require.NoError(t, err)
-		leaf1History := util.HistoryCommitment{
-			Height:   assertion.Height(),
-			Merkle:   common.BytesToHash([]byte("bad commit")),
-			LastLeaf: assertion.StateHash(),
-		}
-		vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, leaf1History)
+
+		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		require.NoError(t, err)
+		vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, honestCommit)
 		require.NoError(t, err)
 		vertexToBisect = vToBisect
 		return nil
@@ -274,7 +268,7 @@ func runBisectionTest(
 	require.NoError(t, err)
 
 	// Check presumptive statuses.
-	err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
+	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
 		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, false, isPs)
@@ -283,30 +277,24 @@ func runBisectionTest(
 	require.NoError(t, err)
 
 	v := vertexTracker{
-		chain:            validator.chain,
-		stateManager:     validator.stateManager,
-		validatorName:    validator.name,
-		validatorAddress: validator.address,
+		chain:            evilValidator.chain,
+		stateManager:     evilValidator.stateManager,
+		validatorName:    evilValidator.name,
+		validatorAddress: evilValidator.address,
 	}
 
 	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
 	require.NoError(t, err)
-	t.Logf("%+v", bisectedVertex)
-	return nil
 
-	// bisectionHeight := uint64(4)
-	// loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
+	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertex.HistoryCommitment().Height)
+	require.NoError(t, err)
 
-	// bisectionCommit := util.HistoryCommitment{
-	// 	Height: bisectionHeight,
-	// 	Merkle: loExp.Root(),
-	// }
-	// commitment := bisectedVertex.HistoryCommitment()
-	// require.NoError(t, err)
-	// require.Equal(t, commitment.Hash(), bisectionCommit.Hash())
+	commitment := bisectedVertex.HistoryCommitment()
+	require.NoError(t, err)
+	require.Equal(t, commitment.Hash(), shouldBisectToCommit.Hash())
 
-	// AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
-	// return bisectedVertex
+	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
+	return bisectedVertex
 }
 
 func generateStateRoots(numBlocks uint64) []common.Hash {
