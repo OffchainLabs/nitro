@@ -65,6 +65,13 @@ type BroadcasterConfig struct {
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
+	BroadcastDelay     BroadcastDelayConfig    `koanf:"broadcast-delay" reload:"hot"`
+}
+
+type BroadcastDelayConfig struct {
+	Delay      time.Duration `koanf:"delay" reload:"hot"`
+	BatchSize  int           `koanf:"batch-size" reload:"hot"`
+	BatchCount int           `koanf:"batch-count" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -97,6 +104,13 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
+	BroadcastDelayConfigAddOptions(prefix+".broadcast-delay", f)
+}
+
+func BroadcastDelayConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".delay", DefaultBroadcastDelayConfig.Delay, "the amount of delay inbetween broadcasting to each batch of clients")
+	f.Int(prefix+".batch-size", DefaultBroadcastDelayConfig.BatchSize, "the size of each batch of clients, each of which get the same delay")
+	f.Int(prefix+".batch-count", DefaultBroadcastDelayConfig.BatchCount, "the number of batches of clients, after which there's no additional delay")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -120,6 +134,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	BroadcastDelay:     DefaultBroadcastDelayConfig,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -143,6 +158,13 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	BroadcastDelay:     DefaultBroadcastDelayConfig,
+}
+
+var DefaultBroadcastDelayConfig = BroadcastDelayConfig{
+	Delay:      time.Millisecond * 10,
+	BatchSize:  5,
+	BatchCount: 5,
 }
 
 type WSBroadcastServer struct {

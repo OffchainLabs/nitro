@@ -274,6 +274,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 
 	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
+	i := 0
 	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
 		var data []byte
 		if client.Compression() {
@@ -300,6 +301,10 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			sendQueueTooLargeCount++
 			clientDeleteList = append(clientDeleteList, client)
 		}
+		if i != 0 && i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount && i%config.BroadcastDelay.BatchSize == 0 {
+			time.Sleep(config.BroadcastDelay.Delay)
+		}
+		i++
 	})
 
 	if sendQueueTooLargeCount > 0 {
