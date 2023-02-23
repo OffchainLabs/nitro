@@ -10,6 +10,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -43,7 +44,7 @@ func TestRetryableRedeem(t *testing.T) {
 	redeemCalldata, err := retryABI.Pack("redeem", id)
 	Require(t, err)
 
-	retryAddress := common.HexToAddress("6e")
+	retryAddress := types.ArbRetryableTxAddress
 	_, gasLeft, err := Precompiles()[retryAddress].Call(
 		redeemCalldata,
 		retryAddress,
@@ -56,7 +57,7 @@ func TestRetryableRedeem(t *testing.T) {
 	)
 	Require(t, err)
 
-	if gasLeft != storage.DeprecatedStorageWriteCost-storage.DeprecatedStorageWriteZeroCost {
+	if gasLeft != storage.StorageWriteCostV0-storage.StorageWriteZeroCostV0 {
 		// We expect to have some gas left over, because in this test we write a zero, but in other
 		//     use cases the precompile would cause a non-zero write. So the precompile allocates enough gas
 		//     to handle both cases, and some will be left over in this test's use case.

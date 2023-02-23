@@ -18,7 +18,8 @@ import (
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
-const RetryableReapPrice = 58000
+const RetryableReapPriceV0 = 58000
+const RetryableReapPriceV11 = 9800
 
 type RetryableState struct {
 	retryables   *storage.Storage
@@ -243,7 +244,12 @@ func (rs *RetryableState) Keepalive(
 	newTimeout := timeout + RetryableLifetimeSeconds
 
 	// Pay in advance for the work needed to reap the duplicate from the timeout queue
-	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
+	burner := rs.retryables.Burner()
+	if burner.Version() < 11 {
+		return newTimeout, rs.retryables.Burner().Burn(RetryableReapPriceV0)
+	} else {
+		return newTimeout, rs.retryables.Burner().Burn(RetryableReapPriceV11)
+	}
 }
 
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing

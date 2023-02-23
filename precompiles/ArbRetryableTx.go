@@ -98,7 +98,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	}
 	// Result is 32 bytes long which is 1 word
 	gasCostToReturnResult := params.CopyGas
-	gasPoolUpdateCost := storage.DeprecatedStorageReadCost + storage.DeprecatedStorageWriteCost
+	gasPoolUpdateCost := storage.StorageReadCostV0 + storage.StorageWriteCostV0
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.gasLeft < futureGasCosts {
 		return hash{}, c.Burn(futureGasCosts) // this will error

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -166,6 +167,10 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 	}
 	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}
+
+	// Add ArbOS and its version field to the access list
+	statedb.AddAddressToAccessList(types.ArbosStateAddress)
+	statedb.AddSlotToAccessList(types.ArbosStateAddress, common.Hash{})
 	return evm
 }
 

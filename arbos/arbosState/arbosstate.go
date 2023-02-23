@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -56,6 +57,14 @@ var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
 var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
 
 func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
+
+	// We may have reached ArbOS without having passed through the STF
+	// In these cases, record the fact that we've touched ArbOS if charging
+	if !burner.IsSystem() {
+		stateDB.AddAddressToAccessList(types.ArbosStateAddress)
+		stateDB.AddSlotToAccessList(types.ArbosStateAddress, common.Hash{})
+	}
+
 	backingStorage := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -113,6 +122,9 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
+	burner.SetVersion(newState.arbosVersion)
+	statedb.AddAddressToAccessList(types.ArbosStateAddress)
+	statedb.AddSlotToAccessList(types.ArbosStateAddress, common.Hash{})
 	return newState, statedb
 }
 
@@ -226,7 +238,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB, chainConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -234,19 +246,23 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return aState, nil
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, stateDB vm.StateDB) error {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(
+	currentTimestamp uint64, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		return state.UpgradeArbosVersion(upgradeTo, false, stateDB)
+		return state.UpgradeArbosVersion(upgradeTo, false, stateDB, chainConfig)
 	}
 	return nil
 }
 
-var ErrFatalNodeOutOfDate = errors.New("please upgrade to latest version of node software")
+var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, stateDB vm.StateDB) error {
+func (state *ArbosState) UpgradeArbosVersion(
+	upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -277,9 +293,25 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 		case 8:
 			// no state changes needed
 		case 9:
-			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
+			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
+				l1pricing.L1PricerFundsPoolAddress,
+			)))
+		case 10:
+			if !chainConfig.DebugMode() {
+				// This upgrade isn't finalized so we only want to support it for testing
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					state.arbosVersion+1,
+					ErrFatalNodeOutOfDate,
+				)
+			}
+			// no state changes needed
 		default:
-			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
+			return fmt.Errorf(
+				"the chain is upgrading to unsupported ArbOS version %v, %w",
+				state.arbosVersion+1,
+				ErrFatalNodeOutOfDate,
+			)
 		}
 		state.arbosVersion++
 	}

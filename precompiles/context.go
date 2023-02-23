@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -50,6 +51,23 @@ func (c *Context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
+func (c *Context) ChargeForRead(db vm.StateDB, key common.Hash) error {
+	if c.version < 11 {
+		return c.Burn(storage.StorageReadCostV0)
+	}
+	return c.Burn(vm.StateLoadCost(db, types.ArbosStateAddress, key))
+}
+
+func (c *Context) ChargeForWrite(db vm.StateDB, key, value common.Hash) error {
+	if c.version < 11 {
+		if value == (common.Hash{}) {
+			return c.Burn(storage.StorageWriteZeroCostV0)
+		}
+		return c.Burn(storage.StorageWriteCostV0)
+	}
+	return c.Burn(vm.StateStoreCost(db, types.ArbosStateAddress, key, value))
+}
+
 func (c *Context) Restrict(err error) {
 	log.Crit("A metered burner was used for access-controlled work", "error", err)
 }
@@ -60,6 +78,10 @@ func (c *Context) HandleError(err error) error {
 
 func (c *Context) ReadOnly() bool {
 	return c.readOnly
+}
+
+func (c *Context) IsSystem() bool {
+	return false
 }
 
 func (c *Context) TracingInfo() *util.TracingInfo {

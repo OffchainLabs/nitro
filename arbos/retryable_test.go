@@ -49,6 +49,7 @@ func TestRetryableLifecycle(t *testing.T) {
 		return currentTime
 	}
 	proveReapingDoesNothing := func() {
+		t.Helper()
 		stateCheck(t, statedb, false, "reaping had an effect", func() {
 			evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 			Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
@@ -61,24 +62,28 @@ func TestRetryableLifecycle(t *testing.T) {
 			Fail(t, currentTime, message, timeoutQueueSize)
 		}
 	}
+	createRetryables := func() []common.Hash {
+		ids := []common.Hash{}
+		for i := 0; i < 8; i++ {
+			id := common.BigToHash(big.NewInt(rand.Int63n(1 << 32)))
+			from := testhelpers.RandomAddress()
+			to := testhelpers.RandomAddress()
+			beneficiary := testhelpers.RandomAddress()
+			callvalue := big.NewInt(rand.Int63n(1 << 32))
+			calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
+
+			timeout := currentTime + lifetime
+			_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
+			Require(t, err)
+			ids = append(ids, id)
+		}
+		return ids
+	}
 
 	stateBeforeEverything := statedb.IntermediateRoot(true)
 	setTime(timestampAtCreation)
 
-	ids := []common.Hash{}
-	for i := 0; i < 8; i++ {
-		id := common.BigToHash(big.NewInt(rand.Int63n(1 << 32)))
-		from := testhelpers.RandomAddress()
-		to := testhelpers.RandomAddress()
-		beneficiary := testhelpers.RandomAddress()
-		callvalue := big.NewInt(rand.Int63n(1 << 32))
-		calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
-
-		timeout := timeoutAtCreation
-		_, err := retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
-		Require(t, err)
-		ids = append(ids, id)
-	}
+	ids := createRetryables()
 	proveReapingDoesNothing()
 
 	// Advance half way to expiration and extend each retryable's lifetime by one period
@@ -103,14 +108,17 @@ func TestRetryableLifecycle(t *testing.T) {
 	// Advance passed the original timeout and reap half the entries in the queue
 	setTime(timeoutAtCreation + 1)
 	burner, _ := state.Burner.(*burn.SystemBurner)
+	currentVersion := burner.Version()
+	burner.SetVersion(10)
+
 	for range ids {
 		// check that our reap pricing is reflective of the true cost
 		gasBefore := burner.Burned()
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		gasBurnedToReap := burner.Burned() - gasBefore
-		if gasBurnedToReap != retryables.RetryableReapPrice {
-			Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPrice)
+		if gasBurnedToReap != retryables.RetryableReapPriceV0 {
+			Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPriceV0)
 		}
 	}
 	checkQueueSize(len(ids), "Queue should have only one copy of each retryable")
@@ -131,8 +139,8 @@ func TestRetryableLifecycle(t *testing.T) {
 		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
 		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
 		gasBurnedToReapAndDelete := burner.Burned() - gasBefore
-		if gasBurnedToReapAndDelete <= retryables.RetryableReapPrice {
-			Fail(t, "deletion was cheap", gasBurnedToReapAndDelete, retryables.RetryableReapPrice)
+		if gasBurnedToReapAndDelete <= retryables.RetryableReapPriceV0 {
+			Fail(t, "deletion was cheap", gasBurnedToReapAndDelete, retryables.RetryableReapPriceV0)
 		}
 
 		// The retryable has been deleted, so opening it should fail
@@ -151,6 +159,23 @@ func TestRetryableLifecycle(t *testing.T) {
 	if !cleared || stateBeforeEverything != statedb.IntermediateRoot(true) {
 		Fail(t, "reaping didn't reset the state", cleared)
 	}
+
+	// Check reaping invariant under cheaper, but more variable model
+	burner.SetVersion(currentVersion)
+	ids = createRetryables()
+	proveReapingDoesNothing()
+	for range ids {
+		// check that our reap pricing is reflective of the true cost
+		gasBefore := burner.Burned()
+		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		Require(t, retryableState.TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM))
+		gasBurnedToReap := burner.Burned() - gasBefore
+		if gasBurnedToReap > retryables.RetryableReapPriceV11 {
+			Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPriceV11)
+		}
+	}
+	checkQueueSize(len(ids), "Queue should have only one copy of each retryable")
+	proveReapingDoesNothing()
 }
 
 func TestRetryableCleanup(t *testing.T) {
@@ -215,6 +240,7 @@ func TestRetryableCreate(t *testing.T) {
 }
 
 func stateCheck(t *testing.T, statedb *state.StateDB, change bool, message string, scope func()) {
+	t.Helper()
 	stateBefore := statedb.IntermediateRoot(true)
 	dumpBefore := string(statedb.Dump(&state.DumpConfig{}))
 	scope()
