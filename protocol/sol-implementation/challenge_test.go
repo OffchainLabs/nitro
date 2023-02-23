@@ -93,6 +93,12 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			},
 		)
 		require.NoError(t, err)
+
+		v, err := challenge.RootVertex(ctx, tx)
+		require.NoError(t, err)
+		want, err := challenge.manager.GetVertex(ctx, tx, v.Id())
+		require.NoError(t, err)
+		require.Equal(t, want.Unwrap(), v)
 	})
 	t.Run("already exists", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
