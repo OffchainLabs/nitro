@@ -87,99 +87,110 @@ func Test_onLeafCreation(t *testing.T) {
 	})
 }
 
-// func Test_onChallengeStarted(t *testing.T) {
-// 	ctx := context.Background()
-// 	logsHook := test.NewGlobal()
+func Test_onChallengeStarted(t *testing.T) {
+	ctx := context.Background()
+	logsHook := test.NewGlobal()
 
-// 	stateRoots := generateStateRoots(10)
-// 	manager := &mocks.MockStateManager{}
-// 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-// 		Height:    5,
-// 		StateRoot: stateRoots[5],
-// 	}).Return(false)
-// 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-// 		Height:    6,
-// 		StateRoot: stateRoots[6],
-// 	}).Return(true)
+	leaf1, leaf2, chains, _, _ := createTwoValidatorFork(t, ctx)
 
-// 	commit6, err := util.NewHistoryCommitment(
-// 		6,
-// 		stateRoots[:7],
-// 		util.WithLastElementProof(stateRoots[:7]),
-// 	)
-// 	require.NoError(t, err)
+	manager := &mocks.MockStateManager{}
+	manager.On("HasStateCommitment", ctx, util.StateCommitment{
+		Height:    leaf1.Height,
+		StateRoot: leaf1.StateHash,
+	}).Return(false)
+	manager.On("HasStateCommitment", ctx, util.StateCommitment{
+		Height:    leaf2.Height,
+		StateRoot: leaf2.StateHash,
+	}).Return(true)
 
-// 	manager.On(
-// 		"HistoryCommitmentUpTo",
-// 		ctx,
-// 		uint64(6),
-// 	).Return(commit6, nil)
+	manager.On(
+		"HistoryCommitmentUpTo",
+		ctx,
+		leaf1.Height,
+	).Return(util.HistoryCommitment{
+		Height: leaf1.Height,
+		Merkle: leaf1.StateHash,
+	}, nil)
 
-// 	commit4, err := util.NewHistoryCommitment(
-// 		4,
-// 		stateRoots[:5],
-// 		util.WithLastElementProof(stateRoots[:5]),
-// 	)
-// 	require.NoError(t, err)
+	manager.On(
+		"HistoryCommitmentUpTo",
+		ctx,
+		leaf2.Height,
+	).Return(util.HistoryCommitment{
+		Height: leaf2.Height,
+		Merkle: leaf2.StateHash,
+	}, nil)
 
-// 	manager.On(
-// 		"HistoryCommitmentUpTo",
-// 		ctx,
-// 		uint64(4),
-// 	).Return(commit4, nil)
-// 	leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
+	validator, err := New(ctx, chains[1], manager)
+	require.NoError(t, err)
 
-// 	err = validator.onLeafCreated(ctx, leaf1)
-// 	require.NoError(t, err)
-// 	err = validator.onLeafCreated(ctx, leaf2)
-// 	require.NoError(t, err)
-// 	AssertLogsContain(t, logsHook, "New leaf appended")
-// 	AssertLogsContain(t, logsHook, "New leaf appended")
-// 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+	err = validator.onLeafCreated(ctx, leaf1)
+	require.NoError(t, err)
+	err = validator.onLeafCreated(ctx, leaf2)
+	require.NoError(t, err)
+	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-// 	var challenge protocol.Challenge
-// 	err = validator.chain.Call(func(tx protocol.ActiveTx) error {
-// 		commit := util.StateCommitment{}
-// 		id := protocol.ChallengeHash(commit.Hash())
-// 		challenge, err = validator.chain.ChallengeByCommitHash(tx, id)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		return nil
-// 	})
-// 	require.NoError(t, err)
-// 	require.NotNil(t, challenge)
+	var challenge util.Option[protocol.Challenge]
+	err = validator.chain.Call(func(tx protocol.ActiveTx) error {
+		genesisId, err := validator.chain.GetAssertionId(ctx, tx, 0)
+		require.NoError(t, err)
 
-// 	manager = &mocks.MockStateManager{}
-// 	manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
-// 	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
+		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
 
-// 	commit6.Merkle = common.BytesToHash([]byte("forked commit"))
-// 	commit4.Merkle = common.BytesToHash([]byte("forked commit"))
-// 	manager.On("HistoryCommitmentUpTo", ctx, uint64(6)).Return(commit6, nil)
-// 	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(commit4, nil)
-// 	validator.stateManager = manager
+		chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
+		require.NoError(t, err)
 
-// 	parentStateCommitment, err := challenge.ParentStateCommitment(ctx, &mocks.MockActiveTx{ReadWriteTx: false})
-// 	require.NoError(t, err)
-// 	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
-// 		ParentSeqNum:    0,
-// 		ParentStateHash: parentStateCommitment.StateRoot,
-// 		ParentStaker:    common.Address{},
-// 		Validator:       common.BytesToAddress([]byte("other validator")),
-// 	})
-// 	require.NoError(t, err)
-// 	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
+		challenge, err = manager.GetChallenge(ctx, tx, chalId)
+		require.NoError(t, err)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, false, challenge.IsNone())
 
-// 	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
-// 		ParentSeqNum:    0,
-// 		ParentStateHash: parentStateCommitment.StateRoot,
-// 		ParentStaker:    common.Address{},
-// 		Validator:       common.BytesToAddress([]byte("other validator")),
-// 	})
-// 	require.NoError(t, err)
-// 	AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
-// }
+	manager = &mocks.MockStateManager{}
+	manager.On("HasStateCommitment", ctx, util.StateCommitment{
+		Height:    leaf1.Height,
+		StateRoot: leaf1.StateHash,
+	}).Return(false)
+	manager.On("HasStateCommitment", ctx, util.StateCommitment{
+		Height:    leaf2.Height,
+		StateRoot: leaf2.StateHash,
+	}).Return(true)
+
+	forked1 := common.BytesToHash([]byte("forked commit"))
+	forked2 := common.BytesToHash([]byte("forked commit"))
+	manager.On("HistoryCommitmentUpTo", ctx, leaf1.Height).Return(util.HistoryCommitment{
+		Height: leaf1.Height,
+		Merkle: forked1,
+	}, nil)
+	manager.On("HistoryCommitmentUpTo", ctx, leaf2.Height).Return(util.HistoryCommitment{
+		Height: leaf2.Height,
+		Merkle: forked2,
+	}, nil)
+	validator.stateManager = manager
+
+	parentStateCommitment, err := challenge.Unwrap().ParentStateCommitment(ctx, &mocks.MockActiveTx{ReadWriteTx: false})
+	require.NoError(t, err)
+	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+		ParentSeqNum:    0,
+		ParentStateHash: parentStateCommitment.StateRoot,
+		ParentStaker:    common.Address{},
+		Validator:       common.BytesToAddress([]byte("other validator")),
+	})
+	require.NoError(t, err)
+	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
+
+	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+		ParentSeqNum:    0,
+		ParentStateHash: parentStateCommitment.StateRoot,
+		ParentStaker:    common.Address{},
+		Validator:       common.BytesToAddress([]byte("other validator")),
+	})
+	require.ErrorContains(t, err, "Vertex already exists")
+}
 
 func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 	ctx := context.Background()

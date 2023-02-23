@@ -49,7 +49,31 @@ func (c *Challenge) GetCreationTime(
 func (c *Challenge) ParentStateCommitment(
 	ctx context.Context, tx protocol.ActiveTx,
 ) (util.StateCommitment, error) {
-	return util.StateCommitment{}, errors.New("unimplemented")
+	v, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	if v.IsNone() {
+		return util.StateCommitment{}, errors.New("no root vertex for challenge")
+	}
+	concreteV, ok := v.Unwrap().(*ChallengeVertex)
+	if !ok {
+		return util.StateCommitment{}, errors.New("vertex is not expected concrete type")
+	}
+	assertionSeqNum, err := c.manager.assertionChain.rollup.GetAssertionNum(
+		c.manager.assertionChain.callOpts, concreteV.inner.ClaimId,
+	)
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionSeqNum))
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	return util.StateCommitment{
+		Height:    assertion.Height(),
+		StateRoot: assertion.StateHash(),
+	}, nil
 }
 
 func (c *Challenge) WinnerVertex(
