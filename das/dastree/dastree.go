@@ -63,7 +63,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 	length := uint32(len(unrolled))
 	leaves := []node{}
 	for bin := uint32(0); bin < length; bin += BinSize {
-		end := arbmath.MinUint32(bin+BinSize, length)
+		end := arbmath.MinInt(bin+BinSize, length)
 		hash := keccord(prepend(LeafByte, keccord(unrolled[bin:end]).Bytes()))
 		leaves = append(leaves, node{hash, end - bin})
 	}

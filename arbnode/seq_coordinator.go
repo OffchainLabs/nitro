@@ -469,8 +469,10 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		log.Info("released chosen-coordinator lock", "myUrl", c.config.MyUrl(), "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
-	// Was, and still, the active sequencer
-	if time.Now().Add(c.config.UpdateInterval / 3).After(atomicTimeRead(&c.lockoutUntil)) {
+	// Was, and still is, the active sequencer
+	// We leave a margin of error of either a five times the update interval or a fifth of the lockout duration, whichever is greater.
+	marginOfError := arbmath.MaxInt(c.config.LockoutDuration/5, c.config.UpdateInterval*5)
+	if time.Now().Add(marginOfError).Before(atomicTimeRead(&c.lockoutUntil)) {
 		// if we recently sequenced - no need for an update
 		return c.noRedisError()
 	}
@@ -600,8 +602,18 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
+	syncProgress := c.sync.SyncProgressMap()
+	synced := len(syncProgress) == 0
+	if !synced {
+		var detailsList []interface{}
+		for key, value := range syncProgress {
+			detailsList = append(detailsList, key, value)
+		}
+		log.Warn("sequencer is not synced", detailsList...)
+	}
+
 	// can take over as main sequencer?
-	if c.sync.Synced() && localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl() {
+	if synced && localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl() {
 		if c.sequencer == nil {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
@@ -634,7 +646,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// update wanting the lockout
 	var wantsLockoutErr error
-	if c.sync.Synced() && !c.AvoidingLockout() {
+	if synced && !c.AvoidingLockout() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
