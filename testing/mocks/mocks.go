@@ -9,7 +9,137 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"math/big"
+	"time"
 )
+
+type MockChallengeVertex struct {
+	mock.Mock
+	MockId         [32]byte
+	MockSeqNum     protocol.VertexSequenceNumber
+	MockStatus     protocol.AssertionState
+	MockHistory    util.HistoryCommitment
+	MockMiniStaker common.Address
+	MockPrev       util.Option[protocol.ChallengeVertex]
+	MockSubChal    util.Option[protocol.Challenge]
+}
+
+func (m *MockChallengeVertex) Id() [32]byte {
+	return m.MockId
+}
+
+func (m *MockChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
+	return m.MockSeqNum
+}
+
+func (m *MockChallengeVertex) Status() protocol.AssertionState {
+	return m.MockStatus
+}
+
+func (m *MockChallengeVertex) HistoryCommitment() util.HistoryCommitment {
+	return m.MockHistory
+}
+
+func (m *MockChallengeVertex) MiniStaker() common.Address {
+	return m.MockMiniStaker
+}
+
+func (m *MockChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
+	return m.MockPrev, nil
+}
+
+func (m *MockChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error) {
+	return m.MockSubChal, nil
+}
+
+func (m *MockChallengeVertex) HasConfirmedSibling(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+) (bool, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+// Presumptive status / timer readers.
+func (m *MockChallengeVertex) EligibleForNewSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+func (m *MockChallengeVertex) IsPresumptiveSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+func (m *MockChallengeVertex) PresumptiveSuccessor(
+	ctx context.Context, tx protocol.ActiveTx,
+) (util.Option[protocol.ChallengeVertex], error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(util.Option[protocol.ChallengeVertex]), args.Error(1)
+}
+
+func (m *MockChallengeVertex) PsTimer(ctx context.Context, tx protocol.ActiveTx) (uint64, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *MockChallengeVertex) ChessClockExpired(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengePeriodSeconds time.Duration,
+) (bool, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+func (m *MockChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+// Mutating calls for challenge moves.
+func (m *MockChallengeVertex) CreateSubChallenge(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+) (protocol.Challenge, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(protocol.Challenge), args.Error(1)
+}
+
+func (m *MockChallengeVertex) Bisect(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	history util.HistoryCommitment,
+	proof []common.Hash,
+) (protocol.ChallengeVertex, error) {
+	args := m.Called(ctx, tx, history, proof)
+	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
+}
+
+func (m *MockChallengeVertex) Merge(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	mergingToHistory util.HistoryCommitment,
+	proof []common.Hash,
+) (protocol.ChallengeVertex, error) {
+	args := m.Called(ctx, tx, mergingToHistory, proof)
+	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
+}
+
+// Mutating calls for confirmations.
+func (m *MockChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
+	args := m.Called(ctx, tx)
+	return args.Error(0)
+}
+
+func (m *MockChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error {
+	args := m.Called(ctx, tx)
+	return args.Error(0)
+}
+
+func (m *MockChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx protocol.ActiveTx) error {
+	args := m.Called(ctx, tx)
+	return args.Error(0)
+}
 
 type MockAssertion struct {
 	Prev           util.Option[*MockAssertion]
