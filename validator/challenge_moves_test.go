@@ -1,43 +1,38 @@
 package validator
 
 import (
+	"context"
+	"testing"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/require"
 )
 
-// import (
-// 	"context"
-// 	"testing"
+func Test_computePrefixProof(t *testing.T) {
+	ctx := context.Background()
+	stateRoots := generateStateRoots(10)
+	manager := statemanager.New(stateRoots)
+	commit, err := manager.HistoryCommitmentUpTo(ctx, 6)
+	require.NoError(t, err)
 
-// 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
-// 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-// 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-// 	"github.com/ethereum/go-ethereum/common"
-// 	"github.com/sirupsen/logrus/hooks/test"
-// 	"github.com/stretchr/testify/require"
-// )
+	v := &vertexTracker{
+		stateManager: manager,
+	}
 
-// func Test_computePrefixProof(t *testing.T) {
-// 	ctx := context.Background()
-// 	stateRoots := generateStateRoots(10)
-// 	manager := statemanager.New(stateRoots)
-// 	commit, err := manager.HistoryCommitmentUpTo(ctx, 6)
-// 	require.NoError(t, err)
+	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
+	require.NoError(t, err)
 
-// 	v := &vertexTracker{
-// 		stateManager: manager,
-// 	}
+	bisectToHeight := bisectToCommit.Height
+	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	require.NoError(t, err)
 
-// 	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
-// 	require.NoError(t, err)
-
-// 	bisectToHeight := bisectToCommit.Height
-// 	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
-// 	require.NoError(t, err)
-
-// 	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
-// 	require.NoError(t, err)
-// }
+	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
+	require.NoError(t, err)
+}
 
 // func Test_bisect(t *testing.T) {
 // 	tx := &goimpl.ActiveTx{}
@@ -211,88 +206,82 @@ import (
 // 	})
 // }
 
-// func runBisectionTest(
-// 	t *testing.T,
-// 	logsHook *test.Hook,
-// 	ctx context.Context,
-// 	tx *goimpl.ActiveTx,
-// 	validator *Validator,
-// 	stateRoots []common.Hash,
-// 	leaf1,
-// 	leaf2 *goimpl.CreateLeafEvent,
-// ) goimpl.ChallengeVertexInterface {
-// 	err := validator.onLeafCreated(ctx, tx, leaf1)
-// 	require.NoError(t, err)
-// 	err = validator.onLeafCreated(ctx, tx, leaf2)
-// 	require.NoError(t, err)
-// 	AssertLogsContain(t, logsHook, "New leaf appended")
-// 	AssertLogsContain(t, logsHook, "New leaf appended")
-// 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+func runBisectionTest(
+	t *testing.T,
+	logsHook *test.Hook,
+	ctx context.Context,
+	validator *Validator,
+	stateRoots []common.Hash,
+	leaf1,
+	leaf2 *protocol.CreateLeafEvent,
+) protocol.ChallengeVertex {
+	err := validator.onLeafCreated(ctx, leaf1)
+	require.NoError(t, err)
+	err = validator.onLeafCreated(ctx, leaf2)
+	require.NoError(t, err)
+	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-// 	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
-// 	require.NoError(t, err)
+	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.Height)
+	require.NoError(t, err)
 
-// 	genesisCommit := util.StateCommitment{
-// 		Height:    0,
-// 		StateRoot: common.Hash{},
-// 	}
+	err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
+		assertion, err := validator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(1))
+		require.NoError(t, err)
+		assertionId, err := validator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(1))
+		require.NoError(t, err)
+		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+		chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(assertionId), protocol.BlockChallenge)
+		require.NoError(t, err)
+		challenge, err := manager.GetChallenge(ctx, tx, chalId)
+		require.NoError(t, err)
+		require.Equal(t, false, challenge.IsNone())
+		_, err = challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, historyCommit)
+		require.NoError(t, err)
+		return nil
+	})
+	require.NoError(t, err)
 
-// 	id := goimpl.ChallengeCommitHash(genesisCommit.Hash())
-// 	err = validator.chain.Tx(func(tx *goimpl.ActiveTx) error {
-// 		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, goimpl.AssertionSequenceNumber(1))
-// 		if fetchErr != nil {
-// 			return fetchErr
-// 		}
-// 		challenge, challErr := validator.chain.ChallengeByCommitHash(tx, id)
-// 		if challErr != nil {
-// 			return challErr
-// 		}
-// 		if _, err = challenge.AddLeaf(ctx, tx, assertion, historyCommit, validator.address); err != nil {
-// 			return err
-// 		}
-// 		return nil
-// 	})
-// 	require.NoError(t, err)
+	// Get the challenge from the chain itself.
+	var vertexToBisect protocol.ChallengeVertex
+	err = validator.chain.Call(func(tx protocol.ActiveTx) error {
+		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+		vBisect, err := manager.GetVertex(ctx, tx, protocol.VertexHash(common.Hash{}))
+		require.NoError(t, err)
+		require.Equal(t, false, vBisect.IsNone())
+		vertexToBisect = vBisect.Unwrap()
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, vertexToBisect)
 
-// 	c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.StateCommitment.Height)
-// 	require.NoError(t, err)
+	v := vertexTracker{
+		chain:            validator.chain,
+		stateManager:     validator.stateManager,
+		validatorName:    validator.name,
+		validatorAddress: validator.address,
+	}
 
-// 	// Get the challenge from the chain itself.
-// 	var vertexToBisect goimpl.ChallengeVertexInterface
-// 	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
-// 		vertexToBisect, err = validator.chain.ChallengeVertexByCommitHash(tx, id, goimpl.VertexCommitHash(c.Hash()))
-// 		if err != nil {
-// 			return err
-// 		}
-// 		return nil
-// 	})
-// 	require.NoError(t, err)
-// 	require.NotNil(t, vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
+	require.NoError(t, err)
 
-// 	v := vertexTracker{
-// 		chain:            validator.chain,
-// 		stateManager:     validator.stateManager,
-// 		validatorName:    validator.name,
-// 		validatorAddress: validator.address,
-// 	}
+	bisectionHeight := uint64(4)
+	loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
 
-// 	bisectedVertex, err := v.bisect(ctx, tx, vertexToBisect)
-// 	require.NoError(t, err)
+	bisectionCommit := util.HistoryCommitment{
+		Height: bisectionHeight,
+		Merkle: loExp.Root(),
+	}
+	commitment := bisectedVertex.HistoryCommitment()
+	require.NoError(t, err)
+	require.Equal(t, commitment.Hash(), bisectionCommit.Hash())
 
-// 	bisectionHeight := uint64(4)
-// 	loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
-
-// 	bisectionCommit := util.HistoryCommitment{
-// 		Height: bisectionHeight,
-// 		Merkle: loExp.Root(),
-// 	}
-// 	commitment, err := bisectedVertex.GetCommitment(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.Equal(t, commitment.Hash(), bisectionCommit.Hash())
-
-// 	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
-// 	return bisectedVertex
-// }
+	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
+	return bisectedVertex
+}
 
 func generateStateRoots(numBlocks uint64) []common.Hash {
 	var ret []common.Hash
