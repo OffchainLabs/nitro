@@ -815,7 +815,10 @@ func createNodeImpl(
 			}
 			maybeDataSigner = dataSigner
 		}
-		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
+		broadcastServer, err = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var l1Reader *headerreader.HeaderReader

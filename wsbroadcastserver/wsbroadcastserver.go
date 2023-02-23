@@ -5,10 +5,12 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net"
 	"net/http"
 	"net/textproto"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -32,6 +35,7 @@ var (
 	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
+	HTTPHeaderNonce                   = textproto.CanonicalMIMEHeaderKey("Arbitrum-Relay-Client-Nonce")
 )
 
 const (
@@ -148,6 +152,9 @@ type WSBroadcastServer struct {
 	acceptDescMutex sync.Mutex
 	acceptDesc      *netpoll.Desc
 
+	pseudoRandomNonceMutex sync.Mutex
+	lastPseudoRandomNonce  common.Hash
+
 	listener      net.Listener
 	config        BroadcasterConfigFetcher
 	started       bool
@@ -157,14 +164,20 @@ type WSBroadcastServer struct {
 	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
-	return &WSBroadcastServer{
-		config:        config,
-		started:       false,
-		catchupBuffer: catchupBuffer,
-		chainId:       chainId,
-		fatalErrChan:  fatalErrChan,
+func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) (*WSBroadcastServer, error) {
+	var nonce common.Hash
+	_, err := rand.Read(nonce[:])
+	if err != nil {
+		return nil, err
 	}
+	return &WSBroadcastServer{
+		config:                config,
+		started:               false,
+		catchupBuffer:         catchupBuffer,
+		chainId:               chainId,
+		fatalErrChan:          fatalErrChan,
+		lastPseudoRandomNonce: nonce,
+	}, nil
 }
 
 func (s *WSBroadcastServer) Initialize() error {
@@ -194,6 +207,23 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	})
 
 	return s.StartWithHeader(ctx, header)
+}
+
+var nonceRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
+
+func (s *WSBroadcastServer) getPseudoRandomNonce() common.Hash {
+	s.pseudoRandomNonceMutex.Lock()
+	defer s.pseudoRandomNonceMutex.Unlock()
+	// Increment lastPseudoRandomNonce
+	for i := 31; i >= 0; i-- {
+		if s.lastPseudoRandomNonce[i] == 255 {
+			s.lastPseudoRandomNonce[i] = 0
+		} else {
+			s.lastPseudoRandomNonce[i]++
+			break
+		}
+	}
+	return s.lastPseudoRandomNonce
 }
 
 func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
@@ -237,6 +267,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		var feedClientVersionSeen bool
 		var connectingIP net.IP
 		var requestedSeqNum arbutil.MessageIndex
+		var nonce common.Hash
 		upgrader := ws.Upgrader{
 			OnRequest: func(uri []byte) error {
 				if strings.Contains(string(uri), LivenessProbeURI) {
@@ -275,6 +306,12 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				} else if headerName == HTTPHeaderCloudflareConnectingIP {
 					connectingIP = net.ParseIP(string(value))
 					log.Trace("Client IP parsed from header", "ip", connectingIP, "header", headerName, "value", string(value))
+				} else if headerName == HTTPHeaderNonce {
+					if nonceRegex.Match(value) {
+						nonce = common.HexToHash(string(value))
+					} else {
+						log.Trace("failed to parse nonce from header", "ip", connectingIP, "header", headerName, "value", string(value))
+					}
 				}
 
 				return nil
@@ -320,6 +357,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			return
 		}
 
+		if nonce == (common.Hash{}) {
+			nonce = s.getPseudoRandomNonce()
+		}
+
 		compressionAccepted := false
 		if compress != nil {
 			_, compressionAccepted = compress.Accepted()
@@ -354,7 +395,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		// Register incoming client in clientManager.
 		safeConn := writeDeadliner{conn, config.WriteTimeout}
 
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted)
+		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted, nonce)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {

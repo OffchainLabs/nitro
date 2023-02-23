@@ -69,8 +69,12 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 	dataSignerErr := func([]byte) ([]byte, error) {
 		return nil, errors.New("relay attempted to sign feed message")
 	}
+	broadcaster, err := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.L2.ChainId, feedErrChan, dataSignerErr)
+	if err != nil {
+		return nil, err
+	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.L2.ChainId, feedErrChan, dataSignerErr),
+		broadcaster:                 broadcaster,
 		broadcastClients:            clients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,

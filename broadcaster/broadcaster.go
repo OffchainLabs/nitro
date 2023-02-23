@@ -60,14 +60,18 @@ type ConfirmedSequenceNumberMessage struct {
 	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
-func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
+func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) (*Broadcaster, error) {
 	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup })
+	server, err := wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan)
+	if err != nil {
+		return nil, err
+	}
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
+		server:        server,
 		catchupBuffer: catchupBuffer,
 		chainId:       chainId,
 		dataSigner:    dataSigner,
-	}
+	}, nil
 }
 
 func (b *Broadcaster) NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {

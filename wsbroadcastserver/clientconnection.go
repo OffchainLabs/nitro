@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
@@ -39,12 +41,19 @@ type ClientConnection struct {
 	Name            string
 	clientManager   *ClientManager
 	requestedSeqNum arbutil.MessageIndex
+	nonceHash       common.Hash
 
 	lastHeardUnix int64
 	out           chan []byte
 
 	compression bool
 	flateReader *wsflate.Reader
+}
+
+var nonceHashPrefix = []byte("Arbitrum relay client connection nonce")
+
+func computeNonceHash(nonce common.Hash) common.Hash {
+	return crypto.Keccak256Hash(nonceHashPrefix, nonce.Bytes())
 }
 
 func NewClientConnection(
@@ -54,6 +63,7 @@ func NewClientConnection(
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	nonce common.Hash,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
@@ -67,6 +77,7 @@ func NewClientConnection(
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
+		nonceHash:       computeNonceHash(nonce),
 	}
 }
 

@@ -21,7 +21,9 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
+	"github.com/zyedidia/generic/btree"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -51,7 +53,7 @@ type CatchupBuffer interface {
 type ClientManager struct {
 	stopwaiter.StopWaiter
 
-	clientPtrMap  map[*ClientConnection]bool
+	clientPtrMap  *btree.Tree[common.Hash, *ClientConnection]
 	clientCount   int32
 	pool          *gopool.Pool
 	poller        netpoll.Poller
@@ -69,12 +71,24 @@ type ClientConnectionAction struct {
 	create bool
 }
 
+func lesserHash(aHash, bHash common.Hash) bool {
+	for i, a := range aHash {
+		b := bHash[i]
+		if a < b {
+			return true
+		} else if a > b {
+			return false
+		}
+	}
+	return false
+}
+
 func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetcher, catchupBuffer CatchupBuffer) *ClientManager {
 	config := configFetcher()
 	return &ClientManager{
 		poller:            poller,
 		pool:              gopool.NewPool(config.Workers, config.Queue, 1),
-		clientPtrMap:      make(map[*ClientConnection]bool),
+		clientPtrMap:      btree.New[common.Hash, *ClientConnection](lesserHash),
 		broadcastChan:     make(chan interface{}, 1),
 		clientAction:      make(chan ClientConnectionAction, 128),
 		config:            configFetcher,
@@ -90,8 +104,12 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 		}
 	}()
 
+	_, exists := cm.clientPtrMap.Get(clientConnection.nonceHash)
+	if exists {
+		return fmt.Errorf("duplicate nonce hash %v", clientConnection.nonceHash)
+	}
 	if cm.config().ConnectionLimits.Enable && !cm.connectionLimiter.Register(clientConnection.clientIp) {
-		return fmt.Errorf("Connection limited %s", clientConnection.clientIp)
+		return fmt.Errorf("connection limited %s", clientConnection.clientIp)
 	}
 
 	clientsCurrentGauge.Inc(1)
@@ -111,7 +129,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	}
 
 	clientConnection.Start(ctx)
-	cm.clientPtrMap[clientConnection] = true
+	cm.clientPtrMap.Put(clientConnection.nonceHash, clientConnection)
 	clientsTotalSuccessCounter.Inc(1)
 
 	return nil
@@ -124,9 +142,10 @@ func (cm *ClientManager) Register(
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	nonce common.Hash,
 ) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression),
+		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression, nonce),
 		true,
 	}
 	cm.clientAction <- createClient
@@ -137,9 +156,9 @@ func (cm *ClientManager) Register(
 // removeAll removes all clients after main ClientManager thread exits
 func (cm *ClientManager) removeAll() {
 	// Only called after main ClientManager thread exits, so remove client directly
-	for client := range cm.clientPtrMap {
+	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
 		cm.removeClientImpl(client)
-	}
+	})
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
@@ -166,7 +185,8 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 }
 
 func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
-	if !cm.clientPtrMap[clientConnection] {
+	_, exists := cm.clientPtrMap.Get(clientConnection.nonceHash)
+	if !exists {
 		return
 	}
 
@@ -175,7 +195,7 @@ func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
 		cm.connectionLimiter.Release(clientConnection.clientIp)
 	}
 
-	delete(cm.clientPtrMap, clientConnection)
+	cm.clientPtrMap.Remove(clientConnection.nonceHash)
 }
 
 func (cm *ClientManager) Remove(clientConnection *ClientConnection) {
@@ -253,8 +273,8 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	}
 
 	sendQueueTooLargeCount := 0
-	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
-	for client := range cm.clientPtrMap {
+	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
+	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
 		var data []byte
 		if client.Compression() {
 			if config.EnableCompression {
@@ -262,7 +282,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			} else {
 				log.Warn("disconnecting because client has enabled compression, but compression support is disabled", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
-				continue
+				return
 			}
 		} else {
 			if !config.RequireCompression {
@@ -270,7 +290,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			} else {
 				log.Warn("disconnecting because client has disabled compression, but compression support is required", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
-				continue
+				return
 			}
 		}
 		select {
@@ -280,7 +300,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			sendQueueTooLargeCount++
 			clientDeleteList = append(clientDeleteList, client)
 		}
-	}
+	})
 
 	if sendQueueTooLargeCount > 0 {
 		if sendQueueTooLargeCount < 10 {
@@ -295,14 +315,14 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 
 // verifyClients should be called every cm.config.ClientPingInterval
 func (cm *ClientManager) verifyClients() []*ClientConnection {
-	clientConnectionCount := len(cm.clientPtrMap)
+	clientConnectionCount := cm.clientPtrMap.Size()
 
 	// Create list of clients to remove
 	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
 
 	// Send ping to all connected clients
-	log.Debug("pinging clients", "count", len(cm.clientPtrMap))
-	for client := range cm.clientPtrMap {
+	log.Debug("pinging clients", "count", cm.clientPtrMap.Size())
+	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
 		diff := time.Since(client.GetLastHeard())
 		if diff > cm.config().ClientTimeout {
 			log.Debug("disconnecting because connection timed out", "client", client.Name)
@@ -314,7 +334,7 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 				clientDeleteList = append(clientDeleteList, client)
 			}
 		}
-	}
+	})
 
 	return clientDeleteList
 }
