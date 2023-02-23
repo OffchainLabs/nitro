@@ -20,6 +20,23 @@ var (
 	_ = protocol.ActiveTx(&activeTx{})
 )
 
+func TestAssertionStateHash(t *testing.T) {
+	ctx := context.Background()
+	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+	tx := &activeTx{readWriteTx: true}
+	assertion, err := chain.LatestConfirmed(ctx, tx)
+	require.NoError(t, err)
+
+	execState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash: common.Hash{},
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	computed := protocol.ComputeStateHash(execState, big.NewInt(1))
+	require.Equal(t, computed, assertion.StateHash())
+}
+
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
@@ -54,7 +71,7 @@ func TestCreateAssertion(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -65,7 +82,7 @@ func TestCreateAssertion(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -110,7 +127,7 @@ func TestCreateAssertion(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -167,7 +184,7 @@ func TestAssertion_Confirm(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -224,7 +241,7 @@ func TestAssertion_Reject(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -289,7 +306,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -334,7 +351,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -356,7 +373,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,

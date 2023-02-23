@@ -261,10 +261,10 @@ func createTwoValidatorFork(
 
 	height := uint64(0)
 	stateRoots := make([]common.Hash, 0)
-	stateRoots = append(stateRoots, genesisState.BlockStateHash())
+	stateRoots = append(stateRoots, genesisStateHash)
 
 	latestBlockHash := common.Hash{}
-	for i := 0; i < 100; i++ {
+	for i := 1; i < 100; i++ {
 		height += 1
 		latestBlockHash = backend.Commit()
 		state := &protocol.ExecutionState{
@@ -274,7 +274,7 @@ func createTwoValidatorFork(
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		stateRoots = append(stateRoots, state.BlockStateHash())
+		stateRoots = append(stateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 	}
 
 	err = chains[1].Tx(func(tx protocol.ActiveTx) error {

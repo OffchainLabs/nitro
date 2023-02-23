@@ -535,6 +535,15 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
         bytes32 sequencerBatchAcc;
     }
 
+
+    function packData(bytes32 execStateHash, uint256 inboxMaxCount, MachineStatus status) public pure returns (bytes memory) {
+        return abi.encodePacked(
+            execStateHash,
+            inboxMaxCount,
+            status
+        );
+    }
+
     function createNewAssertion(
         AssertionInputs calldata assertion,
         uint64 prevAssertionNum,

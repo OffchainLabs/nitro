@@ -33,8 +33,10 @@ func ComputeStateHash(
 	data := make([]byte, 0)
 	globalHash := execState.GlobalState.Hash()
 	data = append(data, globalHash[:]...)
-	data = append(data, u64ToBe(inboxMaxCount.Uint64())...)
-	data = append(data, u64ToBe(uint64(execState.MachineStatus))...)
+	inboxCount := make([]byte, 32)
+	copy(inboxCount[24:32], u64ToBe(inboxMaxCount.Uint64()))
+	data = append(data, inboxCount...)
+	data = append(data, byte(execState.MachineStatus))
 	return crypto.Keccak256Hash(data)
 }
 
