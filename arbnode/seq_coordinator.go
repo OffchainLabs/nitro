@@ -469,8 +469,10 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		log.Info("released chosen-coordinator lock", "myUrl", c.config.MyUrl(), "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
-	// Was, and still, the active sequencer
-	if time.Now().Add(c.config.UpdateInterval / 3).After(atomicTimeRead(&c.lockoutUntil)) {
+	// Was, and still is, the active sequencer
+	// We leave a margin of error of either a five times the update interval or a fifth of the lockout duration, whichever is greater.
+	marginOfError := arbmath.MaxInt(c.config.LockoutDuration/5, c.config.UpdateInterval*5)
+	if time.Now().Add(marginOfError).Before(atomicTimeRead(&c.lockoutUntil)) {
 		// if we recently sequenced - no need for an update
 		return c.noRedisError()
 	}
