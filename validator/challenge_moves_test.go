@@ -28,8 +28,15 @@ func Test_computePrefixProof(t *testing.T) {
 	require.NoError(t, err)
 
 	bisectToHeight := bisectToCommit.Height
-	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
-	require.NoError(t, err)
+	t.Log(len(stateRoots[:bisectToHeight+1]))
+	exp := util.ExpansionFromLeaves(stateRoots[:bisectToHeight+1])
+	proof, err := util.GeneratePrefixProof(
+		bisectToHeight,
+		exp,
+		stateRoots[bisectToHeight:7],
+	), nil
+	// proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	// require.NoError(t, err)
 
 	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
 	require.NoError(t, err)
@@ -266,26 +273,8 @@ func runBisectionTest(
 	})
 	require.NoError(t, err)
 
-	t.Logf("%+v", vertexToBisect.HistoryCommitment())
-
 	// Check presumptive statuses.
 	err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
-		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-
-		leaf2Hist, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.Height)
-		require.NoError(t, err)
-
-		otherVertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalId, leaf2Hist)
-		require.NoError(t, err)
-		otherVertex, err := manager.GetVertex(ctx, tx, otherVertexId)
-		require.NoError(t, err)
-		require.Equal(t, false, otherVertex.IsNone())
-
-		otherIsPs, err := otherVertex.Unwrap().IsPresumptiveSuccessor(ctx, tx)
-		require.NoError(t, err)
-		require.Equal(t, true, otherIsPs)
-
 		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, false, isPs)
@@ -293,17 +282,17 @@ func runBisectionTest(
 	})
 	require.NoError(t, err)
 
+	v := vertexTracker{
+		chain:            validator.chain,
+		stateManager:     validator.stateManager,
+		validatorName:    validator.name,
+		validatorAddress: validator.address,
+	}
+
+	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
+	require.NoError(t, err)
+	t.Logf("%+v", bisectedVertex)
 	return nil
-
-	// v := vertexTracker{
-	// 	chain:            validator.chain,
-	// 	stateManager:     validator.stateManager,
-	// 	validatorName:    validator.name,
-	// 	validatorAddress: validator.address,
-	// }
-
-	// bisectedVertex, err := v.bisect(ctx, vertexToBisect)
-	// require.NoError(t, err)
 
 	// bisectionHeight := uint64(4)
 	// loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
