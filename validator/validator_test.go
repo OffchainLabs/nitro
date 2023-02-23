@@ -52,31 +52,14 @@ func Test_onLeafCreation(t *testing.T) {
 		ctx := context.Background()
 		createdData := createTwoValidatorFork(t, ctx)
 
-		// Setup our mock state manager to agree on leaf1 but disagree on leaf2.
-		manager := &mocks.MockStateManager{}
-		manager.On("HasStateCommitment", ctx, util.StateCommitment{
-			Height:    createdData.leaf1.Height,
-			StateRoot: createdData.leaf1.StateHash,
-		}).Return(true)
-		manager.On("HasStateCommitment", ctx, util.StateCommitment{
-			Height:    createdData.leaf2.Height,
-			StateRoot: createdData.leaf2.StateHash,
-		}).Return(false)
-
-		manager.On(
-			"HistoryCommitmentUpTo",
-			ctx,
-			uint64(createdData.leaf1.Height),
-		).Return(util.HistoryCommitment{
-			Height: createdData.leaf1.Height,
-			Merkle: createdData.leaf1.StateHash, // TODO: Change
-		}, nil)
+		manager := statemanager.New(createdData.stateRoots)
 
 		validator, err := New(ctx, createdData.assertionChains[1], manager)
 		require.NoError(t, err)
 
 		err = validator.onLeafCreated(ctx, createdData.leaf1)
 		require.NoError(t, err)
+
 		err = validator.onLeafCreated(ctx, createdData.leaf2)
 		require.NoError(t, err)
 
@@ -277,6 +260,8 @@ func createTwoValidatorFork(
 		stateRoots = append(stateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 	}
 
+	height += 1
+	latestBlockHash = backend.Commit()
 	err = chains[1].Tx(func(tx protocol.ActiveTx) error {
 		assertion, err = chains[1].CreateAssertion(
 			ctx,
@@ -299,6 +284,8 @@ func createTwoValidatorFork(
 		return nil
 	})
 	require.NoError(t, err)
+
+	stateRoots = append(stateRoots, assertion.StateHash())
 
 	err = chains[2].Tx(func(tx protocol.ActiveTx) error {
 		forkedAssertion, err = chains[2].CreateAssertion(

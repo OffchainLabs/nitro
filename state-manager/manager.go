@@ -88,8 +88,7 @@ func (s *Simulated) LatestStateCommitment(ctx context.Context) (util.StateCommit
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height],
-		util.WithLastElementProof(s.stateRoots[:height+1]),
+		s.stateRoots[:height+1],
 	)
 }
 
@@ -109,7 +108,7 @@ func (s *Simulated) HasHistoryCommitment(ctx context.Context, commitment util.Hi
 	if commitment.Height >= uint64(len(s.stateRoots)) {
 		return false
 	}
-	merkle := util.ExpansionFromLeaves(s.stateRoots[:commitment.Height]).Root()
+	merkle := util.ExpansionFromLeaves(s.stateRoots[:commitment.Height+1]).Root()
 	return merkle == commitment.Merkle
 }
 
@@ -118,7 +117,6 @@ func (s *Simulated) LatestHistoryCommitment(ctx context.Context) (util.HistoryCo
 	height := uint64(len(s.stateRoots)) - 1
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height],
-		util.WithLastElementProof(s.stateRoots[:height+1]),
+		s.stateRoots,
 	)
 }

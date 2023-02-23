@@ -112,7 +112,7 @@ library BlockLeafAdder {
             );
 
             require(
-                getBlockHash(claimStateHash, leafLibArgs.proof1) == leafLibArgs.leafData.lastState,
+                claimStateHash == leafLibArgs.leafData.lastState,
                 "Last state is not the assertion claim block hash"
             );
 
