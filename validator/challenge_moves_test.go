@@ -235,42 +235,65 @@ func runBisectionTest(
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "New leaf appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+
+	var vertexToBisect protocol.ChallengeVertex
+	var chalId protocol.ChallengeHash
+
+	err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
+		genesisId, err := validator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
+		require.NoError(t, err)
+		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+		chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
+		require.NoError(t, err)
+
+		chalId = chalIdComputed
+
+		challenge, err := manager.GetChallenge(ctx, tx, chalId)
+		require.NoError(t, err)
+		require.Equal(t, false, challenge.IsNone())
+		assertion, err := validator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(1))
+		require.NoError(t, err)
+		leaf1History := util.HistoryCommitment{
+			Height:   assertion.Height(),
+			Merkle:   common.BytesToHash([]byte("bad commit")),
+			LastLeaf: assertion.StateHash(),
+		}
+		vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, leaf1History)
+		require.NoError(t, err)
+		vertexToBisect = vToBisect
+		return nil
+	})
+	require.NoError(t, err)
+
+	t.Logf("%+v", vertexToBisect.HistoryCommitment())
+
+	// Check presumptive statuses.
+	err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
+		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+
+		leaf2Hist, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.Height)
+		require.NoError(t, err)
+
+		otherVertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalId, leaf2Hist)
+		require.NoError(t, err)
+		otherVertex, err := manager.GetVertex(ctx, tx, otherVertexId)
+		require.NoError(t, err)
+		require.Equal(t, false, otherVertex.IsNone())
+
+		otherIsPs, err := otherVertex.Unwrap().IsPresumptiveSuccessor(ctx, tx)
+		require.NoError(t, err)
+		require.Equal(t, true, otherIsPs)
+
+		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+		return nil
+	})
+	require.NoError(t, err)
+
 	return nil
-
-	// historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.Height)
-	// require.NoError(t, err)
-
-	// err = validator.chain.Tx(func(tx protocol.ActiveTx) error {
-	// 	assertion, err := validator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(1))
-	// 	require.NoError(t, err)
-	// 	assertionId, err := validator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(1))
-	// 	require.NoError(t, err)
-	// 	manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
-	// 	require.NoError(t, err)
-	// 	chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(assertionId), protocol.BlockChallenge)
-	// 	require.NoError(t, err)
-	// 	challenge, err := manager.GetChallenge(ctx, tx, chalId)
-	// 	require.NoError(t, err)
-	// 	require.Equal(t, false, challenge.IsNone())
-	// 	_, err = challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, historyCommit)
-	// 	require.NoError(t, err)
-	// 	return nil
-	// })
-	// require.NoError(t, err)
-
-	// // Get the challenge from the chain itself.
-	// var vertexToBisect protocol.ChallengeVertex
-	// err = validator.chain.Call(func(tx protocol.ActiveTx) error {
-	// 	manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
-	// 	require.NoError(t, err)
-	// 	vBisect, err := manager.GetVertex(ctx, tx, protocol.VertexHash(common.Hash{}))
-	// 	require.NoError(t, err)
-	// 	require.Equal(t, false, vBisect.IsNone())
-	// 	vertexToBisect = vBisect.Unwrap()
-	// 	return nil
-	// })
-	// require.NoError(t, err)
-	// require.NotNil(t, vertexToBisect)
 
 	// v := vertexTracker{
 	// 	chain:            validator.chain,

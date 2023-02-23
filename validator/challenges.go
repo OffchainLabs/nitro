@@ -164,6 +164,7 @@ func (v *Validator) addChallengeVertex(
 		if err != nil {
 			return err
 		}
+		fmt.Printf("Added leaf with height %d and commit %#x\n", historyCommit.Height, historyCommit.Merkle)
 		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, assertion, historyCommit)
 		if err != nil {
 			return errors.Wrap(err, "could not add challenge leaf to challenge")

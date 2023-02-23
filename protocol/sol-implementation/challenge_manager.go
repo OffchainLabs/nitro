@@ -69,6 +69,24 @@ func (cm *ChallengeManager) CalculateChallengeHash(
 	return c, nil
 }
 
+func (cm *ChallengeManager) CalculateChallengeVertexId(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengeId protocol.ChallengeHash,
+	history util.HistoryCommitment,
+) (protocol.VertexHash, error) {
+	vertexId, err := cm.caller.CalculateChallengeVertexId(
+		cm.assertionChain.callOpts,
+		challengeId,
+		history.Merkle,
+		big.NewInt(int64(history.Height)),
+	)
+	if err != nil {
+		return protocol.VertexHash{}, err
+	}
+	return protocol.VertexHash(vertexId), nil
+}
+
 // GetVertex returns the challenge vertex for the given vertexId.
 func (cm *ChallengeManager) GetVertex(
 	ctx context.Context,

@@ -112,6 +112,12 @@ type ChallengeManager interface {
 		itemId common.Hash,
 		challengeType ChallengeType,
 	) (ChallengeHash, error)
+	CalculateChallengeVertexId(
+		ctx context.Context,
+		tx ActiveTx,
+		challengeId ChallengeHash,
+		history util.HistoryCommitment,
+	) (VertexHash, error)
 	GetVertex(
 		ctx context.Context,
 		tx ActiveTx,
