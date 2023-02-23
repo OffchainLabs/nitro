@@ -11,6 +11,31 @@ import (
 	"math/big"
 )
 
+type MockAssertion struct {
+	Prev           util.Option[*MockAssertion]
+	MockHeight     uint64
+	MockSeqNum     protocol.AssertionSequenceNumber
+	MockPrevSeqNum protocol.AssertionSequenceNumber
+	MockStateHash  common.Hash
+}
+
+func (m *MockAssertion) Height() uint64 {
+	return m.MockHeight
+
+}
+
+func (m *MockAssertion) SeqNum() protocol.AssertionSequenceNumber {
+	return m.MockSeqNum
+}
+
+func (m *MockAssertion) PrevSeqNum() protocol.AssertionSequenceNumber {
+	return m.MockPrevSeqNum
+}
+
+func (m *MockAssertion) StateHash() common.Hash {
+	return m.MockStateHash
+}
+
 type MockStateManager struct {
 	mock.Mock
 }
