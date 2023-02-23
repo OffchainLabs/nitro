@@ -50,10 +50,11 @@ type ClientConnection struct {
 	flateReader *wsflate.Reader
 }
 
-var nonceHashPrefix = []byte("Arbitrum relay client connection nonce")
+var nonceHashPrefix = []byte("Arbitrum relay client connection nonce for date ")
 
 func computeNonceHash(nonce common.Hash) common.Hash {
-	return crypto.Keccak256Hash(nonceHashPrefix, nonce.Bytes())
+	utcDate := time.Now().Format("2006-01-02")
+	return crypto.Keccak256Hash(nonceHashPrefix, []byte(utcDate), nonce[:])
 }
 
 func NewClientConnection(
