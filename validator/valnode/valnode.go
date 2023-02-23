@@ -58,8 +58,8 @@ var TestValidationConfig = Config{
 
 func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".use-jit", DefaultValidationConfig.UseJit, "use jit for validation")
-	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is a public API")
-	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is an authenticated API")
+	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is an authenticated API")
+	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is a public API")
 	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
@@ -94,9 +94,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner)
+		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
 	} else {
-		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner)
+		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
