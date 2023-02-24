@@ -105,13 +105,20 @@ func (v *vertexTracker) merge(
 	mergingTo protocol.ChallengeVertex,
 	mergingFrom protocol.ChallengeVertex,
 ) (protocol.ChallengeVertex, error) {
+	currentCommit := mergingFrom.HistoryCommitment()
 	mergingToCommit := mergingTo.HistoryCommitment()
 	mergingToHeight := mergingToCommit.Height
+	if mergingToHeight >= currentCommit.Height {
+		return nil, fmt.Errorf(
+			"merging to height %d cannot be >= vertex height %d",
+			mergingToHeight,
+			currentCommit.Height,
+		)
+	}
 	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
 	if err != nil {
 		return nil, err
 	}
-	currentCommit := mergingFrom.HistoryCommitment()
 	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {
 		return nil, err

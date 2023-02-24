@@ -119,108 +119,140 @@ func Test_bisect(t *testing.T) {
 	})
 }
 
-// func Test_merge(t *testing.T) {
-// 	tx := &goimpl.ActiveTx{}
-// 	ctx := context.Background()
-// 	genesisCommit := util.StateCommitment{
-// 		Height:    0,
-// 		StateRoot: common.Hash{},
-// 	}
-// 	challengeCommitHash := goimpl.ChallengeCommitHash(genesisCommit.Hash())
+func Test_merge(t *testing.T) {
+	ctx := context.Background()
+	t.Run("fails to verify prefix proof", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 
-// 	t.Run("fails to verify prefix proof", func(t *testing.T) {
-// 		logsHook := test.NewGlobal()
-// 		stateRoots := generateStateRoots(10)
-// 		manager := statemanager.New(stateRoots)
-// 		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+		honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
+		require.NoError(t, err)
 
-// 		err := validator.onLeafCreated(ctx, tx, leaf1)
-// 		require.NoError(t, err)
-// 		err = validator.onLeafCreated(ctx, tx, leaf2)
-// 		require.NoError(t, err)
-// 		AssertLogsContain(t, logsHook, "New leaf appended")
-// 		AssertLogsContain(t, logsHook, "New leaf appended")
-// 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+		err = honestValidator.onLeafCreated(ctx, createdData.leaf1)
+		require.NoError(t, err)
+		err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-// 		c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.StateCommitment.Height)
-// 		require.NoError(t, err)
+		commit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf2.Height)
+		require.NoError(t, err)
 
-// 		var mergingTo goimpl.ChallengeVertexInterface
-// 		err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
-// 			mergingTo, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, goimpl.VertexCommitHash(c.Hash()))
-// 			if err != nil {
-// 				return err
-// 			}
-// 			return nil
-// 		})
-// 		require.NoError(t, err)
-// 		require.NotNil(t, mergingTo)
+		var mergingTo protocol.ChallengeVertex
+		var challengeId protocol.ChallengeHash
+		err = honestValidator.chain.Call(func(tx protocol.ActiveTx) error {
+			genesisId, err := honestValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
+			require.NoError(t, err)
+			manager, err := honestValidator.chain.CurrentChallengeManager(ctx, tx)
+			require.NoError(t, err)
+			chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
+			require.NoError(t, err)
 
-// 		mergingFrom := &goimpl.ChallengeVertex{
-// 			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-// 				Commitment: util.HistoryCommitment{
-// 					Height: 0,
-// 					Merkle: common.BytesToHash([]byte{0}),
-// 				},
-// 			})),
-// 			Commitment: util.HistoryCommitment{
-// 				Height: 7,
-// 				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
-// 			},
-// 		}
-// 		v := vertexTracker{
-// 			chain:            validator.chain,
-// 			stateManager:     validator.stateManager,
-// 			validatorName:    validator.name,
-// 			validatorAddress: validator.address,
-// 		}
-// 		_, err = v.merge(
-// 			ctx, tx, challengeCommitHash, mergingTo, mergingFrom,
-// 		)
-// 		require.ErrorIs(t, err, util.ErrIncorrectProof)
-// 	})
-// 	t.Run("OK", func(t *testing.T) {
-// 		logsHook := test.NewGlobal()
-// 		stateRoots := generateStateRoots(10)
-// 		manager := statemanager.New(stateRoots)
-// 		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+			challengeId = chalId
 
-// 		// Bisect and obtain the result.
-// 		bisectedVertex := runBisectionTest(t, logsHook, ctx, tx, validator, stateRoots, leaf1, leaf2)
+			vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalId, commit)
+			require.NoError(t, err)
 
-// 		// Expect to bisect to 4.
-// 		commitment, err := bisectedVertex.GetCommitment(ctx, tx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, uint64(4), commitment.Height)
+			mergingToV, err := manager.GetVertex(ctx, tx, vertexId)
+			require.NoError(t, err)
+			mergingTo = mergingToV.Unwrap()
+			return nil
+		})
+		require.NoError(t, err)
 
-// 		c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
-// 		require.NoError(t, err)
+		mergingFrom := &mocks.MockChallengeVertex{
+			MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
+				MockHistory: util.HistoryCommitment{
+					Height: 0,
+					Merkle: common.BytesToHash([]byte{0}),
+				},
+			})),
+			MockHistory: util.HistoryCommitment{
+				Height: 101,
+				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
+			},
+		}
+		v := vertexTracker{
+			chain:            honestValidator.chain,
+			stateManager:     honestValidator.stateManager,
+			validatorName:    honestValidator.name,
+			validatorAddress: honestValidator.address,
+		}
+		_, err = v.merge(
+			ctx, challengeId, mergingTo, mergingFrom,
+		)
+		require.ErrorIs(t, err, util.ErrIncorrectProof)
+	})
+	t.Run("OK", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		createdData := createTwoValidatorFork(t, ctx, 70 /* divergence point */)
 
-// 		// Get the vertex we want to merge from.
-// 		var vertexToMergeFrom *goimpl.ChallengeVertex
-// 		err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
-// 			vertexToMergeFrom, err = validator.chain.ChallengeVertexByCommitHash(tx, challengeCommitHash, goimpl.VertexCommitHash(c.Hash()))
-// 			if err != nil {
-// 				return err
-// 			}
-// 			return nil
-// 		})
-// 		require.NoError(t, err)
-// 		require.NotNil(t, vertexToMergeFrom)
+		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+		honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
+		require.NoError(t, err)
 
-// 		// Perform a merge move to the bisected vertex from an origin.
-// 		v := vertexTracker{
-// 			chain:            validator.chain,
-// 			stateManager:     validator.stateManager,
-// 			validatorName:    validator.name,
-// 			validatorAddress: validator.address,
-// 		}
-// 		mergingTo, err := v.merge(ctx, tx, challengeCommitHash, bisectedVertex, vertexToMergeFrom)
-// 		require.NoError(t, err)
-// 		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
-// 		require.Equal(t, bisectedVertex, mergingTo)
-// 	})
-// }
+		evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+		evilValidator, err := New(ctx, createdData.assertionChains[2], evilManager)
+		require.NoError(t, err)
+
+		bisectedTo := runBisectionTest(
+			t,
+			logsHook,
+			ctx,
+			honestValidator,
+			evilValidator,
+			createdData.leaf1,
+			createdData.leaf2,
+		)
+
+		// Both validators should have the same history upon which one will try to merge into.
+		require.Equal(t, createdData.evilValidatorStateRoots[64], createdData.honestValidatorStateRoots[64], "Different state root at 64")
+		ok := honestValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
+		require.Equal(t, true, ok)
+		ok = evilValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
+		require.Equal(t, true, ok)
+
+		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.Height)
+		require.NoError(t, err)
+
+		// Get the vertex we want to merge from.
+		var vertexToMergeFrom protocol.ChallengeVertex
+		var challengeId protocol.ChallengeHash
+		err = honestValidator.chain.Call(func(tx protocol.ActiveTx) error {
+			genesisId, err := honestValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
+			require.NoError(t, err)
+			manager, err := honestValidator.chain.CurrentChallengeManager(ctx, tx)
+			require.NoError(t, err)
+			chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
+			require.NoError(t, err)
+
+			challengeId = chalId
+
+			vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalId, mergingFromHistory)
+			require.NoError(t, err)
+
+			mergingFromV, err := manager.GetVertex(ctx, tx, vertexId)
+			require.NoError(t, err)
+			vertexToMergeFrom = mergingFromV.Unwrap()
+			return nil
+		})
+		require.NoError(t, err)
+
+		// Perform a merge move to the bisected vertex from an origin.
+		v := vertexTracker{
+			chain:            honestValidator.chain,
+			stateManager:     honestValidator.stateManager,
+			validatorName:    honestValidator.name,
+			validatorAddress: honestValidator.address,
+		}
+		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 64")
+		require.Equal(t, bisectedTo.Id(), mergingTo.Id())
+	})
+}
 
 func runBisectionTest(
 	t *testing.T,
