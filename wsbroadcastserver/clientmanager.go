@@ -221,6 +221,7 @@ func (cm *ClientManager) Broadcast(bm interface{}) {
 		// In this case we should proceed without broadcasting the message.
 		return
 	}
+	time.Sleep(cm.config().BroadcastDelay.ConstantDelay)
 	cm.broadcastChan <- bm
 }
 
@@ -309,7 +310,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			return
 		}
 		if i != 0 && i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount && i%config.BroadcastDelay.BatchSize == 0 {
-			time.Sleep(config.BroadcastDelay.Delay)
+			time.Sleep(config.BroadcastDelay.BatchDelay)
 		}
 		i++
 	})
