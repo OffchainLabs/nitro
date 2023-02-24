@@ -168,6 +168,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 				)
 				v.awaitingOneStepFork = true
 				// TODO: Add subchallenge resolution.
+				return nil
 			}
 		}
 		isPresumptive, err = v.vertex.IsPresumptiveSuccessor(ctx, tx)
@@ -177,6 +178,10 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	if v.awaitingOneStepFork {
+		return nil
 	}
 
 	// If presumptive, there is no action to take.
@@ -241,6 +246,7 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash pro
 // this method returns the vertex it merged to.
 func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
 	var prev protocol.ChallengeVertex
+	var mergingInto protocol.ChallengeVertex
 	var parentCommit util.StateCommitment
 	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
 		prevV, err := v.vertex.Prev(ctx, tx)
@@ -255,26 +261,38 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 		if err != nil {
 			return err
 		}
+		prevCommitment := prev.HistoryCommitment()
+		commitment := v.vertex.HistoryCommitment()
+		parentHeight := prevCommitment.Height
+		toHeight := commitment.Height
+
+		mergingToHistory, err := v.determineBisectionPointWithHistory(
+			ctx,
+			parentHeight,
+			toHeight,
+		)
+		if err != nil {
+			return err
+		}
+		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+		if err != nil {
+			return err
+		}
+		vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, v.challenge.Id(), mergingToHistory)
+		if err != nil {
+			return err
+		}
+		vertex, err := manager.GetVertex(ctx, tx, vertexId)
+		if err != nil {
+			return err
+		}
+		if vertex.IsNone() {
+			return errors.New("no vertex found to merge into")
+		}
+		mergingInto = vertex.Unwrap()
 		parentCommit = parentStateCommitment
 		return nil
 	}); err != nil {
-		return nil, err
-	}
-	prevCommitment := prev.HistoryCommitment()
-	commitment := v.vertex.HistoryCommitment()
-	parentHeight := prevCommitment.Height
-	toHeight := commitment.Height
-
-	mergingToHistory, err := v.determineBisectionPointWithHistory(
-		ctx,
-		parentHeight,
-		toHeight,
-	)
-	if err != nil {
-		return nil, err
-	}
-	mergingInto, err := v.fetchVertexByHistoryCommit(ctx, protocol.VertexHash(mergingToHistory.Hash()))
-	if err != nil {
 		return nil, err
 	}
 	mergingFrom := v.vertex

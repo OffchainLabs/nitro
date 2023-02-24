@@ -12,6 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
+func (c *Challenge) Id() protocol.ChallengeHash {
+	return c.id
+}
+
 func (c *Challenge) RootAssertion(
 	ctx context.Context, tx protocol.ActiveTx,
 ) (protocol.Assertion, error) {

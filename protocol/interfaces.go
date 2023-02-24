@@ -166,6 +166,7 @@ const (
 // a challenge.
 type Challenge interface {
 	// Getters.
+	Id() ChallengeHash
 	GetType() ChallengeType
 	WinningClaim() util.Option[AssertionHash]
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)

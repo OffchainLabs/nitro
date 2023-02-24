@@ -157,7 +157,13 @@ func (v *ChallengeVertex) Bisect(
 		)
 	})
 	if err != nil {
-		return nil, err
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "Bisection vertex already exists"):
+			return nil, ErrAlreadyExists
+		default:
+			return nil, err
+		}
 	}
 	return getVertexFromComponents(
 		v.manager,

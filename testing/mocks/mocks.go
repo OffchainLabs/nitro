@@ -234,6 +234,126 @@ func (m *MockActiveTx) Sender() common.Address {
 	return m.From
 }
 
+type MockChallenge struct {
+	mock.Mock
+	MockID                protocol.ChallengeHash
+	MockType              protocol.ChallengeType
+	MockWinningAssertion  util.Option[protocol.AssertionHash]
+	MockAssertion         protocol.Assertion
+	MockRootVertex        protocol.ChallengeVertex
+	MockCreationTime      time.Time
+	MockParentStateCommit util.StateCommitment
+	MockWinnerVertex      util.Option[protocol.ChallengeVertex]
+}
+
+// Getters.
+func (m *MockChallenge) Id() protocol.ChallengeHash {
+	return m.MockID
+}
+
+func (m *MockChallenge) GetType() protocol.ChallengeType {
+	return m.MockType
+}
+
+func (m *MockChallenge) WinningClaim() util.Option[protocol.AssertionHash] {
+	return m.MockWinningAssertion
+}
+
+func (m *MockChallenge) RootAssertion(ctx context.Context, tx protocol.ActiveTx) (protocol.Assertion, error) {
+	return m.MockAssertion, nil
+}
+
+func (m *MockChallenge) RootVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
+	return m.MockRootVertex, nil
+}
+
+func (m *MockChallenge) GetCreationTime(ctx context.Context, tx protocol.ActiveTx) (time.Time, error) {
+	return m.MockCreationTime, nil
+}
+
+func (m *MockChallenge) ParentStateCommitment(ctx context.Context, tx protocol.ActiveTx) (util.StateCommitment, error) {
+	return m.MockParentStateCommit, nil
+}
+
+func (m *MockChallenge) WinnerVertex(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
+	return m.MockWinnerVertex, nil
+}
+
+func (m *MockChallenge) Completed(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(bool), args.Error(1)
+}
+
+// Mutating calls.
+func (m *MockChallenge) AddBlockChallengeLeaf(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	assertion protocol.Assertion,
+	history util.HistoryCommitment,
+) (protocol.ChallengeVertex, error) {
+	args := m.Called(ctx, tx, assertion, history)
+	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
+}
+
+func (m *MockChallenge) AddBigStepChallengeLeaf(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	vertex protocol.ChallengeVertex,
+	history util.HistoryCommitment,
+) (protocol.ChallengeVertex, error) {
+	args := m.Called(ctx, tx, vertex, history)
+	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
+}
+
+type MockChallengeManager struct {
+	mock.Mock
+}
+
+func (m *MockChallengeManager) ChallengePeriodSeconds(
+	ctx context.Context, tx protocol.ActiveTx,
+) (time.Duration, error) {
+	args := m.Called(ctx, tx)
+	return args.Get(0).(time.Duration), args.Error(1)
+}
+
+func (m *MockChallengeManager) CalculateChallengeHash(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	itemId common.Hash,
+	challengeType protocol.ChallengeType,
+) (protocol.ChallengeHash, error) {
+	args := m.Called(ctx, tx, itemId, challengeType)
+	return args.Get(0).(protocol.ChallengeHash), args.Error(1)
+}
+
+func (m *MockChallengeManager) CalculateChallengeVertexId(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengeId protocol.ChallengeHash,
+	history util.HistoryCommitment,
+) (protocol.VertexHash, error) {
+	args := m.Called(ctx, tx, challengeId, history)
+	return args.Get(0).(protocol.VertexHash), args.Error(1)
+}
+
+func (m *MockChallengeManager) GetVertex(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	vertexId protocol.VertexHash,
+) (util.Option[protocol.ChallengeVertex], error) {
+	args := m.Called(ctx, tx, vertexId)
+	return args.Get(0).(util.Option[protocol.ChallengeVertex]), args.Error(1)
+}
+
+func (m *MockChallengeManager) GetChallenge(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengeId protocol.ChallengeHash,
+) (util.Option[protocol.Challenge], error) {
+	args := m.Called(ctx, tx, challengeId)
+	return args.Get(0).(util.Option[protocol.Challenge]), args.Error(1)
+}
+
 type MockProtocol struct {
 	mock.Mock
 }
