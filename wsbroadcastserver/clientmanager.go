@@ -43,7 +43,7 @@ var (
 	clientsTotalFailedWorkerCounter   = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
 	clientsDurationHistogram          = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
 	clientsNonceScoreSample           = containers.NewSwappableSample()
-	clientsNonceScoreHistogram        = metrics.NewRegisteredHistogram("arb/feed/clients/nonce/score", nil, clientsNonceScoreSample)
+	_                                 = metrics.NewRegisteredHistogram("arb/feed/clients/nonce/score", nil, clientsNonceScoreSample)
 )
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
