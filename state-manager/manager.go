@@ -42,7 +42,9 @@ func New(stateRoots []common.Hash) *Simulated {
 }
 
 // LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has.
-func (s *Simulated) LatestAssertionCreationData(ctx context.Context) (*AssertionToCreate, error) {
+func (s *Simulated) LatestAssertionCreationData(
+	ctx context.Context,
+) (*AssertionToCreate, error) {
 	return &AssertionToCreate{
 		// TODO: Fill in.
 		PreState: &protocol.ExecutionState{
