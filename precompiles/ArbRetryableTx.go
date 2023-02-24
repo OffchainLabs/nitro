@@ -99,6 +99,9 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Result is 32 bytes long which is 1 word
 	gasCostToReturnResult := params.CopyGas
 	gasPoolUpdateCost := storage.StorageReadCostV0 + storage.StorageWriteCostV0
+	if c.version >= 11 {
+		gasPoolUpdateCost = params.ColdSloadCostEIP2929 + params.WarmStorageReadCostEIP2929
+	}
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
 	if c.gasLeft < futureGasCosts {
 		return hash{}, c.Burn(futureGasCosts) // this will error
@@ -129,10 +132,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
 	// Note: we need to pay a cost not exceeding the storage access sum above
-	err = c.ChargeWithVersion(10, func() error {
-		return c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
-	})
-	return retryTxHash, err
+	if c.Version() < 11 {
+		return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
+	} else {
+		if err := c.Burn(gasPoolUpdateCost); err != nil {
+			return hash{}, err
+		}
+		return retryTxHash, c.DoForFree(func() error {
+			return c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
+		})
+
+	}
 }
 
 // GetLifetime gets the default lifetime period a retryable has at creation

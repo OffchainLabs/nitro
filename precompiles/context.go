@@ -33,10 +33,14 @@ type Context struct {
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
+	gasIsFree   bool
 	version     uint64 // set during OpenArbosState
 }
 
 func (c *Context) Burn(amount uint64) error {
+	if c.gasIsFree {
+		return nil
+	}
 	if c.gasLeft < amount {
 		c.gasLeft = 0
 		return vm.ErrOutOfGas
@@ -51,6 +55,9 @@ func (c *Context) Burned() uint64 {
 }
 
 func (c *Context) RequireGas(amount uint64) error {
+	if c.gasIsFree {
+		return nil
+	}
 	if c.gasLeft < amount {
 		c.gasLeft = 0
 		return vm.ErrOutOfGas
@@ -78,11 +85,10 @@ func (c *Context) TracingInfo() *util.TracingInfo {
 	return c.tracingInfo
 }
 
-func (c *Context) ChargeWithVersion(temporaryVersion uint64, closure func() error) error {
-	current := c.version
-	c.version = temporaryVersion
+func (c *Context) DoForFree(closure func() error) error {
+	c.gasIsFree = true
 	err := closure()
-	c.version = current
+	c.gasIsFree = false
 	return err
 }
 

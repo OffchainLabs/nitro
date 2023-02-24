@@ -101,45 +101,25 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 }
 
 func chargeForRead(burner burn.Burner, db vm.StateDB, key common.Hash) error {
-	pricingV0 := func() error {
+	if burner.OutsideTx() || burner.Version() < 11 {
 		return burner.Burn(StorageReadCostV0)
 	}
-	if burner.OutsideTx() {
-		return pricingV0()
-	}
-
-	// get the cost early to update access lists even when acting as an old version
-	cost := vm.StateLoadCost(db, types.ArbosStateAddress, key)
-	if burner.Version() < 11 {
-		return pricingV0()
-	}
-	return burner.Burn(cost)
+	return burner.Burn(vm.StateLoadCost(db, types.ArbosStateAddress, key))
 }
 
 func chargeForWrite(burner burn.Burner, db vm.StateDB, key, value common.Hash) error {
-	pricingV0 := func() error {
+	if burner.OutsideTx() || burner.Version() < 11 {
 		if value == (common.Hash{}) {
 			return burner.Burn(StorageWriteZeroCostV0)
 		}
 		return burner.Burn(StorageWriteCostV0)
 	}
-	if burner.OutsideTx() {
-		return pricingV0()
-	}
 
 	// do StateStoreCost's sentry check before computing the state store cost
-	if burner.Version() > 11 {
-		if err := burner.RequireGas(params.SstoreSentryGasEIP2200); err != nil {
-			return err
-		}
+	if err := burner.RequireGas(params.SstoreSentryGasEIP2200); err != nil {
+		return err
 	}
-
-	// get the cost early to update access lists even when acting as an old version
-	cost := vm.StateStoreCost(db, types.ArbosStateAddress, key, value)
-	if burner.Version() < 11 {
-		return pricingV0()
-	}
-	return burner.Burn(cost)
+	return burner.Burn(vm.StateStoreCost(db, types.ArbosStateAddress, key, value))
 }
 
 func (store *Storage) Account() common.Address {
