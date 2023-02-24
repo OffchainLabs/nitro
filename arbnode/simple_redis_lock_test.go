@@ -25,10 +25,8 @@ func attemptLock(ctx context.Context, s *SimpleRedisLock, flag *int32, wg *sync.
 	for i := 0; i < test_attempts; i++ {
 		if s.AttemptLock(ctx) {
 			atomic.AddInt32(flag, 1)
-		} else {
-			if rand.Intn(test_release_frac) == 0 {
-				s.Release(ctx)
-			}
+		} else if rand.Intn(test_release_frac) == 0 {
+			s.Release(ctx)
 		}
 		select {
 		case <-time.After(test_delay):
