@@ -220,6 +220,8 @@ func (cm *ClientManager) Broadcast(bm interface{}) {
 	cm.broadcastChan <- bm
 }
 
+const maxNonceHashAge = time.Hour * 25
+
 func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error) {
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
 		return nil, err
@@ -274,6 +276,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 
 	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
+	recomputeNonceList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
 	i := 0
 	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
 		var data []byte
@@ -300,12 +303,35 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			// Queue for client too backed up, disconnect instead of blocking on channel send
 			sendQueueTooLargeCount++
 			clientDeleteList = append(clientDeleteList, client)
+			return
 		}
 		if i != 0 && i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount && i%config.BroadcastDelay.BatchSize == 0 {
 			time.Sleep(config.BroadcastDelay.Delay)
 		}
 		i++
+		if time.Since(client.nonceHashLastComputed) >= maxNonceHashAge {
+			recomputeNonceList = append(recomputeNonceList, client)
+		}
 	})
+
+	for _, client := range recomputeNonceList {
+		now := time.Now()
+		newNonceHash := computeNonceHash(client.nonce, now)
+		if client.nonceHash == newNonceHash {
+			client.nonceHashLastComputed = now
+			continue
+		}
+		_, exists := cm.clientPtrMap.Get(newNonceHash)
+		if exists {
+			// This nonce was already used on the next day
+			clientDeleteList = append(clientDeleteList, client)
+			continue
+		}
+		cm.clientPtrMap.Remove(client.nonceHash)
+		client.nonceHash = newNonceHash
+		client.nonceHashLastComputed = now
+		cm.clientPtrMap.Put(newNonceHash, client)
+	}
 
 	if sendQueueTooLargeCount > 0 {
 		if sendQueueTooLargeCount < 10 {

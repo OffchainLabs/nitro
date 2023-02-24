@@ -41,7 +41,10 @@ type ClientConnection struct {
 	Name            string
 	clientManager   *ClientManager
 	requestedSeqNum arbutil.MessageIndex
-	nonceHash       common.Hash
+
+	nonce                 common.Hash
+	nonceHash             common.Hash
+	nonceHashLastComputed time.Time
 
 	lastHeardUnix int64
 	out           chan []byte
@@ -52,8 +55,8 @@ type ClientConnection struct {
 
 var nonceHashPrefix = []byte("Arbitrum relay client connection nonce for date ")
 
-func computeNonceHash(nonce common.Hash) common.Hash {
-	utcDate := time.Now().Format("2006-01-02")
+func computeNonceHash(nonce common.Hash, tm time.Time) common.Hash {
+	utcDate := tm.UTC().Format("2006-01-02")
 	return crypto.Keccak256Hash(nonceHashPrefix, []byte(utcDate), nonce[:])
 }
 
@@ -66,19 +69,22 @@ func NewClientConnection(
 	compression bool,
 	nonce common.Hash,
 ) *ClientConnection {
+	now := time.Now()
 	return &ClientConnection{
-		conn:            conn,
-		clientIp:        connectingIP,
-		desc:            desc,
-		creation:        time.Now(),
-		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
-		clientManager:   clientManager,
-		requestedSeqNum: requestedSeqNum,
-		lastHeardUnix:   time.Now().Unix(),
-		out:             make(chan []byte, clientManager.config().MaxSendQueue),
-		compression:     compression,
-		flateReader:     NewFlateReader(),
-		nonceHash:       computeNonceHash(nonce),
+		conn:                  conn,
+		clientIp:              connectingIP,
+		desc:                  desc,
+		creation:              time.Now(),
+		Name:                  fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
+		clientManager:         clientManager,
+		requestedSeqNum:       requestedSeqNum,
+		lastHeardUnix:         time.Now().Unix(),
+		out:                   make(chan []byte, clientManager.config().MaxSendQueue),
+		compression:           compression,
+		flateReader:           NewFlateReader(),
+		nonce:                 nonce,
+		nonceHash:             computeNonceHash(nonce, now),
+		nonceHashLastComputed: now,
 	}
 }
 

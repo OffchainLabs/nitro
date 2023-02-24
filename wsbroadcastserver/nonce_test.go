@@ -5,22 +5,24 @@ package wsbroadcastserver
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
 func TestNonceHashing(t *testing.T) {
+	now := time.Now()
 	var nonceA common.Hash
 	var nonceB common.Hash
 	nonceB[0]++
 
-	nonceAHash := computeNonceHash(nonceA)
-	recomputed := computeNonceHash(nonceA)
+	nonceAHash := computeNonceHash(nonceA, now)
+	recomputed := computeNonceHash(nonceA, now)
 	if nonceAHash != recomputed {
 		Fail(t, "nonce hash is non-deterministic; got", nonceAHash, "and then", recomputed)
 	}
 
-	nonceBHash := computeNonceHash(nonceB)
+	nonceBHash := computeNonceHash(nonceB, now)
 	if nonceAHash == nonceBHash {
 		Fail(t, "nonce hash is the same for A and B:", nonceAHash)
 	}
