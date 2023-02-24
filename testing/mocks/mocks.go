@@ -170,8 +170,8 @@ type MockStateManager struct {
 	mock.Mock
 }
 
-func (m *MockStateManager) LatestAssertionCreationData(ctx context.Context) (*statemanager.AssertionToCreate, error) {
-	args := m.Called(ctx)
+func (m *MockStateManager) LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*statemanager.AssertionToCreate, error) {
+	args := m.Called(ctx, prevHeight)
 	return args.Get(0).(*statemanager.AssertionToCreate), args.Error(1)
 }
 

@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"math/big"
 )
 
 const defaultCreateLeafInterval = time.Second * 5
@@ -220,11 +219,12 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	}); err != nil {
 		return nil, err
 	}
-	// TODO: This should return the pre, post-state and a height.
-	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx)
+	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx, parentAssertion.Height())
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("Prev %d, new %d\n", parentAssertion.Height(), assertionToCreate.Height)
+	fmt.Printf("%#x and %#x\n", assertionToCreate.PreState.GlobalState.BlockHash, assertionToCreate.PostState.GlobalState.BlockHash)
 	var leaf protocol.Assertion
 	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
 		leaf, err = v.chain.CreateAssertion(
@@ -234,16 +234,17 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 			parentAssertionSeq,
 			assertionToCreate.PreState,
 			assertionToCreate.PostState,
-			big.NewInt(0), // TODO: Get from inbox
+			assertionToCreate.InboxMaxCount,
 		)
 		if err != nil {
 			return err
 		}
 		return nil
 	})
+	fmt.Println("GOT ERR", err)
 	switch {
 	case errors.Is(err, solimpl.ErrAlreadyExists):
-		return nil, errors.Wrap(err, "vertex already exists, unable to create new leaf")
+		return nil, errors.Wrap(err, "assertion already exists, unable to create new leaf")
 	case err != nil:
 		return nil, err
 	}

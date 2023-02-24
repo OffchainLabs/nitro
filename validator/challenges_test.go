@@ -349,9 +349,13 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	// Only one validator will have the correct result. We'll make that validator 0.
 	height := uint64(0)
 	validatorStateRoots := make([][]common.Hash, cfg.numValidators)
+	validatorStates := make([][]*protocol.ExecutionState, cfg.numValidators)
+	validatorInboxMaxCounts := make([][]*big.Int, cfg.numValidators)
 
 	for i := 0; i < len(validatorStateRoots); i++ {
 		validatorStateRoots[i] = append(validatorStateRoots[i], genesisStateHash)
+		validatorStates[i] = append(validatorStates[i], genesisState)
+		validatorInboxMaxCounts[i] = append(validatorInboxMaxCounts[i], big.NewInt(1))
 	}
 
 	for i := uint64(1); i < cfg.latestHeight; i++ {
@@ -367,11 +371,15 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		}
 
 		validatorStateRoots[0] = append(validatorStateRoots[0], protocol.ComputeStateHash(state, prevInboxMaxCount))
+		validatorStates[0] = append(validatorStates[0], state)
+		validatorInboxMaxCounts[0] = append(validatorInboxMaxCounts[0], big.NewInt(1))
 
 		for j := uint64(1); j < uint64(cfg.numValidators); j++ {
 			// Before the divergence height, the evil validator agrees.
 			if uint64(i) < cfg.divergenceHeightsByIndex[j] {
 				validatorStateRoots[j] = append(validatorStateRoots[j], protocol.ComputeStateHash(state, prevInboxMaxCount))
+				validatorStates[j] = append(validatorStates[j], state)
+				validatorInboxMaxCounts[j] = append(validatorInboxMaxCounts[j], big.NewInt(1))
 			} else {
 				junkRoot := make([]byte, 32)
 				_, err := rand.Read(junkRoot)
@@ -379,16 +387,17 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 				blockHash := crypto.Keccak256Hash(junkRoot)
 				state.GlobalState.BlockHash = blockHash
 				validatorStateRoots[j] = append(validatorStateRoots[j], protocol.ComputeStateHash(state, prevInboxMaxCount))
+				validatorStates[j] = append(validatorStates[j], state)
+				validatorInboxMaxCounts[j] = append(validatorInboxMaxCounts[j], big.NewInt(1))
 			}
 		}
 	}
 
-	// TODO: Might be a height issue
-
 	// Initialize each validator.
 	validators := make([]*Validator, cfg.numValidators)
 	for i := 0; i < len(validators); i++ {
-		manager := statemanager.New(validatorStateRoots[i])
+		manager := statemanager.NewWithExecutionStates(validatorStates[i], validatorInboxMaxCounts[i])
+		require.NoError(t, err)
 		addr := accs[i+1].accountAddr
 		v, valErr := New(
 			ctx,
