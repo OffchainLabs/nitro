@@ -14,7 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -51,21 +50,12 @@ func (c *Context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
-func (c *Context) ChargeForRead(db vm.StateDB, key common.Hash) error {
-	if c.version < 11 {
-		return c.Burn(storage.StorageReadCostV0)
+func (c *Context) RequireGas(amount uint64) error {
+	if c.gasLeft < amount {
+		c.gasLeft = 0
+		return vm.ErrOutOfGas
 	}
-	return c.Burn(vm.StateLoadCost(db, types.ArbosStateAddress, key))
-}
-
-func (c *Context) ChargeForWrite(db vm.StateDB, key, value common.Hash) error {
-	if c.version < 11 {
-		if value == (common.Hash{}) {
-			return c.Burn(storage.StorageWriteZeroCostV0)
-		}
-		return c.Burn(storage.StorageWriteCostV0)
-	}
-	return c.Burn(vm.StateStoreCost(db, types.ArbosStateAddress, key, value))
+	return nil
 }
 
 func (c *Context) Restrict(err error) {
@@ -80,7 +70,7 @@ func (c *Context) ReadOnly() bool {
 	return c.readOnly
 }
 
-func (c *Context) IsSystem() bool {
+func (c *Context) OutsideTx() bool {
 	return false
 }
 

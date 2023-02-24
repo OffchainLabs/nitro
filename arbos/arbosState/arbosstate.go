@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -57,14 +56,6 @@ var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
 var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
 
 func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
-
-	// We may have reached ArbOS without having passed through the STF
-	// In these cases, record the fact that we've touched ArbOS if charging
-	if !burner.IsSystem() {
-		stateDB.AddAddressToAccessList(types.ArbosStateAddress)
-		stateDB.AddSlotToAccessList(types.ArbosStateAddress, common.Hash{})
-	}
-
 	backingStorage := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -94,15 +85,15 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}, nil
 }
 
-func OpenSystemArbosState(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) (*ArbosState, error) {
-	burner := burn.NewSystemBurner(tracingInfo, readOnly)
+func OpenSystemArbosState(stateDB vm.StateDB, tracingInfo *util.TracingInfo, outsideTx bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(tracingInfo, outsideTx)
 	newState, err := OpenArbosState(stateDB, burner)
 	burner.Restrict(err)
 	return newState, err
 }
 
-func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) *ArbosState {
-	newState, err := OpenSystemArbosState(stateDB, tracingInfo, readOnly)
+func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingInfo, outsideTx bool) *ArbosState {
+	newState, err := OpenSystemArbosState(stateDB, tracingInfo, outsideTx)
 	if err != nil {
 		panic(err)
 	}
@@ -122,9 +113,6 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
-	burner.SetVersion(newState.arbosVersion)
-	statedb.AddAddressToAccessList(types.ArbosStateAddress)
-	statedb.AddSlotToAccessList(types.ArbosStateAddress, common.Hash{})
 	return newState, statedb
 }
 
@@ -192,6 +180,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	if arbosVersion != 0 {
 		return nil, ErrAlreadyInitialized
 	}
+	burner.SetVersion(arbosVersion)
 
 	desiredArbosVersion := chainConfig.ArbitrumChainParams.InitialArbOSVersion
 	if desiredArbosVersion == 0 {

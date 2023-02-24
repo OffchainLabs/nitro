@@ -54,6 +54,13 @@ const StorageWriteZeroCostV0 = params.SstoreResetGasEIP2200
 // NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	statedb.SetNonce(types.ArbosStateAddress, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
+
+	// We may have reached ArbOS without having passed through the canonical STF
+	// In these cases, record the fact that we've touched ArbOS
+	if !burner.OutsideTx() {
+		statedb.AddAddressToAccessList(types.ArbosStateAddress)
+		statedb.AddSlotToAccessList(types.ArbosStateAddress, common.Hash{})
+	}
 	return &Storage{
 		account:    types.ArbosStateAddress,
 		db:         statedb,
@@ -93,12 +100,54 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	)
 }
 
+func chargeForRead(burner burn.Burner, db vm.StateDB, key common.Hash) error {
+	pricingV0 := func() error {
+		return burner.Burn(StorageReadCostV0)
+	}
+	if burner.OutsideTx() {
+		return pricingV0()
+	}
+
+	// get the cost early to update access lists even when acting as an old version
+	cost := vm.StateLoadCost(db, types.ArbosStateAddress, key)
+	if burner.Version() < 11 {
+		return pricingV0()
+	}
+	return burner.Burn(cost)
+}
+
+func chargeForWrite(burner burn.Burner, db vm.StateDB, key, value common.Hash) error {
+	pricingV0 := func() error {
+		if value == (common.Hash{}) {
+			return burner.Burn(StorageWriteZeroCostV0)
+		}
+		return burner.Burn(StorageWriteCostV0)
+	}
+	if burner.OutsideTx() {
+		return pricingV0()
+	}
+
+	// do StateStoreCost's sentry check before computing the state store cost
+	if burner.Version() > 11 {
+		if err := burner.RequireGas(params.SstoreSentryGasEIP2200); err != nil {
+			return err
+		}
+	}
+
+	// get the cost early to update access lists even when acting as an old version
+	cost := vm.StateStoreCost(db, types.ArbosStateAddress, key, value)
+	if burner.Version() < 11 {
+		return pricingV0()
+	}
+	return burner.Burn(cost)
+}
+
 func (store *Storage) Account() common.Address {
 	return store.account
 }
 
 func (store *Storage) Get(key common.Hash) (common.Hash, error) {
-	err := store.burner.ChargeForRead(store.db, key)
+	err := chargeForRead(store.burner, store.db, key)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -130,7 +179,7 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := store.burner.ChargeForWrite(store.db, key, value)
+	err := chargeForWrite(store.burner, store.db, key, value)
 	if err != nil {
 		return err
 	}
@@ -277,7 +326,7 @@ func (store *Storage) NewSlot(offset uint64) StorageSlot {
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
-	err := ss.burner.ChargeForRead(ss.db, ss.slot)
+	err := chargeForRead(ss.burner, ss.db, ss.slot)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -292,7 +341,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.ChargeForWrite(ss.db, ss.slot, value)
+	err := chargeForWrite(ss.burner, ss.db, ss.slot, value)
 	if err != nil {
 		return err
 	}
