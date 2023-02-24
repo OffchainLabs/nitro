@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
@@ -28,7 +30,9 @@ func testBatchPosterParallel(t *testing.T, useMiniRedis bool) {
 
 	var redisUrl string
 	if useMiniRedis {
-		redisUrl = redisutil.GetTestRedisURL(t)
+		var redisServer *miniredis.Miniredis
+		redisServer, redisUrl = redisutil.GetTestRedisURL(t)
+		defer redisServer.Close()
 	}
 	parallelBatchPosters := 1
 	if redisUrl != "" {

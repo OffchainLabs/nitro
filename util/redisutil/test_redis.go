@@ -13,10 +13,10 @@ import (
 )
 
 // t param is used to make sure this is only called in tests
-func GetTestRedisURL(t *testing.T) string {
+func GetTestRedisURL(t *testing.T) (*miniredis.Miniredis, string) {
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)
 
-	return fmt.Sprintf("redis://%s/0", redisServer.Addr())
+	return redisServer, fmt.Sprintf("redis://%s/0", redisServer.Addr())
 
 }

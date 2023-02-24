@@ -48,7 +48,9 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.GetTestRedisURL(t)
+	redisServer, redisUrl := redisutil.GetTestRedisURL(t)
+	defer redisServer.Close()
+	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
@@ -127,7 +129,9 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 				if attempts > 10 {
 					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.SeqCoordinator.DebugPrint())
 				}
-				<-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3)
+				select {
+				case <-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
+				}
 			}
 		}
 	}
@@ -270,7 +274,9 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.GetTestRedisURL(t)
+	redisServer, redisUrl := redisutil.GetTestRedisURL(t)
+	defer redisServer.Close()
+	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 	nodeConfig.BatchPoster.Enable = false
 
 	nodeNames := []string{"stdio://A", "stdio://B"}

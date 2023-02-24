@@ -97,7 +97,9 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	defer cancel()
 
 	coordConfig := TestSeqCoordinatorConfig
-	coordConfig.RedisUrl = redisutil.GetTestRedisURL(t)
+	coordinatorRedisServer, coordinatorRedisUrl := redisutil.GetTestRedisURL(t)
+	defer coordinatorRedisServer.Close()
+	coordConfig.RedisUrl = coordinatorRedisUrl
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
 	coordConfig.Signing.ECDSA.AcceptSequencer = false
@@ -112,7 +114,9 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	nullSigner, err := signature.NewSignVerify(&coordConfig.Signing, nil, nil)
 	Require(t, err)
 
-	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))
+	redisServer, redisUrl := redisutil.GetTestRedisURL(t)
+	defer redisServer.Close()
+	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
 	if redisClient == nil {
 		t.Fatal("redisClient is nil")
