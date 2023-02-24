@@ -16,30 +16,26 @@ func TestNonceHashing(t *testing.T) {
 	var nonceB common.Hash
 	nonceB[0]++
 
-	nonceAHash := computeNonceHash(nonceA, now)
-	recomputed := computeNonceHash(nonceA, now)
+	nonceAHash := computeNonceHash(nonceA, 0, now)
+	recomputed := computeNonceHash(nonceA, 0, now)
 	if nonceAHash != recomputed {
 		Fail(t, "nonce hash is non-deterministic; got", nonceAHash, "and then", recomputed)
 	}
 
-	nonceBHash := computeNonceHash(nonceB, now)
+	nonceBHash := computeNonceHash(nonceB, 0, now)
 	if nonceAHash == nonceBHash {
 		Fail(t, "nonce hash is the same for A and B:", nonceAHash)
 	}
 
-	aLesser := lesserHash(nonceAHash, nonceBHash)
-	if aLesser {
-		if lesserHash(nonceBHash, nonceAHash) {
-			Fail(t, "a < b && b < a")
-		}
-	} else {
-		if lesserHash(nonceBHash, nonceAHash) {
-			Fail(t, "a >= b && b < a")
-		}
+	nonceAScore := scoreNonceHash(nonceAHash)
+	recomputedScore := scoreNonceHash(nonceAHash)
+	if nonceAScore != recomputedScore {
+		Fail(t, "nonce hash score is non-deterministic; got", nonceAScore, "and then", recomputedScore)
 	}
 
-	if lesserHash(nonceAHash, nonceAHash) {
-		Fail(t, "a < a")
+	nonceBScore := scoreNonceHash(nonceBHash)
+	if nonceAScore == nonceBScore {
+		Fail(t, "nonce hash score is the same for A and B:", nonceAScore)
 	}
 }
 
@@ -60,10 +56,10 @@ func TestNonceOrdering(t *testing.T) {
 	}
 	for i, nonceA := range nonces {
 		for j, nonceB := range nonces {
-			less := lesserHash(nonceA, nonceB)
+			better := scoreNonceHash(nonceA) > scoreNonceHash(nonceB)
 			expected := i < j
-			if less != expected {
-				Fail(t, "expected lesserHash(", nonceA, ",", nonceB, ") to be", expected, "but got", less)
+			if better != expected {
+				Fail(t, "expected (scoreNonceHash(", nonceA, ") > scoreNonceHash(", nonceB, ")) to be", expected, "but got", better)
 			}
 		}
 	}

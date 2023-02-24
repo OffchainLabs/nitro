@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"math/big"
 	"math/rand"
 	"net"
 	"sync"
@@ -44,6 +46,7 @@ type ClientConnection struct {
 
 	nonce                 common.Hash
 	nonceHash             common.Hash
+	nonceTarget           float64
 	nonceHashLastComputed time.Time
 
 	lastHeardUnix int64
@@ -53,11 +56,17 @@ type ClientConnection struct {
 	flateReader *wsflate.Reader
 }
 
-var nonceHashPrefix = []byte("Arbitrum relay client connection nonce for date ")
-
-func computeNonceHash(nonce common.Hash, tm time.Time) common.Hash {
+func computeNonceHash(nonce common.Hash, target float64, tm time.Time) common.Hash {
 	utcDate := tm.UTC().Format("2006-01-02")
-	return crypto.Keccak256Hash(nonceHashPrefix, []byte(utcDate), nonce[:])
+	prefix := fmt.Sprintf("Arbitrum feed %v %v:", utcDate, target)
+	return crypto.Keccak256Hash([]byte(prefix), nonce[:])
+}
+
+func scoreNonceHash(nonceBytes common.Hash) float64 {
+	nonceInt := new(big.Int).SetBytes(nonceBytes[:])
+	nonceBigFloat := new(big.Float).SetPrec(64).SetInt(nonceInt)
+	nonceFloat, _ := nonceBigFloat.Float64()
+	return 256 - math.Log2(nonceFloat)
 }
 
 func NewClientConnection(
@@ -68,8 +77,14 @@ func NewClientConnection(
 	connectingIP net.IP,
 	compression bool,
 	nonce common.Hash,
-) *ClientConnection {
+	nonceTarget float64,
+) (*ClientConnection, error) {
 	now := time.Now()
+	nonceHash := computeNonceHash(nonce, nonceTarget, now)
+	nonceScore := scoreNonceHash(nonceHash)
+	if nonceScore < nonceTarget {
+		return nil, fmt.Errorf("nonce hash score %v is below target %v", nonceScore, nonceTarget)
+	}
 	return &ClientConnection{
 		conn:                  conn,
 		clientIp:              connectingIP,
@@ -83,9 +98,10 @@ func NewClientConnection(
 		compression:           compression,
 		flateReader:           NewFlateReader(),
 		nonce:                 nonce,
-		nonceHash:             computeNonceHash(nonce, now),
+		nonceHash:             nonceHash,
+		nonceTarget:           nonceTarget,
 		nonceHashLastComputed: now,
-	}
+	}, nil
 }
 
 func (cc *ClientConnection) Age() time.Duration {

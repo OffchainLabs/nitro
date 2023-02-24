@@ -57,7 +57,8 @@ type CatchupBuffer interface {
 type ClientManager struct {
 	stopwaiter.StopWaiter
 
-	clientPtrMap  *btree.Tree[common.Hash, *ClientConnection]
+	clientPtrSet  *btree.Tree[*ClientConnection, struct{}]
+	clientNonces  map[common.Hash]struct{}
 	clientCount   int32
 	pool          *gopool.Pool
 	poller        netpoll.Poller
@@ -75,9 +76,15 @@ type ClientConnectionAction struct {
 	create bool
 }
 
-func lesserHash(aHash, bHash common.Hash) bool {
-	for i, a := range aHash {
-		b := bHash[i]
+func betterTarget(clientA, clientB *ClientConnection) bool {
+	if clientA.nonceTarget > clientB.nonceTarget {
+		return true
+	} else if clientA.nonceTarget < clientB.nonceTarget {
+		return false
+	}
+
+	for i, a := range clientA.nonceHash {
+		b := clientB.nonceHash[i]
 		if a < b {
 			return true
 		} else if a > b {
@@ -92,7 +99,8 @@ func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetc
 	return &ClientManager{
 		poller:            poller,
 		pool:              gopool.NewPool(config.Workers, config.Queue, 1),
-		clientPtrMap:      btree.New[common.Hash, *ClientConnection](lesserHash),
+		clientPtrSet:      btree.New[*ClientConnection, struct{}](betterTarget),
+		clientNonces:      make(map[common.Hash]struct{}),
 		broadcastChan:     make(chan interface{}, 1),
 		clientAction:      make(chan ClientConnectionAction, 128),
 		config:            configFetcher,
@@ -108,7 +116,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 		}
 	}()
 
-	_, exists := cm.clientPtrMap.Get(clientConnection.nonceHash)
+	_, exists := cm.clientNonces[clientConnection.nonce]
 	if exists {
 		return fmt.Errorf("duplicate nonce hash %v", clientConnection.nonceHash)
 	}
@@ -133,7 +141,8 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	}
 
 	clientConnection.Start(ctx)
-	cm.clientPtrMap.Put(clientConnection.nonceHash, clientConnection)
+	cm.clientPtrSet.Put(clientConnection, struct{}{})
+	cm.clientNonces[clientConnection.nonce] = struct{}{}
 	clientsTotalSuccessCounter.Inc(1)
 
 	return nil
@@ -147,20 +156,25 @@ func (cm *ClientManager) Register(
 	connectingIP net.IP,
 	compression bool,
 	nonce common.Hash,
-) *ClientConnection {
+	nonceTarget float64,
+) (*ClientConnection, error) {
+	cc, err := NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression, nonce, nonceTarget)
+	if err != nil {
+		return nil, err
+	}
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression, nonce),
+		cc,
 		true,
 	}
 	cm.clientAction <- createClient
 
-	return createClient.cc
+	return cc, nil
 }
 
 // removeAll removes all clients after main ClientManager thread exits
 func (cm *ClientManager) removeAll() {
 	// Only called after main ClientManager thread exits, so remove client directly
-	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
+	cm.clientPtrSet.Each(func(client *ClientConnection, _ struct{}) {
 		cm.removeClientImpl(client)
 	})
 }
@@ -189,7 +203,7 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 }
 
 func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
-	_, exists := cm.clientPtrMap.Get(clientConnection.nonceHash)
+	_, exists := cm.clientPtrSet.Get(clientConnection)
 	if !exists {
 		return
 	}
@@ -199,7 +213,8 @@ func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
 		cm.connectionLimiter.Release(clientConnection.clientIp)
 	}
 
-	cm.clientPtrMap.Remove(clientConnection.nonceHash)
+	cm.clientPtrSet.Remove(clientConnection)
+	delete(cm.clientNonces, clientConnection.nonce)
 }
 
 func (cm *ClientManager) Remove(clientConnection *ClientConnection) {
@@ -280,9 +295,9 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	}
 
 	sendQueueTooLargeCount := 0
-	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
+	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrSet.Size())
 	i := 0
-	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
+	cm.clientPtrSet.Each(func(client *ClientConnection, _ struct{}) {
 		var data []byte
 		if client.Compression() {
 			if config.EnableCompression {
@@ -333,16 +348,16 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 
 // verifyClients should be called every cm.config.ClientPingInterval
 func (cm *ClientManager) verifyClients() []*ClientConnection {
-	clientConnectionCount := cm.clientPtrMap.Size()
+	clientConnectionCount := cm.clientPtrSet.Size()
 
 	// Create list of clients to remove
 	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
-	recomputeNonceList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
-	nonceScoreList := make([]int64, 0, cm.clientPtrMap.Size())
+	recomputeNonceList := make([]*ClientConnection, 0, cm.clientPtrSet.Size())
+	nonceScoreList := make([]int64, 0, cm.clientPtrSet.Size())
 
 	// Send ping to all connected clients
-	log.Debug("pinging clients", "count", cm.clientPtrMap.Size())
-	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
+	log.Debug("pinging clients", "count", cm.clientPtrSet.Size())
+	cm.clientPtrSet.Each(func(client *ClientConnection, _ struct{}) {
 		var nonceScore int64
 		for _, b := range client.nonceHash {
 			nonceScore += int64(bits.LeadingZeros8(b))
@@ -376,21 +391,22 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 
 	for _, client := range recomputeNonceList {
 		now := time.Now()
-		newNonceHash := computeNonceHash(client.nonce, now)
+		newNonceHash := computeNonceHash(client.nonce, client.nonceTarget, now)
 		if client.nonceHash == newNonceHash {
 			client.nonceHashLastComputed = now
 			continue
 		}
-		_, exists := cm.clientPtrMap.Get(newNonceHash)
-		if exists {
-			// This nonce was already used on the next day
+		newNonceScore := scoreNonceHash(newNonceHash)
+		if newNonceScore < client.nonceTarget {
+			// This nonce no longer meets the target
 			clientDeleteList = append(clientDeleteList, client)
 			continue
 		}
-		cm.clientPtrMap.Remove(client.nonceHash)
+		// We remove then re-insert because its position in the tree might change
+		cm.clientPtrSet.Remove(client)
 		client.nonceHash = newNonceHash
 		client.nonceHashLastComputed = now
-		cm.clientPtrMap.Put(newNonceHash, client)
+		cm.clientPtrSet.Put(client, struct{}{})
 	}
 
 	return clientDeleteList

@@ -36,6 +36,7 @@ var (
 	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
 	HTTPHeaderNonce                   = textproto.CanonicalMIMEHeaderKey("Arbitrum-Relay-Client-Nonce")
+	HTTPHeaderNonceTarget             = textproto.CanonicalMIMEHeaderKey("Arbitrum-Relay-Client-Nonce-Target")
 )
 
 const (
@@ -300,6 +301,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		var connectingIP net.IP
 		var requestedSeqNum arbutil.MessageIndex
 		var nonce common.Hash
+		var nonceTarget float64
 		upgrader := ws.Upgrader{
 			OnRequest: func(uri []byte) error {
 				if strings.Contains(string(uri), LivenessProbeURI) {
@@ -343,6 +345,18 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 						nonce = common.HexToHash(string(value))
 					} else {
 						log.Trace("failed to parse nonce from header", "ip", connectingIP, "header", headerName, "value", string(value))
+					}
+				} else if headerName == HTTPHeaderNonceTarget && config.AllowCustomNonces {
+					newTarget, err := strconv.ParseFloat(string(value), 64)
+					if err == nil {
+						// This check can't be inverted as it's important that NaN doesn't pass.
+						if newTarget >= 0 && newTarget <= 256 {
+							nonceTarget = newTarget
+						} else {
+							log.Trace("specified nonce target out of range", "ip", connectingIP, "header", headerName, "value", string(value))
+						}
+					} else {
+						log.Trace("failed to parse nonce target from header", "ip", connectingIP, "header", headerName, "value", string(value), "err", err)
 					}
 				}
 
@@ -427,7 +441,12 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		// Register incoming client in clientManager.
 		safeConn := writeDeadliner{conn, config.WriteTimeout}
 
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted, nonce)
+		client, err := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted, nonce, nonceTarget)
+		if err != nil {
+			log.Debug("failed to register client", "connectingIP", connectingIP, "err", err)
+			_ = conn.Close()
+			return
+		}
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
