@@ -133,7 +133,7 @@ jobs:
         run: |
           mkdir -p target/tmp
           echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
-          echo "GOMEMLIMIT=6GB" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
       - name: run tests without race detection
