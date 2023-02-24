@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/bits"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -42,8 +41,8 @@ var (
 	clientsTotalFailedUpgradeCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
 	clientsTotalFailedWorkerCounter   = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
 	clientsDurationHistogram          = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
-	clientsNonceScoreSample           = containers.NewSwappableSample()
-	_                                 = metrics.NewRegisteredHistogram("arb/feed/clients/nonce/score", nil, clientsNonceScoreSample)
+	clientsNonceTargetSample          = containers.NewSwappableSample()
+	_                                 = metrics.NewRegisteredHistogram("arb/feed/clients/nonce/target", nil, clientsNonceTargetSample)
 )
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
@@ -360,19 +359,12 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 	// Create list of clients to remove
 	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
 	recomputeNonceList := make([]*ClientConnection, 0, cm.clientPtrSet.Size())
-	nonceScoreList := make([]int64, 0, cm.clientPtrSet.Size())
+	nonceTargetList := make([]int64, 0, cm.clientPtrSet.Size())
 
 	// Send ping to all connected clients
 	log.Debug("pinging clients", "count", cm.clientPtrSet.Size())
 	cm.clientPtrSet.Each(func(client *ClientConnection, _ struct{}) {
-		var nonceScore int64
-		for _, b := range client.nonceHash {
-			nonceScore += int64(bits.LeadingZeros8(b))
-			if b != 0 {
-				break
-			}
-		}
-		nonceScoreList = append(nonceScoreList, nonceScore)
+		nonceTargetList = append(nonceTargetList, int64(client.nonceTarget*100))
 
 		diff := time.Since(client.GetLastHeard())
 		if diff > cm.config().ClientTimeout {
@@ -394,7 +386,7 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 	})
 
 	// metrics.NewSampleSnapshot doesn't require that its data is sorted, so it's fine that this is sorted in reverse order
-	clientsNonceScoreSample.SetSample(metrics.NewSampleSnapshot(int64(len(nonceScoreList)), nonceScoreList))
+	clientsNonceTargetSample.SetSample(metrics.NewSampleSnapshot(int64(len(nonceTargetList)), nonceTargetList))
 
 	for _, client := range recomputeNonceList {
 		now := time.Now()
