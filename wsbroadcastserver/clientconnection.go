@@ -58,7 +58,7 @@ type ClientConnection struct {
 
 func computeNonceHash(nonce common.Hash, target float64, tm time.Time) common.Hash {
 	utcDate := tm.UTC().Format("2006-01-02")
-	prefix := fmt.Sprintf("Arbitrum feed %v %v:", utcDate, target)
+	prefix := fmt.Sprintf("Arb %v %v:", utcDate, target)
 	return crypto.Keccak256Hash([]byte(prefix), nonce[:])
 }
 
