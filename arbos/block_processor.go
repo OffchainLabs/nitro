@@ -109,8 +109,12 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 	batchFetcher FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
+	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return nil, nil, err
+	}
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID, arbState.ArbOSVersion(), func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
@@ -133,7 +137,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, arbState, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -144,14 +148,17 @@ func ProduceBlockAdvanced(
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
+	arbState *arbosState.ArbosState,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
 ) (*types.Block, types.Receipts, error) {
-
-	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-	if err != nil {
-		return nil, nil, err
+	var err error
+	if arbState == nil {
+		arbState, err = arbosState.OpenSystemArbosState(statedb, nil, true)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	if statedb.GetUnexpectedBalanceDelta().BitLen() != 0 {
@@ -166,11 +173,11 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
+	header := createNewHeader(lastBlockHeader, l1Info, arbState, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
-	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	blockGasLeft, _ := arbState.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -202,7 +209,7 @@ func ProduceBlockAdvanced(
 			if !ok {
 				return nil, nil, errors.New("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
+			retryable, _ := arbState.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
@@ -235,13 +242,13 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, arbState, tx, sender); err != nil {
 				return nil, nil, err
 			}
 
 			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
-				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
+				posterCost, _ := arbState.L1PricingState().GetPosterInfo(tx, poster)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -284,7 +291,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				vm.Config{},
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, arbState, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {

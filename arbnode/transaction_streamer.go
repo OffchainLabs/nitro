@@ -833,8 +833,14 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
+		lastBlock := s.bc.CurrentBlock()
+		statedb, err := s.bc.StateAt(lastBlock.Root())
+		if err != nil {
+			log.Warn("failed to get state while resequencing reorged messages", "err", err, "root", lastBlock.Root(), "block", lastBlock.Number())
+			return
+		}
 		// We don't need a batch fetcher as this is an L2 message
-		txes, err := msg.Message.ParseL2Transactions(s.bc.Config().ChainID, nil)
+		txes, err := msg.Message.ParseL2Transactions(s.bc.Config().ChainID, arbosState.ArbOSVersion(statedb), nil)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
@@ -890,7 +896,6 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 		}
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
-
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
@@ -898,6 +903,7 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 		delayedMessagesRead,
 		lastBlockHeader,
 		statedb,
+		nil,
 		s.bc,
 		s.bc.Config(),
 		hooks,
@@ -1171,6 +1177,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		startTime := time.Now()
+
 		block, receipts, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,

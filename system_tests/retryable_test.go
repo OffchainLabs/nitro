@@ -60,7 +60,7 @@ func retryableSetup(t *testing.T) (
 			if message.Message.Header.Kind != arbos.L1MessageType_SubmitRetryable {
 				continue
 			}
-			txs, err := message.Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, nil)
+			txs, err := message.Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, 10, nil)
 			Require(t, err)
 			for _, tx := range txs {
 				if tx.Type() == types.ArbitrumSubmitRetryableTxType {

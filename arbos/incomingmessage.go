@@ -224,14 +224,14 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
-func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
+func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, arbOSVersion uint64, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
 	}
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0)
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0, arbOSVersion)
 	case L1MessageType_Initialize:
 		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case L1MessageType_EndOfBlock:
@@ -325,7 +325,7 @@ func parseTimeOrPanic(format string, value string) time.Time {
 
 var HeartbeatsDisabledAt = uint64(parseTimeOrPanic(time.RFC1123, "Mon, 08 Aug 2022 16:00:00 GMT").Unix())
 
-func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
+func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int, arbOSVersion uint64) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -365,7 +365,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 				subRequestId := crypto.Keccak256Hash(requestId[:], math.U256Bytes(index))
 				nextRequestId = &subRequestId
 			}
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1, arbOSVersion)
 			if err != nil {
 				return nil, err
 			}
@@ -381,6 +381,9 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		}
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
+		}
+		if newTx.Type() == types.ArbitrumExtendedTxType && arbOSVersion < 11 {
+			return nil, types.ErrTxTypeNotSupported
 		}
 		if newTx.Type() >= types.ArbitrumDepositTxType {
 			// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
