@@ -23,28 +23,6 @@ func init() {
 	logrus.SetOutput(io.Discard)
 }
 
-func Test_track(t *testing.T) {
-	t.Skip("Needs mocks")
-	hook := test.NewGlobal()
-	tkr := newVertexTracker(
-		util.NewArtificialTimeReference(),
-		time.Millisecond,
-		&solimpl.Challenge{},
-		&solimpl.ChallengeVertex{},
-		&solimpl.AssertionChain{},
-		&mocks.MockStateManager{},
-		"mock-validator",
-		common.Address{},
-	)
-
-	tkr.awaitingOneStepFork = true
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
-	defer cancel()
-	tkr.track(ctx)
-	AssertLogsContain(t, hook, "Tracking challenge vertex")
-	AssertLogsContain(t, hook, "Challenge goroutine exiting")
-}
-
 func Test_actOnBlockChallenge(t *testing.T) {
 	ctx := context.Background()
 	t.Run("does nothing if awaiting one step fork", func(t *testing.T) {
@@ -374,74 +352,47 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	return newVertexTracker(util.NewArtificialTimeReference(), time.Second, challenge, vertexToBisect, evilValidator.chain, evilValidator.stateManager, evilValidator.name, evilValidator.address)
 }
 
-// func Test_vertexTracker_canConfirm(t *testing.T) {
-// 	ctx := context.Background()
-// 	tx := &goimpl.ActiveTx{}
-// 	tracker := setupNonPSTracker(t, ctx, tx)
+func Test_vertexTracker_canConfirm(t *testing.T) {
+	ctx := context.Background()
 
-// 	// Can't confirm is vertex is confirmed or rejected
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.ConfirmedAssertionState
-// 	confirmed, err := tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.False(t, confirmed)
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.RejectedAssertionState
-// 	confirmed, err = tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.False(t, confirmed)
-
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-// 	// Can't confirm is parent isn't confirmed
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-// 		Status: goimpl.PendingAssertionState,
-// 	}))
-// 	confirmed, err = tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.False(t, confirmed)
-
-// 	// Can confirm if vertex has won subchallenge
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-// 		Status: goimpl.ConfirmedAssertionState,
-// 		SubChallenge: util.Some(goimpl.ChallengeInterface(&goimpl.Challenge{
-// 			WinnerVertex: util.Some(tracker.vertex),
-// 		})),
-// 	}))
-// 	confirmed, err = tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.True(t, confirmed)
-
-// 	// Can't confirm if vertex is in the middle of subchallenge
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-// 		Status: goimpl.ConfirmedAssertionState,
-// 		SubChallenge: util.Some(goimpl.ChallengeInterface(&goimpl.Challenge{
-// 			WinnerVertex: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{})),
-// 		})),
-// 	}))
-// 	confirmed, err = tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.False(t, confirmed)
-
-// 	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-// 		Status:       goimpl.ConfirmedAssertionState,
-// 		SubChallenge: util.None[goimpl.ChallengeInterface](),
-// 	}))
-// 	psTimer, err := tracker.vertex.GetPsTimer(ctx, tx)
-// 	require.NoError(t, err)
-// 	psTimer.Add(1000000001)
-// 	confirmed, err = tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.True(t, confirmed)
-
-// 	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-// 	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-// 		Status:               goimpl.ConfirmedAssertionState,
-// 		SubChallenge:         util.None[goimpl.ChallengeInterface](),
-// 		PresumptiveSuccessor: util.Some(tracker.vertex),
-// 	}))
-// 	confirmed, err = tracker.confirmed(ctx, tx)
-// 	require.NoError(t, err)
-// 	require.True(t, confirmed)
-// }
+	t.Run("already confirmed", func(t *testing.T) {
+		vertex := &mocks.MockChallengeVertex{
+			MockStatus: protocol.AssertionConfirmed,
+		}
+		tracker := &vertexTracker{
+			vertex: vertex,
+		}
+		confirmed, err := tracker.confirmed(ctx)
+		require.NoError(t, err)
+		require.False(t, confirmed)
+	})
+	t.Run("no prev", func(t *testing.T) {
+		vertex := &mocks.MockChallengeVertex{
+			MockStatus: protocol.AssertionPending,
+		}
+		p := &mocks.MockProtocol{}
+		tracker := &vertexTracker{
+			vertex: vertex,
+			chain:  p,
+		}
+		confirmed, err := tracker.confirmed(ctx)
+		require.ErrorContains(t, err, "no prev vertex")
+		require.False(t, confirmed)
+	})
+	t.Run("prev is not confirmed", func(t *testing.T) {
+		vertex := &mocks.MockChallengeVertex{
+			MockStatus: protocol.AssertionPending,
+			MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
+				MockStatus: protocol.AssertionPending,
+			})),
+		}
+		p := &mocks.MockProtocol{}
+		tracker := &vertexTracker{
+			vertex: vertex,
+			chain:  p,
+		}
+		confirmed, err := tracker.confirmed(ctx)
+		require.NoError(t, err)
+		require.False(t, confirmed)
+	})
+}

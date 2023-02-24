@@ -34,7 +34,7 @@ type rollupAddresses struct {
 	DeployedAt             uint64         `json:"deployed-at"`
 }
 
-func setupAssertionChains(t *testing.T, numChains uint64) ([]*solimpl.AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
+func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
 	t.Helper()
 	ctx := context.Background()
 	accs, backend := setupAccounts(t, numChains)
@@ -71,7 +71,7 @@ func setupAssertionChains(t *testing.T, numChains uint64) ([]*solimpl.AssertionC
 }
 
 func deployFullRollupStack(
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	deployAuth *bind.TransactOpts,
@@ -139,7 +139,7 @@ func deployFullRollupStack(
 }
 
 func deployBridgeCreator(
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend *backends.SimulatedBackend,
@@ -187,7 +187,7 @@ func deployBridgeCreator(
 }
 
 func deployChallengeFactory(
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend *backends.SimulatedBackend,
@@ -243,7 +243,7 @@ func deployChallengeFactory(
 }
 
 func deployRollupCreator(
-	t *testing.T,
+	t testing.TB,
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	auth *bind.TransactOpts,
@@ -337,7 +337,7 @@ type testAccount struct {
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccounts(t *testing.T, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
+func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
 	t.Helper()
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)

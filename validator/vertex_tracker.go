@@ -372,7 +372,7 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 		}
 		return nil
 	}); err != nil {
-		return false, nil
+		return false, err
 	}
 	return gotConfirmed, nil
 }
