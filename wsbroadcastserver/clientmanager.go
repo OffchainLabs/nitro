@@ -359,8 +359,8 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 				return
 			}
 		}
-		if time.Since(client.nonceHashLastComputed) >= maxNonceHashAge {
-			log.Debug("recomputing client nonce hash", "client", client.Name, "lastComputed", client.nonceHashLastComputed)
+		if time.Since(client.nonceHashBase) >= maxNonceHashAge {
+			log.Debug("recomputing client nonce hash", "client", client.Name, "lastComputed", client.nonceHashBase)
 			recomputeNonceList = append(recomputeNonceList, client)
 		}
 	})
@@ -372,7 +372,7 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 		now := time.Now()
 		newNonceHash := computeNonceHash(client.nonce, now)
 		if client.nonceHash == newNonceHash {
-			client.nonceHashLastComputed = now
+			client.nonceHashBase = now
 			continue
 		}
 		_, exists := cm.clientPtrMap.Get(newNonceHash)
@@ -383,7 +383,7 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 		}
 		cm.clientPtrMap.Remove(client.nonceHash)
 		client.nonceHash = newNonceHash
-		client.nonceHashLastComputed = now
+		client.nonceHashBase = now
 		cm.clientPtrMap.Put(newNonceHash, client)
 	}
 
