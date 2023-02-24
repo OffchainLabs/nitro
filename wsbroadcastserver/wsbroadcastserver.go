@@ -64,6 +64,7 @@ type BroadcasterConfig struct {
 	EnableCompression  bool                    `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
+	AllowCustomNonces  bool                    `koanf:"allow-custom-nonces" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
 	BroadcastDelay     BroadcastDelayConfig    `koanf:"broadcast-delay" reload:"hot"`
 }
@@ -103,6 +104,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
+	f.Bool(prefix+".allow-custom-nonces", DefaultBroadcasterConfig.AllowCustomNonces, "whether to allow custom relay client connection nonces")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
 	BroadcastDelayConfigAddOptions(prefix+".broadcast-delay", f)
 }
@@ -133,6 +135,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	EnableCompression:  true,
 	RequireCompression: false,
 	LimitCatchup:       false,
+	AllowCustomNonces:  true,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	BroadcastDelay:     DefaultBroadcastDelayConfig,
 }
@@ -157,6 +160,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	EnableCompression:  true,
 	RequireCompression: false,
 	LimitCatchup:       false,
+	AllowCustomNonces:  true,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
 	BroadcastDelay:     DefaultBroadcastDelayConfig,
 }
@@ -328,7 +332,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				} else if headerName == HTTPHeaderCloudflareConnectingIP {
 					connectingIP = net.ParseIP(string(value))
 					log.Trace("Client IP parsed from header", "ip", connectingIP, "header", headerName, "value", string(value))
-				} else if headerName == HTTPHeaderNonce {
+				} else if headerName == HTTPHeaderNonce && config.AllowCustomNonces {
 					if nonceRegex.Match(value) {
 						nonce = common.HexToHash(string(value))
 					} else {
