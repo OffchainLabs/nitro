@@ -2,17 +2,23 @@ package validator
 
 import (
 	"context"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sirupsen/logrus/hooks/test"
-	"github.com/stretchr/testify/require"
 	"math/big"
 	"math/rand"
 	"testing"
 	"time"
+
+	"bytes"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBlockChallenge(t *testing.T) {
@@ -314,7 +320,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	require.Equal(t, true, cfg.numValidators > 1, "Need at least 2 validators")
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
-	chains, accs, _, backend := setupAssertionChains(t, uint64(cfg.numValidators)+1)
+	chains, accs, addrs, backend := setupAssertionChains(t, uint64(cfg.numValidators)+1)
 	prevInboxMaxCount := big.NewInt(1)
 
 	// Advance the chain by 100 blocks as there needs to be a minimum period of time
@@ -385,9 +391,15 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 				_, err := rand.Read(junkRoot)
 				require.NoError(t, err)
 				blockHash := crypto.Keccak256Hash(junkRoot)
-				state.GlobalState.BlockHash = blockHash
-				validatorStateRoots[j] = append(validatorStateRoots[j], protocol.ComputeStateHash(state, prevInboxMaxCount))
-				validatorStates[j] = append(validatorStates[j], state)
+				evilState := &protocol.ExecutionState{
+					GlobalState: protocol.GoGlobalState{
+						BlockHash: blockHash,
+						Batch:     1,
+					},
+					MachineStatus: protocol.MachineStatusFinished,
+				}
+				validatorStateRoots[j] = append(validatorStateRoots[j], protocol.ComputeStateHash(evilState, prevInboxMaxCount))
+				validatorStates[j] = append(validatorStates[j], evilState)
 				validatorInboxMaxCounts[j] = append(validatorInboxMaxCounts[j], big.NewInt(1))
 			}
 		}
@@ -416,8 +428,13 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
 	defer cancel()
 
-	//harnessObserver := make(chan protocol.ChallengeEvent, 100)
-	//chain.SubscribeChallengeEvents(ctx, harnessObserver)
+	logs := make(chan types.Log)
+	query := ethereum.FilterQuery{
+		Addresses: []common.Address{addrs.Rollup},
+	}
+
+	sub, err := backend.SubscribeFilterLogs(ctx, query, logs)
+	require.NoError(t, err)
 
 	// Submit leaf creation manually for each validator.
 	for _, val := range validators {
@@ -426,12 +443,36 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted leaf creation")
 	}
 
-	// // We fire off each validator's background routines.
-	// for _, val := range validators {
-	// 	go val.Start(ctx)
-	// }
+	// We fire off each validator's background routines.
+	for _, val := range validators {
+		go val.Start(ctx)
+	}
 
-	time.Sleep(time.Second * 10)
+	createdAssertionEventSig := hexutil.MustDecode("0xb795d7f067118d6e112dcd15e103f1a9de80c67210733e0d01e065a35bfb3242")
+	// uint64 indexed assertionNum,
+	// bytes32 indexed parentAssertionHash,
+	// bytes32 indexed assertionHash,
+	// bytes32 executionHash,
+	// AssertionInputs assertion,
+	// bytes32 afterInboxBatchAcc,
+	// bytes32 wasmModuleRoot,
+	// uint256 inboxMaxCount
+	rollupCore, err := rollupgen.NewRollupCore(addrs.Rollup, backend)
+	require.NoError(t, err)
+
+	for {
+		select {
+		case err := <-sub.Err():
+			log.Fatal(err)
+		case vLog := <-logs:
+			if bytes.Equal(vLog.Topics[0][:], createdAssertionEventSig) {
+				t.Log("Assertion created")
+				createdAssertion, err := rollupCore.ParseAssertionCreated(vLog)
+				require.NoError(t, err)
+				t.Logf("%+v", createdAssertion)
+			}
+		}
+	}
 
 	// totalEventsWanted := uint16(0)
 	// for _, count := range cfg.eventsToAssert {

@@ -167,6 +167,7 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 	}
 }
 
+// TODO: Change to polling mechanism
 func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 	for {
 		select {
@@ -223,8 +224,6 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Prev %d, new %d\n", parentAssertion.Height(), assertionToCreate.Height)
-	fmt.Printf("%#x and %#x\n", assertionToCreate.PreState.GlobalState.BlockHash, assertionToCreate.PostState.GlobalState.BlockHash)
 	var leaf protocol.Assertion
 	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
 		leaf, err = v.chain.CreateAssertion(
@@ -241,7 +240,6 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 		}
 		return nil
 	})
-	fmt.Println("GOT ERR", err)
 	switch {
 	case errors.Is(err, solimpl.ErrAlreadyExists):
 		return nil, errors.Wrap(err, "assertion already exists, unable to create new leaf")
