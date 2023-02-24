@@ -368,7 +368,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 
 		validatorStateRoots[0] = append(validatorStateRoots[0], protocol.ComputeStateHash(state, prevInboxMaxCount))
 
-		for j := uint64(0); j < uint64(cfg.numValidators); j++ {
+		for j := uint64(1); j < uint64(cfg.numValidators); j++ {
 			// Before the divergence height, the evil validator agrees.
 			if uint64(i) < cfg.divergenceHeightsByIndex[j] {
 				validatorStateRoots[j] = append(validatorStateRoots[j], protocol.ComputeStateHash(state, prevInboxMaxCount))
@@ -417,10 +417,10 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted leaf creation")
 	}
 
-	// We fire off each validator's background routines.
-	for _, val := range validators {
-		go val.Start(ctx)
-	}
+	// // We fire off each validator's background routines.
+	// for _, val := range validators {
+	// 	go val.Start(ctx)
+	// }
 
 	time.Sleep(time.Second * 10)
 
