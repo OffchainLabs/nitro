@@ -129,9 +129,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 				if attempts > 10 {
 					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.SeqCoordinator.DebugPrint())
 				}
-				select {
-				case <-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
-				}
+				time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
 			}
 		}
 	}
