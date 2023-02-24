@@ -28,12 +28,12 @@ var (
 type SequenceNumberCatchupBuffer struct {
 	messages     []*BroadcastFeedMessage
 	messageCount int32
-	limitCatchup func() bool
+	config       wsbroadcastserver.BroadcasterConfigFetcher
 }
 
-func NewSequenceNumberCatchupBuffer(limitCatchup func() bool) *SequenceNumberCatchupBuffer {
+func NewSequenceNumberCatchupBuffer(config wsbroadcastserver.BroadcasterConfigFetcher) *SequenceNumberCatchupBuffer {
 	return &SequenceNumberCatchupBuffer{
-		limitCatchup: limitCatchup,
+		config: config,
 	}
 }
 
@@ -59,7 +59,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
 		}
-	} else if b.limitCatchup() && firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
+	} else if b.config().LimitCatchup && firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
 		// Requested seqnum is too old, don't send any cache
 		return nil
 	}
@@ -83,8 +83,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(clientConnection *wsbroad
 	var bmCount int
 	if bm != nil {
 		bmCount = len(bm.Messages)
-	}
-	if bm != nil {
+		time.Sleep(b.config().BroadcastDelay.BacklogDelay)
 		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
 		if err != nil {

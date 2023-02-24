@@ -309,7 +309,12 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			clientDeleteList = append(clientDeleteList, client)
 			return
 		}
-		if i != 0 && i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount && i%config.BroadcastDelay.BatchSize == 0 {
+
+		if config.BroadcastDelay.BatchDelay > 0 &&
+			i != 0 &&
+			i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount &&
+			i%config.BroadcastDelay.BatchSize == 0 {
+
 			time.Sleep(config.BroadcastDelay.BatchDelay)
 		}
 		i++

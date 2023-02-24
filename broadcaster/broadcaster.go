@@ -61,7 +61,7 @@ type ConfirmedSequenceNumberMessage struct {
 }
 
 func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) (*Broadcaster, error) {
-	catchupBuffer := NewSequenceNumberCatchupBuffer(func() bool { return config().LimitCatchup })
+	catchupBuffer := NewSequenceNumberCatchupBuffer(config)
 	server, err := wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan)
 	if err != nil {
 		return nil, err

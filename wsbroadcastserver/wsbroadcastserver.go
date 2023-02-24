@@ -70,6 +70,7 @@ type BroadcasterConfig struct {
 }
 
 type BroadcastDelayConfig struct {
+	BacklogDelay  time.Duration `koanf:"backlog-delay" reload:"hot"`
 	ConstantDelay time.Duration `koanf:"constant-delay" reload:"hot"`
 	BatchDelay    time.Duration `koanf:"batch-delay" reload:"hot"`
 	BatchSize     int           `koanf:"batch-size" reload:"hot"`
@@ -111,6 +112,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func BroadcastDelayConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".backlog-delay", DefaultBroadcastDelayConfig.BacklogDelay, "a fixed amount of delay before broadcasting the backlog to clients")
 	f.Duration(prefix+".constant-delay", DefaultBroadcastDelayConfig.ConstantDelay, "a fixed amount of delay before broadcasting a message to clients")
 	f.Duration(prefix+".batch-delay", DefaultBroadcastDelayConfig.BatchDelay, "the amount of delay inbetween broadcasting to each batch of clients")
 	f.Int(prefix+".batch-size", DefaultBroadcastDelayConfig.BatchSize, "the size of each batch of clients, each of which get the same delay")
@@ -168,8 +170,9 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 }
 
 var DefaultBroadcastDelayConfig = BroadcastDelayConfig{
+	BacklogDelay:  0,
 	ConstantDelay: 0,
-	BatchDelay:    time.Millisecond * 10,
+	BatchDelay:    0,
 	BatchSize:     5,
 	BatchCount:    5,
 }
