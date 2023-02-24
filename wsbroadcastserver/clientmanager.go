@@ -77,6 +77,10 @@ type ClientConnectionAction struct {
 }
 
 func betterTarget(clientA, clientB *ClientConnection) bool {
+	if clientA == clientB {
+		return false
+	}
+
 	if clientA.nonceTarget > clientB.nonceTarget {
 		return true
 	} else if clientA.nonceTarget < clientB.nonceTarget {
@@ -91,6 +95,9 @@ func betterTarget(clientA, clientB *ClientConnection) bool {
 			return false
 		}
 	}
+
+	log.Error("two different clients have the same nonce hash", "clientA", clientA.Name, "clientB", clientB.Name, "nonceHash", clientA.nonceHash)
+
 	return false
 }
 
@@ -298,6 +305,15 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrSet.Size())
 	i := 0
 	cm.clientPtrSet.Each(func(client *ClientConnection, _ struct{}) {
+		if config.BroadcastDelay.BatchDelay > 0 &&
+			i != 0 &&
+			i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount &&
+			i%config.BroadcastDelay.BatchSize == 0 {
+
+			time.Sleep(config.BroadcastDelay.BatchDelay)
+		}
+		i++
+
 		var data []byte
 		if client.Compression() {
 			if config.EnableCompression {
@@ -324,15 +340,6 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			clientDeleteList = append(clientDeleteList, client)
 			return
 		}
-
-		if config.BroadcastDelay.BatchDelay > 0 &&
-			i != 0 &&
-			i <= config.BroadcastDelay.BatchSize*config.BroadcastDelay.BatchCount &&
-			i%config.BroadcastDelay.BatchSize == 0 {
-
-			time.Sleep(config.BroadcastDelay.BatchDelay)
-		}
-		i++
 	})
 
 	if sendQueueTooLargeCount > 0 {
