@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/bits"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -28,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -40,6 +42,8 @@ var (
 	clientsTotalFailedUpgradeCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
 	clientsTotalFailedWorkerCounter   = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
 	clientsDurationHistogram          = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
+	clientsNonceScoreSample           = containers.NewSwappableSample()
+	clientsNonceScoreHistogram        = metrics.NewRegisteredHistogram("arb/feed/clients/nonce/score", nil, clientsNonceScoreSample)
 )
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
@@ -276,7 +280,6 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 
 	sendQueueTooLargeCount := 0
 	clientDeleteList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
-	recomputeNonceList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
 	i := 0
 	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
 		var data []byte
@@ -309,10 +312,61 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 			time.Sleep(config.BroadcastDelay.Delay)
 		}
 		i++
+	})
+
+	if sendQueueTooLargeCount > 0 {
+		if sendQueueTooLargeCount < 10 {
+			log.Warn("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
+		} else {
+			log.Error("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
+		}
+	}
+
+	return clientDeleteList, nil
+}
+
+// verifyClients should be called every cm.config.ClientPingInterval
+func (cm *ClientManager) verifyClients() []*ClientConnection {
+	clientConnectionCount := cm.clientPtrMap.Size()
+
+	// Create list of clients to remove
+	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
+	recomputeNonceList := make([]*ClientConnection, 0, cm.clientPtrMap.Size())
+	nonceScoreList := make([]int64, 0, cm.clientPtrMap.Size())
+
+	// Send ping to all connected clients
+	log.Debug("pinging clients", "count", cm.clientPtrMap.Size())
+	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
+		var nonceScore int64
+		for _, b := range client.nonceHash {
+			nonceScore += int64(bits.LeadingZeros8(b))
+			if b != 0 {
+				break
+			}
+		}
+		nonceScoreList = append(nonceScoreList, nonceScore)
+
+		diff := time.Since(client.GetLastHeard())
+		if diff > cm.config().ClientTimeout {
+			log.Debug("disconnecting because connection timed out", "client", client.Name)
+			clientDeleteList = append(clientDeleteList, client)
+			return
+		} else {
+			err := client.Ping()
+			if err != nil {
+				log.Debug("disconnecting because error pinging client", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+				return
+			}
+		}
 		if time.Since(client.nonceHashLastComputed) >= maxNonceHashAge {
+			log.Debug("recomputing client nonce hash", "client", client.Name, "lastComputed", client.nonceHashLastComputed)
 			recomputeNonceList = append(recomputeNonceList, client)
 		}
 	})
+
+	// metrics.NewSampleSnapshot doesn't require that its data is sorted, so it's fine that this is sorted in reverse order
+	clientsNonceScoreSample.SetSample(metrics.NewSampleSnapshot(int64(len(nonceScoreList)), nonceScoreList))
 
 	for _, client := range recomputeNonceList {
 		now := time.Now()
@@ -332,40 +386,6 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 		client.nonceHashLastComputed = now
 		cm.clientPtrMap.Put(newNonceHash, client)
 	}
-
-	if sendQueueTooLargeCount > 0 {
-		if sendQueueTooLargeCount < 10 {
-			log.Warn("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
-		} else {
-			log.Error("disconnecting clients because send queue too large", "count", sendQueueTooLargeCount)
-		}
-	}
-
-	return clientDeleteList, nil
-}
-
-// verifyClients should be called every cm.config.ClientPingInterval
-func (cm *ClientManager) verifyClients() []*ClientConnection {
-	clientConnectionCount := cm.clientPtrMap.Size()
-
-	// Create list of clients to remove
-	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
-
-	// Send ping to all connected clients
-	log.Debug("pinging clients", "count", cm.clientPtrMap.Size())
-	cm.clientPtrMap.Each(func(_ common.Hash, client *ClientConnection) {
-		diff := time.Since(client.GetLastHeard())
-		if diff > cm.config().ClientTimeout {
-			log.Debug("disconnecting because connection timed out", "client", client.Name)
-			clientDeleteList = append(clientDeleteList, client)
-		} else {
-			err := client.Ping()
-			if err != nil {
-				log.Debug("disconnecting because error pinging client", "client", client.Name)
-				clientDeleteList = append(clientDeleteList, client)
-			}
-		}
-	})
 
 	return clientDeleteList
 }
