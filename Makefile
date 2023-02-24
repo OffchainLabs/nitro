@@ -123,10 +123,6 @@ test-go-challenge: test-go-deps
 	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
-test-go-redis: test-go-deps
-	go test -p 1 -run TestRedis -tags redistest ./system_tests/... ./arbnode/...
-	@printf $(done)
-
 test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \

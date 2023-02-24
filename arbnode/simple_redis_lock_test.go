@@ -1,6 +1,3 @@
-//go:build redistest
-// +build redistest
-
 package arbnode
 
 import (

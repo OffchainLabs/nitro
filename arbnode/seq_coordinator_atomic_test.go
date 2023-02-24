@@ -1,9 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build redistest
-// +build redistest
-
 package arbnode
 
 import (
@@ -100,6 +97,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	defer cancel()
 
 	coordConfig := TestSeqCoordinatorConfig
+	coordConfig.RedisUrl = redisutil.GetTestRedisURL(t)
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
 	coordConfig.Signing.ECDSA.AcceptSequencer = false

@@ -18,11 +18,18 @@ import (
 )
 
 func TestBatchPosterParallel(t *testing.T) {
+	testBatchPosterParallel(t, false)
+}
+
+func testBatchPosterParallel(t *testing.T, useMiniRedis bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	redisUrl := redisutil.GetTestRedisURL(t)
+	var redisUrl string
+	if useMiniRedis {
+		redisUrl = redisutil.GetTestRedisURL(t)
+	}
 	parallelBatchPosters := 1
 	if redisUrl != "" {
 		client, err := redisutil.RedisClientFromURL(redisUrl)
