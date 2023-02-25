@@ -189,7 +189,8 @@ func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
 	return err
 }
 
-// This calls go foo() directly, with the benefit of being easily searchable
+// This calls go foo() directly, with the benefit of being easily searchable.
+// Callers may rely on the assumption that foo runs even if this is stopped.
 func (s *StopWaiterSafe) LaunchUntrackedThread(foo func()) {
 	go foo()
 }
@@ -286,6 +287,7 @@ func (s *StopWaiter) StopAndWait() {
 	}
 }
 
+// If stop was already called, thread might silently not be launched
 func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
 	if err := s.StopWaiterSafe.LaunchThread(foo); err != nil {
 		panic(err)

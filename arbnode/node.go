@@ -410,6 +410,7 @@ type Config struct {
 	Archive                bool                        `koanf:"archive"`
 	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
 	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance            MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -417,6 +418,9 @@ func (c *Config) Validate() error {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
 	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.Maintenance.Validate(); err != nil {
 		return err
 	}
 	if err := c.InboxReader.Validate(); err != nil {
@@ -484,6 +488,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
+	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -530,6 +535,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Forwarder = DefaultTestForwarderConfig
 
 	return &config
 }
@@ -584,6 +590,9 @@ type CachingConfig struct {
 	BlockAge              time.Duration `koanf:"block-age"`
 	TrieTimeLimit         time.Duration `koanf:"trie-time-limit"`
 	TrieDirtyCache        int           `koanf:"trie-dirty-cache"`
+	TrieCleanCache        int           `koanf:"trie-clean-cache"`
+	SnapshotCache         int           `koanf:"snapshot-cache"`
+	DatabaseCache         int           `koanf:"database-cache"`
 	SnapshotRestoreMaxGas uint64        `koanf:"snapshot-restore-gas-limit"`
 }
 
@@ -593,6 +602,9 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
+	f.Int(prefix+".trie-clean-cache", DefaultCachingConfig.TrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with")
+	f.Int(prefix+".snapshot-cache", DefaultCachingConfig.SnapshotCache, "amount of memory in megabytes to cache state snapshots with")
+	f.Int(prefix+".database-cache", DefaultCachingConfig.DatabaseCache, "amount of memory in megabytes to cache database contents with")
 	f.Uint64(prefix+".snapshot-restore-gas-limit", DefaultCachingConfig.SnapshotRestoreMaxGas, "maximum gas rolled back to recover snapshot")
 }
 
@@ -602,6 +614,9 @@ var DefaultCachingConfig = CachingConfig{
 	BlockAge:              30 * time.Minute,
 	TrieTimeLimit:         time.Hour,
 	TrieDirtyCache:        1024,
+	TrieCleanCache:        600,
+	SnapshotCache:         400,
+	DatabaseCache:         2048,
 	SnapshotRestoreMaxGas: 300_000_000_000,
 }
 
@@ -626,6 +641,7 @@ type Node struct {
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
+	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
@@ -789,12 +805,16 @@ func createNodeImpl(
 		txPublisher = sequencer
 	} else {
 		if config.DelayedSequencer.Enable {
-			return nil, errors.New("cannot have delayedsequencer without sequencer")
+			return nil, errors.New("cannot have delayed sequencer without sequencer")
 		}
-		if config.ForwardingTarget() == "" {
-			txPublisher = NewTxDropper()
+		if config.Forwarder.RedisUrl != "" {
+			txPublisher = NewRedisTxForwarder(config.ForwardingTarget(), &config.Forwarder)
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
+			if config.ForwardingTarget() == "" {
+				txPublisher = NewTxDropper()
+			} else {
+				txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
+			}
 		}
 	}
 	if config.SeqCoordinator.Enable {
@@ -802,6 +822,11 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+	}
+	dbs := []ethdb.Database{chainDb, arbDb}
+	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs)
+	if err != nil {
+		return nil, err
 	}
 	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
@@ -859,6 +884,7 @@ func createNodeImpl(
 			broadcastServer,
 			broadcastClients,
 			coordinator,
+			maintenanceRunner,
 			nil,
 			classicOutbox,
 			syncMonitor,
@@ -1041,6 +1067,7 @@ func createNodeImpl(
 		broadcastServer,
 		broadcastClients,
 		coordinator,
+		maintenanceRunner,
 		dasLifecycleManager,
 		classicOutbox,
 		syncMonitor,
@@ -1169,6 +1196,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	}
+	if n.MaintenanceRunner != nil {
+		n.MaintenanceRunner.Start(ctx)
+	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
 	}
@@ -1234,6 +1264,9 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
+		n.MaintenanceRunner.StopAndWait()
+	}
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
@@ -1299,7 +1332,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:        baseConf.TrieCleanCache,
+		TrieCleanLimit:        cachingConfig.TrieCleanCache,
 		TrieCleanJournal:      stack.ResolvePath(baseConf.TrieCleanCacheJournal),
 		TrieCleanRejournal:    baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch:   baseConf.NoPrefetch,
@@ -1308,7 +1341,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieTimeLimit:         cachingConfig.TrieTimeLimit,
 		TriesInMemory:         cachingConfig.BlockCount,
 		TrieRetention:         cachingConfig.BlockAge,
-		SnapshotLimit:         baseConf.SnapshotCache,
+		SnapshotLimit:         cachingConfig.SnapshotCache,
 		Preimages:             baseConf.Preimages,
 		SnapshotRestoreMaxGas: cachingConfig.SnapshotRestoreMaxGas,
 	}

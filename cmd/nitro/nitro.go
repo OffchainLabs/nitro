@@ -598,8 +598,12 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 		}
 
 		for i := 0; i < node.NumField(); i++ {
-			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
-			dot := path + "." + node.Type().Field(i).Name
+			fieldTy := node.Type().Field(i)
+			if !fieldTy.IsExported() {
+				continue
+			}
+			hot := fieldTy.Tag.Get("reload") == "hot"
+			dot := path + "." + fieldTy.Name
 
 			first := node.Field(i).Interface()
 			other := value.Field(i).Interface()
