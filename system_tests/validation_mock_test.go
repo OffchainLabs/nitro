@@ -132,7 +132,7 @@ func (r *mockExecRun) GetProofAt(uint64) validator.ProofPromise {
 	return res
 }
 
-func (r *mockExecRun) PrepareRange(uint64, uint64) { return }
+func (r *mockExecRun) PrepareRange(uint64, uint64) {}
 func (r *mockExecRun) Close()                      {}
 
 type mockMachineProof struct {
@@ -250,7 +250,7 @@ func TestValidationServerAPI(t *testing.T) {
 	proofPromise := execRun.GetProofAt(0)
 	proof, err := proofPromise.Await(ctx)
 	Require(t, err)
-	if bytes.Compare(proof, mockProof) != 0 {
+	if !bytes.Equal(proof, mockProof) {
 		t.Error("mock proof not expected")
 	}
 }
