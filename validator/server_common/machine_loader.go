@@ -62,16 +62,15 @@ func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Has
 	return status.Await(ctx)
 }
 
-func (l *MachineLoader[M]) ForEachReadyMachine(runme func(*M) error) error {
+func (l *MachineLoader[M]) ForEachReadyMachine(runme func(*M)) {
+	l.mapMutex.Lock()
+	defer l.mapMutex.Unlock()
 	for _, stat := range l.machines {
 		if stat.Ready() {
 			machine, err := stat.Current()
 			if err != nil {
-				if err := runme(machine); err != nil {
-					return err
-				}
+				runme(machine)
 			}
 		}
 	}
-	return nil
 }

@@ -137,26 +137,25 @@ func (c *MachineCache) populateInitialCache(ctx context.Context, target_step uin
 		if nextMachine.GetStepCount() >= target_step {
 			break
 		}
+		err := nextMachine.Step(ctx, c.machineStepInterval)
+		if err != nil {
+			return err
+		}
+		nextMachine.Freeze()
 		if len(c.machines) >= c.config.CachedChallengeMachines {
 			// Double the step interval between machines, which halves the number of machines.
 			var pruned []MachineInterface
 			for i, mach := range c.machines {
-				// If i%2 == 0, this machine is no longer on the step interval.
-				if i%2 == 1 {
+				// If i%2 == 1, this machine is no longer on the step interval.
+				if i%2 == 0 {
 					pruned = append(pruned, mach)
 				} else {
 					mach.Destroy()
 				}
 			}
 			c.machines = pruned
-			c.firstMachineStep += c.machineStepInterval
 			c.machineStepInterval *= 2
 		}
-		err := nextMachine.Step(ctx, c.machineStepInterval)
-		if err != nil {
-			return err
-		}
-		nextMachine.Freeze()
 		c.machines = append(c.machines, nextMachine)
 	}
 	return nil

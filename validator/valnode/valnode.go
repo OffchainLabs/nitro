@@ -20,7 +20,7 @@ type WasmConfig struct {
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (machine.wavm.br, replay.wasm)")
 }
 
 var DefaultWasmConfig = WasmConfig{
@@ -39,6 +39,7 @@ type Config struct {
 type ValidationConfigFetcher func() *Config
 
 var DefaultValidationConfig = Config{
+	UseJit:     true,
 	Jit:        server_jit.DefaultJitSpawnerConfig,
 	ApiAuth:    true,
 	ApiPublic:  false,
@@ -47,6 +48,7 @@ var DefaultValidationConfig = Config{
 }
 
 var TestValidationConfig = Config{
+	UseJit:     true,
 	Jit:        server_jit.DefaultJitSpawnerConfig,
 	ApiAuth:    false,
 	ApiPublic:  true,
@@ -56,8 +58,8 @@ var TestValidationConfig = Config{
 
 func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".use-jit", DefaultValidationConfig.UseJit, "use jit for validation")
-	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is a public API")
-	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is an authenticated API")
+	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is an authenticated API")
+	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is a public API")
 	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
@@ -92,9 +94,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner)
+		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
 	} else {
-		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner)
+		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -112,11 +114,10 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 	if err := v.arbSpawner.Start(ctx); err != nil {
 		return err
 	}
-	if v.jitSpawner == nil {
-		return nil
-	}
-	if err := v.jitSpawner.Start(ctx); err != nil {
-		return err
+	if v.jitSpawner != nil {
+		if err := v.jitSpawner.Start(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
