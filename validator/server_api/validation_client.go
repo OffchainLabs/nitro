@@ -155,12 +155,10 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 }
 
 func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
-	ctx, cancel := context.WithCancel(r.GetContext())
 	step := &ExecutionClientStep{
 		Promise: containers.NewPromise[validator.MachineStepResult](),
-		cancel:  cancel,
 	}
-	go func() {
+	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
@@ -173,7 +171,8 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
 			return
 		}
 		step.Produce(*res)
-	}()
+	})
+	step.cancel = cancel
 	return step
 }
 
@@ -185,12 +184,10 @@ type asyncProof struct {
 func (a *asyncProof) Close() { a.cancel() }
 
 func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
-	ctx, cancel := context.WithCancel(r.GetContext())
 	proof := &asyncProof{
 		Promise: containers.NewPromise[[]byte](),
-		cancel:  cancel,
 	}
-	go func() {
+	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
 		var resString string
 		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
 		if err != nil {
@@ -203,7 +200,8 @@ func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
 			return
 		}
 		proof.Produce(res)
-	}()
+	})
+	proof.cancel = cancel
 	return proof
 }
 
@@ -212,22 +210,22 @@ func (r *ExecutionClientRun) GetLastStep() validator.MachineStep {
 }
 
 func (r *ExecutionClientRun) PrepareRange(start, end uint64) {
-	go func() {
+	r.LaunchUntrackedThread(func() {
 		err := r.client.client.CallContext(r.client.GetContext(), nil, Namespace+"_prepareRange", r.id, start, end)
 		if err != nil {
 			log.Warn("prepare execution got error", "err", err)
 		}
-	}()
+	})
 }
 
 func (r *ExecutionClientRun) Close() {
 	r.StopOnly()
-	go func() {
+	r.LaunchUntrackedThread(func() {
 		err := r.client.client.CallContext(r.GetParentContext(), nil, Namespace+"_closeExec", r.id)
 		if err != nil {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
-	}()
+	})
 }
 
 func (f *ExecutionClientStep) Close() {
