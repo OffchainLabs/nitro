@@ -16,19 +16,19 @@ import (
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
 func (v *Validator) onChallengeStarted(
-	ctx context.Context, ev *protocol.StartChallengeEvent,
+	ctx context.Context, ev *challengeStartedEvent,
 ) error {
 	if ev == nil {
 		return nil
 	}
 	// Ignore challenges initiated by self.
-	if isFromSelf(v.address, ev.Validator) {
+	if isFromSelf(v.address, ev.challenger) {
 		return nil
 	}
 
 	challenge, err := v.fetchProtocolChallenge(
 		ctx,
-		ev.ParentSeqNum,
+		ev.challengedAssertionNum,
 	)
 	if err != nil {
 		return err
@@ -40,8 +40,8 @@ func (v *Validator) onChallengeStarted(
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
 			// TODO: Should we return error here instead of a log and nil?
 			log.Infof(
-				"Attempted to add a challenge leaf that already exists with state hash %#x",
-				ev.ParentStateHash,
+				"Attempted to add a challenge leaf that already exists on challenge with index %d",
+				ev.challengeNum,
 			)
 			return nil
 		}
@@ -56,7 +56,7 @@ func (v *Validator) onChallengeStarted(
 	log.WithFields(logrus.Fields{
 		"name":                 v.name,
 		"challenger":           challengerName,
-		"challengingStateRoot": fmt.Sprintf("%#x", ev.ParentStateHash),
+		"challengingAssertion": fmt.Sprintf("%d", ev.challengedAssertionNum),
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
@@ -68,13 +68,26 @@ func (v *Validator) onChallengeStarted(
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
+func (v *Validator) challengeAssertion(ctx context.Context, ev *assertionCreatedEvent) error {
 	var challenge protocol.Challenge
 	var err error
-	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum)
+
+	var parentAssertionNum protocol.AssertionSequenceNumber
+	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+		assertionNum, err := v.chain.GetAssertionNum(ctx, tx, ev.parentAssertionHash)
+		if err != nil {
+			return err
+		}
+		parentAssertionNum = assertionNum
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	challenge, err = v.submitProtocolChallenge(ctx, parentAssertionNum)
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
-			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum)
+			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, parentAssertionNum)
 			if fetchErr != nil {
 				return fetchErr
 			}
@@ -90,9 +103,8 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
 			// TODO: Should we return error here instead of a log and nil?
 			log.Infof(
-				"Attempted to add a challenge leaf that already exists with height %d and state hash %#x",
-				ev.Height,
-				ev.StateHash,
+				"Attempted to add a challenge leaf that already exists with challenge hash %#x",
+				challenge.Id(),
 			)
 			return nil
 		}
@@ -104,8 +116,8 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"] = ev.PrevSeqNum
-	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", ev.PrevStateHash)
+	logFields["parentAssertionSeqNum"] = parentAssertionNum
+	logFields["parentAssertionHash"] = fmt.Sprintf("%#x", ev.parentAssertionHash)
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
 
 	return nil

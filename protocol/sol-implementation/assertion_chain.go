@@ -269,6 +269,18 @@ func (ac *AssertionChain) GetAssertionId(
 	return ac.userLogic.GetAssertionId(ac.callOpts, uint64(seqNum))
 }
 
+func (ac *AssertionChain) GetAssertionNum(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	assertionHash protocol.AssertionHash,
+) (protocol.AssertionSequenceNumber, error) {
+	res, err := ac.userLogic.GetAssertionNum(ac.callOpts, assertionHash)
+	if err != nil {
+		return 0, err
+	}
+	return protocol.AssertionSequenceNumber(res), nil
+}
+
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(
 	ctx context.Context,

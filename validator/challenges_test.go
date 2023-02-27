@@ -414,7 +414,9 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		v, valErr := New(
 			ctx,
 			chains[i+1], // Chain 0 is reserved for admin
+			backend,
 			manager,
+			addrs.Rollup,
 			WithName(cfg.validatorNamesByIndex[uint64(i)]),
 			WithAddress(addr),
 			WithDisableLeafCreation(),
@@ -449,14 +451,6 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	}
 
 	createdAssertionEventSig := hexutil.MustDecode("0xb795d7f067118d6e112dcd15e103f1a9de80c67210733e0d01e065a35bfb3242")
-	// uint64 indexed assertionNum,
-	// bytes32 indexed parentAssertionHash,
-	// bytes32 indexed assertionHash,
-	// bytes32 executionHash,
-	// AssertionInputs assertion,
-	// bytes32 afterInboxBatchAcc,
-	// bytes32 wasmModuleRoot,
-	// uint256 inboxMaxCount
 	rollupCore, err := rollupgen.NewRollupCore(addrs.Rollup, backend)
 	require.NoError(t, err)
 

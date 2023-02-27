@@ -35,12 +35,10 @@ func Test_onLeafCreation(t *testing.T) {
 		parentSeqNum := protocol.AssertionSequenceNumber(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
 		seqNum := parentSeqNum + 1
-		ev := &protocol.CreateLeafEvent{
-			PrevSeqNum:    parentSeqNum,
-			PrevStateHash: prevRoot,
-			SeqNum:        seqNum,
-			StateHash:     common.BytesToHash([]byte("bar")),
-			Validator:     common.BytesToAddress([]byte("alice")),
+		ev := &assertionCreatedEvent{
+			parentAssertionHash: protocol.AssertionHash(prevRoot),
+			assertionNum:        seqNum,
+			assertionHash:       protocol.AssertionHash(common.BytesToHash([]byte("bar"))),
 		}
 
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
@@ -57,7 +55,13 @@ func Test_onLeafCreation(t *testing.T) {
 
 		manager := statemanager.New(createdData.honestValidatorStateRoots)
 
-		validator, err := New(ctx, createdData.assertionChains[1], manager)
+		validator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			manager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		err = validator.onLeafCreated(ctx, createdData.leaf1)
@@ -108,7 +112,14 @@ func Test_onChallengeStarted(t *testing.T) {
 		Merkle: createdData.leaf2.StateHash,
 	}, nil)
 
-	validator, err := New(ctx, createdData.assertionChains[1], manager, WithChallengeVertexWakeInterval(time.Hour))
+	validator, err := New(
+		ctx,
+		createdData.assertionChains[1],
+		createdData.backend,
+		manager,
+		createdData.addrs.Rollup,
+		WithChallengeVertexWakeInterval(time.Hour),
+	)
 	require.NoError(t, err)
 
 	err = validator.onLeafCreated(ctx, createdData.leaf1)
@@ -196,7 +207,13 @@ func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 
 	// Setup our mock state manager to agree on leaf1 but disagree on leaf2.
 	manager := &mocks.MockStateManager{}
-	validator, err := New(ctx, createdData.assertionChains[1], manager)
+	validator, err := New(
+		ctx,
+		createdData.assertionChains[1],
+		createdData.backend,
+		manager,
+		createdData.addrs.Rollup,
+	)
 	require.NoError(t, err)
 
 	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SeqNum())
@@ -207,13 +224,14 @@ func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 }
 
 type createdValidatorFork struct {
-	leaf1                     *protocol.CreateLeafEvent
-	leaf2                     *protocol.CreateLeafEvent
+	leaf1                     *assertionCreatedEvent
+	leaf2                     *assertionCreatedEvent
 	assertionChains           []*solimpl.AssertionChain
 	accounts                  []*testAccount
 	backend                   *backends.SimulatedBackend
 	honestValidatorStateRoots []common.Hash
 	evilValidatorStateRoots   []common.Hash
+	addrs                     *rollupAddresses
 }
 
 func createTwoValidatorFork(
@@ -221,7 +239,7 @@ func createTwoValidatorFork(
 	ctx context.Context,
 	divergenceHeight uint64,
 ) *createdValidatorFork {
-	chains, accs, _, backend := setupAssertionChains(t, 3)
+	chains, accs, addrs, backend := setupAssertionChains(t, 3)
 	prevInboxMaxCount := big.NewInt(1)
 
 	var genesis protocol.Assertion
@@ -335,23 +353,15 @@ func createTwoValidatorFork(
 
 	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertion.StateHash())
 
-	ev1 := &protocol.CreateLeafEvent{
-		PrevSeqNum:    genesis.PrevSeqNum(),
-		PrevStateHash: genesis.StateHash(),
-		PrevHeight:    0,
-		Height:        assertion.Height(),
-		SeqNum:        assertion.SeqNum(),
-		StateHash:     assertion.StateHash(),
-		Validator:     accs[1].accountAddr,
+	ev1 := &assertionCreatedEvent{
+		numBlocks:     assertion.Height(),
+		assertionNum:  assertion.SeqNum(),
+		assertionHash: protocol.AssertionHash(assertion.StateHash()),
 	}
-	ev2 := &protocol.CreateLeafEvent{
-		PrevSeqNum:    genesis.PrevSeqNum(),
-		PrevStateHash: genesis.StateHash(),
-		PrevHeight:    0,
-		Height:        forkedAssertion.Height(),
-		SeqNum:        forkedAssertion.SeqNum(),
-		StateHash:     forkedAssertion.StateHash(),
-		Validator:     accs[2].accountAddr,
+	ev2 := &assertionCreatedEvent{
+		numBlocks:     forkedAssertion.Height(),
+		assertionNum:  forkedAssertion.SeqNum(),
+		assertionHash: protocol.AssertionHash(forkedAssertion.StateHash()),
 	}
 	return &createdValidatorFork{
 		leaf1:                     ev1,
@@ -359,6 +369,7 @@ func createTwoValidatorFork(
 		assertionChains:           chains,
 		accounts:                  accs,
 		backend:                   backend,
+		addrs:                     addrs,
 		honestValidatorStateRoots: honestValidatorStateRoots,
 		evilValidatorStateRoots:   evilValidatorStateRoots,
 	}
@@ -453,18 +464,11 @@ func setupAssertions(num int) []protocol.Assertion {
 	return assertions
 }
 
-func setupValidatorWithChain(
-	t testing.TB, chain protocol.Protocol, manager statemanager.Manager, staker common.Address,
-) *Validator {
-	v, err := New(context.Background(), chain, manager, WithAddress(staker))
-	require.NoError(t, err)
-	return v
-}
-
 func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
 	p := &mocks.MockProtocol{}
 	s := &mocks.MockStateManager{}
-	v, err := New(context.Background(), p, s)
+	_, _, addrs, backend := setupAssertionChains(t, 3)
+	v, err := New(context.Background(), p, backend, s, addrs.Rollup)
 	require.NoError(t, err)
 	return v, p, s
 }

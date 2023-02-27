@@ -299,11 +299,23 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	createdData := createTwoValidatorFork(t, ctx, 65 /* divergence point */)
 
 	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
-	honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
+	honestValidator, err := New(
+		ctx,
+		createdData.assertionChains[1],
+		createdData.backend,
+		honestManager,
+		createdData.addrs.Rollup,
+	)
 	require.NoError(t, err)
 
 	evilManager := statemanager.New(createdData.evilValidatorStateRoots)
-	evilValidator, err := New(ctx, createdData.assertionChains[2], evilManager)
+	evilValidator, err := New(
+		ctx,
+		createdData.assertionChains[2],
+		createdData.backend,
+		evilManager,
+		createdData.addrs.Rollup,
+	)
 	require.NoError(t, err)
 
 	err = honestValidator.onLeafCreated(ctx, createdData.leaf1)

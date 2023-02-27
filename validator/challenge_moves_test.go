@@ -38,7 +38,13 @@ func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
-		validator, err := New(ctx, createdData.assertionChains[1], &mocks.MockStateManager{})
+		validator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			&mocks.MockStateManager{},
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		vertex := &mocks.MockChallengeVertex{
@@ -67,7 +73,13 @@ func Test_bisect(t *testing.T) {
 		manager := &mocks.MockStateManager{}
 		manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(util.HistoryCommitment{}, nil)
 		manager.On("PrefixProof", ctx, uint64(0), uint64(7)).Return(make([]common.Hash, 0), nil)
-		validator, err := New(ctx, createdData.assertionChains[1], manager)
+		validator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			manager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		vertex := &mocks.MockChallengeVertex{
@@ -96,11 +108,23 @@ func Test_bisect(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 
 		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
-		honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
+		honestValidator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			honestManager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		evilManager := statemanager.New(createdData.evilValidatorStateRoots)
-		evilValidator, err := New(ctx, createdData.assertionChains[2], evilManager)
+		evilValidator, err := New(
+			ctx,
+			createdData.assertionChains[2],
+			createdData.backend,
+			evilManager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		bisectedTo := runBisectionTest(
@@ -126,7 +150,13 @@ func Test_merge(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 
 		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
-		honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
+		honestValidator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			honestManager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		err = honestValidator.onLeafCreated(ctx, createdData.leaf1)
@@ -190,11 +220,23 @@ func Test_merge(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, 70 /* divergence point */)
 
 		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
-		honestValidator, err := New(ctx, createdData.assertionChains[1], honestManager)
+		honestValidator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			honestManager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		evilManager := statemanager.New(createdData.evilValidatorStateRoots)
-		evilValidator, err := New(ctx, createdData.assertionChains[2], evilManager)
+		evilValidator, err := New(
+			ctx,
+			createdData.assertionChains[2],
+			createdData.backend,
+			evilManager,
+			createdData.addrs.Rollup,
+		)
 		require.NoError(t, err)
 
 		bisectedTo := runBisectionTest(

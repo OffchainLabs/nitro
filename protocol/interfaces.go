@@ -78,6 +78,11 @@ type AssertionChain interface {
 		tx ActiveTx,
 		seqNum AssertionSequenceNumber,
 	) (AssertionHash, error)
+	GetAssertionNum(
+		ctx context.Context,
+		tx ActiveTx,
+		assertionHash AssertionHash,
+	) (AssertionSequenceNumber, error)
 
 	// Mutating methods.
 	CreateAssertion(

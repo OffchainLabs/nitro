@@ -393,6 +393,15 @@ func (m *MockProtocol) GetAssertionId(
 	return args.Get(0).(protocol.AssertionHash), args.Error(1)
 }
 
+func (m *MockProtocol) GetAssertionNum(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	assertionHash protocol.AssertionHash,
+) (protocol.AssertionSequenceNumber, error) {
+	args := m.Called(ctx, tx, assertionHash)
+	return args.Get(0).(protocol.AssertionSequenceNumber), args.Error(1)
+}
+
 func (m *MockProtocol) LatestConfirmed(ctx context.Context, tx protocol.ActiveTx) (protocol.Assertion, error) {
 	args := m.Called(ctx, tx)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
