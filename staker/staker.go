@@ -15,6 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
@@ -34,6 +36,11 @@ const (
 	ResolveNodesStrategy
 	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeNodesStrategy
+)
+
+var (
+	validatorWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/validator/wallet/balanceether", nil)
+	validatorGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/validator/gasrefunder/balanceether", nil)
 )
 
 type L1PostingStrategy struct {
@@ -224,7 +231,25 @@ func (s *Staker) Start(ctxIn context.Context) {
 				returningWait = time.Minute
 			}
 		}()
-		err := s.updateBlockValidatorModuleRoot(ctx)
+		var err error
+		if common.HexToAddress(s.config.GasRefunderAddress) != (common.Address{}) {
+			var gasRefunderBalance *big.Int
+			gasRefunderBalance, err = s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
+			if err != nil {
+				log.Warn("error fetching validator gas refunder balance", "err", err)
+			}
+			validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
+		}
+		walletAddressOrZero := s.wallet.AddressOrZero()
+		if walletAddressOrZero != (common.Address{}) {
+			var walletBalance *big.Int
+			walletBalance, err = s.client.BalanceAt(ctx, walletAddressOrZero, nil)
+			if err != nil {
+				log.Warn("error fetching validator wallet balance", "err", err)
+			}
+			validatorWalletBalance.Update(float64(walletBalance.Int64()) / params.Ether)
+		}
+		err = s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
