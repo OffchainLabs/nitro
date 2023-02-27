@@ -167,7 +167,7 @@ func Test_merge(t *testing.T) {
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-		commit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf2.Height)
+		commit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf2.height)
 		require.NoError(t, err)
 
 		var mergingTo protocol.ChallengeVertex
@@ -256,7 +256,7 @@ func Test_merge(t *testing.T) {
 		ok = evilValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
 		require.Equal(t, true, ok)
 
-		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.Height)
+		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.height)
 		require.NoError(t, err)
 
 		// Get the vertex we want to merge from.
@@ -303,7 +303,7 @@ func runBisectionTest(
 	honestValidator,
 	evilValidator *Validator,
 	leaf1,
-	leaf2 *protocol.CreateLeafEvent,
+	leaf2 *assertionCreatedEvent,
 ) protocol.ChallengeVertex {
 	err := honestValidator.onLeafCreated(ctx, leaf1)
 	require.NoError(t, err)

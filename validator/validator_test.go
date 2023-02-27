@@ -86,30 +86,30 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	manager := &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf1.Height,
-		StateRoot: createdData.leaf1.StateHash,
+		Height:    createdData.leaf1.height,
+		StateRoot: common.Hash(createdData.leaf1.assertionHash),
 	}).Return(false)
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf2.Height,
-		StateRoot: createdData.leaf2.StateHash,
+		Height:    createdData.leaf2.height,
+		StateRoot: common.Hash(createdData.leaf2.assertionHash),
 	}).Return(true)
 
 	manager.On(
 		"HistoryCommitmentUpTo",
 		ctx,
-		createdData.leaf1.Height,
+		createdData.leaf1.height,
 	).Return(util.HistoryCommitment{
-		Height: createdData.leaf1.Height,
-		Merkle: createdData.leaf1.StateHash,
+		Height: createdData.leaf1.height,
+		Merkle: common.Hash(createdData.leaf1.assertionHash),
 	}, nil)
 
 	manager.On(
 		"HistoryCommitmentUpTo",
 		ctx,
-		createdData.leaf2.Height,
+		createdData.leaf2.height,
 	).Return(util.HistoryCommitment{
-		Height: createdData.leaf2.Height,
-		Merkle: createdData.leaf2.StateHash,
+		Height: createdData.leaf2.height,
+		Merkle: common.Hash(createdData.leaf2.assertionHash),
 	}, nil)
 
 	validator, err := New(
@@ -150,42 +150,38 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	manager = &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf1.Height,
-		StateRoot: createdData.leaf1.StateHash,
+		Height:    createdData.leaf1.height,
+		StateRoot: common.Hash(createdData.leaf1.assertionHash),
 	}).Return(false)
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf2.Height,
-		StateRoot: createdData.leaf2.StateHash,
+		Height:    createdData.leaf2.height,
+		StateRoot: common.Hash(createdData.leaf2.assertionHash),
 	}).Return(true)
 
 	forked1 := common.BytesToHash([]byte("forked commit"))
 	forked2 := common.BytesToHash([]byte("forked commit"))
-	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf1.Height).Return(util.HistoryCommitment{
-		Height: createdData.leaf1.Height,
+	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf1.height).Return(util.HistoryCommitment{
+		Height: createdData.leaf1.height,
 		Merkle: forked1,
 	}, nil)
-	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf2.Height).Return(util.HistoryCommitment{
-		Height: createdData.leaf2.Height,
+	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf2.height).Return(util.HistoryCommitment{
+		Height: createdData.leaf2.height,
 		Merkle: forked2,
 	}, nil)
 	validator.stateManager = manager
 
-	parentStateCommitment, err := challenge.Unwrap().ParentStateCommitment(ctx, &mocks.MockActiveTx{ReadWriteTx: false})
-	require.NoError(t, err)
-	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
-		ParentSeqNum:    0,
-		ParentStateHash: parentStateCommitment.StateRoot,
-		ParentStaker:    common.Address{},
-		Validator:       common.BytesToAddress([]byte("other validator")),
+	err = validator.onChallengeStarted(ctx, &challengeStartedEvent{
+		challengedAssertionNum: 0,
+		challengeNum:           0,
+		challenger:             common.BytesToAddress([]byte("other validator")),
 	})
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
 
-	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
-		ParentSeqNum:    0,
-		ParentStateHash: parentStateCommitment.StateRoot,
-		ParentStaker:    common.Address{},
-		Validator:       common.BytesToAddress([]byte("other validator")),
+	err = validator.onChallengeStarted(ctx, &challengeStartedEvent{
+		challengedAssertionNum: 0,
+		challengeNum:           0,
+		challenger:             common.BytesToAddress([]byte("other validator")),
 	})
 	require.ErrorContains(t, err, "Vertex already exists")
 }
@@ -396,10 +392,10 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
-			v.assertions[a.SeqNum()] = &protocol.CreateLeafEvent{
-				StateHash: a.StateHash(),
-				Height:    a.Height(),
-				SeqNum:    a.SeqNum(),
+			v.assertions[a.SeqNum()] = &assertionCreatedEvent{
+				assertionHash: protocol.AssertionHash(a.StateHash()),
+				height:        a.Height(),
+				assertionNum:  a.SeqNum(),
 			}
 			s.On("HasStateCommitment", ctx, util.StateCommitment{
 				Height:    a.Height(),
@@ -417,10 +413,10 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
-			v.assertions[a.SeqNum()] = &protocol.CreateLeafEvent{
-				StateHash: a.StateHash(),
-				Height:    a.Height(),
-				SeqNum:    a.SeqNum(),
+			v.assertions[a.SeqNum()] = &assertionCreatedEvent{
+				assertionHash: protocol.AssertionHash(a.StateHash()),
+				height:        a.Height(),
+				assertionNum:  a.SeqNum(),
 			}
 			if i <= 5 {
 				s.On("HasStateCommitment", ctx, util.StateCommitment{
