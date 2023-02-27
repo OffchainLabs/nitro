@@ -20,7 +20,8 @@ type assertionCreatedEvent struct {
 	assertionNum        protocol.AssertionSequenceNumber
 	assertionHash       protocol.AssertionHash
 	parentAssertionHash protocol.AssertionHash
-	numBlocks           uint64
+	numBlocks           uint64 // TODO: Eliminate
+	height              uint64
 }
 
 type challengeStartedEvent struct {
