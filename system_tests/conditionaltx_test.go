@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -43,41 +44,52 @@ func getStorageSlotValue(t *testing.T, node *arbnode.Node, address common.Addres
 	return slotValue
 }
 
-func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions) {
+func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx int, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions) {
 	t.Helper()
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err != nil {
-		testhelpers.FailImpl(t, "SendConditionalTransactionRPC failed: ", err)
+		testhelpers.FailImpl(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
 	}
 }
 
-func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions) {
+func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions) {
 	t.Helper()
 	accountInfo := l2info.GetInfoWithPrivKey("Owner")
 	nonce := accountInfo.Nonce
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
-		testhelpers.FailImpl(t, "SendConditionalTransactionRPC didn't fail as expected")
+		testhelpers.FailImpl(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx)
 	}
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
 }
 
-func getSuccessOptions(address1, address2 common.Address, currentRootHash1, currentRootHash2 common.Hash, currentSlotValueMap1, currentSlotValueMap2 map[common.Hash]common.Hash) []*arbitrum_types.ConditionalOptions {
+func getSuccessOptions(address1, address2 common.Address, currentRootHash1, currentRootHash2 common.Hash, currentSlotValueMap1, currentSlotValueMap2 map[common.Hash]common.Hash, blockNumber uint64) []*arbitrum_types.ConditionalOptions {
+	now := time.Now().Unix()
+	future := hexutil.Uint64(now + 5)
+	past := hexutil.Uint64(now - 1)
+	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
+	currentBlockNumber := hexutil.Uint64(blockNumber)
 	return []*arbitrum_types.ConditionalOptions{
 		// empty options
 		{},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: map[common.Hash]common.Hash{}}}},
-
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {RootHash: &currentRootHash2}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: currentSlotValueMap1}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: currentSlotValueMap1}, address2: {SlotValue: currentSlotValueMap2}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: currentSlotValueMap1}, address2: {RootHash: &currentRootHash2}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &future},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &future, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMin: &currentBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &currentBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &currentBlockNumber, TimestampMax: &future, TimestampMin: &past},
 	}
 }
 
@@ -113,11 +125,12 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 
 	l2info.GenerateAccount("User2")
 
-	testConditionalTxThatShouldSucceed(t, ctx, l2info, rpcClient, nil)
+	testConditionalTxThatShouldSucceed(t, ctx, -1, l2info, rpcClient, nil)
 
-	successOptions := getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2)
-	for _, options := range successOptions {
-		testConditionalTxThatShouldSucceed(t, ctx, l2info, rpcClient, options)
+	blockNumber := node.Backend.ArbInterface().BlockChain().CurrentBlock().NumberU64()
+	successOptions := getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber)
+	for i, options := range successOptions {
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 
 	tx, err = simple1.Increment(&auth)
@@ -145,10 +158,21 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	previousSlotValueMap2 := currentSlotValueMap2
 	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
 
-	successOptions = getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2)
-	for _, options := range successOptions {
-		testConditionalTxThatShouldSucceed(t, ctx, l2info, rpcClient, options)
+	blockNumber = node.Backend.ArbInterface().BlockChain().CurrentBlock().NumberU64()
+	successOptions = getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber)
+	for i, options := range successOptions {
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
+	blockNumber = node.Backend.ArbInterface().BlockChain().CurrentBlock().NumberU64()
+	now := time.Now().Unix()
+	future := hexutil.Uint64(now + 30)
+	past := hexutil.Uint64(now - 1)
+	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
+	currentBlockNumber := hexutil.Uint64(blockNumber)
+	if blockNumber == 0 {
+		testhelpers.FailImpl(t, "internal test error: unexpected blockNumber == 0")
+	}
+	previousBlockNumber := hexutil.Uint64(blockNumber - 1)
 	failOptions := []*arbitrum_types.ConditionalOptions{
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &previousStorageRootHash1}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: previousSlotValueMap1}}},
@@ -157,9 +181,22 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: previousSlotValueMap1}, contractAddress2: {SlotValue: previousSlotValueMap2}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: currentSlotValueMap1}, contractAddress2: {SlotValue: previousSlotValueMap2}}},
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: map[common.Hash]common.Hash{}}, contractAddress2: {SlotValue: previousSlotValueMap2}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &previousStorageRootHash1}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &currentBlockNumber, TimestampMax: &future, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMin: &future},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &future, TimestampMin: &future},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &past, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &previousBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMin: &futureBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &futureBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &previousBlockNumber, BlockNumberMin: &previousBlockNumber},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &previousBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &future, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &futureBlockNumber, TimestampMax: &future, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &past, TimestampMin: &past},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &future, TimestampMin: &future},
 	}
-	for _, options := range failOptions {
-		testConditionalTxThatShouldFail(t, ctx, l2info, rpcClient, options)
+	for i, options := range failOptions {
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options)
 	}
 }
 

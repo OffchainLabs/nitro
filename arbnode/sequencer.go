@@ -368,7 +368,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 		}
 	}
 	if options != nil && len(options.KnownAccounts) > 0 {
-		err := options.Check(statedb)
+		err := options.Check(header.Number.Uint64(), statedb)
 		if err != nil {
 			return err
 		}
