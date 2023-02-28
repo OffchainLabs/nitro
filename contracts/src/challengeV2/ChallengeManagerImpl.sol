@@ -307,6 +307,10 @@ contract ChallengeManagerImpl is IChallengeManager {
     using ChallengeTypeLib for ChallengeType;
     using ChallengeStructLib for Challenge;
 
+    event Bisected(bytes32 fromId, bytes32 toId, uint256 fromHeight, uint256 toHeight);
+    event Merged(bytes32 fromId, bytes32 toId, uint256 fromHeight, uint256 toHeight);
+    event VertexAdded(bytes32 id, uint256 height);
+
     mapping(bytes32 => ChallengeVertex) public vertices;
     mapping(bytes32 => Challenge) public challenges;
     IAssertionChain public assertionChain;
