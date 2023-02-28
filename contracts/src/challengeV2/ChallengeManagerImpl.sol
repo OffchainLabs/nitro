@@ -307,9 +307,9 @@ contract ChallengeManagerImpl is IChallengeManager {
     using ChallengeTypeLib for ChallengeType;
     using ChallengeStructLib for Challenge;
 
-    event Bisected(bytes32 fromId, bytes32 toId, uint256 fromHeight, uint256 toHeight);
-    event Merged(bytes32 fromId, bytes32 toId, uint256 fromHeight, uint256 toHeight);
-    event VertexAdded(bytes32 id, uint256 height);
+    event Bisected(bytes32 fromId, bytes32 toId);
+    event Merged(bytes32 fromId, bytes32 toId);
+    event VertexAdded(bytes32 id);
 
     mapping(bytes32 => ChallengeVertex) public vertices;
     mapping(bytes32 => Challenge) public challenges;
@@ -340,7 +340,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         returns (bytes32)
     {
         if (challenges[leafData.challengeId].challengeType == ChallengeType.Block) {
-            return BlockLeafAdder.addLeaf(
+            bytes32 vId = BlockLeafAdder.addLeaf(
                 vertices,
                 challenges,
                 AddLeafLibArgs({
@@ -352,8 +352,10 @@ contract ChallengeManagerImpl is IChallengeManager {
                 }),
                 assertionChain
             );
+            emit VertexAdded(vId);
+            return vId;
         } else if (challenges[leafData.challengeId].challengeType == ChallengeType.BigStep) {
-            return BigStepLeafAdder.addLeaf(
+            bytes32 vId = BigStepLeafAdder.addLeaf(
                 vertices,
                 challenges,
                 AddLeafLibArgs({
@@ -364,8 +366,10 @@ contract ChallengeManagerImpl is IChallengeManager {
                     proof2: proof2
                 })
             );
+            emit VertexAdded(vId);
+            return vId;
         } else if (challenges[leafData.challengeId].challengeType == ChallengeType.SmallStep) {
-            return SmallStepLeafAdder.addLeaf(
+            bytes32 vId = SmallStepLeafAdder.addLeaf(
                 vertices,
                 challenges,
                 AddLeafLibArgs({
@@ -376,6 +380,8 @@ contract ChallengeManagerImpl is IChallengeManager {
                     proof2: proof2
                 })
             );
+            emit VertexAdded(vId);
+            return vId;
         } else {
             revert("Unexpected challenge type");
         }
@@ -462,6 +468,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         // CHRIS: TODO: rename to just `connect`
         vertices.connect(bVId, vId, challengePeriodSec);
 
+        emit Bisected(vId, bVId);
         return bVId;
     }
 
@@ -474,6 +481,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         // flush the ps time on the merged vertex, and increase it if has a time lower
         // than the vertex we're merging from
         vertices.flushPs(vertices[bVId].predecessorId, vertices[vId].flushedPsTimeSec);
+        emit Merged(vId, bVId);
         return bVId;
     }
 
