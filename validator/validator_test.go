@@ -44,6 +44,7 @@ func Test_onLeafCreation(t *testing.T) {
 
 		p := &mocks.MockProtocol{}
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
+		p.On("CurrentChallengeManager", ctx, &mocks.MockActiveTx{}).Return(&mocks.MockChallengeManager{}, nil)
 		p.On("AssertionBySequenceNum", ctx, &mocks.MockActiveTx{}, prev.SeqNum()).Return(prev, nil)
 		v.chain = p
 
@@ -373,6 +374,7 @@ func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockS
 		&mocks.MockActiveTx{},
 		protocol.AssertionSequenceNumber(0),
 	).Return(&mocks.MockAssertion{}, nil)
+	p.On("CurrentChallengeManager", ctx, &mocks.MockActiveTx{}).Return(&mocks.MockChallengeManager{}, nil)
 	s := &mocks.MockStateManager{}
 	_, _, addrs, backend := setupAssertionChains(t, 3)
 	v, err := New(context.Background(), p, backend, s, addrs.Rollup)
