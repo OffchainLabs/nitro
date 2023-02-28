@@ -110,4 +110,10 @@ contract Simple {
         (success, ) = address(this).call(data);
         require(success, "CALL_FAILED");
     }
+
+    function checkGasUsed(address to, bytes calldata input) external view returns (uint256) {
+        uint256 before = gasleft();
+        to.staticcall{gas: before - 10000}(input);
+        return before - gasleft();
+    }
 }

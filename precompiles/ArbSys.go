@@ -22,13 +22,12 @@ type ArbSys struct {
 	L2ToL1TxGasCost         func(addr, addr, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 	SendMerkleUpdate        func(ctx, mech, huge, bytes32, huge) error
 	SendMerkleUpdateGasCost func(huge, bytes32, huge) (uint64, error)
+	InvalidBlockNumberError func(huge, huge) error
 
 	// deprecated event
 	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 }
-
-var InvalidBlockNum = errors.New("invalid block number")
 
 // ArbBlockNumber gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -38,13 +37,21 @@ func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 // ArbBlockHash gets the L2 block hash, if sufficiently recent
 func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
 	if !arbBlockNumber.IsUint64() {
-		return bytes32{}, InvalidBlockNum
+		if c.State.ArbOSVersion() >= 11 {
+			return bytes32{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
+		} else {
+			return bytes32{}, errors.New("invalid block number")
+		}
 	}
 	requestedBlockNum := arbBlockNumber.Uint64()
 
 	currentNumber := evm.Context.BlockNumber.Uint64()
 	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
-		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
+		if c.State.ArbOSVersion() >= 11 {
+			return common.Hash{}, con.InvalidBlockNumberError(arbBlockNumber, evm.Context.BlockNumber)
+		} else {
+			return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
+		}
 	}
 
 	return evm.Context.GetHash(requestedBlockNum), nil
