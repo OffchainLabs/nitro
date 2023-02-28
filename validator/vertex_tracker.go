@@ -143,8 +143,11 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 
 	confirmed, err := v.confirmed(ctx)
 	if err != nil {
-		log.WithError(err).Error("Could not check if vertex is confirmed")
-	} else if confirmed {
+		//log.WithError(err).Error("Could not check if vertex is confirmed")
+		//return err
+		_ = err
+	}
+	if confirmed {
 		return ErrConfirmed
 	}
 

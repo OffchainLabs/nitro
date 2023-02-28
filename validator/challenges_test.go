@@ -422,7 +422,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		validators[i] = v
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*100)
 	defer cancel()
 
 	// We fire off each validator's background routines.

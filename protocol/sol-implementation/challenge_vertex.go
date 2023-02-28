@@ -97,6 +97,8 @@ func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx proto
 		switch {
 		case strings.Contains(errS, "Lowest height not one above"):
 			return false, nil
+		case strings.Contains(errS, "Has presumptive successor"):
+			return false, nil
 		default:
 			return false, err
 		}
