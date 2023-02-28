@@ -1148,7 +1148,6 @@ func TestAssertionChain_Bisect(t *testing.T) {
 }
 
 func TestAssertionChain_Merge(t *testing.T) {
-	t.Skip()
 	tx := &ActiveTx{TxStatus: ReadWriteTxStatus}
 	ctx := context.Background()
 	t.Run("past deadline", func(t *testing.T) {
@@ -1315,6 +1314,7 @@ func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
 	return ret
 }
 
+//nolint:unused
 func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 	var ret []common.Hash
 	for i := uint64(0); i < numBlocks; i++ {

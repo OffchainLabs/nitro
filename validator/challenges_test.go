@@ -292,9 +292,10 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 
 	// Advance the chain by 100 blocks as there needs to be a minimum period of time
 	// before any assertions can be made on-chain.
-	honestBlockHash := common.Hash{}
+	var honestBlockHash common.Hash
 	for i := 0; i < 100; i++ {
 		backend.Commit()
+		//nolint:all
 		honestBlockHash = backend.Commit()
 	}
 

@@ -8,14 +8,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 )
-
-type challengeStartedEvent struct {
-	challenger             common.Address
-	challengedAssertionNum protocol.AssertionSequenceNumber
-	challengeNum           uint64
-}
 
 // Subscribes to events fired by the rollup contracts in order to listen to
 // new assertion creations or challenge start events from the protocol.

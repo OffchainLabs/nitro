@@ -112,41 +112,6 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	return nil
 }
 
-func (v *Validator) verifyAddLeafConditions(ctx context.Context, a protocol.Assertion, c protocol.Challenge) error {
-	return v.chain.Call(func(tx protocol.ActiveTx) error {
-		prev, err := v.chain.AssertionBySequenceNum(ctx, tx, a.PrevSeqNum())
-		if err != nil {
-			return err
-		}
-		rootAssertion, err := c.RootAssertion(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if prev != rootAssertion {
-			return errors.New("challenge and assertion parent mismatch")
-		}
-		completed, err := c.Completed(ctx, tx)
-		if err != nil {
-			return nil
-		}
-		if completed {
-			return errors.New("challenge has been completed")
-		}
-		rootVertex, err := c.RootVertex(ctx, tx)
-		if err != nil {
-			return err
-		}
-		eligibleForNewSuccessor, err := rootVertex.EligibleForNewSuccessor(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if !eligibleForNewSuccessor {
-			return errors.New("root vertex is not eligible for new successor")
-		}
-		return nil
-	})
-}
-
 func (v *Validator) addChallengeVertex(
 	ctx context.Context,
 	challenge protocol.Challenge,

@@ -141,6 +141,7 @@ func TestMerkleProofBackend(t *testing.T) {
 	}
 }
 
+//nolint:unused
 func hashesForUints(lo, hi uint64) []common.Hash {
 	ret := []common.Hash{}
 	for i := lo; i < hi; i++ {
