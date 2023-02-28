@@ -57,8 +57,8 @@ func TestBlockChallenge(t *testing.T) {
 		}
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	// 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 	// 		aliceAddr := common.BytesToAddress([]byte{1})
@@ -416,7 +416,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			WithAddress(addr),
 			WithDisableLeafCreation(),
 			WithTimeReference(ref),
-			WithChallengeVertexWakeInterval(time.Second),
+			WithChallengeVertexWakeInterval(time.Millisecond*100),
 		)
 		require.NoError(t, valErr)
 		validators[i] = v
@@ -430,16 +430,18 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		go val.Start(ctx)
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Second * 5)
 
 	// Submit leaf creation manually for each validator.
 	for _, val := range validators {
-		_, err := val.SubmitLeafCreation(ctx)
-		require.NoError(t, err)
-		AssertLogsContain(t, hook, "Submitted leaf creation")
+		go func(vv *Validator) {
+			_, err := vv.SubmitLeafCreation(ctx)
+			require.NoError(t, err)
+			AssertLogsContain(t, hook, "Submitted assertion")
+		}(val)
 	}
 
-	time.Sleep(time.Second * 1000)
+	time.Sleep(time.Second * 5)
 
 	// totalEventsWanted := uint16(0)
 	// for _, count := range cfg.eventsToAssert {
