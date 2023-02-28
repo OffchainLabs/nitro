@@ -12,16 +12,9 @@ import (
 )
 
 var (
-	createdAssertionEventSig = hexutil.MustDecode("0xb795d7f067118d6e112dcd15e103f1a9de80c67210733e0d01e065a35bfb3242")
-	challengeStartedEventSig = hexutil.MustDecode("0xc795d7f067118d6e112dcd15e103f1a9de80c67210733e0d01e065a35bfb3242")
+	challengeStartedEventSig = hexutil.MustDecode("0x1811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae")
+	createdAssertionEventSig = hexutil.MustDecode("0x0811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae")
 )
-
-type assertionCreatedEvent struct {
-	assertionNum        protocol.AssertionSequenceNumber
-	assertionHash       protocol.AssertionHash
-	parentAssertionHash protocol.AssertionHash
-	height              uint64
-}
 
 type challengeStartedEvent struct {
 	challenger             common.Address
@@ -32,7 +25,7 @@ type challengeStartedEvent struct {
 // Subscribes to events fired by the rollup contracts in order to listen to
 // new assertion creations or challenge start events from the protocol.
 func (v *Validator) handleRollupEvents(ctx context.Context) {
-	logs := make(chan types.Log)
+	logs := make(chan types.Log, 100)
 	query := ethereum.FilterQuery{
 		Addresses: []common.Address{v.rollupAddr},
 	}
@@ -41,7 +34,6 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 		log.Error(err)
 		return
 	}
-
 	for {
 		select {
 		case err := <-sub.Err():
@@ -56,14 +48,21 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 				createdAssertion, err := v.rollup.ParseAssertionCreated(vLog)
 				if err != nil {
 					log.Error(err)
-					return
+					continue
 				}
-				v.onLeafCreated(ctx, &assertionCreatedEvent{
-					assertionNum:        protocol.AssertionSequenceNumber(createdAssertion.AssertionNum),
-					assertionHash:       protocol.AssertionHash(createdAssertion.AssertionHash),
-					parentAssertionHash: protocol.AssertionHash(createdAssertion.AssertionHash),
-					height:              createdAssertion.Height.Uint64(),
-				})
+				var assertion protocol.Assertion
+				if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+					retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(createdAssertion.AssertionNum))
+					if err != nil {
+						return err
+					}
+					assertion = retrieved
+					return nil
+				}); err != nil {
+					log.Error(err)
+					continue
+				}
+				v.onLeafCreated(ctx, assertion)
 			case bytes.Equal(topic[:], challengeStartedEventSig):
 				chalStarted, err := v.rollup.ParseRollupChallengeStarted(vLog)
 				if err != nil {

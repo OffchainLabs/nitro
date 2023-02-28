@@ -68,26 +68,14 @@ func (v *Validator) onChallengeStarted(
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Validator) challengeAssertion(ctx context.Context, ev *assertionCreatedEvent) error {
+func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.Assertion) error {
 	var challenge protocol.Challenge
 	var err error
 
-	var parentAssertionNum protocol.AssertionSequenceNumber
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		assertionNum, err := v.chain.GetAssertionNum(ctx, tx, ev.parentAssertionHash)
-		if err != nil {
-			return err
-		}
-		parentAssertionNum = assertionNum
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	challenge, err = v.submitProtocolChallenge(ctx, parentAssertionNum)
+	challenge, err = v.submitProtocolChallenge(ctx, assertion.PrevSeqNum())
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
-			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, parentAssertionNum)
+			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, assertion.PrevSeqNum())
 			if fetchErr != nil {
 				return fetchErr
 			}
@@ -116,8 +104,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *assertionCreated
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"] = parentAssertionNum
-	logFields["parentAssertionHash"] = fmt.Sprintf("%#x", ev.parentAssertionHash)
+	logFields["parentAssertionSeqNum"] = assertion.PrevSeqNum()
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
 
 	return nil

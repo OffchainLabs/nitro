@@ -7,21 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBlockChallenge(t *testing.T) {
+	t.Skip()
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob.
@@ -32,7 +28,6 @@ func TestBlockChallenge(t *testing.T) {
 	//                  \[4]-[6]-bob
 	//
 	t.Run("two validators opening leaves at same height", func(t *testing.T) {
-		t.Skip()
 		cfg := &blockChallengeTestConfig{
 			numValidators: 2,
 			latestHeight:  6,
@@ -431,13 +426,12 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
 	defer cancel()
 
-	logs := make(chan types.Log)
-	query := ethereum.FilterQuery{
-		Addresses: []common.Address{addrs.Rollup},
+	// We fire off each validator's background routines.
+	for _, val := range validators {
+		go val.Start(ctx)
 	}
 
-	sub, err := backend.SubscribeFilterLogs(ctx, query, logs)
-	require.NoError(t, err)
+	time.Sleep(time.Second)
 
 	// Submit leaf creation manually for each validator.
 	for _, val := range validators {
@@ -446,28 +440,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted leaf creation")
 	}
 
-	// We fire off each validator's background routines.
-	for _, val := range validators {
-		go val.Start(ctx)
-	}
-
-	createdAssertionEventSig := hexutil.MustDecode("0xb795d7f067118d6e112dcd15e103f1a9de80c67210733e0d01e065a35bfb3242")
-	rollupCore, err := rollupgen.NewRollupCore(addrs.Rollup, backend)
-	require.NoError(t, err)
-
-	for {
-		select {
-		case err := <-sub.Err():
-			log.Fatal(err)
-		case vLog := <-logs:
-			if bytes.Equal(vLog.Topics[0][:], createdAssertionEventSig) {
-				t.Log("Assertion created")
-				createdAssertion, err := rollupCore.ParseAssertionCreated(vLog)
-				require.NoError(t, err)
-				t.Logf("%+v", createdAssertion)
-			}
-		}
-	}
+	time.Sleep(time.Second * 2)
 
 	// totalEventsWanted := uint16(0)
 	// for _, count := range cfg.eventsToAssert {

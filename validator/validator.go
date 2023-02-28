@@ -34,10 +34,10 @@ type Validator struct {
 	address                                common.Address
 	name                                   string
 	knownValidatorNames                    map[common.Address]string
-	createdLeaves                          map[protocol.AssertionHash]protocol.Assertion
+	createdAssertions                      map[common.Hash]protocol.Assertion
 	assertionsLock                         sync.RWMutex
-	sequenceNumbersByParentStateCommitment map[protocol.AssertionHash][]protocol.AssertionSequenceNumber
-	assertions                             map[protocol.AssertionSequenceNumber]*assertionCreatedEvent
+	sequenceNumbersByParentStateCommitment map[common.Hash][]protocol.AssertionSequenceNumber
+	assertions                             map[protocol.AssertionSequenceNumber]protocol.Assertion
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	chaosMonkeyProbability                 float64
@@ -122,9 +122,9 @@ func New(
 		stateManager:                           stateManager,
 		address:                                common.Address{},
 		createLeafInterval:                     defaultCreateLeafInterval,
-		createdLeaves:                          make(map[protocol.AssertionHash]protocol.Assertion),
-		sequenceNumbersByParentStateCommitment: make(map[protocol.AssertionHash][]protocol.AssertionSequenceNumber),
-		assertions:                             make(map[protocol.AssertionSequenceNumber]*assertionCreatedEvent),
+		createdAssertions:                      make(map[common.Hash]protocol.Assertion),
+		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]protocol.AssertionSequenceNumber),
+		assertions:                             make(map[protocol.AssertionSequenceNumber]protocol.Assertion),
 		timeRef:                                util.NewRealTimeReference(),
 		rollupAddr:                             rollupAddr,
 		challengeVertexWakeInterval:            time.Millisecond * 100,
@@ -137,8 +137,18 @@ func New(
 		return nil, err
 	}
 	v.rollup = rollup
-	// TODO: Get genesis from the chain instead.
-	v.assertions[0] = &assertionCreatedEvent{}
+	var genesis protocol.Assertion
+	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+		genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, 0)
+		if err != nil {
+			return err
+		}
+		genesis = genesisAssertion
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	v.assertions[0] = genesis
 	return v, nil
 }
 
@@ -219,25 +229,20 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 		return nil, err
 	}
 	logFields := logrus.Fields{
-		"name":                         v.name,
-		"latestValidParentHeight":      fmt.Sprintf("%+v", parentAssertion.Height()),
-		"latestValidParentStateRoot":   fmt.Sprintf("%#x", parentAssertion.StateHash()),
-		"leafHeight":                   assertionToCreate.Height,
-		"leafCommitmentBlockStateHash": fmt.Sprintf("%#x", assertionToCreate.PostState.BlockStateHash()),
+		"name":               v.name,
+		"parentHeight":       fmt.Sprintf("%+v", parentAssertion.Height()),
+		"parentStateHash":    fmt.Sprintf("%#x", parentAssertion.StateHash()),
+		"assertionHeight":    leaf.Height(),
+		"assertionStateHash": fmt.Sprintf("%#x", leaf.StateHash()),
 	}
-	log.WithFields(logFields).Info("Submitted leaf creation")
+	log.WithFields(logFields).Info("Submitted assertion")
 
 	// Keep track of the created assertion locally.
 	// TODO: Get the event from the chain instead, by using logs from the receipt.
 	v.assertionsLock.Lock()
 	// TODO: Store a more minimal struct, with only what we need.
-	v.assertions[leaf.SeqNum()] = &assertionCreatedEvent{
-		assertionNum:        leaf.SeqNum(),
-		assertionHash:       protocol.AssertionHash(leaf.StateHash()),
-		parentAssertionHash: protocol.AssertionHash(parentAssertion.StateHash()),
-		height:              leaf.Height(),
-	}
-	key := protocol.AssertionHash(parentAssertion.StateHash())
+	v.assertions[leaf.SeqNum()] = leaf
+	key := parentAssertion.StateHash()
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
 		leaf.SeqNum(),
@@ -245,7 +250,7 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	v.assertionsLock.Unlock()
 
 	v.leavesLock.Lock()
-	v.createdLeaves[protocol.AssertionHash(leaf.StateHash())] = leaf
+	v.createdAssertions[leaf.StateHash()] = leaf
 	v.leavesLock.Unlock()
 	return leaf, nil
 }
@@ -279,10 +284,10 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 			continue
 		}
 		if v.stateManager.HasStateCommitment(ctx, util.StateCommitment{
-			Height:    a.height,                     // TODO: Use height in-protocol instead.
-			StateRoot: common.Hash(a.assertionHash), // TODO: What is assertion hash? Be more specific.
+			Height:    a.Height(),
+			StateRoot: a.StateHash(),
 		}) {
-			return a.assertionNum, nil
+			return a.SeqNum(), nil
 		}
 	}
 	return latestConfirmed, nil
@@ -328,27 +333,36 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 // Processes new leaf creation events from the protocol that were not initiated by self.
 func (v *Validator) onLeafCreated(
 	ctx context.Context,
-	ev *assertionCreatedEvent,
+	assertion protocol.Assertion,
 ) error {
-	if ev == nil {
-		return nil
-	}
 	log.WithFields(logrus.Fields{
-		"name":          v.name,
-		"assertionHash": fmt.Sprintf("%#x", ev.assertionHash),
-		"height":        ev.height,
+		"name":      v.name,
+		"stateHash": fmt.Sprintf("%#x", assertion.StateHash()),
+		"height":    assertion.Height(),
 	}).Info("New assertion appended to protocol")
 	// Detect if there is a fork, then decide if we want to challenge.
 	// We check if the parent assertion has > 1 child.
 	v.assertionsLock.Lock()
 	// Keep track of the created assertion locally.
-	v.assertions[ev.assertionNum] = ev
+	v.assertions[assertion.SeqNum()] = assertion
 
 	// Keep track of assertions by parent state root to more easily detect forks.
-	key := ev.parentAssertionHash
+	var prev protocol.Assertion
+	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+		prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
+		if err != nil {
+			return err
+		}
+		prev = prevAssertion
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	key := prev.StateHash()
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
-		ev.assertionNum,
+		assertion.SeqNum(),
 	)
 	hasForked := len(v.sequenceNumbersByParentStateCommitment[key]) > 1
 	v.assertionsLock.Unlock()
@@ -359,7 +373,7 @@ func (v *Validator) onLeafCreated(
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, ev)
+	return v.challengeAssertion(ctx, assertion)
 }
 
 func isFromSelf(self, staker common.Address) bool {

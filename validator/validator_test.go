@@ -33,12 +33,11 @@ func Test_onLeafCreation(t *testing.T) {
 		v, _, s := setupValidator(t)
 
 		parentSeqNum := protocol.AssertionSequenceNumber(1)
-		prevRoot := common.BytesToHash([]byte("foo"))
 		seqNum := parentSeqNum + 1
-		ev := &assertionCreatedEvent{
-			parentAssertionHash: protocol.AssertionHash(prevRoot),
-			assertionNum:        seqNum,
-			assertionHash:       protocol.AssertionHash(common.BytesToHash([]byte("bar"))),
+		ev := &mocks.MockAssertion{
+			MockPrevSeqNum: parentSeqNum,
+			MockSeqNum:     seqNum,
+			MockStateHash:  common.BytesToHash([]byte("bar")),
 		}
 
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
@@ -86,30 +85,30 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	manager := &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf1.height,
-		StateRoot: common.Hash(createdData.leaf1.assertionHash),
+		Height:    createdData.leaf1.Height(),
+		StateRoot: createdData.leaf1.StateHash(),
 	}).Return(false)
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf2.height,
-		StateRoot: common.Hash(createdData.leaf2.assertionHash),
+		Height:    createdData.leaf2.Height(),
+		StateRoot: createdData.leaf2.StateHash(),
 	}).Return(true)
 
 	manager.On(
 		"HistoryCommitmentUpTo",
 		ctx,
-		createdData.leaf1.height,
+		createdData.leaf1.Height(),
 	).Return(util.HistoryCommitment{
-		Height: createdData.leaf1.height,
-		Merkle: common.Hash(createdData.leaf1.assertionHash),
+		Height: createdData.leaf1.Height(),
+		Merkle: createdData.leaf1.StateHash(),
 	}, nil)
 
 	manager.On(
 		"HistoryCommitmentUpTo",
 		ctx,
-		createdData.leaf2.height,
+		createdData.leaf2.Height(),
 	).Return(util.HistoryCommitment{
-		Height: createdData.leaf2.height,
-		Merkle: common.Hash(createdData.leaf2.assertionHash),
+		Height: createdData.leaf2.Height(),
+		Merkle: createdData.leaf2.StateHash(),
 	}, nil)
 
 	validator, err := New(
@@ -126,8 +125,8 @@ func Test_onChallengeStarted(t *testing.T) {
 	require.NoError(t, err)
 	err = validator.onLeafCreated(ctx, createdData.leaf2)
 	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "New leaf appended")
-	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 	var challenge util.Option[protocol.Challenge]
@@ -150,22 +149,22 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	manager = &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf1.height,
-		StateRoot: common.Hash(createdData.leaf1.assertionHash),
+		Height:    createdData.leaf1.Height(),
+		StateRoot: createdData.leaf1.StateHash(),
 	}).Return(false)
 	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf2.height,
-		StateRoot: common.Hash(createdData.leaf2.assertionHash),
+		Height:    createdData.leaf2.Height(),
+		StateRoot: createdData.leaf2.StateHash(),
 	}).Return(true)
 
 	forked1 := common.BytesToHash([]byte("forked commit"))
 	forked2 := common.BytesToHash([]byte("forked commit"))
-	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf1.height).Return(util.HistoryCommitment{
-		Height: createdData.leaf1.height,
+	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf1.Height()).Return(util.HistoryCommitment{
+		Height: createdData.leaf1.Height(),
 		Merkle: forked1,
 	}, nil)
-	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf2.height).Return(util.HistoryCommitment{
-		Height: createdData.leaf2.height,
+	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf2.Height()).Return(util.HistoryCommitment{
+		Height: createdData.leaf2.Height(),
 		Merkle: forked2,
 	}, nil)
 	validator.stateManager = manager
@@ -220,8 +219,8 @@ func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 }
 
 type createdValidatorFork struct {
-	leaf1                     *assertionCreatedEvent
-	leaf2                     *assertionCreatedEvent
+	leaf1                     protocol.Assertion
+	leaf2                     protocol.Assertion
 	assertionChains           []*solimpl.AssertionChain
 	accounts                  []*testAccount
 	backend                   *backends.SimulatedBackend
@@ -349,19 +348,9 @@ func createTwoValidatorFork(
 
 	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertion.StateHash())
 
-	ev1 := &assertionCreatedEvent{
-		height:        assertion.Height(),
-		assertionNum:  assertion.SeqNum(),
-		assertionHash: protocol.AssertionHash(assertion.StateHash()),
-	}
-	ev2 := &assertionCreatedEvent{
-		height:        forkedAssertion.Height(),
-		assertionNum:  forkedAssertion.SeqNum(),
-		assertionHash: protocol.AssertionHash(forkedAssertion.StateHash()),
-	}
 	return &createdValidatorFork{
-		leaf1:                     ev1,
-		leaf2:                     ev2,
+		leaf1:                     assertion,
+		leaf2:                     forkedAssertion,
 		assertionChains:           chains,
 		accounts:                  accs,
 		backend:                   backend,
@@ -392,11 +381,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
-			v.assertions[a.SeqNum()] = &assertionCreatedEvent{
-				assertionHash: protocol.AssertionHash(a.StateHash()),
-				height:        a.Height(),
-				assertionNum:  a.SeqNum(),
-			}
+			v.assertions[a.SeqNum()] = a
 			s.On("HasStateCommitment", ctx, util.StateCommitment{
 				Height:    a.Height(),
 				StateRoot: a.StateHash(),
@@ -413,11 +398,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
-			v.assertions[a.SeqNum()] = &assertionCreatedEvent{
-				assertionHash: protocol.AssertionHash(a.StateHash()),
-				height:        a.Height(),
-				assertionNum:  a.SeqNum(),
-			}
+			v.assertions[a.SeqNum()] = a
 			if i <= 5 {
 				s.On("HasStateCommitment", ctx, util.StateCommitment{
 					Height:    a.Height(),
