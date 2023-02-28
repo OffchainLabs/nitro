@@ -16,19 +16,23 @@ import (
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
 func (v *Validator) onChallengeStarted(
-	ctx context.Context, ev *challengeStartedEvent,
+	ctx context.Context, ev protocol.Challenge,
 ) error {
-	if ev == nil {
+	var challengedAssertion protocol.Assertion
+	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+		rootAssertion, err := ev.RootAssertion(ctx, tx)
+		if err != nil {
+			return err
+		}
+		challengedAssertion = rootAssertion
 		return nil
-	}
-	// Ignore challenges initiated by self.
-	if isFromSelf(v.address, ev.challenger) {
-		return nil
+	}); err != nil {
+		return err
 	}
 
 	challenge, err := v.fetchProtocolChallenge(
 		ctx,
-		ev.challengedAssertionNum,
+		challengedAssertion.SeqNum(),
 	)
 	if err != nil {
 		return err
@@ -40,8 +44,8 @@ func (v *Validator) onChallengeStarted(
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
 			// TODO: Should we return error here instead of a log and nil?
 			log.Infof(
-				"Attempted to add a challenge leaf that already exists on challenge with index %d",
-				ev.challengeNum,
+				"Attempted to add a challenge leaf that already exists on challenge with id %#x",
+				ev.Id(),
 			)
 			return nil
 		}
@@ -56,7 +60,7 @@ func (v *Validator) onChallengeStarted(
 	log.WithFields(logrus.Fields{
 		"name":                 v.name,
 		"challenger":           challengerName,
-		"challengingAssertion": fmt.Sprintf("%d", ev.challengedAssertionNum),
+		"challengingAssertion": fmt.Sprintf("%d", challengedAssertion.SeqNum()),
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.

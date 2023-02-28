@@ -31,7 +31,8 @@ type Validator struct {
 	chalManagerAddr                        common.Address
 	rollupAddr                             common.Address
 	rollup                                 *rollupgen.RollupCore
-	chalManager                                 *challengeV2gen.ChallengeManagerImpl
+	rollupFilterer                         *rollupgen.RollupCoreFilterer
+	chalManager                            *challengeV2gen.ChallengeManagerImplFilterer
 	backend                                bind.ContractBackend
 	stateManager                           statemanager.Manager
 	address                                common.Address
@@ -156,11 +157,16 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	chalManager, err := challengeV2gen.NewChallengeManagerImpl(chalManagerAddr, backend
+	rollupFilterer, err := rollupgen.NewRollupCoreFilterer(rollupAddr, backend)
+	if err != nil {
+		return nil, err
+	}
+	chalManager, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
 	if err != nil {
 		return nil, err
 	}
 	v.rollup = rollup
+	v.rollupFilterer = rollupFilterer
 	v.assertions[0] = genesis
 	v.chalManagerAddr = chalManagerAddr
 	v.chalManager = chalManager

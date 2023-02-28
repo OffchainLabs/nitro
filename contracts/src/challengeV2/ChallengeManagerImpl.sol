@@ -309,7 +309,8 @@ contract ChallengeManagerImpl is IChallengeManager {
 
     event Bisected(bytes32 fromId, bytes32 toId);
     event Merged(bytes32 fromId, bytes32 toId);
-    event VertexAdded(bytes32 id);
+    event VertexAdded(bytes32 vertexId);
+    event ChallengeCreated(bytes32 challengeId);
 
     mapping(bytes32 => ChallengeVertex) public vertices;
     mapping(bytes32 => Challenge) public challenges;
@@ -401,7 +402,9 @@ contract ChallengeManagerImpl is IChallengeManager {
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
         bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
         vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
-        challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0});
+        challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0, challenger: msg.sender});
+
+        emit ChallengeCreated(challengeId);
 
         return challengeId;
     }
@@ -417,7 +420,7 @@ contract ChallengeManagerImpl is IChallengeManager {
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
         vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);
-        challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0});
+        challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0, challenger: msg.sender});
         vertices[vId].setSuccessionChallenge(newChallengeId);
 
         // CHRIS: TODO: opening a challenge and confirming a winner vertex should have mutually exlusive checks

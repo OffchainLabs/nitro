@@ -13,10 +13,17 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	vertexAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
+	mergeEventSig       = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
+	bisectEventSig      = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
 )
 
 func TestBlockChallenge(t *testing.T) {
@@ -24,10 +31,10 @@ func TestBlockChallenge(t *testing.T) {
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob.
 	//
-	//                   [4]-[6]-alice
-	//                  /
-	// [genesis]-[2]-[3]
-	//                  \[4]-[6]-bob
+	//                [3]-[4]-[6]-alice
+	//               /
+	// [genesis]-[2]-
+	//               \[3]-[4]-[6]-bob
 	//
 	t.Run("two validators opening leaves at same height", func(t *testing.T) {
 		cfg := &blockChallengeTestConfig{
@@ -38,7 +45,7 @@ func TestBlockChallenge(t *testing.T) {
 				1: "bob",
 			},
 			// The heights at which the validators diverge in histories. In this test,
-			// alice and bob agree up to and including height 3.
+			// alice and bob start diverging at height 3.
 			divergenceHeightsByIndex: map[uint64]uint64{
 				0: 3,
 				1: 3,
@@ -51,15 +58,15 @@ func TestBlockChallenge(t *testing.T) {
 		// Alice bisects to 2, is presumptive.
 		// Bob merges to 2.
 		// Bob bisects from 4 to 3, is presumptive.
-		// Alice merges to 3.
+		// Alice bisects from 4 to 3.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
 		cfg.expectedVerticesAdded = 2
-		cfg.expectedBisections = 4
+		cfg.expectedBisections = 5
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	// 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 	// 		aliceAddr := common.BytesToAddress([]byte{1})
@@ -425,8 +432,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		validators[i] = v
 	}
 
-	start := time.Now()
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// We fire off each validator's background routines.
@@ -474,7 +480,6 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 				case bytes.Equal(topic[:], mergeEventSig):
 					totalMerges++
 				default:
-					t.Logf("CHALLENGE MANAGER EVENT %+v", vLog)
 				}
 			}
 		}
@@ -489,12 +494,10 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted assertion")
 	}
 
-	t.Logf("Elapsed %v", time.Since(start))
 	<-ctx.Done()
-	t.Logf("Elapsed %v", time.Since(start))
-	// require.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
-	// require.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
-	// require.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
+	require.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
+	require.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
+	require.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
 }
 
 // func TestValidator_verifyAddLeafConditions(t *testing.T) {

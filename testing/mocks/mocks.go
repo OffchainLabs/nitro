@@ -244,6 +244,7 @@ type MockChallenge struct {
 	MockCreationTime      time.Time
 	MockParentStateCommit util.StateCommitment
 	MockWinnerVertex      util.Option[protocol.ChallengeVertex]
+	MockChallenger        common.Address
 }
 
 // Getters.
@@ -282,6 +283,10 @@ func (m *MockChallenge) WinnerVertex(ctx context.Context, tx protocol.ActiveTx) 
 func (m *MockChallenge) Completed(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	args := m.Called(ctx, tx)
 	return args.Get(0).(bool), args.Error(1)
+}
+
+func (m *MockChallenge) Challenger() common.Address {
+	return m.MockChallenger
 }
 
 // Mutating calls.

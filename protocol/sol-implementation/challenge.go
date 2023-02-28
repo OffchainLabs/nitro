@@ -9,6 +9,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -16,10 +17,30 @@ func (c *Challenge) Id() protocol.ChallengeHash {
 	return c.id
 }
 
+func (c *Challenge) Challenger() common.Address {
+	return c.inner.Challenger
+}
+
 func (c *Challenge) RootAssertion(
 	ctx context.Context, tx protocol.ActiveTx,
 ) (protocol.Assertion, error) {
-	return nil, errors.New("unimplemented")
+	rootVertex, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+	if err != nil {
+		return nil, err
+	}
+	if rootVertex.IsNone() {
+		return nil, errors.New("root vertex not found")
+	}
+	root := rootVertex.Unwrap().(*ChallengeVertex)
+	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
+	if err != nil {
+		return nil, err
+	}
+	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
+	if err != nil {
+		return nil, err
+	}
+	return assertion, nil
 }
 
 func (c *Challenge) RootVertex(

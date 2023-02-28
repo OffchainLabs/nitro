@@ -181,6 +181,7 @@ type Challenge interface {
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
+	Challenger() common.Address
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(

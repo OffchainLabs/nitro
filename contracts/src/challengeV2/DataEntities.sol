@@ -121,6 +121,7 @@ struct Challenge {
     // CHRIS: TODO: we could the leaf id here instead and just lookup the claim from the leaf
     bytes32 winningClaim;
     ChallengeType challengeType; // CHRIS: TODO: can use the keyword 'type' here?
+    address challenger;
 }
 
 // CHRIS: TODO: one step proof test just here for structure test

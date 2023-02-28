@@ -1,23 +1,14 @@
 package validator
 
 import (
-	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/ethereum/go-ethereum"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
-)
-
-var (
-	challengeStartedEventSig = hexutil.MustDecode("0x1811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae") // TODO: Not a real sig.
-	createdAssertionEventSig = hexutil.MustDecode("0x0811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae")
-	vertexAddedEventSig      = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
-	mergeEventSig            = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
-	bisectEventSig           = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
 )
 
 type challengeStartedEvent struct {
@@ -30,26 +21,20 @@ type challengeStartedEvent struct {
 // new assertion creations or challenge start events from the protocol.
 // TODO: Brittle - should be based on querying the chain instead.
 func (v *Validator) handleRollupEvents(ctx context.Context) {
-	assertionChainLogs := make(chan types.Log, 100)
-	assertionChainQuery := ethereum.FilterQuery{
-		Addresses: []common.Address{v.rollupAddr},
-	}
-	assertionSub, err := v.backend.SubscribeFilterLogs(ctx, assertionChainQuery, assertionChainLogs)
+	assertionCreatedChan := make(chan *rollupgen.RollupCoreAssertionCreated, 1)
+	challengeCreatedChan := make(chan *challengeV2gen.ChallengeManagerImplChallengeCreated, 1)
+	assertionSub, err := v.rollupFilterer.WatchAssertionCreated(&bind.WatchOpts{}, assertionCreatedChan, nil, nil, nil)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 	defer assertionSub.Unsubscribe()
-
-	chalLogs := make(chan types.Log, 100)
-	chalQuery := ethereum.FilterQuery{
-		Addresses: []common.Address{v.chalManagerAddr},
-	}
-	chalSub, err := v.backend.SubscribeFilterLogs(ctx, chalQuery, chalLogs)
+	chalSub, err := v.chalManager.WatchChallengeCreated(&bind.WatchOpts{}, challengeCreatedChan)
 	if err != nil {
 		log.Error(err)
 		return
 	}
+	defer chalSub.Unsubscribe()
 	defer chalSub.Unsubscribe()
 
 	for {
@@ -58,78 +43,57 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 			log.Fatal(err)
 		case err := <-chalSub.Err():
 			log.Fatal(err)
-		case vLog := <-chalLogs:
-			if len(vLog.Topics) == 0 {
+		case chalCreated := <-challengeCreatedChan:
+			var challenge protocol.Challenge
+			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+				manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+				if err != nil {
+					return err
+				}
+				retrieved, err := manager.GetChallenge(ctx, tx, chalCreated.ChallengeId)
+				if err != nil {
+					return err
+				}
+				if retrieved.IsNone() {
+					return fmt.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
+				}
+				challenge = retrieved.Unwrap()
+				return nil
+			}); err != nil {
+				log.Error(err)
 				continue
 			}
-			topic := vLog.Topics[0]
-			switch {
-			case bytes.Equal(topic[:], challengeStartedEventSig):
-				chalStarted, err := v.chalManager.ParseChallengeStarted(vLog)
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				if err := v.onChallengeStarted(ctx, &challengeStartedEvent{
-					challenger:             chalStarted.Challenger,
-					challengedAssertionNum: protocol.AssertionSequenceNumber(chalStarted.ChallengedAssertion),
-					challengeNum:           chalStarted.ChallengeIndex,
-				}); err != nil {
-					log.Error(err)
-				}
-			default:
-			}
-		case vLog := <-assertionChainLogs:
-			if len(vLog.Topics) == 0 {
+			// Ignore challenges from self.
+			if isFromSelf(v.address, challenge.Challenger()) {
 				continue
 			}
-			topic := vLog.Topics[0]
-			switch {
-			case bytes.Equal(topic[:], createdAssertionEventSig):
-				createdAssertion, err := v.rollup.ParseAssertionCreated(vLog)
+			if err := v.onChallengeStarted(ctx, challenge); err != nil {
+				log.Error(err)
+			}
+		case assertionCreated := <-assertionCreatedChan:
+			var assertion protocol.Assertion
+			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+				retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
 				if err != nil {
-					log.Error(err)
-					continue
+					return err
 				}
-				var assertion protocol.Assertion
-				if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-					retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(createdAssertion.AssertionNum))
-					if err != nil {
-						return err
-					}
-					assertion = retrieved
-					return nil
-				}); err != nil {
-					log.Error(err)
-					continue
-				}
-				assertionNum, err := v.rollup.LatestStakedAssertion(&bind.CallOpts{}, v.address)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				// Ignore assertions from self.
-				if assertionNum == uint64(assertion.SeqNum()) {
-					continue
-				}
-				if err := v.onLeafCreated(ctx, assertion); err != nil {
-					log.Error(err)
-				}
-			// TODO: This is not working.
-			case bytes.Equal(topic[:], challengeStartedEventSig):
-				chalStarted, err := v.rollup.ParseRollupChallengeStarted(vLog)
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				if err := v.onChallengeStarted(ctx, &challengeStartedEvent{
-					challenger:             chalStarted.Challenger,
-					challengedAssertionNum: protocol.AssertionSequenceNumber(chalStarted.ChallengedAssertion),
-					challengeNum:           chalStarted.ChallengeIndex,
-				}); err != nil {
-					log.Error(err)
-				}
-			default:
+				assertion = retrieved
+				return nil
+			}); err != nil {
+				log.Error(err)
+				continue
+			}
+			assertionNum, err := v.rollup.LatestStakedAssertion(&bind.CallOpts{}, v.address)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			// Ignore assertions from self.
+			if assertionNum == uint64(assertion.SeqNum()) {
+				continue
+			}
+			if err := v.onLeafCreated(ctx, assertion); err != nil {
+				log.Error(err)
 			}
 		}
 	}
