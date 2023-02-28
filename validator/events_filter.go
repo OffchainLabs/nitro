@@ -62,7 +62,7 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 					assertionNum:        protocol.AssertionSequenceNumber(createdAssertion.AssertionNum),
 					assertionHash:       protocol.AssertionHash(createdAssertion.AssertionHash),
 					parentAssertionHash: protocol.AssertionHash(createdAssertion.AssertionHash),
-					numBlocks:           createdAssertion.Assertion.NumBlocks,
+					height:              createdAssertion.Height.Uint64(),
 				})
 			case bytes.Equal(topic[:], challengeStartedEventSig):
 				chalStarted, err := v.rollup.ParseRollupChallengeStarted(vLog)
