@@ -322,8 +322,8 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	require.NoError(t, err)
 	err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
 	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "New leaf appended")
-	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 	var vertexToBisect protocol.ChallengeVertex

@@ -350,12 +350,12 @@ func createTwoValidatorFork(
 	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertion.StateHash())
 
 	ev1 := &assertionCreatedEvent{
-		numBlocks:     assertion.Height(),
+		height:        assertion.Height(),
 		assertionNum:  assertion.SeqNum(),
 		assertionHash: protocol.AssertionHash(assertion.StateHash()),
 	}
 	ev2 := &assertionCreatedEvent{
-		numBlocks:     forkedAssertion.Height(),
+		height:        forkedAssertion.Height(),
 		assertionNum:  forkedAssertion.SeqNum(),
 		assertionHash: protocol.AssertionHash(forkedAssertion.StateHash()),
 	}

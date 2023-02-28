@@ -235,7 +235,7 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 		assertionNum:        leaf.SeqNum(),
 		assertionHash:       protocol.AssertionHash(leaf.StateHash()),
 		parentAssertionHash: protocol.AssertionHash(parentAssertion.StateHash()),
-		numBlocks:           0,
+		height:              leaf.Height(),
 	}
 	key := protocol.AssertionHash(parentAssertion.StateHash())
 	v.sequenceNumbersByParentStateCommitment[key] = append(
@@ -279,7 +279,7 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 			continue
 		}
 		if v.stateManager.HasStateCommitment(ctx, util.StateCommitment{
-			Height:    a.numBlocks,                  // TODO: Use height in-protocol instead.
+			Height:    a.height,                     // TODO: Use height in-protocol instead.
 			StateRoot: common.Hash(a.assertionHash), // TODO: What is assertion hash? Be more specific.
 		}) {
 			return a.assertionNum, nil
@@ -336,7 +336,7 @@ func (v *Validator) onLeafCreated(
 	log.WithFields(logrus.Fields{
 		"name":          v.name,
 		"assertionHash": fmt.Sprintf("%#x", ev.assertionHash),
-		"numBlocks":     ev.numBlocks,
+		"height":        ev.height,
 	}).Info("New assertion appended to protocol")
 	// Detect if there is a fork, then decide if we want to challenge.
 	// We check if the parent assertion has > 1 child.
