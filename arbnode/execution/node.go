@@ -50,7 +50,9 @@ func CreateExecutionNode(
 		}
 		txPublisher = sequencer
 	} else {
-		if fwTarget == "" {
+		if fwConfig.RedisUrl != "" {
+			txPublisher = NewRedisTxForwarder(fwTarget, fwConfig)
+		} else if fwTarget == "" {
 			txPublisher = NewTxDropper()
 		} else {
 			txPublisher = NewForwarder(fwTarget, fwConfig)

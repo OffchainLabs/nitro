@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
@@ -84,7 +85,19 @@ func (t *InboxTracker) Initialize() error {
 		log.Info("InboxTracker", "SequencerBatchCount", 0)
 	}
 
-	return batch.Write()
+	err = batch.Write()
+	if err != nil {
+		return err
+	}
+
+	if t.txStreamer.broadcastServer != nil {
+		err = t.populateFeedBacklog(t.txStreamer.broadcastServer)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 var AccumulatorNotFoundErr = errors.New("accumulator not found")
@@ -186,6 +199,42 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (t *InboxTracker) populateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return fmt.Errorf("error getting batch count: %w", err)
+	}
+	var startMessage arbutil.MessageIndex
+	if batchCount >= 2 {
+		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
+		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
+		// `batchCount - 2` is the index of the batch before the last batch.
+		batchIndex := batchCount - 2
+		startMessage, err = t.GetBatchMessageCount(batchIndex)
+		if err != nil {
+			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
+		}
+	}
+	messageCount, err := t.txStreamer.GetMessageCount()
+	if err != nil {
+		return fmt.Errorf("error getting tx streamer message count: %w", err)
+	}
+	var feedMessages []*broadcaster.BroadcastFeedMessage
+	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
+		message, err := t.txStreamer.GetMessage(seqNum)
+		if err != nil {
+			return fmt.Errorf("error getting message %v: %w", seqNum, err)
+		}
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum)
+		if err != nil {
+			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
+		}
+		feedMessages = append(feedMessages, feedMessage)
+	}
+	broadcastServer.PopulateBacklog(feedMessages)
+	return nil
 }
 
 func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {

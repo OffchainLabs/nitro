@@ -28,10 +28,13 @@ var (
 type SequenceNumberCatchupBuffer struct {
 	messages     []*BroadcastFeedMessage
 	messageCount int32
+	limitCatchup func() bool
 }
 
-func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
-	return &SequenceNumberCatchupBuffer{}
+func NewSequenceNumberCatchupBuffer(limitCatchup func() bool) *SequenceNumberCatchupBuffer {
+	return &SequenceNumberCatchupBuffer{
+		limitCatchup: limitCatchup,
+	}
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
@@ -56,7 +59,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
 		}
-	} else if firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
+	} else if b.limitCatchup() && firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
 		// Requested seqnum is too old, don't send any cache
 		return nil
 	}
@@ -170,4 +173,10 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 
 func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {
 	return int(atomic.LoadInt32(&b.messageCount))
+}
+
+// Not thread safe
+func (b *SequenceNumberCatchupBuffer) Reset(messages []*BroadcastFeedMessage) {
+	b.messages = messages
+	atomic.StoreInt32(&b.messageCount, int32(len(messages)))
 }

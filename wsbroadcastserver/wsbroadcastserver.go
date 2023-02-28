@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,34 +26,41 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
+var (
+	HTTPHeaderCloudflareConnectingIP  = textproto.CanonicalMIMEHeaderKey("CF-Connecting-IP")
+	HTTPHeaderFeedServerVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Server-Version")
+	HTTPHeaderFeedClientVersion       = textproto.CanonicalMIMEHeaderKey("Arbitrum-Feed-Client-Version")
+	HTTPHeaderRequestedSequenceNumber = textproto.CanonicalMIMEHeaderKey("Arbitrum-Requested-Sequence-Number")
+	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
+)
+
 const (
-	HTTPHeaderCloudflareConnectingIP  = "CF-Connecting-IP"
-	HTTPHeaderFeedServerVersion       = "Arbitrum-Feed-Server-Version"
-	HTTPHeaderFeedClientVersion       = "Arbitrum-Feed-Client-Version"
-	HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
-	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
-	FeedServerVersion                 = 2
-	FeedClientVersion                 = 2
-	LivenessProbeURI                  = "livenessprobe"
+	FeedServerVersion = 2
+	FeedClientVersion = 2
+	LivenessProbeURI  = "livenessprobe"
 )
 
 type BroadcasterConfig struct {
-	Enable             bool          `koanf:"enable"`
-	Signed             bool          `koanf:"signed"`
-	Addr               string        `koanf:"addr"`
-	IOTimeout          time.Duration `koanf:"io-timeout" reload:"hot"` // reloading will affect only new connections
-	Port               string        `koanf:"port"`
-	Ping               time.Duration `koanf:"ping" reload:"hot"`           // reloaded value will change future ping intervals
-	ClientTimeout      time.Duration `koanf:"client-timeout" reload:"hot"` // reloaded value will affect all clients (next time the timeout is checked)
-	Queue              int           `koanf:"queue"`
-	Workers            int           `koanf:"workers"`
-	MaxSendQueue       int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
-	RequireVersion     bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
-	DisableSigning     bool          `koanf:"disable-signing"`
-	LogConnect         bool          `koanf:"log-connect"`
-	LogDisconnect      bool          `koanf:"log-disconnect"`
-	EnableCompression  bool          `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
-	RequireCompression bool          `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
+	Enable             bool                    `koanf:"enable"`
+	Signed             bool                    `koanf:"signed"`
+	Addr               string                  `koanf:"addr"`
+	ReadTimeout        time.Duration           `koanf:"read-timeout" reload:"hot"`      // reloaded value will affect all clients (next time the timeout is checked)
+	WriteTimeout       time.Duration           `koanf:"write-timeout" reload:"hot"`     // reloading will affect only new connections
+	HandshakeTimeout   time.Duration           `koanf:"handshake-timeout" reload:"hot"` // reloading will affect only new connections
+	Port               string                  `koanf:"port"`
+	Ping               time.Duration           `koanf:"ping" reload:"hot"`           // reloaded value will change future ping intervals
+	ClientTimeout      time.Duration           `koanf:"client-timeout" reload:"hot"` // reloaded value will affect all clients (next time the timeout is checked)
+	Queue              int                     `koanf:"queue"`
+	Workers            int                     `koanf:"workers"`
+	MaxSendQueue       int                     `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
+	RequireVersion     bool                    `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
+	DisableSigning     bool                    `koanf:"disable-signing"`
+	LogConnect         bool                    `koanf:"log-connect"`
+	LogDisconnect      bool                    `koanf:"log-disconnect"`
+	EnableCompression  bool                    `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
+	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
+	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
+	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -68,7 +76,9 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
 	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages")
 	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
-	f.Duration(prefix+".io-timeout", DefaultBroadcasterConfig.IOTimeout, "duration to wait before timing out HTTP to WS upgrade")
+	f.Duration(prefix+".read-timeout", DefaultBroadcasterConfig.ReadTimeout, "duration to wait before timing out reading data (i.e. pings) from clients")
+	f.Duration(prefix+".write-timeout", DefaultBroadcasterConfig.WriteTimeout, "duration to wait before timing out writing data to clients")
+	f.Duration(prefix+".handshake-timeout", DefaultBroadcasterConfig.HandshakeTimeout, "duration to wait before timing out HTTP to WS upgrade")
 	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
 	f.Duration(prefix+".ping", DefaultBroadcasterConfig.Ping, "duration for ping interval")
 	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
@@ -81,13 +91,17 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".log-disconnect", DefaultBroadcasterConfig.LogDisconnect, "log every client disconnect")
 	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
+	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
+	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
 	Enable:             false,
 	Signed:             false,
 	Addr:               "",
-	IOTimeout:          5 * time.Second,
+	ReadTimeout:        time.Second,
+	WriteTimeout:       2 * time.Second,
+	HandshakeTimeout:   time.Second,
 	Port:               "9642",
 	Ping:               5 * time.Second,
 	ClientTimeout:      15 * time.Second,
@@ -100,13 +114,17 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	LogDisconnect:      false,
 	EnableCompression:  true,
 	RequireCompression: false,
+	LimitCatchup:       false,
+	ConnectionLimits:   DefaultConnectionLimiterConfig,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	Enable:             false,
 	Signed:             false,
 	Addr:               "0.0.0.0",
-	IOTimeout:          2 * time.Second,
+	ReadTimeout:        2 * time.Second,
+	WriteTimeout:       2 * time.Second,
+	HandshakeTimeout:   2 * time.Second,
 	Port:               "0",
 	Ping:               5 * time.Second,
 	ClientTimeout:      15 * time.Second,
@@ -119,6 +137,8 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	LogDisconnect:      false,
 	EnableCompression:  true,
 	RequireCompression: false,
+	LimitCatchup:       false,
+	ConnectionLimits:   DefaultConnectionLimiterConfig,
 }
 
 type WSBroadcastServer struct {
@@ -192,7 +212,20 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	// Called below in accept() loop.
 	handle := func(conn net.Conn) {
 		config := s.config()
-		safeConn := deadliner{conn, config.IOTimeout}
+		// Set read and write deadlines for the handshake/upgrade
+		err := conn.SetReadDeadline(time.Now().Add(config.HandshakeTimeout))
+		if err != nil {
+			log.Warn("error setting handshake read deadline", "err", err)
+			_ = conn.Close()
+			return
+		}
+		err = conn.SetWriteDeadline(time.Now().Add(config.HandshakeTimeout))
+		if err != nil {
+			log.Warn("error setting handshake write deadline", "err", err)
+			_ = conn.Close()
+			return
+		}
+
 		var compress *wsflate.Extension
 		var negotiate func(httphead.Option) (httphead.Option, error)
 		if config.EnableCompression {
@@ -202,7 +235,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			negotiate = compress.Negotiate
 		}
 		var feedClientVersionSeen bool
-		var connectingIP string
+		var connectingIP net.IP
 		var requestedSeqNum arbutil.MessageIndex
 		upgrader := ws.Upgrader{
 			OnRequest: func(uri []byte) error {
@@ -214,7 +247,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				return nil
 			},
 			OnHeader: func(key []byte, value []byte) error {
-				headerName := string(key)
+				headerName := textproto.CanonicalMIMEHeaderKey(string(key))
 				if headerName == HTTPHeaderFeedClientVersion {
 					feedClientVersion, err := strconv.ParseUint(string(value), 0, 64)
 					if err != nil {
@@ -240,7 +273,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 					}
 					requestedSeqNum = arbutil.MessageIndex(num)
 				} else if headerName == HTTPHeaderCloudflareConnectingIP {
-					connectingIP = string(value)
+					connectingIP = net.ParseIP(string(value))
+					log.Trace("Client IP parsed from header", "ip", connectingIP, "header", headerName, "value", string(value))
 				}
 
 				return nil
@@ -252,26 +286,37 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 						ws.RejectionReason(fmt.Sprintf("Missing HTTP header %s", HTTPHeaderFeedClientVersion)),
 					)
 				}
+				if connectingIP == nil {
+					if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+						connectingIP = addr.IP
+						log.Trace("Client IP taken from socket", "ip", connectingIP, "remoteAddr", conn.RemoteAddr())
+					} else {
+						log.Warn("No client IP could be determined from socket", "remoteAddr", conn.RemoteAddr())
+					}
+				}
+
+				if config.ConnectionLimits.Enable && !s.clientManager.connectionLimiter.IsAllowed(connectingIP) {
+					return nil, ws.RejectConnectionError(
+						ws.RejectionStatus(http.StatusTooManyRequests),
+						ws.RejectionReason("Too many open feed connections."),
+					)
+				}
+
 				return header, nil
 			},
 			Negotiate: negotiate,
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
-		_, err := upgrader.Upgrade(safeConn)
-		if len(connectingIP) == 0 {
-			parts := strings.Split(conn.RemoteAddr().String(), ":")
-			if len(parts) > 0 {
-				connectingIP = parts[0]
-			}
-		}
+		_, err = upgrader.Upgrade(conn)
+
 		if err != nil {
 			if err.Error() != "" {
 				// Only log if liveness probe was not called
 				log.Debug("websocket upgrade error", "connectingIP", connectingIP, "err", err)
 				clientsTotalFailedUpgradeCounter.Inc(1)
 			}
-			_ = safeConn.Close()
+			_ = conn.Close()
 			return
 		}
 
@@ -284,6 +329,20 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			_ = conn.Close()
 			return
 		}
+		// Unset our handshake/upgrade deadlines
+		err = conn.SetReadDeadline(time.Time{})
+		if err != nil {
+			log.Warn("error unsetting read deadline", "connectingIP", connectingIP, "err", err)
+			_ = conn.Close()
+			return
+		}
+		err = conn.SetWriteDeadline(time.Time{})
+		if err != nil {
+			log.Warn("error unsetting write deadline", "connectingIP", connectingIP, "err", err)
+			_ = conn.Close()
+			return
+		}
+
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
 		if err != nil {
@@ -293,6 +352,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Register incoming client in clientManager.
+		safeConn := writeDeadliner{conn, config.WriteTimeout}
+
 		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted)
 
 		// Subscribe to events about conn.
@@ -312,7 +373,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			// receive client messages, close on error
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client, close on any error
-				if _, _, err := client.Receive(ctx, s.config().ClientTimeout); err != nil {
+				if _, _, err := client.Receive(ctx, s.config().ReadTimeout); err != nil {
 					s.clientManager.Remove(client)
 					return
 				}
@@ -457,23 +518,16 @@ func (s *WSBroadcastServer) ClientCount() int32 {
 	return s.clientManager.ClientCount()
 }
 
-// deadliner is a wrapper around net.Conn that sets read/write deadlines before
-// every Read() or Write() call.
-type deadliner struct {
+// writeDeadliner is a wrapper around net.Conn that sets write deadlines before
+// every Write() call.
+type writeDeadliner struct {
 	net.Conn
 	t time.Duration
 }
 
-func (d deadliner) Write(p []byte) (int, error) {
+func (d writeDeadliner) Write(p []byte) (int, error) {
 	if err := d.Conn.SetWriteDeadline(time.Now().Add(d.t)); err != nil {
 		return 0, err
 	}
 	return d.Conn.Write(p)
-}
-
-func (d deadliner) Read(p []byte) (int, error) {
-	if err := d.Conn.SetReadDeadline(time.Now().Add(d.t)); err != nil {
-		return 0, err
-	}
-	return d.Conn.Read(p)
 }

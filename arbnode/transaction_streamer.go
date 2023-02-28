@@ -580,14 +580,15 @@ func (s *TransactionStreamer) countDuplicateMessages(
 	return curMsg, false, nil, nil
 }
 
-func (s *TransactionStreamer) logReorg(pos arbutil.MessageIndex, dbMsg *arbostypes.MessageWithMetadata, newMsg *arbostypes.MessageWithMetadata, force bool) {
-	sendLog := force
+func (s *TransactionStreamer) logReorg(pos arbutil.MessageIndex, dbMsg *arbostypes.MessageWithMetadata, newMsg *arbostypes.MessageWithMetadata, confirmed bool) {
+	sendLog := confirmed
 	if time.Now().After(s.nextAllowedFeedReorgLog) {
 		sendLog = true
 	}
 	if sendLog {
 		s.nextAllowedFeedReorgLog = time.Now().Add(time.Minute)
 		log.Warn("TransactionStreamer: Reorg detected!",
+			"confirmed", confirmed,
 			"pos", pos,
 			"got-delayed", newMsg.DelayedMessagesRead,
 			"got-header", newMsg.Message.Header,
@@ -719,6 +720,7 @@ func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
 	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
 
+// The caller must hold the insertionMutex
 func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	if s.coordinator != nil {
 		if !s.coordinator.CurrentlyChosen() {

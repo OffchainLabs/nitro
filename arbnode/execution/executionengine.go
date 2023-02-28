@@ -46,7 +46,7 @@ type ExecutionEngine struct {
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
-	reorgSequencing func() *arbos.SequencingHooks
+	reorgSequencing bool
 }
 
 func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
@@ -67,14 +67,14 @@ func (s *ExecutionEngine) SetBlockValidator(validator *staker.BlockValidator) {
 	s.validator = validator
 }
 
-func (s *ExecutionEngine) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
+func (s *ExecutionEngine) EnableReorgSequencing() {
 	if s.Started() {
-		panic("trying to set reorg sequencing policy after start")
+		panic("trying to enable reorg sequencing after start")
 	}
-	if s.reorgSequencing != nil {
-		panic("trying to set reorg sequencing policy when already set")
+	if s.reorgSequencing {
+		panic("trying to enable reorg sequencing when already set")
 	}
-	s.reorgSequencing = reorgSequencing
+	s.reorgSequencing = true
 }
 
 func (s *ExecutionEngine) SetTransactionStreamer(streamer TransactionStreamerInterface) {
@@ -147,7 +147,7 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 
 // The caller must hold the createBlocksMutex
 func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
-	if s.reorgSequencing == nil {
+	if !s.reorgSequencing {
 		return
 	}
 
@@ -190,7 +190,9 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, s.reorgSequencing())
+		hooks := arbos.NoopSequencingHooks()
+		hooks.DiscardInvalidTxsEarly = true
+		_, err = s.sequenceTransactionsWithBlockMutex(msg.Message.Header, txes, hooks)
 		if err != nil {
 			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
