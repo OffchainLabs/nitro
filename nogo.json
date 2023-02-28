@@ -89,11 +89,6 @@
             "external/.*": "Third party code"
         }
     },
-    "shadow": {
-        "exclude_files": {
-            "external/.*": "Third party code"
-        }
-    },
     "shift": {
         "exclude_files": {
             "external/.*": "Third party code"
