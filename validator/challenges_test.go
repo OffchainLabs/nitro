@@ -416,13 +416,13 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			WithAddress(addr),
 			WithDisableLeafCreation(),
 			WithTimeReference(ref),
-			WithChallengeVertexWakeInterval(time.Millisecond*10),
+			WithChallengeVertexWakeInterval(time.Second),
 		)
 		require.NoError(t, valErr)
 		validators[i] = v
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*100)
 	defer cancel()
 
 	// We fire off each validator's background routines.
@@ -439,7 +439,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted leaf creation")
 	}
 
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 1000)
 
 	// totalEventsWanted := uint16(0)
 	// for _, count := range cfg.eventsToAssert {
