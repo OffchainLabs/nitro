@@ -89,6 +89,13 @@
             "external/.*": "Third party code"
         }
     },
+    "shadow": {
+        "exclude_files": {
+            "external/.*": "Third party code",
+            "validator/.*": "disabling for now",
+            "protocol/.*": "disabling for now"
+        }
+    },
     "shift": {
         "exclude_files": {
             "external/.*": "Third party code"
