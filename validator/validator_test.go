@@ -34,13 +34,21 @@ func Test_onLeafCreation(t *testing.T) {
 
 		parentSeqNum := protocol.AssertionSequenceNumber(1)
 		seqNum := parentSeqNum + 1
+		prev := &mocks.MockAssertion{
+			MockPrevSeqNum: 0,
+			MockSeqNum:     parentSeqNum,
+			MockStateHash:  common.Hash{},
+		}
 		ev := &mocks.MockAssertion{
 			MockPrevSeqNum: parentSeqNum,
 			MockSeqNum:     seqNum,
 			MockStateHash:  common.BytesToHash([]byte("bar")),
 		}
 
+		p := &mocks.MockProtocol{}
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
+		p.On("AssertionBySequenceNum", ctx, &mocks.MockActiveTx{}, prev.SeqNum()).Return(prev, nil)
+		v.chain = p
 
 		err := v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
@@ -98,8 +106,9 @@ func Test_onChallengeStarted(t *testing.T) {
 		ctx,
 		createdData.leaf1.Height(),
 	).Return(util.HistoryCommitment{
-		Height: createdData.leaf1.Height(),
-		Merkle: createdData.leaf1.StateHash(),
+		Height:   createdData.leaf1.Height(),
+		Merkle:   createdData.leaf1.StateHash(),
+		LastLeaf: createdData.leaf1.StateHash(),
 	}, nil)
 
 	manager.On(
@@ -107,8 +116,9 @@ func Test_onChallengeStarted(t *testing.T) {
 		ctx,
 		createdData.leaf2.Height(),
 	).Return(util.HistoryCommitment{
-		Height: createdData.leaf2.Height(),
-		Merkle: createdData.leaf2.StateHash(),
+		Height:   createdData.leaf2.Height(),
+		Merkle:   createdData.leaf2.StateHash(),
+		LastLeaf: createdData.leaf2.StateHash(),
 	}, nil)
 
 	validator, err := New(
@@ -160,12 +170,14 @@ func Test_onChallengeStarted(t *testing.T) {
 	forked1 := common.BytesToHash([]byte("forked commit"))
 	forked2 := common.BytesToHash([]byte("forked commit"))
 	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf1.Height()).Return(util.HistoryCommitment{
-		Height: createdData.leaf1.Height(),
-		Merkle: forked1,
+		Height:   createdData.leaf1.Height(),
+		Merkle:   forked1,
+		LastLeaf: createdData.leaf1.StateHash(),
 	}, nil)
 	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf2.Height()).Return(util.HistoryCommitment{
-		Height: createdData.leaf2.Height(),
-		Merkle: forked2,
+		Height:   createdData.leaf2.Height(),
+		Merkle:   forked2,
+		LastLeaf: createdData.leaf2.StateHash(),
 	}, nil)
 	validator.stateManager = manager
 
@@ -443,6 +455,13 @@ func setupAssertions(num int) []protocol.Assertion {
 
 func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
 	p := &mocks.MockProtocol{}
+	ctx := context.Background()
+	p.On(
+		"AssertionBySequenceNum",
+		ctx,
+		&mocks.MockActiveTx{},
+		protocol.AssertionSequenceNumber(0),
+	).Return(&mocks.MockAssertion{}, nil)
 	s := &mocks.MockStateManager{}
 	_, _, addrs, backend := setupAssertionChains(t, 3)
 	v, err := New(context.Background(), p, backend, s, addrs.Rollup)
