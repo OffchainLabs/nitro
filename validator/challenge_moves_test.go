@@ -163,8 +163,8 @@ func Test_merge(t *testing.T) {
 		require.NoError(t, err)
 		err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
 		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "New leaf appended")
-		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "New assertion appended")
+		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 		commit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf2.height)
@@ -309,8 +309,8 @@ func runBisectionTest(
 	require.NoError(t, err)
 	err = honestValidator.onLeafCreated(ctx, leaf2)
 	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "New leaf appended")
-	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 	var vertexToBisect protocol.ChallengeVertex

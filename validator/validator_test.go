@@ -45,7 +45,7 @@ func Test_onLeafCreation(t *testing.T) {
 
 		err := v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
@@ -70,7 +70,7 @@ func Test_onLeafCreation(t *testing.T) {
 		err = validator.onLeafCreated(ctx, createdData.leaf2)
 		require.NoError(t, err)
 
-		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 		err = validator.onLeafCreated(ctx, createdData.leaf2)
