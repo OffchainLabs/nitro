@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	challengeStartedEventSig = hexutil.MustDecode("0x1811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae")
+	challengeStartedEventSig = hexutil.MustDecode("0x1811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae") // TODO: Not a real sig.
 	createdAssertionEventSig = hexutil.MustDecode("0x0811239f50280ab7ba21c37f9f04fc72d9796c8fe213e714d281b87606509dae")
 )
 
@@ -62,20 +62,23 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 					log.Error(err)
 					continue
 				}
-				v.onLeafCreated(ctx, assertion)
+				if err := v.onLeafCreated(ctx, assertion); err != nil {
+					log.Error(err)
+				}
 			case bytes.Equal(topic[:], challengeStartedEventSig):
 				chalStarted, err := v.rollup.ParseRollupChallengeStarted(vLog)
 				if err != nil {
 					log.Error(err)
 					return
 				}
-				v.onChallengeStarted(ctx, &challengeStartedEvent{
+				if err := v.onChallengeStarted(ctx, &challengeStartedEvent{
 					challenger:             chalStarted.Challenger,
 					challengedAssertionNum: protocol.AssertionSequenceNumber(chalStarted.ChallengedAssertion),
 					challengeNum:           chalStarted.ChallengeIndex,
-				})
+				}); err != nil {
+					log.Error(err)
+				}
 			default:
-				log.Infof("Got event that did not match: %#x", topic)
 			}
 		}
 	}

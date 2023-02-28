@@ -15,7 +15,6 @@ library LeafAdderLib {
         AddLeafArgs memory leafData,
         uint256 miniStake
     ) internal view {
-        require(leafData.claimId != 0, "Empty claimId");
         require(leafData.historyRoot != 0, "Empty historyRoot");
         // CHRIS: TODO: we should also prove that the height is greater than 1 if we set the root heigt to 1
         require(leafData.height != 0, "Empty height");

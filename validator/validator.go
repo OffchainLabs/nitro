@@ -345,6 +345,7 @@ func (v *Validator) onLeafCreated(
 	v.assertionsLock.Lock()
 	// Keep track of the created assertion locally.
 	v.assertions[assertion.SeqNum()] = assertion
+	v.assertionsLock.Unlock()
 
 	// Keep track of assertions by parent state root to more easily detect forks.
 	var prev protocol.Assertion
@@ -359,6 +360,7 @@ func (v *Validator) onLeafCreated(
 		return err
 	}
 
+	v.assertionsLock.Lock()
 	key := prev.StateHash()
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],

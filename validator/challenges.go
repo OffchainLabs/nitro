@@ -71,7 +71,6 @@ func (v *Validator) onChallengeStarted(
 func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.Assertion) error {
 	var challenge protocol.Challenge
 	var err error
-
 	challenge, err = v.submitProtocolChallenge(ctx, assertion.PrevSeqNum())
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
@@ -106,7 +105,6 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	logFields["name"] = v.name
 	logFields["parentAssertionSeqNum"] = assertion.PrevSeqNum()
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
-
 	return nil
 }
 

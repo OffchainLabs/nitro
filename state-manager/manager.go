@@ -57,7 +57,7 @@ func NewWithExecutionStates(executionStates []*protocol.ExecutionState, inboxMax
 	}
 	stateRoots := make([]common.Hash, len(executionStates))
 	for i := 0; i < len(stateRoots); i++ {
-		stateRoots[i] = protocol.ComputeStateHash(executionStates[i], inboxMaxCounts[i])
+		stateRoots[i] = protocol.ComputeStateHash(executionStates[i], big.NewInt(2))
 	}
 	return &Simulated{
 		stateRoots:      stateRoots,
@@ -86,7 +86,7 @@ func (s *Simulated) LatestAssertionCreationData(
 	return &AssertionToCreate{
 		PreState:      s.executionStates[prevHeight],
 		PostState:     lastState,
-		InboxMaxCount: s.inboxMaxCounts[len(s.inboxMaxCounts)-1],
+		InboxMaxCount: big.NewInt(1),
 		Height:        uint64(len(s.stateRoots)) - 1,
 	}, nil
 }

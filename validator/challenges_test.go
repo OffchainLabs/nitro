@@ -17,7 +17,6 @@ import (
 )
 
 func TestBlockChallenge(t *testing.T) {
-	t.Skip()
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob.
@@ -440,7 +439,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted leaf creation")
 	}
 
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 5)
 
 	// totalEventsWanted := uint16(0)
 	// for _, count := range cfg.eventsToAssert {

@@ -67,7 +67,7 @@ func TestCreateAssertion(t *testing.T) {
 			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
-		_, err = chain.CreateAssertion(
+		created, err := chain.CreateAssertion(
 			ctx,
 			tx,
 			height,
@@ -77,6 +77,8 @@ func TestCreateAssertion(t *testing.T) {
 			prevInboxMaxCount,
 		)
 		require.NoError(t, err)
+		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
+		require.Equal(t, computed, created.StateHash(), "Unequal computed hash")
 
 		_, err = chain.CreateAssertion(
 			ctx,
@@ -123,7 +125,7 @@ func TestCreateAssertion(t *testing.T) {
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		chain.txOpts.From = accs[2].accountAddr
-		_, err = chain.CreateAssertion(
+		forked, err := chain.CreateAssertion(
 			ctx,
 			tx,
 			height,
@@ -133,6 +135,8 @@ func TestCreateAssertion(t *testing.T) {
 			prevInboxMaxCount,
 		)
 		require.NoError(t, err)
+		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
+		require.Equal(t, computed, forked.StateHash(), "Unequal computed hash")
 	})
 }
 
