@@ -456,6 +456,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 	}
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
+		if room <= 0 {
+			return
+		}
 		if batchCount <= v.globalPosNextSend.BatchNumber {
 			var err error
 			batchCount, err = v.inboxTracker.GetBatchCount()

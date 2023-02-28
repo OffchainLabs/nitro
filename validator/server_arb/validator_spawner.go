@@ -193,7 +193,11 @@ func (v *ArbitratorSpawner) Room() int {
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
-	return avail - int(atomic.LoadInt32(&v.count))
+	current := int(atomic.LoadInt32(&v.count))
+	if current >= avail {
+		return 0
+	}
+	return avail - current
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
