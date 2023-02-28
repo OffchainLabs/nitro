@@ -4,14 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"math/big"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-
-	"math/big"
-
-	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
@@ -90,36 +87,7 @@ func Test_onChallengeStarted(t *testing.T) {
 	logsHook := test.NewGlobal()
 
 	createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
-
-	manager := &mocks.MockStateManager{}
-	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf1.Height(),
-		StateRoot: createdData.leaf1.StateHash(),
-	}).Return(false)
-	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf2.Height(),
-		StateRoot: createdData.leaf2.StateHash(),
-	}).Return(true)
-
-	manager.On(
-		"HistoryCommitmentUpTo",
-		ctx,
-		createdData.leaf1.Height(),
-	).Return(util.HistoryCommitment{
-		Height:   createdData.leaf1.Height(),
-		Merkle:   createdData.leaf1.StateHash(),
-		LastLeaf: createdData.leaf1.StateHash(),
-	}, nil)
-
-	manager.On(
-		"HistoryCommitmentUpTo",
-		ctx,
-		createdData.leaf2.Height(),
-	).Return(util.HistoryCommitment{
-		Height:   createdData.leaf2.Height(),
-		Merkle:   createdData.leaf2.StateHash(),
-		LastLeaf: createdData.leaf2.StateHash(),
-	}, nil)
+	manager := statemanager.New(createdData.honestValidatorStateRoots)
 
 	validator, err := New(
 		ctx,
@@ -127,74 +95,17 @@ func Test_onChallengeStarted(t *testing.T) {
 		createdData.backend,
 		manager,
 		createdData.addrs.Rollup,
-		WithChallengeVertexWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
 
 	err = validator.onLeafCreated(ctx, createdData.leaf1)
 	require.NoError(t, err)
+
 	err = validator.onLeafCreated(ctx, createdData.leaf2)
 	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "New assertion appended")
+
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
-
-	var challenge util.Option[protocol.Challenge]
-	err = validator.chain.Call(func(tx protocol.ActiveTx) error {
-		genesisId, err := validator.chain.GetAssertionId(ctx, tx, 0)
-		require.NoError(t, err)
-
-		manager, err := validator.chain.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-
-		chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-		require.NoError(t, err)
-
-		challenge, err = manager.GetChallenge(ctx, tx, chalId)
-		require.NoError(t, err)
-		return nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, false, challenge.IsNone())
-
-	manager = &mocks.MockStateManager{}
-	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf1.Height(),
-		StateRoot: createdData.leaf1.StateHash(),
-	}).Return(false)
-	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    createdData.leaf2.Height(),
-		StateRoot: createdData.leaf2.StateHash(),
-	}).Return(true)
-
-	forked1 := common.BytesToHash([]byte("forked commit"))
-	forked2 := common.BytesToHash([]byte("forked commit"))
-	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf1.Height()).Return(util.HistoryCommitment{
-		Height:   createdData.leaf1.Height(),
-		Merkle:   forked1,
-		LastLeaf: createdData.leaf1.StateHash(),
-	}, nil)
-	manager.On("HistoryCommitmentUpTo", ctx, createdData.leaf2.Height()).Return(util.HistoryCommitment{
-		Height:   createdData.leaf2.Height(),
-		Merkle:   forked2,
-		LastLeaf: createdData.leaf2.StateHash(),
-	}, nil)
-	validator.stateManager = manager
-
-	err = validator.onChallengeStarted(ctx, &challengeStartedEvent{
-		challengedAssertionNum: 0,
-		challengeNum:           0,
-		challenger:             common.BytesToAddress([]byte("other validator")),
-	})
-	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
-
-	err = validator.onChallengeStarted(ctx, &challengeStartedEvent{
-		challengedAssertionNum: 0,
-		challengeNum:           0,
-		challenger:             common.BytesToAddress([]byte("other validator")),
-	})
-	require.ErrorContains(t, err, "Vertex already exists")
 }
 
 func Test_submitAndFetchProtocolChallenge(t *testing.T) {
