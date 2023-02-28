@@ -20,6 +20,7 @@ var (
 // ChallengeManager --
 type ChallengeManager struct {
 	assertionChain *AssertionChain
+	addr           common.Address
 	caller         *challengeV2gen.ChallengeManagerImplCaller
 	writer         *challengeV2gen.ChallengeManagerImplTransactor
 }
@@ -39,9 +40,14 @@ func (ac *AssertionChain) CurrentChallengeManager(
 	}
 	return &ChallengeManager{
 		assertionChain: ac,
+		addr:           addr,
 		caller:         &managerBinding.ChallengeManagerImplCaller,
 		writer:         &managerBinding.ChallengeManagerImplTransactor,
 	}, nil
+}
+
+func (cm *ChallengeManager) Address() common.Address {
+	return cm.addr
 }
 
 // ChallengePeriodSeconds --

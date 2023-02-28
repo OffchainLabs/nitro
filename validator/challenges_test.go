@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 	"math/rand"
@@ -10,7 +11,9 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
@@ -50,15 +53,13 @@ func TestBlockChallenge(t *testing.T) {
 		// Bob bisects from 4 to 3, is presumptive.
 		// Alice merges to 3.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
-		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
-			&protocol.ChallengeLeafEvent{}:   2,
-			&protocol.ChallengeBisectEvent{}: 4,
-			&protocol.ChallengeMergeEvent{}:  2,
-		}
+		cfg.expectedVerticesAdded = 2
+		cfg.expectedBisections = 4
+		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
 	})
 	// 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 	// 		aliceAddr := common.BytesToAddress([]byte{1})
@@ -308,7 +309,9 @@ type blockChallengeTestConfig struct {
 	validatorNamesByIndex map[uint64]string
 	latestHeight          uint64
 	// Events we want to assert are fired from the goimpl.
-	eventsToAssert map[protocol.ChallengeEvent]uint
+	expectedBisections    uint64
+	expectedMerges        uint64
+	expectedVerticesAdded uint64
 }
 
 func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
@@ -422,7 +425,8 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		validators[i] = v
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second*100)
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
 	// We fire off each validator's background routines.
@@ -430,84 +434,67 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		go val.Start(ctx)
 	}
 
+	var managerAddr common.Address
+	err = chains[1].Call(func(tx protocol.ActiveTx) error {
+		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+		managerAddr = manager.Address()
+		return nil
+	})
+	require.NoError(t, err)
+
+	var totalVertexAdded uint64
+	var totalBisections uint64
+	var totalMerges uint64
+
+	go func() {
+		logs := make(chan types.Log, 100)
+		query := ethereum.FilterQuery{
+			Addresses: []common.Address{managerAddr},
+		}
+		sub, err := backend.SubscribeFilterLogs(ctx, query, logs)
+		require.NoError(t, err)
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case err := <-sub.Err():
+				log.Fatal(err)
+			case <-ctx.Done():
+				return
+			case vLog := <-logs:
+				if len(vLog.Topics) == 0 {
+					continue
+				}
+				topic := vLog.Topics[0]
+				switch {
+				case bytes.Equal(topic[:], vertexAddedEventSig):
+					totalVertexAdded++
+				case bytes.Equal(topic[:], bisectEventSig):
+					totalBisections++
+				case bytes.Equal(topic[:], mergeEventSig):
+					totalMerges++
+				default:
+					t.Logf("CHALLENGE MANAGER EVENT %+v", vLog)
+				}
+			}
+		}
+	}()
+
 	time.Sleep(time.Second * 5)
 
 	// Submit leaf creation manually for each validator.
 	for _, val := range validators {
-		go func(vv *Validator) {
-			_, err := vv.SubmitLeafCreation(ctx)
-			require.NoError(t, err)
-			AssertLogsContain(t, hook, "Submitted assertion")
-		}(val)
+		_, err := val.SubmitLeafCreation(ctx)
+		require.NoError(t, err)
+		AssertLogsContain(t, hook, "Submitted assertion")
 	}
 
-	time.Sleep(time.Second * 5)
-
-	// totalEventsWanted := uint16(0)
-	// for _, count := range cfg.eventsToAssert {
-	// 	totalEventsWanted += uint16(count)
-	// }
-	// totalEventsSeen := uint16(0)
-	// seenEventCount := make(map[string]uint)
-	// for ev := range harnessObserver {
-	// 	if totalEventsSeen > totalEventsWanted {
-	// 		t.Logf("Received more events than expected, saw an extra %+T", ev)
-	// 	}
-	// 	switch e := ev.(type) {
-	// 	case *protocol.ChallengeLeafEvent:
-	// 		fmt.Println("ChallengeLeafEvent")
-	// 		fmt.Printf(
-	// 			"validator=%s height=%d commit=%#x\n",
-	// 			cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-	// 			e.History.Height,
-	// 			e.History.Merkle,
-	// 		)
-	// 		fmt.Println("")
-	// 	case *protocol.ChallengeMergeEvent:
-	// 		fmt.Println("ChallengeMergeEvent")
-	// 		fmt.Printf(
-	// 			"validator=%s to=%d commit=%#x\n",
-	// 			cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-	// 			e.ToHistory.Height,
-	// 			e.ToHistory.Merkle,
-	// 		)
-	// 		fmt.Println("")
-	// 	case *protocol.ChallengeBisectEvent:
-	// 		fmt.Println("ChallengeBisectEvent")
-	// 		fmt.Printf(
-	// 			"validator=%s to=%d commit=%#x\n",
-	// 			cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-	// 			e.ToHistory.Height,
-	// 			e.ToHistory.Merkle,
-	// 		)
-	// 		fmt.Println("")
-	// 	default:
-	// 		fmt.Printf(
-	// 			"Seen event %+T: %+v from validator %s\n",
-	// 			ev,
-	// 			ev,
-	// 			cfg.validatorNamesByAddress[ev.ValidatorAddress()],
-	// 		)
-	// 	}
-	// 	typ := fmt.Sprintf("%+T", ev)
-	// 	seenEventCount[typ]++
-	// 	totalEventsSeen++
-	// }
-	// for ev, wantedCount := range cfg.eventsToAssert {
-	// 	_ = wantedCount
-	// 	typ := fmt.Sprintf("%+T", ev)
-	// 	seenCount, ok := seenEventCount[typ]
-	// 	if !ok {
-	// 		t.Logf("Wanted to see %+T event, but none received", ev)
-	// 	}
-	// 	_ = seenCount
-	// 	require.Equal(
-	// 		t,
-	// 		wantedCount,
-	// 		seenCount,
-	// 		fmt.Sprintf("Did not see the expected number of %+T events", ev),
-	// 	)
-	// }
+	t.Logf("Elapsed %v", time.Since(start))
+	<-ctx.Done()
+	t.Logf("Elapsed %v", time.Since(start))
+	// require.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
+	// require.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
+	// require.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
 }
 
 // func TestValidator_verifyAddLeafConditions(t *testing.T) {

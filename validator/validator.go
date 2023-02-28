@@ -8,6 +8,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -27,8 +28,10 @@ type Opt = func(val *Validator)
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
 	chain                                  protocol.Protocol
+	chalManagerAddr                        common.Address
 	rollupAddr                             common.Address
-	rollup                                 *rollupgen.RollupCoreFilterer
+	rollup                                 *rollupgen.RollupCore
+	chalManager                                 *challengeV2gen.ChallengeManagerImpl
 	backend                                bind.ContractBackend
 	stateManager                           statemanager.Manager
 	address                                common.Address
@@ -132,23 +135,35 @@ func New(
 	for _, o := range opts {
 		o(v)
 	}
-	rollup, err := rollupgen.NewRollupCoreFilterer(rollupAddr, backend)
-	if err != nil {
-		return nil, err
-	}
-	v.rollup = rollup
+	var chalManagerAddr common.Address
 	var genesis protocol.Assertion
 	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
 		genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, 0)
 		if err != nil {
 			return err
 		}
+		chalManager, err := v.chain.CurrentChallengeManager(ctx, tx)
+		if err != nil {
+			return err
+		}
+		chalManagerAddr = chalManager.Address()
 		genesis = genesisAssertion
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+	rollup, err := rollupgen.NewRollupCore(rollupAddr, backend)
+	if err != nil {
+		return nil, err
+	}
+	chalManager, err := challengeV2gen.NewChallengeManagerImpl(chalManagerAddr, backend
+	if err != nil {
+		return nil, err
+	}
+	v.rollup = rollup
 	v.assertions[0] = genesis
+	v.chalManagerAddr = chalManagerAddr
+	v.chalManager = chalManager
 	return v, nil
 }
 

@@ -108,6 +108,7 @@ type AssertionChain interface {
 // ChallengeManager allows for retrieving details of challenges such
 // as challenges themselves, vertices, or constants such as the challenge period seconds.
 type ChallengeManager interface {
+	Address() common.Address
 	ChallengePeriodSeconds(
 		ctx context.Context, tx ActiveTx,
 	) (time.Duration, error)

@@ -307,6 +307,7 @@ func (m *MockChallenge) AddBigStepChallengeLeaf(
 
 type MockChallengeManager struct {
 	mock.Mock
+	MockAddr common.Address
 }
 
 func (m *MockChallengeManager) ChallengePeriodSeconds(
@@ -352,6 +353,10 @@ func (m *MockChallengeManager) GetChallenge(
 ) (util.Option[protocol.Challenge], error) {
 	args := m.Called(ctx, tx, challengeId)
 	return args.Get(0).(util.Option[protocol.Challenge]), args.Error(1)
+}
+
+func (m *MockChallengeManager) Address() common.Address {
+	return m.MockAddr
 }
 
 type MockProtocol struct {
