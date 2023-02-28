@@ -21,6 +21,7 @@ interface IRollupCore {
 
     event AssertionCreated(
         uint64 indexed assertionNum,
+        uint256 indexed height,
         bytes32 indexed parentAssertionHash,
         bytes32 indexed assertionHash,
         bytes32 executionHash,

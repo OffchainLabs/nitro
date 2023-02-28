@@ -666,6 +666,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
 
         emit AssertionCreated(
             latestAssertionCreated(),
+            assertion.numBlocks + memoryFrame.prevAssertion.height,
             memoryFrame.prevAssertion.assertionHash,
             newAssertionHash,
             memoryFrame.executionHash,
