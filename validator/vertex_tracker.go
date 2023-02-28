@@ -110,9 +110,9 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	var siblingConfirmed bool
 	var prev protocol.ChallengeVertex
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		prevV, err := v.vertex.Prev(ctx, tx)
-		if err != nil {
-			return err
+		prevV, err2 := v.vertex.Prev(ctx, tx)
+		if err2 != nil {
+			return err2
 		}
 		if prevV.IsNone() {
 			return ErrPrevNone
@@ -225,9 +225,9 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(ctx context.Context, hash pro
 	var mergingTo util.Option[protocol.ChallengeVertex]
 	var err error
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
+		manager, err2 := v.chain.CurrentChallengeManager(ctx, tx)
+		if err2 != nil {
+			return err2
 		}
 		mergingTo, err = manager.GetVertex(ctx, tx, hash)
 		if err != nil {
@@ -344,7 +344,7 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 			if !subChallengeWinnerVertex.IsNone() {
 				winner := subChallengeWinnerVertex.Unwrap()
 				if winner == v.vertex {
-					if confirmErr := v.vertex.ConfirmForSubChallengeWin(ctx, tx); err != nil {
+					if confirmErr := v.vertex.ConfirmForSubChallengeWin(ctx, tx); confirmErr != nil {
 						return confirmErr
 					}
 					gotConfirmed = true

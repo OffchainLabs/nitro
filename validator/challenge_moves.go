@@ -129,9 +129,9 @@ func (v *vertexTracker) merge(
 
 	var mergedTo protocol.ChallengeVertex
 	if err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		mergedToV, err := mergingFrom.Merge(ctx, tx, historyCommit, proof)
-		if err != nil {
-			return err
+		mergedToV, err2 := mergingFrom.Merge(ctx, tx, historyCommit, proof)
+		if err2 != nil {
+			return err2
 		}
 		mergedTo = mergedToV
 		return nil

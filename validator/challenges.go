@@ -169,17 +169,17 @@ func (v *Validator) fetchProtocolChallenge(
 	var err error
 	var challenge util.Option[protocol.Challenge]
 	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		assertionId, err := v.chain.GetAssertionId(ctx, tx, parentAssertionSeqNum)
-		if err != nil {
-			return err
+		assertionId, err2 := v.chain.GetAssertionId(ctx, tx, parentAssertionSeqNum)
+		if err2 != nil {
+			return err2
 		}
-		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
+		manager, err3 := v.chain.CurrentChallengeManager(ctx, tx)
+		if err3 != nil {
+			return err3
 		}
-		chalHash, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(assertionId), protocol.BlockChallenge)
-		if err != nil {
-			return err
+		chalHash, err4 := manager.CalculateChallengeHash(ctx, tx, common.Hash(assertionId), protocol.BlockChallenge)
+		if err4 != nil {
+			return err4
 		}
 		challenge, err = manager.GetChallenge(
 			ctx,

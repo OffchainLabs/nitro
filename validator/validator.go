@@ -288,9 +288,9 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 		if err != nil {
 			return err
 		}
-		latestConfirmedFetched, err := v.chain.LatestConfirmed(ctx, tx)
-		if err != nil {
-			return err
+		latestConfirmedFetched, err2 := v.chain.LatestConfirmed(ctx, tx)
+		if err2 != nil {
+			return err2
 		}
 		latestConfirmed = latestConfirmedFetched.SeqNum()
 		return nil
