@@ -7,27 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHistoryCommitment_LastLeafProof(t *testing.T) {
-	hashes := []common.Hash{
-		common.BytesToHash([]byte{10}),
-		common.BytesToHash([]byte{11}),
-		common.BytesToHash([]byte{12}),
-	}
-	commit, err := NewHistoryCommitment(
-		12,
-		hashes,
-		WithLastElementProof(hashes),
-	)
-	require.NoError(t, err)
-
-	err = VerifyPrefixProof(
-		commit.LastLeafPrefix.Unwrap(),
-		commit.Normalized().Unwrap(),
-		commit.LastLeafProof,
-	)
-	require.NoError(t, err)
-}
-
 func TestHistoryCommitment(t *testing.T) {
 	hashes := []common.Hash{
 		common.BytesToHash([]byte{10}),

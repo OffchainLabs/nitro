@@ -146,7 +146,6 @@ func TestAssertionChain(t *testing.T) {
 		historyCommit, err := util.NewHistoryCommitment(
 			height,
 			hashes,
-			util.WithLastElementProof(hashes),
 		)
 		require.NoError(t, err)
 
@@ -156,7 +155,6 @@ func TestAssertionChain(t *testing.T) {
 		badCommit, err := util.NewHistoryCommitment(
 			height,
 			wrongBlockHashes[:height],
-			util.WithLastElementProof(wrongBlockHashes[:height+1]),
 		)
 		require.NoError(t, err)
 
@@ -764,7 +762,6 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history, err := util.NewHistoryCommitment(
 			5,
 			hashes[:5],
-			util.WithLastElementProof(hashes[:5]),
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
@@ -811,7 +808,6 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history, err := util.NewHistoryCommitment(
 			5,
 			hashes[:5],
-			util.WithLastElementProof(hashes[:6]),
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
@@ -858,7 +854,6 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history, err := util.NewHistoryCommitment(
 			5,
 			hashes[:5],
-			util.WithLastElementProof(hashes[:6]),
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
@@ -905,7 +900,6 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history, err := util.NewHistoryCommitment(
 			4,
 			hashes[:8],
-			util.WithLastElementProof(hashes[:9]),
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
@@ -952,7 +946,6 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history, err := util.NewHistoryCommitment(
 			3,
 			hashes[5:8],
-			util.WithLastElementProof(hashes[5:9]),
 		)
 		require.NoError(t, err)
 
@@ -1014,7 +1007,6 @@ func TestAssertionChain_BlockChallenge_CreateLeafInvariants(t *testing.T) {
 		history, err := util.NewHistoryCommitment(
 			3,
 			hashes[5:8],
-			util.WithLastElementProof(hashes[5:9]),
 		)
 		require.NoError(t, err)
 		_, err = c.AddLeaf(
@@ -1064,7 +1056,6 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		badCommit, err := util.NewHistoryCommitment(
 			hi,
 			wrongBlockHashes[:hi],
-			util.WithLastElementProof(wrongBlockHashes[:hi+1]),
 		)
 		require.NoError(t, err)
 
@@ -1080,7 +1071,6 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		goodCommit, err := util.NewHistoryCommitment(
 			hi,
 			correctBlockHashes[:hi],
-			util.WithLastElementProof(correctBlockHashes[:hi+1]),
 		)
 		require.NoError(t, err)
 		goodLeaf, err := challenge.AddLeaf(
