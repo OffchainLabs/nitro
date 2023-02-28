@@ -22,7 +22,6 @@ go_library(
 go_test(
     name = "util_test",
     srcs = [
-        "commitments_test.go",
         "proof_test.go",
         "thread_safe_slice_test.go",
         "time_reference_test.go",
