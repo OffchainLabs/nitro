@@ -5,7 +5,6 @@ import (
 	"time"
 
 	goimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
-	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -18,11 +17,6 @@ type MockStateManager struct {
 func (m *MockStateManager) LatestHistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
-}
-
-func (m *MockStateManager) LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*statemanager.AssertionToCreate, error) {
-	args := m.Called(ctx, prevHeight)
-	return args.Get(0).(*statemanager.AssertionToCreate), args.Error(1)
 }
 
 func (m *MockStateManager) HasHistoryCommitment(ctx context.Context, commit util.HistoryCommitment) bool {
