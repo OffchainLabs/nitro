@@ -33,13 +33,14 @@ type ActiveTx interface {
 	FinalizedBlockNumber() *big.Int // Finalized block number.
 	HeadBlockNumber() *big.Int      // If nil, uses the latest block in the chain.
 	ReadOnly() bool                 // Checks if a transaction is read-only.
+	Sender() common.Address
 }
 
 // ChainReader can only make non-mutating calls to a backing blockchain.
 // It executes a callback and feeds it an ActiveTx type which includes relevant
 // data about the chain, such as the finalized block number and head block number.
 type ChainReader interface {
-	Call(ctx context.Context, callback func(ActiveTx) error) error
+	Call(callback func(ActiveTx) error) error
 }
 
 // ChainReadWriter can make mutating and non-mutating calls to a backing blockchain.
@@ -47,7 +48,13 @@ type ChainReader interface {
 // data about the chain, such as the finalized block number and head block number.
 type ChainReadWriter interface {
 	ChainReader
-	Tx(ctx context.Context, callback func(ActiveTx) error) error
+	Tx(callback func(ActiveTx) error) error
+}
+
+// Protocol --
+type Protocol interface {
+	ChainReadWriter
+	AssertionChain
 }
 
 // AssertionChain can manage assertions in the protocol and retrieve
@@ -55,6 +62,10 @@ type ChainReadWriter interface {
 // which is used for all challenges in the protocol.
 type AssertionChain interface {
 	// Read-only methods.
+	NumAssertions(
+		ctx context.Context,
+		tx ActiveTx,
+	) (uint64, error)
 	AssertionBySequenceNum(
 		ctx context.Context,
 		tx ActiveTx,
@@ -62,13 +73,23 @@ type AssertionChain interface {
 	) (Assertion, error)
 	LatestConfirmed(ctx context.Context, tx ActiveTx) (Assertion, error)
 	CurrentChallengeManager(ctx context.Context, tx ActiveTx) (ChallengeManager, error)
+	GetAssertionId(
+		ctx context.Context,
+		tx ActiveTx,
+		seqNum AssertionSequenceNumber,
+	) (AssertionHash, error)
+	GetAssertionNum(
+		ctx context.Context,
+		tx ActiveTx,
+		assertionHash AssertionHash,
+	) (AssertionSequenceNumber, error)
 
 	// Mutating methods.
 	CreateAssertion(
 		ctx context.Context,
 		tx ActiveTx,
 		height uint64,
-		prevAssertionId uint64,
+		prevSeqNum AssertionSequenceNumber,
 		prevAssertionState *ExecutionState,
 		postState *ExecutionState,
 		prevInboxMaxCount *big.Int,
@@ -87,6 +108,7 @@ type AssertionChain interface {
 // ChallengeManager allows for retrieving details of challenges such
 // as challenges themselves, vertices, or constants such as the challenge period seconds.
 type ChallengeManager interface {
+	Address() common.Address
 	ChallengePeriodSeconds(
 		ctx context.Context, tx ActiveTx,
 	) (time.Duration, error)
@@ -96,6 +118,12 @@ type ChallengeManager interface {
 		itemId common.Hash,
 		challengeType ChallengeType,
 	) (ChallengeHash, error)
+	CalculateChallengeVertexId(
+		ctx context.Context,
+		tx ActiveTx,
+		challengeId ChallengeHash,
+		history util.HistoryCommitment,
+	) (VertexHash, error)
 	GetVertex(
 		ctx context.Context,
 		tx ActiveTx,
@@ -144,6 +172,7 @@ const (
 // a challenge.
 type Challenge interface {
 	// Getters.
+	Id() ChallengeHash
 	GetType() ChallengeType
 	WinningClaim() util.Option[AssertionHash]
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
@@ -152,6 +181,7 @@ type Challenge interface {
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
+	Challenger() common.Address
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(
@@ -174,11 +204,11 @@ type Challenge interface {
 type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
-	SequenceNum(ctx context.Context, tx ActiveTx) (VertexSequenceNumber, error)
+	SequenceNum() VertexSequenceNumber
+	Status() AssertionState
+	HistoryCommitment() util.HistoryCommitment
+	MiniStaker() common.Address
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
-	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)
-	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
-	MiniStaker(ctx context.Context, tx ActiveTx) (common.Address, error)
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
 	HasConfirmedSibling(
 		ctx context.Context,
@@ -221,4 +251,115 @@ type ChallengeVertex interface {
 	ConfirmForPsTimer(ctx context.Context, tx ActiveTx) error
 	ConfirmForChallengeDeadline(ctx context.Context, tx ActiveTx) error
 	ConfirmForSubChallengeWin(ctx context.Context, tx ActiveTx) error
+}
+
+type AssertionChainEvent interface {
+	IsAssertionChainEvent() bool // this method is just a marker that the type intends to be an AssertionChainEvent
+}
+
+type genericAssertionChainEvent struct{}
+
+func (ev *genericAssertionChainEvent) IsAssertionChainEvent() bool { return true }
+
+type CreateLeafEvent struct {
+	genericAssertionChainEvent
+	PrevSeqNum    AssertionSequenceNumber
+	SeqNum        AssertionSequenceNumber
+	PrevHeight    uint64
+	PrevStateHash common.Hash
+	Height        uint64
+	StateHash     common.Hash
+	Validator     common.Address
+}
+
+type ConfirmEvent struct {
+	genericAssertionChainEvent
+	SeqNum AssertionSequenceNumber
+}
+
+type RejectEvent struct {
+	genericAssertionChainEvent
+	SeqNum AssertionSequenceNumber
+}
+
+type StartChallengeEvent struct {
+	genericAssertionChainEvent
+	ParentSeqNum    AssertionSequenceNumber
+	ParentStateHash common.Hash
+	ParentStaker    common.Address
+	Validator       common.Address
+}
+
+type SetBalanceEvent struct {
+	genericAssertionChainEvent
+	Addr       common.Address
+	OldBalance *big.Int
+	NewBalance *big.Int
+}
+
+type ChallengeEvent interface {
+	IsChallengeEvent() bool // this method is just a marker that the type intends to be a ChallengeEvent
+	ParentStateCommitmentHash() common.Hash
+	ValidatorAddress() common.Address
+}
+
+type genericChallengeEvent struct{}
+
+func (ev *genericChallengeEvent) IsChallengeEvent() bool { return true }
+
+type ChallengeLeafEvent struct {
+	genericChallengeEvent
+	ParentSeqNum      VertexSequenceNumber
+	SequenceNum       VertexSequenceNumber
+	WinnerIfConfirmed AssertionSequenceNumber
+	ParentStateCommit util.StateCommitment
+	History           util.HistoryCommitment
+	BecomesPS         bool
+	Validator         common.Address
+}
+
+type ChallengeBisectEvent struct {
+	genericChallengeEvent
+	FromSequenceNum   VertexSequenceNumber // previously existing vertex
+	SequenceNum       VertexSequenceNumber // newly created vertex
+	ParentStateCommit util.StateCommitment
+	ToHistory         util.HistoryCommitment
+	FromHistory       util.HistoryCommitment
+	BecomesPS         bool
+	Validator         common.Address
+}
+
+type ChallengeMergeEvent struct {
+	genericChallengeEvent
+	ToHistory            util.HistoryCommitment
+	FromHistory          util.HistoryCommitment
+	ParentStateCommit    util.StateCommitment
+	DeeperSequenceNum    VertexSequenceNumber
+	ShallowerSequenceNum VertexSequenceNumber
+	BecomesPS            bool
+	Validator            common.Address
+}
+
+func (c *ChallengeLeafEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeBisectEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeMergeEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeLeafEvent) ValidatorAddress() common.Address {
+	return c.Validator
+}
+
+func (c *ChallengeBisectEvent) ValidatorAddress() common.Address {
+	return c.Validator
+}
+
+func (c *ChallengeMergeEvent) ValidatorAddress() common.Address {
+	return c.Validator
 }

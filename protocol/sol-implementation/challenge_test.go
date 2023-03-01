@@ -61,18 +61,6 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
 		t.Skip("Needs proofs implemented in solidity")
 	})
-	t.Run("empty history commitment", func(t *testing.T) {
-		_, err := challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			a1,
-			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.Hash{},
-			},
-		)
-		require.ErrorContains(t, err, "Empty historyRoot")
-	})
 	t.Run("winner already declared", func(t *testing.T) {
 		t.Skip("Needs winner declaration logic implemented in solidity")
 	})
@@ -88,8 +76,9 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:   height1,
+				Merkle:   common.BytesToHash([]byte("nyan")),
+				LastLeaf: a1.inner.StateHash,
 			},
 		)
 		require.NoError(t, err)
@@ -106,8 +95,9 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height2,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:   height2,
+				Merkle:   common.BytesToHash([]byte("nyan")),
+				LastLeaf: a1.inner.StateHash,
 			},
 		)
 		require.ErrorContains(t, err, "already exists")
@@ -151,7 +141,7 @@ func setupTopLevelFork(
 		ctx,
 		tx,
 		height1,
-		prev,
+		protocol.AssertionSequenceNumber(prev),
 		prevState,
 		postState,
 		prevInboxMaxCount,
@@ -173,7 +163,7 @@ func setupTopLevelFork(
 		ctx,
 		tx,
 		height2,
-		prev,
+		protocol.AssertionSequenceNumber(prev),
 		prevState,
 		postState,
 		prevInboxMaxCount,

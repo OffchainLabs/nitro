@@ -20,6 +20,7 @@ var (
 // ChallengeManager --
 type ChallengeManager struct {
 	assertionChain *AssertionChain
+	addr           common.Address
 	caller         *challengeV2gen.ChallengeManagerImplCaller
 	writer         *challengeV2gen.ChallengeManagerImplTransactor
 }
@@ -39,9 +40,14 @@ func (ac *AssertionChain) CurrentChallengeManager(
 	}
 	return &ChallengeManager{
 		assertionChain: ac,
+		addr:           addr,
 		caller:         &managerBinding.ChallengeManagerImplCaller,
 		writer:         &managerBinding.ChallengeManagerImplTransactor,
 	}, nil
+}
+
+func (cm *ChallengeManager) Address() common.Address {
+	return cm.addr
 }
 
 // ChallengePeriodSeconds --
@@ -67,6 +73,24 @@ func (cm *ChallengeManager) CalculateChallengeHash(
 		return protocol.ChallengeHash{}, err
 	}
 	return c, nil
+}
+
+func (cm *ChallengeManager) CalculateChallengeVertexId(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	challengeId protocol.ChallengeHash,
+	history util.HistoryCommitment,
+) (protocol.VertexHash, error) {
+	vertexId, err := cm.caller.CalculateChallengeVertexId(
+		cm.assertionChain.callOpts,
+		challengeId,
+		history.Merkle,
+		big.NewInt(int64(history.Height)),
+	)
+	if err != nil {
+		return protocol.VertexHash{}, err
+	}
+	return protocol.VertexHash(vertexId), nil
 }
 
 // GetVertex returns the challenge vertex for the given vertexId.

@@ -15,6 +15,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
 )
@@ -37,26 +38,29 @@ type activeTx struct {
 	readWriteTx bool
 	finalized   *big.Int
 	head        *big.Int
+	sender      common.Address
 }
 
-// FinalizedBlockNumber --
 func (a *activeTx) FinalizedBlockNumber() *big.Int {
 	return a.finalized
 }
 
-// HeadBlockNumber --
 func (a *activeTx) HeadBlockNumber() *big.Int {
 	return a.head
 }
 
-// ReadOnly --
 func (a *activeTx) ReadOnly() bool {
 	return !a.readWriteTx
+}
+
+func (a *activeTx) Sender() common.Address {
+	return a.sender
 }
 
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
 	bind.ContractBackend
+	BlockchainReader
 	ReceiptFetcher
 }
 
@@ -70,6 +74,11 @@ type ChainCommiter interface {
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
+// BlockchainReader --
+type BlockchainReader interface {
+	Blockchain() *core.BlockChain
 }
 
 // AssertionChain is a wrapper around solgen bindings
@@ -116,6 +125,55 @@ func NewAssertionChain(
 	return chain, nil
 }
 
+// Tx enables a mutating call to the chain.
+func (chain *AssertionChain) Tx(cb func(protocol.ActiveTx) error) error {
+	head := chain.backend.Blockchain().CurrentHeader()
+	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
+	var headNum *big.Int
+	var finalizedNum *big.Int
+	if finalized != nil {
+		finalizedNum = finalized.Number()
+	}
+	if head != nil {
+		headNum = head.Number
+	}
+	tx := &activeTx{
+		readWriteTx: true,
+		head:        headNum,
+		finalized:   finalizedNum,
+		sender:      chain.stakerAddr,
+	}
+	return cb(tx)
+}
+
+// Call enables a non-mutating call to the chain.
+func (chain *AssertionChain) Call(cb func(protocol.ActiveTx) error) error {
+	head := chain.backend.Blockchain().CurrentHeader()
+	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
+	var headNum *big.Int
+	var finalizedNum *big.Int
+	if finalized != nil {
+		finalizedNum = finalized.Number()
+	}
+	if head != nil {
+		headNum = head.Number
+	}
+	tx := &activeTx{
+		readWriteTx: false,
+		head:        headNum,
+		finalized:   finalizedNum,
+		sender:      chain.stakerAddr,
+	}
+	return cb(tx)
+}
+
+func (ac *AssertionChain) NumAssertions(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+) (uint64, error) {
+	return ac.rollup.NumAssertions(ac.callOpts)
+}
+
 // AssertionBySequenceNum --
 func (ac *AssertionChain) AssertionBySequenceNum(
 	ctx context.Context,
@@ -144,8 +202,12 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 	}, nil
 }
 
-func (ac *AssertionChain) LatestConfirmed(_ context.Context, _ protocol.ActiveTx) (protocol.Assertion, error) {
-	return nil, errors.New("unimplemented")
+func (ac *AssertionChain) LatestConfirmed(ctx context.Context, tx protocol.ActiveTx) (protocol.Assertion, error) {
+	res, err := ac.rollup.LatestConfirmed(ac.callOpts)
+	if err != nil {
+		return nil, err
+	}
+	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(res))
 }
 
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
@@ -154,7 +216,7 @@ func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	height uint64,
-	prevAssertionId uint64,
+	prevAssertionId protocol.AssertionSequenceNumber,
 	prevAssertionState *protocol.ExecutionState,
 	postState *protocol.ExecutionState,
 	prevInboxMaxCount *big.Int,
@@ -199,6 +261,26 @@ func (ac *AssertionChain) CreateAssertion(
 	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
 }
 
+func (ac *AssertionChain) GetAssertionId(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	seqNum protocol.AssertionSequenceNumber,
+) (protocol.AssertionHash, error) {
+	return ac.userLogic.GetAssertionId(ac.callOpts, uint64(seqNum))
+}
+
+func (ac *AssertionChain) GetAssertionNum(
+	ctx context.Context,
+	tx protocol.ActiveTx,
+	assertionHash protocol.AssertionHash,
+) (protocol.AssertionSequenceNumber, error) {
+	res, err := ac.userLogic.GetAssertionNum(ac.callOpts, assertionHash)
+	if err != nil {
+		return 0, err
+	}
+	return protocol.AssertionSequenceNumber(res), nil
+}
+
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(
 	ctx context.Context,
@@ -218,8 +300,11 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: FIX UP to use assertion hash.
-	challengeId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash{}, protocol.BlockChallenge)
+	assertionId, err := ac.rollup.GetAssertionId(ac.callOpts, uint64(seqNum))
+	if err != nil {
+		return nil, err
+	}
+	challengeId, err := manager.CalculateChallengeHash(ctx, tx, assertionId, protocol.BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
