@@ -15,8 +15,27 @@ import (
 
 var (
 	_ = protocol.AssertionChain(&AssertionChain{})
+	_ = protocol.ChainReadWriter(&AssertionChain{})
 	_ = protocol.Assertion(&Assertion{})
+	_ = protocol.ActiveTx(&activeTx{})
 )
+
+func TestAssertionStateHash(t *testing.T) {
+	ctx := context.Background()
+	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+	tx := &activeTx{readWriteTx: true}
+	assertion, err := chain.LatestConfirmed(ctx, tx)
+	require.NoError(t, err)
+
+	execState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash: common.Hash{},
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	computed := protocol.ComputeStateHash(execState, big.NewInt(1))
+	require.Equal(t, computed, assertion.StateHash())
+}
 
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
@@ -48,22 +67,24 @@ func TestCreateAssertion(t *testing.T) {
 			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
-		_, err = chain.CreateAssertion(
+		created, err := chain.CreateAssertion(
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
 		)
 		require.NoError(t, err)
+		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
+		require.Equal(t, computed, created.StateHash(), "Unequal computed hash")
 
 		_, err = chain.CreateAssertion(
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -104,16 +125,18 @@ func TestCreateAssertion(t *testing.T) {
 		}
 		prevInboxMaxCount := big.NewInt(1)
 		chain.txOpts.From = accs[2].accountAddr
-		_, err = chain.CreateAssertion(
+		forked, err := chain.CreateAssertion(
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
 		)
 		require.NoError(t, err)
+		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
+		require.Equal(t, computed, forked.StateHash(), "Unequal computed hash")
 	})
 }
 
@@ -165,7 +188,7 @@ func TestAssertion_Confirm(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -222,7 +245,7 @@ func TestAssertion_Reject(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -287,7 +310,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -332,7 +355,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,
@@ -354,7 +377,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			ctx,
 			tx,
 			height,
-			prev,
+			protocol.AssertionSequenceNumber(prev),
 			prevState,
 			postState,
 			prevInboxMaxCount,

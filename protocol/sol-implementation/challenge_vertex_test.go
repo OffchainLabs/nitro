@@ -30,9 +30,11 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height:    height1,
-			Merkle:    common.BytesToHash([]byte("nyan")),
-			FirstLeaf: genesis.inner.StateHash,
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			FirstLeaf:     genesis.inner.StateHash,
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -41,9 +43,11 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height:    height2,
-			Merkle:    common.BytesToHash([]byte("nyan2")),
-			FirstLeaf: genesis.inner.StateHash,
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			FirstLeaf:     genesis.inner.StateHash,
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -78,9 +82,11 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height:    height1,
-			Merkle:    common.BytesToHash([]byte("nyan")),
-			FirstLeaf: genesis.inner.StateHash,
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			FirstLeaf:     genesis.inner.StateHash,
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -89,9 +95,11 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height:    height2,
-			Merkle:    common.BytesToHash([]byte("nyan2")),
-			FirstLeaf: genesis.inner.StateHash,
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			FirstLeaf:     genesis.inner.StateHash,
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -125,9 +133,11 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height:    height1,
-			Merkle:    common.BytesToHash([]byte("nyan")),
-			FirstLeaf: genesis.inner.StateHash,
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			FirstLeaf:     genesis.inner.StateHash,
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -136,9 +146,11 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height:    height2,
-			Merkle:    common.BytesToHash([]byte("nyan2")),
-			FirstLeaf: genesis.inner.StateHash,
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			FirstLeaf:     genesis.inner.StateHash,
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -199,9 +211,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height:    height1,
-				Merkle:    common.BytesToHash([]byte("nyan")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				FirstLeaf:     genesis.inner.StateHash,
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -210,9 +224,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height:    height2,
-				Merkle:    common.BytesToHash([]byte("nyan2")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				FirstLeaf:     genesis.inner.StateHash,
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -241,9 +257,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height:    height1,
-				Merkle:    common.BytesToHash([]byte("nyan")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				FirstLeaf:     genesis.inner.StateHash,
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -252,9 +270,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height:    height2,
-				Merkle:    common.BytesToHash([]byte("nyan2")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				FirstLeaf:     genesis.inner.StateHash,
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -283,9 +303,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height:    height1,
-				Merkle:    common.BytesToHash([]byte("nyan")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				FirstLeaf:     genesis.inner.StateHash,
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -294,9 +316,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height:    height2,
-				Merkle:    common.BytesToHash([]byte("nyan2")),
-				FirstLeaf: genesis.inner.StateHash,
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				FirstLeaf:     genesis.inner.StateHash,
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -368,8 +392,10 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height: height1,
-			Merkle: common.BytesToHash([]byte("nyan")),
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -382,8 +408,10 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height: height2,
-			Merkle: common.BytesToHash([]byte("nyan2")),
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -459,8 +487,10 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -473,8 +503,10 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height: height2,
-				Merkle: common.BytesToHash([]byte("nyan2")),
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -523,8 +555,10 @@ func TestChallengeVertex_Merge(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height: height1,
-			Merkle: common.BytesToHash([]byte("nyan")),
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -537,8 +571,10 @@ func TestChallengeVertex_Merge(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height: height2,
-			Merkle: common.BytesToHash([]byte("nyan2")),
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -623,8 +659,10 @@ func TestChallengeVertex_Merge(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -637,8 +675,10 @@ func TestChallengeVertex_Merge(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height: height2,
-				Merkle: common.BytesToHash([]byte("nyan2")),
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -698,8 +738,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -715,8 +757,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -725,8 +769,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height: height2,
-				Merkle: common.BytesToHash([]byte("nyan2")),
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -759,8 +805,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -770,8 +818,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height: height2,
-				Merkle: common.BytesToHash([]byte("nyan2")),
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -861,8 +911,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height: height1,
-				Merkle: common.BytesToHash([]byte("nyan")),
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -872,8 +924,10 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			tx,
 			a2,
 			util.HistoryCommitment{
-				Height: height2,
-				Merkle: common.BytesToHash([]byte("nyan2")),
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan2")),
+				LastLeaf:      a2.inner.StateHash,
+				LastLeafProof: []common.Hash{a2.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -988,8 +1042,10 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height: height1,
-			Merkle: common.BytesToHash([]byte("nyan")),
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -999,8 +1055,10 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height: height2,
-			Merkle: common.BytesToHash([]byte("nyan2")),
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -1152,8 +1210,10 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		tx,
 		a1,
 		util.HistoryCommitment{
-			Height: height1,
-			Merkle: common.BytesToHash([]byte("nyan")),
+			Height:        height1,
+			Merkle:        common.BytesToHash([]byte("nyan")),
+			LastLeaf:      a1.inner.StateHash,
+			LastLeafProof: []common.Hash{a1.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
@@ -1163,8 +1223,10 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		tx,
 		a2,
 		util.HistoryCommitment{
-			Height: height2,
-			Merkle: common.BytesToHash([]byte("nyan2")),
+			Height:        height2,
+			Merkle:        common.BytesToHash([]byte("nyan2")),
+			LastLeaf:      a2.inner.StateHash,
+			LastLeafProof: []common.Hash{a2.inner.StateHash},
 		},
 	)
 	require.NoError(t, err)
