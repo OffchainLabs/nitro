@@ -3,13 +3,25 @@ package statemanager
 import (
 	"context"
 
+	"errors"
+	"fmt"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"math/big"
 )
 
 // Manager defines a struct that can provide local state data and historical
 // Merkle commitments to L2 state for the validator.
+type AssertionToCreate struct {
+	PreState      *protocol.ExecutionState
+	PostState     *protocol.ExecutionState
+	InboxMaxCount *big.Int
+	Height        uint64
+}
+
 type Manager interface {
+	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
 	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
 	StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error)
 	LatestStateCommitment(ctx context.Context) (util.StateCommitment, error)
@@ -22,7 +34,9 @@ type Manager interface {
 // Simulated defines a very naive state manager that is initialized from a list of predetermined
 // state roots. It can produce state and history commitments from those roots.
 type Simulated struct {
-	stateRoots []common.Hash
+	stateRoots      []common.Hash
+	executionStates []*protocol.ExecutionState
+	inboxMaxCounts  []*big.Int
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
@@ -30,7 +44,51 @@ func New(stateRoots []common.Hash) *Simulated {
 	if len(stateRoots) == 0 {
 		panic("must have state roots")
 	}
-	return &Simulated{stateRoots}
+	return &Simulated{stateRoots: stateRoots}
+}
+
+// New simulated manager from a list of predefined state roots, useful for tests and simulations.
+func NewWithExecutionStates(executionStates []*protocol.ExecutionState, inboxMaxCounts []*big.Int) *Simulated {
+	if len(executionStates) == 0 {
+		panic("must have execution states")
+	}
+	if len(executionStates) != len(inboxMaxCounts) {
+		panic("number of exec states must match number of inbox max counts")
+	}
+	stateRoots := make([]common.Hash, len(executionStates))
+	for i := 0; i < len(stateRoots); i++ {
+		stateRoots[i] = protocol.ComputeStateHash(executionStates[i], big.NewInt(2))
+	}
+	return &Simulated{
+		stateRoots:      stateRoots,
+		executionStates: executionStates,
+		inboxMaxCounts:  inboxMaxCounts,
+	}
+}
+
+// LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has
+// and a pre-state based on a height of the previous assertion the validator should build upon.
+func (s *Simulated) LatestAssertionCreationData(
+	ctx context.Context,
+	prevHeight uint64,
+) (*AssertionToCreate, error) {
+	if len(s.executionStates) == 0 {
+		return nil, errors.New("no local execution states")
+	}
+	if prevHeight >= uint64(len(s.stateRoots)) {
+		return nil, fmt.Errorf(
+			"prev height %d cannot be >= %d state roots",
+			prevHeight,
+			len(s.stateRoots),
+		)
+	}
+	lastState := s.executionStates[len(s.executionStates)-1]
+	return &AssertionToCreate{
+		PreState:      s.executionStates[prevHeight],
+		PostState:     lastState,
+		InboxMaxCount: big.NewInt(1),
+		Height:        uint64(len(s.stateRoots)) - 1,
+	}, nil
 }
 
 // HasStateCommitment checks if a state commitment is found in our local list of state roots.
@@ -64,8 +122,7 @@ func (s *Simulated) LatestStateCommitment(ctx context.Context) (util.StateCommit
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height],
-		util.WithLastElementProof(s.stateRoots[:height+1]),
+		s.stateRoots[:height+1],
 	)
 }
 
@@ -76,7 +133,7 @@ func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Ha
 	return util.GeneratePrefixProof(
 		lo,
 		exp,
-		s.stateRoots[lo:hi],
+		s.stateRoots[lo:hi+1],
 	), nil
 }
 
@@ -85,7 +142,7 @@ func (s *Simulated) HasHistoryCommitment(ctx context.Context, commitment util.Hi
 	if commitment.Height >= uint64(len(s.stateRoots)) {
 		return false
 	}
-	merkle := util.ExpansionFromLeaves(s.stateRoots[:commitment.Height]).Root()
+	merkle := util.ExpansionFromLeaves(s.stateRoots[:commitment.Height+1]).Root()
 	return merkle == commitment.Merkle
 }
 
@@ -94,7 +151,6 @@ func (s *Simulated) LatestHistoryCommitment(ctx context.Context) (util.HistoryCo
 	height := uint64(len(s.stateRoots)) - 1
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height],
-		util.WithLastElementProof(s.stateRoots[:height+1]),
+		s.stateRoots,
 	)
 }
