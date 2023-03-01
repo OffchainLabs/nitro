@@ -3,6 +3,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -53,7 +54,7 @@ func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx i
 	}
 }
 
-func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions) {
+func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions, expectedErrorCode int) {
 	t.Helper()
 	accountInfo := l2info.GetInfoWithPrivKey("Owner")
 	nonce := accountInfo.Nonce
@@ -61,6 +62,15 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
 		testhelpers.FailImpl(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx)
+	} else {
+		var rErr rpc.Error
+		if errors.As(err, &rErr) {
+			if rErr.ErrorCode() != expectedErrorCode {
+				testhelpers.FailImpl(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
+			}
+		} else {
+			testhelpers.FailImpl(t, "unexpected error type, err:", err)
+		}
 	}
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
 }
@@ -196,7 +206,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &future, TimestampMin: &future},
 	}
 	for i, options := range failOptions {
-		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options)
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
 }
 
