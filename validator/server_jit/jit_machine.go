@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package server_jit
 
 import (
 	"context"
@@ -11,14 +11,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -28,37 +26,9 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func getJitPath() (string, error) {
-	var jitBinary string
-	executable, err := os.Executable()
-	if err == nil {
-		if strings.Contains(filepath.Base(executable), "test") {
-			_, thisfile, _, _ := runtime.Caller(0)
-			projectDir := filepath.Dir(filepath.Dir(thisfile))
-			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
-		} else {
-			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
-		}
-		_, err = os.Stat(jitBinary)
-	}
-	if err != nil {
-		var lookPathErr error
-		jitBinary, lookPathErr = exec.LookPath("jit")
-		if lookPathErr == nil {
-			return jitBinary, nil
-		}
-	}
-	return jitBinary, err
-}
-
-func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-	jitBinary, err := getJitPath()
-	if err != nil {
-		return nil, err
-	}
-	binary := filepath.Join(config.getMachinePath(moduleRoot), config.ProverBinPath)
-	invocation := []string{"--binary", binary, "--forks"}
-	if config.JitCranelift {
+func createJitMachine(jitBinary string, binaryPath string, cranelift bool, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+	invocation := []string{"--binary", binaryPath, "--forks"}
+	if cranelift {
 		invocation = append(invocation, "--cranelift")
 	}
 	process := exec.Command(jitBinary, invocation...)
@@ -75,7 +45,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	}()
 
 	machine := &JitMachine{
-		binary:  binary,
+		binary:  binaryPath,
 		process: process,
 		stdin:   stdin,
 	}
@@ -89,12 +59,14 @@ func (machine *JitMachine) close() {
 	}
 }
 
+type GoPreimageResolver = func(common.Hash) ([]byte, error)
+
 func (machine *JitMachine) prove(
-	ctxIn context.Context, entry *ValidationInput, resolver GoPreimageResolver,
-) (GoGlobalState, error) {
+	ctxIn context.Context, entry *validator.ValidationInput, resolver GoPreimageResolver,
+) (validator.GoGlobalState, error) {
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
-	state := GoGlobalState{}
+	state := validator.GoGlobalState{}
 
 	timeout := time.Now().Add(60 * time.Second)
 	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{

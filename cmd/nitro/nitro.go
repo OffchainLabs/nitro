@@ -6,8 +6,10 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"math/big"
 	"net/http"
@@ -54,6 +56,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func printSampleUsage(name string) {
@@ -230,6 +233,7 @@ func mainImpl() int {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.AuthRPC.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
@@ -240,6 +244,29 @@ func mainImpl() int {
 	stackConf.P2P.NoDiscovery = true
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
+
+	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
+		fileName := stackConf.ResolvePath("jwtsecret")
+		secret := common.Hash{}
+		_, err := rand.Read(secret[:])
+		if err != nil {
+			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+		}
+		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
+		if errors.Is(err, fs.ErrExist) {
+			log.Info("using existing jwt file", "fileName", fileName)
+		} else {
+			if err != nil {
+				log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+			}
+			log.Info("created jwt file", "fileName", fileName)
+		}
+		stackConf.JWTSecret = fileName
+	}
+
+	if nodeConfig.Node.BlockValidator.JWTSecret == "self" {
+		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
+	}
 
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
@@ -278,8 +305,8 @@ func mainImpl() int {
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
-	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	validatorCanAct := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Staker.OnlyCreateWalletContract
+	validatorCanAct := nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
@@ -302,19 +329,19 @@ func mainImpl() int {
 		l1Client = nil
 	}
 
-	if nodeConfig.Node.Validator.Enable {
+	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			log.Crit("validator have the L1 reader enabled")
 		}
-		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
+		if !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
-	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
-		if !nodeConfig.Node.Validator.UseSmartContractWallet {
+	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
+		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
@@ -401,6 +428,17 @@ func mainImpl() int {
 	}
 
 	fatalErrChan := make(chan error, 10)
+
+	valNode, err := valnode.CreateValidationNode(
+		func() *valnode.Config { return &liveNodeConfig.get().Validation },
+		stack,
+		fatalErrChan,
+	)
+	if err != nil {
+		valNode = nil
+		log.Warn("couldn't init validation node", "err", err)
+	}
+
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
@@ -445,8 +483,17 @@ func mainImpl() int {
 		}
 	}
 
-	if err := currentNode.Start(ctx); err != nil {
-		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+	if valNode != nil {
+		err = valNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
+		}
+	}
+	if err == nil {
+		err = currentNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		}
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -473,6 +520,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
+	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
@@ -482,6 +530,7 @@ type NodeConfig struct {
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
+	AuthRPC       genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -506,6 +555,7 @@ var NodeConfigDefault = NodeConfig{
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
+	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
@@ -515,6 +565,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
+	genericconf.AuthRPCConfigAddOptions("auth", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)

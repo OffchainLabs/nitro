@@ -46,7 +46,7 @@ type ChallengeBackend interface {
 }
 
 // Assert that ExecutionChallengeBackend implements ChallengeBackend
-var _ ChallengeBackend = (*validator.ExecutionChallengeBackend)(nil)
+var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
 type challengeCore struct {
 	con                  *challengegen.ChallengeManager
@@ -67,14 +67,13 @@ type ChallengeManager struct {
 	blockChallengeBackend *BlockChallengeBackend
 
 	// fields below are only used to create execution challenge from block challenge
-	validator         *StatelessBlockValidator
-	targetNumMachines int
-	wasmModuleRoot    common.Hash
+	validator      *StatelessBlockValidator
+	wasmModuleRoot common.Hash
 
 	initialMachineBlockNr int64
 
 	// nil until working on execution challenge
-	executionChallengeBackend *validator.ExecutionChallengeBackend
+	executionChallengeBackend *ExecutionChallengeBackend
 }
 
 // NewChallengeManager constructs a new challenge manager.
@@ -90,7 +89,6 @@ func NewChallengeManager(
 	inboxTracker InboxTrackerInterface,
 	validator *StatelessBlockValidator,
 	startL1Block uint64,
-	targetNumMachines int,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
@@ -149,7 +147,6 @@ func NewChallengeManager(
 		},
 		blockChallengeBackend: backend,
 		validator:             validator,
-		targetNumMachines:     targetNumMachines,
 		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
 }
@@ -160,16 +157,15 @@ func NewExecutionChallengeManager(
 	auth *bind.TransactOpts,
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
-	initialMachine validator.MachineInterface,
+	exec validator.ExecutionRun,
 	startL1Block uint64,
-	targetNumMachines int,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
-	backend, err := validator.NewExecutionChallengeBackend(initialMachine, targetNumMachines, nil)
+	backend, err := NewExecutionChallengeBackend(exec)
 	if err != nil {
 		return nil, err
 	}
@@ -478,10 +474,15 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	m.executionChallengeBackend, err = m.validator.validationSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input, m.targetNumMachines)
+	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input)
 	if err != nil {
 		return fmt.Errorf("error creating execution backend for block %v: %w", blockNum, err)
 	}
+	backend, err := NewExecutionChallengeBackend(execRun)
+	if err != nil {
+		return err
+	}
+	m.executionChallengeBackend = backend
 	m.initialMachineBlockNr = int64(blockNum)
 	return nil
 }

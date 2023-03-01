@@ -20,12 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {
@@ -116,9 +117,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	valConfig := staker.L1ValidatorConfig{
-		TargetMachineCount: 4,
-	}
+	valConfig := staker.L1ValidatorConfig{}
 
 	valWalletA, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
@@ -127,10 +126,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, nil)
-	Require(t, err)
+
+	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+	blockValidatorConfig := staker.TestBlockValidatorConfig
+	blockValidatorConfig.URL = valStack.WSEndpoint()
+
 	statelessA, err := staker.NewStatelessBlockValidator(
-		spawner,
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
@@ -138,7 +139,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.Execution.ChainDB,
 		l2nodeA.ArbDB,
 		nil,
-		&staker.DefaultBlockValidatorConfig,
+		&blockValidatorConfig,
 	)
 	Require(t, err)
 	stakerA, err := staker.NewStaker(
@@ -158,7 +159,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
-		spawner,
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
@@ -166,7 +166,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.Execution.ChainDB,
 		l2nodeB.ArbDB,
 		nil,
-		&staker.DefaultBlockValidatorConfig,
+		&blockValidatorConfig,
 	)
 	Require(t, err)
 	stakerB, err := staker.NewStaker(
