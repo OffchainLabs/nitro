@@ -178,7 +178,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -219,7 +219,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 	if err != nil {
 		return chainDb, nil, err
 	}

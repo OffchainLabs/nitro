@@ -69,7 +69,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test())
+	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil)
 	defer l2nodeB.StopAndWait()
 
 	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()

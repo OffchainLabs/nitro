@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -211,7 +212,15 @@ func (s *Staker) Initialize(ctx context.Context) error {
 func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
-	s.CallIteratively(func(ctx context.Context) time.Duration {
+	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
+		defer func() {
+			panicErr := recover()
+			if panicErr != nil {
+				log.Error("staker Act call panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
+				s.builder.ClearTransactions()
+				returningWait = time.Minute
+			}
+		}()
 		err := s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
@@ -664,6 +673,9 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 		stakerInfo, err := s.rollup.StakerInfo(ctx, staker)
 		if err != nil {
 			return fmt.Errorf("error getting staker %v info: %w", staker, err)
+		}
+		if stakerInfo == nil {
+			return fmt.Errorf("staker %v (returned from ValidatorUtils's GetStakers function) not found in rollup", staker)
 		}
 		if stakerInfo.CurrentChallenge != nil {
 			continue

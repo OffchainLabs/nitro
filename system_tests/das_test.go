@@ -151,7 +151,7 @@ func TestDASRekey(t *testing.T) {
 
 		l1NodeConfigB.DataAvailability.L1NodeURL = "none"
 
-		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB)
+		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 		nodeA.StopAndWait()
 		nodeB.StopAndWait()
@@ -185,7 +185,7 @@ func TestDASRekey(t *testing.T) {
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	nodeA.StopAndWait()
@@ -330,7 +330,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Enable = true
 	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
 	l1NodeConfigB.DataAvailability.L1NodeURL = "none"
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 
