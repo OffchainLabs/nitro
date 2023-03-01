@@ -157,8 +157,8 @@ func (c *Challenge) AddBlockChallengeLeaf(
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
-			make([]byte, 0), // TODO: Proof of inbox consumption.
-			make([]byte, 0), // TODO: Proof of last state (redundant)
+			lastLeafProof,
+			make([]byte, 0), // Inbox proof
 		)
 	})
 	if err != nil {

@@ -76,9 +76,10 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height:   height1,
-				Merkle:   common.BytesToHash([]byte("nyan")),
-				LastLeaf: a1.inner.StateHash,
+				Height:        height1,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.NoError(t, err)
@@ -95,9 +96,10 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			tx,
 			a1,
 			util.HistoryCommitment{
-				Height:   height2,
-				Merkle:   common.BytesToHash([]byte("nyan")),
-				LastLeaf: a1.inner.StateHash,
+				Height:        height2,
+				Merkle:        common.BytesToHash([]byte("nyan")),
+				LastLeaf:      a1.inner.StateHash,
+				LastLeafProof: []common.Hash{a1.inner.StateHash},
 			},
 		)
 		require.ErrorContains(t, err, "already exists")
