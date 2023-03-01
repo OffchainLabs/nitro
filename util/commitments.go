@@ -64,6 +64,6 @@ func NewHistoryCommitment(
 		LastLeaf:  leaves[len(leaves)-1],
 		// TODO: Implement.
 		FirstLeafProof: make([]common.Hash, 0),
-		LastLeafProof:  make([]common.Hash, 0),
+		LastLeafProof:  []common.Hash{leaves[len(leaves)-1]},
 	}, nil
 }
