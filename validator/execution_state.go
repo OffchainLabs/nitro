@@ -18,6 +18,20 @@ type GoGlobalState struct {
 	PosInBatch uint64
 }
 
+type MachineStatus uint8
+
+const (
+	MachineStatusRunning  MachineStatus = 0
+	MachineStatusFinished MachineStatus = 1
+	MachineStatusErrored  MachineStatus = 2
+	MachineStatusTooFar   MachineStatus = 3
+)
+
+type ExecutionState struct {
+	GlobalState   GoGlobalState
+	MachineStatus MachineStatus
+}
+
 func u64ToBe(x uint64) []byte {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, x)
@@ -38,20 +52,6 @@ func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
 		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
 	}
-}
-
-type MachineStatus uint8
-
-const (
-	MachineStatusRunning  MachineStatus = 0
-	MachineStatusFinished MachineStatus = 1
-	MachineStatusErrored  MachineStatus = 2
-	MachineStatusTooFar   MachineStatus = 3
-)
-
-type ExecutionState struct {
-	GlobalState   GoGlobalState
-	MachineStatus MachineStatus
 }
 
 func NewExecutionStateFromSolidity(eth rollupgen.RollupLibExecutionState) *ExecutionState {
@@ -105,4 +105,11 @@ func (s *ExecutionState) RequiredBatches() uint64 {
 		count++
 	}
 	return count
+}
+
+type MachineStepResult struct {
+	Hash        common.Hash
+	Position    uint64
+	Status      MachineStatus
+	GlobalState GoGlobalState
 }
