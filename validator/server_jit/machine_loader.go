@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
@@ -69,9 +68,6 @@ func (j *JitMachineLoader) Stop() {
 	if j.stopped {
 		return
 	}
-	err := j.ForEachReadyMachine(func(machine *JitMachine) error { machine.close(); return nil })
-	if err != nil {
-		log.Error("error while closing jit validator", "err", err)
-	}
+	j.ForEachReadyMachine(func(machine *JitMachine) { machine.close() })
 	j.stopped = true
 }

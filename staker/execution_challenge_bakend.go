@@ -5,16 +5,13 @@ package staker
 
 import (
 	"context"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 type ExecutionChallengeBackend struct {
-	exec          validator.ExecutionRun
-	lastStep      validator.MachineStep
-	lastStepMutex sync.Mutex
+	exec validator.ExecutionRun
 }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
@@ -30,44 +27,20 @@ func (b *ExecutionChallengeBackend) SetRange(ctx context.Context, start uint64, 
 	return nil
 }
 
-func (b *ExecutionChallengeBackend) getStepResult(ctx context.Context, position uint64) (validator.MachineStepResult, error) {
-	b.lastStepMutex.Lock()
-	lastStep := b.lastStep
-	b.lastStepMutex.Unlock()
-	if lastStep != nil && lastStep.Ready() {
-		lastRes, err := lastStep.Current()
-		if err != nil && (lastRes.Position == position || (lastRes.Position > position && lastRes.Status != validator.MachineStatusRunning)) {
-			return lastRes, nil
-		}
-	}
+func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error) {
 	step := b.exec.GetStepAt(position)
 	result, err := step.Await(ctx)
 	if err != nil {
-		b.lastStepMutex.Lock()
-		b.lastStep = step
-		b.lastStepMutex.Unlock()
-	}
-	return result, err
-}
-
-func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error) {
-	res, err := b.getStepResult(ctx, position)
-	if err != nil {
 		return common.Hash{}, err
 	}
-	return res.Hash, nil
+	return result.Hash, nil
 }
 
 func (b *ExecutionChallengeBackend) GetProofAt(
 	ctx context.Context,
 	position uint64,
 ) ([]byte, error) {
-	async := b.exec.GetProofAt(position)
-	res, err := async.Await(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
+	return b.exec.GetProofAt(position).Await(ctx)
 }
 
 func (b *ExecutionChallengeBackend) GetFinalState(ctx context.Context) (uint64, validator.GoGlobalState, uint8, error) {

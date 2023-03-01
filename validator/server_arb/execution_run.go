@@ -20,6 +20,7 @@ type executionRun struct {
 type machineStep struct {
 	containers.Promise[validator.MachineStepResult]
 	reqPosition uint64
+	cancel      func()
 }
 
 func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
@@ -28,10 +29,10 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		return
 	}
 	machineStep := machine.GetStepCount()
-	if s.reqPosition != machine.GetStepCount() {
+	if s.reqPosition != machineStep {
 		machineRunning := machine.IsRunning()
 		if (machineRunning && s.reqPosition != machineStep) || machineStep > s.reqPosition {
-			s.ProduceError(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.reqPosition, machine.GetStepCount()))
+			s.ProduceError(fmt.Errorf("machine is in wrong position want: %d, got: %d", s.reqPosition, machine.GetStepCount()))
 			return
 		}
 
@@ -45,7 +46,7 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 	s.Produce(result)
 }
 
-func (s *machineStep) Close() {}
+func (s *machineStep) Close() { s.cancel() }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
@@ -74,7 +75,7 @@ func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
 		Promise:     containers.NewPromise[validator.MachineStepResult](),
 		reqPosition: position,
 	}
-	e.LaunchThread(func(ctx context.Context) {
+	cancel := e.LaunchThreadWithCancel(func(ctx context.Context) {
 		if position == ^uint64(0) {
 			mstep.consumeMachine(e.cache.GetFinalMachine(ctx))
 		} else {
@@ -82,11 +83,13 @@ func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
 			mstep.consumeMachine(e.cache.GetMachineAt(ctx, position))
 		}
 	})
+	mstep.cancel = cancel
 	return mstep
 }
 
 type asyncProof struct {
 	containers.Promise[[]byte]
+	cancel func()
 }
 
 func (p *asyncProof) Close() {}
@@ -95,7 +98,7 @@ func (e *executionRun) GetProofAt(position uint64) validator.ProofPromise {
 	proof := &asyncProof{
 		Promise: containers.NewPromise[[]byte](),
 	}
-	e.LaunchThread(func(ctx context.Context) {
+	cancel := e.LaunchThreadWithCancel(func(ctx context.Context) {
 		machine, err := e.cache.GetMachineAt(ctx, position)
 		if err != nil {
 			proof.ProduceError(err)
@@ -103,6 +106,7 @@ func (e *executionRun) GetProofAt(position uint64) validator.ProofPromise {
 		}
 		proof.Produce(machine.ProveNextStep())
 	})
+	proof.cancel = cancel
 	return proof
 }
 

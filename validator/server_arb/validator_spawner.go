@@ -23,21 +23,24 @@ import (
 )
 
 type ArbitratorSpawnerConfig struct {
-	ConcurrentRuns int                `koanf:"concurrent-runs-limit" reload:"hot"`
+	Workers        int                `koanf:"workers" reload:"hot"`
 	OutputPath     string             `koanf:"output-path" reload:"hot"`
 	Execution      MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	ExecRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	ConcurrentRuns: 0,
+	Workers:        0,
 	OutputPath:     "./target/output",
 	Execution:      DefaultMachineCacheConfig,
+	ExecRunTimeout: time.Minute * 15,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".concurrent-runs-limit", DefaultArbitratorSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
+	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
+	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 }
@@ -179,18 +182,22 @@ func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot 
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	v.LaunchThread(func(ctx context.Context) {
+		defer atomic.AddInt32(&v.count, -1)
 		run.consumeResult(v.execute(ctx, entry, moduleRoot))
-		atomic.AddInt32(&v.count, -1)
 	})
 	return run
 }
 
 func (v *ArbitratorSpawner) Room() int {
-	avail := v.config().ConcurrentRuns
+	avail := v.config().Workers
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
-	return avail - int(atomic.LoadInt32(&v.count))
+	current := int(atomic.LoadInt32(&v.count))
+	if current >= avail {
+		return 0
+	}
+	return avail - current
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"time"
 
 	"github.com/offchainlabs/nitro/validator"
 
@@ -109,10 +110,16 @@ func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *
 	if err != nil {
 		return nil, err
 	}
-	return &ExecutionClientRun{c, res}, nil
+	run := &ExecutionClientRun{
+		client: c,
+		id:     res,
+	}
+	run.Start(c.GetContext())
+	return run, nil
 }
 
 type ExecutionClientRun struct {
+	stopwaiter.StopWaiter
 	client *ExecutionClient
 	id     uint64
 }
@@ -131,16 +138,27 @@ func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut v
 
 type ExecutionClientStep struct {
 	containers.Promise[validator.MachineStepResult]
-	cancel func()
+	cancel context.CancelFunc
+}
+
+func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
+	err := r.client.client.CallContext(ctx, nil, Namespace+"_execKeepAlive", r.id)
+	if err != nil {
+		log.Error("execution run keepalive failed", "err", err)
+	}
+	return time.Minute // TODO: configurable
+}
+
+func (r *ExecutionClientRun) Start(ctx_in context.Context) {
+	r.StopWaiter.Start(ctx_in, r)
+	r.CallIteratively(r.SendKeepAlive)
 }
 
 func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
-	ctx, cancel := context.WithCancel(r.client.GetContext())
 	step := &ExecutionClientStep{
 		Promise: containers.NewPromise[validator.MachineStepResult](),
-		cancel:  cancel,
 	}
-	go func() {
+	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
@@ -153,7 +171,8 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
 			return
 		}
 		step.Produce(*res)
-	}()
+	})
+	step.cancel = cancel
 	return step
 }
 
@@ -165,12 +184,10 @@ type asyncProof struct {
 func (a *asyncProof) Close() { a.cancel() }
 
 func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
-	ctx, cancel := context.WithCancel(r.client.GetContext())
 	proof := &asyncProof{
 		Promise: containers.NewPromise[[]byte](),
-		cancel:  cancel,
 	}
-	go func() {
+	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
 		var resString string
 		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
 		if err != nil {
@@ -183,7 +200,8 @@ func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
 			return
 		}
 		proof.Produce(res)
-	}()
+	})
+	proof.cancel = cancel
 	return proof
 }
 
@@ -192,21 +210,22 @@ func (r *ExecutionClientRun) GetLastStep() validator.MachineStep {
 }
 
 func (r *ExecutionClientRun) PrepareRange(start, end uint64) {
-	go func() {
+	r.LaunchUntrackedThread(func() {
 		err := r.client.client.CallContext(r.client.GetContext(), nil, Namespace+"_prepareRange", r.id, start, end)
 		if err != nil {
 			log.Warn("prepare execution got error", "err", err)
 		}
-	}()
+	})
 }
 
 func (r *ExecutionClientRun) Close() {
-	go func() {
-		err := r.client.client.CallContext(r.client.GetContext(), nil, Namespace+"_closeExec", r.id)
+	r.StopOnly()
+	r.LaunchUntrackedThread(func() {
+		err := r.client.client.CallContext(r.GetParentContext(), nil, Namespace+"_closeExec", r.id)
 		if err != nil {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
-	}()
+	})
 }
 
 func (f *ExecutionClientStep) Close() {

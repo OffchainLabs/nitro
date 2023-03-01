@@ -29,18 +29,18 @@ type MachineCache struct {
 }
 
 type MachineCacheConfig struct {
-	TargetMachineCount int    `koanf:"target-machine-count"`
-	InitialSteps       uint64 `koanf:"initial-steps"`
+	CachedChallengeMachines int    `koanf:"cached-challenge-machines"`
+	InitialSteps            uint64 `koanf:"initial-steps"`
 }
 
 var DefaultMachineCacheConfig = MachineCacheConfig{
-	TargetMachineCount: 4,
-	InitialSteps:       100000,
+	CachedChallengeMachines: 4,
+	InitialSteps:            100000,
 }
 
 func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".initial-steps", DefaultMachineCacheConfig.InitialSteps, "initial steps between machines")
-	f.Int(prefix+".target-machine-count", DefaultMachineCacheConfig.TargetMachineCount, "target machine count")
+	f.Int(prefix+".cached-challenge-machines", DefaultMachineCacheConfig.CachedChallengeMachines, "how many machines to store in cache while working on a challenge")
 }
 
 // `initialMachine` won't be mutated by this function.
@@ -77,7 +77,7 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 }
 
 func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, end uint64) *MachineCache {
-	newInterval := (start - end) / uint64(c.config.TargetMachineCount)
+	newInterval := (start - end) / uint64(c.config.CachedChallengeMachines)
 	if start == c.firstMachineStep && newInterval == c.machineStepInterval {
 		return c
 	}
@@ -98,23 +98,27 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 			newCache.ProduceError(err)
 			return
 		}
-		initial := closest.CloneMachineInterface()
-		initialStep := initial.GetStepCount()
-		if initialStep > start {
-			newCache.ProduceError(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
+		closestStep := closest.GetStepCount()
+		var initial MachineInterface
+		if closestStep > start {
+			newCache.ProduceError(fmt.Errorf("initial machine step too large %d > %d", closestStep, start))
 			return
 		}
-		if initialStep < start {
-			err := initial.Step(ctx, start-initialStep)
+		if closestStep < start {
+			initial = closest.CloneMachineInterface()
+			err := initial.Step(ctx, start-closestStep)
 			if err != nil {
 				newCache.ProduceError(err)
 				return
 			}
+			initial.Freeze()
+		} else {
+			initial = closest
 		}
 		newCache.machines = []MachineInterface{initial}
 		newCache.firstMachineStep = start
 		newCache.machineStepInterval = newInterval
-		err = newCache.populateInitialCache(ctx, newInterval*uint64(c.config.TargetMachineCount))
+		err = newCache.populateInitialCache(ctx, newInterval*uint64(c.config.CachedChallengeMachines))
 		if err != nil {
 			newCache.ProduceError(err)
 		} else {
@@ -133,24 +137,25 @@ func (c *MachineCache) populateInitialCache(ctx context.Context, target_step uin
 		if nextMachine.GetStepCount() >= target_step {
 			break
 		}
-		if len(c.machines) >= c.config.TargetMachineCount {
-			// Double the step interval between machines, which halves the number of machines.
-			var pruned []MachineInterface
-			for i, mach := range c.machines {
-				// If i%2 == 0, this machine is no longer on the step interval.
-				if i%2 == 1 {
-					pruned = append(pruned, mach)
-				}
-			}
-			c.machines = pruned
-			c.firstMachineStep += c.machineStepInterval
-			c.machineStepInterval *= 2
-		}
 		err := nextMachine.Step(ctx, c.machineStepInterval)
 		if err != nil {
 			return err
 		}
 		nextMachine.Freeze()
+		if len(c.machines) >= c.config.CachedChallengeMachines {
+			// Double the step interval between machines, which halves the number of machines.
+			var pruned []MachineInterface
+			for i, mach := range c.machines {
+				// If i%2 == 1, this machine is no longer on the step interval.
+				if i%2 == 0 {
+					pruned = append(pruned, mach)
+				} else {
+					mach.Destroy()
+				}
+			}
+			c.machines = pruned
+			c.machineStepInterval *= 2
+		}
 		c.machines = append(c.machines, nextMachine)
 	}
 	return nil

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"math/big"
 	"net/http"
@@ -249,16 +250,21 @@ func mainImpl() int {
 		secret := common.Hash{}
 		_, err := rand.Read(secret[:])
 		if err != nil {
-			log.Crit("couldn't create jwt secret", "err", err)
+			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
 		}
-		err = os.WriteFile(fileName, []byte(secret.Hex()), 0600)
-		if err != nil {
-			log.Crit("couldn't create jwt secret", "err", err)
+		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
+		if errors.Is(err, fs.ErrExist) {
+			log.Info("using existing jwt file", "fileName", fileName)
+		} else {
+			if err != nil {
+				log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+			}
+			log.Info("created jwt file", "fileName", fileName)
 		}
 		stackConf.JWTSecret = fileName
 	}
 
-	if nodeConfig.Node.BlockValidator.JWTSecret == "" {
+	if nodeConfig.Node.BlockValidator.JWTSecret == "self" {
 		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
 	}
 

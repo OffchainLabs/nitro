@@ -166,20 +166,27 @@ func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
 }
 
 // If stop was already called, thread might silently not be launched
-func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
+func (s *StopWaiterSafe) LaunchThreadWithCancel(foo func(context.Context)) (func(), error) {
 	ctx, err := s.GetContext()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if s.Stopped() {
-		return nil
+		return func() {}, nil
 	}
+	innerCtx, cancel := context.WithCancel(ctx)
 	s.wg.Add(1)
 	go func() {
-		foo(ctx)
+		foo(innerCtx)
 		s.wg.Done()
+		cancel()
 	}()
-	return nil
+	return cancel, nil
+}
+
+func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
+	_, err := s.LaunchThreadWithCancel(foo)
+	return err
 }
 
 // This calls go foo() directly, with the benefit of being easily searchable.
@@ -288,6 +295,14 @@ func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
 	if err := s.StopWaiterSafe.LaunchThread(foo); err != nil {
 		panic(err)
 	}
+}
+
+func (s *StopWaiter) LaunchThreadWithCancel(foo func(context.Context)) func() {
+	cancel, err := s.StopWaiterSafe.LaunchThreadWithCancel(foo)
+	if err != nil {
+		panic(err)
+	}
+	return cancel
 }
 
 func (s *StopWaiter) CallIteratively(foo func(context.Context) time.Duration) {

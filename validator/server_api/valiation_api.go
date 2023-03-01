@@ -10,7 +10,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 const Namespace string = "validation"
@@ -40,24 +42,32 @@ func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServ
 	return &ValidationServerAPI{spawner}
 }
 
+type execRunEntry struct {
+	run      validator.ExecutionRun
+	accessed time.Time
+}
+
 type ExecServerAPI struct {
+	stopwaiter.StopWaiter
 	ValidationServerAPI
 	execSpawner validator.ExecutionSpawner
 
+	config server_arb.ArbitratorSpawnerConfigFecher
+
 	runIdLock sync.Mutex
 	nextId    uint64
-	runs      map[uint64]validator.ExecutionRun // TODO: expire when old
+	runs      map[uint64]*execRunEntry
 }
 
-func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner) *ExecServerAPI {
-	time.Now().Unix()
+func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
+	rand.Seed(time.Now().UnixNano())
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
 		nextId:              rand.Uint64(), // good-enough to aver reusing ids after reboot
-		runs:                make(map[uint64]validator.ExecutionRun),
+		runs:                make(map[uint64]*execRunEntry),
+		config:              config,
 	}
-
 }
 
 func (a *ExecServerAPI) CreateExecutionRun(wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
@@ -73,12 +83,29 @@ func (a *ExecServerAPI) CreateExecutionRun(wasmModuleRoot common.Hash, jsonInput
 	defer a.runIdLock.Unlock()
 	newId := a.nextId
 	a.nextId++
-	a.runs[newId] = execRun
+	a.runs[newId] = &execRunEntry{execRun, time.Now()}
 	return newId, nil
 }
 
 func (a *ExecServerAPI) LatestWasmModuleRoot() (common.Hash, error) {
 	return a.execSpawner.LatestWasmModuleRoot()
+}
+
+func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
+	oldestKept := time.Now().Add(-1 * a.config().ExecRunTimeout)
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	for id, entry := range a.runs {
+		if entry.accessed.Before(oldestKept) {
+			delete(a.runs, id)
+		}
+	}
+	return a.config().ExecRunTimeout / 5
+}
+
+func (a *ExecServerAPI) Start(ctx_in context.Context) {
+	a.StopWaiter.Start(ctx_in, a)
+	a.CallIteratively(a.removeOldRuns)
 }
 
 func (a *ExecServerAPI) WriteToFile(jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
@@ -89,16 +116,17 @@ func (a *ExecServerAPI) WriteToFile(jsonInput *ValidationInputJson, expOut valid
 	return a.execSpawner.WriteToFile(input, expOut, moduleRoot)
 }
 
-var ErrRunNotFound error = errors.New("run not found")
+var errRunNotFound error = errors.New("run not found")
 
 func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
-	run, found := a.runs[id]
-	if !found {
-		return nil, ErrRunNotFound
+	entry := a.runs[id]
+	if entry == nil {
+		return nil, errRunNotFound
 	}
-	return run, nil
+	entry.accessed = time.Now()
+	return entry.run, nil
 }
 
 func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*MachineStepResultJson, error) {
@@ -136,6 +164,14 @@ func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, 
 	return nil
 }
 
+func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error {
+	_, err := a.getRun(execid)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (a *ExecServerAPI) CloseExec(execid uint64) {
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()
@@ -143,6 +179,6 @@ func (a *ExecServerAPI) CloseExec(execid uint64) {
 	if !found {
 		return
 	}
-	run.Close()
+	run.run.Close()
 	delete(a.runs, execid)
 }

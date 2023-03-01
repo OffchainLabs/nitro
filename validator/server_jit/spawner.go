@@ -17,19 +17,19 @@ import (
 )
 
 type JitSpawnerConfig struct {
-	ConcurrentRuns int  `koanf:"concurrent-runs-limit" reload:"hot"`
-	Cranelift      bool `koanf:"cranelift"`
+	Workers   int  `koanf:"workers" reload:"hot"`
+	Cranelift bool `koanf:"cranelift"`
 }
 
 type JitSpawnerConfigFecher func() *JitSpawnerConfig
 
 var DefaultJitSpawnerConfig = JitSpawnerConfig{
-	ConcurrentRuns: 0,
-	Cranelift:      true,
+	Workers:   0,
+	Cranelift: true,
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".concurrent-runs-limit", DefaultJitSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
+	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 }
 
@@ -65,11 +65,9 @@ func (v *JitSpawner) Start(ctx_in context.Context) error {
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {
-	empty := validator.GoGlobalState{}
-
 	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
 	if err != nil {
-		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
+		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
 	resolver := func(hash common.Hash) ([]byte, error) {
@@ -101,7 +99,7 @@ func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.
 }
 
 func (v *JitSpawner) Room() int {
-	avail := v.config().ConcurrentRuns
+	avail := v.config().Workers
 	if avail == 0 {
 		avail = runtime.NumCPU()
 	}
