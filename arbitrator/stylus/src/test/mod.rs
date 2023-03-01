@@ -3,8 +3,8 @@
 
 use wasmer::wasmparser::Operator;
 
+mod api;
 mod native;
-mod storage;
 mod wavm;
 
 fn expensive_add(op: &Operator) -> u64 {

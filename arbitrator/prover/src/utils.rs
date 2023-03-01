@@ -160,7 +160,7 @@ impl From<[u8; 20]> for Bytes20 {
 impl From<u32> for Bytes20 {
     fn from(x: u32) -> Self {
         let mut b = [0u8; 20];
-        b[(32 - 4)..].copy_from_slice(&x.to_be_bytes());
+        b[(20 - 4)..].copy_from_slice(&x.to_be_bytes());
         Self(b)
     }
 }
@@ -168,7 +168,7 @@ impl From<u32> for Bytes20 {
 impl From<u64> for Bytes20 {
     fn from(x: u64) -> Self {
         let mut b = [0u8; 20];
-        b[(32 - 8)..].copy_from_slice(&x.to_be_bytes());
+        b[(20 - 8)..].copy_from_slice(&x.to_be_bytes());
         Self(b)
     }
 }

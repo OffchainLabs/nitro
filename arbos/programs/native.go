@@ -37,7 +37,7 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 
 func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32) error {
-	output := rustVec()
+	output := &C.RustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u32(version),
@@ -103,7 +103,7 @@ func callUserWasm(
 		return ret, scope.Contract.Gas, nil
 	}
 
-	output := rustVec()
+	output := &C.RustVec{}
 	status := userStatus(C.stylus_call(
 		goSlice(module),
 		goSlice(calldata),
@@ -195,28 +195,17 @@ func hashToBytes32(hash common.Hash) bytes32 {
 	return value
 }
 
-func rustVec() C.RustVec {
-	var ptr *u8
-	var len usize
-	var cap usize
-	return C.RustVec{
-		ptr: (**u8)(&ptr),
-		len: (*usize)(&len),
-		cap: (*usize)(&cap),
-	}
+func (vec *C.RustVec) read() []byte {
+	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec C.RustVec) read() []byte {
-	return arbutil.PointerToSlice((*byte)(*vec.ptr), int(*vec.len))
-}
-
-func (vec C.RustVec) intoBytes() []byte {
+func (vec *C.RustVec) intoBytes() []byte {
 	slice := vec.read()
-	C.stylus_free(vec)
+	C.stylus_free(*vec)
 	return slice
 }
 
-func (vec C.RustVec) overwrite(data []byte) {
+func (vec *C.RustVec) overwrite(data []byte) {
 	C.stylus_overwrite_vec(vec, goSlice(data))
 }
 

@@ -1025,7 +1025,7 @@ impl Machine {
     pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(&config)?;
+        let stylus_data = bin.instrument(config)?;
 
         let forward = include_bytes!("../../../target/machines/latest/forward.wasm");
         let forward = parse(forward, Path::new("forward"))?;
@@ -1057,7 +1057,7 @@ impl Machine {
         version: u32,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {
-        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = StylusConfig::version(version);
         let stylus_data = bin.instrument(&config)?;
 
@@ -2726,7 +2726,7 @@ impl Machine {
             }
             LinkModule | UnlinkModule => {
                 if op == LinkModule {
-                    let leaf_index = match self.value_stack.get(self.value_stack.len() - 1) {
+                    let leaf_index = match self.value_stack.last() {
                         Some(Value::I32(x)) => *x as usize / Memory::LEAF_SIZE,
                         x => fail!("module pointer has invalid type {x:?}"),
                     };

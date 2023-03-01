@@ -1,12 +1,16 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(
     clippy::field_reassign_with_default,
     clippy::inconsistent_digit_grouping
 )]
 
-use crate::{native::NativeInstance, run::RunProgram};
+use crate::{
+    native::NativeInstance,
+    run::RunProgram,
+    test::api::{TestEvmContracts, TestEvmStorage},
+};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
@@ -17,7 +21,7 @@ use prover::{
         start::StartMover,
         MiddlewareWrapper, ModuleMod,
     },
-    utils::Bytes32,
+    utils::{Bytes20, Bytes32},
     Machine,
 };
 use std::{path::Path, sync::Arc};
@@ -65,6 +69,21 @@ fn uniform_cost_config() -> StylusConfig {
     config.pricing.hostio_cost = 100;
     config.costs = |_| 1;
     config
+}
+
+fn rust_wasm_file(name: &str) -> String {
+    format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm",)
+}
+
+fn new_native_with_evm(
+    file: &str,
+    config: &StylusConfig,
+) -> Result<(NativeInstance, TestEvmContracts, TestEvmStorage)> {
+    let storage = TestEvmStorage::default();
+    let contracts = TestEvmContracts::default();
+    let mut native = NativeInstance::from_path(file, config)?;
+    native.set_test_evm_api(Bytes20::default(), storage.clone(), contracts.clone());
+    Ok((native, contracts, storage))
 }
 
 fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
@@ -441,14 +460,60 @@ fn test_storage() -> Result<()> {
     args.extend(key);
     args.extend(value);
 
+    let address = Bytes20::default();
     let mut native = NativeInstance::from_path(filename, &config)?;
-    let storage = native.set_test_evm_api();
+    let api = native.set_test_evm_api(
+        address,
+        TestEvmStorage::default(),
+        TestEvmContracts::default(),
+    );
 
     run_native(&mut native, &args)?;
-    assert_eq!(storage.get(&Bytes32(key)), Some(Bytes32(value)));
+    assert_eq!(api.get_bytes32(address, Bytes32(key)), Some(Bytes32(value)));
 
     args[0] = 0x00; // load the value
     let output = run_native(&mut native, &args)?;
     assert_eq!(output, value);
+    Ok(())
+}
+
+#[test]
+fn test_calls() -> Result<()> {
+    // in call.rs
+    //     the first 20 bytes are the contract you want to call
+    //     the remaining input becomes the calldata
+    //
+    // in storage.rs
+    //     an input starting with 0x00 will induce a storage read
+    //     all other inputs induce a storage write
+
+    let filename = rust_wasm_file("calls");
+    let config = uniform_cost_config();
+
+    let calls_addr = Bytes20::from(0x00_u32);
+    let store_addr = Bytes20::from(0x01_u32);
+
+    let (mut native, mut contracts, mut storage) = new_native_with_evm(&filename, &config)?;
+    contracts.insert(calls_addr, "calls", &config)?;
+    contracts.insert(store_addr, "storage", &config)?;
+
+    let key = Bytes32::from(0x48_u32);
+    let value = Bytes32::from(0x96_u32);
+    storage.set_bytes32(store_addr, key, value);
+
+    // repeatedly reenter
+    let mut args = vec![];
+    for _ in 0..2 {
+        args.extend(calls_addr);
+    }
+
+    // end with a read
+    args.extend(store_addr);
+    args.push(0x00);
+    args.extend(key);
+
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(hex::encode(output), hex::encode(value));
+    assert!(storage.get_bytes32(calls_addr, key).is_none());
     Ok(())
 }

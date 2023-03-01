@@ -55,26 +55,27 @@ impl GoSliceData {
 
 #[repr(C)]
 pub struct RustVec {
-    ptr: *mut *mut u8,
-    len: *mut usize,
-    cap: *mut usize,
+    ptr: *mut u8,
+    len: usize,
+    cap: usize,
 }
 
 impl RustVec {
-    fn new(vec: Vec<u8>, ptr: *mut *mut u8, len: *mut usize, cap: *mut usize) -> Self {
-        let mut rust_vec = Self { ptr, len, cap };
+    fn new(vec: Vec<u8>) -> Self {
+        let mut rust_vec = Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        };
         unsafe { rust_vec.write(vec) };
         rust_vec
     }
 
     unsafe fn write(&mut self, mut vec: Vec<u8>) {
-        let ptr = vec.as_mut_ptr();
-        let len = vec.len();
-        let cap = vec.capacity();
+        self.ptr = vec.as_mut_ptr();
+        self.len = vec.len();
+        self.cap = vec.capacity();
         mem::forget(vec);
-        *self.ptr = ptr;
-        *self.len = len;
-        *self.cap = cap;
     }
 
     unsafe fn write_err(&mut self, err: ErrReport) {
@@ -88,10 +89,11 @@ impl RustVec {
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u32,
-    mut output: RustVec,
+    output: *mut RustVec,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let config = StylusConfig::version(version);
+    let output = &mut *output;
 
     match native::module(wasm, config) {
         Ok(module) => {
@@ -110,7 +112,7 @@ pub struct GoAPI {
     pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
     pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64) -> u8,
     pub call_contract:
-        unsafe extern "C" fn(usize, Bytes20, RustVec, *mut u64, Bytes32) -> UserOutcomeKind,
+        unsafe extern "C" fn(usize, Bytes20, *mut RustVec, *mut u64, Bytes32) -> UserOutcomeKind,
     pub id: usize,
 }
 
@@ -120,7 +122,7 @@ pub unsafe extern "C" fn stylus_call(
     calldata: GoSliceData,
     params: GoParams,
     go_api: GoAPI,
-    mut output: RustVec,
+    output: *mut RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
@@ -128,6 +130,7 @@ pub unsafe extern "C" fn stylus_call(
     let config = params.config();
     let pricing = config.pricing;
     let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
+    let output = &mut *output;
 
     macro_rules! error {
         ($msg:expr, $report:expr) => {{
@@ -166,13 +169,14 @@ pub unsafe extern "C" fn stylus_call(
 
 #[no_mangle]
 pub unsafe extern "C" fn stylus_free(vec: RustVec) {
-    let vec = Vec::from_raw_parts(*vec.ptr, *vec.len, *vec.cap);
+    let vec = Vec::from_raw_parts(vec.ptr, vec.len, vec.cap);
     mem::drop(vec)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn stylus_overwrite_vec(vec: RustVec, data: GoSliceData) {
-    let mut vec = Vec::from_raw_parts(*vec.ptr, *vec.len, *vec.cap);
+pub unsafe extern "C" fn stylus_overwrite_vec(vec: *mut RustVec, data: GoSliceData) {
+    let vec = &*vec;
+    let mut vec = Vec::from_raw_parts(vec.ptr, vec.len, vec.cap);
     vec.clear();
     vec.extend(data.slice());
     mem::forget(vec)

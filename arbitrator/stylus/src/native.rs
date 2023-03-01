@@ -52,6 +52,10 @@ impl NativeInstance {
         self.env.as_mut(&mut self.store)
     }
 
+    pub fn config(&self) -> StylusConfig {
+        self.env().config.clone()
+    }
+
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
     pub unsafe fn deserialize(module: &[u8], config: StylusConfig) -> Result<Self> {
@@ -77,6 +81,9 @@ impl NativeInstance {
                 "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
                 "account_load_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_load_bytes32),
                 "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
+                "call_contract" => Function::new_typed_with_env(&mut store, &func_env, host::call_contract),
+                "util_move_vec" => Function::new_typed_with_env(&mut store, &func_env, host::util_move_vec),
+                "debug_println" => Function::new_typed_with_env(&mut store, &func_env, host::debug_println),
             },
         };
         let instance = Instance::new(&mut store, &module, &imports)?;
@@ -142,14 +149,16 @@ impl NativeInstance {
             (cost, status != 0)
         });
         let call_contract = Box::new(move |contract, input, gas: u64, value| unsafe {
-            let data_ptr = std::ptr::null_mut();
-            let data_len = std::ptr::null_mut();
-            let data_cap = std::ptr::null_mut();
-
             let mut gas_left = gas;
-            let data = RustVec::new(input, data_ptr, data_len, data_cap);
-            let status = call(id, contract, data, &mut gas_left as *mut _, value);
-            let output = Vec::from_raw_parts(*data_ptr, *data_len, *data_cap);
+            let mut data = RustVec::new(input);
+            let status = call(
+                id,
+                contract,
+                &mut data as *mut _,
+                &mut gas_left as *mut _,
+                value,
+            );
+            let output = Vec::from_raw_parts(data.ptr, data.len, data.cap);
             (output, gas - gas_left, status)
         });
 
@@ -226,18 +235,26 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
+        (u32 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u32 { panic!("incomplete import") })
+        };
         ($($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
         };
     }
-    let imports = imports! {
+    let mut imports = imports! {
         "forward" => {
             "read_args" => stub!(|_: u32|),
             "return_data" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
+            "call_contract" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32, _: u32|),
+            "util_move_vec" => stub!(|_: u32, _: u32|),
         },
     };
+    if config.debug.is_some() {
+        imports.define("forward", "debug_println", stub!(|_: u32, _: u32|));
+    }
     Instance::new(&mut store, &module, &imports)?;
 
     let module = module.serialize()?;

@@ -1,8 +1,13 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::env::{MaybeEscape, WasmEnv, WasmEnvMut};
+use crate::{
+    env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+    RustVec,
+};
+use arbutil::Color;
 use prover::programs::prelude::*;
+use std::{mem::{self, MaybeUninit}, ptr};
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
@@ -55,7 +60,8 @@ pub(crate) fn call_contract(
     calldata: u32,
     calldata_len: u32,
     value: u32,
-) -> MaybeEscape {
+    output_vec: u32,
+) -> Result<u8, Escape> {
     let mut meter = WasmEnv::begin(&mut env)?;
     let gas = meter.gas_left().into();
 
@@ -64,10 +70,36 @@ pub(crate) fn call_contract(
     let input = memory.read_slice(calldata, calldata_len)?;
     let value = memory.read_bytes32(value)?;
 
-    let (output, cost, status) = data.evm()?.call_contract(contract, input, gas, value);
+    let output: RustVec = unsafe {
+        let data: MaybeUninit<RustVec> = MaybeUninit::uninit();
+        let size = mem::size_of::<RustVec>();
+        let output = memory.read_slice(output_vec, size as u32)?;
+        ptr::write_bytes(&output as *const _, data.as_mut_ptr(), size);
+        data.assume_init()
+    };
+
+    let (outs, cost, status) = data.evm()?.call_contract(contract, input, gas, value);
+    memory.write_ptr(output.ptr as u32, outs.as_mut_ptr())?;
+    mem::forget(outs);
 
     let mut meter = WasmEnv::meter(&mut env);
     meter.buy_gas(cost)?;
+    Ok(status as u8)
+}
 
+pub(crate) fn util_move_vec(mut env: WasmEnvMut, source: u32, dest: u32) -> MaybeEscape {
+    let mut meter = WasmEnv::begin(&mut env)?;
+
+    Ok(())
+}
+
+pub(crate) fn debug_println(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
+    let memory = WasmEnv::memory(&mut env);
+    let text = memory.read_slice(ptr, len)?;
+    println!(
+        "{} {}",
+        "Stylus says:".yellow(),
+        String::from_utf8_lossy(&text)
+    );
     Ok(())
 }

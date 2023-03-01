@@ -15,7 +15,7 @@ use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView,
-    StoreMut, StoreRef,
+    StoreMut, StoreRef, WasmPtr,
 };
 
 #[self_referencing]
@@ -99,7 +99,7 @@ pub struct MeterData {
 }
 
 pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
-pub type StoreBytes32 = Box<dyn Fn(Bytes32, Bytes32) -> (u64, bool) + Send>;
+pub type StoreBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> (u64, bool) + Send>;
 pub type CallContract =
     Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (Vec<u8>, u64, UserOutcomeKind) + Send>;
 
