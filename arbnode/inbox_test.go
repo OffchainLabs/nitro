@@ -84,7 +84,8 @@ func TestTransactionStreamer(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	inbox.Start(ctx)
+	err := inbox.Start(ctx)
+	Require(t, err)
 	exec.Start(ctx)
 
 	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)

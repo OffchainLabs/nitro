@@ -63,8 +63,9 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcastQueueSize   int   `koanf:"max-broadcaster-queue-size"`
-	MaxReorgResequenceDepth int64 `koanf:"max-reorg-resequence-depth" reload:"hot"`
+	MaxBroadcastQueueSize   int           `koanf:"max-broadcaster-queue-size"`
+	MaxReorgResequenceDepth int64         `koanf:"max-reorg-resequence-depth" reload:"hot"`
+	ExecuteMessageLoopDelay time.Duration `koanf:"execute-message-loop-delay" reload:"hot"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
@@ -72,11 +73,13 @@ type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcastQueueSize:   10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
+	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
 	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
+	f.Duration(prefix+".execute-message-loop-delay", DefaultTransactionStreamerConfig.ExecuteMessageLoopDelay, "delay when polling calls to execute messages")
 }
 
 func NewTransactionStreamer(
@@ -820,7 +823,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 }
 
 // return value: true if should be called again
-func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *execution.ExecutionEngine) bool {
+func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *execution.ExecutionEngine) bool {
 	if ctx.Err() != nil {
 		return false
 	}
@@ -855,22 +858,14 @@ func (s *TransactionStreamer) feedNextMsg(ctx context.Context, exec *execution.E
 	return pos+1 < msgCount
 }
 
-func (s *TransactionStreamer) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn, s)
-	s.LaunchThread(func(ctx context.Context) {
-		for {
-			for s.feedNextMsg(ctx, s.exec) {
-			}
-			timer := time.NewTimer(time.Second)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-s.newMessageNotifier:
-				timer.Stop()
-			case <-timer.C:
-			}
+func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
+	if s.executeNextMsg(ctx, s.exec) {
+		return 0
+	}
+	return s.config().ExecuteMessageLoopDelay
+}
 
-		}
-	})
+func (s *TransactionStreamer) Start(ctxIn context.Context) error {
+	s.StopWaiter.Start(ctxIn, s)
+	return stopwaiter.CallIterativelyWith[struct{}](&s.StopWaiterSafe, s.executeMessages, s.newMessageNotifier)
 }
