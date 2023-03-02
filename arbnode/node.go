@@ -432,10 +432,16 @@ func (c *Config) Validate() error {
 	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
+	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (c *Config) Get() *Config {
+	if nil != c.Validate() {
+		panic("invalid config")
+	}
 	return c
 }
 

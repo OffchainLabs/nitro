@@ -65,6 +65,22 @@ type L1ValidatorConfig struct {
 	ContractWalletAddress    string            `koanf:"contract-wallet-address"`
 	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
 	Dangerous                DangerousConfig   `koanf:"dangerous"`
+
+	strategy    StakerStrategy
+	gasRefunder common.Address
+}
+
+func (c *L1ValidatorConfig) Validate() error {
+	strategy, err := stakerStrategyFromString(c.Strategy)
+	if err != nil {
+		return err
+	}
+	c.strategy = strategy
+	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
+		return errors.New("invalid validator gas refunder address")
+	}
+	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
+	return nil
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
@@ -121,7 +137,6 @@ type Staker struct {
 	stopwaiter.StopWaiter
 	l1Reader                L1ReaderInterface
 	activeChallenge         *ChallengeManager
-	strategy                StakerStrategy
 	baseCallOpts            bind.CallOpts
 	config                  L1ValidatorConfig
 	highGasBlocksBuffer     *big.Int
@@ -157,12 +172,9 @@ func NewStaker(
 	statelessBlockValidator *StatelessBlockValidator,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
-	strategy, err := stakerStrategyFromString(config.Strategy)
+	err := config.Validate()
 	if err != nil {
 		return nil, err
-	}
-	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) {
-		return nil, errors.New("invalid validator gas refunder address")
 	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
@@ -173,7 +185,6 @@ func NewStaker(
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
-		strategy:                strategy,
 		baseCallOpts:            callOpts,
 		config:                  config,
 		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
@@ -318,7 +329,7 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
-	if s.strategy != WatchtowerStrategy {
+	if s.config.strategy != WatchtowerStrategy {
 		whitelisted, err := s.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("error checking if whitelisted: %w", err)
@@ -361,7 +372,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		StakeExists:          rawInfo != nil,
 	}
 
-	effectiveStrategy := s.strategy
+	effectiveStrategy := s.config.strategy
 	nodesLinear, err := s.validatorUtils.AreUnresolvedNodesLinear(callOpts, s.rollupAddress)
 	if err != nil {
 		return nil, fmt.Errorf("error checking for rollup assertion fork: %w", err)
@@ -450,7 +461,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				return nil, fmt.Errorf("error withdrawing staker funds from our staker %v: %w", walletAddressOrZero, err)
 			}
 			log.Info("removing old stake and withdrawing funds")
-			return s.wallet.ExecuteTransactions(ctx, s.builder, common.HexToAddress(s.config.GasRefunderAddress))
+			return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
 		}
 	}
 
@@ -500,7 +511,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
-	return s.wallet.ExecuteTransactions(ctx, s.builder, common.HexToAddress(s.config.GasRefunderAddress))
+	return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
 }
 
 func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
@@ -729,5 +740,5 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 }
 
 func (s *Staker) Strategy() StakerStrategy {
-	return s.strategy
+	return s.config.strategy
 }
