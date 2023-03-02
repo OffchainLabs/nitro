@@ -72,12 +72,15 @@ type BatchPosterConfig struct {
 	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+
+	gasRefunder common.Address
 }
 
 func (c *BatchPosterConfig) Validate() error {
 	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
+	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
@@ -434,7 +437,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 		seqNum,
 		message,
 		new(big.Int).SetUint64(delayedMsg),
-		common.HexToAddress(b.config().GasRefunderAddress),
+		b.config().gasRefunder,
 		new(big.Int).SetUint64(uint64(prevMsgNum)),
 		new(big.Int).SetUint64(uint64(newMsgNum)),
 	)
