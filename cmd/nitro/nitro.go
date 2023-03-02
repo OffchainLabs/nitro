@@ -333,7 +333,7 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("validator have the L1 reader enabled")
 		}
-		if !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		if nodeConfig.Node.Staker.Strategy != "Watchtower" && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
