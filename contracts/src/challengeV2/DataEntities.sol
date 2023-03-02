@@ -87,7 +87,12 @@ interface IChallengeManagerExternalView {
 }
 
 interface IChallengeManagerCore {
-    function initialize(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriod, IOneStepProofEntry _oneStepProofEntry) external;
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _miniStakeValue,
+        uint256 _challengePeriod,
+        IOneStepProofEntry _oneStepProofEntry
+    ) external;
 
     function confirmForPsTimer(bytes32 vId) external;
 

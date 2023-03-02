@@ -125,8 +125,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
         bytes32 prefixHistoryRoot,
-        bytes memory prefixProof,
-        uint256 challengePeriodSec
+        bytes memory prefixProof
     ) internal view returns (bytes32, uint256) {
         require(vertices[vId].exists(), "Vertex does not exist");
         // CHRIS: TODO: put this together with the has confirmable ps check?
@@ -138,9 +137,10 @@ library ChallengeManagerLib {
         require(vertices[predecessorId].psId != vId, "Cannot bisect presumptive successor");
 
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
-        require(
-            HistoryRootLib.hasPrefix(vertices[vId].historyRoot, prefixHistoryRoot, bHeight, prefixProof),
-            "Invalid prefix history"
+        (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
+
+        HistoryRootLib.verifyPrefixProof(
+            prefixHistoryRoot, bHeight, vertices[vId].historyRoot, vertices[vId].height, preExpansion, proof
         );
 
         return (ChallengeVertexLib.id(challengeId, prefixHistoryRoot, bHeight), bHeight);
@@ -151,12 +151,10 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
         bytes32 prefixHistoryRoot,
-        bytes memory prefixProof,
-        uint256 challengePeriodSec
+        bytes memory prefixProof
     ) internal view returns (bytes32, uint256) {
-        (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
-        );
+        (bytes32 bVId, uint256 bHeight) =
+            ChallengeManagerLib.calculateBisectionVertex(vertices, challenges, vId, prefixHistoryRoot, prefixProof);
 
         // CHRIS: redundant check?
         require(!vertices[bVId].exists(), "Bisection vertex already exists");
@@ -169,12 +167,10 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         bytes32 vId,
         bytes32 prefixHistoryRoot,
-        bytes memory prefixProof,
-        uint256 challengePeriodSec
+        bytes memory prefixProof
     ) internal view returns (bytes32, uint256) {
-        (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.calculateBisectionVertex(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
-        );
+        (bytes32 bVId, uint256 bHeight) =
+            ChallengeManagerLib.calculateBisectionVertex(vertices, challenges, vId, prefixHistoryRoot, prefixProof);
 
         require(vertices[bVId].exists(), "Bisection vertex does not already exist");
 
@@ -315,12 +311,22 @@ contract ChallengeManagerImpl is IChallengeManager {
     uint256 public miniStakeValue;
     uint256 public challengePeriodSec;
 
-    constructor(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
+    constructor(
+        IAssertionChain _assertionChain,
+        uint256 _miniStakeValue,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) {
         // HN: TODO: remove constructor?
         initialize(_assertionChain, _miniStakeValue, _challengePeriodSec, _oneStepProofEntry);
     }
 
-    function initialize(IAssertionChain _assertionChain, uint256 _miniStakeValue, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) public {
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _miniStakeValue,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) public {
         require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
         miniStakeValue = _miniStakeValue;
@@ -437,9 +443,8 @@ contract ChallengeManagerImpl is IChallengeManager {
 
     function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
         // CHRIS: TODO: we calculate this again below when we call addnewsuccessor?
-        (bytes32 bVId, uint256 bHeight) = ChallengeManagerLib.checkBisect(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
-        );
+        (bytes32 bVId, uint256 bHeight) =
+            ChallengeManagerLib.checkBisect(vertices, challenges, vId, prefixHistoryRoot, prefixProof);
 
         // CHRIS: TODO: the spec says we should stop the presumptive successor timer of the vId, but why?
         // CHRIS: TODO: is that because we only care about presumptive successors further down the chain?
@@ -462,9 +467,7 @@ contract ChallengeManagerImpl is IChallengeManager {
     }
 
     function merge(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {
-        (bytes32 bVId,) = ChallengeManagerLib.checkMerge(
-            vertices, challenges, vId, prefixHistoryRoot, prefixProof, challengePeriodSec
-        );
+        (bytes32 bVId,) = ChallengeManagerLib.checkMerge(vertices, challenges, vId, prefixHistoryRoot, prefixProof);
 
         vertices.connect(bVId, vId, challengePeriodSec);
         // flush the ps time on the merged vertex, and increase it if has a time lower
