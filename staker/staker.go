@@ -84,7 +84,7 @@ func (c *L1ValidatorConfig) Validate() error {
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
-	Enable:                   false,
+	Enable:                   true,
 	Strategy:                 "Watchtower",
 	StakerInterval:           time.Minute,
 	MakeAssertionInterval:    time.Hour,
