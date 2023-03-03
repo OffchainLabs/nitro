@@ -23,7 +23,7 @@ contract ChallengeManagerE2ETest is Test {
     bytes32 genesisHash = rand.hash();
     bytes32 h1 = rand.hash();
     bytes32 h2 = rand.hash();
-    uint256 height1 = 11;
+    uint256 height1 = 19;
 
     uint256 miniStakeVal = 1 ether;
     uint256 challengePeriodSec = 1000;
@@ -93,7 +93,6 @@ contract ChallengeManagerE2ETest is Test {
         uint256 currentHeight
     ) internal returns (bytes32) {
         bytes32[] memory preExp = MerkleTreeLib.expansionFromLeaves(leaves, 0, bisectionHeight);
-        // height 8
         return challengeManager.bisect(
             currentId,
             MerkleTreeLib.root(preExp),
@@ -191,21 +190,21 @@ contract ChallengeManagerE2ETest is Test {
         winningVertices[4] = winningId;
         losingVertices[4] = losingId;
 
+        // height 16
+        winningVertices[3] = bisect(challengeManager, winningVertices[4], winningLeaves, 16, winningLeaves.length);
+        losingVertices[3] = bisect(challengeManager, losingVertices[4], losingLeaves, 16, losingLeaves.length);
+
         // height 8
-        winningVertices[3] = bisect(challengeManager, winningVertices[4], winningLeaves, 8, winningLeaves.length);
-        losingVertices[3] = bisect(challengeManager, losingVertices[4], losingLeaves, 8, losingLeaves.length);
+        winningVertices[2] = bisect(challengeManager, winningVertices[3], winningLeaves, 8, 16);
+        losingVertices[2] = bisect(challengeManager, losingVertices[3], losingLeaves, 8, 16);
 
         // height 4
-        winningVertices[2] = bisect(challengeManager, winningVertices[3], winningLeaves, 4, 8);
-        losingVertices[2] = bisect(challengeManager, losingVertices[3], losingLeaves, 4, 8);
+        winningVertices[1] = bisect(challengeManager, winningVertices[2], winningLeaves, 4, 8);
+        losingVertices[1] = bisect(challengeManager, losingVertices[2], losingLeaves, 4, 8);
 
-        // height 2
-        winningVertices[1] = bisect(challengeManager, winningVertices[2], winningLeaves, 2, 4);
-        losingVertices[1] = bisect(challengeManager, losingVertices[2], losingLeaves, 2, 4);
-
-        // height 1
-        winningVertices[0] = bisect(challengeManager, winningVertices[1], winningLeaves, 1, 2);
-        losingVertices[0] = bisect(challengeManager, losingVertices[1], losingLeaves, 1, 2);
+        // height 4
+        winningVertices[0] = bisect(challengeManager, winningVertices[1], winningLeaves, 2, 4);
+        losingVertices[0] = bisect(challengeManager, losingVertices[1], losingLeaves, 2, 4);
 
         return (winningVertices, losingVertices);
     }
@@ -271,7 +270,11 @@ contract ChallengeManagerE2ETest is Test {
             challengeManager.createSubChallenge(challengeManager.getVertex(bigStepWinners[0]).predecessorId);
 
         (bytes32[5] memory smallStepWinners,) = addLeafsAndBisectToSubChallenge(
-            challengeManager, smallStepChallengeId, bigStepWinners[0], bigStepLosers[0], abi.encodePacked(height1)
+            challengeManager,
+            smallStepChallengeId,
+            bigStepWinners[0],
+            bigStepLosers[0],
+            abi.encodePacked(SmallStepLeafAdder.MAX_STEPS + height1)
         );
 
         challengeManager.createSubChallenge(challengeManager.getVertex(smallStepWinners[0]).predecessorId);

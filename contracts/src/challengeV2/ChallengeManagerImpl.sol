@@ -406,7 +406,7 @@ contract ChallengeManagerImpl is IChallengeManager {
 
         // CHRIS: TODO: we should have an existance check
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
-        bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
+        bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 1);
         vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
         challenges[challengeId] =
             Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0, challenger: msg.sender});
@@ -423,7 +423,7 @@ contract ChallengeManagerImpl is IChallengeManager {
             ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriodSec);
 
         bytes32 originHistoryRoot = vertices[vId].historyRoot;
-        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 0);
+        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 1);
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
         vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);

@@ -39,7 +39,7 @@ library LeafAdderLib {
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
+            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 1, leafData.firstStatehistoryProof),
             "First state not in history"
         );
 
@@ -47,7 +47,7 @@ library LeafAdderLib {
 
         require(
             challenges[leafData.challengeId].rootId
-                == ChallengeVertexLib.id(leafData.challengeId, leafData.firstState, 0),
+                == ChallengeVertexLib.id(leafData.challengeId, leafData.firstState, 1),
             "First state is not the challenge root"
         );
     }
