@@ -438,21 +438,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) Get() *Config {
-	if nil != c.Validate() {
-		panic("invalid config")
-	}
-	return c
-}
-
-func (c *Config) Start(context.Context) {}
-
-func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
-}
-
 func (c *Config) ForwardingTarget() string {
 	if c.ForwardingTargetImpl == "null" {
 		return ""
