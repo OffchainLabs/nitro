@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSubchallengeCommitments(t *testing.T) {
+func TestFullChallengeResolution(t *testing.T) {
 	ctx := context.Background()
 
 	// Start by creating a simple, two validator fork in the assertion
@@ -18,6 +18,7 @@ func TestSubchallengeCommitments(t *testing.T) {
 		numBlocks:     1,
 		divergeHeight: 1,
 	})
+	t.Log("Alice (honest) and Bob have a fork at height 1")
 	// TODO: Customize the statemanager to allow fixed num steps.
 	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
 	evilManager := statemanager.New(createdData.evilValidatorStateRoots)
@@ -29,7 +30,6 @@ func TestSubchallengeCommitments(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, protocol.BlockChallenge, chal.GetType())
-		t.Log("Created BigStepChallenge")
 		t.Log("Created BlockChallenge")
 
 		commit1, err := honestManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.Height())
@@ -39,8 +39,10 @@ func TestSubchallengeCommitments(t *testing.T) {
 
 		vertex1, err := chal.AddBlockChallengeLeaf(ctx, tx, createdData.leaf1, commit1)
 		require.NoError(t, err)
+		t.Log("Alice (honest) added leaf at height 1")
 		vertex2, err := chal.AddBlockChallengeLeaf(ctx, tx, createdData.leaf2, commit2)
 		require.NoError(t, err)
+		t.Log("Bob added leaf at height 1")
 
 		parentVertex, err := chal.RootVertex(ctx, tx)
 		require.NoError(t, err)
@@ -49,7 +51,7 @@ func TestSubchallengeCommitments(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, true, areAtOSF, "Children not at one-step fork")
 
-		t.Log("Created BlockChallenge vertices that are at a one-step-fork")
+		t.Log("Alice and Bob's BlockChallenge vertices that are at a one-step-fork")
 
 		subChal, err := parentVertex.CreateSubChallenge(ctx, tx)
 		require.NoError(t, err)
@@ -64,8 +66,10 @@ func TestSubchallengeCommitments(t *testing.T) {
 
 		vertex1, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
 		require.NoError(t, err)
+		t.Log("Alice (honest) added leaf at height 1")
 		vertex2, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex2, commit2)
 		require.NoError(t, err)
+		t.Log("Bob added leaf at height 1")
 
 		parentVertex, err = subChal.RootVertex(ctx, tx)
 		require.NoError(t, err)
@@ -74,7 +78,7 @@ func TestSubchallengeCommitments(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, true, areAtOSF, "Children in BigStepChallenge not at one-step fork")
 
-		t.Log("Created BigStepChallenge vertices that are at a one-step-fork")
+		t.Log("Alice and Bob's BigStepChallenge vertices are at a one-step-fork")
 
 		subChal, err = parentVertex.CreateSubChallenge(ctx, tx)
 		require.NoError(t, err)
@@ -89,8 +93,10 @@ func TestSubchallengeCommitments(t *testing.T) {
 
 		vertex1, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
 		require.NoError(t, err)
+		t.Log("Alice (honest) added leaf at height 1")
 		vertex2, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex2, commit2)
 		require.NoError(t, err)
+		t.Log("Bob added leaf at height 1")
 
 		parentVertex, err = subChal.RootVertex(ctx, tx)
 		require.NoError(t, err)
@@ -98,6 +104,10 @@ func TestSubchallengeCommitments(t *testing.T) {
 		areAtOSF, err = parentVertex.ChildrenAreAtOneStepFork(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, true, areAtOSF, "Children in SmallStepChallenge not at one-step fork")
+
+		t.Log("Alice and Bob's BigStepChallenge vertices are at a one-step-fork")
+		t.Log("Reached one-step-proof in SmallStepChallenge")
+		t.Log("Alice wins")
 		return nil
 	})
 }
