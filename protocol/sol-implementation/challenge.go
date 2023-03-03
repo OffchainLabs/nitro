@@ -238,8 +238,8 @@ func (c *Challenge) AddSubChallengeLeaf(
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
+			lastLeafProof,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
-			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
 	})
 	if err != nil {

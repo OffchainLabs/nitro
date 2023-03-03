@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -139,8 +140,36 @@ func (s *Simulated) BigStepLeafCommitment(
 			toAssertionHeight,
 		)
 	}
+
+	preState := s.stateRoots[fromAssertionHeight]
+	postState := s.stateRoots[toAssertionHeight]
+	engine, err := execution.NewExecutionEngine(toAssertionHeight, preState, postState, &execution.Config{
+		FixedNumSteps: 1,
+	})
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+
+	expansion := util.NewEmptyMerkleExpansion()
+
+	// TODO: Advance by big-steps instead.
+	var total int
+	for i := uint64(0); i < engine.NumOpcodes(); i++ {
+		start, err := engine.StateAfter(i)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		intermediateState, err := start.NextState()
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		expansion = expansion.AppendLeaf(intermediateState.Hash())
+		total++
+	}
+
 	return util.HistoryCommitment{
-		Height: 0, // Should be the number of big steps between from and to heights.
+		Height: engine.NumBigSteps(),
+		Merkle: expansion.Root(),
 	}, nil
 }
 
@@ -165,8 +194,39 @@ func (s *Simulated) SmallStepLeafCommitment(
 			toBigStep,
 		)
 	}
+	// TODO: Not state roots but rather intermediate wavm roots in a big step challenge.
+	// We should probably pass these into the function.
+	preState := s.stateRoots[fromBigStep]
+	postState := s.stateRoots[toBigStep]
+
+	// TODO: Args should be block num instead of big step num, and pre/post states should
+	// be top-level states in this case.
+	engine, err := execution.NewExecutionEngine(toBigStep, preState, postState, &execution.Config{
+		FixedNumSteps: 1,
+	})
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+
+	expansion := util.NewEmptyMerkleExpansion()
+
+	var total int
+	for i := uint64(0); i < engine.NumOpcodes(); i++ {
+		start, err := engine.StateAfter(i)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		intermediateState, err := start.NextState()
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		expansion = expansion.AppendLeaf(intermediateState.Hash())
+		total++
+	}
+
 	return util.HistoryCommitment{
-		Height: 0, // Should be the number of WAVM opcodes between from and to.
+		Height: engine.NumOpcodes(),
+		Merkle: expansion.Root(),
 	}, nil
 }
 
