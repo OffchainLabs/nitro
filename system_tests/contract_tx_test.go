@@ -33,9 +33,7 @@ func TestContractTxDeploy(t *testing.T) {
 	from := common.HexToAddress("0x123412341234")
 	TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), l2info, client, ctx)
 
-	var requestId common.Hash
-	var stateNonce uint64
-	runDeploy := func() *types.Receipt {
+	for stateNonce := uint64(0); stateNonce < 2; stateNonce++ {
 		pos, err := node.TxStreamer.GetMessageCount()
 		Require(t, err)
 		var delayedMessagesRead uint64
@@ -53,6 +51,8 @@ func TestContractTxDeploy(t *testing.T) {
 			0x60, 0x00, // PUSH1 0
 			0xF3, // RETURN
 		}
+		var requestId common.Hash
+		requestId[0] = uint8(stateNonce)
 		contractTx := &types.ArbitrumContractTx{
 			ChainId:   params.ArbitrumDevTestChainConfig().ChainID,
 			RequestId: requestId,
@@ -78,7 +78,7 @@ func TestContractTxDeploy(t *testing.T) {
 						Poster:      from,
 						BlockNumber: 0,
 						Timestamp:   0,
-						RequestId:   &requestId,
+						RequestId:   &contractTx.RequestId,
 						L1BaseFee:   &big.Int{},
 					},
 					L2msg:        l2Msg,
@@ -88,18 +88,10 @@ func TestContractTxDeploy(t *testing.T) {
 			},
 		})
 		Require(t, err)
-		requestId[0]++
 
 		txHash := types.NewTx(contractTx).Hash()
 		t.Log("made contract tx", contractTx, "with hash", txHash)
-		var receipt *types.Receipt
-		for i := 0; i < 100; i++ {
-			receipt, err = client.TransactionReceipt(ctx, txHash)
-			if err == nil {
-				break
-			}
-			time.Sleep(time.Millisecond * 20)
-		}
+		receipt, err := WaitForTx(ctx, client, txHash, time.Second*10)
 		Require(t, err)
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			Fail(t, "Receipt has non-successful status", receipt.Status)
@@ -117,10 +109,5 @@ func TestContractTxDeploy(t *testing.T) {
 		if !bytes.Equal(code, []byte{0xFE}) {
 			Fail(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))
 		}
-
-		return receipt
 	}
-
-	runDeploy()
-	runDeploy()
 }
