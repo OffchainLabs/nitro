@@ -2,273 +2,266 @@ package validator
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"math/big"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_onLeafCreation(t *testing.T) {
-	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, s := setupValidator(t)
 
-		parentSeqNum := goimpl.AssertionSequenceNumber(1)
-		prevRoot := common.BytesToHash([]byte("foo"))
-		parentAssertion := &goimpl.Assertion{
-			StateCommitment: util.StateCommitment{
-				StateRoot: prevRoot,
-				Height:    uint64(parentSeqNum),
-			},
-		}
+		parentSeqNum := protocol.AssertionSequenceNumber(1)
 		seqNum := parentSeqNum + 1
-		newlyCreatedAssertion := &goimpl.Assertion{
-			Prev:            util.Some[*goimpl.Assertion](parentAssertion),
-			SequenceNum:     seqNum,
-			StateCommitment: util.StateCommitment{},
-			Staker:          util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
+		prev := &mocks.MockAssertion{
+			MockPrevSeqNum: 0,
+			MockSeqNum:     parentSeqNum,
+			MockStateHash:  common.Hash{},
 		}
-		ev := &goimpl.CreateLeafEvent{
-			PrevSeqNum:          parentAssertion.SequenceNum,
-			PrevStateCommitment: parentAssertion.StateCommitment,
-			SeqNum:              newlyCreatedAssertion.SequenceNum,
-			StateCommitment:     newlyCreatedAssertion.StateCommitment,
-			Validator:           newlyCreatedAssertion.Staker.Unwrap(),
+		ev := &mocks.MockAssertion{
+			MockPrevSeqNum: parentSeqNum,
+			MockSeqNum:     seqNum,
+			MockStateHash:  common.BytesToHash([]byte("bar")),
 		}
 
+		p := &mocks.MockProtocol{}
 		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
+		p.On("CurrentChallengeManager", ctx, &mocks.MockActiveTx{}).Return(&mocks.MockChallengeManager{}, nil)
+		p.On("AssertionBySequenceNum", ctx, &mocks.MockActiveTx{}, prev.SeqNum()).Return(prev, nil)
+		v.chain = p
 
-		err := v.onLeafCreated(ctx, tx, ev)
+		err := v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		stateRoots := generateStateRoots(10)
-		manager := &mocks.MockStateManager{}
-		manager.On("HasStateCommitment", ctx, util.StateCommitment{
-			Height:    5,
-			StateRoot: stateRoots[5],
-		}).Return(false)
-		manager.On("HasStateCommitment", ctx, util.StateCommitment{
-			Height:    6,
-			StateRoot: stateRoots[6],
-		}).Return(true)
+		ctx := context.Background()
+		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 
-		commit, err := util.NewHistoryCommitment(
-			6,
-			stateRoots[:7],
-			util.WithLastElementProof(stateRoots[:7]),
+		manager := statemanager.New(createdData.honestValidatorStateRoots)
+
+		validator, err := New(
+			ctx,
+			createdData.assertionChains[1],
+			createdData.backend,
+			manager,
+			createdData.addrs.Rollup,
 		)
 		require.NoError(t, err)
 
-		manager.On(
-			"HistoryCommitmentUpTo",
-			ctx,
-			uint64(6),
-		).Return(commit, nil)
-
-		leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
-
-		validator.stateManager = manager
-
-		err = validator.onLeafCreated(ctx, tx, leaf1)
+		err = validator.onLeafCreated(ctx, createdData.leaf1)
 		require.NoError(t, err)
-		err = validator.onLeafCreated(ctx, tx, leaf2)
+
+		err = validator.onLeafCreated(ctx, createdData.leaf2)
 		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "New leaf appended")
+
+		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+
+		err = validator.onLeafCreated(ctx, createdData.leaf2)
+		require.ErrorContains(t, err, "Vertex already exists")
 	})
 }
 
 func Test_onChallengeStarted(t *testing.T) {
-	tx := &goimpl.ActiveTx{}
 	ctx := context.Background()
 	logsHook := test.NewGlobal()
 
-	stateRoots := generateStateRoots(10)
-	manager := &mocks.MockStateManager{}
-	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    5,
-		StateRoot: stateRoots[5],
-	}).Return(false)
-	manager.On("HasStateCommitment", ctx, util.StateCommitment{
-		Height:    6,
-		StateRoot: stateRoots[6],
-	}).Return(true)
+	createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+	manager := statemanager.New(createdData.honestValidatorStateRoots)
 
-	commit6, err := util.NewHistoryCommitment(
-		6,
-		stateRoots[:7],
-		util.WithLastElementProof(stateRoots[:7]),
+	validator, err := New(
+		ctx,
+		createdData.assertionChains[1],
+		createdData.backend,
+		manager,
+		createdData.addrs.Rollup,
 	)
 	require.NoError(t, err)
 
-	manager.On(
-		"HistoryCommitmentUpTo",
-		ctx,
-		uint64(6),
-	).Return(commit6, nil)
-
-	commit4, err := util.NewHistoryCommitment(
-		4,
-		stateRoots[:5],
-		util.WithLastElementProof(stateRoots[:5]),
-	)
+	err = validator.onLeafCreated(ctx, createdData.leaf1)
 	require.NoError(t, err)
 
-	manager.On(
-		"HistoryCommitmentUpTo",
-		ctx,
-		uint64(4),
-	).Return(commit4, nil)
-	leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
+	err = validator.onLeafCreated(ctx, createdData.leaf2)
+	require.NoError(t, err)
 
-	err = validator.onLeafCreated(ctx, tx, leaf1)
-	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, tx, leaf2)
-	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "New leaf appended")
-	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
-
-	var challenge goimpl.ChallengeInterface
-	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
-		commit := util.StateCommitment{}
-		id := goimpl.ChallengeCommitHash(commit.Hash())
-		challenge, err = validator.chain.ChallengeByCommitHash(tx, id)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	require.NoError(t, err)
-	require.NotNil(t, challenge)
-
-	manager = &mocks.MockStateManager{}
-	manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
-	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
-
-	commit6.Merkle = common.BytesToHash([]byte("forked commit"))
-	commit4.Merkle = common.BytesToHash([]byte("forked commit"))
-	manager.On("HistoryCommitmentUpTo", ctx, uint64(6)).Return(commit6, nil)
-	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(commit4, nil)
-	validator.stateManager = manager
-
-	parentStateCommitment, err := challenge.ParentStateCommitment(ctx, tx)
-	require.NoError(t, err)
-	err = validator.onChallengeStarted(ctx, tx, &goimpl.StartChallengeEvent{
-		ParentSeqNum:          0,
-		ParentStateCommitment: parentStateCommitment,
-		ParentStaker:          common.Address{},
-		Validator:             common.BytesToAddress([]byte("other validator")),
-	})
-	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
-
-	err = validator.onChallengeStarted(ctx, tx, &goimpl.StartChallengeEvent{
-		ParentSeqNum:          0,
-		ParentStateCommitment: parentStateCommitment,
-		ParentStaker:          common.Address{},
-		Validator:             common.BytesToAddress([]byte("other validator")),
-	})
-	require.NoError(t, err)
-	AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
 }
 
 func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 	ctx := context.Background()
-	stateRoots := generateStateRoots(10)
-	_, _, validator := createTwoValidatorFork(t, ctx, &mocks.MockStateManager{}, stateRoots)
-	var genesis *goimpl.Assertion
-	var err error
-	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
-		genesis = validator.chain.LatestConfirmed(tx)
+	createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+
+	var genesis protocol.Assertion
+	err := createdData.assertionChains[1].Call(func(tx protocol.ActiveTx) error {
+		conf, err := createdData.assertionChains[1].LatestConfirmed(ctx, tx)
+		if err != nil {
+			return err
+		}
+		genesis = conf
 		return nil
 	})
 	require.NoError(t, err)
-	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SequenceNum)
+
+	// Setup our mock state manager to agree on leaf1 but disagree on leaf2.
+	manager := &mocks.MockStateManager{}
+	validator, err := New(
+		ctx,
+		createdData.assertionChains[1],
+		createdData.backend,
+		manager,
+		createdData.addrs.Rollup,
+	)
 	require.NoError(t, err)
-	gotChallenge, err := validator.fetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
+
+	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SeqNum())
+	require.NoError(t, err)
+	gotChallenge, err := validator.fetchProtocolChallenge(ctx, genesis.SeqNum())
 	require.NoError(t, err)
 	require.Equal(t, wantedChallenge, gotChallenge)
+}
+
+type createdValidatorFork struct {
+	leaf1                     protocol.Assertion
+	leaf2                     protocol.Assertion
+	assertionChains           []*solimpl.AssertionChain
+	accounts                  []*testAccount
+	backend                   *backends.SimulatedBackend
+	honestValidatorStateRoots []common.Hash
+	evilValidatorStateRoots   []common.Hash
+	addrs                     *rollupAddresses
 }
 
 func createTwoValidatorFork(
 	t *testing.T,
 	ctx context.Context,
-	stateManager statemanager.Manager,
-	stateRoots []common.Hash,
-) (*goimpl.CreateLeafEvent, *goimpl.CreateLeafEvent, *Validator) {
-	chain := goimpl.NewAssertionChain(
-		ctx,
-		util.NewArtificialTimeReference(),
-		time.Second,
-	)
-	staker1 := common.BytesToAddress([]byte("foo"))
-	staker2 := common.BytesToAddress([]byte("bar"))
-	staker3 := common.BytesToAddress([]byte("nyan"))
-	v := setupValidatorWithChain(t, chain, stateManager, staker3)
+	divergenceHeight uint64,
+) *createdValidatorFork {
+	chains, accs, addrs, backend := setupAssertionChains(t, 3)
+	prevInboxMaxCount := big.NewInt(1)
 
-	// Add balances to the stakers.
-	bal := big.NewInt(0).Mul(goimpl.AssertionStake, big.NewInt(100))
-	err := chain.Tx(func(tx *goimpl.ActiveTx) error {
-		chain.AddToBalance(tx, staker1, bal)
-		chain.AddToBalance(tx, staker2, bal)
-		chain.AddToBalance(tx, staker3, bal)
+	var genesis protocol.Assertion
+	var assertion protocol.Assertion
+	var forkedAssertion protocol.Assertion
+	err := chains[1].Call(func(tx protocol.ActiveTx) error {
+		genesisAssertion, err := chains[1].AssertionBySequenceNum(ctx, tx, 0)
+		if err != nil {
+			return err
+		}
+		genesis = genesisAssertion
 		return nil
 	})
 	require.NoError(t, err)
 
-	// Create some commitments.
-	commit := util.StateCommitment{
-		StateRoot: stateRoots[5],
-		Height:    5,
+	genesisState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash: common.Hash{},
+		},
+		MachineStatus: protocol.MachineStatusFinished,
 	}
-	forkedCommit := util.StateCommitment{
-		StateRoot: stateRoots[6],
-		Height:    6,
+	genesisStateHash := protocol.ComputeStateHash(genesisState, big.NewInt(1))
+
+	require.Equal(t, genesisStateHash, genesis.StateHash(), "Genesis state hash unequal")
+
+	height := uint64(0)
+	honestValidatorStateRoots := make([]common.Hash, 0)
+	evilValidatorStateRoots := make([]common.Hash, 0)
+	honestValidatorStateRoots = append(honestValidatorStateRoots, genesisStateHash)
+	evilValidatorStateRoots = append(evilValidatorStateRoots, genesisStateHash)
+
+	honestBlockHash := common.Hash{}
+	for i := 1; i < 100; i++ {
+		height += 1
+		honestBlockHash = backend.Commit()
+
+		state := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
+				BlockHash: honestBlockHash,
+				Batch:     1,
+			},
+			MachineStatus: protocol.MachineStatusFinished,
+		}
+
+		honestValidatorStateRoots = append(honestValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
+
+		// Before the divergence height, the evil validator agrees.
+		if uint64(i) < divergenceHeight {
+			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
+		} else {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			require.NoError(t, err)
+			blockHash := crypto.Keccak256Hash(junkRoot)
+			state.GlobalState.BlockHash = blockHash
+			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
+		}
+
 	}
 
-	var genesis *goimpl.Assertion
-	var assertion *goimpl.Assertion
-	var forkedAssertion *goimpl.Assertion
-	err = chain.Call(func(tx *goimpl.ActiveTx) error {
-		genesis = chain.LatestConfirmed(tx)
-		return nil
-	})
-	require.NoError(t, err)
-
-	err = chain.Tx(func(tx *goimpl.ActiveTx) error {
-		assertion, err = chain.CreateLeaf(
+	height += 1
+	honestBlockHash = backend.Commit()
+	err = chains[1].Tx(func(tx protocol.ActiveTx) error {
+		assertion, err = chains[1].CreateAssertion(
+			ctx,
 			tx,
-			genesis,
-			commit,
-			staker1,
+			height, // Height.
+			genesis.SeqNum(),
+			genesisState,
+			&protocol.ExecutionState{
+				GlobalState: protocol.GoGlobalState{
+					BlockHash: honestBlockHash,
+					Batch:     1,
+				},
+				MachineStatus: protocol.MachineStatusFinished,
+			},
+			prevInboxMaxCount,
 		)
 		if err != nil {
 			return err
 		}
-		forkedAssertion, err = chain.CreateLeaf(
+		return nil
+	})
+	require.NoError(t, err)
+
+	honestValidatorStateRoots = append(honestValidatorStateRoots, assertion.StateHash())
+
+	evilPostState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash: common.BytesToHash([]byte("evilcommit")),
+			Batch:     1,
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	err = chains[2].Tx(func(tx protocol.ActiveTx) error {
+		forkedAssertion, err = chains[2].CreateAssertion(
+			ctx,
 			tx,
-			genesis,
-			forkedCommit,
-			staker2,
+			height, // Height.
+			genesis.SeqNum(),
+			genesisState,
+			evilPostState,
+			prevInboxMaxCount,
 		)
 		if err != nil {
 			return err
@@ -277,119 +270,114 @@ func createTwoValidatorFork(
 	})
 	require.NoError(t, err)
 
-	ev1 := &goimpl.CreateLeafEvent{
-		PrevSeqNum:          genesis.SequenceNum,
-		PrevStateCommitment: genesis.StateCommitment,
-		SeqNum:              assertion.SequenceNum,
-		StateCommitment:     assertion.StateCommitment,
-		Validator:           staker1,
+	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertion.StateHash())
+
+	return &createdValidatorFork{
+		leaf1:                     assertion,
+		leaf2:                     forkedAssertion,
+		assertionChains:           chains,
+		accounts:                  accs,
+		backend:                   backend,
+		addrs:                     addrs,
+		honestValidatorStateRoots: honestValidatorStateRoots,
+		evilValidatorStateRoots:   evilValidatorStateRoots,
 	}
-	ev2 := &goimpl.CreateLeafEvent{
-		PrevSeqNum:          genesis.SequenceNum,
-		PrevStateCommitment: genesis.StateCommitment,
-		SeqNum:              forkedAssertion.SequenceNum,
-		StateCommitment:     forkedAssertion.StateCommitment,
-		Validator:           staker2,
-	}
-	return ev1, ev2, v
 }
 
 func Test_findLatestValidAssertion(t *testing.T) {
 	ctx := context.Background()
-	tx := &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}
+	tx := &mocks.MockActiveTx{}
 	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
 		v, p, _ := setupValidator(t)
-		genesis := &goimpl.Assertion{
-			SequenceNum: 0,
-			StateCommitment: util.StateCommitment{
-				Height:    0,
-				StateRoot: common.Hash{},
-			},
-			Prev:   util.None[*goimpl.Assertion](),
-			Staker: util.None[common.Address](),
+		genesis := &mocks.MockAssertion{
+			MockSeqNum:    0,
+			MockHeight:    0,
+			MockStateHash: common.Hash{},
+			Prev:          util.None[*mocks.MockAssertion](),
 		}
-		p.On("LatestConfirmed", tx).Return(genesis)
-		p.On("NumAssertions", tx).Return(uint64(100))
-		latestValid := v.findLatestValidAssertion(ctx)
-		require.Equal(t, genesis.SequenceNum, latestValid)
+		p.On("LatestConfirmed", ctx, tx).Return(genesis, nil)
+		p.On("NumAssertions", ctx, tx).Return(uint64(100), nil)
+		latestValid, err := v.findLatestValidAssertion(ctx)
+		require.NoError(t, err)
+		require.Equal(t, genesis.SeqNum(), latestValid)
 	})
 	t.Run("all are valid, latest one is picked", func(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
-			v.assertions[a.SequenceNum] = &goimpl.CreateLeafEvent{
-				StateCommitment: a.StateCommitment,
-				SeqNum:          a.SequenceNum,
-			}
-			s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
+			v.assertions[a.SeqNum()] = a
+			s.On("HasStateCommitment", ctx, util.StateCommitment{
+				Height:    a.Height(),
+				StateRoot: a.StateHash(),
+			}).Return(true)
 		}
-		p.On("LatestConfirmed", tx).Return(assertions[0])
-		p.On("NumAssertions", tx).Return(uint64(len(assertions)))
+		p.On("LatestConfirmed", ctx, tx).Return(assertions[0], nil)
+		p.On("NumAssertions", ctx, tx).Return(uint64(len(assertions)), nil)
 
-		latestValid := v.findLatestValidAssertion(ctx)
-		require.Equal(t, assertions[len(assertions)-1].SequenceNum, latestValid)
+		latestValid, err := v.findLatestValidAssertion(ctx)
+		require.NoError(t, err)
+		require.Equal(t, assertions[len(assertions)-1].SeqNum(), latestValid)
 	})
 	t.Run("latest valid is behind", func(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
-			v.assertions[a.SequenceNum] = &goimpl.CreateLeafEvent{
-				StateCommitment: a.StateCommitment,
-				SeqNum:          a.SequenceNum,
-			}
+			v.assertions[a.SeqNum()] = a
 			if i <= 5 {
-				s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
+				s.On("HasStateCommitment", ctx, util.StateCommitment{
+					Height:    a.Height(),
+					StateRoot: a.StateHash(),
+				}).Return(true)
 			} else {
-				s.On("HasStateCommitment", ctx, a.StateCommitment).Return(false)
+				s.On("HasStateCommitment", ctx, util.StateCommitment{
+					Height:    a.Height(),
+					StateRoot: a.StateHash(),
+				}).Return(false)
 			}
 		}
-		p.On("LatestConfirmed", tx).Return(assertions[0])
-		p.On("NumAssertions", tx).Return(uint64(len(assertions)))
-		latestValid := v.findLatestValidAssertion(ctx)
-		require.Equal(t, assertions[5].SequenceNum, latestValid)
+		p.On("LatestConfirmed", ctx, tx).Return(assertions[0], nil)
+		p.On("NumAssertions", ctx, tx).Return(uint64(len(assertions)), nil)
+		latestValid, err := v.findLatestValidAssertion(ctx)
+		require.NoError(t, err)
+		require.Equal(t, assertions[5].SeqNum(), latestValid)
 	})
 }
 
-func setupAssertions(num int) []*goimpl.Assertion {
+func setupAssertions(num int) []protocol.Assertion {
 	if num == 0 {
-		return make([]*goimpl.Assertion, 0)
+		return make([]protocol.Assertion, 0)
 	}
-	genesis := &goimpl.Assertion{
-		SequenceNum: 0,
-		StateCommitment: util.StateCommitment{
-			Height:    0,
-			StateRoot: common.Hash{},
-		},
-		Prev:   util.None[*goimpl.Assertion](),
-		Staker: util.None[common.Address](),
+	genesis := &mocks.MockAssertion{
+		MockSeqNum:    0,
+		MockHeight:    0,
+		MockStateHash: common.Hash{},
+		Prev:          util.None[*mocks.MockAssertion](),
 	}
-	assertions := []*goimpl.Assertion{genesis}
+	assertions := []protocol.Assertion{genesis}
 	for i := 1; i < num; i++ {
-		assertions = append(assertions, &goimpl.Assertion{
-			SequenceNum: goimpl.AssertionSequenceNumber(i),
-			StateCommitment: util.StateCommitment{
-				Height:    uint64(i),
-				StateRoot: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
-			},
-			Prev:   util.Some[*goimpl.Assertion](assertions[i-1]),
-			Staker: util.None[common.Address](),
-		})
+		assertions = append(assertions, protocol.Assertion(&mocks.MockAssertion{
+			MockSeqNum:    protocol.AssertionSequenceNumber(i),
+			MockHeight:    uint64(i),
+			MockStateHash: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
+			Prev:          util.Some(assertions[i-1].(*mocks.MockAssertion)),
+		}))
 	}
 	return assertions
 }
 
-func setupValidatorWithChain(
-	t testing.TB, chain goimpl.OnChainProtocol, manager statemanager.Manager, staker common.Address,
-) *Validator {
-	v, err := New(context.Background(), chain, manager, WithAddress(staker))
-	require.NoError(t, err)
-	return v
-}
-
 func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
 	p := &mocks.MockProtocol{}
+	ctx := context.Background()
+	p.On(
+		"AssertionBySequenceNum",
+		ctx,
+		&mocks.MockActiveTx{},
+		protocol.AssertionSequenceNumber(0),
+	).Return(&mocks.MockAssertion{}, nil)
+	p.On("CurrentChallengeManager", ctx, &mocks.MockActiveTx{}).Return(&mocks.MockChallengeManager{}, nil)
 	s := &mocks.MockStateManager{}
-	v, err := New(context.Background(), p, s)
+	_, _, addrs, backend := setupAssertionChains(t, 3)
+	v, err := New(context.Background(), p, backend, s, addrs.Rollup)
 	require.NoError(t, err)
 	return v, p, s
 }

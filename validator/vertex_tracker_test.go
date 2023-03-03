@@ -2,13 +2,14 @@ package validator
 
 import (
 	"context"
-	"errors"
 	"io"
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"errors"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,34 +23,13 @@ func init() {
 	logrus.SetOutput(io.Discard)
 }
 
-func Test_track(t *testing.T) {
-	tx := &goimpl.ActiveTx{}
-	hook := test.NewGlobal()
-	tkr := newVertexTracker(util.NewArtificialTimeReference(), time.Millisecond, &goimpl.Challenge{}, &goimpl.ChallengeVertex{
-		Commitment: util.HistoryCommitment{},
-		Validator:  common.Address{},
-	}, nil, nil, "", common.Address{})
-	tkr.awaitingOneStepFork = true
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
-	defer cancel()
-	tkr.track(ctx, tx)
-	AssertLogsContain(t, hook, "Tracking challenge vertex")
-	AssertLogsContain(t, hook, "Challenge goroutine exiting")
-}
-
 func Test_actOnBlockChallenge(t *testing.T) {
-	tx := &goimpl.ActiveTx{}
-	challengeCommit := util.StateCommitment{
-		Height:    0,
-		StateRoot: common.Hash{},
-	}
-	challengeCommitHash := goimpl.ChallengeCommitHash(challengeCommit.Hash())
 	ctx := context.Background()
 	t.Run("does nothing if awaiting one step fork", func(t *testing.T) {
 		tkr := &vertexTracker{
 			awaitingOneStepFork: true,
 		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
+		err := tkr.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 	})
 	t.Run("fails to fetch vertex by history commit", func(t *testing.T) {
@@ -57,23 +37,23 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		var vertex *goimpl.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
+		p.On("CurrentChallengeManager", ctx, &mocks.MockActiveTx{}).Return(
+			&solimpl.ChallengeManager{},
 			errors.New("something went wrong"),
 		)
-		vertex = &goimpl.ChallengeVertex{
-			Commitment: history,
+		vertex := &mocks.MockChallengeVertex{
+			MockHistory: history,
 		}
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
+			challenge: nil, // TODO: Populate
 		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
+		err := tkr.actOnBlockChallenge(ctx)
 		require.ErrorContains(t, err, "could not refresh vertex")
 	})
-	t.Run("fails to check if at one-step-fork", func(t *testing.T) {
+	t.Run("pre-checks before checking is at one-step-fork", func(t *testing.T) {
+		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 1,
 		}
@@ -81,41 +61,63 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &goimpl.ChallengeVertex{
-			Commitment: history,
-			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-				Commitment: parentHistory,
-			})),
+		manager := &mocks.MockChallengeManager{}
+		prevV := &mocks.MockChallengeVertex{
+			MockHistory: parentHistory,
 		}
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
-			nil,
-		)
-		p.On("Completed", &goimpl.ActiveTx{}).Return(
-			false,
-		)
-		p.On("HasConfirmedSibling", &goimpl.ActiveTx{}, vertex.SequenceNum).Return(
-			false, nil,
-		)
-		p.On(
-			"IsAtOneStepFork",
-			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
-			challengeCommitHash,
-			history,
-			parentHistory,
+		prevV.On(
+			"ChildrenAreAtOneStepFork",
+			ctx,
+			tx,
 		).Return(
 			false, errors.New("something went wrong"),
 		)
+		vertex := &mocks.MockChallengeVertex{
+			MockId:      common.Hash{},
+			MockHistory: history,
+			MockPrev:    util.Some(protocol.ChallengeVertex(prevV)),
+			MockStatus:  protocol.AssertionConfirmed,
+		}
+		challenge := &mocks.MockChallenge{}
+		p.On("CurrentChallengeManager", ctx, tx).Return(
+			manager,
+			nil,
+		)
+		manager.On("GetVertex", ctx, tx, protocol.VertexHash(vertex.Id())).Return(
+			util.Some(protocol.ChallengeVertex(vertex)),
+			nil,
+		)
+
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
+			challenge: challenge,
 		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrConfirmed)
+
+		vertex.MockStatus = protocol.AssertionPending
+		challenge.On("Completed", ctx, tx).Return(
+			true, nil,
+		)
+		vertex.On("HasConfirmedSibling", ctx, tx).Return(
+			false, nil,
+		)
+
+		err = tkr.actOnBlockChallenge(ctx)
+		require.ErrorIs(t, err, ErrChallengeCompleted)
+
+		tkr = &vertexTracker{
+			chain:     p,
+			vertex:    vertex,
+			challenge: &solimpl.Challenge{},
+		}
+		err = tkr.actOnBlockChallenge(ctx)
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("logs one-step-fork and returns", func(t *testing.T) {
 		hook := test.NewGlobal()
+		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 1,
 		}
@@ -123,111 +125,77 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &goimpl.ChallengeVertex{
-			Commitment: history,
-			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-				Commitment: parentHistory,
-			})),
+		manager := &mocks.MockChallengeManager{}
+		prevV := &mocks.MockChallengeVertex{
+			MockHistory: parentHistory,
 		}
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
-			nil,
-		)
-		p.On(
-			"IsAtOneStepFork",
-			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
-			challengeCommitHash,
-			history,
-			parentHistory,
+		prevV.On(
+			"ChildrenAreAtOneStepFork",
+			ctx,
+			tx,
 		).Return(
 			true, nil,
 		)
+		vertex := &mocks.MockChallengeVertex{
+			MockId:      common.Hash{},
+			MockHistory: history,
+			MockPrev:    util.Some(protocol.ChallengeVertex(prevV)),
+			MockStatus:  protocol.AssertionPending,
+		}
+		challenge := &mocks.MockChallenge{}
+		p.On("CurrentChallengeManager", ctx, tx).Return(
+			manager,
+			nil,
+		)
+		manager.On("GetVertex", ctx, tx, protocol.VertexHash(vertex.Id())).Return(
+			util.Some(protocol.ChallengeVertex(vertex)),
+			nil,
+		)
+		challenge.On("Completed", ctx, tx).Return(
+			false, nil,
+		)
+		vertex.On("HasConfirmedSibling", ctx, tx).Return(
+			false, nil,
+		)
+
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
+			challenge: challenge,
 		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
+		err := tkr.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
 	})
-	t.Run("vertex's prev is nil and returns", func(t *testing.T) {
+	t.Run("vertex prev is nil and returns", func(t *testing.T) {
+		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &goimpl.ChallengeVertex{
-			Commitment: history,
-			Prev:       util.None[goimpl.ChallengeVertexInterface](),
+		manager := &mocks.MockChallengeManager{}
+		p.On("CurrentChallengeManager", ctx, tx).Return(
+			manager,
+			nil,
+		)
+		vertex := &mocks.MockChallengeVertex{
+			MockHistory: history,
+			MockPrev:    util.None[protocol.ChallengeVertex](),
 		}
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
+		manager.On("GetVertex", ctx, tx, protocol.VertexHash{}).Return(
+			util.Some(protocol.ChallengeVertex(vertex)),
 			nil,
 		)
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
+			challenge: &mocks.MockChallenge{},
 		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
+		err := tkr.actOnBlockChallenge(ctx)
 		require.ErrorIs(t, err, ErrPrevNone)
 	})
-	t.Run("vertex confirmed and returns", func(t *testing.T) {
-		history := util.HistoryCommitment{
-			Height: 1,
-		}
-		parentHistory := util.HistoryCommitment{
-			Height: 0,
-		}
-		p := &mocks.MockProtocol{}
-		vertex := &goimpl.ChallengeVertex{
-			Commitment: history,
-			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-				Commitment: parentHistory,
-			})),
-			Status: goimpl.ConfirmedAssertionState,
-		}
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
-			nil,
-		)
-		tkr := &vertexTracker{
-			chain:     p,
-			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
-		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
-		require.ErrorIs(t, err, ErrConfirmed)
-	})
-	t.Run("challenge completed and returns", func(t *testing.T) {
-		history := util.HistoryCommitment{
-			Height: 1,
-		}
-		parentHistory := util.HistoryCommitment{
-			Height: 0,
-		}
-		p := &mocks.MockProtocol{}
-		vertex := &goimpl.ChallengeVertex{
-			Commitment: history,
-			Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-				Commitment: parentHistory,
-			})),
-		}
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
-			nil,
-		)
-		tkr := &vertexTracker{
-			chain:  p,
-			vertex: vertex,
-			challenge: &goimpl.Challenge{
-				WinnerAssertion: util.Some(&goimpl.Assertion{}),
-			},
-		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
-		require.ErrorIs(t, err, ErrChallengeCompleted)
-	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
+		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 2,
 		}
@@ -235,320 +203,208 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			Height: 0,
 		}
 		p := &mocks.MockProtocol{}
-		vertex := &goimpl.ChallengeVertex{
-			Commitment: history,
+		manager := &mocks.MockChallengeManager{}
+		prevV := &mocks.MockChallengeVertex{
+			MockHistory: parentHistory,
 		}
-		prev := &goimpl.ChallengeVertex{
-			Commitment:           parentHistory,
-			PresumptiveSuccessor: util.Some(goimpl.ChallengeVertexInterface(vertex)),
-		}
-		vertex.Prev = util.Some(goimpl.ChallengeVertexInterface(prev))
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
-			nil,
-		)
-		p.On(
-			"IsAtOneStepFork",
-			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
-			challengeCommitHash,
-			history,
-			parentHistory,
+		prevV.On(
+			"ChildrenAreAtOneStepFork",
+			ctx,
+			tx,
 		).Return(
 			false, nil,
 		)
+		vertex := &mocks.MockChallengeVertex{
+			MockId:      common.Hash{},
+			MockHistory: history,
+			MockPrev:    util.Some(protocol.ChallengeVertex(prevV)),
+			MockStatus:  protocol.AssertionPending,
+		}
+		challenge := &mocks.MockChallenge{}
+		p.On("CurrentChallengeManager", ctx, tx).Return(
+			manager,
+			nil,
+		)
+		manager.On("GetVertex", ctx, tx, protocol.VertexHash(vertex.Id())).Return(
+			util.Some(protocol.ChallengeVertex(vertex)),
+			nil,
+		)
+		challenge.On("Completed", ctx, tx).Return(
+			false, nil,
+		)
+		vertex.On("HasConfirmedSibling", ctx, tx).Return(
+			false, nil,
+		)
+		vertex.On("IsPresumptiveSuccessor", ctx, tx).Return(
+			true, nil,
+		)
+
 		tkr := &vertexTracker{
 			chain:     p,
 			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
+			challenge: challenge,
 		}
-		err := tkr.actOnBlockChallenge(ctx, tx)
+		err := tkr.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 	})
 	t.Run("bisects", func(t *testing.T) {
 		hook := test.NewGlobal()
-		trk := setupNonPSTracker(t, ctx, tx)
-		err := trk.actOnBlockChallenge(ctx, tx)
+		trk := setupNonPSTracker(t, ctx)
+		err := trk.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 	})
 	t.Run("merges", func(t *testing.T) {
 		hook := test.NewGlobal()
-		trk := setupNonPSTracker(t, ctx, tx)
-		err := trk.actOnBlockChallenge(ctx, tx)
+		trk := setupNonPSTracker(t, ctx)
+		err := trk.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 
 		// Get the challenge vertex from the other validator. It should share a history
 		// with the vertex we just bisected to, so it should try to merge instead.
-		var vertex *goimpl.ChallengeVertex
-		v, err := trk.stateManager.HistoryCommitmentUpTo(ctx, 5)
+		var vertex protocol.ChallengeVertex
+		honestCommit, err := trk.stateManager.HistoryCommitmentUpTo(ctx, 64)
 		require.NoError(t, err)
-		err = trk.chain.Call(func(tx *goimpl.ActiveTx) error {
-			var parentStateCommitment util.StateCommitment
-			parentStateCommitment, err = trk.challenge.ParentStateCommitment(ctx, tx)
-			if err != nil {
-				return err
-			}
-			vertex, err = trk.chain.ChallengeVertexByCommitHash(tx, goimpl.ChallengeCommitHash(parentStateCommitment.Hash()), goimpl.VertexCommitHash(v.Hash()))
-			if err != nil {
-				return err
-			}
+
+		err = trk.chain.Call(func(tx protocol.ActiveTx) error {
+			genesisId, err := trk.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
+			require.NoError(t, err)
+			manager, err := trk.chain.CurrentChallengeManager(ctx, tx)
+			require.NoError(t, err)
+			chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
+			require.NoError(t, err)
+			vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalIdComputed, honestCommit)
+			require.NoError(t, err)
+			vertexV, err := manager.GetVertex(ctx, tx, vertexId)
+			require.NoError(t, err)
+			vertex = vertexV.Unwrap()
 			return nil
 		})
 		require.NoError(t, err)
 		require.NotNil(t, vertex)
+
 		trk.vertex = vertex
 
-		err = trk.actOnBlockChallenge(ctx, tx)
+		err = trk.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
-		AssertLogsContain(t, hook, "Successfully merged to vertex with height 4")
+		AssertLogsContain(t, hook, "Successfully merged to vertex with height 64")
 	})
 }
 
-func Test_isAtOneStepFork(t *testing.T) {
-	tx := &goimpl.ActiveTx{}
-	ctx := context.Background()
-	challengeCommit := util.StateCommitment{
-		Height:    0,
-		StateRoot: common.Hash{},
-	}
-	challengeCommitHash := goimpl.ChallengeCommitHash(challengeCommit.Hash())
-	commitA := util.HistoryCommitment{
-		Height: 1,
-	}
-	commitB := util.HistoryCommitment{
-		Height: 2,
-	}
-	vertex := &goimpl.ChallengeVertex{
-		Commitment: commitA,
-		Prev: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-			Commitment: commitB,
-		})),
-	}
-	t.Run("fails", func(t *testing.T) {
-		p := &mocks.MockProtocol{}
-		p.On(
-			"IsAtOneStepFork",
-			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
-			challengeCommitHash,
-			commitA,
-			commitB,
-		).Return(
-			false, errors.New("something went wrong"),
-		)
-		tkr := &vertexTracker{
-			chain:     p,
-			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
-		}
-		_, err := tkr.isAtOneStepFork(ctx, tx)
-		require.ErrorContains(t, err, "something went wrong")
-	})
-	t.Run("OK", func(t *testing.T) {
-		p := &mocks.MockProtocol{}
-		p.On(
-			"IsAtOneStepFork",
-			&goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus},
-			challengeCommitHash,
-			commitA,
-			commitB,
-		).Return(
-			true, nil,
-		)
-		tkr := &vertexTracker{
-			chain:     p,
-			vertex:    vertex,
-			challenge: &goimpl.Challenge{},
-		}
-		ok, err := tkr.isAtOneStepFork(ctx, tx)
+func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
+	logsHook := test.NewGlobal()
+	createdData := createTwoValidatorFork(t, ctx, 65 /* divergence point */)
+
+	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+	honestValidator, err := New(
+		ctx,
+		createdData.assertionChains[1],
+		createdData.backend,
+		honestManager,
+		createdData.addrs.Rollup,
+	)
+	require.NoError(t, err)
+
+	evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+	evilValidator, err := New(
+		ctx,
+		createdData.assertionChains[2],
+		createdData.backend,
+		evilManager,
+		createdData.addrs.Rollup,
+	)
+	require.NoError(t, err)
+
+	err = honestValidator.onLeafCreated(ctx, createdData.leaf1)
+	require.NoError(t, err)
+	err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
+	require.NoError(t, err)
+	AssertLogsContain(t, logsHook, "New assertion appended")
+	AssertLogsContain(t, logsHook, "New assertion appended")
+	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+
+	var vertexToBisect protocol.ChallengeVertex
+	var challenge protocol.Challenge
+
+	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
+		genesisId, err := evilValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
 		require.NoError(t, err)
-		require.True(t, ok)
-	})
-}
-
-func Test_fetchVertexByHistoryCommit(t *testing.T) {
-	ctx := context.Background()
-	challengeCommit := util.StateCommitment{
-		Height:    0,
-		StateRoot: common.Hash{},
-	}
-	challengeCommitHash := goimpl.ChallengeCommitHash(challengeCommit.Hash())
-
-	t.Run("nil vertex", func(t *testing.T) {
-		history := util.HistoryCommitment{
-			Height: 1,
-		}
-		p := &mocks.MockProtocol{}
-		var vertex *goimpl.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex, nil,
-		)
-		tkr := &vertexTracker{
-			chain:     p,
-			challenge: &goimpl.Challenge{},
-		}
-		_, err := tkr.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(history.Hash()))
-		require.ErrorContains(t, err, "fetched nil challenge")
-	})
-	t.Run("fetching error", func(t *testing.T) {
-		history := util.HistoryCommitment{
-			Height: 1,
-		}
-		p := &mocks.MockProtocol{}
-		var vertex *goimpl.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(
-			vertex,
-			errors.New("something went wrong"),
-		)
-		tkr := &vertexTracker{
-			chain:     p,
-			challenge: &goimpl.Challenge{},
-		}
-		_, err := tkr.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(history.Hash()))
-		require.ErrorContains(t, err, "something went wrong")
-	})
-	t.Run("OK", func(t *testing.T) {
-		history := util.HistoryCommitment{
-			Height: 1,
-		}
-		p := &mocks.MockProtocol{}
-		want := &goimpl.ChallengeVertex{
-			Commitment: history,
-		}
-		p.On("ChallengeVertexByCommitHash", &goimpl.ActiveTx{TxStatus: goimpl.ReadOnlyTxStatus}, challengeCommitHash, goimpl.VertexCommitHash(history.Hash())).Return(want, nil)
-		tkr := &vertexTracker{
-			chain:     p,
-			challenge: &goimpl.Challenge{},
-		}
-		got, err := tkr.fetchVertexByHistoryCommit(ctx, goimpl.VertexCommitHash(history.Hash()))
+		manager, err := evilValidator.chain.CurrentChallengeManager(ctx, tx)
 		require.NoError(t, err)
-		require.Equal(t, want, got)
-	})
-}
+		chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
+		require.NoError(t, err)
 
-func setupNonPSTracker(t *testing.T, ctx context.Context, tx *goimpl.ActiveTx) *vertexTracker {
-	stateRoots := generateStateRoots(10)
-	manager := statemanager.New(stateRoots)
-	leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
-	err := validator.onLeafCreated(ctx, tx, leaf1)
-	require.NoError(t, err)
-	err = validator.onLeafCreated(ctx, tx, leaf2)
-	require.NoError(t, err)
+		chal, err := manager.GetChallenge(ctx, tx, chalIdComputed)
+		require.NoError(t, err)
+		require.Equal(t, false, chal.IsNone())
+		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
+		require.NoError(t, err)
 
-	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
-	require.NoError(t, err)
-
-	genesisCommit := util.StateCommitment{
-		Height:    0,
-		StateRoot: common.Hash{},
-	}
-
-	id := goimpl.ChallengeCommitHash(genesisCommit.Hash())
-	var challenge goimpl.ChallengeInterface
-	err = validator.chain.Tx(func(tx *goimpl.ActiveTx) error {
-		assertion, fetchErr := validator.chain.AssertionBySequenceNum(tx, goimpl.AssertionSequenceNumber(1))
-		if fetchErr != nil {
-			return fetchErr
-		}
-		challenge, err = validator.chain.ChallengeByCommitHash(tx, id)
-		if err != nil {
-			return err
-		}
-		if _, err = challenge.AddLeaf(ctx, tx, assertion, historyCommit, validator.address); err != nil {
-			return err
-		}
+		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		require.NoError(t, err)
+		vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, honestCommit)
+		require.NoError(t, err)
+		vertexToBisect = vToBisect
+		challenge = chal.Unwrap()
 		return nil
 	})
 	require.NoError(t, err)
 
-	// Get the challenge vertex.
-	c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, 6)
-	require.NoError(t, err)
-
-	var vertex goimpl.ChallengeVertexInterface
-	err = validator.chain.Call(func(tx *goimpl.ActiveTx) error {
-		vertex, err = validator.chain.ChallengeVertexByCommitHash(tx, id, goimpl.VertexCommitHash(c.Hash()))
-		if err != nil {
-			return err
-		}
+	// Check presumptive statuses.
+	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
+		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
 		return nil
 	})
 	require.NoError(t, err)
-	require.NotNil(t, vertex)
-
-	return newVertexTracker(util.NewArtificialTimeReference(), time.Second, challenge, vertex, validator.chain, validator.stateManager, validator.name, validator.address)
+	return newVertexTracker(util.NewArtificialTimeReference(), time.Second, challenge, vertexToBisect, evilValidator.chain, evilValidator.stateManager, evilValidator.name, evilValidator.address)
 }
 
 func Test_vertexTracker_canConfirm(t *testing.T) {
 	ctx := context.Background()
-	tx := &goimpl.ActiveTx{}
-	tracker := setupNonPSTracker(t, ctx, tx)
 
-	// Can't confirm is vertex is confirmed or rejected
-	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.ConfirmedAssertionState
-	confirmed, err := tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.False(t, confirmed)
-	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.RejectedAssertionState
-	confirmed, err = tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.False(t, confirmed)
-
-	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-	// Can't confirm is parent isn't confirmed
-	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-		Status: goimpl.PendingAssertionState,
-	}))
-	confirmed, err = tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.False(t, confirmed)
-
-	// Can confirm if vertex has won subchallenge
-	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-		Status: goimpl.ConfirmedAssertionState,
-		SubChallenge: util.Some(goimpl.ChallengeInterface(&goimpl.Challenge{
-			WinnerVertex: util.Some(tracker.vertex),
-		})),
-	}))
-	confirmed, err = tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.True(t, confirmed)
-
-	// Can't confirm if vertex is in the middle of subchallenge
-	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-		Status: goimpl.ConfirmedAssertionState,
-		SubChallenge: util.Some(goimpl.ChallengeInterface(&goimpl.Challenge{
-			WinnerVertex: util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{})),
-		})),
-	}))
-	confirmed, err = tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.False(t, confirmed)
-
-	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
-	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-		Status:       goimpl.ConfirmedAssertionState,
-		SubChallenge: util.None[goimpl.ChallengeInterface](),
-	}))
-	psTimer, err := tracker.vertex.GetPsTimer(ctx, tx)
-	require.NoError(t, err)
-	psTimer.Add(1000000001)
-	confirmed, err = tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.True(t, confirmed)
-
-	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
-	tracker.vertex.(*goimpl.ChallengeVertex).Status = goimpl.PendingAssertionState
-	tracker.vertex.(*goimpl.ChallengeVertex).Prev = util.Some(goimpl.ChallengeVertexInterface(&goimpl.ChallengeVertex{
-		Status:               goimpl.ConfirmedAssertionState,
-		SubChallenge:         util.None[goimpl.ChallengeInterface](),
-		PresumptiveSuccessor: util.Some(tracker.vertex),
-	}))
-	confirmed, err = tracker.confirmed(ctx, tx)
-	require.NoError(t, err)
-	require.True(t, confirmed)
+	t.Run("already confirmed", func(t *testing.T) {
+		vertex := &mocks.MockChallengeVertex{
+			MockStatus: protocol.AssertionConfirmed,
+		}
+		tracker := &vertexTracker{
+			vertex: vertex,
+		}
+		confirmed, err := tracker.confirmed(ctx)
+		require.NoError(t, err)
+		require.False(t, confirmed)
+	})
+	t.Run("no prev", func(t *testing.T) {
+		vertex := &mocks.MockChallengeVertex{
+			MockStatus: protocol.AssertionPending,
+		}
+		p := &mocks.MockProtocol{}
+		tracker := &vertexTracker{
+			vertex: vertex,
+			chain:  p,
+		}
+		confirmed, err := tracker.confirmed(ctx)
+		require.ErrorContains(t, err, "no prev vertex")
+		require.False(t, confirmed)
+	})
+	t.Run("prev is not confirmed", func(t *testing.T) {
+		vertex := &mocks.MockChallengeVertex{
+			MockStatus: protocol.AssertionPending,
+			MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
+				MockStatus: protocol.AssertionPending,
+			})),
+		}
+		p := &mocks.MockProtocol{}
+		tracker := &vertexTracker{
+			vertex: vertex,
+			chain:  p,
+		}
+		confirmed, err := tracker.confirmed(ctx)
+		require.NoError(t, err)
+		require.False(t, confirmed)
+	})
 }

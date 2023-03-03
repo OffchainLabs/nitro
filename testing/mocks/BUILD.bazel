@@ -6,7 +6,8 @@ go_library(
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/mocks",
     visibility = ["//visibility:public"],
     deps = [
-        "//protocol/go-implementation",
+        "//protocol",
+        "//state-manager",
         "//util",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_stretchr_testify//mock",

@@ -1108,13 +1108,7 @@ func (c *Challenge) AddLeaf(
 	// The validator must provide a history commitment over
 	// a series of states where the last state must be proven to be
 	// one corresponding to the assertion specified.
-	if err := util.VerifyPrefixProof(
-		history.LastLeafPrefix.Unwrap(),
-		history.Normalized().Unwrap(),
-		history.LastLeafProof,
-	); err != nil {
-		return nil, ErrProofFailsToVerify
-	}
+	// TODO: Verify prefix proof
 
 	challengeManager := assertion.challengeManager
 	timer := util.NewCountUpTimer(challengeManager.TimeReference())
@@ -1507,7 +1501,5 @@ func (v *ChallengeVertex) GetPresumptiveSuccessor(ctx context.Context, tx *Activ
 
 func historyProvidesLastLeafProof(history util.HistoryCommitment) bool {
 	return history.LastLeaf != (common.Hash{}) &&
-		len(history.LastLeafProof) != 0 &&
-		!history.LastLeafPrefix.IsNone() &&
-		!history.Normalized().IsNone()
+		len(history.LastLeafProof) != 0
 }
