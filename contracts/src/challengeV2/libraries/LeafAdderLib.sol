@@ -3,7 +3,7 @@ pragma solidity ^0.8.17;
 
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
-import "./HistoryRootLib.sol";
+import "./MerkleTreeLib.sol";
 import "./PsVerticesLib.sol";
 
 library LeafAdderLib {
@@ -31,7 +31,7 @@ library LeafAdderLib {
 
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
-            HistoryRootLib.hasState(
+            MerkleTreeLib.hasState(
                 leafData.historyRoot, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
             ),
             "Last state not in history"
@@ -39,7 +39,7 @@ library LeafAdderLib {
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            HistoryRootLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
+            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
             "First state not in history"
         );
 
@@ -240,7 +240,7 @@ library SmallStepLeafAdder {
             // the wavm state of the last state should always be exactly the same as the wavm state of the claim
             // regardless of the height
             require(
-                HistoryRootLib.hasState(
+                MerkleTreeLib.hasState(
                     vertices[leafLibArgs.leafData.claimId].historyRoot,
                     leafLibArgs.leafData.lastState,
                     1,

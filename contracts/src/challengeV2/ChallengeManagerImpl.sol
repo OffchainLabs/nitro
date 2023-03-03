@@ -6,7 +6,7 @@ import "../osp/IOneStepProofEntry.sol";
 import "./libraries/ChallengeVertexLib.sol";
 import "./libraries/PsVerticesLib.sol";
 import "./libraries/ChallengeStructLib.sol";
-import "./libraries/HistoryRootLib.sol";
+import "./libraries/MerkleTreeLib.sol";
 import "./libraries/ChallengeTypeLib.sol";
 import "./libraries/LeafAdderLib.sol";
 
@@ -139,7 +139,7 @@ library ChallengeManagerLib {
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
         (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
 
-        HistoryRootLib.verifyPrefixProof(
+        MerkleTreeLib.verifyPrefixProof(
             prefixHistoryRoot, bHeight, vertices[vId].historyRoot, vertices[vId].height, preExpansion, proof
         );
 
@@ -205,7 +205,7 @@ library ChallengeManagerLib {
         // the root id is challenge id combined with the history commitment and the height
         // bytes32 historyRoot, bytes32 state, uint256 stateHeight, bytes memory proof
         require(
-            HistoryRootLib.hasState(
+            MerkleTreeLib.hasState(
                 vertices[predecessorId].historyRoot,
                 oneStepData.beforeHash,
                 oneStepData.machineStep,
@@ -220,7 +220,7 @@ library ChallengeManagerLib {
         );
 
         require(
-            HistoryRootLib.hasState(
+            MerkleTreeLib.hasState(
                 vertices[winnerVId].historyRoot, afterHash, oneStepData.machineStep + 1, afterHistoryInclusionProof
             ),
             "After state not in history"

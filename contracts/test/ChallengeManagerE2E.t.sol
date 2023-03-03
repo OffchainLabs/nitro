@@ -54,7 +54,7 @@ contract ChallengeManagerE2ETest is Test {
 
     function randomLeavesAndExpansion(uint256 height) internal returns (bytes32[] memory, bytes32[] memory) {
         bytes32[] memory leaves = rand.hashes(height);
-        bytes32[] memory exp = HistoryRootLib.expansionFromLeaves(leaves, 0, height);
+        bytes32[] memory exp = MerkleTreeLib.expansionFromLeaves(leaves, 0, height);
 
         return (leaves, exp);
     }
@@ -68,7 +68,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: challengeId,
                 claimId: a1,
                 height: height1,
-                historyRoot: MerkleExpansionLib.root(exp),
+                historyRoot: MerkleTreeLib.root(exp),
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -92,14 +92,16 @@ contract ChallengeManagerE2ETest is Test {
         uint256 bisectionHeight,
         uint256 currentHeight
     ) internal returns (bytes32) {
-        bytes32[] memory preExp = HistoryRootLib.expansionFromLeaves(leaves, 0, bisectionHeight);
+        bytes32[] memory preExp = MerkleTreeLib.expansionFromLeaves(leaves, 0, bisectionHeight);
         // height 8
         return challengeManager.bisect(
             currentId,
-            MerkleExpansionLib.root(preExp),
+            MerkleTreeLib.root(preExp),
             abi.encode(
                 preExp,
-                HistoryRootLib.generatePrefixProof(bisectionHeight, slice(leaves, bisectionHeight, currentHeight))
+                MerkleTreeLib.generatePrefixProof(
+                    bisectionHeight, ArrayUtils.slice(leaves, bisectionHeight, currentHeight)
+                )
             )
         );
     }
@@ -114,7 +116,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: blockChallengeId,
                 claimId: a1,
                 height: height1,
-                historyRoot: MerkleExpansionLib.root(exp1),
+                historyRoot: MerkleTreeLib.root(exp1),
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -130,7 +132,7 @@ contract ChallengeManagerE2ETest is Test {
                 challengeId: blockChallengeId,
                 claimId: a2,
                 height: height1,
-                historyRoot: MerkleExpansionLib.root(exp2),
+                historyRoot: MerkleTreeLib.root(exp2),
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h2,
@@ -243,9 +245,9 @@ contract ChallengeManagerE2ETest is Test {
         (bytes32[] memory leaves2, bytes32[] memory exp2) = randomLeavesAndExpansion(height1);
 
         bytes32 blockLeaf1Id =
-            addLeaf(challengeManager, challengeId, claimId1, MerkleExpansionLib.root(exp1), height1, addLeafProof2);
+            addLeaf(challengeManager, challengeId, claimId1, MerkleTreeLib.root(exp1), height1, addLeafProof2);
         bytes32 blockLeaf2Id =
-            addLeaf(challengeManager, challengeId, claimId2, MerkleExpansionLib.root(exp2), height1, addLeafProof2);
+            addLeaf(challengeManager, challengeId, claimId2, MerkleTreeLib.root(exp2), height1, addLeafProof2);
         (bytes32[5] memory challengeWinningVertices, bytes32[5] memory challengeLosingVertices) =
             bisectToRoot(challengeManager, blockLeaf1Id, blockLeaf2Id, leaves1, leaves2);
 
