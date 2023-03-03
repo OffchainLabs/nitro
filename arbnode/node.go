@@ -1070,7 +1070,10 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
 		}
 	}
-	n.TxStreamer.Start(ctx)
+	err = n.TxStreamer.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error starting transaction streamer: %w", err)
+	}
 	n.Execution.ExecEngine.Start(ctx)
 	if n.InboxReader != nil {
 		err = n.InboxReader.Start(ctx)

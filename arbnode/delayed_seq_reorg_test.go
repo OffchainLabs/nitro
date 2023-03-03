@@ -22,7 +22,8 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	tracker, err := NewInboxTracker(db, streamer, nil)
 	Require(t, err)
 
-	streamer.Start(ctx)
+	err = streamer.Start(ctx)
+	Require(t, err)
 	exec.Start(ctx)
 	init, err := streamer.GetMessage(0)
 	Require(t, err)
