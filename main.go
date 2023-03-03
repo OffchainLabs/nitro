@@ -334,7 +334,7 @@ func initializeSystem(
 	validators := make([]*validator.Validator, cfg.NumValidators)
 	for i := 0; i < len(validators); i++ {
 		addr := validatorAddrs[i]
-		// TODO: Fix up.
+		// TODO(RJ): This file is broken and needs to take in real dependencies. Currently uses goimpl but should use solimpl
 		v, valErr := validator.New(
 			ctx,
 			nil,
