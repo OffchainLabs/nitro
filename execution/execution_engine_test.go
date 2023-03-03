@@ -1,46 +1,81 @@
 package execution
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/require"
+)
+
+var (
+	_ = StateReader(&Engine{})
+	_ = StateIterator(&ExecutionState{})
+)
+
+func TestWorstCaseBigStepBisections(t *testing.T) {
+	hashes := make([]common.Hash, 0)
+	hashes = append(hashes, common.Hash{})
+	for len(hashes) <= 100 {
+		hashes = append(
+			hashes,
+			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
+		)
+	}
+	engine99, err := NewExecutionEngine(99, hashes[98], hashes[99], &Config{
+		FixedNumSteps: MaxInstructionsPerBlock,
+	})
+	require.NoError(t, err)
+	numSteps := engine99.NumOpcodes()
+	numBigSteps := engine99.NumBigSteps()
+	t.Logf("Number of total steps %d", numSteps)
+	t.Logf("Number of big steps: %d", numBigSteps)
+
+	osfHeight := numBigSteps
+	var totalBisections int
+	for osfHeight != 2 {
+		bisectTo, err := util.BisectionPoint(1, osfHeight)
+		require.NoError(t, err)
+		osfHeight = bisectTo
+		totalBisections++
+	}
+	t.Logf("Total bisections: %d", totalBisections)
+	require.Equal(t, 22, totalBisections)
+}
 
 func TestExecutionEngine(t *testing.T) {
-	maxInstructions := uint64(71)
-	blockGen := NewBlockGenerator(maxInstructions)
-	bh0 := blockGen.BlockHash(0)
-	bh1 := blockGen.BlockHash(1)
-	bh99 := blockGen.BlockHash(99)
-	if bh0 == bh1 || bh0 == bh99 || bh1 == bh99 {
-		t.Fatal()
+	hashes := make([]common.Hash, 0)
+	hashes = append(hashes, common.Hash{})
+	for len(hashes) <= 100 {
+		hashes = append(
+			hashes,
+			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
+		)
 	}
-
-	engine99, err := blockGen.NewExecutionEngine(99, DefaultEngineConfig())
+	engine99, err := NewExecutionEngine(99, hashes[98], hashes[99], DefaultConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	numSteps := engine99.NumSteps()
-	if numSteps == 0 || numSteps > maxInstructions {
+	numSteps := engine99.NumOpcodes()
+	if numSteps == 0 || numSteps > MaxInstructionsPerBlock {
 		t.Fatal(numSteps)
 	}
 
-	for i := uint64(0); i < numSteps; i++ {
+	for i := uint64(0); i < 10; i++ {
 		thisState, err := engine99.StateAfter(i)
-		if err != nil {
-			t.Fatal(err, i)
-		}
+		require.NoError(t, err)
 		nextState, err := thisState.NextState()
-		if err != nil {
-			t.Fatal(err, i)
-		}
+		require.NoError(t, err)
 		nextDirect, err := engine99.StateAfter(i + 1)
-		if err != nil {
-			t.Fatal(err, i)
-		}
+		require.NoError(t, err)
+
 		if nextState.Hash() != nextDirect.Hash() {
 			t.Fatal(i)
 		}
-		osp, err := thisState.OneStepProof()
-		if err != nil {
-			t.Fatal(err, i)
-		}
+		osp, err := OneStepProof(thisState)
+		require.NoError(t, err)
+
 		if !VerifyOneStepProof(thisState.Hash(), nextState.Hash(), osp) {
 			t.Fatal(i)
 		}
@@ -76,12 +111,8 @@ func TestExecutionEngine(t *testing.T) {
 			t.Fatal(i)
 		}
 	}
-
 	// check for expected errors
-	if _, err := engine99.StateAfter(engine99.NumSteps() + 1); err == nil {
-		t.Fatal()
-	}
-	if _, err := blockGen.NewExecutionEngine(0, DefaultEngineConfig()); err == nil {
+	if _, err := engine99.StateAfter(engine99.NumOpcodes() + 1); err == nil {
 		t.Fatal()
 	}
 }

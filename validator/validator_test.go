@@ -56,7 +56,10 @@ func Test_onLeafCreation(t *testing.T) {
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		ctx := context.Background()
-		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+			divergeHeight: 10,
+			numBlocks:     100,
+		})
 
 		manager := statemanager.New(createdData.honestValidatorStateRoots)
 
@@ -87,7 +90,10 @@ func Test_onChallengeStarted(t *testing.T) {
 	ctx := context.Background()
 	logsHook := test.NewGlobal()
 
-	createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+		divergeHeight: 10,
+		numBlocks:     100,
+	})
 	manager := statemanager.New(createdData.honestValidatorStateRoots)
 
 	validator, err := New(
@@ -111,7 +117,10 @@ func Test_onChallengeStarted(t *testing.T) {
 
 func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 	ctx := context.Background()
-	createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+		divergeHeight: 10,
+		numBlocks:     100,
+	})
 
 	var genesis protocol.Assertion
 	err := createdData.assertionChains[1].Call(func(tx protocol.ActiveTx) error {
@@ -153,13 +162,27 @@ type createdValidatorFork struct {
 	addrs                     *rollupAddresses
 }
 
+type createForkConfig struct {
+	numBlocks     uint64
+	divergeHeight uint64
+}
+
 func createTwoValidatorFork(
 	t *testing.T,
 	ctx context.Context,
-	divergenceHeight uint64,
+	cfg *createForkConfig,
 ) *createdValidatorFork {
+	divergenceHeight := cfg.divergeHeight
+	numBlocks := cfg.numBlocks
+
 	chains, accs, addrs, backend := setupAssertionChains(t, 3)
 	prevInboxMaxCount := big.NewInt(1)
+
+	// Advance the backend by some blocks to get over time delta failures when
+	// using the assertion chain.
+	for i := 0; i < 100; i++ {
+		backend.Commit()
+	}
 
 	var genesis protocol.Assertion
 	var assertion protocol.Assertion
@@ -191,7 +214,7 @@ func createTwoValidatorFork(
 	evilValidatorStateRoots = append(evilValidatorStateRoots, genesisStateHash)
 
 	honestBlockHash := common.Hash{}
-	for i := 1; i < 100; i++ {
+	for i := uint64(1); i < numBlocks; i++ {
 		height += 1
 		honestBlockHash = backend.Commit()
 

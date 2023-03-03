@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -80,10 +79,6 @@ func NewWithExecutionStates(executionStates []*protocol.ExecutionState, inboxMax
 		executionStates: executionStates,
 		inboxMaxCounts:  inboxMaxCounts,
 	}
-}
-
-func (s *Simulated) ExecutionEngine() *execution.ExecutionEngine {
-	return nil
 }
 
 // LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has
