@@ -2,7 +2,6 @@
 pragma solidity ^0.8.17;
 
 import "../../libraries/MerkleLib.sol";
-import "forge-std/Test.sol";
 
 library ArrayUtils {
     function append(bytes32[] memory arr, bytes32 newItem) internal pure returns (bytes32[] memory) {
@@ -34,6 +33,7 @@ library ArrayUtils {
 // CHRIS: TODO: consolidate with the existing merklelib
 // CHRIS: TODO: sort out hasstate
 // CHRIS: TODO: copied from challengemanager lib - should remove and reuse
+// CHRIS: TODO: uncomment the contents of hasState
 // CHRIS: TODO: document and test hasState
 
 library UintUtils {

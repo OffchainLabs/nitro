@@ -17,14 +17,7 @@ contract MerkleTreeLibTest is Test {
         return newArr;
     }
 
-    function logArr(bytes32[] memory arr1) internal view {
-        console.log("----------------------");
-        for (uint256 i = 0; i < arr1.length; i++) {
-            console.logBytes32(arr1[i]);
-        }
-    }
-
-    function eq(bytes32[] memory arr1, bytes32[] memory arr2) internal view {
+    function eq(bytes32[] memory arr1, bytes32[] memory arr2) internal pure {
         require(keccak256(abi.encode(arr1)) == keccak256(abi.encode(arr2)), "Arrays not equal");
     }
 
@@ -74,7 +67,7 @@ contract MerkleTreeLibTest is Test {
 
     function expansionsFromLeaves(bytes32[] memory leaves, uint256 lowHeight)
         public
-        view
+        pure
         returns (bytes32[] memory, bytes32[] memory, bytes32[] memory)
     {
         bytes32[] memory lowExpansion = new bytes32[](0);
@@ -108,11 +101,11 @@ contract MerkleTreeLibTest is Test {
 
     function testDoesProve() public {
         proveVerify(1, 2);
-        // proveVerify(1, 3);
-        // proveVerify(2, 3);
-        // proveVerify(2, 13);
-        // proveVerify(17, 7052);
-        // proveVerify(23, 7052);
-        // proveVerify(20, 7052);
+        proveVerify(1, 3);
+        proveVerify(2, 3);
+        proveVerify(2, 13);
+        proveVerify(17, 7052);
+        proveVerify(23, 7052);
+        proveVerify(20, 7052);
     }
 }
