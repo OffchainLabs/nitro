@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/stretchr/testify/require"
@@ -107,6 +108,42 @@ func TestFullChallengeResolution(t *testing.T) {
 
 		t.Log("Alice and Bob's BigStepChallenge vertices are at a one-step-fork")
 		t.Log("Reached one-step-proof in SmallStepChallenge")
+
+		preStateRoot := createdData.honestValidatorStateRoots[0]
+		postStateRoot := createdData.honestValidatorStateRoots[1]
+		honestEngine, err := execution.NewExecutionEngine(1, preStateRoot, postStateRoot, &execution.Config{
+			FixedNumSteps: 1,
+		})
+		require.NoError(t, err)
+
+		evilPreStateRoot := createdData.evilValidatorStateRoots[0]
+		evilPostStateRoot := createdData.evilValidatorStateRoots[1]
+		evilEngine, err := execution.NewExecutionEngine(1, evilPreStateRoot, evilPostStateRoot, &execution.Config{
+			FixedNumSteps: 1,
+		})
+		require.NoError(t, err)
+
+		preState, err := honestEngine.StateAfter(0)
+		require.NoError(t, err)
+		postState, err := preState.NextState()
+		require.NoError(t, err)
+		osp, err := execution.OneStepProof(preState)
+		require.NoError(t, err)
+
+		verified := execution.VerifyOneStepProof(preState.Hash(), postState.Hash(), osp)
+		require.Equal(t, true, verified, "Alice should win")
+
+		evilPreState, err := evilEngine.StateAfter(0)
+		require.NoError(t, err)
+		evilPostState, err := evilPreState.NextState()
+		require.NoError(t, err)
+
+		osp, err = execution.OneStepProof(evilPreState)
+		require.NoError(t, err)
+
+		verified = execution.VerifyOneStepProof(preState.Hash(), evilPostState.Hash(), osp)
+		require.Equal(t, false, verified, "Bob should not win")
+
 		t.Log("Alice wins")
 		return nil
 	})
