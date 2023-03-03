@@ -12,7 +12,7 @@ func TestExecutionEngine(t *testing.T) {
 		t.Fatal()
 	}
 
-	engine99, err := blockGen.NewExecutionEngine(99)
+	engine99, err := blockGen.NewExecutionEngine(99, DefaultEngineConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestExecutionEngine(t *testing.T) {
 	if _, err := engine99.StateAfter(engine99.NumSteps() + 1); err == nil {
 		t.Fatal()
 	}
-	if _, err := blockGen.NewExecutionEngine(0); err == nil {
+	if _, err := blockGen.NewExecutionEngine(0, DefaultEngineConfig()); err == nil {
 		t.Fatal()
 	}
 }

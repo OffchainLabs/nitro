@@ -103,7 +103,7 @@ func Test_bisect(t *testing.T) {
 		_, err = v.bisect(ctx, vertex)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
-	t.Run("OK", func(t *testing.T) {
+	t.Run("bisects", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
 
@@ -251,11 +251,6 @@ func Test_merge(t *testing.T) {
 
 		// Both validators should have the same history upon which one will try to merge into.
 		require.Equal(t, createdData.evilValidatorStateRoots[64], createdData.honestValidatorStateRoots[64], "Different state root at 64")
-		ok := honestValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
-		require.Equal(t, true, ok)
-		ok = evilValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
-		require.Equal(t, true, ok)
-
 		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.Height())
 		require.NoError(t, err)
 

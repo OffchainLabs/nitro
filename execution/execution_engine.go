@@ -52,13 +52,32 @@ func (gen *BlockGenerator) BlockHash(blockNum uint64) common.Hash {
 	return gen.stateRoots[blockNum]
 }
 
-func (gen *BlockGenerator) NewExecutionEngine(blockNum uint64) (*ExecutionEngine, error) {
+type ExecEngineConfig struct {
+	NumSteps          uint64
+	RandomizeNumSteps bool
+}
+
+func DefaultEngineConfig() *ExecEngineConfig {
+	return &ExecEngineConfig{
+		RandomizeNumSteps: true,
+	}
+}
+
+func (gen *BlockGenerator) NewExecutionEngine(blockNum uint64, cfg *ExecEngineConfig) (*ExecutionEngine, error) {
 	if blockNum == 0 {
 		return nil, errors.New("tried to make execution engine for genesis block")
 	}
 	startStateRoot := gen.BlockHash(blockNum - 1)
 	endStateRoot := gen.BlockHash(blockNum)
-	numSteps := binary.BigEndian.Uint64(crypto.Keccak256(startStateRoot.Bytes())[:8]) % (1 + gen.maxInstructionsPerBlock)
+	var numSteps uint64
+	if cfg == nil || cfg.RandomizeNumSteps {
+		numSteps = binary.BigEndian.Uint64(crypto.Keccak256(startStateRoot.Bytes())[:8]) % (1 + gen.maxInstructionsPerBlock)
+	} else {
+		numSteps = cfg.NumSteps
+	}
+	if numSteps == 0 {
+		return nil, errors.New("must have at least one step of execution")
+	}
 	return &ExecutionEngine{
 		startStateRoot: startStateRoot,
 		endStateRoot:   endStateRoot,
