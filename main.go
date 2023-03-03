@@ -13,7 +13,6 @@ import (
 	"time"
 
 	goimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/go-implementation"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/OffchainLabs/challenge-protocol-v2/validator"
 	"github.com/OffchainLabs/challenge-protocol-v2/web"
@@ -334,12 +333,14 @@ func initializeSystem(
 	// Initialize each validator.
 	validators := make([]*validator.Validator, cfg.NumValidators)
 	for i := 0; i < len(validators); i++ {
-		manager := statemanager.New(validatorStateRoots[i])
 		addr := validatorAddrs[i]
+		// TODO(RJ): This file is broken and needs to take in real dependencies. Currently uses goimpl but should use solimpl
 		v, valErr := validator.New(
 			ctx,
-			challengeManager,
-			manager,
+			nil,
+			nil,
+			nil,
+			common.Address{},
 			validator.WithName(fmt.Sprintf("%d", i)),
 			validator.WithAddress(addr),
 			validator.WithDisableLeafCreation(),

@@ -10,6 +10,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"math/big"
 )
 
 type GoGlobalState struct {
@@ -23,6 +24,20 @@ func u64ToBe(x uint64) []byte {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, x)
 	return data
+}
+
+func ComputeStateHash(
+	execState *ExecutionState,
+	inboxMaxCount *big.Int,
+) common.Hash {
+	data := make([]byte, 0)
+	globalHash := execState.GlobalState.Hash()
+	data = append(data, globalHash[:]...)
+	inboxCount := make([]byte, 32)
+	copy(inboxCount[24:32], u64ToBe(inboxMaxCount.Uint64()))
+	data = append(data, inboxCount...)
+	data = append(data, byte(execState.MachineStatus))
+	return crypto.Keccak256Hash(data)
 }
 
 func (s GoGlobalState) Hash() common.Hash {

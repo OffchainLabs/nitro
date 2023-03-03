@@ -134,16 +134,17 @@ func VerifyPrefixProof(pre, post HistoryCommitment, proof []common.Hash) error {
 	expHeight := pre.Height
 	expansion, numRead := MerkleExpansionFromCompact(proof, expHeight)
 	proof = proof[numRead:]
-	for expHeight < post.Height {
+	height := post.Height + 1
+	for expHeight < height {
 		if len(proof) == 0 {
 			return ErrIncorrectProof
 		}
 		// extHeight looks like   xxxxxxx0yyy
 		// post.height looks like xxxxxxx1zzz
-		firstDiffBit := 63 - bits.LeadingZeros64(expHeight^post.Height)
+		firstDiffBit := 63 - bits.LeadingZeros64(expHeight^height)
 		mask := (uint64(1) << firstDiffBit) - 1
 		yyy := expHeight & mask
-		zzz := post.Height & mask
+		zzz := height & mask
 		if yyy != 0 {
 			lowBit := bits.TrailingZeros64(yyy)
 			exp, err := expansion.AppendCompleteSubtree(uint64(lowBit), proof[0])
@@ -168,7 +169,7 @@ func VerifyPrefixProof(pre, post HistoryCommitment, proof []common.Hash) error {
 				return err
 			}
 			expansion = exp
-			expHeight = post.Height
+			expHeight = height
 			proof = proof[1:]
 		}
 	}

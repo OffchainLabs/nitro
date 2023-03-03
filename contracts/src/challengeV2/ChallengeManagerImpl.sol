@@ -303,6 +303,11 @@ contract ChallengeManagerImpl is IChallengeManager {
     using ChallengeTypeLib for ChallengeType;
     using ChallengeStructLib for Challenge;
 
+    event Bisected(bytes32 fromId, bytes32 toId);
+    event Merged(bytes32 fromId, bytes32 toId);
+    event VertexAdded(bytes32 vertexId);
+    event ChallengeCreated(bytes32 challengeId);
+
     mapping(bytes32 => ChallengeVertex) public vertices;
     mapping(bytes32 => Challenge) public challenges;
     IAssertionChain public assertionChain;
@@ -342,7 +347,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         returns (bytes32)
     {
         if (challenges[leafData.challengeId].challengeType == ChallengeType.Block) {
-            return BlockLeafAdder.addLeaf(
+            bytes32 vId = BlockLeafAdder.addLeaf(
                 vertices,
                 challenges,
                 AddLeafLibArgs({
@@ -354,8 +359,10 @@ contract ChallengeManagerImpl is IChallengeManager {
                 }),
                 assertionChain
             );
+            emit VertexAdded(vId);
+            return vId;
         } else if (challenges[leafData.challengeId].challengeType == ChallengeType.BigStep) {
-            return BigStepLeafAdder.addLeaf(
+            bytes32 vId = BigStepLeafAdder.addLeaf(
                 vertices,
                 challenges,
                 AddLeafLibArgs({
@@ -366,8 +373,10 @@ contract ChallengeManagerImpl is IChallengeManager {
                     proof2: proof2
                 })
             );
+            emit VertexAdded(vId);
+            return vId;
         } else if (challenges[leafData.challengeId].challengeType == ChallengeType.SmallStep) {
-            return SmallStepLeafAdder.addLeaf(
+            bytes32 vId = SmallStepLeafAdder.addLeaf(
                 vertices,
                 challenges,
                 AddLeafLibArgs({
@@ -378,6 +387,8 @@ contract ChallengeManagerImpl is IChallengeManager {
                     proof2: proof2
                 })
             );
+            emit VertexAdded(vId);
+            return vId;
         } else {
             revert("Unexpected challenge type");
         }
@@ -397,7 +408,9 @@ contract ChallengeManagerImpl is IChallengeManager {
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
         bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
         vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
-        challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0});
+        challenges[challengeId] = Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0, challenger: msg.sender});
+
+        emit ChallengeCreated(challengeId);
 
         return challengeId;
     }
@@ -413,7 +426,7 @@ contract ChallengeManagerImpl is IChallengeManager {
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
         vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);
-        challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0});
+        challenges[newChallengeId] = Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0, challenger: msg.sender});
         vertices[vId].setSuccessionChallenge(newChallengeId);
 
         // CHRIS: TODO: opening a challenge and confirming a winner vertex should have mutually exlusive checks
@@ -463,6 +476,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         // CHRIS: TODO: rename to just `connect`
         vertices.connect(bVId, vId, challengePeriodSec);
 
+        emit Bisected(vId, bVId);
         return bVId;
     }
 
@@ -473,6 +487,7 @@ contract ChallengeManagerImpl is IChallengeManager {
         // flush the ps time on the merged vertex, and increase it if has a time lower
         // than the vertex we're merging from
         vertices.flushPs(vertices[bVId].predecessorId, vertices[vId].flushedPsTimeSec);
+        emit Merged(vId, bVId);
         return bVId;
     }
 
