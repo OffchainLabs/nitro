@@ -190,7 +190,7 @@ type Challenge interface {
 		assertion Assertion,
 		history util.HistoryCommitment,
 	) (ChallengeVertex, error)
-	AddSubChallengeLeaf(
+	AddBigStepChallengeLeaf(
 		ctx context.Context,
 		tx ActiveTx,
 		vertex ChallengeVertex,
