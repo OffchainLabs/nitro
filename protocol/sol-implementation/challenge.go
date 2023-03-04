@@ -188,8 +188,8 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	}, nil
 }
 
-// AddBigStepChallengeLeaf vertex to a BigStepChallenge using a vertex and a history commitment.
-func (c *Challenge) AddBigStepChallengeLeaf(
+// AddSubChallengeLeaf adds the appropriate leaf to the challenge based on a vertex and history commitment.
+func (c *Challenge) AddSubChallengeLeaf(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	vertex protocol.ChallengeVertex,
@@ -238,8 +238,8 @@ func (c *Challenge) AddBigStepChallengeLeaf(
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
+			lastLeafProof,
 			make([]byte, 0), // TODO: Proof of inbox consumption.
-			make([]byte, 0), // TODO: Proof of last state (redundant)
 		)
 	})
 	if err != nil {
