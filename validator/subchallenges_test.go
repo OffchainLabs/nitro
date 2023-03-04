@@ -28,7 +28,7 @@ func TestFullChallengeResolution(t *testing.T) {
 
 	// Next, we create a challenge.
 	honestChain := createdData.assertionChains[1]
-	honestChain.Tx(func(tx protocol.ActiveTx) error {
+	chainErr := honestChain.Tx(func(tx protocol.ActiveTx) error {
 		chal, err := honestChain.CreateSuccessionChallenge(ctx, tx, 0)
 		require.NoError(t, err)
 
@@ -96,11 +96,11 @@ func TestFullChallengeResolution(t *testing.T) {
 
 		proof := hexutil.MustDecode("0x0000000000000000000000000000000000000000000000000000000000000001")
 		commit1.LastLeafProof = []common.Hash{common.BytesToHash(proof)}
-		vertex1, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
+		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
 		require.NoError(t, err)
 		t.Log("Alice (honest) added leaf at height 1")
 		commit1.LastLeafProof = []common.Hash{common.BytesToHash(proof)}
-		vertex2, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex2, commit2)
+		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex2, commit2)
 		require.NoError(t, err)
 		t.Log("Bob added leaf at height 1")
 
@@ -152,4 +152,5 @@ func TestFullChallengeResolution(t *testing.T) {
 		t.Log("Alice wins")
 		return nil
 	})
+	require.NoError(t, chainErr)
 }
