@@ -123,7 +123,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		preState, err := honestEngine.StateAfter(0)
+		preState, err := honestEngine.StateAfterSmallSteps(0)
 		require.NoError(t, err)
 		postState, err := preState.NextState()
 		require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		verified := execution.VerifyOneStepProof(preState.Hash(), postState.Hash(), osp)
 		require.Equal(t, true, verified, "Alice should win")
 
-		evilPreState, err := evilEngine.StateAfter(0)
+		evilPreState, err := evilEngine.StateAfterSmallSteps(0)
 		require.NoError(t, err)
 		evilPostState, err := evilPreState.NextState()
 		require.NoError(t, err)

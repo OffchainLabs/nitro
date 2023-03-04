@@ -728,7 +728,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			manager: challenge.manager,
 		}
 		_, err := vertex.CreateSubChallenge(ctx, tx)
-		require.ErrorContains(t, err, "execution reverted: Fork candidate vertex does not exist")
+		require.ErrorContains(t, err, "execution reverted: Challenge does not exist")
 	})
 	t.Run("Error: leaf can never be a fork candidate", func(t *testing.T) {
 		a1, _, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
