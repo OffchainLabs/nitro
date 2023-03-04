@@ -314,7 +314,7 @@ func (m *MockChallenge) AddBlockChallengeLeaf(
 	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
 }
 
-func (m *MockChallenge) AddSubChallengeLeaf(
+func (m *MockChallenge) AddBigStepChallengeLeaf(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	vertex protocol.ChallengeVertex,
