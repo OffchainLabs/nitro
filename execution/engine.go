@@ -150,7 +150,7 @@ func (engine *Engine) StateAfterBigSteps(num uint64) (IntermediateStateIterator,
 	}
 	return &ExecutionState{
 		engine:  engine,
-		stepNum: num,
+		stepNum: numOpcodes,
 	}, nil
 }
 

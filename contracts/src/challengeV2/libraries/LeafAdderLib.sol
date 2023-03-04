@@ -214,7 +214,7 @@ library SmallStepLeafAdder {
         // CHRIS: TODO:
         // 1. hydrate the wavm state with the proof
         // 2. find the program counter and return it
-        return uint256(1);
+        return uint256(bytes32(proof));
     }
 
     function addLeaf(
