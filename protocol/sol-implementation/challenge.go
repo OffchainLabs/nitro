@@ -239,7 +239,7 @@ func (c *Challenge) AddSubChallengeLeaf(
 			opts,
 			leafData,
 			lastLeafProof,
-			make([]byte, 0), // TODO: Proof of inbox consumption.
+			lastLeafProof, // TODO(RJ): Should be different for big and small step.
 		)
 	})
 	if err != nil {
