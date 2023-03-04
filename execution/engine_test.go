@@ -63,11 +63,11 @@ func TestExecutionEngine(t *testing.T) {
 	}
 
 	for i := uint64(0); i < 10; i++ {
-		thisState, err := engine99.StateAfter(i)
+		thisState, err := engine99.StateAfterSmallSteps(i)
 		require.NoError(t, err)
 		nextState, err := thisState.NextState()
 		require.NoError(t, err)
-		nextDirect, err := engine99.StateAfter(i + 1)
+		nextDirect, err := engine99.StateAfterSmallSteps(i + 1)
 		require.NoError(t, err)
 
 		if nextState.Hash() != nextDirect.Hash() {
@@ -112,7 +112,7 @@ func TestExecutionEngine(t *testing.T) {
 		}
 	}
 	// check for expected errors
-	if _, err := engine99.StateAfter(engine99.NumOpcodes() + 1); err == nil {
+	if _, err := engine99.StateAfterSmallSteps(engine99.NumOpcodes() + 1); err == nil {
 		t.Fatal()
 	}
 }

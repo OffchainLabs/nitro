@@ -26,7 +26,8 @@ type EngineAtBlock interface {
 	BlockNum() uint64
 	NumOpcodes() uint64
 	NumBigSteps() uint64
-	StateAfter(n uint64) (IntermediateStateIterator, error)
+	StateAfterSmallSteps(n uint64) (IntermediateStateIterator, error)
+	StateAfterBigSteps(n uint64) (IntermediateStateIterator, error)
 	Serialize() []byte
 }
 
@@ -121,10 +122,12 @@ func (engine *Engine) internalHash() common.Hash {
 	return crypto.Keccak256Hash(engine.Serialize())
 }
 
+// NumOpcodes in the engine at the block height.
 func (engine *Engine) NumOpcodes() uint64 {
 	return engine.numSteps
 }
 
+// NumBigSteps in the engine at the block height.
 func (engine *Engine) NumBigSteps() uint64 {
 	if engine.numSteps <= BigStepSize {
 		return 1
@@ -132,11 +135,27 @@ func (engine *Engine) NumBigSteps() uint64 {
 	return engine.numSteps / BigStepSize
 }
 
+// BlockNum of the L2 state the engine corresponds to.
 func (engine *Engine) BlockNum() uint64 {
 	return engine.blockNum
 }
 
-func (engine *Engine) StateAfter(num uint64) (IntermediateStateIterator, error) {
+// StateAfterBigSteps gets the intermediate state after executing N big step(s).
+// If the number of total steps is less than the total number of opcodes in the N big steps,
+// we simply advance by the number of opcodes.
+func (engine *Engine) StateAfterBigSteps(num uint64) (IntermediateStateIterator, error) {
+	numOpcodes := num * BigStepSize
+	if numOpcodes > engine.numSteps {
+		numOpcodes = engine.numSteps
+	}
+	return &ExecutionState{
+		engine:  engine,
+		stepNum: num,
+	}, nil
+}
+
+// StateAfterSmallSteps gets the intermediate state after executing N WAVM opcode(s).
+func (engine *Engine) StateAfterSmallSteps(num uint64) (IntermediateStateIterator, error) {
 	if num > engine.numSteps {
 		return nil, ErrOutOfBounds
 	}

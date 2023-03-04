@@ -152,10 +152,9 @@ func (s *Simulated) BigStepLeafCommitment(
 
 	expansion := util.NewEmptyMerkleExpansion()
 
-	// TODO: Advance by big-steps instead.
 	var total int
-	for i := uint64(0); i < engine.NumOpcodes(); i++ {
-		start, err := engine.StateAfter(i)
+	for i := uint64(0); i < engine.NumBigSteps(); i++ {
+		start, err := engine.StateAfterBigSteps(i)
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
@@ -173,6 +172,7 @@ func (s *Simulated) BigStepLeafCommitment(
 	}, nil
 }
 
+// TODO(RJ): Implement the Merkleization.
 func (s *Simulated) BigStepCommitmentUpTo(
 	ctx context.Context,
 	toBigStep uint64,
@@ -182,6 +182,11 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	}, nil
 }
 
+// SmallStepLeafCommitment produces a small step history commitment which includes
+// a Merkleization of the N WAVM opcodes in between big steps A and B. This function
+// is called when a validator is preparing a subchallenge on big-steps A and B that
+// are one-step away from each other. It will then load up the WAVM opcodes
+// between those two values and produce a commitment.
 func (s *Simulated) SmallStepLeafCommitment(
 	ctx context.Context,
 	fromBigStep,
@@ -212,7 +217,7 @@ func (s *Simulated) SmallStepLeafCommitment(
 
 	var total int
 	for i := uint64(0); i < engine.NumOpcodes(); i++ {
-		start, err := engine.StateAfter(i)
+		start, err := engine.StateAfterSmallSteps(i)
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
@@ -230,6 +235,7 @@ func (s *Simulated) SmallStepLeafCommitment(
 	}, nil
 }
 
+// TODO(RJ): Implement the Merkleization.
 func (s *Simulated) SmallStepCommitmentUpTo(
 	ctx context.Context,
 	toStep uint64,
