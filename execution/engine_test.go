@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	_ = StateReader(&Engine{})
-	_ = StateIterator(&ExecutionState{})
+	_ = EngineAtBlock(&Engine{})
+	_ = IntermediateStateIterator(&ExecutionState{})
 )
 
 func TestWorstCaseBigStepBisections(t *testing.T) {
