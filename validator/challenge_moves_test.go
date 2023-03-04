@@ -251,11 +251,6 @@ func Test_merge(t *testing.T) {
 
 		// Both validators should have the same history upon which one will try to merge into.
 		require.Equal(t, createdData.evilValidatorStateRoots[64], createdData.honestValidatorStateRoots[64], "Different state root at 64")
-		ok := honestValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
-		require.Equal(t, true, ok)
-		ok = evilValidator.stateManager.HasHistoryCommitment(ctx, bisectedTo.HistoryCommitment())
-		require.Equal(t, true, ok)
-
 		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.Height())
 		require.NoError(t, err)
 

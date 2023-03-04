@@ -175,16 +175,6 @@ func (m *MockStateManager) LatestAssertionCreationData(ctx context.Context, prev
 	return args.Get(0).(*statemanager.AssertionToCreate), args.Error(1)
 }
 
-func (m *MockStateManager) LatestHistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
-}
-
-func (m *MockStateManager) HasHistoryCommitment(ctx context.Context, commit util.HistoryCommitment) bool {
-	args := m.Called(ctx, commit)
-	return args.Bool(0)
-}
-
 func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 
 	args := m.Called(ctx, height)
@@ -201,14 +191,38 @@ func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit util.S
 	return args.Bool(0)
 }
 
-func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.StateCommitment, error) {
-	args := m.Called(ctx, height)
-	return args.Get(0).(util.StateCommitment), args.Error(1)
+func (m *MockStateManager) BigStepLeafCommitment(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
+) (util.HistoryCommitment, error) {
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
-func (m *MockStateManager) LatestStateCommitment(ctx context.Context) (util.StateCommitment, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(util.StateCommitment), args.Error(1)
+func (m *MockStateManager) BigStepCommitmentUpTo(
+	ctx context.Context,
+	toBigStep uint64,
+) (util.HistoryCommitment, error) {
+	args := m.Called(ctx, toBigStep)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+}
+
+func (m *MockStateManager) SmallStepLeafCommitment(
+	ctx context.Context,
+	fromBigStep,
+	toBigStep uint64,
+) (util.HistoryCommitment, error) {
+	args := m.Called(ctx, fromBigStep, toBigStep)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+}
+
+func (m *MockStateManager) SmallStepCommitmentUpTo(
+	ctx context.Context,
+	toStep uint64,
+) (util.HistoryCommitment, error) {
+	args := m.Called(ctx, toStep)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
 type MockActiveTx struct {
