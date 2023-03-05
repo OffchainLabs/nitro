@@ -382,7 +382,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
-		if newTx.Type() == types.ArbitrumTippingTxType && arbOSVersion < 11 {
+		if newTx.Type() == types.ArbitrumSubtypedTxType && arbOSVersion < 11 {
 			return nil, types.ErrTxTypeNotSupported
 		}
 		if newTx.Type() >= types.ArbitrumDepositTxType {

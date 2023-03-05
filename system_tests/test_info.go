@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -229,5 +230,31 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 		Nonce:     txNonce,
 		Data:      data,
 	}
+	return b.SignTxAs(from, txData)
+}
+
+func (b *BlockchainTestInfo) PrepareTippingTx(from, to string, gas uint64, tipCap *big.Int, value *big.Int, data []byte) *types.Transaction {
+	b.T.Helper()
+	addr := b.GetAddress(to)
+	return b.PrepareTippingTxTo(from, &addr, gas, tipCap, value, data)
+}
+
+func (b *BlockchainTestInfo) PrepareTippingTxTo(
+	from string, to *common.Address, gas uint64, tipCap *big.Int, value *big.Int, data []byte,
+) *types.Transaction {
+	b.T.Helper()
+	info := b.GetInfoWithPrivKey(from)
+	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
+	feeCap := arbmath.BigAdd(b.GasPrice, tipCap)
+	dynamic := types.DynamicFeeTx{
+		To:        to,
+		Gas:       gas,
+		GasFeeCap: feeCap,
+		GasTipCap: tipCap,
+		Value:     value,
+		Nonce:     txNonce,
+		Data:      data,
+	}
+	txData := &types.ArbitrumSubtypedTx{TxData: &types.ArbitrumTippingTx{DynamicFeeTx: dynamic}}
 	return b.SignTxAs(from, txData)
 }
