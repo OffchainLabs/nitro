@@ -15,9 +15,9 @@ import (
 )
 
 func TestChallengeManagerFullAsserterIncorrect(t *testing.T) {
-	RunChallengeTest(t, false)
+	RunChallengeTest(t, false, false, MsgPerBatch+1)
 }
 
 func TestChallengeManagerFullAsserterCorrect(t *testing.T) {
-	RunChallengeTest(t, true)
+	RunChallengeTest(t, true, false, MsgPerBatch+2)
 }
