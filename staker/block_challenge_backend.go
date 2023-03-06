@@ -72,7 +72,7 @@ func NewBlockChallengeBackend(
 	}, nil
 }
 
-func (b *BlockChallengeBackend) findBatchFromMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
+func (b *BlockChallengeBackend) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
 	}
@@ -94,7 +94,7 @@ func (b *BlockChallengeBackend) findBatchFromMessageCount(msgCount arbutil.Messa
 		if batchMsgCount < msgCount {
 			low = mid + 1
 		} else if batchMsgCount == msgCount {
-			return mid, nil
+			return mid + 1, nil
 		} else if mid == low { // batchMsgCount > msgCount
 			return mid, nil
 		} else { // batchMsgCount > msgCount
@@ -104,7 +104,7 @@ func (b *BlockChallengeBackend) findBatchFromMessageCount(msgCount arbutil.Messa
 }
 
 func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.MessageIndex) (validator.GoGlobalState, error) {
-	batch, err := b.findBatchFromMessageCount(count)
+	batch, err := b.findBatchAfterMessageCount(count)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
