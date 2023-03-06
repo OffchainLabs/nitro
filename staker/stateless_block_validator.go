@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"testing"
 
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -30,7 +31,7 @@ type StatelessBlockValidator struct {
 	execSpawner        validator.ExecutionSpawner
 	validationSpawners []validator.ValidationSpawner
 
-	recorder *execution.BlockRecorder
+	recorder BlockRecorder
 
 	inboxReader  InboxReaderInterface
 	inboxTracker InboxTrackerInterface
@@ -45,6 +46,16 @@ type StatelessBlockValidator struct {
 
 type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
+}
+
+type BlockRecorder interface {
+	RecordBlockCreation(
+		ctx context.Context,
+		pos arbutil.MessageIndex,
+		msg *arbostypes.MessageWithMetadata,
+	) (*execution.RecordResult, error)
+	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
+	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
 }
 
 type InboxTrackerInterface interface {
@@ -218,7 +229,7 @@ func NewStatelessBlockValidator(
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
-	recorder *execution.BlockRecorder,
+	recorder BlockRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
@@ -421,6 +432,10 @@ func (v *StatelessBlockValidator) ValidateResult(
 		}
 	}
 	return true, &entry.End, nil
+}
+
+func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder BlockRecorder) {
+	v.recorder = recorder
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
