@@ -3,7 +3,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -12,6 +11,11 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -19,6 +23,7 @@ import (
 )
 
 type mockSpawner struct {
+	ExecSpawned []uint64
 }
 
 var blockHashKey = common.HexToHash("0x11223344")
@@ -49,11 +54,7 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 		Promise: containers.NewPromise[validator.GoGlobalState](),
 		root:    moduleRoot,
 	}
-	if moduleRoot != mockWasmModuleRoot {
-		run.ProduceError(errors.New("unsupported root"))
-	} else {
-		run.Produce(globalstateFromTestPreimages(entry.Preimages))
-	}
+	run.Produce(globalstateFromTestPreimages(entry.Preimages))
 	return run
 }
 
@@ -66,17 +67,11 @@ func (s *mockSpawner) Room() int                                  { return 4 }
 func (s *mockSpawner) LatestWasmModuleRoot() (common.Hash, error) { return mockWasmModuleRoot, nil }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
-	if wasmModuleRoot != mockWasmModuleRoot {
-		return nil, errors.New("unsupported root")
-	}
+	s.ExecSpawned = append(s.ExecSpawned, input.Id)
 	return &mockExecRun{
 		startState: input.StartState,
 		endState:   globalstateFromTestPreimages(input.Preimages),
 	}, nil
-}
-
-func (s *mockSpawner) LamockWasmModuleRoot() (common.Hash, error) {
-	return common.HexToHash("0x1234567890abcdeffedcba0987654321"), nil
 }
 
 func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
@@ -147,7 +142,7 @@ type mockMachineStep struct {
 
 func (s *mockMachineStep) Close() {}
 
-func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) *node.Node {
+func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.DataDir = ""
@@ -187,7 +182,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 		serverAPI.StopOnly()
 	}()
 
-	return stack
+	return spawner, stack
 }
 
 // mostly tests translation to/from json and running over network
@@ -195,7 +190,7 @@ func TestValidationServerAPI(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	validationDefault := createMockValidationNode(t, ctx, nil)
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	client := server_api.NewExecutionClient(validationDefault.WSEndpoint(), nil)
 	err := client.Start(ctx)
 	Require(t, err)
@@ -259,10 +254,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	validationDefault := createMockValidationNode(t, ctx, nil)
+	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
 	shortTimeoutConfig.ExecRunTimeout = time.Second
-	validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
+	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 
 	clientDefault := server_api.NewExecutionClient(validationDefault.WSEndpoint(), nil)
 	err := clientDefault.Start(ctx)
@@ -289,4 +284,44 @@ func TestExecutionKeepAlive(t *testing.T) {
 	if err == nil {
 		t.Error("getStep should have timed out but didn't")
 	}
+}
+
+type mockBlockRecorder struct {
+	validator *staker.StatelessBlockValidator
+	streamer  *arbnode.TransactionStreamer
+}
+
+func (m *mockBlockRecorder) RecordBlockCreation(
+	ctx context.Context,
+	pos arbutil.MessageIndex,
+	msg *arbostypes.MessageWithMetadata,
+) (*execution.RecordResult, error) {
+	_, globalpos, err := m.validator.GlobalStatePositionsAtCount(pos + 1)
+	if err != nil {
+		return nil, err
+	}
+	res, err := m.streamer.ResultAtCount(pos + 1)
+	if err != nil {
+		return nil, err
+	}
+	globalState := validator.GoGlobalState{
+		Batch:      globalpos.BatchNumber,
+		PosInBatch: globalpos.PosInBatch,
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+	}
+	return &execution.RecordResult{
+		Pos:       pos,
+		BlockHash: res.BlockHash,
+		Preimages: globalstateToTestPreimages(globalState),
+	}, nil
+}
+
+func (m *mockBlockRecorder) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {}
+func (m *mockBlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
+	return nil
+}
+
+func newMockRecorder(validator *staker.StatelessBlockValidator, streamer *arbnode.TransactionStreamer) *mockBlockRecorder {
+	return &mockBlockRecorder{validator, streamer}
 }
