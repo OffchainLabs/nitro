@@ -105,7 +105,7 @@ library MerkleTreeLib {
     // roots of each of it's complete subtrees.
     // ---------
     // eg. Below a tree of height 3 is represented as the composition of 2 complete subtrees, one of size
-    // 2 (AB) and one of size one.
+    // 2 (AB) and one of size one (C).
     //    AB
     //   /  \
     //  A    B    C
@@ -132,9 +132,9 @@ library MerkleTreeLib {
     // 2. Complete sub trees can only be appended at the height of the lowest complete subtree in the tree, or below
     // 3. If the existing tree is empty a sub tree can be appended at any height
     // When appending a sub tree we may increase the size of the merkle expansion vector, in the same
-    // that adding 1 to a binary number may increase the index of it's most significant bit
+    // that adding 1 to a binary number may increase the index of its most significant bit
     // ---------
-    // eg. A complete subtree can only be appended to the ABC tree at level 0, since the it's lowest complete
+    // eg. A complete subtree can only be appended to the ABC tree at level 0, since the its lowest complete
     // subtree (C) is at level 0. Doing so would create a complete sub tree at level 1, which would in turn
     // cause the creation of new size 4 sub tree
     //
@@ -145,6 +145,8 @@ library MerkleTreeLib {
     //  A    B    C       D       A    B C    D
     //
     // ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
+    // --------------------------------------------------------------------------------------------
+    
 
     /// @notice The root of the subtree. A collision free commitment to the contents of the tree.
     /// @dev    The root of a tree is defined as the cumulative hashing of the
