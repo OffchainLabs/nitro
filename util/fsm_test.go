@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSimpleFSM(t *testing.T) {
+func TestOpenCloseFSM(t *testing.T) {
 	var startState doorState
 	startState = doorStateClosed
 	transitions := []*FsmEvent[doorEvent, doorState]{
@@ -15,25 +15,40 @@ func TestSimpleFSM(t *testing.T) {
 	fsm, err := NewFsm(startState, transitions)
 	require.NoError(t, err)
 
-	require.Equal(t, uint8(doorStateClosed), uint8(fsm.Current()))
+	t.Run("assert state state", func(t *testing.T) {
+		curr := fsm.Current()
+		require.Equal(t, uint8(doorStateClosed), uint8(curr.State))
+	})
+	t.Run("invalid transition", func(t *testing.T) {
+		err = fsm.Do(Close{})
+		require.ErrorIs(t, err, ErrFsmInvalidTransition)
+	})
+	t.Run("valid transitions", func(t *testing.T) {
+		err = fsm.Do(Open{intruderName: "vitalik"})
+		require.NoError(t, err)
 
-	err = fsm.Do(Close{})
-	require.ErrorIs(t, err, ErrFsmInvalidTransition)
+		curr := fsm.Current()
+		require.Equal(t, uint8(doorStateOpened), uint8(curr.State))
+		openedEv, ok := curr.SourceEvent.(Open)
+		require.Equal(t, true, ok)
+		require.Equal(t, "vitalik", openedEv.intruderName)
 
-	require.Equal(t, uint8(doorStateClosed), uint8(fsm.Current()))
+		err = fsm.Do(Close{})
+		require.NoError(t, err)
 
-	err = fsm.Do(Open{intruderName: "vitalik"})
-	require.NoError(t, err)
+		curr = fsm.Current()
+		require.Equal(t, uint8(doorStateClosed), uint8(curr.State))
 
-	require.Equal(t, uint8(doorStateOpened), uint8(fsm.Current()))
+		err = fsm.Do(Open{intruderName: "vitalik"})
+		require.NoError(t, err)
 
-	err = fsm.Do(Close{})
-	require.NoError(t, err)
-
-	require.Equal(t, uint8(doorStateClosed), uint8(fsm.Current()))
-
-	err = fsm.Do(Close{})
-	require.ErrorIs(t, err, ErrFsmInvalidTransition)
+		curr = fsm.Current()
+		require.Equal(t, uint8(doorStateOpened), uint8(curr.State))
+	})
+	t.Run("unknown event", func(t *testing.T) {
+		err = fsm.Do(SchrodingersDoorOpenedAndClosed{})
+		require.ErrorIs(t, err, ErrFsmEventNotFound)
+	})
 }
 
 type doorEvent interface {
@@ -60,6 +75,16 @@ func (c Close) String() string {
 }
 
 func (c Close) isDoorEvent() bool {
+	return true
+}
+
+type SchrodingersDoorOpenedAndClosed struct{}
+
+func (c SchrodingersDoorOpenedAndClosed) String() string {
+	return "open_and_closed"
+}
+
+func (c SchrodingersDoorOpenedAndClosed) isDoorEvent() bool {
 	return true
 }
 

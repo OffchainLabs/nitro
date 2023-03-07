@@ -22,6 +22,11 @@ type FsmEvent[E, T Stringer] struct {
 	To   T
 }
 
+type CurrentState[E, T Stringer] struct {
+	SourceEvent E
+	State       T
+}
+
 func WithTrackedTransitions[E, T Stringer]() FsmOpt[E, T] {
 	return func(f *Fsm[E, T]) {
 		f.trackingTransitions = true
@@ -43,7 +48,7 @@ type Fsm[E, T Stringer] struct {
 	lock                sync.RWMutex
 	trackingTransitions bool
 	transitionsExecuted []*transitionMade[E, T]
-	curr                T
+	curr                *CurrentState[E, T]
 	validEvents         map[string]bool
 	validStates         map[string]bool
 	validTransitions    map[internalKey]T
@@ -55,7 +60,9 @@ func NewFsm[E, T Stringer](
 	opts ...FsmOpt[E, T],
 ) (*Fsm[E, T], error) {
 	f := &Fsm[E, T]{
-		curr:                startState,
+		curr: &CurrentState[E, T]{
+			State: startState,
+		},
 		transitionsExecuted: make([]*transitionMade[E, T], 0),
 	}
 	for _, opt := range opts {
@@ -82,7 +89,7 @@ func (f *Fsm[E, T]) CanTransition(event E) bool {
 	defer f.lock.RUnlock()
 	_, ok := f.validTransitions[internalKey{
 		eventType: event.String(),
-		src:       f.curr.String(),
+		src:       f.curr.State.String(),
 	}]
 	return ok
 }
@@ -90,7 +97,7 @@ func (f *Fsm[E, T]) CanTransition(event E) bool {
 func (f *Fsm[E, T]) Do(event E) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	src := f.curr
+	src := f.curr.State
 	key := internalKey{
 		eventType: event.String(),
 		src:       src.String(),
@@ -104,7 +111,10 @@ func (f *Fsm[E, T]) Do(event E) error {
 		}
 		return ErrFsmEventNotFound
 	}
-	f.curr = to
+	f.curr = &CurrentState[E, T]{
+		State:       to,
+		SourceEvent: event,
+	}
 	if f.trackingTransitions {
 		f.transitionsExecuted = append(
 			f.transitionsExecuted,
@@ -114,7 +124,7 @@ func (f *Fsm[E, T]) Do(event E) error {
 	return nil
 }
 
-func (f *Fsm[E, T]) Current() T {
+func (f *Fsm[E, T]) Current() *CurrentState[E, T] {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	return f.curr
