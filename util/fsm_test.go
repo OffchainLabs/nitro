@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestOpenCloseFSM(t *testing.T) {
+func TestFSM_OpenClose(t *testing.T) {
 	var startState doorState
 	startState = doorStateClosed
 	transitions := []*FsmEvent[doorEvent, doorState]{
@@ -49,6 +49,49 @@ func TestOpenCloseFSM(t *testing.T) {
 		err = fsm.Do(SchrodingersDoorOpenedAndClosed{})
 		require.ErrorIs(t, err, ErrFsmEventNotFound)
 	})
+}
+
+func TestFSM_TrackTransitions(t *testing.T) {
+	var startState doorState
+	startState = doorStateClosed
+	transitions := []*FsmEvent[doorEvent, doorState]{
+		{Typ: Open{}, From: []doorState{doorStateClosed}, To: doorStateOpened},
+		{Typ: Close{}, From: []doorState{doorStateOpened}, To: doorStateClosed},
+	}
+	fsm, err := NewFsm(
+		startState,
+		transitions,
+		WithTrackedTransitions[doorEvent, doorState](),
+	)
+	require.NoError(t, err)
+
+	err = fsm.Do(Open{intruderName: "vitalik"})
+	require.NoError(t, err)
+
+	err = fsm.Do(Close{})
+	require.NoError(t, err)
+
+	err = fsm.Do(Open{intruderName: "vitalik"})
+	require.NoError(t, err)
+
+	err = fsm.Do(Open{})
+	require.ErrorIs(t, err, ErrFsmInvalidTransition)
+
+	require.Equal(t, 3, len(fsm.transitionsExecuted))
+	require.Equal(t, uint8(doorStateClosed), uint8(fsm.transitionsExecuted[0].From))
+	require.Equal(t, uint8(doorStateOpened), uint8(fsm.transitionsExecuted[0].To))
+	_, ok := fsm.transitionsExecuted[0].Event.(Open)
+	require.Equal(t, true, ok)
+
+	require.Equal(t, uint8(doorStateOpened), uint8(fsm.transitionsExecuted[1].From))
+	require.Equal(t, uint8(doorStateClosed), uint8(fsm.transitionsExecuted[1].To))
+	_, ok = fsm.transitionsExecuted[1].Event.(Close)
+	require.Equal(t, true, ok)
+
+	require.Equal(t, uint8(doorStateClosed), uint8(fsm.transitionsExecuted[2].From))
+	require.Equal(t, uint8(doorStateOpened), uint8(fsm.transitionsExecuted[2].To))
+	_, ok = fsm.transitionsExecuted[2].Event.(Open)
+	require.Equal(t, true, ok)
 }
 
 type doorEvent interface {
