@@ -169,8 +169,9 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 					"Reached one-step-fork at %d %#x, now tracking subchallenge resolution",
 					prevCommitment.Height, prevCommitment.Merkle,
 				)
+
+				// TODO: Should be awaiting subchallenge resolution.
 				v.awaitingOneStepFork = true
-				// TODO: Add subchallenge resolution.
 				return nil
 			}
 		}
