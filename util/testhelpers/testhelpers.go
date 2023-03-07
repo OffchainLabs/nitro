@@ -11,9 +11,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
@@ -88,12 +86,4 @@ func InitTestLog(t *testing.T, level log.Lvl) *LogHandler {
 	glogger.Verbosity(level)
 	log.Root().SetHandler(glogger)
 	return handler
-}
-
-func CompressedTxSize(t *testing.T, tx *types.Transaction) uint64 {
-	txBin, err := tx.MarshalBinary()
-	RequireImpl(t, err)
-	compressed, err := arbcompress.CompressFast(txBin)
-	RequireImpl(t, err)
-	return uint64(len(compressed))
 }
