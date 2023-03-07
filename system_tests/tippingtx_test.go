@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -108,6 +109,13 @@ func TestTippingTxTipPaid(t *testing.T) {
 	l2info.GenerateAccount("User1")
 	l2info.GenerateAccount("User2")
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{l2info.PrepareTx("Owner", "User1", l2info.TransferGas, big.NewInt(1e18), nil)})
+	compressedTxSize := func(t *testing.T, tx *types.Transaction) uint64 {
+		txBin, err := tx.MarshalBinary()
+		Require(t, err)
+		compressed, err := arbcompress.CompressFast(txBin)
+		Require(t, err)
+		return uint64(len(compressed))
+	}
 
 	testFees := func(tip uint64) (*big.Int, *big.Int) {
 		tipCap := arbmath.BigMulByUint(baseFee, tip)
