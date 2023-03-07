@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
@@ -118,14 +117,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
 		from := p.msg.From()
-		start := time.Now()
 		tracer.CaptureStart(evm, from, *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
-			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
+			tracer.CaptureEnd(nil, p.state.Burner.Burned(), nil)
 			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingAfterEVM)
@@ -227,7 +225,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, callValueErr, nil
 		}
 
-		time := evm.Context.Time.Uint64()
+		time := evm.Context.Time
 		timeout := time + retryables.RetryableLifetimeSeconds
 
 		// we charge for creating the retryable and reaping the next expired one on L1
@@ -563,7 +561,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	scheduled := types.Transactions{}
-	time := p.evm.Context.Time.Uint64()
+	time := p.evm.Context.Time
 	basefee := p.evm.Context.BaseFee
 	chainID := p.evm.ChainConfig().ChainID
 

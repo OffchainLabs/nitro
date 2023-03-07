@@ -270,7 +270,7 @@ func ProduceBlockAdvanced(
 			}
 
 			snap := statedb.Snapshot()
-			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
+			statedb.SetTxContext(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
 			receipt, result, err := core.ApplyTransactionWithResultFilter(

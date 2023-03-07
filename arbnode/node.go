@@ -1417,7 +1417,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	if height == nil {
 		return errors.New("non empty chain config but empty chain")
 	}
-	err := storedConfig.CheckCompatible(config, *height)
+	err := storedConfig.CheckCompatible(config, *height, 0)
 	if err != nil {
 		return err
 	}
