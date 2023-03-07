@@ -146,7 +146,7 @@ func TestTippingTxTipPaid(t *testing.T) {
 		if !gotTip {
 			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
 		}
-		txSize := compressedTxSize(t, tx)
+		txSize := testhelpers.CompressedTxSize(t, tx)
 		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
 		l1GasActual := txSize * params.TxDataNonZeroGasEIP2028
 

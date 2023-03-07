@@ -17,9 +17,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
@@ -27,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestSequencerFeePaid(t *testing.T) {
@@ -88,7 +87,7 @@ func TestSequencerFeePaid(t *testing.T) {
 			Fail(t, "tips are somehow enabled")
 		}
 
-		txSize := compressedTxSize(t, tx)
+		txSize := testhelpers.CompressedTxSize(t, tx)
 		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
 		l1GasActual := txSize * params.TxDataNonZeroGasEIP2028
 
@@ -179,7 +178,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 
 		TransferBalance(t, "Faucet", "Faucet", common.Big1, l1info, l1client, ctx) // generate l1 traffic
 
-		units := compressedTxSize(t, tx) * params.TxDataNonZeroGasEIP2028
+		units := testhelpers.CompressedTxSize(t, tx) * params.TxDataNonZeroGasEIP2028
 		estimatedL1FeePerUnit := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, receipt.GasUsedForL1), units)
 
 		if !arbmath.BigEquals(lastEstimate, estimatedL1FeePerUnit) {
@@ -296,12 +295,4 @@ func TestSequencerPriceAdjustsFrom10Gwei(t *testing.T) {
 
 func TestSequencerPriceAdjustsFrom25Gwei(t *testing.T) {
 	testSequencerPriceAdjustsFrom(t, 25*params.GWei)
-}
-
-func compressedTxSize(t *testing.T, tx *types.Transaction) uint64 {
-	txBin, err := tx.MarshalBinary()
-	Require(t, err)
-	compressed, err := arbcompress.CompressFast(txBin)
-	Require(t, err)
-	return uint64(len(compressed))
 }
