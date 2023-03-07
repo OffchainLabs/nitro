@@ -427,8 +427,8 @@ impl Sub for StackState {
     }
 }
 
-pub fn wasm_to_wavm<'a>(
-    code: &[Operator<'a>],
+pub fn wasm_to_wavm(
+    code: &[Operator<'_>],
     out: &mut Vec<Instruction>,
     fp_impls: &FloatingPointImpls,
     func_types: &[FunctionType],
