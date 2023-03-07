@@ -260,20 +260,17 @@ if $force_init; then
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to user_l1user --wait
     docker-compose run testnode-scripts send-l1 --ethamount 0.0001 --from user_l1user --to user_l1user_b --wait --delay 500 --times 500 > /dev/null &
 
-    echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-
-    nativeTokenAddress=""
+    deployL2Command="docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid"
     if $erc20rollup; then
         echo == Deploying token
         nativeTokenAddress=`docker-compose run testnode-scripts create-erc20 --deployerKey $devprivkey --mintTo user_l1user | tail -n 1 | awk '{ print $NF }'`
+        deployL2Command+=" --nativeERC20TokenAddress $nativeTokenAddress"
     fi
 
-    if $erc20rollup; then
-        docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --nativeERC20TokenAddress $nativeTokenAddress --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
-    else
-        docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
-    fi
+    echo == Deploying L2
+    eval $deployL2Command
+
     echo == Writing configs
     docker-compose run testnode-scripts write-config
 
