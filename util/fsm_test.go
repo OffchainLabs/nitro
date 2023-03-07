@@ -64,6 +64,7 @@ func (d doorState) String() string {
 
 // Creates a simple test where we have a door open/closed state machine.
 func TestFSM_OpenClose(t *testing.T) {
+	//nolint:all
 	var startState doorState
 	startState = doorStateClosed
 	transitions := []*FsmEvent[doorEvent, doorState]{
@@ -111,6 +112,7 @@ func TestFSM_OpenClose(t *testing.T) {
 
 // Checks if our FSM can correctly track state transitions when configured to do so.
 func TestFSM_TrackTransitions(t *testing.T) {
+	//nolint:all
 	var startState doorState
 	startState = doorStateClosed
 	transitions := []*FsmEvent[doorEvent, doorState]{
@@ -219,6 +221,7 @@ func (_ Cool) String() string {
 
 // Tests a more complex fsm that describes an HVAC system which includes cycles.
 func TestFSM_ComplexWithCycles(t *testing.T) {
+	//nolint:all
 	var startState hvacState
 	startState = hvacOff
 	transitions := []*FsmEvent[hvacEvent, hvacState]{
