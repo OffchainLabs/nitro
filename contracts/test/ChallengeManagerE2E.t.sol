@@ -6,6 +6,7 @@ import "../src/challengeV2/DataEntities.sol";
 import "./MockAssertionChain.sol";
 import "../src/challengeV2/ChallengeManagerImpl.sol";
 import "../src/osp/IOneStepProofEntry.sol";
+import "./challengeV2/Utils.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
     function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
@@ -18,19 +19,11 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
 }
 
 contract ChallengeManagerE2ETest is Test {
-    function generateHash(uint256 iterations) internal pure returns (bytes32 h) {
-        // seed
-        h = 0xf19f64ef5b8c788ff3f087b4f75bc6596a6aaa3c9048bbbbe990fa0870261385;
-        for (uint256 i = 0; i < iterations; i++) {
-            h = keccak256(abi.encodePacked(h));
-        }
-    }
-
-    bytes32 genesisHash = generateHash(0);
-    bytes32 h1 = generateHash(1);
-    bytes32 h2 = generateHash(2);
-    uint256 height1 = 10;
-    uint256 inboxSeenCount1 = 5;
+    Random rand = new Random();
+    bytes32 genesisHash = rand.hash();
+    bytes32 h1 = rand.hash();
+    bytes32 h2 = rand.hash();
+    uint256 height1 = 19;
 
     uint256 miniStakeVal = 1 ether;
     uint256 challengePeriodSec = 1000;
@@ -49,6 +42,7 @@ contract ChallengeManagerE2ETest is Test {
         returns (MockAssertionChain, ChallengeManagerImpl, bytes32, bytes32, bytes32, bytes32)
     {
         (MockAssertionChain assertionChain, ChallengeManagerImpl challengeManager, bytes32 genesis) = deploy();
+        uint256 inboxSeenCount1 = 5;
 
         bytes32 a1 = assertionChain.addAssertion(genesis, height1, inboxSeenCount1, h1, 0);
         bytes32 a2 = assertionChain.addAssertion(genesis, height1, inboxSeenCount1, h2, 0);
@@ -58,15 +52,23 @@ contract ChallengeManagerE2ETest is Test {
         return (assertionChain, challengeManager, genesis, a1, a2, challengeId);
     }
 
+    function randomLeavesAndExpansion(uint256 height) internal returns (bytes32[] memory, bytes32[] memory) {
+        bytes32[] memory leaves = rand.hashes(height);
+        bytes32[] memory exp = MerkleTreeLib.expansionFromLeaves(leaves, 0, height);
+
+        return (leaves, exp);
+    }
+
     function testCanConfirmPs() public {
         (, ChallengeManagerImpl challengeManager,, bytes32 a1,, bytes32 challengeId) = deployAndInitChallenge();
+        (, bytes32[] memory exp) = randomLeavesAndExpansion(height1);
 
         bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
                 challengeId: challengeId,
                 claimId: a1,
                 height: height1,
-                historyRoot: h1,
+                historyRoot: MerkleTreeLib.root(exp),
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -83,16 +85,37 @@ contract ChallengeManagerE2ETest is Test {
         assertEq(challengeManager.winningClaim(challengeId), a1);
     }
 
+    function bisect(
+        IChallengeManager challengeManager,
+        bytes32 currentId,
+        bytes32[] memory leaves,
+        uint256 bisectionHeight,
+        uint256 currentHeight
+    ) internal returns (bytes32) {
+        bytes32[] memory preExp = MerkleTreeLib.expansionFromLeaves(leaves, 0, bisectionHeight);
+        return challengeManager.bisect(
+            currentId,
+            MerkleTreeLib.root(preExp),
+            abi.encode(
+                preExp,
+                MerkleTreeLib.generatePrefixProof(
+                    bisectionHeight, ArrayUtils.slice(leaves, bisectionHeight, currentHeight)
+                )
+            )
+        );
+    }
+
     function testCanConfirmSubChallenge() public {
         (, ChallengeManagerImpl challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
             deployAndInitChallenge();
+        (bytes32[] memory leaves1, bytes32[] memory exp1) = randomLeavesAndExpansion(height1);
 
         bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
                 challengeId: blockChallengeId,
                 claimId: a1,
                 height: height1,
-                historyRoot: h1,
+                historyRoot: MerkleTreeLib.root(exp1),
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h1,
@@ -102,12 +125,13 @@ contract ChallengeManagerE2ETest is Test {
             abi.encodePacked(uint256(0))
         );
 
+        (bytes32[] memory leaves2, bytes32[] memory exp2) = randomLeavesAndExpansion(height1);
         bytes32 v2Id = challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
                 challengeId: blockChallengeId,
                 claimId: a2,
                 height: height1,
-                historyRoot: h2,
+                historyRoot: MerkleTreeLib.root(exp2),
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
                 lastState: h2,
@@ -117,37 +141,16 @@ contract ChallengeManagerE2ETest is Test {
             abi.encodePacked(uint256(0))
         );
 
-        bytes32 b11;
-        bytes32 b12;
-        bytes32 b14;
-        bytes32 b18;
-        {
-            // height 8
-            b18 = challengeManager.bisect(v1Id, h1, "");
-            bytes32 b28 = challengeManager.bisect(v2Id, h2, "");
+        (bytes32[5] memory b1,) = bisectToRoot(challengeManager, v1Id, v2Id, leaves1, leaves2);
 
-            // height 4
-            b14 = challengeManager.bisect(b18, h1, "");
-            bytes32 b24 = challengeManager.bisect(b28, h2, "");
-
-            // height 2
-            b12 = challengeManager.bisect(b14, h1, "");
-            bytes32 b22 = challengeManager.bisect(b24, h2, "");
-
-            // height 1
-            b11 = challengeManager.bisect(b12, h1, "");
-            challengeManager.bisect(b22, h2, "");
-        }
-
-        bytes32 rootId = challengeManager.getVertex(b11).predecessorId;
-
-        bytes32 bigStepChallengeId = challengeManager.createSubChallenge(rootId);
+        bytes32 bigStepChallengeId =
+            challengeManager.createSubChallenge(challengeManager.getVertex(b1[0]).predecessorId);
 
         // only add one leaf
         bytes32 bsLeaf1 = challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
                 challengeId: bigStepChallengeId,
-                claimId: b11,
+                claimId: b1[0],
                 height: height1,
                 historyRoot: h1,
                 firstState: genesisHash,
@@ -164,41 +167,44 @@ contract ChallengeManagerE2ETest is Test {
         // confirm in the sub challenge by ps
         challengeManager.confirmForPsTimer(bsLeaf1);
         // confirm because of sub challenge
-        challengeManager.confirmForSucessionChallengeWin(b11);
+        challengeManager.confirmForSucessionChallengeWin(b1[0]);
         // confirm the rest sequentially by ps
-        challengeManager.confirmForPsTimer(b12);
-        challengeManager.confirmForPsTimer(b14);
-        challengeManager.confirmForPsTimer(b18);
-        challengeManager.confirmForPsTimer(v1Id);
+        challengeManager.confirmForPsTimer(b1[1]);
+        challengeManager.confirmForPsTimer(b1[2]);
+        challengeManager.confirmForPsTimer(b1[3]);
+        challengeManager.confirmForPsTimer(b1[4]);
 
         assertEq(challengeManager.winningClaim(blockChallengeId), a1);
     }
 
-    function bisectToRoot(IChallengeManager challengeManager, bytes32 winningLeaf, bytes32 losingLeaf)
-        internal
-        returns (bytes32[5] memory, bytes32[5] memory)
-    {
+    function bisectToRoot(
+        IChallengeManager challengeManager,
+        bytes32 winningId,
+        bytes32 losingId,
+        bytes32[] memory winningLeaves,
+        bytes32[] memory losingLeaves
+    ) internal returns (bytes32[5] memory, bytes32[5] memory) {
         bytes32[5] memory winningVertices;
         bytes32[5] memory losingVertices;
 
-        winningVertices[4] = winningLeaf;
-        losingVertices[4] = losingLeaf;
+        winningVertices[4] = winningId;
+        losingVertices[4] = losingId;
+
+        // height 16
+        winningVertices[3] = bisect(challengeManager, winningVertices[4], winningLeaves, 16, winningLeaves.length);
+        losingVertices[3] = bisect(challengeManager, losingVertices[4], losingLeaves, 16, losingLeaves.length);
 
         // height 8
-        winningVertices[3] = challengeManager.bisect(winningVertices[4], h1, "");
-        losingVertices[3] = challengeManager.bisect(losingVertices[4], h2, "");
+        winningVertices[2] = bisect(challengeManager, winningVertices[3], winningLeaves, 8, 16);
+        losingVertices[2] = bisect(challengeManager, losingVertices[3], losingLeaves, 8, 16);
 
         // height 4
-        winningVertices[2] = challengeManager.bisect(winningVertices[3], h1, "");
-        losingVertices[2] = challengeManager.bisect(losingVertices[3], h2, "");
+        winningVertices[1] = bisect(challengeManager, winningVertices[2], winningLeaves, 4, 8);
+        losingVertices[1] = bisect(challengeManager, losingVertices[2], losingLeaves, 4, 8);
 
-        // height 2
-        winningVertices[1] = challengeManager.bisect(winningVertices[2], h1, "");
-        losingVertices[1] = challengeManager.bisect(losingVertices[2], h2, "");
-
-        // height 1
-        winningVertices[0] = challengeManager.bisect(winningVertices[1], h1, "");
-        losingVertices[0] = challengeManager.bisect(losingVertices[1], h2, "");
+        // height 4
+        winningVertices[0] = bisect(challengeManager, winningVertices[1], winningLeaves, 2, 4);
+        losingVertices[0] = bisect(challengeManager, losingVertices[1], losingLeaves, 2, 4);
 
         return (winningVertices, losingVertices);
     }
@@ -208,13 +214,14 @@ contract ChallengeManagerE2ETest is Test {
         bytes32 challengeId,
         bytes32 claimId,
         bytes32 historyRoot,
+        uint256 height,
         bytes memory proof2
     ) internal returns (bytes32) {
         return challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
                 challengeId: challengeId,
                 claimId: claimId,
-                height: height1,
+                height: height,
                 historyRoot: historyRoot,
                 firstState: genesisHash,
                 firstStatehistoryProof: "",
@@ -230,15 +237,18 @@ contract ChallengeManagerE2ETest is Test {
         IChallengeManager challengeManager,
         bytes32 challengeId,
         bytes32 claimId1,
-        bytes32 historyRoot1,
         bytes32 claimId2,
-        bytes32 historyRoot2,
         bytes memory addLeafProof2
     ) internal returns (bytes32[5] memory, bytes32[5] memory) {
-        bytes32 blockLeaf1Id = addLeaf(challengeManager, challengeId, claimId1, historyRoot1, addLeafProof2);
-        bytes32 blockLeaf2Id = addLeaf(challengeManager, challengeId, claimId2, historyRoot2, addLeafProof2);
+        (bytes32[] memory leaves1, bytes32[] memory exp1) = randomLeavesAndExpansion(height1);
+        (bytes32[] memory leaves2, bytes32[] memory exp2) = randomLeavesAndExpansion(height1);
+
+        bytes32 blockLeaf1Id =
+            addLeaf(challengeManager, challengeId, claimId1, MerkleTreeLib.root(exp1), height1, addLeafProof2);
+        bytes32 blockLeaf2Id =
+            addLeaf(challengeManager, challengeId, claimId2, MerkleTreeLib.root(exp2), height1, addLeafProof2);
         (bytes32[5] memory challengeWinningVertices, bytes32[5] memory challengeLosingVertices) =
-            bisectToRoot(challengeManager, blockLeaf1Id, blockLeaf2Id);
+            bisectToRoot(challengeManager, blockLeaf1Id, blockLeaf2Id, leaves1, leaves2);
 
         return (challengeWinningVertices, challengeLosingVertices);
     }
@@ -247,14 +257,13 @@ contract ChallengeManagerE2ETest is Test {
         (, ChallengeManagerImpl challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
             deployAndInitChallenge();
 
-        (bytes32[5] memory blockWinners, bytes32[5] memory blockLosers) = addLeafsAndBisectToSubChallenge(
-            challengeManager, blockChallengeId, a1, h1, a2, h2, abi.encodePacked(uint256(0))
-        );
+        (bytes32[5] memory blockWinners, bytes32[5] memory blockLosers) =
+            addLeafsAndBisectToSubChallenge(challengeManager, blockChallengeId, a1, a2, abi.encodePacked(uint256(0)));
 
         bytes32 bigStepChallengeId =
             challengeManager.createSubChallenge(challengeManager.getVertex(blockWinners[0]).predecessorId);
         (bytes32[5] memory bigStepWinners, bytes32[5] memory bigStepLosers) = addLeafsAndBisectToSubChallenge(
-            challengeManager, bigStepChallengeId, blockWinners[0], h1, blockLosers[0], h2, abi.encodePacked(uint256(0))
+            challengeManager, bigStepChallengeId, blockWinners[0], blockLosers[0], abi.encodePacked(uint256(0))
         );
 
         bytes32 smallStepChallengeId =
@@ -264,10 +273,8 @@ contract ChallengeManagerE2ETest is Test {
             challengeManager,
             smallStepChallengeId,
             bigStepWinners[0],
-            h1,
             bigStepLosers[0],
-            h2,
-            abi.encodePacked(height1)
+            abi.encodePacked(SmallStepLeafAdder.MAX_STEPS + height1)
         );
 
         challengeManager.createSubChallenge(challengeManager.getVertex(smallStepWinners[0]).predecessorId);

@@ -9,6 +9,14 @@ contract Random {
         return seed;
     }
 
+    function hashes(uint256 count) public returns (bytes32[] memory) {
+        bytes32[] memory h = new bytes32[](count);
+        for (uint256 i = 0; i < h.length; i++) {
+            h[i] = hash();
+        }
+        return h;
+    }
+
     function addr() public returns (address) {
         seed = keccak256(abi.encodePacked(seed));
         return address(bytes20(seed));
