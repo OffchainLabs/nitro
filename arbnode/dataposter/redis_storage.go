@@ -178,6 +178,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		_, err = pipe.Exec(ctx)
 		if errors.Is(err, redis.TxFailedErr) {
 			// Unfortunately, we can't wrap two errors.
+			//nolint:errorlint
 			err = fmt.Errorf("%w: %v", StorageRaceErr, err.Error())
 		}
 		return err
