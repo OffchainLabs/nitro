@@ -55,9 +55,9 @@ struct AddLeafArgs {
     uint256 height;
     bytes32 historyRoot;
     bytes32 firstState;
-    bytes firstStatehistoryProof;
+    bytes32[] firstStatehistoryProof;
     bytes32 lastState;
-    bytes lastStatehistoryProof;
+    bytes32[] lastStatehistoryProof;
 }
 
 struct AddLeafLibArgs {

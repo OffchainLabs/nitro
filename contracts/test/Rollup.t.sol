@@ -16,6 +16,7 @@ import "../src/osp/OneStepProverMath.sol";
 import "../src/osp/OneStepProverHostIo.sol";
 import "../src/osp/OneStepProofEntry.sol";
 import "../src/challengeV2/ChallengeManagerImpl.sol";
+import "./challengeV2/Utils.sol";
 
 contract RollupTest is Test {
     address constant owner = address(1337);
@@ -36,6 +37,7 @@ contract RollupTest is Test {
     RollupUserLogic userRollup;
     RollupAdminLogic adminRollup;
     ChallengeManagerImpl challengeManager;
+    Random rand = new Random();
 
     address[] validators;
     bool[] flags;
@@ -353,6 +355,19 @@ contract RollupTest is Test {
         });
     }
 
+    function fillStatesInBetween(bytes32 start, bytes32 end, uint256 totalCount) internal returns(bytes32[] memory) {
+        bytes32[] memory innerStates = rand.hashes(6);
+
+        bytes32[] memory states = new bytes32[](totalCount);
+        states[0] = start;
+        for(uint i = 0; i < innerStates.length; i++) {
+            states[i + 1] = innerStates[i];
+        }
+        states[totalCount - 1] = end;
+
+        return states;
+    }
+
     function testSuccessConfirmForPsTimer() public {
         testSuccessCreateSecondChild();
         vm.prank(validator1);
@@ -363,16 +378,20 @@ contract RollupTest is Test {
         vm.warp(block.timestamp + CONFIRM_PERIOD_BLOCKS * 15);
         bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(0));
         bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(1));
+
+        bytes32[] memory states = fillStatesInBetween(h0, h1, 8);
+        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, 8));
+
         bytes32 v1Id = challengeManager.addLeaf{value: 1}(
             AddLeafArgs({
                 challengeId: challengeId,
                 claimId: userRollup.getAssertionId(1),
-                height: 8,
-                historyRoot: h1,
+                height: 7,
+                historyRoot: root,
                 firstState: h0,
-                firstStatehistoryProof: "",
-                lastState: h1,
-                lastStatehistoryProof: ""
+                firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0),
+                lastState: states[states.length - 1],
+                lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1)
             }),
             abi.encodePacked(h1),
             abi.encodePacked(uint256(0))
