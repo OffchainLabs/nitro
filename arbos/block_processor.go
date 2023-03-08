@@ -84,7 +84,7 @@ type ConditionalOptionsForTxMap map[common.Hash]*arbitrum_types.ConditionalOptio
 type SequencingHooks struct {
 	TxErrors                []error
 	DiscardInvalidTxsEarly  bool
-	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address) error
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, uint64, uint64) error
 	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 	ConditionalOptionsForTx ConditionalOptionsForTxMap
 }
@@ -93,7 +93,7 @@ func NoopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, uint64, uint64) error {
 			return nil
 		},
 		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
@@ -242,7 +242,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender); err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info.l1BlockNumber, l1Info.l1Timestamp); err != nil {
 				return nil, nil, err
 			}
 

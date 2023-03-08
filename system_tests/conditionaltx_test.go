@@ -75,10 +75,9 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
 }
 
-func getSuccessOptions(address1, address2 common.Address, currentRootHash1, currentRootHash2 common.Hash, currentSlotValueMap1, currentSlotValueMap2 map[common.Hash]common.Hash, blockNumber uint64) []*arbitrum_types.ConditionalOptions {
-	now := time.Now().Unix()
-	future := hexutil.Uint64(now + 5)
-	past := hexutil.Uint64(now - 1)
+func getSuccessOptions(address1, address2 common.Address, currentRootHash1, currentRootHash2 common.Hash, currentSlotValueMap1, currentSlotValueMap2 map[common.Hash]common.Hash, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
+	future := hexutil.Uint64(timestamp + 5)
+	past := hexutil.Uint64(timestamp - 1)
 	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
 	currentBlockNumber := hexutil.Uint64(blockNumber)
 	return []*arbitrum_types.ConditionalOptions{
@@ -106,23 +105,25 @@ func getSuccessOptions(address1, address2 common.Address, currentRootHash1, curr
 func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node, client := CreateTestL2(t, ctx)
+
+	l2info, node, l2client, _, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	contractAddress1, simple1 := deploySimple(t, ctx, auth, client)
+	contractAddress1, simple1 := deploySimple(t, ctx, auth, l2client)
 	tx, err := simple1.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	contractAddress2, simple2 := deploySimple(t, ctx, auth, client)
+	contractAddress2, simple2 := deploySimple(t, ctx, auth, l2client)
 	tx, err = simple2.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	tx, err = simple2.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	currentRootHash1 := getStorageRootHash(t, node, contractAddress1)
@@ -137,19 +138,22 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 
 	testConditionalTxThatShouldSucceed(t, ctx, -1, l2info, rpcClient, nil)
 
-	blockNumber := node.Backend.ArbInterface().BlockChain().CurrentBlock().NumberU64()
-	successOptions := getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber)
+	block, err := l1client.BlockByNumber(ctx, nil)
+	testhelpers.RequireImpl(t, err)
+	blockNumber := block.NumberU64()
+	blockTime := block.Time()
+	successOptions := getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber, blockTime)
 	for i, options := range successOptions {
 		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 
 	tx, err = simple1.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	tx, err = simple2.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	previousStorageRootHash1 := currentRootHash1
@@ -168,15 +172,20 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	previousSlotValueMap2 := currentSlotValueMap2
 	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
 
-	blockNumber = node.Backend.ArbInterface().BlockChain().CurrentBlock().NumberU64()
-	successOptions = getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber)
+	block, err = l1client.BlockByNumber(ctx, nil)
+	testhelpers.RequireImpl(t, err)
+	blockNumber = block.NumberU64()
+	blockTime = block.Time()
+	successOptions = getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber, blockTime)
 	for i, options := range successOptions {
 		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
-	blockNumber = node.Backend.ArbInterface().BlockChain().CurrentBlock().NumberU64()
-	now := time.Now().Unix()
-	future := hexutil.Uint64(now + 30)
-	past := hexutil.Uint64(now - 1)
+	block, err = l1client.BlockByNumber(ctx, nil)
+	testhelpers.RequireImpl(t, err)
+	blockNumber = block.NumberU64()
+	blockTime = block.Time()
+	future := hexutil.Uint64(blockTime + 30)
+	past := hexutil.Uint64(blockTime - 1)
 	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
 	currentBlockNumber := hexutil.Uint64(blockNumber)
 	if blockNumber == 0 {
