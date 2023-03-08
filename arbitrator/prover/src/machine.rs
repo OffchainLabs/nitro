@@ -1073,7 +1073,11 @@ impl Machine {
         let main_module = &modules[main_module_idx];
 
         // Rust support
-        if let Some(&f) = main_module.exports.get("__main_void").filter(|_| runtime_support) {
+        if let Some(&f) = main_module
+            .exports
+            .get("__main_void")
+            .filter(|_| runtime_support)
+        {
             let mut expected_type = FunctionType::default();
             expected_type.outputs.push(ArbValueType::I32); // ret
             ensure!(
