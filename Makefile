@@ -69,7 +69,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.toml)
 
 prover_src = arbitrator/prover/src
-rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files)
+rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) arbitrator/prover/bulk_memory_internal.wasm
 
 jit_dir = arbitrator/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
@@ -186,6 +186,9 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	mkdir -p `dirname $(replay_wasm)`
 	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
 	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
+
+arbitrator/prover/bulk_memory_internal.wasm: arbitrator/prover/bulk_memory_internal.wat
+	wat2wasm -o arbitrator/prover/bulk_memory_internal.wasm arbitrator/prover/bulk_memory_internal.wat
 
 $(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_bin)`
