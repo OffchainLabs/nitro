@@ -117,7 +117,12 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if arbmath.BigLessThan(balance, cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
-	if err := options.CheckOnlyStorage(statedb); err != nil {
+	l1BlockNumber, err := arbos.Blockhashes().L1BlockNumber()
+	if err != nil {
+		// TODO
+		return err
+	}
+	if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
 		return err
 	}
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
