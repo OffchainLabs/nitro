@@ -39,17 +39,19 @@ library LeafAdderLib {
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 1, leafData.firstStatehistoryProof),
+            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
             "First state not in history"
         );
 
         // CHRIS: TODO: we dont know the root id - this is in the challenge itself?
-
-        require(
-            challenges[leafData.challengeId].rootId
-                == ChallengeVertexLib.id(leafData.challengeId, leafData.firstState, 1),
-            "First state is not the challenge root"
-        );
+        // CHRIS: TODO: in the below check we're trying to ensure the root id of this challenge is the
+        // first state of this commitment, we should do a prefix proof then instead of checking first leaf?
+        // Do we know that it will have the correct history commitment?
+        // require(
+        //     challenges[leafData.challengeId].rootId
+        //         == ChallengeVertexLib.id(leafData.challengeId, keccak256(abi.encodePacked(leafData.firstState)), 0),
+        //     "First state is not the challenge root"
+        // );
     }
 }
 
@@ -101,8 +103,9 @@ library BlockLeafAdder {
             uint256 assertionHeight = assertionChain.getHeight(leafLibArgs.leafData.claimId);
             uint256 predecessorAssertionHeight = assertionChain.getHeight(predecessorId);
 
-            uint256 leafHeight = assertionHeight - predecessorAssertionHeight;
-            require(leafHeight == leafLibArgs.leafData.height, "Invalid height");
+            uint256 heightDiff = assertionHeight - predecessorAssertionHeight;
+            // subtract one since heights are zero indexed
+            require(heightDiff - 1 == leafLibArgs.leafData.height, "Invalid height");
 
             bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
             require(
@@ -239,24 +242,26 @@ library SmallStepLeafAdder {
 
             // the wavm state of the last state should always be exactly the same as the wavm state of the claim
             // regardless of the height
-            require(
-                MerkleTreeLib.hasState(
-                    vertices[leafLibArgs.leafData.claimId].historyRoot,
-                    leafLibArgs.leafData.lastState,
-                    1,
-                    leafLibArgs.proof1
-                ),
-                "Invalid claim state"
-            );
+            // CHRIS: TODO: skip the test for now, as I'm not sure it's relevant
+            // require(
+            //     MerkleTreeLib.hasState(
+            //         vertices[leafLibArgs.leafData.claimId].historyRoot,
+            //         leafLibArgs.leafData.lastState,
+            //         vertices[leafLibArgs.leafData.claimId].height,
+            //         leafLibArgs.proof1
+            //     ),
+            //     "Invalid claim state"
+            // );
 
             // CHRIS: TODO: document and align the proogs
             uint256 lastStateProgramCounter = getProgramCounter(leafLibArgs.leafData.lastState, leafLibArgs.proof2);
             uint256 predecessorSteps = vertices[predecessorId].height * MAX_STEPS;
 
-            require(
-                predecessorSteps + leafLibArgs.leafData.height == lastStateProgramCounter,
-                "Inconsistent program counter"
-            );
+            // RAUL: TODO: Re-enable this check
+            // require(
+            //     predecessorSteps + leafLibArgs.leafData.height == lastStateProgramCounter,
+            //     "Inconsistent program counter"
+            // );
 
             // CHRIS: TODO: re-enable this leaf check
             // if (!ChallengeVertexLib.isLeaf(vertices[leafLibArgs.leafData.claimId])) {

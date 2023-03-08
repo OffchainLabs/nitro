@@ -105,7 +105,6 @@ func newVertexTrackerFsm(
 			Typ: backToStart{},
 			From: []vertexTrackerState{
 				trackerAtOneStepFork,
-				trackerPresumptive,
 				trackerBisecting,
 				trackerMerging,
 			},
@@ -117,7 +116,6 @@ func newVertexTrackerFsm(
 			Typ: markPresumptive{},
 			From: []vertexTrackerState{
 				trackerStarted,
-				trackerPresumptive,
 				trackerBisecting,
 				trackerMerging,
 			},
@@ -126,12 +124,9 @@ func newVertexTrackerFsm(
 		// One-step-proof states.
 		{
 			// The tracker will take some action if it has reached a one-step-fork.
-			Typ: actOneStepFork{},
-			From: []vertexTrackerState{
-				trackerStarted,
-				trackerAtOneStepFork,
-			},
-			To: trackerAtOneStepFork,
+			Typ:  actOneStepFork{},
+			From: []vertexTrackerState{trackerStarted},
+			To:   trackerAtOneStepFork,
 		},
 		{
 			// The tracker will take some action if it has reached a one-step-proof

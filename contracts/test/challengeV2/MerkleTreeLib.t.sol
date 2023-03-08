@@ -21,27 +21,6 @@ contract MerkleTreeLibTest is Test {
         require(keccak256(abi.encode(arr1)) == keccak256(abi.encode(arr2)), "Arrays not equal");
     }
 
-    function rehashed(bytes32[] memory arr) internal pure returns (bytes32[] memory) {
-        bytes32[] memory arr2 = new bytes32[](arr.length);
-        for (uint256 i = 0; i < arr.length; i++) {
-            arr2[i] = keccak256(abi.encodePacked(arr[i]));
-        }
-        return arr2;
-    }
-
-    function testRootsMatch(uint256 length) public {
-        vm.assume(length > 0);
-        vm.assume(length < 1000);
-        // uint256 length = 5;
-        bytes32[] memory h = random.hashes(length);
-        bytes32[] memory rh = rehashed(h);
-
-        bytes32[] memory me = MerkleTreeLib.expansionFromLeaves(h, 0, length);
-        bytes32 root = MerkleLib.generateRoot(rh);
-
-        assertEq(root, MerkleTreeLib.root(me), "Equal roots");
-    }
-
     function testDoesAppend() public {
         // CHRIS: TODO: add more assertions to this test
         bytes32[] memory me = new bytes32[](0);
@@ -65,20 +44,20 @@ contract MerkleTreeLibTest is Test {
         eq(me4, me);
     }
 
-    function expansionsFromLeaves(bytes32[] memory leaves, uint256 lowHeight)
+    function expansionsFromLeaves(bytes32[] memory leaves, uint256 lowSize)
         public
         pure
         returns (bytes32[] memory, bytes32[] memory, bytes32[] memory)
     {
         bytes32[] memory lowExpansion = new bytes32[](0);
         bytes32[] memory highExpansion = new bytes32[](0);
-        bytes32[] memory difference = new bytes32[](leaves.length - lowHeight);
+        bytes32[] memory difference = new bytes32[](leaves.length - lowSize);
 
         for (uint256 i = 0; i < leaves.length; i++) {
-            if (i < lowHeight) {
+            if (i < lowSize) {
                 lowExpansion = MerkleTreeLib.appendLeaf(lowExpansion, leaves[i]);
             } else {
-                difference[i - lowHeight] = leaves[i];
+                difference[i - lowSize] = leaves[i];
             }
 
             highExpansion = MerkleTreeLib.appendLeaf(highExpansion, leaves[i]);
@@ -87,15 +66,15 @@ contract MerkleTreeLibTest is Test {
         return (lowExpansion, highExpansion, difference);
     }
 
-    function proveVerify(uint256 startHeight, uint256 endHeight) internal {
-        bytes32[] memory leaves = random.hashes(endHeight);
+    function proveVerify(uint256 startSize, uint256 endSize) internal {
+        bytes32[] memory leaves = random.hashes(endSize);
         (bytes32[] memory lowExp, bytes32[] memory highExp, bytes32[] memory diff) =
-            expansionsFromLeaves(leaves, startHeight);
+            expansionsFromLeaves(leaves, startSize);
 
-        bytes32[] memory proof = MerkleTreeLib.generatePrefixProof(startHeight, diff);
+        bytes32[] memory proof = ProofUtils.generatePrefixProof(startSize, diff);
 
         MerkleTreeLib.verifyPrefixProof(
-            MerkleTreeLib.root(lowExp), startHeight, MerkleTreeLib.root(highExp), endHeight, lowExp, proof
+            MerkleTreeLib.root(lowExp), startSize, MerkleTreeLib.root(highExp), endSize, lowExp, proof
         );
     }
 
@@ -107,5 +86,24 @@ contract MerkleTreeLibTest is Test {
         proveVerify(17, 7052);
         proveVerify(23, 7052);
         proveVerify(20, 7052);
+    }
+
+    function verifyInclusion(uint256 index, uint256 treeSize) internal {
+        bytes32[] memory leaves = random.hashes(treeSize);
+        bytes32[] memory re = ProofUtils.rehashed(leaves);
+        bytes32[] memory me = ProofUtils.expansionFromLeaves(leaves, 0, leaves.length);
+        bytes32[] memory proof = ProofUtils.generateInclusionProof(re, index);
+
+        bool v2 = MerkleTreeLib.hasState(MerkleTreeLib.root(me), leaves[index], index, proof);
+        assertTrue(v2, "Invalid v2 root");
+    }
+
+    function testProveInclusion() public {
+        uint256 size = 16;
+        for (uint256 i = 0; i < size; i++) {
+            for (uint256 j = 0; j < i; j++) {
+                verifyInclusion(j, i);
+            }
+        }
     }
 }

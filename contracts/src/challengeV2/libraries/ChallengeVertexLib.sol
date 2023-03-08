@@ -87,7 +87,7 @@ library ChallengeVertexLib {
             predecessorId: 0, // always zero for root
             successionChallenge: 0,
             historyRoot: historyRoot,
-            height: 1,
+            height: 0,
             claimId: claimId,
             status: VertexStatus.Confirmed, // root starts off as confirmed
             staker: address(0), // always zero for non leaf
@@ -108,8 +108,8 @@ library ChallengeVertexLib {
     ) internal pure returns (ChallengeVertex memory) {
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
-        // root is at height 1
-        require(height > 1, "Height must be greater than 1");
+        // root is at height 0
+        require(height != 0, "Zero height");
         require(claimId != 0, "Zero claim id");
         require(staker != address(0), "Zero staker address");
         // initialPsTimeSec can be zero
@@ -137,8 +137,8 @@ library ChallengeVertexLib {
     {
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
-        // root is at height 1
-        require(height > 1, "Height must be greater than 1");
+        // root is at height 0
+        require(height != 0, "Zero height");
         // initialPsTimeSec can be zero
 
         return ChallengeVertex({
