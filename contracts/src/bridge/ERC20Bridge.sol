@@ -65,4 +65,9 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
             (success, returnData) = to.call(data);
         }
     }
+
+    function _baseFeeToReport() internal override returns (uint256) {
+        // we report 0, so that ArbOs charges 0 submission fee
+        return 0;
+    }
 }

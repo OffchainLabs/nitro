@@ -211,7 +211,7 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
             sender,
             uint64(block.number),
             uint64(block.timestamp), // solhint-disable-line not-rely-on-time
-            block.basefee,
+            _baseFeeToReport(),
             messageDataHash
         );
 
@@ -287,4 +287,6 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
         uint256 value,
         bytes memory data
     ) internal virtual returns (bool success, bytes memory returnData);
+
+    function _baseFeeToReport() internal virtual returns (uint256);
 }
