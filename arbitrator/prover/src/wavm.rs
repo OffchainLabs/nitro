@@ -779,12 +779,10 @@ pub fn wasm_to_wavm(
             },
             MemoryFill {mem} => {
               ensure!(*mem == 0, "multi-memory proposal not supported");
-              //TODO seraphina put @pop 2 I think?
               opcode!(Call, std::convert::Into::<u64>::into(internals_offset)+4, @pop 3);
             }
             MemoryCopy {src, dst} => {
               ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
-              //TODO seraphina put @pop 2 I think?
               opcode!(Call, std::convert::Into::<u64>::into(internals_offset)+5, @pop 3);
             },
 

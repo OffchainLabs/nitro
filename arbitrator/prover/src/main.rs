@@ -494,6 +494,7 @@ fn main() -> Result<()> {
     }
 
     if opts.require_success && mach.get_status() != MachineStatus::Finished {
+        println!("Machine errored, but success was required!");
         std::process::exit(1);
     }
 

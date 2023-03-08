@@ -1073,14 +1073,12 @@ impl Machine {
         let main_module = &modules[main_module_idx];
 
         // Rust support
-        if let Some(&f) = main_module.exports.get("main").filter(|_| runtime_support) {
+        if let Some(&f) = main_module.exports.get("__main_void").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ArbValueType::I32); // argc
-            expected_type.inputs.push(ArbValueType::I32); // argv
             expected_type.outputs.push(ArbValueType::I32); // ret
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
-                "Main function doesn't match expected signature of [argc, argv] -> [ret]",
+                "Main function doesn't match expected signature of [] -> [ret]",
             );
             entry!(I32Const, 0);
             entry!(I32Const, 0);
