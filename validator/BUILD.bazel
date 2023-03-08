@@ -33,11 +33,13 @@ go_test(
         "challenge_moves_test.go",
         "challenges_test.go",
         "deploy_rollup_test.go",
+        "subchallenges_test.go",
         "validator_test.go",
         "vertex_tracker_test.go",
     ],
     embed = [":validator"],
     deps = [
+        "//execution",
         "//protocol",
         "//protocol/sol-implementation",
         "//solgen/go/bridgegen",

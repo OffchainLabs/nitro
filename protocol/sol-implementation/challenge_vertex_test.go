@@ -728,7 +728,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			manager: challenge.manager,
 		}
 		_, err := vertex.CreateSubChallenge(ctx, tx)
-		require.ErrorContains(t, err, "execution reverted: Fork candidate vertex does not exist")
+		require.ErrorContains(t, err, "execution reverted: Challenge does not exist")
 	})
 	t.Run("Error: leaf can never be a fork candidate", func(t *testing.T) {
 		a1, _, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
@@ -1030,7 +1030,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 	})
 }
 
-func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
+func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
 	height1 := uint64(6)
@@ -1160,11 +1160,11 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("empty history root", func(t *testing.T) {
-		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{})
+		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{})
 		require.ErrorContains(t, err, "execution reverted: Empty historyRoot")
 	})
 	t.Run("vertex does not exist", func(t *testing.T) {
-		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, tx, &ChallengeVertex{
+		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, &ChallengeVertex{
 			id:      [32]byte{},
 			manager: challenge.manager,
 		}, util.HistoryCommitment{
@@ -1174,14 +1174,14 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 		require.ErrorContains(t, err, "execution reverted: Vertex does not exist")
 	})
 	t.Run("claim has invalid succession challenge", func(t *testing.T) {
-		_, err = bigStepChal.AddBigStepChallengeLeaf(ctx, tx, v1Height2, util.HistoryCommitment{
+		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height2, util.HistoryCommitment{
 			Height: 2,
 			Merkle: v1Commit,
 		})
 		require.ErrorContains(t, err, "execution reverted: Claim has invalid succession challenge")
 	})
 	t.Run("create sub challenge leaf rival 1", func(t *testing.T) {
-		v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
+		v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
 			Height: 1,
 			Merkle: v1Commit,
 		})
@@ -1189,7 +1189,7 @@ func TestChallengeVertex_CreateSubChallengeLeaf(t *testing.T) {
 		require.False(t, v.Id() == [32]byte{}) // Should have a non-empty ID
 	})
 	t.Run("create sub challenge leaf rival 2", func(t *testing.T) {
-		v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, tx, v2Height1, util.HistoryCommitment{
+		v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, v2Height1, util.HistoryCommitment{
 			Height: 1,
 			Merkle: v2Commit,
 		})
@@ -1327,7 +1327,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 	bigStepChal, err := genesis.CreateSubChallenge(context.Background(), tx)
 	require.NoError(t, err)
 
-	v, err := bigStepChal.AddBigStepChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
+	v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
 		Height: 1,
 		Merkle: v1Commit,
 	})

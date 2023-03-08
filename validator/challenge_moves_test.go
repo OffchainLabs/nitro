@@ -37,7 +37,10 @@ func Test_computePrefixProof(t *testing.T) {
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
-		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+			divergeHeight: 10,
+			numBlocks:     100,
+		})
 		validator, err := New(
 			ctx,
 			createdData.assertionChains[1],
@@ -69,7 +72,10 @@ func Test_bisect(t *testing.T) {
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("fails to verify prefix proof", func(t *testing.T) {
-		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+			divergeHeight: 10,
+			numBlocks:     100,
+		})
 		manager := &mocks.MockStateManager{}
 		manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(util.HistoryCommitment{}, nil)
 		manager.On("PrefixProof", ctx, uint64(0), uint64(7)).Return(make([]common.Hash, 0), nil)
@@ -103,9 +109,12 @@ func Test_bisect(t *testing.T) {
 		_, err = v.bisect(ctx, vertex)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
-	t.Run("OK", func(t *testing.T) {
+	t.Run("bisects", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+			divergeHeight: 10,
+			numBlocks:     100,
+		})
 
 		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
 		honestValidator, err := New(
@@ -147,7 +156,10 @@ func Test_merge(t *testing.T) {
 	ctx := context.Background()
 	t.Run("fails to verify prefix proof", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		createdData := createTwoValidatorFork(t, ctx, 10 /* divergence point */)
+		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+			divergeHeight: 10,
+			numBlocks:     100,
+		})
 
 		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
 		honestValidator, err := New(
@@ -217,7 +229,10 @@ func Test_merge(t *testing.T) {
 	})
 	t.Run("OK", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		createdData := createTwoValidatorFork(t, ctx, 70 /* divergence point */)
+		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+			divergeHeight: 70,
+			numBlocks:     100,
+		})
 
 		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
 		honestValidator, err := New(
