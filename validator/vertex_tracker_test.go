@@ -296,7 +296,10 @@ func Test_actOnBlockChallenge(t *testing.T) {
 
 func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	logsHook := test.NewGlobal()
-	createdData := createTwoValidatorFork(t, ctx, 65 /* divergence point */)
+	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
+		divergeHeight: 65,
+		numBlocks:     100,
+	})
 
 	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
 	honestValidator, err := New(

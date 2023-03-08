@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"strings"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -223,17 +224,34 @@ func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.Act
 }
 
 func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.ActiveTx) (protocol.Challenge, error) {
-	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	currentChallenge, err := v.manager.GetChallenge(ctx, tx, v.inner.ChallengeId)
+	if err != nil {
+		return nil, err
+	}
+	if currentChallenge.IsNone() {
+		return nil, errors.New("no challenge exists found for vertex")
+	}
+	challenge := currentChallenge.Unwrap()
+	var subChallengeType protocol.ChallengeType
+	switch challenge.GetType() {
+	case protocol.BlockChallenge:
+		subChallengeType = protocol.BigStepChallenge
+	case protocol.BigStepChallenge:
+		subChallengeType = protocol.SmallStepChallenge
+	default:
+		return nil, fmt.Errorf("cannot make subchallenge for challenge type %d", challenge.GetType())
+	}
+
+	if _, err = transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
 		return v.manager.writer.CreateSubChallenge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 		)
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
-	// TODO: DO not use empty assertion
-	challengeId, err := v.manager.CalculateChallengeHash(ctx, tx, v.id, protocol.BigStepChallenge)
+
+	challengeId, err := v.manager.CalculateChallengeHash(ctx, tx, v.id, subChallengeType)
 	if err != nil {
 		return nil, err
 	}

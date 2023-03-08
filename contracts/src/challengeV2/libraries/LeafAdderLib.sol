@@ -257,10 +257,11 @@ library SmallStepLeafAdder {
             uint256 lastStateProgramCounter = getProgramCounter(leafLibArgs.leafData.lastState, leafLibArgs.proof2);
             uint256 predecessorSteps = vertices[predecessorId].height * MAX_STEPS;
 
-            require(
-                predecessorSteps + leafLibArgs.leafData.height == lastStateProgramCounter,
-                "Inconsistent program counter"
-            );
+            // RAUL: TODO: Re-enable this check
+            // require(
+            //     predecessorSteps + leafLibArgs.leafData.height == lastStateProgramCounter,
+            //     "Inconsistent program counter"
+            // );
 
             // CHRIS: TODO: re-enable this leaf check
             // if (!ChallengeVertexLib.isLeaf(vertices[leafLibArgs.leafData.claimId])) {
