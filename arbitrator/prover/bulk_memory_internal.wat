@@ -44,7 +44,10 @@
             ;; write the value
             local.get $value
             i32.store8
-            br $loop))
+
+            br $loop
+        )
+    )
 
     (func $memory_copy (param $dest i32) (param $source i32) (param $size i32)
         (local $offset i32)
@@ -72,7 +75,6 @@
         local.get $size
         i64.extend_i32_u
         i64.add
-
                 
         ;; memory size in bytes
         memory.size
@@ -84,11 +86,6 @@
         i64.gt_u
         (if (then unreachable))
 
-        ;; if length is zero, nothing to do
-        local.get $size
-        i32.eqz
-        (if (then return))
-
         local.get $source
         local.get $dest
         i32.gt_s
@@ -98,6 +95,12 @@
                 i32.const 0
                 local.set $offset
                 (loop $forward
+                    ;; break the loop when offset == length
+                    local.get $offset
+                    local.get $size
+                    i32.eq
+                    (if (then return))
+
                     ;; put d + o on stack
                     local.get $offset
                     local.get $dest
@@ -116,27 +119,30 @@
                     local.get $offset
                     i32.const 1
                     i32.add
-                    local.tee $offset
+                    local.set $offset
 
+                    br $forward
+                )
+            )
+            (else ;; copy backward when source < dest
+                (loop $backward
                     ;; check to terminate loop
                     local.get $size
-                    i32.ne
-                    br_if $forward))
-            (else
-                ;; offset starts at (l-1)
-                local.get $size
-                i32.const 1
-                i32.sub
-                local.set $offset
+                    i32.eqz
+                    (if (then return))
 
-                (loop $backward
+                    ;; decrement offset
+                    local.get $size
+                    i32.const 1
+                    i32.sub
+                    local.tee $size
+
                     ;; put d + o on stack
-                    local.get $offset
                     local.get $dest
                     i32.add
 
                     ;; load from s + o
-                    local.get $offset
+                    local.get $size
                     local.get $source
                     i32.add
                     i32.load8_u
@@ -144,13 +150,9 @@
                     ;; store to d + o
                     i32.store8
 
-                    ;; decrement offset
-                    local.get $offset
-                    i32.const 1
-                    i32.sub
-                    local.tee $offset
-
-                    ;; check to terminate loop
-                    i32.const -1
-                    i32.ne
-                    br_if $backward)))))
+                    br $backward
+                )
+            )
+        )
+    )
+)
