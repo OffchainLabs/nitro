@@ -53,7 +53,7 @@ func newVertexTracker(
 		challenge: challenge,
 		vertex:    vertex,
 		fsm:       fsm,
-	}
+	}, nil
 }
 
 func (v *vertexTracker) spawn(ctx context.Context) {

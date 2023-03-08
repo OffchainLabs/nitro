@@ -19,7 +19,7 @@ func (v *vertexTracker) determineBisectionPointWithHistory(
 	if err != nil {
 		return util.HistoryCommitment{}, errors.Wrapf(err, "determining bisection point failed for %d and %d", parentHeight, toHeight)
 	}
-	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
+	historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
 	if err != nil {
 		return util.HistoryCommitment{}, errors.Wrapf(err, "could not rertieve history commitment up to height %d", bisectTo)
 	}
@@ -36,7 +36,7 @@ func (v *vertexTracker) bisect(
 	var bisectedVertex protocol.ChallengeVertex
 	var isPresumptive bool
 
-	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
+	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		commitment := validatorChallengeVertex.HistoryCommitment()
 		toHeight := commitment.Height
 		prev, err := validatorChallengeVertex.Prev(ctx, tx)
@@ -51,7 +51,7 @@ func (v *vertexTracker) bisect(
 			return err
 		}
 		bisectTo := historyCommit.Height
-		proof, err := v.stateManager.PrefixProof(ctx, bisectTo, toHeight)
+		proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectTo, toHeight)
 		if err != nil {
 			return errors.Wrapf(err, "generating prefix proof failed from height %d to %d", bisectTo, toHeight)
 		}
@@ -88,7 +88,7 @@ func (v *vertexTracker) bisect(
 	}
 	bisectedVertexCommitment := bisectedVertex.HistoryCommitment()
 	log.WithFields(logrus.Fields{
-		"name":                   v.validatorName,
+		"name":                   v.cfg.validatorName,
 		"isPresumptiveSuccessor": isPresumptive,
 		"historyCommitHeight":    bisectedVertexCommitment.Height,
 		"historyCommitMerkle":    fmt.Sprintf("%#x", bisectedVertexCommitment.Merkle),
@@ -115,11 +115,11 @@ func (v *vertexTracker) merge(
 			currentCommit.Height,
 		)
 	}
-	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
+	historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
 	if err != nil {
 		return nil, err
 	}
-	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
+	proof, err := v.cfg.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (v *vertexTracker) merge(
 	}
 
 	var mergedTo protocol.ChallengeVertex
-	if err = v.chain.Tx(func(tx protocol.ActiveTx) error {
+	if err = v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		mergedToV, err2 := mergingFrom.Merge(ctx, tx, historyCommit, proof)
 		if err2 != nil {
 			return err2
@@ -146,7 +146,7 @@ func (v *vertexTracker) merge(
 		)
 	}
 	log.WithFields(logrus.Fields{
-		"name": v.validatorName,
+		"name": v.cfg.validatorName,
 	}).Infof(
 		"Successfully merged to vertex with height %d and commit %#x",
 		mergingToCommit.Height,
