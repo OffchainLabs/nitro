@@ -4,30 +4,44 @@ import (
 	"fmt"
 )
 
+// Defines a state in a finite state machine that aids
+// in deciding a challenge vertex tracker's actions.
 type vertexTrackerState uint8
 
 const (
+	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
 	trackerInvalid vertexTrackerState = iota
+	// The start state of the tracker.
 	trackerStarted
+	// The vertex being tracked is presumptive.
 	trackerPresumptive
-	trackerFinished
+	// The vertex being tracked is at a one step fork.
 	trackerAtOneStepFork
+	// The vertex being tracked is at a one step proof.
 	trackerAtOneStepProof
+	// The tracker is opening a subchallenge on the vertex.
 	trackerOpeningSubchallenge
+	// The tracker is adding a subchallenge leaf on the vertex's subchallenge.
 	trackerAddingSubchallengeLeaf
+	// The tracker is awaiting resolution of its subchallenges.
 	trackerAwaitingSubchallengeResolution
+	// The tracker is attempting a bisection move.
 	trackerBisecting
+	// The tracker is attempting a merge move.
 	trackerMerging
+	// The tracker is confirming a vertex after it has won a one-step-proof.
+	// TODO: There are other ways the vertex can be confirmed, and perhaps should
+	// be tracked in a separate goroutine then the vertex tracker.
+	trackerConfirming
 )
 
+// String turns a vertex tracker state into a readable string.
 func (v vertexTrackerState) String() string {
 	switch v {
 	case trackerStarted:
 		return "started"
 	case trackerPresumptive:
 		return "presumptive"
-	case trackerFinished:
-		return "finished"
 	case trackerAtOneStepFork:
 		return "one_step_fork"
 	case trackerAtOneStepProof:
@@ -37,42 +51,75 @@ func (v vertexTrackerState) String() string {
 	case trackerAddingSubchallengeLeaf:
 		return "adding_subchallenge_leaf"
 	case trackerAwaitingSubchallengeResolution:
-		return "awaiting_resolution"
+		return "awaiting_subchallenge_resolution"
 	case trackerBisecting:
 		return "bisecting"
 	case trackerMerging:
 		return "merging"
+	case trackerConfirming:
+		return "confirming"
 	default:
 		return "invalid"
 	}
 }
 
+// Defines structs that characterize actions a vertex tracker
+// can take to transition between states in its finite state machine.
 type vertexTrackerAction interface {
 	fmt.Stringer
 	isVertexTrackerAction() bool
 }
 
-type checkPresumptive struct{}
-type markPresumptive struct{}
-type checkOneStepFork struct{}
-type bisect struct{}
-type merge struct{}
-type openSubchallenge struct{}
-type openSubchallengeLeaf struct{}
-type checkChallengeConfirmed struct{}
-type checkVertexConfirmed struct{}
-type checkSiblingConfirmed struct{}
-type checkSibling struct{}
-type awaitSubchallengeResolution struct{}
-type checkOneStepProof struct{}
-type confirmWinner struct{}
-type transitionToChallengeComplete struct{}
+// Transitions the vertex tracker back to a start state.
+type backToStart struct{}
 
+// Transitions the vertex tracker to a presumptive state.
+type markPresumptive struct{}
+
+// Tracker will check if the vertex is at a one step fork.
+type checkOneStepFork struct{}
+
+// Tracker will check if the vertex is at a one step proof.
+type checkOneStepProof struct{}
+
+// Tracker will open a subchallenge on its vertex.
+type openSubchallenge struct{}
+
+// Tracker will add a subchallenge on its vertex's subchallenge.
+type openSubchallengeLeaf struct{}
+
+// Tracker will await subchallenge resolution.
+type awaitSubchallengeResolution struct{}
+
+// Tracker will attempt to bisect its vertex.
+type bisect struct{}
+
+// Tracker will attempt to merge its vertex.
+type merge struct{}
+
+// Tracker will attempt to confirm a challenge winner.
+type confirmWinner struct{}
+
+func (_ backToStart) String() string {
+	return "back_to_start"
+}
 func (_ markPresumptive) String() string {
 	return "mark_presumptive"
 }
 func (_ checkOneStepFork) String() string {
 	return "check_one_step_fork"
+}
+func (_ checkOneStepProof) String() string {
+	return "check_one_step_proof"
+}
+func (_ openSubchallenge) String() string {
+	return "open_subchallenge"
+}
+func (_ openSubchallengeLeaf) String() string {
+	return "open_subchallenge_leaf"
+}
+func (_ awaitSubchallengeResolution) String() string {
+	return "await_subchallenge_resolution"
 }
 func (_ bisect) String() string {
 	return "bisect"
@@ -80,14 +127,29 @@ func (_ bisect) String() string {
 func (_ merge) String() string {
 	return "merge"
 }
-func (_ openSubchallenge) String() string {
-	return "openSubchallenge"
+func (_ confirmWinner) String() string {
+	return "confirm_winner"
 }
 
+func (_ backToStart) isVertexTrackerAction() bool {
+	return true
+}
 func (_ markPresumptive) isVertexTrackerAction() bool {
 	return true
 }
 func (_ checkOneStepFork) isVertexTrackerAction() bool {
+	return true
+}
+func (_ checkOneStepProof) isVertexTrackerAction() bool {
+	return true
+}
+func (_ openSubchallenge) isVertexTrackerAction() bool {
+	return true
+}
+func (_ openSubchallengeLeaf) isVertexTrackerAction() bool {
+	return true
+}
+func (_ awaitSubchallengeResolution) isVertexTrackerAction() bool {
 	return true
 }
 func (_ bisect) isVertexTrackerAction() bool {
@@ -96,6 +158,6 @@ func (_ bisect) isVertexTrackerAction() bool {
 func (_ merge) isVertexTrackerAction() bool {
 	return true
 }
-func (_ openSubchallenge) isVertexTrackerAction() bool {
+func (_ confirmWinner) isVertexTrackerAction() bool {
 	return true
 }
