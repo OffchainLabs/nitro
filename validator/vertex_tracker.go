@@ -99,6 +99,32 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 	}
 }
 
+func (vt *vertexTracker) trackerShouldComplete(ctx context.Context) (bool, error) {
+	var challengeCompleted bool
+	var siblingConfirmed bool
+	var err error
+	if err = vt.chain.Call(func(tx protocol.ActiveTx) error {
+		challengeCompleted, err = vt.challenge.Completed(ctx, tx)
+		if err != nil {
+			return nil
+		}
+		siblingConfirmed, err = vt.vertex.HasConfirmedSibling(ctx, tx)
+		if err != nil {
+			return nil
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	current := vt.fsm.Current()
+	isPresumptive := current.State == trackerPresumptive
+	awaitingResolution := current.State == trackerAwaitingSubchallengeResolution
+	return challengeCompleted ||
+		siblingConfirmed ||
+		isPresumptive ||
+		awaitingResolution, nil
+}
+
 func (vt *vertexTracker) act(ctx context.Context) error {
 	current := vt.fsm.Current()
 	switch current.State {
@@ -194,7 +220,10 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		// TODO: Implement.
 		return nil
 	case trackerPresumptive:
-		// TODO: Cancel the context as this is a terminal state.
+		// Terminal state does nothing. The vertex tracker will end next time it acts.
+		return nil
+	case trackerAwaitingSubchallengeResolution:
+		// Terminal state does nothing. The vertex tracker will end next time it acts.
 		return nil
 	default:
 		return fmt.Errorf("invalid state: %s", current.State)
@@ -393,38 +422,3 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 	}
 	return gotConfirmed, nil
 }
-
-// var challengeCompleted bool
-// var siblingConfirmed bool
-// var prev protocol.ChallengeVertex
-// if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-// 	prevV, err2 := v.vertex.Prev(ctx, tx)
-// 	if err2 != nil {
-// 		return err2
-// 	}
-// 	if prevV.IsNone() {
-// 		return ErrPrevNone
-// 	}
-// 	prev = prevV.Unwrap()
-// 	status := v.vertex.Status()
-// 	if status == protocol.AssertionConfirmed {
-// 		return ErrConfirmed
-// 	}
-// 	challengeCompleted, err = v.challenge.Completed(ctx, tx)
-// 	if err != nil {
-// 		return nil
-// 	}
-// 	siblingConfirmed, err = v.vertex.HasConfirmedSibling(ctx, tx)
-// 	if err != nil {
-// 		return nil
-// 	}
-// 	return nil
-// }); err != nil {
-// 	return err
-// }
-// if challengeCompleted {
-// 	return ErrChallengeCompleted
-// }
-// if siblingConfirmed {
-// 	return ErrSiblingConfirmed
-// }
