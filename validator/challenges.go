@@ -64,8 +64,22 @@ func (v *Validator) onChallengeStarted(
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
-
+	tracker, err := newVertexTracker(
+		&vertexTrackerConfig{
+			timeRef:          v.timeRef,
+			actEveryNSeconds: v.challengeVertexWakeInterval,
+			chain:            v.chain,
+			stateManager:     v.stateManager,
+			validatorName:    v.name,
+			validatorAddress: v.address,
+		},
+		challenge,
+		challengeVertex,
+	)
+	if err != nil {
+		return err
+	}
+	go tracker.spawn(ctx)
 	return nil
 }
 
@@ -103,7 +117,22 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	}
 
 	// Start tracking the challenge.
-	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v.chain, v.stateManager, v.name, v.address).track(ctx)
+	tracker, err := newVertexTracker(
+		&vertexTrackerConfig{
+			timeRef:          v.timeRef,
+			actEveryNSeconds: v.challengeVertexWakeInterval,
+			chain:            v.chain,
+			stateManager:     v.stateManager,
+			validatorName:    v.name,
+			validatorAddress: v.address,
+		},
+		challenge,
+		challengeVertex,
+	)
+	if err != nil {
+		return err
+	}
+	go tracker.spawn(ctx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
