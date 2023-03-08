@@ -138,6 +138,38 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return s.bc.CurrentHeader().Nonce.Uint64(), nil
 }
 
+func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
+	var l2Message []byte
+	if len(txes) == 1 && txErrors[0] == nil {
+		txBytes, err := txes[0].MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	} else {
+		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+		sizeBuf := make([]byte, 8)
+		for i, tx := range txes {
+			if txErrors[i] != nil {
+				continue
+			}
+			txBytes, err := tx.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+			l2Message = append(l2Message, sizeBuf...)
+			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+			l2Message = append(l2Message, txBytes...)
+		}
+	}
+	return &arbostypes.L1IncomingMessage{
+		Header: header,
+		L2msg:  l2Message,
+	}, nil
+}
+
 // The caller must hold the createBlocksMutex
 func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
 	if !s.reorgSequencing {
@@ -206,38 +238,6 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 		}
 		<-time.After(time.Millisecond * 100)
 	}
-}
-
-func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
-	var l2Message []byte
-	if len(txes) == 1 && txErrors[0] == nil {
-		txBytes, err := txes[0].MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-		l2Message = append(l2Message, txBytes...)
-	} else {
-		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
-		sizeBuf := make([]byte, 8)
-		for i, tx := range txes {
-			if txErrors[i] != nil {
-				continue
-			}
-			txBytes, err := tx.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
-			l2Message = append(l2Message, sizeBuf...)
-			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
-			l2Message = append(l2Message, txBytes...)
-		}
-	}
-	return &arbostypes.L1IncomingMessage{
-		Header: header,
-		L2msg:  l2Message,
-	}, nil
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
@@ -317,22 +317,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	return block, nil
 }
 
-func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
-	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum
-}
-
-func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
-	genesis := s.GetGenesisBlockNumber()
-	if blockNum < genesis {
-		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
-	}
-	return arbutil.MessageIndex(blockNum - genesis), nil
-}
-
-func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return uint64(messageNum) + s.GetGenesisBlockNumber()
-}
-
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
 	for {
 		s.createBlocksMutex.Lock()
@@ -383,6 +367,22 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	log.Info("ExecutionEngine: Added DelayedMessages", "pos", lastMsg+1, "delayed", delayedSeqNum, "block-header", block.Header())
 
 	return nil
+}
+
+func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
+	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum
+}
+
+func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
+	genesis := s.GetGenesisBlockNumber()
+	if blockNum < genesis {
+		return 0, fmt.Errorf("blockNum %d < genesis %d", blockNum, genesis)
+	}
+	return arbutil.MessageIndex(blockNum - genesis), nil
+}
+
+func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
+	return uint64(messageNum) + s.GetGenesisBlockNumber()
 }
 
 // must hold createBlockMutex
