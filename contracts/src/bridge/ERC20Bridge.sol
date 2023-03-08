@@ -56,17 +56,13 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         bytes memory data
     ) internal override returns (bool success, bytes memory returnData) {
         // first release native token
-        // solhint-disable-next-line avoid-low-level-calls
-        (success, returnData) = nativeToken.call(
-            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
-        );
+        IERC20(nativeToken).safeTransfer(to, value);
+        success = true;
 
-        // if there's data do additional contract call (if token transfer was succesful)
+        // if there's data do additional contract call
         if (data.length > 0) {
-            if (success) {
-                // solhint-disable-next-line avoid-low-level-calls
-                (success, returnData) = to.call(data);
-            }
+            // solhint-disable-next-line avoid-low-level-calls
+            (success, returnData) = to.call(data);
         }
     }
 }
