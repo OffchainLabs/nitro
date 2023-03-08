@@ -76,11 +76,11 @@ type backToStart struct{}
 // Transitions the vertex tracker to a presumptive state.
 type markPresumptive struct{}
 
-// Tracker will check if the vertex is at a one step fork.
-type checkOneStepFork struct{}
+// Tracker will act if the vertex is at a one step fork.
+type actOneStepFork struct{}
 
-// Tracker will check if the vertex is at a one step proof.
-type checkOneStepProof struct{}
+// Tracker will act if the vertex is at a one step proof.
+type actOneStepProof struct{}
 
 // Tracker will open a subchallenge on its vertex.
 type openSubchallenge struct{}
@@ -106,10 +106,10 @@ func (_ backToStart) String() string {
 func (_ markPresumptive) String() string {
 	return "mark_presumptive"
 }
-func (_ checkOneStepFork) String() string {
+func (_ actOneStepFork) String() string {
 	return "check_one_step_fork"
 }
-func (_ checkOneStepProof) String() string {
+func (_ actOneStepProof) String() string {
 	return "check_one_step_proof"
 }
 func (_ openSubchallenge) String() string {
@@ -137,10 +137,10 @@ func (_ backToStart) isVertexTrackerAction() bool {
 func (_ markPresumptive) isVertexTrackerAction() bool {
 	return true
 }
-func (_ checkOneStepFork) isVertexTrackerAction() bool {
+func (_ actOneStepFork) isVertexTrackerAction() bool {
 	return true
 }
-func (_ checkOneStepProof) isVertexTrackerAction() bool {
+func (_ actOneStepProof) isVertexTrackerAction() bool {
 	return true
 }
 func (_ openSubchallenge) isVertexTrackerAction() bool {

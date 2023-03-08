@@ -8,6 +8,8 @@ go_library(
         "events_filter.go",
         "validator.go",
         "vertex_tracker.go",
+        "vertex_tracker_state_machine.go",
+        "vertex_tracker_states.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/validator",
     visibility = ["//visibility:public"],
