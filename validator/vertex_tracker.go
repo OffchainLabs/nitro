@@ -33,6 +33,7 @@ type vertexTracker struct {
 	awaitingOneStepFork   bool
 	validatorName         string
 	validatorAddress      common.Address
+	fsm                   *util.Fsm[vertexTrackerAction, vertexTrackerState]
 }
 
 func newVertexTracker(
