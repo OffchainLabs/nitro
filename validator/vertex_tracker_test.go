@@ -21,7 +21,7 @@ func init() {
 	logrus.SetOutput(io.Discard)
 }
 
-func Test_actOnBlockChallenge(t *testing.T) {
+func Test_act(t *testing.T) {
 	ctx := context.Background()
 	t.Run("logs one-step-fork and returns", func(t *testing.T) {
 		hook := test.NewGlobal()
@@ -177,52 +177,43 @@ func Test_actOnBlockChallenge(t *testing.T) {
 	})
 	t.Run("bisects", func(t *testing.T) {
 		hook := test.NewGlobal()
-		trk := setupNonPSTracker(t, ctx)
-		err := trk.act(ctx)
+		tkr, _ := setupNonPSTracker(t, ctx)
+		err := tkr.act(ctx)
 		require.NoError(t, err)
-		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
+		require.Equal(t, int(trackerBisecting), int(tkr.fsm.Current().State))
+		err = tkr.act(ctx)
+		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 	})
 	t.Run("merges", func(t *testing.T) {
 		hook := test.NewGlobal()
-		trk := setupNonPSTracker(t, ctx)
-		err := trk.act(ctx)
+		evilTracker, honestTracker := setupNonPSTracker(t, ctx)
+		err := evilTracker.act(ctx)
 		require.NoError(t, err)
-
-		// Get the challenge vertex from the other validator. It should share a history
-		// with the vertex we just bisected to, so it should try to merge instead.
-		var vertex protocol.ChallengeVertex
-		honestCommit, err := trk.cfg.stateManager.HistoryCommitmentUpTo(ctx, 64)
+		require.Equal(t, int(trackerBisecting), int(evilTracker.fsm.Current().State))
+		err = evilTracker.act(ctx)
 		require.NoError(t, err)
-
-		err = trk.cfg.chain.Call(func(tx protocol.ActiveTx) error {
-			genesisId, err := trk.cfg.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
-			require.NoError(t, err)
-			manager, err := trk.cfg.chain.CurrentChallengeManager(ctx, tx)
-			require.NoError(t, err)
-			chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-			require.NoError(t, err)
-			vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalIdComputed, honestCommit)
-			require.NoError(t, err)
-			vertexV, err := manager.GetVertex(ctx, tx, vertexId)
-			require.NoError(t, err)
-			vertex = vertexV.Unwrap()
-			return nil
-		})
+		require.Equal(t, trackerStarted.String(), evilTracker.fsm.Current().State.String())
+		err = evilTracker.act(ctx)
 		require.NoError(t, err)
-		require.NotNil(t, vertex)
+		require.Equal(t, trackerPresumptive.String(), evilTracker.fsm.Current().State.String())
+		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 
-		trk.vertex = vertex
-
-		err = trk.act(ctx)
+		err = honestTracker.act(ctx)
 		require.NoError(t, err)
-		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
+		require.Equal(t, int(trackerBisecting), int(honestTracker.fsm.Current().State))
+		err = honestTracker.act(ctx)
+		require.NoError(t, err)
+		require.Equal(t, int(trackerMerging), int(honestTracker.fsm.Current().State))
+		err = honestTracker.act(ctx)
+		require.NoError(t, err)
+		require.Equal(t, int(trackerStarted), int(honestTracker.fsm.Current().State))
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 		AssertLogsContain(t, hook, "Successfully merged to vertex with height 64")
 	})
 }
 
-func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
+func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vertexTracker) {
 	logsHook := test.NewGlobal()
 	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 		divergeHeight: 65,
@@ -257,7 +248,8 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-	var vertexToBisect protocol.ChallengeVertex
+	var honestLeafVertex protocol.ChallengeVertex
+	var leafVertexToBisect protocol.ChallengeVertex
 	var challenge protocol.Challenge
 
 	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
@@ -274,11 +266,20 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
 		require.NoError(t, err)
 
-		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
 		require.NoError(t, err)
-		vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, honestCommit)
+		honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
 		require.NoError(t, err)
-		vertexToBisect = vToBisect
+		vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, evilCommit)
+		require.NoError(t, err)
+
+		honestLeafId, err := manager.CalculateChallengeVertexId(ctx, tx, chalIdComputed, honestCommit)
+		require.NoError(t, err)
+		honestLeaf, err := manager.GetVertex(ctx, tx, honestLeafId)
+		require.NoError(t, err)
+
+		honestLeafVertex = honestLeaf.Unwrap()
+		leafVertexToBisect = vToBisect
 		challenge = chal.Unwrap()
 		return nil
 	})
@@ -286,13 +287,13 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 
 	// Check presumptive statuses.
 	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
+		isPs, err := leafVertexToBisect.IsPresumptiveSuccessor(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, false, isPs)
 		return nil
 	})
 	require.NoError(t, err)
-	tracker, err := newVertexTracker(
+	tracker1, err := newVertexTracker(
 		&vertexTrackerConfig{
 			timeRef:               util.NewArtificialTimeReference(),
 			challengePeriodLength: time.Second,
@@ -302,10 +303,23 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 			validatorAddress:      evilValidator.address,
 		},
 		challenge,
-		vertexToBisect,
+		leafVertexToBisect,
 	)
 	require.NoError(t, err)
-	return tracker
+	tracker2, err := newVertexTracker(
+		&vertexTrackerConfig{
+			timeRef:               util.NewArtificialTimeReference(),
+			challengePeriodLength: time.Second,
+			chain:                 honestValidator.chain,
+			stateManager:          honestValidator.stateManager,
+			validatorName:         honestValidator.name,
+			validatorAddress:      honestValidator.address,
+		},
+		challenge,
+		honestLeafVertex,
+	)
+	require.NoError(t, err)
+	return tracker1, tracker2
 }
 
 func Test_vertexTracker_canConfirm(t *testing.T) {
