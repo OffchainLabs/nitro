@@ -288,5 +288,7 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
         bytes memory data
     ) internal virtual returns (bool success, bytes memory returnData);
 
+    /// @dev get base fee which is emitted in `MessageDelivered` event and then picked up and
+    /// used in ArbOs to calculate the submission fee for retryable ticket
     function _baseFeeToReport() internal virtual returns (uint256);
 }
