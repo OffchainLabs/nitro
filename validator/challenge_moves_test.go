@@ -21,14 +21,16 @@ func Test_computePrefixProof(t *testing.T) {
 	require.NoError(t, err)
 
 	v := &vertexTracker{
-		stateManager: manager,
+		cfg: &vertexTrackerConfig{
+			stateManager: manager,
+		},
 	}
 
 	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
 	require.NoError(t, err)
 
 	bisectToHeight := bisectToCommit.Height
-	proof, err := v.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectToHeight, 6)
 	require.NoError(t, err)
 	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
 	require.NoError(t, err)
@@ -63,10 +65,12 @@ func Test_bisect(t *testing.T) {
 			},
 		}
 		v := vertexTracker{
-			chain:            validator.chain,
-			stateManager:     validator.stateManager,
-			validatorName:    validator.name,
-			validatorAddress: validator.address,
+			cfg: &vertexTrackerConfig{
+				chain:            validator.chain,
+				stateManager:     validator.stateManager,
+				validatorName:    validator.name,
+				validatorAddress: validator.address,
+			},
 		}
 		_, err = v.bisect(ctx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
@@ -101,10 +105,12 @@ func Test_bisect(t *testing.T) {
 			},
 		}
 		v := vertexTracker{
-			chain:            validator.chain,
-			stateManager:     validator.stateManager,
-			validatorName:    validator.name,
-			validatorAddress: validator.address,
+			cfg: &vertexTrackerConfig{
+				chain:            validator.chain,
+				stateManager:     validator.stateManager,
+				validatorName:    validator.name,
+				validatorAddress: validator.address,
+			},
 		}
 		_, err = v.bisect(ctx, vertex)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
@@ -217,10 +223,12 @@ func Test_merge(t *testing.T) {
 			},
 		}
 		v := vertexTracker{
-			chain:            honestValidator.chain,
-			stateManager:     honestValidator.stateManager,
-			validatorName:    honestValidator.name,
-			validatorAddress: honestValidator.address,
+			cfg: &vertexTrackerConfig{
+				chain:            honestValidator.chain,
+				stateManager:     honestValidator.stateManager,
+				validatorName:    honestValidator.name,
+				validatorAddress: honestValidator.address,
+			},
 		}
 		_, err = v.merge(
 			ctx, challengeId, mergingTo, mergingFrom,
@@ -294,10 +302,12 @@ func Test_merge(t *testing.T) {
 
 		// Perform a merge move to the bisected vertex from an origin.
 		v := vertexTracker{
-			chain:            honestValidator.chain,
-			stateManager:     honestValidator.stateManager,
-			validatorName:    honestValidator.name,
-			validatorAddress: honestValidator.address,
+			cfg: &vertexTrackerConfig{
+				chain:            honestValidator.chain,
+				stateManager:     honestValidator.stateManager,
+				validatorName:    honestValidator.name,
+				validatorAddress: honestValidator.address,
+			},
 		}
 		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
 		require.NoError(t, err)
@@ -361,10 +371,12 @@ func runBisectionTest(
 	require.NoError(t, err)
 
 	v := vertexTracker{
-		chain:            evilValidator.chain,
-		stateManager:     evilValidator.stateManager,
-		validatorName:    evilValidator.name,
-		validatorAddress: evilValidator.address,
+		cfg: &vertexTrackerConfig{
+			chain:            evilValidator.chain,
+			stateManager:     evilValidator.stateManager,
+			validatorName:    evilValidator.name,
+			validatorAddress: evilValidator.address,
+		},
 	}
 
 	bisectedVertex, err := v.bisect(ctx, vertexToBisect)

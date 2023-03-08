@@ -27,7 +27,6 @@ type vertexTrackerConfig struct {
 	challengeCreationTime time.Time
 	chain                 protocol.Protocol
 	stateManager          statemanager.Manager
-	awaitingOneStepFork   bool
 	validatorName         string
 	validatorAddress      common.Address
 }
@@ -153,7 +152,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("bad source event: %s", event)
 		}
-		log.WithField("name", vt.cfg.validatorName).Info(
+		log.WithField("name", vt.cfg.validatorName).Infof(
 			"Reached one-step-fork at height %d and commitment %#x",
 			event.forkPointVertex.HistoryCommitment().Height,
 			event.forkPointVertex.HistoryCommitment().Merkle,
@@ -261,7 +260,7 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 			return err
 		}
 		if prevV.IsNone() {
-			return fmt.Errorf("no prev vertex found for vertex with id %#x", vt.vertex.Id())
+			return errors.Wrapf(ErrPrevNone, "vertex with id: %#x", vt.vertex.Id())
 		}
 		prev = prevV.Unwrap()
 		return nil
