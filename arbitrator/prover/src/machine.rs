@@ -2,7 +2,6 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 use crate::{
     binary::{self, parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
-    console::Color,
     host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -14,6 +13,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
+use arbutil::Color;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -1951,8 +1951,8 @@ impl Machine {
                         } else {
                             eprintln!(
                                 "{} for hash {}",
-                                Color::red("Missing requested preimage"),
-                                Color::red(hash),
+                                "Missing requested preimage".red(),
+                                hash.red(),
                             );
                             self.eprint_backtrace();
                             bail!("missing requested preimage for hash {}", hash);
@@ -1983,7 +1983,7 @@ impl Machine {
                     } else {
                         let delayed = inbox_identifier == InboxIdentifier::Delayed;
                         if msg_num < self.first_too_far || delayed {
-                            eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
+                            eprintln!("{} {msg_num}", "Missing inbox message".red());
                             self.eprint_backtrace();
                             bail!(
                                 "missing inbox message {msg_num} of {}",
@@ -2005,7 +2005,7 @@ impl Machine {
             // If we halted, print out any trailing output that didn't have a newline.
             println!(
                 "{} {}",
-                Color::yellow("WASM says:"),
+                "WASM says:".yellow(),
                 String::from_utf8_lossy(&self.stdio_output),
             );
             self.stdio_output.clear();
@@ -2444,7 +2444,7 @@ impl Machine {
         eprintln!("Backtrace:");
         for (module, func, pc) in self.get_backtrace() {
             let func = rustc_demangle::demangle(&func);
-            eprintln!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
+            eprintln!("  {} {} @ {}", module, func.mint(), pc.blue());
         }
     }
 }
