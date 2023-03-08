@@ -140,7 +140,7 @@ library ChallengeManagerLib {
         (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
 
         MerkleTreeLib.verifyPrefixProof(
-            prefixHistoryRoot, bHeight, vertices[vId].historyRoot, vertices[vId].height, preExpansion, proof
+            prefixHistoryRoot, bHeight + 1, vertices[vId].historyRoot, vertices[vId].height + 1, preExpansion, proof
         );
 
         return (ChallengeVertexLib.id(challengeId, prefixHistoryRoot, bHeight), bHeight);
@@ -187,9 +187,9 @@ library ChallengeManagerLib {
         IOneStepProofEntry oneStepProofEntry,
         bytes32 winnerVId,
         OneStepData calldata oneStepData,
-        bytes calldata beforeHistoryInclusionProof,
-        bytes calldata afterHistoryInclusionProof
-    ) internal returns (bytes32) {
+        bytes32[] calldata beforeHistoryInclusionProof,
+        bytes32[] calldata afterHistoryInclusionProof
+    ) internal view returns (bytes32) {
         require(vertices[winnerVId].exists(), "Vertex does not exist");
         bytes32 predecessorId = vertices[winnerVId].predecessorId;
         require(vertices[predecessorId].exists(), "Predecessor does not exist");
@@ -280,7 +280,7 @@ library ChallengeManagerLib {
 
         uint256 mostSignificantSharedBit = mostSignificantBit((end - 1) ^ start);
         uint256 mask = type(uint256).max << mostSignificantSharedBit;
-        return (end - 1) & mask;
+        return ((end - 1) & mask) - 1;
     }
 
     function bisectionHeight(mapping(bytes32 => ChallengeVertex) storage vertices, bytes32 vId)
@@ -405,8 +405,10 @@ contract ChallengeManagerImpl is IChallengeManager {
         // CHRIS: TODO: whenever we call an external function we should make a list of the assumptions we're making about the external contract
 
         // CHRIS: TODO: we should have an existance check
+        // CHRIS: TODO: this and the history root propagation in createSubChallenge need to be re-assessed - dont we have
+        // different types of state at each level?
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
-        bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 1);
+        bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
         vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
         challenges[challengeId] =
             Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0, challenger: msg.sender});
@@ -423,7 +425,7 @@ contract ChallengeManagerImpl is IChallengeManager {
             ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriodSec);
 
         bytes32 originHistoryRoot = vertices[vId].historyRoot;
-        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 1);
+        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 0);
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
         vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);
@@ -441,8 +443,8 @@ contract ChallengeManagerImpl is IChallengeManager {
     function executeOneStep(
         bytes32 winnerVId,
         OneStepData calldata oneStepData,
-        bytes calldata beforeHistoryInclusionProof,
-        bytes calldata afterHistoryInclusionProof
+        bytes32[] calldata beforeHistoryInclusionProof,
+        bytes32[] calldata afterHistoryInclusionProof
     ) public returns (bytes32) {
         bytes32 challengeId = ChallengeManagerLib.checkExecuteOneStep(
             vertices,
