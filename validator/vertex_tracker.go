@@ -154,18 +154,37 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if vt.challenge.GetType() == protocol.SmallStepChallenge {
 			return vt.fsm.Do(actOneStepProof{})
 		}
-		return vt.fsm.Do(openSubchallenge{})
+		return vt.fsm.Do(openSubchallenge{
+			forkPointVertex: event.forkPointVertex,
+		})
 	case trackerAtOneStepProof:
 		log.Info("Checking one-step-proof against protocol")
 		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
-		// TODO: Implement.
-		return vt.fsm.Do(openSubchallenge{})
+		event, ok := current.SourceEvent.(openSubchallenge)
+		if !ok {
+			return fmt.Errorf("bad source event: %s", event)
+		}
+		subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
+		if err != nil {
+			return err
+		}
+		return vt.fsm.Do(openSubchallengeLeaf{
+			subChallenge:    subChallenge,
+			forkPointVertex: event.forkPointVertex,
+		})
 	case trackerAddingSubchallengeLeaf:
-		// TODO: Implement.
-		return vt.fsm.Do(openSubchallengeLeaf{})
+		event, ok := current.SourceEvent.(openSubchallengeLeaf)
+		if !ok {
+			return fmt.Errorf("bad source event: %s", event)
+		}
+		if err := vt.openSubchallengeLeaf(
+			ctx, event.forkPointVertex, event.subChallenge,
+		); err != nil {
+			return err
+		}
+		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
-		// TODO: Seems to allow for double bisections?
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
@@ -197,8 +216,6 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			return err
 		}
 		go tracker.spawn(ctx)
-
-		// TODO: This seems wrong...what to do?
 		return vt.fsm.Do(backToStart{})
 	case trackerConfirming:
 		// TODO: Implement.
@@ -334,6 +351,95 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 		return nil, err
 	}
 	return mergedTo, nil
+}
+
+func (v *vertexTracker) openSubchallenge(
+	ctx context.Context,
+	prevVertex protocol.ChallengeVertex,
+) (protocol.Challenge, error) {
+	if v.challenge.GetType() == protocol.SmallStepChallenge {
+		return nil, errors.New("cannot create subchallenge on small step challenge")
+	}
+	// Produce a Merkle commitment of big steps from height v.prev.height to v.height.
+	var subChal protocol.Challenge
+	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
+		manager, err := v.cfg.chain.CurrentChallengeManager(ctx, tx)
+		if err != nil {
+			return err
+		}
+		var subChalToCreate protocol.ChallengeType
+		switch v.challenge.GetType() {
+		case protocol.BlockChallenge:
+			subChalToCreate = protocol.BigStepChallenge
+		case protocol.BigStepChallenge:
+			subChalToCreate = protocol.SmallStepChallenge
+		default:
+			errors.New("unsupported challenge type to create")
+		}
+		subChal, err = prevVertex.CreateSubChallenge(ctx, tx)
+		if err != nil {
+			switch {
+			case errors.Is(err, solimpl.ErrAlreadyExists):
+				subChalHash, calcErr := manager.CalculateChallengeHash(ctx, tx, prevVertex.Id(), subChalToCreate)
+				if calcErr != nil {
+					return calcErr
+				}
+				fetchedSubChal, fetchErr := manager.GetChallenge(ctx, tx, subChalHash)
+				if fetchErr != nil {
+					return fetchErr
+				}
+				if fetchedSubChal.IsNone() {
+					return fmt.Errorf("no subchallenge found on-chain for id %#x", subChalHash)
+				}
+				subChal = fetchedSubChal.Unwrap()
+			default:
+				return errors.Wrap(err, "subchallenge creation failed")
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return subChal, nil
+}
+
+func (vt *vertexTracker) openSubchallengeLeaf(
+	ctx context.Context,
+	prevVertex protocol.ChallengeVertex,
+	subChallenge protocol.Challenge,
+) error {
+	var subChalLeaf protocol.ChallengeVertex
+	if err := vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
+		fromHeight := prevVertex.HistoryCommitment().Height
+		toHeight := vt.vertex.HistoryCommitment().Height
+		var history util.HistoryCommitment
+		var err error
+		switch subChallenge.GetType() {
+		case protocol.BigStepChallenge:
+			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromHeight, toHeight)
+		case protocol.SmallStepChallenge:
+			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, fromHeight, toHeight)
+		default:
+			return errors.New("unsupported subchallenge type for creating leaf commitment")
+		}
+		if err != nil {
+			return err
+		}
+		addedLeaf, err := subChallenge.AddSubChallengeLeaf(ctx, tx, vt.vertex, history)
+		if err != nil {
+			return err
+		}
+		subChalLeaf = addedLeaf
+		return nil
+	}); err != nil {
+		return err
+	}
+	go newVertexTracker(
+		vt.cfg,
+		subChallenge,
+		subChalLeaf,
+	).track(ctx)
+	return nil
 }
 
 // TODO: Unused - need to refactor into something more manageable.

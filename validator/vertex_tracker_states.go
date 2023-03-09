@@ -89,10 +89,17 @@ type actOneStepFork struct {
 type actOneStepProof struct{}
 
 // Tracker will open a subchallenge on its vertex.
-type openSubchallenge struct{}
+type openSubchallenge struct {
+	// The parent vertex of the rival vertices in the one-step-fork.
+	forkPointVertex protocol.ChallengeVertex
+}
 
 // Tracker will add a subchallenge on its vertex's subchallenge.
-type openSubchallengeLeaf struct{}
+type openSubchallengeLeaf struct {
+	// The parent vertex of the rival vertices in the one-step-fork.
+	forkPointVertex protocol.ChallengeVertex
+	subChallenge    protocol.Challenge
+}
 
 // Tracker will await subchallenge resolution.
 type awaitSubchallengeResolution struct{}
