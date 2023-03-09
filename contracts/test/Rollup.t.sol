@@ -273,7 +273,8 @@ contract RollupTest is Test {
         returns (
             ExecutionState memory,
             ExecutionState memory,
-            ExecutionState memory
+            ExecutionState memory,
+            uint256
         )
     {
         uint64 inboxcount = uint64(_createNewBatch());
@@ -286,6 +287,9 @@ contract RollupTest is Test {
         afterState.globalState.u64Vals[0] = 1; // inbox count
         afterState.globalState.u64Vals[1] = 0; // pos in msg
 
+        // record some genesis state for later use
+        uint256 genesisInboxCount = userRollup.bridge().sequencerMessageCount();
+
         vm.prank(validator1);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
@@ -297,7 +301,12 @@ contract RollupTest is Test {
             prevAssertionInboxMaxCount: 1
         });
 
-        ExecutionState memory afterState2 = afterState;
+
+        ExecutionState memory afterState2;
+        afterState2.machineStatus = MachineStatus.FINISHED;
+        afterState2.globalState.bytes32Vals[0] = FIRST_ASSERTION_BLOCKHASH; // blockhash
+        afterState2.globalState.bytes32Vals[1] = FIRST_ASSERTION_SENDROOT; // sendroot
+        afterState2.globalState.u64Vals[0] = 1; // inbox count
         afterState2.globalState.u64Vals[1] = 1; // modify the state
         vm.prank(validator2);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
@@ -312,7 +321,7 @@ contract RollupTest is Test {
 
         assertEq(userRollup.getAssertion(0).secondChildBlock, block.number);
 
-        return (beforeState, afterState, afterState2);
+        return (beforeState, afterState, afterState2, genesisInboxCount);
     }
 
     function testRevertConfirmWrongInput() public {
@@ -369,7 +378,7 @@ contract RollupTest is Test {
     }
 
     function testSuccessConfirmForPsTimer() public {
-        testSuccessCreateSecondChild();
+        (,ExecutionState memory afterState,,uint256 genesisInboxCount) = testSuccessCreateSecondChild();
         vm.prank(validator1);
         bytes32 challengeId = userRollup.createChallenge({
             assertionNum: 0
@@ -394,7 +403,7 @@ contract RollupTest is Test {
                 lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1)
             }),
             abi.encodePacked(h1),
-            abi.encodePacked(uint256(0))
+            abi.encode(afterState.globalState, genesisInboxCount, afterState.machineStatus)
         );
         userRollup.challengeManager().confirmForPsTimer(v1Id);
         vm.prank(validator1);
