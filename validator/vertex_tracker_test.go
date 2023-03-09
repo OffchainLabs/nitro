@@ -87,7 +87,7 @@ func Test_act(t *testing.T) {
 		err = tkr.act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerOpeningSubchallenge), int(tkr.fsm.Current().State))
-		AssertLogsContain(t, hook, "Reached one-step-fork at height 0")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
 	})
 	t.Run("vertex prev is nil and returns", func(t *testing.T) {
 		tx := &mocks.MockActiveTx{ReadWriteTx: false}
@@ -209,7 +209,7 @@ func Test_act(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int(trackerStarted), int(honestTracker.fsm.Current().State))
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
-		AssertLogsContain(t, hook, "Successfully merged to vertex with height 64")
+		AssertLogsContain(t, hook, "Successfully merged to vertex")
 	})
 }
 

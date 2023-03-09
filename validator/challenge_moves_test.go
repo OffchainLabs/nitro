@@ -311,7 +311,7 @@ func Test_merge(t *testing.T) {
 		}
 		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
 		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 64")
+		AssertLogsContain(t, logsHook, "Successfully merged to vertex")
 		require.Equal(t, bisectedTo.Id(), mergingTo.Id())
 	})
 }
