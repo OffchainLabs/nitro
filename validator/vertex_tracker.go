@@ -400,6 +400,11 @@ func (v *vertexTracker) openSubchallenge(
 	}); err != nil {
 		return nil, err
 	}
+	log.WithFields(logrus.Fields{
+		"name":   v.cfg.validatorName,
+		"height": prevVertex.HistoryCommitment().Height,
+		"merkle": util.Trunc(prevVertex.HistoryCommitment().Merkle.Bytes()),
+	}).Infof("Opened %s subchallenge", subChal.GetType())
 	return subChal, nil
 }
 
@@ -409,11 +414,11 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	subChallenge protocol.Challenge,
 ) error {
 	var subChalLeaf protocol.ChallengeVertex
-	if err := vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
+	var history util.HistoryCommitment
+	var err error
+	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		fromHeight := prevVertex.HistoryCommitment().Height
 		toHeight := vt.vertex.HistoryCommitment().Height
-		var history util.HistoryCommitment
-		var err error
 		switch subChallenge.GetType() {
 		case protocol.BigStepChallenge:
 			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromHeight, toHeight)
@@ -434,6 +439,14 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	}); err != nil {
 		return err
 	}
+	log.WithFields(logrus.Fields{
+		"name":                      vt.cfg.validatorName,
+		"upperLevelForkPoint":       prevVertex.HistoryCommitment().Height,
+		"upperLevelForkPointMerkle": util.Trunc(prevVertex.HistoryCommitment().Merkle.Bytes()),
+		"height":                    history.Height,
+		"merkle":                    util.Trunc(history.Merkle.Bytes()),
+		"subChallengeType":          subChallenge.GetType(),
+	}).Info("Added subchallenge leaf, now tracking its vertex")
 	tracker, err := newVertexTracker(
 		vt.cfg,
 		subChallenge,

@@ -156,6 +156,19 @@ const (
 	SmallStepChallenge
 )
 
+func (ct ChallengeType) String() string {
+	switch ct {
+	case BlockChallenge:
+		return "block"
+	case BigStepChallenge:
+		return "big_step"
+	case SmallStepChallenge:
+		return "small_step"
+	default:
+		return "unknown"
+	}
+}
+
 // AssertionState represents the enum with the same name
 // in the protocol smart contracts.
 type AssertionState uint8
