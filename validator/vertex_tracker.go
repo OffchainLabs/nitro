@@ -77,10 +77,19 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 				continue
 			}
 			if shouldComplete {
-				log.WithFields(logrus.Fields{
-					"height": commitment.Height,
-					"merkle": fmt.Sprintf("%#x", commitment.Merkle),
-				}).Debug("Vertex tracker received notice of a confirmation, exiting")
+				if v.fsm.Current().State == trackerPresumptive {
+					log.WithFields(logrus.Fields{
+						"height":        commitment.Height,
+						"merkle":        fmt.Sprintf("%#x", commitment.Merkle),
+						"validatorName": v.cfg.validatorName,
+					}).Debug("Vertex tracker became presumptive, exiting goroutine")
+				} else {
+					log.WithFields(logrus.Fields{
+						"height":        commitment.Height,
+						"merkle":        fmt.Sprintf("%#x", commitment.Merkle),
+						"validatorName": v.cfg.validatorName,
+					}).Debug("Vertex tracker received notice of a confirmation, exiting")
+				}
 				return
 			}
 			if err := v.act(ctx); err != nil {
@@ -171,6 +180,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		// TODO: Implement.
 		return nil
 	case trackerBisecting:
+		// TODO: Seems to allow for double bisections?
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
@@ -202,6 +212,8 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			return err
 		}
 		go tracker.spawn(ctx)
+
+		// TODO: This seems wrong...what to do?
 		return vt.fsm.Do(backToStart{})
 	case trackerConfirming:
 		// TODO: Implement.
