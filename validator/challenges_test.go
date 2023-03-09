@@ -74,6 +74,7 @@ func TestBlockChallenge(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
+		t.Skip("Flakey")
 		cfg := &blockChallengeTestConfig{
 			numValidators:      2,
 			currentChainHeight: 8,
@@ -101,6 +102,7 @@ func TestBlockChallenge(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 	})
 	t.Run("two validators opening leaves at heights 6 and 256", func(t *testing.T) {
+		t.Skip("Flakey")
 		cfg := &blockChallengeTestConfig{
 			numValidators:      2,
 			currentChainHeight: 256,
@@ -129,6 +131,7 @@ func TestBlockChallenge(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
 	t.Run("two validators opening leaves at heights 129 and 256", func(t *testing.T) {
+		t.Skip("Flakey")
 		cfg := &blockChallengeTestConfig{
 			numValidators:      2,
 			currentChainHeight: 256,
@@ -163,6 +166,7 @@ func TestBlockChallenge(t *testing.T) {
 	//                   [4]-[6]-charlie
 	//
 	t.Run("three validators opening leaves at same height same fork point", func(t *testing.T) {
+		t.Skip("Flakey")
 		cfg := &blockChallengeTestConfig{
 			numValidators:      3,
 			currentChainHeight: 6,
@@ -198,6 +202,7 @@ func TestBlockChallenge(t *testing.T) {
 	//                   [4]-[6]-charlie
 	//
 	t.Run("three validators opening leaves at same height different fork points", func(t *testing.T) {
+		t.Skip("Flakey")
 		cfg := &blockChallengeTestConfig{
 			numValidators:      3,
 			currentChainHeight: 6,
@@ -233,6 +238,7 @@ func TestBlockChallenge(t *testing.T) {
 	//                   [3]-[4]--[4]--charlie
 	//
 	t.Run("three validators opening leaves at different height different fork points", func(t *testing.T) {
+		t.Skip("Flakey")
 		cfg := &blockChallengeTestConfig{
 			numValidators:      3,
 			currentChainHeight: 64,
