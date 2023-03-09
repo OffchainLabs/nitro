@@ -99,7 +99,6 @@ library ProofUtils {
         require(leaves.length >= 1, "No leaves");
         require(index < leaves.length, "Index too high");
         bytes32[][] memory fullT = fullTree(leaves);
-
         if (leaves.length == 1) return new bytes32[](0);
 
         uint256 maxLevel = UintUtils.mostSignificantBit(leaves.length - 1);

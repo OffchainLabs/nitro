@@ -7,6 +7,9 @@ import "./MockAssertionChain.sol";
 import "../src/challengeV2/ChallengeManagerImpl.sol";
 import "../src/osp/IOneStepProofEntry.sol";
 import "./challengeV2/Utils.sol";
+import "./challengeV2/StateTools.sol";
+import "../src/state/GlobalState.sol";
+import "../src/state/Machine.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
     function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
@@ -20,14 +23,17 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
 
 contract ChallengeManagerE2ETest is Test {
     Random rand = new Random();
-    bytes32 genesisHash = rand.hash();
+    bytes32 genesisBlockHash = rand.hash();
+    State genesisState = StateToolsLib.randomState(rand, 7, genesisBlockHash, MachineStatus.RUNNING);
+    bytes32 genesisStateHash = StateToolsLib.hash(genesisState);
 
     function genesisStates() internal view returns (bytes32[] memory) {
         bytes32[] memory genStates = new bytes32[](1);
-        genStates[0] = genesisHash;
+        genStates[0] = genesisStateHash;
         return genStates;
     }
 
+    // CHRIS: TODO: remove these in favour of instance hashes each time
     bytes32 h1 = rand.hash();
     bytes32 h2 = rand.hash();
     uint256 height1 = 18;
@@ -36,31 +42,63 @@ contract ChallengeManagerE2ETest is Test {
     uint256 challengePeriodSec = 1000;
 
     uint256 genesisHeight = 2;
+    uint256 inboxMsgCountGenesis = 7;
+    uint256 inboxMsgCountAssertion = 12;
 
     function deploy() internal returns (MockAssertionChain, ChallengeManagerImpl, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
         ChallengeManagerImpl challengeManager =
             new ChallengeManagerImpl(assertionChain, miniStakeVal, challengePeriodSec, new MockOneStepProofEntry());
-        bytes32 genesis =
-            assertionChain.addAssertionUnsafe(0, genesisHeight, 0, keccak256(abi.encodePacked(genesisHash)), 0);
+        bytes32 genesis = assertionChain.addAssertionUnsafe(0, genesisHeight, inboxMsgCountGenesis, genesisStateHash, 0);
 
         return (assertionChain, challengeManager, genesis);
     }
 
-    function deployAndInitChallenge()
-        internal
-        returns (MockAssertionChain, ChallengeManagerImpl, bytes32, bytes32, bytes32, bytes32)
-    {
+    struct StateForHash {
+        GlobalState gs;
+        uint256 inboxMsgCountMax;
+        MachineStatus ms;
+    }
+
+    struct InitData {
+        MockAssertionChain assertionChain;
+        ChallengeManagerImpl challengeManager;
+        bytes32 genesis;
+        bytes32 a1;
+        bytes32 a2;
+        bytes32 challengeId;
+        State a1State;
+        State a2State;
+    }
+
+    function deployAndInitChallenge() internal returns (InitData memory) {
         (MockAssertionChain assertionChain, ChallengeManagerImpl challengeManager, bytes32 genesis) = deploy();
-        uint256 inboxSeenCount1 = 5;
+
+        State memory a1State =
+            StateToolsLib.randomState(rand, GlobalStateLib.getInboxPosition(genesisState.gs), h1, MachineStatus.RUNNING);
+        State memory a2State =
+            StateToolsLib.randomState(rand, GlobalStateLib.getInboxPosition(genesisState.gs), h2, MachineStatus.RUNNING);
 
         // add one since heights are zero indexed in the history states
-        bytes32 a1 = assertionChain.addAssertion(genesis, genesisHeight + height1 + 1, inboxSeenCount1, h1, 0);
-        bytes32 a2 = assertionChain.addAssertion(genesis, genesisHeight + height1 + 1, inboxSeenCount1, h2, 0);
+        bytes32 a1 = assertionChain.addAssertion(
+            genesis, genesisHeight + height1 + 1, inboxMsgCountAssertion, StateToolsLib.hash(a1State), 0
+        );
+        bytes32 a2 = assertionChain.addAssertion(
+            genesis, genesisHeight + height1 + 1, inboxMsgCountAssertion, StateToolsLib.hash(a2State), 0
+        );
 
         bytes32 challengeId = assertionChain.createChallenge(a1, a2, challengeManager);
 
-        return (assertionChain, challengeManager, genesis, a1, a2, challengeId);
+        return InitData({
+            assertionChain: assertionChain,
+            challengeManager: challengeManager,
+            genesis: genesis,
+            a1: a1,
+            a2: a2,
+            challengeId: challengeId,
+            a1State: a1State,
+            a2State: a2State
+        });
     }
 
     function appendRandomStates(bytes32[] memory currentStates, uint256 numStates)
@@ -75,32 +113,32 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmPs() public {
-        (, ChallengeManagerImpl challengeManager,, bytes32 a1,, bytes32 challengeId) = deployAndInitChallenge();
+        InitData memory id = deployAndInitChallenge();
         (bytes32[] memory states, bytes32[] memory exp) = appendRandomStates(genesisStates(), height1);
 
         bytes32[] memory firstProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0);
         bytes32[] memory lastProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1);
 
-        bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
+        bytes32 v1Id = id.challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
-                challengeId: challengeId,
-                claimId: a1,
+                challengeId: id.challengeId,
+                claimId: id.a1,
                 height: height1,
                 historyRoot: MerkleTreeLib.root(exp),
-                firstState: genesisHash,
+                firstState: genesisStateHash,
                 firstStatehistoryProof: firstProof,
                 lastState: states[states.length - 1],
                 lastStatehistoryProof: lastProof
             }),
             abi.encodePacked(states[states.length - 1]),
-            abi.encodePacked(uint256(0))
+            abi.encode(id.a1State.gs, id.a1State.inboxMsgCountMax, id.a1State.ms)
         );
 
         vm.warp(challengePeriodSec + 2);
 
-        challengeManager.confirmForPsTimer(v1Id);
+        id.challengeManager.confirmForPsTimer(v1Id);
 
-        assertEq(challengeManager.winningClaim(challengeId), a1);
+        assertEq(id.challengeManager.winningClaim(id.challengeId), id.a1);
     }
 
     function bisect(
@@ -120,50 +158,49 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmSubChallenge() public {
-        (, ChallengeManagerImpl challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
-            deployAndInitChallenge();
+        InitData memory id = deployAndInitChallenge();
         (bytes32[] memory states1, bytes32[] memory exp1) = appendRandomStates(genesisStates(), height1);
 
-        bytes32 v1Id = challengeManager.addLeaf{value: miniStakeVal}(
+        bytes32 v1Id = id.challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
-                challengeId: blockChallengeId,
-                claimId: a1,
+                challengeId: id.challengeId,
+                claimId: id.a1,
                 height: height1,
                 historyRoot: MerkleTreeLib.root(exp1),
-                firstState: genesisHash,
+                firstState: genesisStateHash,
                 firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), 0),
                 lastState: states1[states1.length - 1],
                 lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), states1.length - 1)
             }),
             abi.encodePacked(states1[states1.length - 1]),
-            abi.encodePacked(uint256(0))
+            abi.encode(id.a1State.gs, id.a1State.inboxMsgCountMax, id.a1State.ms)
         );
 
         (bytes32[] memory states2, bytes32[] memory exp2) = appendRandomStates(genesisStates(), height1);
-        bytes32 v2Id = challengeManager.addLeaf{value: miniStakeVal}(
+        bytes32 v2Id = id.challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
-                challengeId: blockChallengeId,
-                claimId: a2,
+                challengeId: id.challengeId,
+                claimId: id.a2,
                 height: height1,
                 historyRoot: MerkleTreeLib.root(exp2),
-                firstState: genesisHash,
+                firstState: genesisStateHash,
                 firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), 0),
                 lastState: states2[states2.length - 1],
                 lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), states2.length - 1)
             }),
             abi.encodePacked(states2[states2.length - 1]),
-            abi.encodePacked(uint256(0))
+            abi.encode(id.a2State.gs, id.a2State.inboxMsgCountMax, id.a2State.ms)
         );
 
-        (bytes32[5] memory b1,) = bisectToRoot(challengeManager, v1Id, v2Id, states1, states2);
+        (bytes32[5] memory b1,) = bisectToRoot(id.challengeManager, v1Id, v2Id, states1, states2);
 
         bytes32 bigStepChallengeId =
-            challengeManager.createSubChallenge(challengeManager.getVertex(b1[0]).predecessorId);
+            id.challengeManager.createSubChallenge(id.challengeManager.getVertex(b1[0]).predecessorId);
 
         (bytes32[] memory subStates, bytes32[] memory subExp) = appendRandomStates(genesisStates(), height1);
 
         // only add one leaf
-        bytes32 bsLeaf1 = challengeManager.addLeaf{value: miniStakeVal}(
+        bytes32 bsLeaf1 = id.challengeManager.addLeaf{value: miniStakeVal}(
             AddLeafArgs({
                 challengeId: bigStepChallengeId,
                 claimId: b1[0],
@@ -183,16 +220,16 @@ contract ChallengeManagerE2ETest is Test {
         vm.warp(challengePeriodSec + 2);
 
         // confirm in the sub challenge by ps
-        challengeManager.confirmForPsTimer(bsLeaf1);
+        id.challengeManager.confirmForPsTimer(bsLeaf1);
         // confirm because of sub challenge
-        challengeManager.confirmForSucessionChallengeWin(b1[0]);
+        id.challengeManager.confirmForSucessionChallengeWin(b1[0]);
         // confirm the rest sequentially by ps
-        challengeManager.confirmForPsTimer(b1[1]);
-        challengeManager.confirmForPsTimer(b1[2]);
-        challengeManager.confirmForPsTimer(b1[3]);
-        challengeManager.confirmForPsTimer(b1[4]);
+        id.challengeManager.confirmForPsTimer(b1[1]);
+        id.challengeManager.confirmForPsTimer(b1[2]);
+        id.challengeManager.confirmForPsTimer(b1[3]);
+        id.challengeManager.confirmForPsTimer(b1[4]);
 
-        assertEq(challengeManager.winningClaim(blockChallengeId), a1);
+        assertEq(id.challengeManager.winningClaim(id.challengeId), id.a1);
     }
 
     function bisectToRoot(
@@ -242,7 +279,7 @@ contract ChallengeManagerE2ETest is Test {
                 claimId: claimId,
                 height: height,
                 historyRoot: historyRoot,
-                firstState: genesisHash,
+                firstState: genesisStateHash,
                 firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0),
                 lastState: states[states.length - 1],
                 lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1)
@@ -252,6 +289,15 @@ contract ChallengeManagerE2ETest is Test {
         );
     }
 
+    struct AddLeafAndBisectArgs {
+        IChallengeManager challengeManager;
+        bytes32 challengeId;
+        bytes32 claimId1;
+        bytes32 claimId2;
+        bytes addLeaf1Proof2;
+        bytes addLeaf2Proof2;
+    }
+
     struct AddLeafAndBisectReturns {
         bytes32[5] winningVertices;
         bytes32[5] losingVertices;
@@ -259,26 +305,37 @@ contract ChallengeManagerE2ETest is Test {
         bytes32[] states2;
     }
 
-    function addLeafsAndBisectToSubChallenge(
-        IChallengeManager challengeManager,
-        bytes32 challengeId,
-        bytes32 claimId1,
-        bytes32 claimId2,
-        bytes memory addLeafProof2
-    ) internal returns (AddLeafAndBisectReturns memory) {
+    function addLeafsAndBisectToSubChallenge(AddLeafAndBisectArgs memory args)
+        internal
+        returns (AddLeafAndBisectReturns memory)
+    {
         AddLeafAndBisectReturns memory r;
         (bytes32[] memory states1, bytes32[] memory exp1) = appendRandomStates(genesisStates(), height1);
         r.states1 = states1;
         (bytes32[] memory states2, bytes32[] memory exp2) = appendRandomStates(genesisStates(), height1);
         r.states2 = states2;
 
-        bytes32 v1Id =
-            addLeaf(challengeManager, challengeId, claimId1, MerkleTreeLib.root(exp1), height1, states1, addLeafProof2);
-        bytes32 v2Id =
-            addLeaf(challengeManager, challengeId, claimId2, MerkleTreeLib.root(exp2), height1, states2, addLeafProof2);
+        bytes32 v1Id = addLeaf(
+            args.challengeManager,
+            args.challengeId,
+            args.claimId1,
+            MerkleTreeLib.root(exp1),
+            height1,
+            states1,
+            args.addLeaf1Proof2
+        );
+        bytes32 v2Id = addLeaf(
+            args.challengeManager,
+            args.challengeId,
+            args.claimId2,
+            MerkleTreeLib.root(exp2),
+            height1,
+            states2,
+            args.addLeaf2Proof2
+        );
 
         (bytes32[5] memory challengeWinningVertices, bytes32[5] memory challengeLosingVertices) =
-            bisectToRoot(challengeManager, v1Id, v2Id, r.states1, r.states2);
+            bisectToRoot(args.challengeManager, v1Id, v2Id, r.states1, r.states2);
         r.losingVertices = challengeLosingVertices;
         r.winningVertices = challengeWinningVertices;
 
@@ -286,45 +343,61 @@ contract ChallengeManagerE2ETest is Test {
     }
 
     function testCanConfirmFromOneStep() public {
-        (, ChallengeManagerImpl challengeManager,, bytes32 a1, bytes32 a2, bytes32 blockChallengeId) =
-            deployAndInitChallenge();
+        InitData memory id = deployAndInitChallenge();
 
-        AddLeafAndBisectReturns memory blockResult =
-            addLeafsAndBisectToSubChallenge(challengeManager, blockChallengeId, a1, a2, abi.encodePacked(uint256(0)));
+        AddLeafAndBisectReturns memory blockResult = addLeafsAndBisectToSubChallenge(
+            AddLeafAndBisectArgs({
+                challengeManager: id.challengeManager,
+                challengeId: id.challengeId,
+                claimId1: id.a1,
+                claimId2: id.a2,
+                addLeaf1Proof2: abi.encode(id.a1State.gs, id.a1State.inboxMsgCountMax, id.a1State.ms),
+                addLeaf2Proof2: abi.encode(id.a2State.gs, id.a2State.inboxMsgCountMax, id.a2State.ms)
+            })
+        );
+        Challenge memory c = id.challengeManager.getChallenge(id.challengeId);
+        ChallengeVertex memory v = id.challengeManager.getVertex(c.rootId);
 
-        bytes32 bigStepChallengeId = challengeManager.createSubChallenge(
-            challengeManager.getVertex(blockResult.winningVertices[0]).predecessorId
+        bytes32 bigStepChallengeId = id.challengeManager.createSubChallenge(
+            id.challengeManager.getVertex(blockResult.winningVertices[0]).predecessorId
         );
         AddLeafAndBisectReturns memory bigStepResult = addLeafsAndBisectToSubChallenge(
-            challengeManager,
-            bigStepChallengeId,
-            blockResult.winningVertices[0],
-            blockResult.losingVertices[0],
-            abi.encodePacked(uint256(0))
+            AddLeafAndBisectArgs({
+                challengeManager: id.challengeManager,
+                challengeId: bigStepChallengeId,
+                claimId1: blockResult.winningVertices[0],
+                claimId2: blockResult.losingVertices[0],
+                addLeaf1Proof2: abi.encodePacked(uint256(0)),
+                addLeaf2Proof2: abi.encodePacked(uint256(0))
+            })
         );
 
-        bytes32 smallStepChallengeId = challengeManager.createSubChallenge(
-            challengeManager.getVertex(bigStepResult.winningVertices[0]).predecessorId
+        bytes32 smallStepChallengeId = id.challengeManager.createSubChallenge(
+            id.challengeManager.getVertex(bigStepResult.winningVertices[0]).predecessorId
         );
 
         AddLeafAndBisectReturns memory smallStepResult = addLeafsAndBisectToSubChallenge(
-            challengeManager,
-            smallStepChallengeId,
-            bigStepResult.winningVertices[0],
-            bigStepResult.losingVertices[0],
-            abi.encodePacked(height1)
+            AddLeafAndBisectArgs({
+                challengeManager: id.challengeManager,
+                challengeId: smallStepChallengeId,
+                claimId1: bigStepResult.winningVertices[0],
+                claimId2: bigStepResult.losingVertices[0],
+                addLeaf1Proof2: abi.encodePacked(height1),
+                addLeaf2Proof2: abi.encodePacked(height1)
+            })
         );
 
-        challengeManager.createSubChallenge(
-            challengeManager.getVertex(smallStepResult.winningVertices[0]).predecessorId
+        id.challengeManager.createSubChallenge(
+            id.challengeManager.getVertex(smallStepResult.winningVertices[0]).predecessorId
         );
-        uint256 baseHeight = challengeManager.getVertex(smallStepResult.winningVertices[0]).height - 1;
+        uint256 baseHeight = id.challengeManager.getVertex(smallStepResult.winningVertices[0]).height - 1;
+
         // form the states for the history commitment of the winning states
         bytes32[] memory firstStates = new bytes32[](2);
         firstStates[0] = smallStepResult.states1[0];
         firstStates[1] = smallStepResult.states1[1];
 
-        challengeManager.executeOneStep(
+        id.challengeManager.executeOneStep(
             smallStepResult.winningVertices[0],
             OneStepData({
                 execCtx: ExecutionContext({maxInboxMessagesRead: 0, bridge: IBridge(address(0))}),
@@ -336,26 +409,26 @@ contract ChallengeManagerE2ETest is Test {
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(firstStates), baseHeight + 1)
         );
 
-        challengeManager.confirmForSucessionChallengeWin(smallStepResult.winningVertices[0]);
+        id.challengeManager.confirmForSucessionChallengeWin(smallStepResult.winningVertices[0]);
 
         vm.warp(challengePeriodSec + 2);
-        challengeManager.confirmForPsTimer(smallStepResult.winningVertices[1]);
-        challengeManager.confirmForPsTimer(smallStepResult.winningVertices[2]);
-        challengeManager.confirmForPsTimer(smallStepResult.winningVertices[3]);
-        challengeManager.confirmForPsTimer(smallStepResult.winningVertices[4]);
+        id.challengeManager.confirmForPsTimer(smallStepResult.winningVertices[1]);
+        id.challengeManager.confirmForPsTimer(smallStepResult.winningVertices[2]);
+        id.challengeManager.confirmForPsTimer(smallStepResult.winningVertices[3]);
+        id.challengeManager.confirmForPsTimer(smallStepResult.winningVertices[4]);
 
-        challengeManager.confirmForSucessionChallengeWin(bigStepResult.winningVertices[0]);
-        challengeManager.confirmForPsTimer(bigStepResult.winningVertices[1]);
-        challengeManager.confirmForPsTimer(bigStepResult.winningVertices[2]);
-        challengeManager.confirmForPsTimer(bigStepResult.winningVertices[3]);
-        challengeManager.confirmForPsTimer(bigStepResult.winningVertices[4]);
+        id.challengeManager.confirmForSucessionChallengeWin(bigStepResult.winningVertices[0]);
+        id.challengeManager.confirmForPsTimer(bigStepResult.winningVertices[1]);
+        id.challengeManager.confirmForPsTimer(bigStepResult.winningVertices[2]);
+        id.challengeManager.confirmForPsTimer(bigStepResult.winningVertices[3]);
+        id.challengeManager.confirmForPsTimer(bigStepResult.winningVertices[4]);
 
-        challengeManager.confirmForSucessionChallengeWin(blockResult.winningVertices[0]);
-        challengeManager.confirmForPsTimer(blockResult.winningVertices[1]);
-        challengeManager.confirmForPsTimer(blockResult.winningVertices[2]);
-        challengeManager.confirmForPsTimer(blockResult.winningVertices[3]);
-        challengeManager.confirmForPsTimer(blockResult.winningVertices[4]);
+        id.challengeManager.confirmForSucessionChallengeWin(blockResult.winningVertices[0]);
+        id.challengeManager.confirmForPsTimer(blockResult.winningVertices[1]);
+        id.challengeManager.confirmForPsTimer(blockResult.winningVertices[2]);
+        id.challengeManager.confirmForPsTimer(blockResult.winningVertices[3]);
+        id.challengeManager.confirmForPsTimer(blockResult.winningVertices[4]);
 
-        assertEq(challengeManager.winningClaim(blockChallengeId), a1);
+        assertEq(id.challengeManager.winningClaim(id.challengeId), id.a1);
     }
 }
