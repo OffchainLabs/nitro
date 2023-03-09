@@ -201,9 +201,6 @@ library ChallengeManagerLib {
             "Challenge is not at one step execution point"
         );
 
-        // check that the before hash is the state has of the root id
-        // the root id is challenge id combined with the history commitment and the height
-        // bytes32 historyRoot, bytes32 state, uint256 stateHeight, bytes memory proof
         require(
             MerkleTreeLib.hasState(
                 vertices[predecessorId].historyRoot,
@@ -408,8 +405,10 @@ contract ChallengeManagerImpl is IChallengeManager {
         // CHRIS: TODO: this and the history root propagation in createSubChallenge need to be re-assessed - dont we have
         // different types of state at each level?
         bytes32 originStateHash = assertionChain.getStateHash(assertionId);
-        bytes32 rootId = ChallengeVertexLib.id(challengeId, originStateHash, 0);
-        vertices[rootId] = ChallengeVertexLib.newRoot(challengeId, originStateHash, assertionId);
+        ChallengeVertex memory root =
+            ChallengeVertexLib.newRoot(challengeId, keccak256(abi.encodePacked(originStateHash)), assertionId);
+        bytes32 rootId = ChallengeVertexLib.id(root);
+        vertices[rootId] = root;
         challenges[challengeId] =
             Challenge({rootId: rootId, challengeType: ChallengeType.Block, winningClaim: 0, challenger: msg.sender});
 
@@ -425,10 +424,12 @@ contract ChallengeManagerImpl is IChallengeManager {
             ChallengeManagerLib.checkCreateSubChallenge(vertices, challenges, vId, challengePeriodSec);
 
         bytes32 originHistoryRoot = vertices[vId].historyRoot;
-        bytes32 rootId = ChallengeVertexLib.id(newChallengeId, originHistoryRoot, 0);
+        ChallengeVertex memory root = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);
+        bytes32 rootId = ChallengeVertexLib.id(root);
 
         // CHRIS: TODO: should we even add the root for the one step? probably not
-        vertices[rootId] = ChallengeVertexLib.newRoot(newChallengeId, originHistoryRoot, vId);
+        // CHRIS: TODO: when going from big step to small step we want to change state type so we cant use the origin history root
+        vertices[rootId] = root;
         challenges[newChallengeId] =
             Challenge({rootId: rootId, challengeType: newChallengeType, winningClaim: 0, challenger: msg.sender});
         vertices[vId].setSuccessionChallenge(newChallengeId);
