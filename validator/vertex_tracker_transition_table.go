@@ -24,17 +24,6 @@ func newVertexTrackerFsm(
 			},
 			To: trackerStarted,
 		},
-		{
-			// Marks a tracker as presumptive status. This can occur
-			// soon after the tracker begins, or if a challenge move has been made.
-			Typ: markPresumptive{},
-			From: []vertexTrackerState{
-				trackerStarted,
-				trackerBisecting,
-				trackerMerging,
-			},
-			To: trackerPresumptive,
-		},
 		// One-step-proof states.
 		{
 			// The tracker will take some action if it has reached a one-step-fork.
@@ -52,13 +41,13 @@ func newVertexTrackerFsm(
 		{
 			// The tracker will open a subchallenge on a vertex that is at a one-step-fork.
 			Typ:  openSubchallenge{},
-			From: []vertexTrackerState{trackerAtOneStepFork},
+			From: []vertexTrackerState{trackerAtOneStepFork, trackerOpeningSubchallenge},
 			To:   trackerOpeningSubchallenge,
 		},
 		{
 			// The tracker will add a subchallenge leaf to its vertex's subchallenge.
 			Typ:  openSubchallengeLeaf{},
-			From: []vertexTrackerState{trackerOpeningSubchallenge},
+			From: []vertexTrackerState{trackerOpeningSubchallenge, trackerAddingSubchallengeLeaf},
 			To:   trackerAddingSubchallengeLeaf,
 		},
 		{
@@ -67,6 +56,7 @@ func newVertexTrackerFsm(
 			From: []vertexTrackerState{
 				trackerAtOneStepFork,
 				trackerAddingSubchallengeLeaf,
+				trackerAwaitingSubchallengeResolution,
 			},
 			To: trackerAwaitingSubchallengeResolution,
 		},
@@ -84,14 +74,27 @@ func newVertexTrackerFsm(
 			From: []vertexTrackerState{
 				trackerStarted,
 				trackerBisecting, // If a bisection attempt already exists, the tracker will try to merge.
+				trackerMerging,
 			},
 			To: trackerMerging,
 		},
 		// Finishing.
 		{
+			// Marks a tracker as presumptive status. This can occur
+			// soon after the tracker begins, or if a challenge move has been made.
+			Typ: markPresumptive{},
+			From: []vertexTrackerState{
+				trackerStarted,
+				trackerPresumptive,
+				trackerBisecting,
+				trackerMerging,
+			},
+			To: trackerPresumptive,
+		},
+		{
 			// Once a vertex tracker is at a one-step-proof, it will attempt to confirm a winner on-chain.
 			Typ:  confirmWinner{},
-			From: []vertexTrackerState{trackerAtOneStepProof},
+			From: []vertexTrackerState{trackerAtOneStepProof, trackerConfirming},
 			To:   trackerConfirming,
 		},
 	}
