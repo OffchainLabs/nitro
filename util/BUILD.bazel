@@ -5,23 +5,33 @@ go_library(
     srcs = [
         "commitments.go",
         "count_up_timer.go",
+        "fsm.go",
         "option_type.go",
         "proof.go",
+        "stopwaiter.go",
         "thread_safe_slice.go",
         "time_reference.go",
         "util.go",
+        "wait_for_l1.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/util",
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_ethereum_go_ethereum//:go-ethereum",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core",
+        "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_ethereum_go_ethereum//log",
+        "@com_github_pkg_errors//:errors",
     ],
 )
 
 go_test(
     name = "util_test",
     srcs = [
+        "fsm_test.go",
         "proof_test.go",
         "thread_safe_slice_test.go",
         "time_reference_test.go",
