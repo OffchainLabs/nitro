@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
@@ -48,7 +49,7 @@ func CreateChallenge(
 	auth *bind.TransactOpts,
 	client bind.ContractBackend,
 	ospEntry common.Address,
-	inputMachine validator.MachineInterface,
+	inputMachine server_arb.MachineInterface,
 	maxInboxMessage uint64,
 	asserter common.Address,
 	challenger common.Address,
@@ -109,8 +110,8 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 
 func runChallengeTest(
 	t *testing.T,
-	baseMachine *validator.ArbitratorMachine,
-	incorrectMachine validator.MachineInterface,
+	baseMachine *server_arb.ArbitratorMachine,
+	incorrectMachine server_arb.MachineInterface,
 	asserterIsCorrect bool,
 	testTimeout bool,
 	maxInboxMessage uint64,
@@ -131,7 +132,7 @@ func runChallengeTest(
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend)
 	backend.Commit()
 
-	var asserterMachine, challengerMachine validator.MachineInterface
+	var asserterMachine, challengerMachine server_arb.MachineInterface
 	var expectedWinner common.Address
 	if asserterIsCorrect {
 		expectedWinner = asserter.From
@@ -157,26 +158,33 @@ func runChallengeTest(
 
 	backend.Commit()
 
+	asserterRun, err := server_arb.NewExecutionRun(ctx,
+		func(context.Context) (server_arb.MachineInterface, error) { return asserterMachine, nil },
+		&server_arb.DefaultMachineCacheConfig)
+	Require(t, err)
+
 	asserterManager, err := NewExecutionChallengeManager(
 		backend,
 		asserter,
 		challengeManager,
 		1,
-		asserterMachine,
+		asserterRun,
 		0,
-		4,
 		12,
 	)
 	Require(t, err)
 
+	challengerRun, err := server_arb.NewExecutionRun(ctx,
+		func(context.Context) (server_arb.MachineInterface, error) { return challengerMachine, nil },
+		&server_arb.DefaultMachineCacheConfig)
+	Require(t, err)
 	challengerManager, err := NewExecutionChallengeManager(
 		backend,
 		challenger,
 		challengeManager,
 		1,
-		challengerMachine,
+		challengerRun,
 		0,
-		4,
 		12,
 	)
 	Require(t, err)
@@ -228,7 +236,7 @@ func runChallengeTest(
 	t.Fatal("challenge timed out without winner")
 }
 
-func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *validator.ArbitratorMachine {
+func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *server_arb.ArbitratorMachine {
 	_, filename, _, _ := runtime.Caller(0)
 	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
 
@@ -239,7 +247,7 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *val
 		modulePaths = append(modulePaths, path.Join(wasmDir, moduleName))
 	}
 
-	machine, err := validator.LoadSimpleMachine(wasmPath, modulePaths)
+	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths)
 	Require(t, err)
 
 	return machine
@@ -247,31 +255,31 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *val
 
 func TestChallengeToOSP(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := validator.NewIncorrectMachine(machine, 200)
+	IncorrectMachine := server_arb.NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := validator.NewIncorrectMachine(machine, 200)
+	IncorrectMachine := server_arb.NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
-	IncorrectMachine := validator.NewIncorrectMachine(machine, 10)
+	IncorrectMachine := server_arb.NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
-	IncorrectMachine := validator.NewIncorrectMachine(machine, 10)
+	IncorrectMachine := server_arb.NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToTimeout(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := validator.NewIncorrectMachine(machine, 200)
+	IncorrectMachine := server_arb.NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, false, true, 0)
 }
 
