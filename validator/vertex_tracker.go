@@ -398,7 +398,7 @@ func (v *vertexTracker) openSubchallenge(
 		}
 		return nil
 	}); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "FAILS TO OPEN CHAL")
 	}
 	log.WithFields(logrus.Fields{
 		"name":   v.cfg.validatorName,
@@ -437,7 +437,7 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		subChalLeaf = addedLeaf
 		return nil
 	}); err != nil {
-		return err
+		return errors.Wrapf(err, "%s FAILS TO OPEN SUBCHAL: %d, %s", vt.cfg.validatorName, history.Height, util.Trunc(history.Merkle.Bytes()))
 	}
 	log.WithFields(logrus.Fields{
 		"name":                      vt.cfg.validatorName,
