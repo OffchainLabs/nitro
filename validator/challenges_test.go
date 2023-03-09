@@ -70,8 +70,8 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")

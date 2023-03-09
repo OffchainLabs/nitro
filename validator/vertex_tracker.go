@@ -434,11 +434,15 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	}); err != nil {
 		return err
 	}
-	go newVertexTracker(
+	tracker, err := newVertexTracker(
 		vt.cfg,
 		subChallenge,
 		subChalLeaf,
-	).track(ctx)
+	)
+	if err != nil {
+		return err
+	}
+	go tracker.spawn(ctx)
 	return nil
 }
 

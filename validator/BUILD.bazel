@@ -6,7 +6,6 @@ go_library(
         "challenge_moves.go",
         "challenges.go",
         "events_filter.go",
-        "subchallenges.go",
         "validator.go",
         "vertex_tracker.go",
         "vertex_tracker_states.go",
