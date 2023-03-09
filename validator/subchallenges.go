@@ -10,17 +10,14 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (v *vertexTracker) submitSubChallenge(ctx context.Context) error {
+func (v *vertexTracker) openSubchallenge(ctx context.Context) error {
 	if v.challenge.GetType() == protocol.SmallStepChallenge {
 		return errors.New("cannot create subchallenge on small step challenge")
 	}
 	// Produce a Merkle commitment of big steps from height v.prev.height to v.height.
 	var subChalLeaf protocol.ChallengeVertex
 	var subChal protocol.Challenge
-	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
-		// TODO(RJ): What happens if subchal creation works, but the rest of this function fails?
-		// in this case, we need to make sure we keep retrying, otherwise
-		// we do not have another chance to do so.
+	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		prevVertex, err := v.vertex.Prev(ctx, tx)
 		if err != nil {
 			return err
@@ -30,7 +27,7 @@ func (v *vertexTracker) submitSubChallenge(ctx context.Context) error {
 		}
 		prev := prevVertex.Unwrap()
 
-		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+		manager, err := v.cfg.chain.CurrentChallengeManager(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -66,7 +63,9 @@ func (v *vertexTracker) submitSubChallenge(ctx context.Context) error {
 				return errors.Wrap(err, "subchallenge creation failed")
 			}
 		}
+}
 
+func (vt *vertexTracker) openSubchallengeLeaf(ctx context.Context) error {
 		fromHeight := prev.HistoryCommitment().Height
 		toHeight := v.vertex.HistoryCommitment().Height
 
