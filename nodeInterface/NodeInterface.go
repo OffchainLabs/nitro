@@ -78,7 +78,10 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if node.InboxReader == nil {
 		return 0, nil
 	}
-	bc := node.Execution.ArbInterface.BlockChain()
+	bc, err := blockchainFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, err
+	}
 	header := bc.GetHeaderByHash(blockHash)
 	if header == nil {
 		return 0, errors.New("unknown block hash")
@@ -486,16 +489,16 @@ func (n NodeInterface) GasEstimateL1Component(
 func (n NodeInterface) GasEstimateComponents(
 	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
 ) (uint64, uint64, huge, huge, error) {
-	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
-	if err != nil {
-		return 0, 0, nil, nil, err
-	}
 	if to == types.NodeInterfaceAddress || to == types.NodeInterfaceDebugAddress {
 		return 0, 0, nil, nil, errors.New("cannot estimate virtual contract")
 	}
 
+	backend, ok := n.backend.(*arbitrum.APIBackend)
+	if !ok {
+		return 0, 0, nil, nil, errors.New("failed getting API backend")
+	}
+
 	context := n.context
-	backend := node.Execution.Backend.APIBackend()
 	gasCap := backend.RPCGasCap()
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)

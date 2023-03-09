@@ -45,11 +45,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/execution/gethclient"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -273,9 +273,9 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		os.Exit(1)
 	}
-	if nodeConfig.Node.Archive {
+	if nodeConfig.Execution.Archive {
 		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
-		nodeConfig.Node.Caching.Archive = true
+		nodeConfig.Execution.Caching.Archive = true
 	}
 
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
@@ -288,8 +288,8 @@ func mainImpl() int {
 		nodeConfig.Node.L1Reader.Enable = true
 	}
 
-	if nodeConfig.Node.Sequencer.Enable {
-		if nodeConfig.Node.ForwardingTarget() != "" {
+	if nodeConfig.Execution.Sequencer.Enable {
+		if nodeConfig.Execution.ForwardingTarget() != "" {
 			flag.Usage()
 			log.Crit("forwarding-target cannot be set when sequencer is enabled")
 		}
@@ -297,14 +297,14 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
 		}
-	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
+	} else if nodeConfig.Execution.ForwardingTargetImpl == "" {
 		flag.Usage()
 		log.Crit("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
-	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
+	sequencerNeedsKey := nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Staker.OnlyCreateWalletContract
 	validatorCanAct := nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
@@ -360,9 +360,9 @@ func mainImpl() int {
 		return 0
 	}
 
-	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Node.TxLookupLimit = 0
+		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
 	stack, err := node.New(&stackConf)
@@ -381,7 +381,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), gethclient.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching))
 	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
 		// Calling Stop on the blockchain multiple times does nothing
@@ -439,9 +439,23 @@ func mainImpl() int {
 		log.Warn("couldn't init validation node", "err", err)
 	}
 
+	execNode, err := gethclient.CreateExecutionNode(
+		stack,
+		chainDb,
+		l2BlockChain,
+		l1Client,
+		nil, // TODO
+		func() *gethclient.Config { return &liveNodeConfig.get().Execution },
+	)
+	if err != nil {
+		log.Error("failed to create execution node", "err", err)
+		return 1
+	}
+
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
+		execNode,
 		chainDb,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
@@ -477,7 +491,7 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Execution.Backend.APIBackend(), currentNode.Execution.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
@@ -520,6 +534,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution     gethclient.Config               `koanf:"exec" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`

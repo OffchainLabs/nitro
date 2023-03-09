@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethclient"
 	"github.com/offchainlabs/nitro/statetransfer"
 
 	nitroutil "github.com/offchainlabs/nitro/util"
@@ -45,7 +46,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, ConfigDefaultL2Test().TxLookupLimit, 0)
+	bc, err := gethclient.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, ConfigDefaultL2Test().TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
