@@ -12,17 +12,29 @@ func newVertexTrackerFsm(
 	startState vertexTrackerState,
 ) (*util.Fsm[vertexTrackerAction, vertexTrackerState], error) {
 	transitions := []*util.FsmEvent[vertexTrackerAction, vertexTrackerState]{
-		// Start states.
 		{
 			// Returns the tracker to the very beginning. Several states can cause
 			// this, including challenge moves.
 			Typ: backToStart{},
 			From: []vertexTrackerState{
 				trackerAtOneStepFork,
+				trackerPresumptive,
 				trackerBisecting,
 				trackerMerging,
 			},
 			To: trackerStarted,
+		},
+		{
+			// Marks a tracker as presumptive status. This can occur
+			// soon after the tracker begins, or if a challenge move has been made.
+			Typ: markPresumptive{},
+			From: []vertexTrackerState{
+				trackerStarted,
+				trackerPresumptive,
+				trackerBisecting,
+				trackerMerging,
+			},
+			To: trackerPresumptive,
 		},
 		// One-step-proof states.
 		{
@@ -79,18 +91,6 @@ func newVertexTrackerFsm(
 			To: trackerMerging,
 		},
 		// Finishing.
-		{
-			// Marks a tracker as presumptive status. This can occur
-			// soon after the tracker begins, or if a challenge move has been made.
-			Typ: markPresumptive{},
-			From: []vertexTrackerState{
-				trackerStarted,
-				trackerPresumptive,
-				trackerBisecting,
-				trackerMerging,
-			},
-			To: trackerPresumptive,
-		},
 		{
 			// Once a vertex tracker is at a one-step-proof, it will attempt to confirm a winner on-chain.
 			Typ:  confirmWinner{},

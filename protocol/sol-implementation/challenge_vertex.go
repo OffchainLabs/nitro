@@ -24,7 +24,19 @@ func (v *ChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
 }
 
 func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
-
+	// Refreshes the vertex.
+	vertex, err := v.manager.GetVertex(ctx, tx, v.id)
+	if err != nil {
+		return util.None[protocol.ChallengeVertex](), err
+	}
+	if vertex.IsNone() {
+		return util.None[protocol.ChallengeVertex](), ErrNotFound
+	}
+	innerV, ok := vertex.Unwrap().(*ChallengeVertex)
+	if !ok {
+		return util.None[protocol.ChallengeVertex](), ErrNotFound
+	}
+	v.inner = innerV.inner
 	return v.manager.GetVertex(ctx, tx, v.inner.PredecessorId)
 }
 
