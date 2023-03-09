@@ -92,6 +92,7 @@ func TestCreateAssertion(t *testing.T) {
 		require.ErrorContains(t, err, "ALREADY_STAKED")
 	})
 	t.Run("can create fork", func(t *testing.T) {
+		l1Reader := NewHeaderReader(backend, func() *headerreader.Config { return &headerreader.TestConfig })
 		chain, err := NewAssertionChain(
 			ctx,
 			addresses.Rollup,

@@ -153,7 +153,7 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	_, err = transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err = transact(ctx, c.manager.assertionChain.backend, c.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
@@ -234,7 +234,7 @@ func (c *Challenge) AddSubChallengeLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	_, err = transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err = transact(ctx, c.manager.assertionChain.backend, c.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,

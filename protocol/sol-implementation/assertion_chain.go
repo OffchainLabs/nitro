@@ -13,10 +13,12 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/pkg/errors"
 )
 
@@ -84,12 +86,13 @@ type BlockchainReader interface {
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	backend    ChainBackend
-	rollup     *rollupgen.RollupCore
-	userLogic  *rollupgen.RollupUserLogic
-	callOpts   *bind.CallOpts
-	txOpts     *bind.TransactOpts
-	stakerAddr common.Address
+	backend      ChainBackend
+	rollup       *rollupgen.RollupCore
+	userLogic    *rollupgen.RollupUserLogic
+	callOpts     *bind.CallOpts
+	txOpts       *bind.TransactOpts
+	stakerAddr   common.Address
+	headerReader *HeaderReader
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -101,12 +104,14 @@ func NewAssertionChain(
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
 	backend ChainBackend,
+	headerReader *HeaderReader,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
-		backend:    backend,
-		callOpts:   callOpts,
-		txOpts:     txOpts,
-		stakerAddr: stakerAddr,
+		backend:      backend,
+		callOpts:     callOpts,
+		txOpts:       txOpts,
+		stakerAddr:   stakerAddr,
+		headerReader: headerReader,
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,
@@ -236,7 +241,7 @@ func (ac *AssertionChain) CreateAssertion(
 	newOpts := copyTxOpts(ac.txOpts)
 	newOpts.Value = stake
 
-	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+	receipt, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.NewStakeOnNewAssertion(
 			newOpts,
 			rollupgen.AssertionInputs{
@@ -287,7 +292,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	tx protocol.ActiveTx,
 	seqNum protocol.AssertionSequenceNumber,
 ) (protocol.Challenge, error) {
-	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+	_, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
 			uint64(seqNum),
@@ -319,7 +324,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 func (ac *AssertionChain) Confirm(
 	ctx context.Context, tx protocol.ActiveTx, blockHash, sendRoot common.Hash,
 ) error {
-	receipt, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+	receipt, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot)
 	})
 	if err != nil {
@@ -364,7 +369,7 @@ func (ac *AssertionChain) Confirm(
 func (ac *AssertionChain) Reject(
 	ctx context.Context, tx protocol.ActiveTx, staker common.Address,
 ) error {
-	_, err := transact(ctx, ac.backend, func() (*types.Transaction, error) {
+	_, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.RejectNextAssertion(ac.txOpts, staker)
 	})
 	switch {
@@ -438,7 +443,7 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 // transaction had a failed status on-chain, or if the execution of the callback
 // failed directly.
 // TODO(RJ): Add logic of waiting for transactions to complete.
-func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+func transact(ctx context.Context, backend ChainBackend, l1Reader *HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
 	tx, err := fn()
 	if err != nil {
 		return nil, err
@@ -446,7 +451,7 @@ func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Trans
 	if commiter, ok := backend.(ChainCommiter); ok {
 		commiter.Commit()
 	}
-	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
