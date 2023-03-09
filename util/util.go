@@ -21,6 +21,7 @@ func BisectionPoint(pre, post uint64) (uint64, error) {
 	return (post - 1) & mask, nil
 }
 
+// Truncates a byte slice to 4 bytes and pretty-prints as a hex string.
 func Trunc(b []byte) string {
 	if len(b) < 4 {
 		return fmt.Sprintf("%#x", b)

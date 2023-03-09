@@ -12,6 +12,7 @@ type vertexTrackerState uint8
 
 const (
 	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
+	// nolint:unused
 	trackerInvalid vertexTrackerState = iota
 	// The start state of the tracker.
 	trackerStarted
