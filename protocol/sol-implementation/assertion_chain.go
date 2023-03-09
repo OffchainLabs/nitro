@@ -442,7 +442,6 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 // an optional transaction receipt. It returns an error if the
 // transaction had a failed status on-chain, or if the execution of the callback
 // failed directly.
-// TODO(RJ): Add logic of waiting for transactions to complete.
 func transact(ctx context.Context, backend ChainBackend, l1Reader *HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
 	tx, err := fn()
 	if err != nil {
