@@ -62,9 +62,9 @@ func TestFullChallengeResolution(t *testing.T) {
 		require.Equal(t, protocol.BigStepChallenge, subChal.GetType())
 		t.Log("Created BigStepChallenge")
 
-		commit1, err = honestManager.BigStepLeafCommitment(ctx, 0, 1)
+		commit1, err = honestManager.BigStepLeafCommitment(ctx, 0, 1, common.Hash{}, common.Hash{})
 		require.NoError(t, err)
-		commit2, err = evilManager.BigStepLeafCommitment(ctx, 0, 1)
+		commit2, err = evilManager.BigStepLeafCommitment(ctx, 0, 1, common.Hash{}, common.Hash{})
 		require.NoError(t, err)
 
 		vertex1, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
@@ -89,9 +89,9 @@ func TestFullChallengeResolution(t *testing.T) {
 		require.Equal(t, protocol.SmallStepChallenge, subChal.GetType())
 		t.Log("Created SmallStepChallenge")
 
-		commit1, err = honestManager.SmallStepLeafCommitment(ctx, 0, 1)
+		commit1, err = honestManager.SmallStepLeafCommitment(ctx, 0, 1, common.Hash{}, common.Hash{})
 		require.NoError(t, err)
-		commit2, err = evilManager.SmallStepLeafCommitment(ctx, 0, 1)
+		commit2, err = evilManager.SmallStepLeafCommitment(ctx, 0, 1, common.Hash{}, common.Hash{})
 		require.NoError(t, err)
 
 		proof := hexutil.MustDecode("0x0000000000000000000000000000000000000000000000000000000000000001")

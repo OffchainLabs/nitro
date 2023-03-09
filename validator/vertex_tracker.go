@@ -419,11 +419,14 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		fromHeight := prevVertex.HistoryCommitment().Height
 		toHeight := vt.vertex.HistoryCommitment().Height
+
+		fromState := prevVertex.HistoryCommitment().LastLeaf
+		toState := vt.vertex.HistoryCommitment().LastLeaf
 		switch subChallenge.GetType() {
 		case protocol.BigStepChallenge:
-			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromHeight, toHeight)
+			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromHeight, toHeight, fromState, toState)
 		case protocol.SmallStepChallenge:
-			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, fromHeight, toHeight)
+			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, fromHeight, toHeight, fromState, toState)
 		default:
 			return errors.New("unsupported subchallenge type for creating leaf commitment")
 		}

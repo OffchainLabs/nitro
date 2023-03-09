@@ -27,7 +27,7 @@ var (
 	bisectEventSig      = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
 )
 
-func TestBlockChallenge(t *testing.T) {
+func TestChallengeProtocol(t *testing.T) {
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob.
@@ -38,7 +38,7 @@ func TestBlockChallenge(t *testing.T) {
 	//               \[3]-[4]-[6]-bob
 	//
 	t.Run("two validators opening leaves at same height", func(t *testing.T) {
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      2,
 			currentChainHeight: 6,
 			validatorNamesByIndex: map[uint64]string{
@@ -69,13 +69,13 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 5
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      2,
 			currentChainHeight: 8,
 			validatorNamesByIndex: map[uint64]string{
@@ -97,13 +97,13 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 5
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 	})
 	t.Run("two validators opening leaves at heights 6 and 256", func(t *testing.T) {
 		t.Skip("Flakey")
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      2,
 			currentChainHeight: 256,
 			validatorNamesByIndex: map[uint64]string{
@@ -126,13 +126,13 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 9
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
 	t.Run("two validators opening leaves at heights 129 and 256", func(t *testing.T) {
 		t.Skip("Flakey")
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      2,
 			currentChainHeight: 256,
 			validatorNamesByIndex: map[uint64]string{
@@ -154,7 +154,7 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 14
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
@@ -167,7 +167,7 @@ func TestBlockChallenge(t *testing.T) {
 	//
 	t.Run("three validators opening leaves at same height same fork point", func(t *testing.T) {
 		t.Skip("Flakey")
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      3,
 			currentChainHeight: 6,
 			validatorNamesByIndex: map[uint64]string{
@@ -190,7 +190,7 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 5
 		cfg.expectedMerges = 4
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
@@ -203,7 +203,7 @@ func TestBlockChallenge(t *testing.T) {
 	//
 	t.Run("three validators opening leaves at same height different fork points", func(t *testing.T) {
 		t.Skip("Flakey")
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      3,
 			currentChainHeight: 6,
 			validatorNamesByIndex: map[uint64]string{
@@ -226,7 +226,7 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 7
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 	})
@@ -239,7 +239,7 @@ func TestBlockChallenge(t *testing.T) {
 	//
 	t.Run("three validators opening leaves at different height different fork points", func(t *testing.T) {
 		t.Skip("Flakey")
-		cfg := &blockChallengeTestConfig{
+		cfg := &challengeProtocolTestConfig{
 			numValidators:      3,
 			currentChainHeight: 64,
 			latestHeightsByIndex: map[uint64]uint64{
@@ -265,13 +265,13 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedBisections = 6
 		cfg.expectedMerges = 3
 		hook := test.NewGlobal()
-		runBlockChallengeTest(t, hook, cfg)
+		runChallengeTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
 }
 
-type blockChallengeTestConfig struct {
+type challengeProtocolTestConfig struct {
 	// Number of validators we want to enter a block challenge with.
 	numValidators uint16
 	// The heights at which each validator diverges histories.
@@ -287,7 +287,7 @@ type blockChallengeTestConfig struct {
 	expectedVerticesAdded uint64
 }
 
-func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
+func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
 	require.Equal(t, true, cfg.numValidators > 1, "Need at least 2 validators")
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()

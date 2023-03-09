@@ -31,6 +31,8 @@ type Manager interface {
 		ctx context.Context,
 		fromAssertionHeight,
 		toAssertionHeight uint64,
+		fromStateHash,
+		toStateHash common.Hash,
 	) (util.HistoryCommitment, error)
 	BigStepCommitmentUpTo(
 		ctx context.Context,
@@ -40,6 +42,8 @@ type Manager interface {
 		ctx context.Context,
 		fromBigStep,
 		toBigStep uint64,
+		fromStateHash,
+		toStateHash common.Hash,
 	) (util.HistoryCommitment, error)
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
@@ -132,6 +136,8 @@ func (s *Simulated) BigStepLeafCommitment(
 	ctx context.Context,
 	fromAssertionHeight,
 	toAssertionHeight uint64,
+	startBlockHash,
+	endBlockHash common.Hash,
 ) (util.HistoryCommitment, error) {
 	if toAssertionHeight != fromAssertionHeight+1 {
 		return util.HistoryCommitment{}, fmt.Errorf(
@@ -141,9 +147,7 @@ func (s *Simulated) BigStepLeafCommitment(
 		)
 	}
 
-	preState := s.stateRoots[fromAssertionHeight]
-	postState := s.stateRoots[toAssertionHeight]
-	engine, err := execution.NewExecutionEngine(toAssertionHeight, preState, postState, &execution.Config{
+	engine, err := execution.NewExecutionEngine(toAssertionHeight, startBlockHash, endBlockHash, &execution.Config{
 		FixedNumSteps: 1,
 	})
 	if err != nil {
@@ -191,6 +195,8 @@ func (s *Simulated) SmallStepLeafCommitment(
 	ctx context.Context,
 	fromBigStep,
 	toBigStep uint64,
+	startStateHash,
+	endStateHash common.Hash,
 ) (util.HistoryCommitment, error) {
 	if toBigStep != fromBigStep+1 {
 		return util.HistoryCommitment{}, fmt.Errorf(
@@ -199,14 +205,9 @@ func (s *Simulated) SmallStepLeafCommitment(
 			toBigStep,
 		)
 	}
-	// TODO: Not state roots but rather intermediate wavm roots in a big step challenge.
-	// We should probably pass these into the function.
-	preState := s.stateRoots[fromBigStep]
-	postState := s.stateRoots[toBigStep]
-
-	// TODO: Args should be block num instead of big step num, and pre/post states should
-	// be top-level states in this case.
-	engine, err := execution.NewExecutionEngine(toBigStep, preState, postState, &execution.Config{
+	// TODO: Execution engine should have granularity to load opcodes only between
+	// fromBigStep to toBigStep in order to advance states.
+	engine, err := execution.NewExecutionEngine(toBigStep, startStateHash, endStateHash, &execution.Config{
 		FixedNumSteps: 1,
 	})
 	if err != nil {
