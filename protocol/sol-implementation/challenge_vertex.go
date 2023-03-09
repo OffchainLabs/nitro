@@ -260,7 +260,13 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 			v.id,
 		)
 	}); err != nil {
-		return nil, err
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "Challenge already exists"):
+			return nil, ErrAlreadyExists
+		default:
+			return nil, errors.Wrap(err, "submitting subchallenge to chain failed")
+		}
 	}
 
 	challengeId, err := v.manager.CalculateChallengeHash(ctx, tx, v.id, subChallengeType)
