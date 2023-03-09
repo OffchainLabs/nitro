@@ -23,6 +23,7 @@ contracts/test/prover/spec-proofs/*.json
 contracts/test/storage/*-old.dot
 contracts/forge-cache/
 contracts/out/
+contracts/.env
 .make/
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
