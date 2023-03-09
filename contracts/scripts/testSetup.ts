@@ -147,3 +147,7 @@ export const setupNetworks = async (l1Url: string, l2Url: string) => {
     l2Network,
   }
 }
+
+export function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
