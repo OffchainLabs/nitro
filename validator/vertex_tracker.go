@@ -57,11 +57,10 @@ func newVertexTracker(
 
 func (v *vertexTracker) spawn(ctx context.Context) {
 	commitment := v.vertex.HistoryCommitment()
-	miniStakerAddr := v.vertex.MiniStaker()
 	log.WithFields(logrus.Fields{
-		"height":     commitment.Height,
-		"merkle":     fmt.Sprintf("%#x", commitment.Merkle),
-		"miniStaker": miniStakerAddr,
+		"height":        commitment.Height,
+		"merkle":        util.Trunc(commitment.Merkle[:]),
+		"validatorName": v.cfg.validatorName,
 	}).Info("Tracking challenge vertex")
 
 	t := v.cfg.timeRef.NewTicker(v.cfg.actEveryNSeconds)
@@ -77,19 +76,11 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 				continue
 			}
 			if shouldComplete {
-				if v.fsm.Current().State == trackerPresumptive {
-					log.WithFields(logrus.Fields{
-						"height":        commitment.Height,
-						"merkle":        fmt.Sprintf("%#x", commitment.Merkle),
-						"validatorName": v.cfg.validatorName,
-					}).Debug("Vertex tracker became presumptive, exiting goroutine")
-				} else {
-					log.WithFields(logrus.Fields{
-						"height":        commitment.Height,
-						"merkle":        fmt.Sprintf("%#x", commitment.Merkle),
-						"validatorName": v.cfg.validatorName,
-					}).Debug("Vertex tracker received notice of a confirmation, exiting")
-				}
+				log.WithFields(logrus.Fields{
+					"height":        commitment.Height,
+					"merkle":        util.Trunc(commitment.Merkle[:]),
+					"validatorName": v.cfg.validatorName,
+				}).Debug("Vertex tracker received notice of a confirmation, exiting")
 				return
 			}
 			if err := v.act(ctx); err != nil {
@@ -98,7 +89,7 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 		case <-ctx.Done():
 			log.WithFields(logrus.Fields{
 				"height": commitment.Height,
-				"merkle": fmt.Sprintf("%#x", commitment.Merkle),
+				"merkle": util.Trunc(commitment.Merkle[:]),
 			}).Debug("Challenge goroutine exiting")
 			return
 		}
@@ -122,13 +113,7 @@ func (vt *vertexTracker) trackerShouldComplete(ctx context.Context) (bool, error
 	}); err != nil {
 		return false, err
 	}
-	current := vt.fsm.Current()
-	isPresumptive := current.State == trackerPresumptive
-	awaitingResolution := current.State == trackerAwaitingSubchallengeResolution
-	return challengeCompleted ||
-		siblingConfirmed ||
-		isPresumptive ||
-		awaitingResolution, nil
+	return challengeCompleted || siblingConfirmed, nil
 }
 
 func (vt *vertexTracker) act(ctx context.Context) error {
@@ -162,9 +147,9 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			return fmt.Errorf("bad source event: %s", event)
 		}
 		log.WithField("name", vt.cfg.validatorName).Infof(
-			"Reached one-step-fork at height %d and commitment %#x",
+			"Reached one-step-fork at %d and commitment %s",
 			event.forkPointVertex.HistoryCommitment().Height,
-			event.forkPointVertex.HistoryCommitment().Merkle,
+			util.Trunc(event.forkPointVertex.HistoryCommitment().Merkle.Bytes()),
 		)
 		if vt.challenge.GetType() == protocol.SmallStepChallenge {
 			return vt.fsm.Do(actOneStepProof{})
@@ -172,13 +157,13 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		return vt.fsm.Do(openSubchallenge{})
 	case trackerAtOneStepProof:
 		log.Info("Checking one-step-proof against protocol")
-		return nil
+		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
 		// TODO: Implement.
-		return nil
+		return vt.fsm.Do(openSubchallenge{})
 	case trackerAddingSubchallengeLeaf:
 		// TODO: Implement.
-		return nil
+		return vt.fsm.Do(openSubchallengeLeaf{})
 	case trackerBisecting:
 		// TODO: Seems to allow for double bisections?
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
@@ -217,13 +202,20 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		return vt.fsm.Do(backToStart{})
 	case trackerConfirming:
 		// TODO: Implement.
-		return nil
+		return vt.fsm.Do(confirmWinner{})
 	case trackerPresumptive:
 		// Terminal state does nothing. The vertex tracker will end next time it acts.
-		return nil
+		isPs, err := vt.isPresumptive(ctx)
+		if err != nil {
+			return err
+		}
+		if !isPs {
+			return vt.fsm.Do(backToStart{})
+		}
+		return vt.fsm.Do(markPresumptive{})
 	case trackerAwaitingSubchallengeResolution:
 		// Terminal state does nothing. The vertex tracker will end next time it acts.
-		return nil
+		return vt.fsm.Do(awaitSubchallengeResolution{})
 	default:
 		return fmt.Errorf("invalid state: %s", current.State)
 	}

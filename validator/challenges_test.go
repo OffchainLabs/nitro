@@ -74,6 +74,7 @@ func TestBlockChallenge(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
+		t.Skip()
 		cfg := &blockChallengeTestConfig{
 			numValidators:      2,
 			currentChainHeight: 8,

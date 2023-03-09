@@ -2,6 +2,7 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/bits"
 )
@@ -18,4 +19,11 @@ func BisectionPoint(pre, post uint64) (uint64, error) {
 	matchingBits := bits.LeadingZeros64((post - 1) ^ pre)
 	mask := uint64(math.MaxUint64) << (63 - matchingBits)
 	return (post - 1) & mask, nil
+}
+
+func Trunc(b []byte) string {
+	if len(b) < 4 {
+		return fmt.Sprintf("%#x", b)
+	}
+	return fmt.Sprintf("%#x", b[:4])
 }
