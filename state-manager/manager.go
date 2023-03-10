@@ -220,8 +220,10 @@ func (s *Simulated) BigStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		hash := intermediateState.Hash()
-		if s.bigStepDivergenceHeight > 0 && s.bigStepDivergenceHeight >= i {
+		var hash common.Hash
+		if s.bigStepDivergenceHeight == 0 || i <= s.bigStepDivergenceHeight {
+			hash = intermediateState.Hash()
+		} else {
 			junkRoot := make([]byte, 32)
 			_, err := rand.Read(junkRoot)
 			if err != nil {
@@ -240,13 +242,65 @@ func (s *Simulated) BigStepLeafCommitment(
 	}, nil
 }
 
-// TODO(RJ): Implement the Merkleization.
+// TODO(RJ): Deduplicate.
 func (s *Simulated) BigStepCommitmentUpTo(
 	ctx context.Context,
+	blockNum uint64,
+	startBlockHash,
+	endBlockHash common.Hash,
 	toBigStep uint64,
 ) (util.HistoryCommitment, error) {
+	cfg := execution.DefaultConfig()
+	if s.maxWavmOpcodes > 0 {
+		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		cfg.BigStepSize = s.numOpcodesPerBigStep
+	}
+	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+
+	expansion := util.NewEmptyMerkleExpansion()
+
+	if engine.NumBigSteps() < toBigStep {
+		return util.HistoryCommitment{}, errors.New("not enough big steps")
+	}
+
+	var endHash common.Hash
+	// Up to and including the specified big step.
+	for i := uint64(0); i <= toBigStep; i++ {
+		start, err := engine.StateAfterBigSteps(i)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		intermediateState, err := start.NextState()
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		var hash common.Hash
+		if s.bigStepDivergenceHeight == 0 || i < s.bigStepDivergenceHeight {
+			hash = intermediateState.Hash()
+		} else {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			if err != nil {
+				return util.HistoryCommitment{}, err
+			}
+			hash = crypto.Keccak256Hash(junkRoot)
+		}
+		if i+1 == toBigStep {
+			endHash = hash
+		}
+		expansion = expansion.AppendLeaf(hash)
+	}
+
 	return util.HistoryCommitment{
-		Height: toBigStep,
+		Height:    toBigStep,
+		Merkle:    expansion.Root(),
+		FirstLeaf: startBlockHash,
+		LastLeaf:  endHash,
 	}, nil
 }
 
@@ -294,8 +348,10 @@ func (s *Simulated) SmallStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		hash := intermediateState.Hash()
-		if s.smallStepDivergenceHeight > 0 && s.smallStepDivergenceHeight >= i {
+		var hash common.Hash
+		if s.smallStepDivergenceHeight == 0 || i <= s.smallStepDivergenceHeight {
+			hash = intermediateState.Hash()
+		} else {
 			junkRoot := make([]byte, 32)
 			_, err := rand.Read(junkRoot)
 			if err != nil {
@@ -313,13 +369,64 @@ func (s *Simulated) SmallStepLeafCommitment(
 	}, nil
 }
 
-// TODO(RJ): Implement the Merkleization.
 func (s *Simulated) SmallStepCommitmentUpTo(
 	ctx context.Context,
+	blockNum uint64,
+	startBlockHash,
+	endBlockHash common.Hash,
 	toStep uint64,
 ) (util.HistoryCommitment, error) {
+	cfg := execution.DefaultConfig()
+	if s.maxWavmOpcodes > 0 {
+		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		cfg.BigStepSize = s.numOpcodesPerBigStep
+	}
+	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+
+	expansion := util.NewEmptyMerkleExpansion()
+
+	if engine.NumOpcodes() < toStep {
+		return util.HistoryCommitment{}, errors.New("not enough big steps")
+	}
+
+	var endHash common.Hash
+	// Up to and including the specified small step.
+	for i := uint64(0); i <= toStep; i++ {
+		start, err := engine.StateAfterSmallSteps(i)
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		intermediateState, err := start.NextState()
+		if err != nil {
+			return util.HistoryCommitment{}, err
+		}
+		var hash common.Hash
+		if s.smallStepDivergenceHeight == 0 || i < s.smallStepDivergenceHeight {
+			hash = intermediateState.Hash()
+		} else {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			if err != nil {
+				return util.HistoryCommitment{}, err
+			}
+			hash = crypto.Keccak256Hash(junkRoot)
+		}
+		if i+1 == toStep {
+			endHash = hash
+		}
+		expansion = expansion.AppendLeaf(hash)
+	}
+
 	return util.HistoryCommitment{
-		Height: toStep,
+		Height:    toStep,
+		Merkle:    expansion.Root(),
+		FirstLeaf: startBlockHash,
+		LastLeaf:  endHash,
 	}, nil
 }
 

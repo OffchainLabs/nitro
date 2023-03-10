@@ -70,6 +70,48 @@ func TestDivergenceGranularity(t *testing.T) {
 	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 
+	// Check if big step commitments between the validators agree before the divergence height.
+	checkHeight := divergenceHeight - 1
+	honestCommit, err = honestManager.BigStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		honestRoots[fromBlock],
+		honestRoots[toBlock],
+		checkHeight,
+	)
+	require.NoError(t, err)
+	evilCommit, err = evilManager.BigStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		evilRoots[fromBlock],
+		evilRoots[toBlock],
+		checkHeight,
+	)
+	require.NoError(t, err)
+	require.Equal(t, honestCommit, evilCommit)
+
+	// Check if big step commitments between the validators disagree starting at the divergence height.
+	honestCommit, err = honestManager.BigStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		honestRoots[fromBlock],
+		honestRoots[toBlock],
+		divergenceHeight,
+	)
+	require.NoError(t, err)
+	evilCommit, err = evilManager.BigStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		evilRoots[fromBlock],
+		evilRoots[toBlock],
+		divergenceHeight,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, honestCommit.Height, evilCommit.Height)
+	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
+
 	// Small step challenge granularity.
 
 }
