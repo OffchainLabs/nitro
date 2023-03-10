@@ -123,7 +123,7 @@ func TestDivergenceGranularity(t *testing.T) {
 		fromBigStep,
 		toBigStep,
 		honestRoots[fromBlock],
-		honestCommit.LastLeaf,
+		honestRoots[toBlock],
 	)
 	require.NoError(t, err)
 
@@ -133,7 +133,7 @@ func TestDivergenceGranularity(t *testing.T) {
 		fromBigStep,
 		toBigStep,
 		evilRoots[fromBlock],
-		evilCommit.LastLeaf,
+		evilRoots[toBlock],
 	)
 	require.NoError(t, err)
 
@@ -148,7 +148,7 @@ func TestDivergenceGranularity(t *testing.T) {
 		ctx,
 		blockNum,
 		honestRoots[fromBlock],
-		honestCommit.LastLeaf,
+		honestRoots[toBlock],
 		checkHeight,
 	)
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestDivergenceGranularity(t *testing.T) {
 		ctx,
 		blockNum,
 		evilRoots[fromBlock],
-		evilCommit.LastLeaf,
+		evilRoots[toBlock],
 		checkHeight,
 	)
 	require.NoError(t, err)
