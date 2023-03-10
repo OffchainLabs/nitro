@@ -61,7 +61,8 @@ type Simulated struct {
 	stateRoots                []common.Hash
 	executionStates           []*protocol.ExecutionState
 	inboxMaxCounts            []*big.Int
-	wavmOpcodesPerBlock       uint64
+	maxWavmOpcodes            uint64
+	numOpcodesPerBigStep      uint64
 	bigStepDivergenceHeight   uint64
 	smallStepDivergenceHeight uint64
 }
@@ -76,9 +77,15 @@ func New(stateRoots []common.Hash) *Simulated {
 
 type Opt func(*Simulated)
 
-func WithWavmOpcodesPerBlock(totalOpcodes uint64) Opt {
+func WithMaxWavmOpcodesPerBlock(maxOpcodes uint64) Opt {
 	return func(s *Simulated) {
-		s.wavmOpcodesPerBlock = totalOpcodes
+		s.maxWavmOpcodes = maxOpcodes
+	}
+}
+
+func WithNumOpcodesPerBigStep(numOpcodes uint64) Opt {
+	return func(s *Simulated) {
+		s.numOpcodesPerBigStep = numOpcodes
 	}
 }
 
@@ -191,8 +198,11 @@ func (s *Simulated) BigStepLeafCommitment(
 	}
 
 	cfg := execution.DefaultConfig()
-	if s.wavmOpcodesPerBlock > 0 {
-		cfg.FixedNumSteps = s.wavmOpcodesPerBlock
+	if s.maxWavmOpcodes > 0 {
+		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		cfg.BigStepSize = s.numOpcodesPerBigStep
 	}
 	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
 	if err != nil {
@@ -223,8 +233,10 @@ func (s *Simulated) BigStepLeafCommitment(
 	}
 
 	return util.HistoryCommitment{
-		Height: engine.NumBigSteps(),
-		Merkle: expansion.Root(),
+		Height:    engine.NumBigSteps(),
+		Merkle:    expansion.Root(),
+		FirstLeaf: startBlockHash,
+		LastLeaf:  endBlockHash,
 	}, nil
 }
 
@@ -259,8 +271,11 @@ func (s *Simulated) SmallStepLeafCommitment(
 		)
 	}
 	cfg := execution.DefaultConfig()
-	if s.wavmOpcodesPerBlock > 0 {
-		cfg.FixedNumSteps = s.wavmOpcodesPerBlock
+	if s.maxWavmOpcodes > 0 {
+		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		cfg.BigStepSize = s.numOpcodesPerBigStep
 	}
 	engine, err := execution.NewExecutionEngine(blockNum, startStateHash, endStateHash, cfg)
 	if err != nil {

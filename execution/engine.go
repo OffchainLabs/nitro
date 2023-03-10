@@ -8,14 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-const (
-	// MaxInstructions per block is defined as 2^43 WAVM opcodes in Arbitrum.
-	MaxInstructionsPerBlock = 1 << 43
-	// BigStepSize defines a "BigStep" in the challenge protocol
-	// as 2^20 WAVM opcodes.
-	BigStepSize = 1 << 20
-)
-
 var (
 	ErrOutOfBounds = errors.New("instruction number out of bounds")
 )
@@ -43,27 +35,33 @@ type IntermediateStateIterator interface {
 
 // Config for the engine.
 type Config struct {
-	FixedNumSteps uint64
+	MaxInstructionsPerBlock uint64
+	BigStepSize             uint64
 }
 
 // DefaultConfig for the engine.
 func DefaultConfig() *Config {
 	return &Config{
-		FixedNumSteps: 0,
+		// MaxInstructions per block is defined as 2^43 WAVM opcodes in Arbitrum.
+		MaxInstructionsPerBlock: 1 << 43,
+		// BigStepSize defines a "BigStep" in the challenge protocol
+		// as 2^20 WAVM opcodes.
+		BigStepSize: 1 << 20,
 	}
 }
 
 // BigStepHeight computes the big step an opcode index is in, 1-indexed.
-func BigStepHeight(opcodeIndex uint64) uint64 {
-	if opcodeIndex < BigStepSize {
+func BigStepHeight(cfg *Config, opcodeIndex uint64) uint64 {
+	if opcodeIndex < cfg.BigStepSize {
 		return 1
 	}
-	return opcodeIndex / BigStepSize
+	return opcodeIndex / cfg.BigStepSize
 }
 
 // Engine can provide an execution engine for a specific pre-state of an L2 block,
 // giving access to a state iterator to advance opcode-by-opcode and fetch one-step-proofs.
 type Engine struct {
+	cfg            *Config
 	startStateRoot common.Hash
 	endStateRoot   common.Hash
 	numSteps       uint64
@@ -81,19 +79,11 @@ func NewExecutionEngine(
 	if blockNum == 0 {
 		return nil, errors.New("tried to make execution engine for genesis block")
 	}
-	var numSteps uint64
-	if cfg == nil || cfg.FixedNumSteps == 0 {
-		numSteps = binary.BigEndian.Uint64(crypto.Keccak256(preStateRoot.Bytes())[:8]) % (1 + MaxInstructionsPerBlock)
-	} else {
-		numSteps = cfg.FixedNumSteps
-	}
-	if numSteps == 0 {
-		return nil, errors.New("must have at least one step of execution")
-	}
 	return &Engine{
+		cfg:            cfg,
 		startStateRoot: preStateRoot,
 		endStateRoot:   postStateRoot,
-		numSteps:       numSteps,
+		numSteps:       cfg.MaxInstructionsPerBlock,
 		blockNum:       blockNum,
 	}, nil
 }
@@ -129,10 +119,10 @@ func (engine *Engine) NumOpcodes() uint64 {
 
 // NumBigSteps in the engine at the block height.
 func (engine *Engine) NumBigSteps() uint64 {
-	if engine.numSteps <= BigStepSize {
+	if engine.numSteps <= engine.cfg.BigStepSize {
 		return 1
 	}
-	return engine.numSteps / BigStepSize
+	return engine.numSteps / engine.cfg.BigStepSize
 }
 
 // BlockNum of the L2 state the engine corresponds to.
@@ -144,7 +134,7 @@ func (engine *Engine) BlockNum() uint64 {
 // If the number of total steps is less than the total number of opcodes in the N big steps,
 // we simply advance by the number of opcodes.
 func (engine *Engine) StateAfterBigSteps(num uint64) (IntermediateStateIterator, error) {
-	numOpcodes := num * BigStepSize
+	numOpcodes := num * engine.cfg.BigStepSize
 	if numOpcodes > engine.numSteps {
 		numOpcodes = engine.numSteps
 	}
