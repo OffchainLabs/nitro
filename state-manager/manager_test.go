@@ -42,6 +42,8 @@ func TestDivergenceGranularity(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	t.Log("Big step leaf commitment height", honestCommit.Height)
+
 	divergenceHeight := uint64(4)
 	evilStates, evilRoots, evilCounts := setupStates(t, numStates, divergenceHeight)
 
@@ -113,7 +115,74 @@ func TestDivergenceGranularity(t *testing.T) {
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 
 	// Small step challenge granularity.
+	fromBigStep := divergenceHeight - 1
+	toBigStep := divergenceHeight
+	honestCommit, err = honestManager.SmallStepLeafCommitment(
+		ctx,
+		blockNum,
+		fromBigStep,
+		toBigStep,
+		honestRoots[fromBlock],
+		honestCommit.LastLeaf,
+	)
+	require.NoError(t, err)
 
+	evilCommit, err = evilManager.SmallStepLeafCommitment(
+		ctx,
+		blockNum,
+		fromBigStep,
+		toBigStep,
+		evilRoots[fromBlock],
+		evilCommit.LastLeaf,
+	)
+	require.NoError(t, err)
+
+	t.Log("Small step leaf commitment height", honestCommit.Height)
+	require.Equal(t, honestCommit.Height, evilCommit.Height)
+	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
+
+	// Check if small step commitments between the validators agree before the divergence height.
+	checkHeight = divergenceHeight - 1
+	honestCommit, err = honestManager.SmallStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		honestRoots[fromBlock],
+		honestCommit.LastLeaf,
+		checkHeight,
+	)
+	require.NoError(t, err)
+	evilCommit, err = evilManager.SmallStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		evilRoots[fromBlock],
+		evilCommit.LastLeaf,
+		checkHeight,
+	)
+	require.NoError(t, err)
+	require.Equal(t, honestCommit, evilCommit)
+
+	// Check if small step commitments between the validators disagree starting at the divergence height.
+	honestCommit, err = honestManager.SmallStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		honestRoots[fromBlock],
+		honestCommit.LastLeaf,
+		divergenceHeight,
+	)
+	require.NoError(t, err)
+	evilCommit, err = evilManager.SmallStepCommitmentUpTo(
+		ctx,
+		blockNum,
+		evilRoots[fromBlock],
+		evilCommit.LastLeaf,
+		divergenceHeight,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, honestCommit.Height, evilCommit.Height)
+	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 }
 
 func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.ExecutionState, []common.Hash, []*big.Int) {
