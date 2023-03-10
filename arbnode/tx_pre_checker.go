@@ -124,12 +124,9 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			// TODO
 			return err
 		}
-		if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
-			return err
-		}
 		now := time.Now().Unix()
 		secondOldHeader := header
-		// find a block that's at least second old
+		// try to find a block header that's at least second old
 		for now-int64(secondOldHeader.Time) < 1 && secondOldHeader.Number.Uint64() > 0 {
 			previousHeader := bc.GetHeader(secondOldHeader.ParentHash, secondOldHeader.Number.Uint64()-1)
 			if previousHeader == nil {
@@ -137,14 +134,12 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			}
 			secondOldHeader = previousHeader
 		}
-		if secondOldHeader != header {
-			secondOldStatedb, err := bc.StateAt(secondOldHeader.Root)
-			if err != nil {
-				return err
-			}
-			if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
-				return err
-			}
+		secondOldStatedb, err := bc.StateAt(secondOldHeader.Root)
+		if err != nil {
+			return err
+		}
+		if err := options.PreCheck(l1BlockNumber, secondOldStatedb); err != nil {
+			return err
 		}
 	}
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
