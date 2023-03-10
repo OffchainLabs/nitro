@@ -3,14 +3,15 @@ package validator
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
-	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"time"
 )
 
 var (
@@ -433,7 +434,8 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		if err != nil {
 			return err
 		}
-		addedLeaf, err := subChallenge.AddSubChallengeLeaf(ctx, tx, vt.vertex, history)
+		var addedLeaf protocol.ChallengeVertex
+		addedLeaf, err = subChallenge.AddSubChallengeLeaf(ctx, tx, vt.vertex, history)
 		if err != nil {
 			return err
 		}
