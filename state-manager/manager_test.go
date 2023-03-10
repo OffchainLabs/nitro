@@ -29,9 +29,9 @@ func TestDivergenceGranularity(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	blockNum := uint64(3)
-	fromBlock := uint64(3)
-	toBlock := uint64(4)
+	blockNum := uint64(1)
+	fromBlock := uint64(1)
+	toBlock := uint64(2)
 	honestCommit, err := honestManager.BigStepLeafCommitment(
 		ctx,
 		blockNum,
@@ -41,10 +41,10 @@ func TestDivergenceGranularity(t *testing.T) {
 		honestRoots[toBlock],
 	)
 	require.NoError(t, err)
-	t.Logf("%+v", honestCommit)
 
 	divergenceHeight := uint64(4)
 	evilStates, evilRoots, evilCounts := setupStates(t, numStates, divergenceHeight)
+
 	evilManager, err := NewWithAssertionStates(
 		evilStates,
 		evilCounts,
@@ -62,7 +62,10 @@ func TestDivergenceGranularity(t *testing.T) {
 		evilRoots[toBlock],
 	)
 	require.NoError(t, err)
-	t.Logf("%+v", evilCommit)
+
+	require.Equal(t, honestCommit.Height, evilCommit.Height)
+	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 }
 
 func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.ExecutionState, []common.Hash, []*big.Int) {
@@ -71,8 +74,10 @@ func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.
 	roots := make([]common.Hash, numStates)
 	inboxCounts := make([]*big.Int, numStates)
 	for i := uint64(0); i < numStates; i++ {
-		blockHash := crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
-		if divergenceHeight > 0 && divergenceHeight >= i {
+		var blockHash common.Hash
+		if divergenceHeight == 0 || i < divergenceHeight {
+			blockHash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+		} else {
 			junkRoot := make([]byte, 32)
 			_, err := rand.Read(junkRoot)
 			require.NoError(t, err)
