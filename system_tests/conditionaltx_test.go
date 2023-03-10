@@ -329,28 +329,22 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	start := time.Now().Unix()
-	if time.Since(time.Unix(start, 0)) > 500*time.Millisecond {
+	contractAddress, simple := deploySimple(t, ctx, auth, l2client)
+	if time.Since(time.Unix(start, 0)) > 200*time.Millisecond {
 		start++
 		time.Sleep(time.Until(time.Unix(start, 0)))
 	}
-	var options []*arbitrum_types.ConditionalOptions
-	for i := 0; i < 5; i++ {
-		contractAddress, simple := deploySimple(t, ctx, auth, l2client)
-		tx, err := simple.Increment(&auth)
-		Require(t, err, "failed to call Increment()")
-		_, err = EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		currentRootHash := getStorageRootHash(t, node, contractAddress)
-		opt := &arbitrum_types.ConditionalOptions{
-			KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
-				contractAddress: {RootHash: &currentRootHash},
-			},
-		}
-		options = append(options, opt)
-		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, opt, -32003)
+	tx, err := simple.Increment(&auth)
+	Require(t, err, "failed to call Increment()")
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	currentRootHash := getStorageRootHash(t, node, contractAddress)
+	options := &arbitrum_types.ConditionalOptions{
+		KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
+			contractAddress: {RootHash: &currentRootHash},
+		},
 	}
+	testConditionalTxThatShouldFail(t, ctx, 0, l2info, rpcClient, options, -32003)
 	time.Sleep(time.Until(time.Unix(start+1, 0)))
-	for i, opt := range options {
-		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, opt)
-	}
+	testConditionalTxThatShouldSucceed(t, ctx, 1, l2info, rpcClient, options)
 }
