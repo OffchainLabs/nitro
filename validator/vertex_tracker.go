@@ -430,18 +430,10 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		}
 		fromHeight := prevVertex.HistoryCommitment().Height
 		toHeight := vt.vertex.HistoryCommitment().Height
+		fromState := prevVertex.HistoryCommitment().LastLeaf
+		toState := vt.vertex.HistoryCommitment().LastLeaf
 		switch subChallenge.GetType() {
 		case protocol.BigStepChallenge:
-			fromCommit, err := vt.cfg.stateManager.HistoryCommitmentUpTo(ctx, fromHeight)
-			if err != nil {
-				return err
-			}
-			toCommit, err := vt.cfg.stateManager.HistoryCommitmentUpTo(ctx, toHeight)
-			if err != nil {
-				return err
-			}
-			fromState := fromCommit.LastLeaf
-			toState := toCommit.LastLeaf
 			log.WithFields(logrus.Fields{
 				"name":          vt.cfg.validatorName,
 				"fromStateRoot": util.Trunc(fromState.Bytes()),
@@ -449,9 +441,6 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 			}).Info("Big step leaf commit")
 			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, rootAssertion.Height(), fromHeight, toHeight, fromState, toState)
 		case protocol.SmallStepChallenge:
-			r := vt.vertex.HistoryCommitment().Merkle
-			fromState := prevVertex.HistoryCommitment().Merkle
-			toState := crypto.Keccak256Hash(r.Bytes())
 			log.WithFields(logrus.Fields{
 				"name":          vt.cfg.validatorName,
 				"fromStateRoot": util.Trunc(fromState.Bytes()),

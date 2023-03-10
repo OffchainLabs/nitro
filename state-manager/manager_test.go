@@ -48,11 +48,14 @@ func TestDivergenceGranularity(t *testing.T) {
 	evilManager, err := NewWithAssertionStates(
 		evilStates,
 		evilCounts,
-		WithBigStepStateDivergenceHeight(divergenceHeight),
+		WithBigStepStateDivergenceHeight(divergenceHeight),   // Diverges at the 4th big step.
+		WithSmallStepStateDivergenceHeight(divergenceHeight), // Diverges at the 4th small step, within the 4th big step.
 		WithMaxWavmOpcodesPerBlock(maxOpcodesPerBlock),
 		WithNumOpcodesPerBigStep(bigStepSize),
 	)
 	require.NoError(t, err)
+
+	// Big step challenge granularity.
 	evilCommit, err := evilManager.BigStepLeafCommitment(
 		ctx,
 		blockNum,
@@ -66,6 +69,9 @@ func TestDivergenceGranularity(t *testing.T) {
 	require.Equal(t, honestCommit.Height, evilCommit.Height)
 	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
+
+	// Small step challenge granularity.
+
 }
 
 func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.ExecutionState, []common.Hash, []*big.Int) {
