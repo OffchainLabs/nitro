@@ -54,9 +54,11 @@ type Manager interface {
 // Simulated defines a very naive state manager that is initialized from a list of predetermined
 // state roots. It can produce state and history commitments from those roots.
 type Simulated struct {
-	stateRoots      []common.Hash
-	executionStates []*protocol.ExecutionState
-	inboxMaxCounts  []*big.Int
+	stateRoots                []common.Hash
+	executionStates           []*protocol.ExecutionState
+	inboxMaxCounts            []*big.Int
+	bigStepDivergenceHeight   uint64
+	smallStepDivergenceHeight uint64
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
@@ -67,26 +69,52 @@ func New(stateRoots []common.Hash) *Simulated {
 	return &Simulated{stateRoots: stateRoots}
 }
 
-// New simulated manager from a list of predefined state roots, useful for tests and simulations.
-func NewWithExecutionStates(
-	executionStates []*protocol.ExecutionState,
+type Opt func(*Simulated)
+
+func WithBigStepStateDivergence(divergenceHeight uint64) Opt {
+	return func(s *Simulated) {
+		s.bigStepDivergenceHeight = divergenceHeight
+	}
+}
+
+func WithSmallStepStateDivergence(divergenceHeight uint64) Opt {
+	return func(s *Simulated) {
+		s.smallStepDivergenceHeight = divergenceHeight
+	}
+}
+
+// NewWithAssertionStates creates a simulated state manager from a list of predefined state roots for
+// the top-level assertion chain, useful for tests and simulation purposes in block challenges.
+// This also allows for specifying the honest states for big and small step subchallenges along
+// with the point at which the state manager should diverge from the honest computation.
+func NewWithAssertionStates(
+	assertionChainExecutionStates []*protocol.ExecutionState,
 	inboxMaxCounts []*big.Int,
-) *Simulated {
-	if len(executionStates) == 0 {
-		panic("must have execution states")
+	opts ...Opt,
+) (*Simulated, error) {
+	if len(assertionChainExecutionStates) == 0 {
+		return nil, errors.New("must have execution states")
 	}
-	if len(executionStates) != len(inboxMaxCounts) {
-		panic("number of exec states must match number of inbox max counts")
+	if len(assertionChainExecutionStates) != len(inboxMaxCounts) {
+		return nil, fmt.Errorf(
+			"number of exec states %d must match number of inbox max counts %d",
+			len(assertionChainExecutionStates),
+			len(inboxMaxCounts),
+		)
 	}
-	stateRoots := make([]common.Hash, len(executionStates))
+	stateRoots := make([]common.Hash, len(assertionChainExecutionStates))
 	for i := 0; i < len(stateRoots); i++ {
-		stateRoots[i] = protocol.ComputeStateHash(executionStates[i], big.NewInt(2))
+		stateRoots[i] = protocol.ComputeStateHash(assertionChainExecutionStates[i], big.NewInt(2))
 	}
-	return &Simulated{
+	s := &Simulated{
 		stateRoots:      stateRoots,
-		executionStates: executionStates,
+		executionStates: assertionChainExecutionStates,
 		inboxMaxCounts:  inboxMaxCounts,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
 }
 
 // LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has

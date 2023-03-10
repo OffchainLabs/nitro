@@ -30,7 +30,7 @@ var (
 	bisectEventSig      = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
 )
 
-func TestChallengeProtocol(t *testing.T) {
+func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob, in which
@@ -66,47 +66,17 @@ func TestChallengeProtocol(t *testing.T) {
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
-			numValidators:      2,
 			currentChainHeight: 6,
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-			},
 			// The latest assertion height each validator has seen.
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 6,
-				1: 6,
-			},
+			aliceHeight: 6,
+			bobHeight:   6,
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3.
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 3,
-				1: 3,
-			},
-			// The number of big steps of WAVM opcodes at the one-step-fork point
-			// in this test.
-			numBigStepsAtSubchallengeCreationByIndex: map[uint64]uint64{
-				0: 6,
-				1: 6,
-			},
-			// The heights at which the validators diverge in histories at the big step
-			// subchallenge level. In this case, they diverge starting at the 3rd big step.
-			bigStepDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 3,
-				1: 3,
-			},
-			// The number of WAVM opcodes (small steps) at the one-step-fork point of a big step
-			// subchallenge in this test.
-			numSmallStepsAtSubchallengeCreationByIndex: map[uint64]uint64{
-				0: execution.BigStepSize,
-				1: execution.BigStepSize,
-			},
-			// The heights at which the validators diverge in histories at the small step
-			// subchallenge level. In this case, they diverge starting at the 2^10th WAVM opcode.
-			smallStepDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 1 << 10,
-				1: 1 << 10,
-			},
+			assertionDivergenceHeight:    3,
+			numBigStepsAtAssertionHeight: 6,
+			bigStepDivergenceHeight:      3,
+			numSmallStepsAtBigStep:       execution.BigStepSize,
+			smallStepDivergenceHeight:    1 << 10,
 		}
 		// Alice adds a challenge leaf 6, is presumptive.
 		// Bob adds leaf 6.
@@ -128,22 +98,10 @@ func TestChallengeProtocol(t *testing.T) {
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")
 		cfg := &challengeProtocolTestConfig{
-			numValidators:      2,
-			currentChainHeight: 8,
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-			},
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 8,
-				1: 8,
-			},
-			// The heights at which the validators diverge in histories. In this test,
-			// alice and bob start diverging at height 3.
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 5,
-				1: 5,
-			},
+			currentChainHeight:        8,
+			aliceHeight:               8,
+			bobHeight:                 8,
+			assertionDivergenceHeight: 5,
 		}
 		cfg.expectedVerticesAdded = 2
 		cfg.expectedBisections = 5
@@ -156,20 +114,10 @@ func TestChallengeProtocol(t *testing.T) {
 	t.Run("two validators opening leaves at heights 6 and 256", func(t *testing.T) {
 		t.Skip("Flakey")
 		cfg := &challengeProtocolTestConfig{
-			numValidators:      2,
-			currentChainHeight: 256,
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-			},
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 6,
-				1: 256,
-			},
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 4,
-				1: 4,
-			},
+			currentChainHeight:        256,
+			aliceHeight:               6,
+			bobHeight:                 256,
+			assertionDivergenceHeight: 4,
 		}
 		// With Alice starting at 256 and bisecting all the way down to 4
 		// will take 6 bisections. Then, Alice bisects from 4 to 3. Bob bisects twice to 4 and 2.
@@ -185,20 +133,10 @@ func TestChallengeProtocol(t *testing.T) {
 	t.Run("two validators opening leaves at heights 129 and 256", func(t *testing.T) {
 		t.Skip("Flakey")
 		cfg := &challengeProtocolTestConfig{
-			numValidators:      2,
-			currentChainHeight: 256,
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-			},
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 129,
-				1: 256,
-			},
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 4,
-				1: 4,
-			},
+			currentChainHeight:        256,
+			aliceHeight:               129,
+			bobHeight:                 256,
+			assertionDivergenceHeight: 4,
 		}
 		// Same as the test case above but bob has 4 more bisections to perform
 		// if Bob starts at 129.
@@ -210,140 +148,26 @@ func TestChallengeProtocol(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
-	//
-	//                   [4]-[6]-alice
-	//                  /
-	// [genesis]-[2]-[3]-[4]-[6]-bob
-	//                  \
-	//                   [4]-[6]-charlie
-	//
-	t.Run("three validators opening leaves at same height same fork point", func(t *testing.T) {
-		t.Skip("Flakey")
-		cfg := &challengeProtocolTestConfig{
-			numValidators:      3,
-			currentChainHeight: 6,
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-				2: "charlie",
-			},
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 6,
-				1: 6,
-				2: 6,
-			},
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 4,
-				1: 4,
-				2: 4,
-			},
-		}
-		cfg.expectedVerticesAdded = 3
-		cfg.expectedBisections = 5
-		cfg.expectedMerges = 4
-		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-	})
-	//
-	//                   [4]-alice
-	//                  /
-	// [genesis]-[2]-[3]    -[6]-bob
-	//                  \  /
-	//                   [4]-[6]-charlie
-	//
-	t.Run("three validators opening leaves at same height different fork points", func(t *testing.T) {
-		t.Skip("Flakey")
-		cfg := &challengeProtocolTestConfig{
-			numValidators:      3,
-			currentChainHeight: 6,
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-				2: "charlie",
-			},
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 6,
-				1: 6,
-				2: 6,
-			},
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 3,
-				1: 5,
-				2: 5,
-			},
-		}
-		cfg.expectedVerticesAdded = 3
-		cfg.expectedBisections = 7
-		cfg.expectedMerges = 2
-		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
-	})
-	//
-	//                   [3]-----------[6]--alice
-	//                  /
-	// [genesis]-[2]---------[4]--[5]--bob
-	//                  \  /
-	//                   [3]-[4]--[4]--charlie
-	//
-	t.Run("three validators opening leaves at different height different fork points", func(t *testing.T) {
-		t.Skip("Flakey")
-		cfg := &challengeProtocolTestConfig{
-			numValidators:      3,
-			currentChainHeight: 64,
-			latestAssertionHeightsByIndex: map[uint64]uint64{
-				0: 6,
-				1: 5,
-				2: 5,
-			},
-			validatorNamesByIndex: map[uint64]string{
-				0: "alice",
-				1: "bob",
-				2: "charlie",
-			},
-			// The heights at which the validators diverge in histories. In this test,
-			// alice and bob agree up to and including height 3.
-			assertionDivergenceHeightsByIndex: map[uint64]uint64{
-				0: 3,
-				1: 4,
-				2: 4,
-			},
-		}
-
-		cfg.expectedVerticesAdded = 3
-		cfg.expectedBisections = 6
-		cfg.expectedMerges = 3
-		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-	})
 }
 
 type challengeProtocolTestConfig struct {
-	// Number of validators we want to enter a block challenge with.
-	numValidators uint16
-	// The heights at which each validator diverges histories at the assertion chain level.
-	assertionDivergenceHeightsByIndex map[uint64]uint64
 	// The latest heights by index at the assertion chain level.
-	latestAssertionHeightsByIndex map[uint64]uint64
+	aliceHeight uint64
+	bobHeight   uint64
+	// The height in the assertion chain at which the validators diverge.
+	assertionDivergenceHeight uint64
 	// The number of big steps of WAVM opcodes at the one-step-fork point in a test.
-	numBigStepsAtSubchallengeCreationByIndex map[uint64]uint64
+	numBigStepsAtAssertionHeight uint64
 	// The heights at which the validators diverge in histories at the big step
 	// subchallenge level.
-	bigStepDivergenceHeightsByIndex map[uint64]uint64
+	bigStepDivergenceHeight uint64
 	// The number of WAVM opcodes (small steps) at the one-step-fork point of a big step
 	// subchallenge in a test.
-	numSmallStepsAtSubchallengeCreationByIndex map[uint64]uint64
+	numSmallStepsAtBigStep uint64
 	// The heights at which the validators diverge in histories at the small step
 	// subchallenge level.
-	smallStepDivergenceHeightsByIndex map[uint64]uint64
-	// Validator human-readable names by index.
-	validatorNamesByIndex map[uint64]string
-	currentChainHeight    uint64
+	smallStepDivergenceHeight uint64
+	currentChainHeight        uint64
 	// Events we want to assert are fired from the goimpl.
 	expectedBisections    uint64
 	expectedMerges        uint64
@@ -402,59 +226,45 @@ func prepareHonestStates(
 	return honestStates, honestInboxCounts
 }
 
-// Creates validator states for each validator index where each index can diverge from
-// others at specific points. For example, with Alice, Bob, and Charlie,
-// All of them agree up to height 3, then Alice diverges starting at height 4 from Bob and Charlie.
-// Meanwhile, Bob and Charlie agree up until height 5, and start to diverge then.
-func prepareDivergingAssertionChainStates(
+func prepareMaliciousStates(
 	t testing.TB,
 	cfg *challengeProtocolTestConfig,
 	honestStates []*protocol.ExecutionState,
 	honestInboxCounts []*big.Int,
 	prevInboxMaxCount *big.Int,
-) ([][]*protocol.ExecutionState, [][]*big.Int) {
-	allValidatorStates := make([][]*protocol.ExecutionState, cfg.numValidators)
-	allValidatorInboxCounts := make([][]*big.Int, cfg.numValidators)
-	for i := uint64(0); i < uint64(cfg.numValidators); i++ {
-		numRoots := cfg.latestAssertionHeightsByIndex[i] + 1
-		divergenceHeight := cfg.assertionDivergenceHeightsByIndex[i]
+) ([]*protocol.ExecutionState, []*big.Int) {
+	divergenceHeight := cfg.assertionDivergenceHeight
+	numRoots := cfg.bobHeight + 1
+	states := make([]*protocol.ExecutionState, numRoots)
+	inboxCounts := make([]*big.Int, numRoots)
 
-		stateRoots := make([]common.Hash, numRoots)
-		states := make([]*protocol.ExecutionState, numRoots)
-		inboxCounts := make([]*big.Int, numRoots)
-
-		for j := uint64(0); j < numRoots; j++ {
-			if divergenceHeight == 0 || j < divergenceHeight {
-				states[j] = honestStates[j]
-				inboxCounts[j] = honestInboxCounts[j]
-			} else {
-				junkRoot := make([]byte, 32)
-				_, err := rand.Read(junkRoot)
-				require.NoError(t, err)
-				blockHash := crypto.Keccak256Hash(junkRoot)
-				evilState := &protocol.ExecutionState{
-					GlobalState: protocol.GoGlobalState{
-						BlockHash: blockHash,
-						Batch:     1,
-					},
-					MachineStatus: protocol.MachineStatusFinished,
-				}
-				stateRoots[j] = protocol.ComputeStateHash(evilState, prevInboxMaxCount)
-				states[j] = evilState
-				inboxCounts[j] = big.NewInt(1)
+	for j := uint64(0); j < numRoots; j++ {
+		if divergenceHeight == 0 || j < divergenceHeight {
+			states[j] = honestStates[j]
+			inboxCounts[j] = honestInboxCounts[j]
+		} else {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			require.NoError(t, err)
+			blockHash := crypto.Keccak256Hash(junkRoot)
+			evilState := &protocol.ExecutionState{
+				GlobalState: protocol.GoGlobalState{
+					BlockHash: blockHash,
+					Batch:     1,
+				},
+				MachineStatus: protocol.MachineStatusFinished,
 			}
+			states[j] = evilState
+			inboxCounts[j] = big.NewInt(1)
 		}
-		allValidatorStates[i] = states
-		allValidatorInboxCounts[i] = inboxCounts
 	}
-	return allValidatorStates, allValidatorInboxCounts
+	return states, inboxCounts
 }
 
 func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
-	require.Equal(t, true, cfg.numValidators > 1, "Need at least 2 validators")
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
-	chains, accs, addrs, backend := setupAssertionChains(t, uint64(cfg.numValidators)+1)
+	chains, accs, addrs, backend := setupAssertionChains(t, 3) // 0th is admin chain.
 	prevInboxMaxCount := big.NewInt(1)
 
 	// Advance the chain by 100 blocks as there needs to be a minimum period of time
@@ -472,7 +282,7 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 		prevInboxMaxCount,
 	)
 
-	allValidatorsStates, allValidatorsInboxCounts := prepareDivergingAssertionChainStates(
+	maliciousStates, maliciousInboxCounts := prepareMaliciousStates(
 		t,
 		cfg,
 		honestStates,
@@ -481,36 +291,55 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 	)
 
 	// Initialize each validator.
-	validators := make([]*Validator, cfg.numValidators)
-	for i := 0; i < len(validators); i++ {
-		manager := statemanager.NewWithExecutionStates(allValidatorsStates[i], allValidatorsInboxCounts[i])
-		addr := accs[i+1].accountAddr
-		v, valErr := New(
-			ctx,
-			chains[i+1], // Chain 0 is reserved for admin
-			backend,
-			manager,
-			addrs.Rollup,
-			WithName(cfg.validatorNamesByIndex[uint64(i)]),
-			WithAddress(addr),
-			WithDisableLeafCreation(),
-			WithTimeReference(ref),
-			WithChallengeVertexWakeInterval(time.Millisecond*10),
-		)
-		require.NoError(t, valErr)
-		validators[i] = v
-	}
+	honestManager, err := statemanager.NewWithAssertionStates(
+		maliciousStates,
+		maliciousInboxCounts,
+	)
+	require.NoError(t, err)
+	aliceAddr := accs[1].accountAddr
+	alice, err := New(
+		ctx,
+		chains[1], // Chain 0 is reserved for admin controls.
+		backend,
+		honestManager,
+		addrs.Rollup,
+		WithName("alice"),
+		WithAddress(aliceAddr),
+		WithDisableLeafCreation(),
+		WithTimeReference(ref),
+		WithChallengeVertexWakeInterval(time.Millisecond*10),
+	)
+	require.NoError(t, err)
+
+	maliciousManager, err := statemanager.NewWithAssertionStates(
+		honestStates,
+		honestInboxCounts,
+	)
+	require.NoError(t, err)
+	bobAddr := accs[1].accountAddr
+	bob, err := New(
+		ctx,
+		chains[2], // Chain 0 is reserved for admin controls.
+		backend,
+		maliciousManager,
+		addrs.Rollup,
+		WithName("bob"),
+		WithAddress(bobAddr),
+		WithDisableLeafCreation(),
+		WithTimeReference(ref),
+		WithChallengeVertexWakeInterval(time.Millisecond*10),
+	)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
 	// We fire off each validator's background routines.
-	for _, val := range validators {
-		go val.Start(ctx)
-	}
+	go alice.Start(ctx)
+	go bob.Start(ctx)
 
 	var managerAddr common.Address
-	err := chains[1].Call(func(tx protocol.ActiveTx) error {
+	err = chains[1].Call(func(tx protocol.ActiveTx) error {
 		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
 		require.NoError(t, err)
 		managerAddr = manager.Address()
@@ -557,11 +386,11 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 	time.Sleep(time.Millisecond * 100)
 
 	// Submit leaf creation manually for each validator.
-	for _, val := range validators {
-		_, err := val.SubmitLeafCreation(ctx)
-		require.NoError(t, err)
-		AssertLogsContain(t, hook, "Submitted assertion")
-	}
+	_, err = alice.SubmitLeafCreation(ctx)
+	require.NoError(t, err)
+	_, err = bob.SubmitLeafCreation(ctx)
+	require.NoError(t, err)
+	AssertLogsContain(t, hook, "Submitted assertion")
 
 	<-ctx.Done()
 	assert.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
