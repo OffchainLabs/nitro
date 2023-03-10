@@ -205,9 +205,12 @@ func (m *MockStateManager) BigStepLeafCommitment(
 
 func (m *MockStateManager) BigStepCommitmentUpTo(
 	ctx context.Context,
+	blockNum uint64,
+	startBlockHash,
+	endBlockHash common.Hash,
 	toBigStep uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, toBigStep)
+	args := m.Called(ctx, blockNum, startBlockHash, endBlockHash, toBigStep)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
@@ -225,9 +228,12 @@ func (m *MockStateManager) SmallStepLeafCommitment(
 
 func (m *MockStateManager) SmallStepCommitmentUpTo(
 	ctx context.Context,
+	blockNum uint64,
+	startBlockHash,
+	endBlockHash common.Hash,
 	toStep uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, toStep)
+	args := m.Called(ctx, blockNum, startBlockHash, endBlockHash, toStep)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 

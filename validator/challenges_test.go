@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -75,7 +74,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			assertionDivergenceHeight:    3,
 			numBigStepsAtAssertionHeight: 6,
 			bigStepDivergenceHeight:      3,
-			numSmallStepsAtBigStep:       execution.BigStepSize,
+			numSmallStepsAtBigStep:       10,
 			smallStepDivergenceHeight:    1 << 10,
 		}
 		// Alice adds a challenge leaf 6, is presumptive.

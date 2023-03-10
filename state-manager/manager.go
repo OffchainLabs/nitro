@@ -39,6 +39,9 @@ type Manager interface {
 	) (util.HistoryCommitment, error)
 	BigStepCommitmentUpTo(
 		ctx context.Context,
+		blockNum uint64,
+		startBlockHash,
+		endBlockHash common.Hash,
 		toBigStep uint64,
 	) (util.HistoryCommitment, error)
 	SmallStepLeafCommitment(
@@ -51,6 +54,9 @@ type Manager interface {
 	) (util.HistoryCommitment, error)
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
+		blockNum uint64,
+		startBlockHash,
+		endBlockHash common.Hash,
 		toStep uint64,
 	) (util.HistoryCommitment, error)
 }

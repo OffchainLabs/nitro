@@ -117,14 +117,14 @@ func TestFullChallengeResolution(t *testing.T) {
 		preStateRoot := createdData.honestValidatorStateRoots[0]
 		postStateRoot := createdData.honestValidatorStateRoots[1]
 		honestEngine, err := execution.NewExecutionEngine(1, preStateRoot, postStateRoot, &execution.Config{
-			FixedNumSteps: 1,
+			MaxInstructionsPerBlock: 1,
 		})
 		require.NoError(t, err)
 
 		evilPreStateRoot := createdData.evilValidatorStateRoots[0]
 		evilPostStateRoot := createdData.evilValidatorStateRoots[1]
 		evilEngine, err := execution.NewExecutionEngine(1, evilPreStateRoot, evilPostStateRoot, &execution.Config{
-			FixedNumSteps: 1,
+			MaxInstructionsPerBlock: 1,
 		})
 		require.NoError(t, err)
 
