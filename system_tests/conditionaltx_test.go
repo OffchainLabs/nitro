@@ -311,3 +311,46 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		testhelpers.FailImpl(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
 	}
 }
+
+func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.TxPreCheckerStrictness = arbnode.TxPreCheckerStrictnessLikelyCompatible
+	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
+	defer requireClose(t, l1stack)
+	defer node.StopAndWait()
+	rpcClient, err := node.Stack.Attach()
+	testhelpers.RequireImpl(t, err)
+
+	l2info.GenerateAccount("User2")
+
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	start := time.Now().Unix()
+	if time.Since(time.Unix(start, 0)) > 500*time.Millisecond {
+		start++
+		time.Sleep(time.Until(time.Unix(start, 0)))
+	}
+	var options []*arbitrum_types.ConditionalOptions
+	for i := 0; i < 5; i++ {
+		contractAddress, simple := deploySimple(t, ctx, auth, l2client)
+		tx, err := simple.Increment(&auth)
+		Require(t, err, "failed to call Increment()")
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		currentRootHash := getStorageRootHash(t, node, contractAddress)
+		opt := &arbitrum_types.ConditionalOptions{
+			KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
+				contractAddress: {RootHash: &currentRootHash},
+			},
+		}
+		options = append(options, opt)
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, opt, -32003)
+	}
+	time.Sleep(time.Until(time.Unix(start+1, 0)))
+	for i, opt := range options {
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, opt)
+	}
+}

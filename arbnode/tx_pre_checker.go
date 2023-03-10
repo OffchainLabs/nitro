@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
@@ -77,7 +78,7 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
-func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, strictness uint, options *arbitrum_types.ConditionalOptions) error {
+func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, strictness uint) error {
 	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -117,13 +118,34 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if arbmath.BigLessThan(balance, cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
-	l1BlockNumber, err := arbos.Blockhashes().L1BlockNumber()
-	if err != nil {
-		// TODO
-		return err
-	}
-	if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
-		return err
+	if options != nil {
+		l1BlockNumber, err := arbos.Blockhashes().L1BlockNumber()
+		if err != nil {
+			// TODO
+			return err
+		}
+		if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
+			return err
+		}
+		now := time.Now().Unix()
+		secondOldHeader := header
+		// find a block that's at least second old
+		for now-int64(secondOldHeader.Time) < 1 && secondOldHeader.Number.Uint64() > 0 {
+			previousHeader := bc.GetHeaderByNumber(secondOldHeader.Number.Uint64() - 1)
+			if previousHeader == nil {
+				break
+			}
+			secondOldHeader = previousHeader
+		}
+		if secondOldHeader != header {
+			secondOldStatedb, err := bc.StateAt(secondOldHeader.Root)
+			if err != nil {
+				return err
+			}
+			if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
+				return err
+			}
+		}
 	}
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -146,7 +168,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc.Config(), block.Header(), statedb, arbos, tx, c.getStrictness(), options)
+	err = PreCheckTx(c.bc, c.bc.Config(), block.Header(), statedb, arbos, tx, options, c.getStrictness())
 	if err != nil {
 		return err
 	}
