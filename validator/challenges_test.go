@@ -91,7 +91,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedBisections = 5
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
+		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
 	})
@@ -107,7 +107,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedBisections = 5
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
+		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 	})
@@ -126,7 +126,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedBisections = 9
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
+		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
@@ -144,7 +144,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedBisections = 14
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
-		runChallengeTest(t, hook, cfg)
+		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
@@ -261,7 +261,7 @@ func prepareMaliciousStates(
 	return states, inboxCounts
 }
 
-func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
+func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
 	chains, accs, addrs, backend := setupAssertionChains(t, 3) // 0th is admin chain.
@@ -292,8 +292,8 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 
 	// Initialize each validator.
 	honestManager, err := statemanager.NewWithAssertionStates(
-		maliciousStates,
-		maliciousInboxCounts,
+		honestStates,
+		honestInboxCounts,
 	)
 	require.NoError(t, err)
 	aliceAddr := accs[1].accountAddr
@@ -312,8 +312,8 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 	require.NoError(t, err)
 
 	maliciousManager, err := statemanager.NewWithAssertionStates(
-		honestStates,
-		honestInboxCounts,
+		maliciousStates,
+		maliciousInboxCounts,
 	)
 	require.NoError(t, err)
 	bobAddr := accs[1].accountAddr

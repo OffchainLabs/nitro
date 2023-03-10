@@ -11,6 +11,8 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"math/rand"
 )
 
 // Manager defines a struct that can provide local state data and historical
@@ -29,6 +31,7 @@ type Manager interface {
 	PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error)
 	BigStepLeafCommitment(
 		ctx context.Context,
+		blockNum,
 		fromAssertionHeight,
 		toAssertionHeight uint64,
 		fromStateHash,
@@ -40,6 +43,7 @@ type Manager interface {
 	) (util.HistoryCommitment, error)
 	SmallStepLeafCommitment(
 		ctx context.Context,
+		blockNum,
 		fromBigStep,
 		toBigStep uint64,
 		fromStateHash,
@@ -57,6 +61,7 @@ type Simulated struct {
 	stateRoots                []common.Hash
 	executionStates           []*protocol.ExecutionState
 	inboxMaxCounts            []*big.Int
+	wavmOpcodesPerBlock       uint64
 	bigStepDivergenceHeight   uint64
 	smallStepDivergenceHeight uint64
 }
@@ -71,13 +76,19 @@ func New(stateRoots []common.Hash) *Simulated {
 
 type Opt func(*Simulated)
 
-func WithBigStepStateDivergence(divergenceHeight uint64) Opt {
+func WithWavmOpcodesPerBlock(totalOpcodes uint64) Opt {
+	return func(s *Simulated) {
+		s.wavmOpcodesPerBlock = totalOpcodes
+	}
+}
+
+func WithBigStepStateDivergenceHeight(divergenceHeight uint64) Opt {
 	return func(s *Simulated) {
 		s.bigStepDivergenceHeight = divergenceHeight
 	}
 }
 
-func WithSmallStepStateDivergence(divergenceHeight uint64) Opt {
+func WithSmallStepStateDivergenceHeight(divergenceHeight uint64) Opt {
 	return func(s *Simulated) {
 		s.smallStepDivergenceHeight = divergenceHeight
 	}
@@ -165,6 +176,7 @@ func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (u
 // between those two heights and produce a commitment.
 func (s *Simulated) BigStepLeafCommitment(
 	ctx context.Context,
+	blockNum uint64,
 	fromAssertionHeight,
 	toAssertionHeight uint64,
 	startBlockHash,
@@ -178,16 +190,17 @@ func (s *Simulated) BigStepLeafCommitment(
 		)
 	}
 
-	engine, err := execution.NewExecutionEngine(toAssertionHeight, startBlockHash, endBlockHash, &execution.Config{
-		FixedNumSteps: 1,
-	})
+	cfg := execution.DefaultConfig()
+	if s.wavmOpcodesPerBlock > 0 {
+		cfg.FixedNumSteps = s.wavmOpcodesPerBlock
+	}
+	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
 
 	expansion := util.NewEmptyMerkleExpansion()
 
-	var total int
 	for i := uint64(0); i < engine.NumBigSteps(); i++ {
 		start, err := engine.StateAfterBigSteps(i)
 		if err != nil {
@@ -197,8 +210,16 @@ func (s *Simulated) BigStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		expansion = expansion.AppendLeaf(intermediateState.Hash())
-		total++
+		hash := intermediateState.Hash()
+		if s.bigStepDivergenceHeight > 0 && s.bigStepDivergenceHeight >= i {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			if err != nil {
+				return util.HistoryCommitment{}, err
+			}
+			hash = crypto.Keccak256Hash(junkRoot)
+		}
+		expansion = expansion.AppendLeaf(hash)
 	}
 
 	return util.HistoryCommitment{
@@ -224,6 +245,7 @@ func (s *Simulated) BigStepCommitmentUpTo(
 // between those two values and produce a commitment.
 func (s *Simulated) SmallStepLeafCommitment(
 	ctx context.Context,
+	blockNum uint64,
 	fromBigStep,
 	toBigStep uint64,
 	startStateHash,
@@ -236,11 +258,11 @@ func (s *Simulated) SmallStepLeafCommitment(
 			toBigStep,
 		)
 	}
-	// TODO: Execution engine should have granularity to load opcodes only between
-	// fromBigStep to toBigStep in order to advance states.
-	engine, err := execution.NewExecutionEngine(toBigStep, startStateHash, endStateHash, &execution.Config{
-		FixedNumSteps: 1,
-	})
+	cfg := execution.DefaultConfig()
+	if s.wavmOpcodesPerBlock > 0 {
+		cfg.FixedNumSteps = s.wavmOpcodesPerBlock
+	}
+	engine, err := execution.NewExecutionEngine(blockNum, startStateHash, endStateHash, cfg)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
@@ -257,7 +279,16 @@ func (s *Simulated) SmallStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		expansion = expansion.AppendLeaf(intermediateState.Hash())
+		hash := intermediateState.Hash()
+		if s.smallStepDivergenceHeight > 0 && s.smallStepDivergenceHeight >= i {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			if err != nil {
+				return util.HistoryCommitment{}, err
+			}
+			hash = crypto.Keccak256Hash(junkRoot)
+		}
+		expansion = expansion.AppendLeaf(hash)
 		total++
 	}
 

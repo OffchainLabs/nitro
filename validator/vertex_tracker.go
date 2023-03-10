@@ -424,6 +424,10 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	var history util.HistoryCommitment
 	var err error
 	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
+		rootAssertion, err := subChallenge.RootAssertion(ctx, tx)
+		if err != nil {
+			return err
+		}
 		fromHeight := prevVertex.HistoryCommitment().Height
 		toHeight := vt.vertex.HistoryCommitment().Height
 		switch subChallenge.GetType() {
@@ -443,7 +447,7 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 				"fromStateRoot": util.Trunc(fromState.Bytes()),
 				"toStateRoot":   util.Trunc(toState.Bytes()),
 			}).Info("Big step leaf commit")
-			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromHeight, toHeight, fromState, toState)
+			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, rootAssertion.Height(), fromHeight, toHeight, fromState, toState)
 		case protocol.SmallStepChallenge:
 			r := vt.vertex.HistoryCommitment().Merkle
 			fromState := prevVertex.HistoryCommitment().Merkle
@@ -453,7 +457,7 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 				"fromStateRoot": util.Trunc(fromState.Bytes()),
 				"toStateRoot":   util.Trunc(toState.Bytes()),
 			}).Info("Small step leaf commit")
-			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, fromHeight, toHeight, fromState, toState)
+			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, rootAssertion.Height(), fromHeight, toHeight, fromState, toState)
 		default:
 			return errors.New("unsupported subchallenge type for creating leaf commitment")
 		}
