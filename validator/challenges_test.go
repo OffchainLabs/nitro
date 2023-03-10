@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -30,12 +31,35 @@ var (
 func TestChallengeProtocol(t *testing.T) {
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
-	// they disagree with. Here's the example with Alice and Bob.
+	// they disagree with. Here's the example with Alice and Bob, in which
+	// they narrow down their disagreement to a single WAVM opcode
+	// in a small step subchallenge. In this first test, Alice will be the honest
+	// validator and will be able to resolve a challenge via a one-step-proof.
+	//
+	// At the assertion chain level, the fork is at height 2.
 	//
 	//                [3]-[4]-[6]-alice
 	//               /
 	// [genesis]-[2]-
-	//               \[3]-[4]-[6]-bob
+	//               \
+	//                [3]-[4]-[6]-bob
+	//
+	// At the big step challenge level, the fork is at height 2.
+	//
+	//                    [3]-[4]-[6]-alice
+	//                   /
+	// [bigstep_root]-[2]
+	//                   \
+	//                    [3]-[4]-[6]-bob
+	//
+	//
+	// At the small step challenge level the fork is at 2^10 opcodes.
+	//
+	//                          [2^10 + 1]-alice
+	//                         /
+	// [small_step_root]-[2^10]
+	//                         \
+	//                          [2^10 + 1]-bob
 	//
 	t.Run("two validators opening leaves at same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
@@ -45,15 +69,40 @@ func TestChallengeProtocol(t *testing.T) {
 				0: "alice",
 				1: "bob",
 			},
-			latestHeightsByIndex: map[uint64]uint64{
+			// The latest assertion height each validator has seen.
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 6,
 				1: 6,
 			},
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3.
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 3,
 				1: 3,
+			},
+			// The number of big steps of WAVM opcodes at the one-step-fork point
+			// in this test.
+			numBigStepsAtSubchallengeCreationByIndex: map[uint64]uint64{
+				0: 6,
+				1: 6,
+			},
+			// The heights at which the validators diverge in histories at the big step
+			// subchallenge level. In this case, they diverge starting at the 3rd big step.
+			bigStepDivergenceHeightsByIndex: map[uint64]uint64{
+				0: 3,
+				1: 3,
+			},
+			// The number of WAVM opcodes (small steps) at the one-step-fork point of a big step
+			// subchallenge in this test.
+			numSmallStepsAtSubchallengeCreationByIndex: map[uint64]uint64{
+				0: execution.BigStepSize,
+				1: execution.BigStepSize,
+			},
+			// The heights at which the validators diverge in histories at the small step
+			// subchallenge level. In this case, they diverge starting at the 2^10th WAVM opcode.
+			smallStepDivergenceHeightsByIndex: map[uint64]uint64{
+				0: 1 << 10,
+				1: 1 << 10,
 			},
 		}
 		// Alice adds a challenge leaf 6, is presumptive.
@@ -82,13 +131,13 @@ func TestChallengeProtocol(t *testing.T) {
 				0: "alice",
 				1: "bob",
 			},
-			latestHeightsByIndex: map[uint64]uint64{
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 8,
 				1: 8,
 			},
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3.
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 5,
 				1: 5,
 			},
@@ -110,11 +159,11 @@ func TestChallengeProtocol(t *testing.T) {
 				0: "alice",
 				1: "bob",
 			},
-			latestHeightsByIndex: map[uint64]uint64{
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 6,
 				1: 256,
 			},
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 4,
 				1: 4,
 			},
@@ -139,11 +188,11 @@ func TestChallengeProtocol(t *testing.T) {
 				0: "alice",
 				1: "bob",
 			},
-			latestHeightsByIndex: map[uint64]uint64{
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 129,
 				1: 256,
 			},
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 4,
 				1: 4,
 			},
@@ -175,12 +224,12 @@ func TestChallengeProtocol(t *testing.T) {
 				1: "bob",
 				2: "charlie",
 			},
-			latestHeightsByIndex: map[uint64]uint64{
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 6,
 				1: 6,
 				2: 6,
 			},
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 4,
 				1: 4,
 				2: 4,
@@ -211,12 +260,12 @@ func TestChallengeProtocol(t *testing.T) {
 				1: "bob",
 				2: "charlie",
 			},
-			latestHeightsByIndex: map[uint64]uint64{
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 6,
 				1: 6,
 				2: 6,
 			},
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 3,
 				1: 5,
 				2: 5,
@@ -242,7 +291,7 @@ func TestChallengeProtocol(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
 			numValidators:      3,
 			currentChainHeight: 64,
-			latestHeightsByIndex: map[uint64]uint64{
+			latestAssertionHeightsByIndex: map[uint64]uint64{
 				0: 6,
 				1: 5,
 				2: 5,
@@ -254,7 +303,7 @@ func TestChallengeProtocol(t *testing.T) {
 			},
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob agree up to and including height 3.
-			divergenceHeightsByIndex: map[uint64]uint64{
+			assertionDivergenceHeightsByIndex: map[uint64]uint64{
 				0: 3,
 				1: 4,
 				2: 4,
@@ -274,10 +323,21 @@ func TestChallengeProtocol(t *testing.T) {
 type challengeProtocolTestConfig struct {
 	// Number of validators we want to enter a block challenge with.
 	numValidators uint16
-	// The heights at which each validator diverges histories.
-	divergenceHeightsByIndex map[uint64]uint64
-	// The latest heights by index
-	latestHeightsByIndex map[uint64]uint64
+	// The heights at which each validator diverges histories at the assertion chain level.
+	assertionDivergenceHeightsByIndex map[uint64]uint64
+	// The latest heights by index at the assertion chain level.
+	latestAssertionHeightsByIndex map[uint64]uint64
+	// The number of big steps of WAVM opcodes at the one-step-fork point in a test.
+	numBigStepsAtSubchallengeCreationByIndex map[uint64]uint64
+	// The heights at which the validators diverge in histories at the big step
+	// subchallenge level.
+	bigStepDivergenceHeightsByIndex map[uint64]uint64
+	// The number of WAVM opcodes (small steps) at the one-step-fork point of a big step
+	// subchallenge in a test.
+	numSmallStepsAtSubchallengeCreationByIndex map[uint64]uint64
+	// The heights at which the validators diverge in histories at the small step
+	// subchallenge level.
+	smallStepDivergenceHeightsByIndex map[uint64]uint64
 	// Validator human-readable names by index.
 	validatorNamesByIndex map[uint64]string
 	currentChainHeight    uint64

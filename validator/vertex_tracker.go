@@ -355,6 +355,10 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 	return mergedTo, nil
 }
 
+// Opens a subchallenge on a parent vertex. This function determines the type of subchallenge
+// that should be opened, and then the tracker attempts to submit a subchallenge creation
+// on-chain and return its value. If the subchallenge already exists, it will instead fetch
+// the challenge and return its value.
 func (v *vertexTracker) openSubchallenge(
 	ctx context.Context,
 	prevVertex protocol.ChallengeVertex,
@@ -362,7 +366,6 @@ func (v *vertexTracker) openSubchallenge(
 	if v.challenge.GetType() == protocol.SmallStepChallenge {
 		return nil, errors.New("cannot create subchallenge on small step challenge")
 	}
-	// Produce a Merkle commitment of big steps from height v.prev.height to v.height.
 	var subChal protocol.Challenge
 	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		manager, err := v.cfg.chain.CurrentChallengeManager(ctx, tx)
@@ -400,7 +403,7 @@ func (v *vertexTracker) openSubchallenge(
 		}
 		return nil
 	}); err != nil {
-		return nil, errors.Wrap(err, "FAILS TO OPEN CHAL")
+		return nil, err
 	}
 	log.WithFields(logrus.Fields{
 		"name":   v.cfg.validatorName,
@@ -463,7 +466,7 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		subChalLeaf = addedLeaf
 		return nil
 	}); err != nil {
-		return errors.Wrapf(err, "%s FAILS TO OPEN SUBCHAL: %d, %s", vt.cfg.validatorName, history.Height, util.Trunc(history.Merkle.Bytes()))
+		return err
 	}
 	log.WithFields(logrus.Fields{
 		"name":                      vt.cfg.validatorName,
