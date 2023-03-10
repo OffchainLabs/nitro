@@ -68,7 +68,10 @@ func New(stateRoots []common.Hash) *Simulated {
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
-func NewWithExecutionStates(executionStates []*protocol.ExecutionState, inboxMaxCounts []*big.Int) *Simulated {
+func NewWithExecutionStates(
+	executionStates []*protocol.ExecutionState,
+	inboxMaxCounts []*big.Int,
+) *Simulated {
 	if len(executionStates) == 0 {
 		panic("must have execution states")
 	}

@@ -13,6 +13,7 @@ import (
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -23,6 +24,7 @@ import (
 )
 
 var (
+	// TODO: These are brittle and could break if the event sigs change in Solidity.
 	vertexAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
 	mergeEventSig       = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
 	bisectEventSig      = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
@@ -55,13 +57,14 @@ func TestChallengeProtocol(t *testing.T) {
 	//
 	// At the small step challenge level the fork is at 2^10 opcodes.
 	//
-	//                          [2^10 + 1]-alice
+	//                          [2^10 + 1]----....many bisections...----[2^20]-alice
 	//                         /
 	// [small_step_root]-[2^10]
 	//                         \
-	//                          [2^10 + 1]-bob
+	//                          [2^10 + 1]-----....many bisections...----[2^20]-bob
 	//
-	t.Run("two validators opening leaves at same height", func(t *testing.T) {
+	//
+	t.Run("two forked assertions at the same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
 			numValidators:      2,
 			currentChainHeight: 6,
@@ -347,29 +350,20 @@ type challengeProtocolTestConfig struct {
 	expectedVerticesAdded uint64
 }
 
-func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
-	require.Equal(t, true, cfg.numValidators > 1, "Need at least 2 validators")
-	ctx := context.Background()
-	ref := util.NewRealTimeReference()
-	chains, accs, addrs, backend := setupAssertionChains(t, uint64(cfg.numValidators)+1)
-	prevInboxMaxCount := big.NewInt(1)
-
-	// Advance the chain by 100 blocks as there needs to be a minimum period of time
-	// before any assertions can be made on-chain.
-	var honestBlockHash common.Hash
-	for i := 0; i < 100; i++ {
-		backend.Commit()
-		//nolint:all
-		honestBlockHash = backend.Commit()
-	}
-
+func prepareHonestStates(
+	t testing.TB,
+	ctx context.Context,
+	chain protocol.Protocol,
+	backend *backends.SimulatedBackend,
+	chainHeight uint64,
+	prevInboxMaxCount *big.Int,
+) ([]*protocol.ExecutionState, []*big.Int) {
+	t.Helper()
 	// Initialize each validator's associated state roots which diverge
 	var genesis protocol.Assertion
-	err := chains[1].Call(func(tx protocol.ActiveTx) error {
-		genesisAssertion, err := chains[1].AssertionBySequenceNum(ctx, tx, 0)
-		if err != nil {
-			return err
-		}
+	err := chain.Call(func(tx protocol.ActiveTx) error {
+		genesisAssertion, err := chain.AssertionBySequenceNum(ctx, tx, 0)
+		require.NoError(t, err)
 		genesis = genesisAssertion
 		return nil
 	})
@@ -386,17 +380,13 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 
 	// Initialize each validator associated state roots which diverge
 	// at specified points in the test config.
-	honestRoots := make([]common.Hash, cfg.currentChainHeight)
-	honestStates := make([]*protocol.ExecutionState, cfg.currentChainHeight)
-	honestInboxCounts := make([]*big.Int, cfg.currentChainHeight)
-	honestRoots[0] = genesisStateHash
+	honestStates := make([]*protocol.ExecutionState, chainHeight)
+	honestInboxCounts := make([]*big.Int, chainHeight)
 	honestStates[0] = genesisState
 	honestInboxCounts[0] = big.NewInt(1)
 
-	height := uint64(0)
-
-	for i := uint64(1); i < cfg.currentChainHeight; i++ {
-		height += 1
+	var honestBlockHash common.Hash
+	for i := uint64(1); i < chainHeight; i++ {
 		honestBlockHash = backend.Commit()
 		state := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
@@ -406,22 +396,28 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 			MachineStatus: protocol.MachineStatusFinished,
 		}
 
-		honestRoots[i] = protocol.ComputeStateHash(state, prevInboxMaxCount)
 		honestStates[i] = state
 		honestInboxCounts[i] = big.NewInt(1)
 	}
+	return honestStates, honestInboxCounts
+}
 
-	vRoots := make([][]common.Hash, cfg.numValidators)
-	vStates := make([][]*protocol.ExecutionState, cfg.numValidators)
-	vInboxCounts := make([][]*big.Int, cfg.numValidators)
-
-	// Creates validator states for each validator index where each index can diverge from
-	// others at specific points. For example, with Alice, Bob, and Charlie,
-	// All of them agree up to height 3, then Alice diverges starting at height 4 from Bob and Charlie.
-	// Meanwhile, Bob and Charlie agree up until height 5, and start to diverge then.
+// Creates validator states for each validator index where each index can diverge from
+// others at specific points. For example, with Alice, Bob, and Charlie,
+// All of them agree up to height 3, then Alice diverges starting at height 4 from Bob and Charlie.
+// Meanwhile, Bob and Charlie agree up until height 5, and start to diverge then.
+func prepareDivergingAssertionChainStates(
+	t testing.TB,
+	cfg *challengeProtocolTestConfig,
+	honestStates []*protocol.ExecutionState,
+	honestInboxCounts []*big.Int,
+	prevInboxMaxCount *big.Int,
+) ([][]*protocol.ExecutionState, [][]*big.Int) {
+	allValidatorStates := make([][]*protocol.ExecutionState, cfg.numValidators)
+	allValidatorInboxCounts := make([][]*big.Int, cfg.numValidators)
 	for i := uint64(0); i < uint64(cfg.numValidators); i++ {
-		numRoots := cfg.latestHeightsByIndex[i] + 1
-		divergenceHeight := cfg.divergenceHeightsByIndex[i]
+		numRoots := cfg.latestAssertionHeightsByIndex[i] + 1
+		divergenceHeight := cfg.assertionDivergenceHeightsByIndex[i]
 
 		stateRoots := make([]common.Hash, numRoots)
 		states := make([]*protocol.ExecutionState, numRoots)
@@ -429,7 +425,6 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 
 		for j := uint64(0); j < numRoots; j++ {
 			if divergenceHeight == 0 || j < divergenceHeight {
-				stateRoots[j] = honestRoots[j]
 				states[j] = honestStates[j]
 				inboxCounts[j] = honestInboxCounts[j]
 			} else {
@@ -449,16 +444,46 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 				inboxCounts[j] = big.NewInt(1)
 			}
 		}
-		vRoots[i] = stateRoots
-		vStates[i] = states
-		vInboxCounts[i] = inboxCounts
+		allValidatorStates[i] = states
+		allValidatorInboxCounts[i] = inboxCounts
 	}
+	return allValidatorStates, allValidatorInboxCounts
+}
+
+func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
+	require.Equal(t, true, cfg.numValidators > 1, "Need at least 2 validators")
+	ctx := context.Background()
+	ref := util.NewRealTimeReference()
+	chains, accs, addrs, backend := setupAssertionChains(t, uint64(cfg.numValidators)+1)
+	prevInboxMaxCount := big.NewInt(1)
+
+	// Advance the chain by 100 blocks as there needs to be a minimum period of time
+	// before any assertions can be made on-chain.
+	for i := 0; i < 100; i++ {
+		backend.Commit()
+	}
+
+	honestStates, honestInboxCounts := prepareHonestStates(
+		t,
+		ctx,
+		chains[1],
+		backend,
+		cfg.currentChainHeight,
+		prevInboxMaxCount,
+	)
+
+	allValidatorsStates, allValidatorsInboxCounts := prepareDivergingAssertionChainStates(
+		t,
+		cfg,
+		honestStates,
+		honestInboxCounts,
+		prevInboxMaxCount,
+	)
 
 	// Initialize each validator.
 	validators := make([]*Validator, cfg.numValidators)
 	for i := 0; i < len(validators); i++ {
-		manager := statemanager.NewWithExecutionStates(vStates[i], vInboxCounts[i])
-		require.NoError(t, err)
+		manager := statemanager.NewWithExecutionStates(allValidatorsStates[i], allValidatorsInboxCounts[i])
 		addr := accs[i+1].accountAddr
 		v, valErr := New(
 			ctx,
@@ -485,7 +510,7 @@ func runChallengeTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestC
 	}
 
 	var managerAddr common.Address
-	err = chains[1].Call(func(tx protocol.ActiveTx) error {
+	err := chains[1].Call(func(tx protocol.ActiveTx) error {
 		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
 		require.NoError(t, err)
 		managerAddr = manager.Address()
