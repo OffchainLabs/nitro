@@ -47,7 +47,7 @@ func newVertexTrackerFsm(
 			// The tracker will take some action if it has reached a one-step-proof
 			// in a small step challenge.
 			Typ:  actOneStepProof{},
-			From: []vertexTrackerState{trackerAtOneStepFork},
+			From: []vertexTrackerState{trackerAtOneStepFork, trackerAtOneStepProof},
 			To:   trackerAtOneStepProof,
 		},
 		{

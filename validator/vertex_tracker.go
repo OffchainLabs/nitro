@@ -3,14 +3,16 @@ package validator
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"time"
 )
 
 var (
@@ -419,13 +421,33 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		fromHeight := prevVertex.HistoryCommitment().Height
 		toHeight := vt.vertex.HistoryCommitment().Height
-
-		fromState := prevVertex.HistoryCommitment().LastLeaf
-		toState := vt.vertex.HistoryCommitment().LastLeaf
 		switch subChallenge.GetType() {
 		case protocol.BigStepChallenge:
+			fromCommit, err := vt.cfg.stateManager.HistoryCommitmentUpTo(ctx, fromHeight)
+			if err != nil {
+				return err
+			}
+			toCommit, err := vt.cfg.stateManager.HistoryCommitmentUpTo(ctx, toHeight)
+			if err != nil {
+				return err
+			}
+			fromState := fromCommit.LastLeaf
+			toState := toCommit.LastLeaf
+			log.WithFields(logrus.Fields{
+				"name":          vt.cfg.validatorName,
+				"fromStateRoot": util.Trunc(fromState.Bytes()),
+				"toStateRoot":   util.Trunc(toState.Bytes()),
+			}).Info("Big step leaf commit")
 			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromHeight, toHeight, fromState, toState)
 		case protocol.SmallStepChallenge:
+			r := vt.vertex.HistoryCommitment().Merkle
+			fromState := prevVertex.HistoryCommitment().Merkle
+			toState := crypto.Keccak256Hash(r.Bytes())
+			log.WithFields(logrus.Fields{
+				"name":          vt.cfg.validatorName,
+				"fromStateRoot": util.Trunc(fromState.Bytes()),
+				"toStateRoot":   util.Trunc(toState.Bytes()),
+			}).Info("Small step leaf commit")
 			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, fromHeight, toHeight, fromState, toState)
 		default:
 			return errors.New("unsupported subchallenge type for creating leaf commitment")
