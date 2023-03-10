@@ -131,7 +131,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		secondOldHeader := header
 		// find a block that's at least second old
 		for now-int64(secondOldHeader.Time) < 1 && secondOldHeader.Number.Uint64() > 0 {
-			previousHeader := bc.GetHeaderByNumber(secondOldHeader.Number.Uint64() - 1)
+			previousHeader := bc.GetHeader(secondOldHeader.ParentHash, secondOldHeader.Number.Uint64()-1)
 			if previousHeader == nil {
 				break
 			}
