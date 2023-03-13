@@ -426,8 +426,6 @@ def go_dependencies():
         importpath = "github.com/elastic/gosigar",
         sum = "h1:Dg80n8cr90OZ7x+bAax/QjoW/XqTI11RmA79ZwIm9/4=",
         version = "v0.14.2",
-<<<<<<< Updated upstream
-=======
     )
 
     go_repository(
@@ -435,7 +433,6 @@ def go_dependencies():
         importpath = "github.com/emicklei/dot",
         sum = "h1:WjL422LPltH/ThM9AJQ8HJXEMw9SOxLrglppg/1pFYU=",
         version = "v1.2.0",
->>>>>>> Stashed changes
     )
 
     go_repository(
