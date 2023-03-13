@@ -365,8 +365,7 @@ contracts/test/prover/proofs/global-state.json:
 	echo "[]" > $@
 
 contracts/test/prover/proofs/forward-test.json: $(arbitrator_cases)/forward-test.wasm $(arbitrator_tests_forward_deps) $(prover_bin)
-	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize \
-        $(patsubstq %,-l %, $(arbitrator_tests_forward_deps))
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize $(patsubst %,-l %, $(arbitrator_tests_forward_deps))
 
 contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrator_tests_link_deps) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_tests_link_deps)
