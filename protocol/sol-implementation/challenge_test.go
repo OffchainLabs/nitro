@@ -76,21 +76,13 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	// t.Run("first state not in history", func(t *testing.T) {
 	// 	t.Skip()
 	// })
+	leaves := make([]common.Hash, 4)
+	for i := range leaves {
+		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	history, err := util.NewHistoryCommitment(heightDiff, leaves)
+	require.NoError(t, err)
 	t.Run("OK", func(t *testing.T) {
-		leaves := make([]common.Hash, 4)
-		for i := range leaves {
-			leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
-		}
-		history, err := util.NewHistoryCommitment(heightDiff, leaves)
-		require.NoError(t, err)
-		require.Equal(t, history.FirstLeaf, leaves[0])
-		require.Equal(t, history.LastLeaf, leaves[3])
-		computed, err := util.CalculateRootFromProof(history.LastLeafProof, history.Height-1, history.LastLeaf)
-		require.NoError(t, err)
-		require.Equal(t, history.Merkle, computed)
-		computed, err = util.CalculateRootFromProof(history.FirstLeafProof, 0, history.FirstLeaf)
-		require.Equal(t, history.Merkle, computed)
-
 		_, err = challenge.AddBlockChallengeLeaf(
 			ctx,
 			tx,
@@ -105,21 +97,15 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})
-	// t.Run("already exists", func(t *testing.T) {
-	// 	t.Skip()
-	// 	_, err := challenge.AddBlockChallengeLeaf(
-	// 		ctx,
-	// 		tx,
-	// 		a1,
-	// 		util.HistoryCommitment{
-	// 			Height:        heightDiff,
-	// 			Merkle:        common.BytesToHash([]byte("nyan")),
-	// 			LastLeaf:      a1.inner.StateHash,
-	// 			LastLeafProof: []common.Hash{a1.inner.StateHash},
-	// 		},
-	// 	)
-	// 	require.ErrorContains(t, err, "already exists")
-	// })
+	t.Run("already exists", func(t *testing.T) {
+		_, err := challenge.AddBlockChallengeLeaf(
+			ctx,
+			tx,
+			a1,
+			history,
+		)
+		require.ErrorContains(t, err, "already exists")
+	})
 }
 
 func setupTopLevelFork(
