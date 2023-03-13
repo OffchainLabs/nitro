@@ -20,7 +20,10 @@ use {
 pub type OpCosts = fn(&Operator) -> u64;
 
 #[derive(Clone, Default)]
-pub struct StylusDebugConfig {}
+pub struct StylusDebugParams {
+    pub debug_funcs: bool,
+    pub count_ops: bool,
+}
 
 #[derive(Clone)]
 pub struct StylusConfig {
@@ -30,7 +33,7 @@ pub struct StylusConfig {
     pub heap_bound: Bytes, // requires recompilation
     pub depth: DepthParams,
     pub pricing: PricingParams,
-    pub debug: Option<StylusDebugConfig>,
+    pub debug: StylusDebugParams,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -57,7 +60,7 @@ impl Default for StylusConfig {
             heap_bound: Bytes(u32::MAX as usize),
             depth: DepthParams::default(),
             pricing: PricingParams::default(),
-            debug: None,
+            debug: StylusDebugParams::default(),
         }
     }
 }
@@ -87,10 +90,6 @@ impl StylusConfig {
             _ => panic!("no config exists for Stylus version {version}"),
         };
         config
-    }
-
-    pub fn add_debug_params(&mut self) {
-        self.debug = Some(StylusDebugConfig::default())
     }
 }
 
@@ -143,7 +142,7 @@ impl StylusConfig {
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
 
-        if let Some(_debug) = &self.debug {
+        if self.debug.count_ops {
             let counter = Counter::new();
             compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
         }

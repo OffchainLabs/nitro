@@ -74,8 +74,9 @@ impl NativeInstance {
     }
 
     fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
+        let debug_funcs = env.config.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
-        let imports = imports! {
+        let mut imports = imports! {
             "forward" => {
                 "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
                 "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
@@ -83,9 +84,15 @@ impl NativeInstance {
                 "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
                 "call_contract" => Function::new_typed_with_env(&mut store, &func_env, host::call_contract),
                 "util_move_vec" => Function::new_typed_with_env(&mut store, &func_env, host::util_move_vec),
-                "debug_println" => Function::new_typed_with_env(&mut store, &func_env, host::debug_println),
             },
         };
+        if debug_funcs {
+            imports.define(
+                "forward",
+                "debug_println",
+                Function::new_typed_with_env(&mut store, &func_env, host::debug_println),
+            );
+        }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
         let memory = exports.get_memory("memory")?.clone();
@@ -252,7 +259,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "util_move_vec" => stub!(|_: u32, _: u32|),
         },
     };
-    if config.debug.is_some() {
+    if config.debug.debug_funcs {
         imports.define("forward", "debug_println", stub!(|_: u32, _: u32|));
     }
     Instance::new(&mut store, &module, &imports)?;

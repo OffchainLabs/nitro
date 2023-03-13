@@ -29,6 +29,7 @@ pub struct GoParams {
     max_depth: u32,
     wasm_gas_price: u64,
     hostio_cost: u64,
+    debug_mode: usize,
 }
 
 impl GoParams {
@@ -37,6 +38,7 @@ impl GoParams {
         config.depth.max_depth = self.max_depth;
         config.pricing.wasm_gas_price = self.wasm_gas_price;
         config.pricing.hostio_cost = self.hostio_cost;
+        config.debug.debug_funcs = self.debug_mode != 0;
         config
     }
 }
@@ -79,9 +81,8 @@ impl RustVec {
     }
 
     unsafe fn write_err(&mut self, err: ErrReport) {
-        let msg = format!("{:?}", err);
-        let vec = msg.into_bytes();
-        self.write(vec)
+        println!("Rust: writing error {err:?}");
+        self.write(format!("{err:?}").into_bytes());
     }
 }
 
@@ -89,11 +90,16 @@ impl RustVec {
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u32,
+    debug_mode: usize,
     output: *mut RustVec,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-    let config = StylusConfig::version(version);
     let output = &mut *output;
+
+    let mut config = StylusConfig::version(version);
+    if debug_mode != 0 {
+        config.debug.debug_funcs = true;
+    }
 
     match native::module(wasm, config) {
         Ok(module) => {

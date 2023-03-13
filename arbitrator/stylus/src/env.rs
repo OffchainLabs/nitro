@@ -274,7 +274,7 @@ pub enum Escape {
 }
 
 impl Escape {
-    pub fn internal(error: &'static str) -> MaybeEscape {
+    pub fn internal<T>(error: &'static str) -> Result<T, Escape> {
         Err(Self::Internal(eyre!(error)))
     }
 

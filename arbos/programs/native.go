@@ -36,11 +36,17 @@ type usize = C.size_t
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32) error {
+func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) error {
+	debugMode := 0
+	if debug {
+		debugMode = 1
+	}
+
 	output := &C.RustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u32(version),
+		usize(debugMode),
 		output,
 	))
 	result, err := status.output(output.intoBytes())
@@ -222,5 +228,6 @@ func (params *goParams) encode() C.GoParams {
 		max_depth:      u32(params.maxDepth),
 		wasm_gas_price: u64(params.wasmGasPrice),
 		hostio_cost:    u64(params.hostioCost),
+		debug_mode:     usize(params.debugMode),
 	}
 }

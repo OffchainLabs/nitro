@@ -63,7 +63,8 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
-    config.add_debug_params();
+    config.debug.count_ops = true;
+    config.debug.debug_funcs = true;
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;

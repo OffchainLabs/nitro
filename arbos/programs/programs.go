@@ -87,7 +87,7 @@ func (p Programs) SetWasmHostioCost(cost uint64) error {
 	return p.wasmHostioCost.Set(cost)
 }
 
-func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (uint32, error) {
+func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, err
@@ -104,7 +104,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 	if err != nil {
 		return 0, err
 	}
-	if err := compileUserWasm(statedb, program, wasm, version); err != nil {
+	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(program.Hash(), version)
@@ -132,7 +132,7 @@ func (p Programs) CallProgram(
 	if programVersion != stylusVersion {
 		return nil, errors.New("program out of date, please recompile")
 	}
-	params, err := p.goParams(programVersion)
+	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
 	if err != nil {
 		return nil, err
 	}
@@ -156,9 +156,10 @@ type goParams struct {
 	maxDepth     uint32
 	wasmGasPrice uint64
 	hostioCost   uint64
+	debugMode    uint64
 }
 
-func (p Programs) goParams(version uint32) (*goParams, error) {
+func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
@@ -176,6 +177,9 @@ func (p Programs) goParams(version uint32) (*goParams, error) {
 		maxDepth:     maxDepth,
 		wasmGasPrice: wasmGasPrice.Uint64(),
 		hostioCost:   hostioCost,
+	}
+	if debug {
+		config.debugMode = 1
 	}
 	return config, nil
 }
