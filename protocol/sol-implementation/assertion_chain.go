@@ -456,17 +456,30 @@ func transact(ctx context.Context, backend ChainBackend, fn func() (*types.Trans
 	return receipt, nil
 }
 
+// copyTxOpts creates a deep copy of the given transaction options.
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
-	return &bind.TransactOpts{
-		From:      opts.From,
-		Nonce:     opts.Nonce,
-		Signer:    opts.Signer,
-		Value:     opts.Value,
-		GasPrice:  opts.GasPrice,
-		GasFeeCap: opts.GasFeeCap,
-		GasTipCap: opts.GasTipCap,
-		GasLimit:  opts.GasLimit,
-		Context:   opts.Context,
-		NoSend:    opts.NoSend,
+	copied := &bind.TransactOpts{
+		From:     opts.From,
+		Context:  opts.Context,
+		NoSend:   opts.NoSend,
+		Signer:   opts.Signer,
+		GasLimit: opts.GasLimit,
 	}
+
+	if opts.Nonce != nil {
+		copied.Nonce = new(big.Int).Set(opts.Nonce)
+	}
+	if opts.Value != nil {
+		copied.Value = new(big.Int).Set(opts.Value)
+	}
+	if opts.GasPrice != nil {
+		copied.GasPrice = new(big.Int).Set(opts.GasPrice)
+	}
+	if opts.GasFeeCap != nil {
+		copied.GasFeeCap = new(big.Int).Set(opts.GasFeeCap)
+	}
+	if opts.GasTipCap != nil {
+		copied.GasTipCap = new(big.Int).Set(opts.GasTipCap)
+	}
+	return copied
 }
