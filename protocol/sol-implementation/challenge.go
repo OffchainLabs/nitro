@@ -140,16 +140,12 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	if err != nil {
 		return nil, err
 	}
-	prevAssertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
-	if err != nil {
-		return nil, err
-	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
 		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             prevAssertion.StateHash(),
+		FirstState:             history.FirstLeaf,
 		FirstStatehistoryProof: firstLeafProof,
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
