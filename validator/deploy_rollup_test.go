@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"fmt"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"math/big"
 
 	"crypto/ecdsa"
@@ -15,6 +14,10 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/ospgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -39,7 +42,7 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 	t.Helper()
 	ctx := context.Background()
 	accs, backend := setupAccounts(t, numChains)
-	headerReader := solimpl.NewHeaderReader(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *solimpl.Config { return &solimpl.TestConfig })
+	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
 	headerReader.Start(ctx)
 	prod := false
 	wasmModuleRoot := common.Hash{}

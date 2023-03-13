@@ -8,6 +8,9 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -395,7 +398,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 }
 
-func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend, *HeaderReader) {
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend, *headerreader.HeaderReader) {
 	t.Helper()
 	ctx := context.Background()
 	accs, backend := setupAccounts(t, 3)
@@ -415,7 +418,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 		common.Address{}, // Sequencer addr.
 		cfg,
 	)
-	headerReader := NewHeaderReader(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *Config { return &TestConfig })
+	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
 	headerReader.Start(ctx)
 	chain, err := NewAssertionChain(
 		ctx,

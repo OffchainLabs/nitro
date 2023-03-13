@@ -14,6 +14,8 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
+	"github.com/offchainlabs/nitro/util/headerreader"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -92,7 +94,7 @@ type AssertionChain struct {
 	callOpts     *bind.CallOpts
 	txOpts       *bind.TransactOpts
 	stakerAddr   common.Address
-	headerReader *HeaderReader
+	headerReader *headerreader.HeaderReader
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -104,7 +106,7 @@ func NewAssertionChain(
 	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
 	backend ChainBackend,
-	headerReader *HeaderReader,
+	headerReader *headerreader.HeaderReader,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
 		backend:      backend,
@@ -442,7 +444,7 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 // an optional transaction receipt. It returns an error if the
 // transaction had a failed status on-chain, or if the execution of the callback
 // failed directly.
-func transact(ctx context.Context, backend ChainBackend, l1Reader *HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+func transact(ctx context.Context, backend ChainBackend, l1Reader *headerreader.HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
 	tx, err := fn()
 	if err != nil {
 		return nil, err
