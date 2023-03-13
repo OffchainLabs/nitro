@@ -423,3 +423,54 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 	require.NoError(t, err)
 	return chain, accs, addresses, backend
 }
+
+func TestCopyTxOpts(t *testing.T) {
+	a := &bind.TransactOpts{
+		From:      common.BigToAddress(big.NewInt(1)),
+		Nonce:     big.NewInt(2),
+		Value:     big.NewInt(3),
+		GasPrice:  big.NewInt(4),
+		GasFeeCap: big.NewInt(5),
+		GasTipCap: big.NewInt(6),
+		GasLimit:  7,
+		Context:   context.TODO(),
+		NoSend:    false,
+	}
+
+	b := copyTxOpts(a)
+
+	require.Equal(t, a.From, b.From)
+	require.Equal(t, a.Nonce, b.Nonce)
+	require.Equal(t, a.Value, b.Value)
+	require.Equal(t, a.GasPrice, b.GasPrice)
+	require.Equal(t, a.GasFeeCap, b.GasFeeCap)
+	require.Equal(t, a.GasTipCap, b.GasTipCap)
+	require.Equal(t, a.GasLimit, b.GasLimit)
+	require.Equal(t, a.Context, b.Context)
+	require.Equal(t, a.NoSend, b.NoSend)
+
+	// Make changes like SetBytes which modify the underlying values.
+
+	b.From.SetBytes([]byte("foobar"))
+	b.Nonce.SetBytes([]byte("foobar"))
+	b.Value.SetBytes([]byte("foobar"))
+	b.GasPrice.SetBytes([]byte("foobar"))
+	b.GasFeeCap.SetBytes([]byte("foobar"))
+	b.GasTipCap.SetBytes([]byte("foobar"))
+	b.GasLimit = 123456789
+	type foo string // custom type for linter.
+	b.Context = context.WithValue(context.TODO(), foo("bar"), foo("baz"))
+	b.NoSend = true
+
+	// Everything should be different.
+	// Note: signer is not evaluated because function comparison is not possible.
+	require.NotEqual(t, a.From, b.From)
+	require.NotEqual(t, a.Nonce, b.Nonce)
+	require.NotEqual(t, a.Value, b.Value)
+	require.NotEqual(t, a.GasPrice, b.GasPrice)
+	require.NotEqual(t, a.GasFeeCap, b.GasFeeCap)
+	require.NotEqual(t, a.GasTipCap, b.GasTipCap)
+	require.NotEqual(t, a.GasLimit, b.GasLimit)
+	require.NotEqual(t, a.Context, b.Context)
+	require.NotEqual(t, a.NoSend, b.NoSend)
+}
