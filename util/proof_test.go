@@ -26,7 +26,8 @@ func TestMerkleProof(t *testing.T) {
 		require.Equal(t, 5, len(tree))
 	})
 	index := uint64(3)
-	proof := GenerateMerkleProof(index, tree)
+	proof, err := GenerateMerkleProof(index, tree)
+	require.NoError(t, err)
 	require.Equal(t, true, len(proof) > 0)
 	computedRoot, err := CalculateRootFromProof(proof, index, leaves[index])
 	require.NoError(t, err)
@@ -37,7 +38,8 @@ func TestMerkleProof(t *testing.T) {
 	})
 	t.Run("first leaf proof", func(t *testing.T) {
 		index = uint64(0)
-		proof = GenerateMerkleProof(index, tree)
+		proof, err = GenerateMerkleProof(index, tree)
+		require.NoError(t, err)
 		require.Equal(t, true, len(proof) > 0)
 		computedRoot, err = CalculateRootFromProof(proof, index, leaves[index])
 		require.NoError(t, err)
@@ -47,7 +49,8 @@ func TestMerkleProof(t *testing.T) {
 	})
 	t.Run("last leaf proof", func(t *testing.T) {
 		index = uint64(len(leaves) - 1)
-		proof = GenerateMerkleProof(index, tree)
+		proof, err = GenerateMerkleProof(index, tree)
+		require.NoError(t, err)
 		require.Equal(t, true, len(proof) > 0)
 		computedRoot, err = CalculateRootFromProof(proof, index, leaves[index])
 		require.NoError(t, err)
@@ -55,6 +58,25 @@ func TestMerkleProof(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, root, computedRoot)
 	})
+}
+
+func TestMerkleProofExpansionEquivalence(t *testing.T) {
+	leaves := make([]common.Hash, 4)
+	for i := 0; i < len(leaves); i++ {
+		leaves[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
+	}
+	tree := ComputeMerkleTree(leaves)
+	index := uint64(0)
+	proof, err := GenerateMerkleProof(index, tree)
+	require.NoError(t, err)
+	computedRoot, err := CalculateRootFromProof(proof, index, leaves[index])
+	require.NoError(t, err)
+	root, err := MerkleRoot(tree)
+	require.NoError(t, err)
+	require.Equal(t, root, computedRoot)
+
+	exp := ExpansionFromLeaves(leaves)
+	require.Equal(t, root, exp.Root())
 }
 
 func TestMerkleExpansion(t *testing.T) {

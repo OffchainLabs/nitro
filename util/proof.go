@@ -17,6 +17,7 @@ var (
 	ErrIncorrectProof = errors.New("incorrect proof")
 	ErrProofTooLong   = errors.New("merkle proof too long")
 	ErrInvalidTree    = errors.New("invalid merkle tree")
+	ErrInvalidLeaves  = errors.New("invalid number of leaves for merkle tree")
 )
 
 // Calculates a Merkle root from a Merkle proof, index, and leaf.
@@ -24,7 +25,7 @@ func CalculateRootFromProof(proof []common.Hash, index uint64, leaf common.Hash)
 	if len(proof) > 256 {
 		return common.Hash{}, ErrProofTooLong
 	}
-	h := leaf
+	h := crypto.Keccak256Hash(leaf[:])
 	for i := 0; i < len(proof); i++ {
 		node := proof[i]
 		if index&(1<<i) == 0 {
@@ -48,7 +49,11 @@ func MerkleRoot(tree [][]common.Hash) (common.Hash, error) {
 // pads with empty [32]byte{} until the length is a power of two.
 // Creates a tree where the last level is the root.
 func ComputeMerkleTree(items []common.Hash) [][]common.Hash {
-	leaves := items
+	leaves := make([]common.Hash, len(items))
+	for i, r := range items {
+		// Rehash to match the Merkle expansion functions.
+		leaves[i] = crypto.Keccak256Hash(r[:])
+	}
 	for !isPowerOfTwo(uint64(len(leaves))) {
 		leaves = append(leaves, common.Hash{})
 	}
@@ -67,17 +72,20 @@ func ComputeMerkleTree(items []common.Hash) [][]common.Hash {
 }
 
 // GenerateMerkleProof for an index in a Merkle tree.
-func GenerateMerkleProof(index uint64, tree [][]common.Hash) []common.Hash {
+func GenerateMerkleProof(index uint64, tree [][]common.Hash) ([]common.Hash, error) {
+	if len(tree) == 0 {
+		return nil, ErrInvalidTree
+	}
 	proof := make([]common.Hash, len(tree)-1)
 	leaves := tree[0]
 	if index >= uint64(len(leaves)) {
-		return nil
+		return nil, ErrInvalidLeaves
 	}
 	for i := 0; i < len(tree)-1; i++ {
 		subIndex := (index / (1 << i)) ^ 1
 		proof[i] = tree[i][subIndex]
 	}
-	return proof
+	return proof, nil
 }
 
 type MerkleExpansion []common.Hash
