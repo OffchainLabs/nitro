@@ -458,7 +458,8 @@ func TestCopyTxOpts(t *testing.T) {
 	b.GasFeeCap.SetBytes([]byte("foobar"))
 	b.GasTipCap.SetBytes([]byte("foobar"))
 	b.GasLimit = 123456789
-	b.Context = context.WithValue(context.TODO(), "foo", "bar")
+	type foo string // custom type for linter.
+	b.Context = context.WithValue(context.TODO(), foo("bar"), foo("baz"))
 	b.NoSend = true
 
 	// Everything should be different.
