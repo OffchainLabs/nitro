@@ -37,11 +37,11 @@ library LeafAdderLib {
             "Last state not in history"
         );
 
-        // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
-        require(
-            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
-            "First state not in history"
-        );
+        // // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
+        // require(
+        //     MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
+        //     "First state not in history"
+        // );
 
         // CHRIS: TODO: we dont know the root id - this is in the challenge itself?
         // CHRIS: TODO: in the below check we're trying to ensure the root id of this challenge is the
@@ -117,17 +117,20 @@ library BlockLeafAdder {
             // subtract one since heights are zero indexed
             require(heightDiff - 1 == leafLibArgs.leafData.height, "Invalid height");
 
-            bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
-            require(
-                getInboxMsgProcessedCount(claimStateHash, leafLibArgs.proof2)
-                    == assertionChain.getInboxMsgCountSeen(predecessorId),
-                "Invalid inbox messages processed"
-            );
+            // bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
 
-            require(
-                getBlockHash(claimStateHash, leafLibArgs.proof1) == leafLibArgs.leafData.lastState,
-                "Last state is not the assertion claim block hash"
-            );
+            // RJ: TODO: provide valid inbox proofs from the validator client
+            // require(
+            //     getInboxMsgProcessedCount(claimStateHash, leafLibArgs.proof2)
+            //         == assertionChain.getInboxMsgCountSeen(predecessorId),
+            //     "Invalid inbox messages processed"
+            // );
+
+            // CHRIS: TODO: Implement the block hash check
+            // require(
+            //     getBlockHash(claimStateHash, leafLibArgs.proof1) == leafLibArgs.leafData.lastState,
+            //     "Last state is not the assertion claim block hash"
+            // );
 
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }
