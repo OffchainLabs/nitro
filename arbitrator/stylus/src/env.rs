@@ -15,7 +15,7 @@ use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView,
-    StoreMut, StoreRef, WasmPtr,
+    StoreMut, StoreRef,
 };
 
 #[self_referencing]

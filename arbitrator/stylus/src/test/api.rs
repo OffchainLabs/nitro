@@ -3,30 +3,14 @@
 
 use crate::{
     env::{LoadBytes32, StoreBytes32},
-    native::{self, NativeInstance},
-    run::RunProgram,
+    native::NativeInstance,
 };
-use arbutil::Color;
-use eyre::Result;
 use parking_lot::Mutex;
-use prover::{
-    programs::prelude::*,
-    utils::{Bytes20, Bytes32},
-};
+use prover::utils::{Bytes20, Bytes32};
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone, Default)]
 pub(crate) struct TestEvmContracts(Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>);
-
-impl TestEvmContracts {
-    pub fn insert(&mut self, address: Bytes20, name: &str, config: &StylusConfig) -> Result<()> {
-        let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
-        let wasm = std::fs::read(file)?;
-        let module = native::module(&wasm, config.clone())?;
-        self.0.lock().insert(address, module);
-        Ok(())
-    }
-}
 
 #[derive(Clone, Default)]
 pub(crate) struct TestEvmStorage(Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>);
@@ -62,31 +46,12 @@ impl NativeInstance {
         &mut self,
         address: Bytes20,
         storage: TestEvmStorage,
-        contracts: TestEvmContracts,
+        _contracts: TestEvmContracts,
     ) -> TestEvmStorage {
         let get_bytes32 = storage.getter(address);
         let set_bytes32 = storage.setter(address);
-        let config = self.config();
-        let moved_storage = storage.clone();
 
-        let call = Box::new(move |address: Bytes20, input: Vec<u8>, gas: u64, _value| {
-            // this call function is for testing purposes only and deviates from onchain behavior
-
-            let mut instance = match contracts.0.lock().get(&address) {
-                Some(module) => unsafe {
-                    NativeInstance::deserialize(module, config.clone()).unwrap()
-                },
-                None => panic!("No contract at address {}", address.red()),
-            };
-
-            instance.set_test_evm_api(address, moved_storage.clone(), contracts.clone());
-            instance.set_gas(gas);
-
-            let outcome = instance.run_main(&input, &config).unwrap();
-            let gas_left: u64 = instance.gas_left().into();
-            let (status, outs) = outcome.into_data();
-            (outs, gas - gas_left, status)
-        });
+        let call = Box::new(move |_address, _input, _gas, _value| unimplemented!("contract call"));
         self.env_mut().set_evm_api(get_bytes32, set_bytes32, call);
         storage
     }

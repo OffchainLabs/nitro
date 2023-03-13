@@ -102,7 +102,7 @@ func TestProgramError(t *testing.T) {
 
 func TestProgramStorage(t *testing.T) {
 	file := "../arbitrator/stylus/tests/storage/target/wasm32-unknown-unknown/release/storage.wasm"
-	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file)
+	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -130,7 +130,7 @@ func TestProgramStorage(t *testing.T) {
 		Fail(t, "wrong value", value, storedValue)
 	}
 
-	_ = node
+	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 

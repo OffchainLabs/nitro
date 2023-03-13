@@ -3,7 +3,7 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    host, GoAPI, RustVec,
+    host, GoAPI,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
@@ -82,8 +82,6 @@ impl NativeInstance {
                 "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
                 "account_load_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_load_bytes32),
                 "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
-                "call_contract" => Function::new_typed_with_env(&mut store, &func_env, host::call_contract),
-                "util_move_vec" => Function::new_typed_with_env(&mut store, &func_env, host::util_move_vec),
             },
         };
         if debug_funcs {
@@ -142,7 +140,6 @@ impl NativeInstance {
 
         let get = api.get_bytes32;
         let set = api.set_bytes32;
-        let call = api.call_contract;
         let id = api.id;
 
         let get_bytes32 = Box::new(move |key| unsafe {
@@ -155,19 +152,8 @@ impl NativeInstance {
             let status = set(id, key, value, &mut cost as *mut _);
             (cost, status != 0)
         });
-        let call_contract = Box::new(move |contract, input, gas: u64, value| unsafe {
-            let mut gas_left = gas;
-            let mut data = RustVec::new(input);
-            let status = call(
-                id,
-                contract,
-                &mut data as *mut _,
-                &mut gas_left as *mut _,
-                value,
-            );
-            let output = Vec::from_raw_parts(data.ptr, data.len, data.cap);
-            (output, gas - gas_left, status)
-        });
+        let call_contract =
+            Box::new(move |_contract, _input, _gas, _value| unimplemented!("contract call"));
 
         env.set_evm_api(get_bytes32, set_bytes32, call_contract)
     }
@@ -255,8 +241,6 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "return_data" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
-            "call_contract" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32, _: u32|),
-            "util_move_vec" => stub!(|_: u32, _: u32|),
         },
     };
     if config.debug.debug_funcs {

@@ -20,11 +20,6 @@ uint8_t setBytes32Impl(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost);
 uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost) {
     return setBytes32Impl(api, key, value, cost);
 }
-
-uint8_t callContractImpl(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value);
-uint8_t callContractWrap(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value) {
-    return callContractImpl(api, contract, data, gas, value);
-}
 */
 import "C"
 import (
@@ -50,18 +45,16 @@ type apiClosure struct {
 	callContract callContractType
 }
 
-func newAPI(getBytes32 getBytes32Type, setBytes32 setBytes32Type, callContract callContractType) C.GoAPI {
+func newAPI(getBytes32 getBytes32Type, setBytes32 setBytes32Type) C.GoAPI {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
-		getBytes32:   getBytes32,
-		setBytes32:   setBytes32,
-		callContract: callContract,
+		getBytes32: getBytes32,
+		setBytes32: setBytes32,
 	})
 	return C.GoAPI{
-		get_bytes32:   (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:   (*[0]byte)(C.setBytes32Wrap),
-		call_contract: (*[0]byte)(C.callContractWrap),
-		id:            u64(id),
+		get_bytes32: (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32: (*[0]byte)(C.setBytes32Wrap),
+		id:          u64(id),
 	}
 }
 
