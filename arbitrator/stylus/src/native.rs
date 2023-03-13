@@ -228,9 +228,6 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
-        (u32 <- $($types:tt)+) => {
-            Function::new_typed(&mut store, $($types)+ -> u32 { panic!("incomplete import") })
-        };
         ($($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
         };

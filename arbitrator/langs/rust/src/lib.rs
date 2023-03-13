@@ -3,7 +3,6 @@
 
 pub use util::{Bytes20, Bytes32};
 
-pub mod contract;
 pub mod debug;
 mod util;
 

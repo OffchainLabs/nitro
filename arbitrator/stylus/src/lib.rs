@@ -68,7 +68,6 @@ impl RustVec {
     }
 
     unsafe fn write_err(&mut self, err: ErrReport) {
-        println!("Rust: writing error {err:?}");
         self.write(format!("{err:?}").into_bytes());
     }
 }
@@ -162,13 +161,4 @@ pub unsafe extern "C" fn stylus_call(
 pub unsafe extern "C" fn stylus_free(vec: RustVec) {
     let vec = Vec::from_raw_parts(vec.ptr, vec.len, vec.cap);
     mem::drop(vec)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn stylus_overwrite_vec(vec: *mut RustVec, data: GoSliceData) {
-    let vec = &*vec;
-    let mut vec = Vec::from_raw_parts(vec.ptr, vec.len, vec.cap);
-    vec.clear();
-    vec.extend(data.slice());
-    mem::forget(vec)
 }

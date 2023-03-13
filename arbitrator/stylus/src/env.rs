@@ -278,7 +278,7 @@ impl Escape {
         Err(Self::Internal(eyre!(error)))
     }
 
-    pub fn out_of_gas() -> MaybeEscape {
+    pub fn out_of_gas<T>() -> Result<T, Escape> {
         Err(Self::OutOfGas)
     }
 }

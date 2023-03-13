@@ -167,10 +167,6 @@ func (vec *C.RustVec) intoBytes() []byte {
 	return slice
 }
 
-func (vec *C.RustVec) overwrite(data []byte) {
-	C.stylus_overwrite_vec(vec, goSlice(data))
-}
-
 func goSlice(slice []byte) C.GoSliceData {
 	return C.GoSliceData{
 		ptr: (*u8)(arbutil.SliceToPointer(slice)),
