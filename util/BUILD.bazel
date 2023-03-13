@@ -16,8 +16,6 @@ go_library(
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/util",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_ethereum_go_ethereum//:go-ethereum",
-        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//core/types",
