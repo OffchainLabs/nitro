@@ -32,16 +32,16 @@ library LeafAdderLib {
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
             MerkleTreeLib.hasState(
-                leafData.historyRoot, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
+                leafData.historyRoot, leafData.lastState, leafData.height-1, leafData.lastStatehistoryProof
             ),
             "Last state not in history"
         );
 
         // // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
-        // require(
-        //     MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
-        //     "First state not in history"
-        // );
+        require(
+            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
+            "First state not in history"
+        );
 
         // CHRIS: TODO: we dont know the root id - this is in the challenge itself?
         // CHRIS: TODO: in the below check we're trying to ensure the root id of this challenge is the

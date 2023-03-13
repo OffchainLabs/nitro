@@ -129,6 +129,12 @@ func (c *Challenge) AddBlockChallengeLeaf(
 		lastLeafProof = append(lastLeafProof, r)
 		flatLastLeafProof = append(flatLastLeafProof, r[:]...)
 	}
+	firstLeafProof := make([][32]byte, 0)
+	for _, h := range history.FirstLeafProof {
+		var r [32]byte
+		copy(r[:], h[:])
+		firstLeafProof = append(firstLeafProof, r)
+	}
 	callOpts := c.manager.assertionChain.callOpts
 	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
 	if err != nil {
@@ -144,7 +150,7 @@ func (c *Challenge) AddBlockChallengeLeaf(
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
 		FirstState:             prevAssertion.StateHash(),
-		FirstStatehistoryProof: make([][32]byte, 0), // TODO: Add in.
+		FirstStatehistoryProof: firstLeafProof,
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
 	}

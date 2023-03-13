@@ -77,16 +77,19 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	// 	t.Skip()
 	// })
 	t.Run("OK", func(t *testing.T) {
-		t.Log(heightDiff)
 		leaves := make([]common.Hash, 4)
 		for i := range leaves {
 			leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 		}
 		history, err := util.NewHistoryCommitment(heightDiff, leaves)
 		require.NoError(t, err)
-		t.Logf("%+v", history)
 		require.Equal(t, history.FirstLeaf, leaves[0])
 		require.Equal(t, history.LastLeaf, leaves[3])
+		computed, err := util.CalculateRootFromProof(history.LastLeafProof, history.Height-1, history.LastLeaf)
+		require.NoError(t, err)
+		require.Equal(t, history.Merkle, computed)
+		computed, err = util.CalculateRootFromProof(history.FirstLeafProof, 0, history.FirstLeaf)
+		require.Equal(t, history.Merkle, computed)
 
 		_, err = challenge.AddBlockChallengeLeaf(
 			ctx,
