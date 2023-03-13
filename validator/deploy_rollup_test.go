@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"math/big"
 
 	"crypto/ecdsa"
@@ -38,6 +39,8 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 	t.Helper()
 	ctx := context.Background()
 	accs, backend := setupAccounts(t, numChains)
+	headerReader := solimpl.NewHeaderReader(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *solimpl.Config { return &solimpl.TestConfig })
+	headerReader.Start(ctx)
 	prod := false
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := accs[0].accountAddr
@@ -63,6 +66,7 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 			&bind.CallOpts{},
 			accs[i].accountAddr,
 			backend,
+			headerReader,
 		)
 		require.NoError(t, err)
 		chains[i] = chain

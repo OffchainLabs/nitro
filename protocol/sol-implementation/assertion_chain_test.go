@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,7 +23,7 @@ var (
 
 func TestAssertionStateHash(t *testing.T) {
 	ctx := context.Background()
-	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	tx := &activeTx{readWriteTx: true}
 	assertion, err := chain.LatestConfirmed(ctx, tx)
 	require.NoError(t, err)
@@ -39,7 +40,7 @@ func TestAssertionStateHash(t *testing.T) {
 
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
-	chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+	chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 	tx := &activeTx{readWriteTx: true}
 
 	t.Run("OK", func(t *testing.T) {
@@ -92,7 +93,6 @@ func TestCreateAssertion(t *testing.T) {
 		require.ErrorContains(t, err, "ALREADY_STAKED")
 	})
 	t.Run("can create fork", func(t *testing.T) {
-		l1Reader := NewHeaderReader(backend, func() *headerreader.Config { return &headerreader.TestConfig })
 		chain, err := NewAssertionChain(
 			ctx,
 			addresses.Rollup,
@@ -100,6 +100,7 @@ func TestCreateAssertion(t *testing.T) {
 			&bind.CallOpts{},
 			accs[2].accountAddr,
 			backend,
+			headerReader,
 		)
 		require.NoError(t, err)
 		height := uint64(1)
@@ -143,7 +144,7 @@ func TestCreateAssertion(t *testing.T) {
 
 func TestAssertionBySequenceNum(t *testing.T) {
 	ctx := context.Background()
-	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	tx := &activeTx{readWriteTx: true}
 
 	resp, err := chain.AssertionBySequenceNum(ctx, tx, 0)
@@ -159,7 +160,7 @@ func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
-		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+		chain, _, _, backend, _ := setupAssertionChainWithChallengeManager(t)
 
 		height := uint64(1)
 		prev := uint64(0)
@@ -216,7 +217,7 @@ func TestAssertion_Reject(t *testing.T) {
 	})
 
 	t.Run("Already confirmed assertion", func(t *testing.T) {
-		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+		chain, _, _, backend, _ := setupAssertionChainWithChallengeManager(t)
 
 		height := uint64(1)
 		prev := uint64(0)
@@ -262,8 +263,8 @@ func TestAssertion_Reject(t *testing.T) {
 }
 
 func TestChallengePeriodSeconds(t *testing.T) {
-	chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	ctx := context.Background()
+	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	tx := &activeTx{readWriteTx: true}
 	manager, err := chain.CurrentChallengeManager(ctx, tx)
 	require.NoError(t, err)
@@ -277,12 +278,12 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
 	t.Run("assertion does not exist", func(t *testing.T) {
-		chain, _, _, _ := setupAssertionChainWithChallengeManager(t)
+		chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 		_, err := chain.CreateSuccessionChallenge(ctx, tx, 2)
 		require.ErrorIs(t, err, ErrInvalidChildren)
 	})
 	t.Run("at least two children required", func(t *testing.T) {
-		chain, _, _, backend := setupAssertionChainWithChallengeManager(t)
+		chain, _, _, backend, _ := setupAssertionChainWithChallengeManager(t)
 		height := uint64(1)
 		prev := uint64(0)
 		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
@@ -327,7 +328,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		)
 	})
 	t.Run("OK", func(t *testing.T) {
-		chain, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+		chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 		height := uint64(1)
 		prev := uint64(0)
 		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
@@ -370,6 +371,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			&bind.CallOpts{},
 			accs[2].accountAddr,
 			backend,
+			headerReader,
 		)
 		require.NoError(t, err)
 
@@ -393,7 +395,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 	})
 }
 
-func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend, *HeaderReader) {
 	t.Helper()
 	ctx := context.Background()
 	accs, backend := setupAccounts(t, 3)
@@ -413,6 +415,8 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 		common.Address{}, // Sequencer addr.
 		cfg,
 	)
+	headerReader := NewHeaderReader(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *Config { return &TestConfig })
+	headerReader.Start(ctx)
 	chain, err := NewAssertionChain(
 		ctx,
 		addresses.Rollup,
@@ -420,7 +424,8 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 		&bind.CallOpts{},
 		accs[1].accountAddr,
 		backend,
+		headerReader,
 	)
 	require.NoError(t, err)
-	return chain, accs, addresses, backend
+	return chain, accs, addresses, backend, headerReader
 }
