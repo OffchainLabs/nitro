@@ -80,10 +80,20 @@ library BlockLeafAdder {
         // 2. Extract the block hash from the assertion state hash using the claim proof and return it
     }
 
-    function getInboxMsgProcessedCount(bytes32 assertionStateHash, bytes memory proof) internal returns (uint256) {
-        return uint256(bytes32(bytes(proof)));
-        // CHRIS: TODO:
-        // 1. Unwrap the assertion state hash to find the number of inbox messages it processed
+    function getInboxMsgProcessedCount(bytes32 assertionStateHash, bytes memory proof)
+        internal
+        view
+        returns (uint256)
+    {
+        (GlobalState memory globalState, uint256 inboxMaxCount, MachineStatus machineStatus) =
+            abi.decode(proof, (GlobalState, uint256, MachineStatus));
+
+        // CHRIS: TODO: use the stateHash from RollupLib? it would mean importing RollupLib here, is that ok?
+        // CHRIS: TODO: try add later after circular dependencies fixed in rollup
+        bytes32 stateHash = keccak256(abi.encodePacked(GlobalStateLib.hash(globalState), inboxMaxCount, machineStatus));
+        require(stateHash == assertionStateHash, "Invalid state hash from proof");
+
+        return GlobalStateLib.getInboxPosition(globalState);
     }
 
     function addLeaf(

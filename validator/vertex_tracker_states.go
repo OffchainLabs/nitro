@@ -2,6 +2,8 @@ package validator
 
 import (
 	"fmt"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 )
 
 // Defines a state in a finite state machine that aids
@@ -10,6 +12,7 @@ type vertexTrackerState uint8
 
 const (
 	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
+	// nolint:unused
 	trackerInvalid vertexTrackerState = iota
 	// The start state of the tracker.
 	trackerStarted
@@ -77,7 +80,10 @@ type backToStart struct{}
 type markPresumptive struct{}
 
 // Tracker will act if the vertex is at a one step fork.
-type actOneStepFork struct{}
+type actOneStepFork struct {
+	// The parent vertex of the rival vertices in the one-step-fork.
+	forkPointVertex protocol.ChallengeVertex
+}
 
 // Tracker will act if the vertex is at a one step proof.
 type actOneStepProof struct{}

@@ -43,7 +43,7 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 	rollupOwner := accs[0].accountAddr
 	chainId := big.NewInt(1337)
 	loserStakeEscrow := common.Address{}
-	challengePeriodSeconds := big.NewInt(100)
+	challengePeriodSeconds := big.NewInt(604800) // 7 days.
 	miniStake := big.NewInt(1)
 	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
 	addresses := deployFullRollupStack(
