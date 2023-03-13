@@ -13,7 +13,6 @@ package programs
 
 Bytes32 getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost);
 uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost);
-uint8_t callContractWrap(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value);
 */
 import "C"
 import (
@@ -31,7 +30,6 @@ type u8 = C.uint8_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
-type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 
 func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) error {
@@ -149,14 +147,6 @@ func (value bytes32) toHash() common.Hash {
 
 func (value bytes32) toBig() *big.Int {
 	return value.toHash().Big()
-}
-
-func (value bytes20) toAddress() common.Address {
-	addr := common.Address{}
-	for index, b := range value.bytes {
-		addr[index] = byte(b)
-	}
-	return addr
 }
 
 func hashToBytes32(hash common.Hash) bytes32 {
