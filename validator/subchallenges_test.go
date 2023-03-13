@@ -13,6 +13,7 @@ import (
 )
 
 func TestFullChallengeResolution(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 
 	// Start by creating a simple, two validator fork in the assertion

@@ -13,10 +13,11 @@ import (
 // to have a smaller API surface area and attach useful
 // methods that callers can use directly.
 type Assertion struct {
-	StateCommitment util.StateCommitment
-	chain           *AssertionChain
-	id              uint64
-	inner           rollupgen.AssertionNode
+	StateCommitment    util.StateCommitment
+	chain              *AssertionChain
+	id                 uint64
+	createdAtBlockHash common.Hash
+	inner              rollupgen.AssertionNode
 }
 
 func (a *Assertion) Height() uint64 {
@@ -33,6 +34,10 @@ func (a *Assertion) PrevSeqNum() protocol.AssertionSequenceNumber {
 
 func (a *Assertion) StateHash() common.Hash {
 	return a.inner.StateHash
+}
+
+func (a *Assertion) BlockHash() common.Hash {
+	return a.createdAtBlockHash
 }
 
 // Challenge is a developer-friendly wrapper around

@@ -45,23 +45,22 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//               \
 	//                [3]-[4]-[6]-bob
 	//
-	// At the big step challenge level, the fork is at height 2.
+	// At the big step challenge level, the fork is at height 2 (big step number 2).
 	//
 	//                    [3]-[4]-[6]-alice
 	//                   /
-	// [bigstep_root]-[2]
+	// [big_step_root]-[2]
 	//                   \
 	//                    [3]-[4]-[6]-bob
 	//
 	//
-	// At the small step challenge level the fork is at 2^10 opcodes.
+	// At the small step challenge level the fork is at height 2 (wavm opcode 2).
 	//
-	//                          [2^10 + 1]----....many bisections...----[2^20]-alice
-	//                         /
-	// [small_step_root]-[2^10]
-	//                         \
-	//                          [2^10 + 1]-----....many bisections...----[2^20]-bob
-	//
+	//                      [3]-[4]-[6]-alice
+	//                     /
+	// [small_step_root]-[2]
+	//                     \
+	//                      [3]-[4]-[6]-bob
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
@@ -70,12 +69,12 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			aliceHeight: 6,
 			bobHeight:   6,
 			// The heights at which the validators diverge in histories. In this test,
-			// alice and bob start diverging at height 3.
+			// alice and bob start diverging at height 3 at all subchallenge levels.
 			assertionDivergenceHeight:    3,
-			numBigStepsAtAssertionHeight: 6,
+			numBigStepsAtAssertionHeight: 10,
 			bigStepDivergenceHeight:      3,
 			numSmallStepsAtBigStep:       10,
-			smallStepDivergenceHeight:    1 << 10,
+			smallStepDivergenceHeight:    3,
 		}
 		// Alice adds a challenge leaf 6, is presumptive.
 		// Bob adds leaf 6.
@@ -91,8 +90,8 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 32")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")

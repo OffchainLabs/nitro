@@ -6,6 +6,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -19,7 +20,18 @@ func (v *vertexTracker) determineBisectionPointWithHistory(
 	if err != nil {
 		return util.HistoryCommitment{}, errors.Wrapf(err, "determining bisection point failed for %d and %d", parentHeight, toHeight)
 	}
-	historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
+	var historyCommit util.HistoryCommitment
+	switch v.challenge.GetType() {
+	case protocol.BlockChallenge:
+		historyCommit, err = v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
+	case protocol.BigStepChallenge:
+		// TODO: Need the block hash of the one-step-fork point.
+		fmt.Println("CALLED BIG")
+		historyCommit, err = v.cfg.stateManager.BigStepCommitmentUpTo(ctx, 0, common.Hash{}, common.Hash{}, bisectTo)
+	case protocol.SmallStepChallenge:
+		fmt.Println("CALLED BIG")
+		historyCommit, err = v.cfg.stateManager.SmallStepCommitmentUpTo(ctx, 0, common.Hash{}, common.Hash{}, bisectTo)
+	}
 	if err != nil {
 		return util.HistoryCommitment{}, errors.Wrapf(err, "could not rertieve history commitment up to height %d", bisectTo)
 	}
@@ -120,9 +132,19 @@ func (v *vertexTracker) merge(
 			currentCommit.Height,
 		)
 	}
-	historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
+	var historyCommit util.HistoryCommitment
+	var err error
+	switch v.challenge.GetType() {
+	case protocol.BlockChallenge:
+		historyCommit, err = v.cfg.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
+	case protocol.BigStepChallenge:
+		// TODO: Need the block hash of the one-step-fork point.
+		historyCommit, err = v.cfg.stateManager.BigStepCommitmentUpTo(ctx, 0, common.Hash{}, common.Hash{}, mergingToHeight)
+	case protocol.SmallStepChallenge:
+		historyCommit, err = v.cfg.stateManager.SmallStepCommitmentUpTo(ctx, 0, common.Hash{}, common.Hash{}, mergingToHeight)
+	}
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "could not rertieve history commitment up to height %d", mergingToHeight)
 	}
 	proof, err := v.cfg.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {

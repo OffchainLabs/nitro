@@ -24,6 +24,9 @@ func Test_computePrefixProof(t *testing.T) {
 		cfg: &vertexTrackerConfig{
 			stateManager: manager,
 		},
+		challenge: &mocks.MockChallenge{
+			MockType: protocol.BlockChallenge,
+		},
 	}
 
 	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
@@ -71,6 +74,9 @@ func Test_bisect(t *testing.T) {
 				validatorName:    validator.name,
 				validatorAddress: validator.address,
 			},
+			challenge: &mocks.MockChallenge{
+				MockType: protocol.BlockChallenge,
+			},
 		}
 		_, err = v.bisect(ctx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
@@ -110,6 +116,9 @@ func Test_bisect(t *testing.T) {
 				stateManager:     validator.stateManager,
 				validatorName:    validator.name,
 				validatorAddress: validator.address,
+			},
+			challenge: &mocks.MockChallenge{
+				MockType: protocol.BlockChallenge,
 			},
 		}
 		_, err = v.bisect(ctx, vertex)
@@ -229,6 +238,9 @@ func Test_merge(t *testing.T) {
 				validatorName:    honestValidator.name,
 				validatorAddress: honestValidator.address,
 			},
+			challenge: &mocks.MockChallenge{
+				MockType: protocol.BlockChallenge,
+			},
 		}
 		_, err = v.merge(
 			ctx, challengeId, mergingTo, mergingFrom,
@@ -308,6 +320,9 @@ func Test_merge(t *testing.T) {
 				validatorName:    honestValidator.name,
 				validatorAddress: honestValidator.address,
 			},
+			challenge: &mocks.MockChallenge{
+				MockType: protocol.BlockChallenge,
+			},
 		}
 		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
 		require.NoError(t, err)
@@ -376,6 +391,9 @@ func runBisectionTest(
 			stateManager:     evilValidator.stateManager,
 			validatorName:    evilValidator.name,
 			validatorAddress: evilValidator.address,
+		},
+		challenge: &mocks.MockChallenge{
+			MockType: protocol.BlockChallenge,
 		},
 	}
 
