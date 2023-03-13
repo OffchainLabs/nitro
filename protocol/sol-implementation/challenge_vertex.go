@@ -132,7 +132,7 @@ func (v *ChallengeVertex) Merge(
 	for _, h := range proof {
 		flatProof = append(flatProof, h[:]...)
 	}
-	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Merge(
 			v.manager.assertionChain.txOpts,
 			v.id,
@@ -163,7 +163,7 @@ func (v *ChallengeVertex) Bisect(
 	for _, h := range proof {
 		flatProof = append(flatProof, h[:]...)
 	}
-	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Bisect(
 			v.manager.assertionChain.txOpts,
 			v.id,
@@ -218,7 +218,7 @@ func getVertexFromComponents(
 }
 
 func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
-	_, err := transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.ConfirmForPsTimer(
 			v.manager.assertionChain.txOpts,
 			v.id,
@@ -254,7 +254,7 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 		return nil, fmt.Errorf("cannot make subchallenge for challenge type %d", challenge.GetType())
 	}
 
-	if _, err = transact(ctx, v.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	if _, err = transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.CreateSubChallenge(
 			v.manager.assertionChain.txOpts,
 			v.id,
