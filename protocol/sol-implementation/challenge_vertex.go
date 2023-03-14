@@ -125,19 +125,14 @@ func (v *ChallengeVertex) Merge(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	mergingToHistory util.HistoryCommitment,
-	proof []common.Hash,
+	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	// Flatten the last leaf proof for submission to the chain.
-	flatProof := make([]byte, 0)
-	for _, h := range proof {
-		flatProof = append(flatProof, h[:]...)
-	}
 	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Merge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 			mergingToHistory.Merkle,
-			flatProof,
+			proof,
 		)
 	})
 	if err != nil {

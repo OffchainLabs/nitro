@@ -190,25 +190,14 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
 		require.NoError(t, err)
 
-		t.Log("totals", len(prefixExpansion), prefixProof)
+		t.Log("totals", len(prefixExpansion), len(prefixProof))
 
-		proofTy, _ := abi.NewType("tuple", "prefixProof", []abi.ArgumentMarshaling{
-			{Name: "prefixExpansion", Type: "bytes32[]"},
-			{Name: "proof", Type: "bytes32[]"},
-		})
-
+		b32Arr, _ := abi.NewType("bytes32[]", "", nil)
 		args := abi.Arguments{
-			{Type: proofTy, Name: "prefixProof"},
+			{Type: b32Arr, Name: "prefixExpansion"},
+			{Type: b32Arr, Name: "prefixProof"},
 		}
-		record := struct {
-			PrefixExpansion []common.Hash
-			Proof           []common.Hash
-		}{
-			PrefixExpansion: prefixExpansion,
-			Proof:           prefixProof,
-		}
-
-		packed, err := args.Pack(&record)
+		packed, err := args.Pack(&prefixExpansion, &prefixProof)
 		require.NoError(t, err)
 		t.Logf("GOTEEMMMMM %#x", packed)
 
@@ -357,7 +346,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			ctx,
 			tx,
 			util.HistoryCommitment{},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		bisectedTo2 := bisectedTo2V.(*ChallengeVertex)
@@ -367,7 +356,7 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 			ctx,
 			tx,
 			util.HistoryCommitment{},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		bisectedTo1 := bisectedTo1V.(*ChallengeVertex)
@@ -434,7 +423,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 				Height: 4,
 				Merkle: common.BytesToHash([]byte("nyan4")),
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "does not exist")
 	})
@@ -450,7 +439,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 				Height: 4,
 				Merkle: common.BytesToHash([]byte("nyan4")),
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "Cannot bisect presumptive")
 	})
@@ -472,7 +461,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 				Height: 4,
 				Merkle: common.BytesToHash([]byte("nyan4")),
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "cannot set lower ps")
 	})
@@ -525,7 +514,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)
@@ -539,7 +528,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "already exists")
 	})
@@ -597,7 +586,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 				Height: 4,
 				Merkle: common.BytesToHash([]byte("nyan4")),
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "does not exist")
 	})
@@ -613,7 +602,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 				Height: 4,
 				Merkle: common.BytesToHash([]byte("nyan4")),
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "Cannot bisect presumptive")
 	})
@@ -629,7 +618,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 
@@ -644,7 +633,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.ErrorContains(t, err, "cannot set lower ps")
 	})
@@ -697,7 +686,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)
@@ -711,7 +700,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 
@@ -790,7 +779,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 4,
 				Merkle: wantCommit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)
@@ -841,7 +830,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 4,
 				Merkle: v2Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 
@@ -856,7 +845,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 4,
 				Merkle: v1Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v1Height4 := v1Height4V.(*ChallengeVertex)
@@ -870,7 +859,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 2,
 				Merkle: v2Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v2Height2 := v2Height2V.(*ChallengeVertex)
@@ -884,7 +873,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 2,
 				Merkle: v1Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v1Height2 := v1Height2V.(*ChallengeVertex)
@@ -898,7 +887,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 1,
 				Merkle: v1Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v1Height1 := v1Height1V.(*ChallengeVertex)
@@ -947,7 +936,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 4,
 				Merkle: v2Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v2Height4 := v2Height4V.(*ChallengeVertex)
@@ -961,7 +950,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 4,
 				Merkle: v1Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v1Height4 := v1Height4V.(*ChallengeVertex)
@@ -975,7 +964,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 2,
 				Merkle: v2Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v2Height2 := v2Height2V.(*ChallengeVertex)
@@ -989,7 +978,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 2,
 				Merkle: v1Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v1Height2 := v1Height2V.(*ChallengeVertex)
@@ -1003,7 +992,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 1,
 				Merkle: v1Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v1Height1 := v1Height1V.(*ChallengeVertex)
@@ -1017,7 +1006,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 				Height: 1,
 				Merkle: v2Commit,
 			},
-			make([]common.Hash, 0),
+			make([]byte, 0),
 		)
 		require.NoError(t, err)
 		v2Height1 := v2Height1V.(*ChallengeVertex)
@@ -1078,7 +1067,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			Height: 4,
 			Merkle: v2Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v2Height4 := v2Height4V.(*ChallengeVertex)
@@ -1092,7 +1081,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			Height: 4,
 			Merkle: v1Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v1Height4 := v1Height4V.(*ChallengeVertex)
@@ -1106,7 +1095,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			Height: 2,
 			Merkle: v2Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v2Height2 := v2Height2V.(*ChallengeVertex)
@@ -1120,7 +1109,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			Height: 2,
 			Merkle: v1Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v1Height2 := v1Height2V.(*ChallengeVertex)
@@ -1134,7 +1123,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			Height: 1,
 			Merkle: v1Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v1Height1 := v1Height1V.(*ChallengeVertex)
@@ -1148,7 +1137,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			Height: 1,
 			Merkle: v2Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v2Height1 := v2Height1V.(*ChallengeVertex)
@@ -1246,7 +1235,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 			Height: 4,
 			Merkle: v2Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v2Height4 := v2Height4V.(*ChallengeVertex)
@@ -1260,7 +1249,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 			Height: 4,
 			Merkle: v1Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v1Height4 := v1Height4V.(*ChallengeVertex)
@@ -1274,7 +1263,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 			Height: 2,
 			Merkle: v2Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v2Height2 := v2Height2V.(*ChallengeVertex)
@@ -1288,7 +1277,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 			Height: 2,
 			Merkle: v1Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v1Height2 := v1Height2V.(*ChallengeVertex)
@@ -1302,7 +1291,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 			Height: 1,
 			Merkle: v1Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v1Height1 := v1Height1V.(*ChallengeVertex)
@@ -1316,7 +1305,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 			Height: 1,
 			Merkle: v2Commit,
 		},
-		make([]common.Hash, 0),
+		make([]byte, 0),
 	)
 	require.NoError(t, err)
 	v2Height1 := v2Height1V.(*ChallengeVertex)
