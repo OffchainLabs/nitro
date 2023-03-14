@@ -37,7 +37,7 @@ library LeafAdderLib {
             "Last state not in history"
         );
 
-        // // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
+        // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
             MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
             "First state not in history"
