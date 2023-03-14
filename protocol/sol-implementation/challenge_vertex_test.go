@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 
+	"math/big"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -14,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
 var _ = protocol.ChallengeVertex(&ChallengeVertex{})
@@ -37,12 +38,15 @@ func TestVerifySolidityPrefixProof(t *testing.T) {
 	err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
 	require.NoError(t, err)
 
+	_, numRead := util.MerkleExpansionFromCompact(prefixProof, 4)
+	onlyProof := prefixProof[numRead:]
+
 	b32Arr, _ := abi.NewType("bytes32[]", "", nil)
 	args := abi.Arguments{
 		{Type: b32Arr, Name: "prefixExpansion"},
 		{Type: b32Arr, Name: "prefixProof"},
 	}
-	packed, err := args.Pack(&prefixExpansion, &prefixProof)
+	packed, err := args.Pack(&prefixExpansion, &onlyProof)
 	require.NoError(t, err)
 	chain1, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 
