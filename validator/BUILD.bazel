@@ -57,6 +57,7 @@ go_test(
         "@com_github_ethereum_go_ethereum//core",
         "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_offchainlabs_nitro//util/headerreader",
         "@com_github_sirupsen_logrus//:logrus",
         "@com_github_sirupsen_logrus//hooks/test",
         "@com_github_stretchr_testify//assert",

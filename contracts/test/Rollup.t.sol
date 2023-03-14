@@ -365,7 +365,7 @@ contract RollupTest is Test {
     }
 
     function fillStatesInBetween(bytes32 start, bytes32 end, uint256 totalCount) internal returns(bytes32[] memory) {
-        bytes32[] memory innerStates = rand.hashes(6);
+        bytes32[] memory innerStates = rand.hashes(totalCount - 2);
 
         bytes32[] memory states = new bytes32[](totalCount);
         states[0] = start;
@@ -388,14 +388,14 @@ contract RollupTest is Test {
         bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(0));
         bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(1));
 
-        bytes32[] memory states = fillStatesInBetween(h0, h1, 8);
-        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, 8));
+        bytes32[] memory states = fillStatesInBetween(h0, h1, 9);
+        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, 9));
 
         bytes32 v1Id = challengeManager.addLeaf{value: 1}(
             AddLeafArgs({
                 challengeId: challengeId,
                 claimId: userRollup.getAssertionId(1),
-                height: 7,
+                height: 8,
                 historyRoot: root,
                 firstState: h0,
                 firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0),

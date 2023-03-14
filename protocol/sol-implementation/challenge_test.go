@@ -116,7 +116,7 @@ func setupTopLevelFork(
 ) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
 	t.Helper()
 	tx := &activeTx{readWriteTx: true}
-	chain1, accs, addresses, backend := setupAssertionChainWithChallengeManager(t)
+	chain1, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 	prev := uint64(0)
 
 	minAssertionPeriod, err := chain1.userLogic.MinimumAssertionPeriod(chain1.callOpts)
@@ -159,6 +159,7 @@ func setupTopLevelFork(
 		&bind.CallOpts{},
 		accs[2].accountAddr,
 		backend,
+		headerReader,
 	)
 	require.NoError(t, err)
 

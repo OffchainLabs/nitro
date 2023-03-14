@@ -81,10 +81,10 @@ contract ChallengeManagerE2ETest is Test {
 
         // add one since heights are zero indexed in the history states
         bytes32 a1 = assertionChain.addAssertion(
-            genesis, genesisHeight + height1 + 1, inboxMsgCountAssertion, StateToolsLib.hash(a1State), 0
+            genesis, genesisHeight + height1, inboxMsgCountAssertion, StateToolsLib.hash(a1State), 0
         );
         bytes32 a2 = assertionChain.addAssertion(
-            genesis, genesisHeight + height1 + 1, inboxMsgCountAssertion, StateToolsLib.hash(a2State), 0
+            genesis, genesisHeight + height1, inboxMsgCountAssertion, StateToolsLib.hash(a2State), 0
         );
 
         bytes32 challengeId = assertionChain.createChallenge(a1, a2, challengeManager);
@@ -355,9 +355,7 @@ contract ChallengeManagerE2ETest is Test {
                 addLeaf2Proof2: abi.encode(id.a2State.gs, id.a2State.inboxMsgCountMax, id.a2State.ms)
             })
         );
-        Challenge memory c = id.challengeManager.getChallenge(id.challengeId);
-        ChallengeVertex memory v = id.challengeManager.getVertex(c.rootId);
-
+        
         bytes32 bigStepChallengeId = id.challengeManager.createSubChallenge(
             id.challengeManager.getVertex(blockResult.winningVertices[0]).predecessorId
         );

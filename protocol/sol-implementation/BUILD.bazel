@@ -20,6 +20,7 @@ go_library(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//core",
         "@com_github_ethereum_go_ethereum//core/types",
+        "@com_github_offchainlabs_nitro//util/headerreader",
         "@com_github_pkg_errors//:errors",
     ],
 )
@@ -47,6 +48,7 @@ go_test(
         "@com_github_ethereum_go_ethereum//core",
         "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_offchainlabs_nitro//util/headerreader",
         "@com_github_stretchr_testify//require",
     ],
 )

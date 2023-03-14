@@ -114,8 +114,7 @@ library BlockLeafAdder {
             uint256 predecessorAssertionHeight = assertionChain.getHeight(predecessorId);
 
             uint256 heightDiff = assertionHeight - predecessorAssertionHeight;
-            // subtract one since heights are zero indexed
-            require(heightDiff - 1 == leafLibArgs.leafData.height, "Invalid height");
+            require(heightDiff == leafLibArgs.leafData.height, "Invalid leaf height");
 
             // bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
 
