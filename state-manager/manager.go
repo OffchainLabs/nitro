@@ -119,7 +119,7 @@ func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.Stat
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height+1],
+		s.stateRoots[:height],
 	)
 }
 
@@ -252,6 +252,6 @@ func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Ha
 	return util.GeneratePrefixProof(
 		lo,
 		exp,
-		s.stateRoots[lo:hi+1],
+		s.stateRoots[lo:hi],
 	), nil
 }

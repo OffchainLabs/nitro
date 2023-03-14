@@ -17,7 +17,7 @@ func Test_computePrefixProof(t *testing.T) {
 	ctx := context.Background()
 	stateRoots := generateStateRoots(10)
 	manager := statemanager.New(stateRoots)
-	commit, err := manager.HistoryCommitmentUpTo(ctx, 6)
+	commit, err := manager.HistoryCommitmentUpTo(ctx, 8)
 	require.NoError(t, err)
 
 	v := &vertexTracker{
@@ -26,11 +26,11 @@ func Test_computePrefixProof(t *testing.T) {
 		},
 	}
 
-	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 6)
+	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 8)
 	require.NoError(t, err)
 
 	bisectToHeight := bisectToCommit.Height
-	proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectToHeight, 6)
+	proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectToHeight, 8)
 	require.NoError(t, err)
 	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
 	require.NoError(t, err)
