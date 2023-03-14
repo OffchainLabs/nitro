@@ -32,7 +32,18 @@ func Test_computePrefixProof(t *testing.T) {
 	bisectToHeight := bisectToCommit.Height
 	proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectToHeight, 8)
 	require.NoError(t, err)
-	err = util.VerifyPrefixProof(bisectToCommit, commit, proof)
+
+	data, err := statemanager.ProofArgs.Unpack(proof)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(data))
+	proofOnly, ok := data[1].([][32]byte)
+	require.Equal(t, true, ok)
+	t.Log(len(proofOnly))
+	proofHash := make([]common.Hash, 0)
+	for i := 0; i < len(proofOnly); i++ {
+		proofHash = append(proofHash, proofOnly[i])
+	}
+	err = util.VerifyPrefixProof(bisectToCommit, commit, proofHash)
 	require.NoError(t, err)
 }
 

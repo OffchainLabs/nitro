@@ -10,7 +10,17 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+)
+
+var (
+	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
+	// ProofArgs for submission to the protocol.
+	ProofArgs = abi.Arguments{
+		{Type: b32Arr, Name: "prefixExpansion"},
+		{Type: b32Arr, Name: "prefixProof"},
+	}
 )
 
 // Manager defines a struct that can provide local state data and historical
@@ -26,7 +36,7 @@ type Manager interface {
 	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
 	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
 	HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error)
-	PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error)
+	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
 	BigStepLeafCommitment(
 		ctx context.Context,
 		fromAssertionHeight,
@@ -247,11 +257,14 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
 // from a low point to a high point specified as arguments.
-func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Hash, error) {
-	exp := util.ExpansionFromLeaves(s.stateRoots[:lo])
-	return util.GeneratePrefixProof(
+func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
+	prefixExpansion := util.ExpansionFromLeaves(s.stateRoots[:lo])
+	prefixProof := util.GeneratePrefixProof(
 		lo,
-		exp,
+		prefixExpansion,
 		s.stateRoots[lo:hi],
-	), nil
+	)
+	_, numRead := util.MerkleExpansionFromCompact(prefixProof, lo)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
