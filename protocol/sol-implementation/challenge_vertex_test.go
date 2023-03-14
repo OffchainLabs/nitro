@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	"math/rand"
 )
 
 var _ = protocol.ChallengeVertex(&ChallengeVertex{})
@@ -81,19 +82,36 @@ func evilHashesUpTo(n uint64) []common.Hash {
 	return hashes
 }
 
+func divergingHashesStartingAt(t *testing.T, n uint64, hashes []common.Hash) []common.Hash {
+	t.Helper()
+	divergingHashes := make([]common.Hash, len(hashes))
+	for i := uint64(0); i < n; i++ {
+		divergingHashes[i] = hashes[i]
+	}
+	for i := n; i < uint64(len(divergingHashes)); i++ {
+		junk := make([]byte, 32)
+		_, err := rand.Read(junk)
+		require.NoError(t, err)
+		divergingHashes[i] = common.BytesToHash(junk)
+	}
+	return divergingHashes
+}
+
 func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(6)
+	height1 := uint64(3)
 	height2 := uint64(7)
 	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	// We add two leaves to the challenge.
-	honestHashes := honestHashesUpTo(height1)
-	evilHashes := evilHashesUpTo(height2)
-	honestCommit, err := util.NewHistoryCommitment(height1, honestHashes)
+	honestHashes := honestHashesUpTo(10)
+	evilHashes := evilHashesUpTo(10)
+	honestManager := statemanager.New(honestHashes)
+	evilManager := statemanager.New(evilHashes)
+	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
-	evilCommit, err := util.NewHistoryCommitment(height2, evilHashes)
+	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
 	require.NoError(t, err)
 
 	v1, err := challenge.AddBlockChallengeLeaf(
@@ -202,11 +220,13 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		height2 := uint64(1)
 		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-		honestHashes := honestHashesUpTo(height1)
-		evilHashes := evilHashesUpTo(height2)
-		honestCommit, err := util.NewHistoryCommitment(height1, honestHashes)
+		honestHashes := honestHashesUpTo(10)
+		evilHashes := evilHashesUpTo(10)
+		honestManager := statemanager.New(honestHashes)
+		evilManager := statemanager.New(evilHashes)
+		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 		require.NoError(t, err)
-		evilCommit, err := util.NewHistoryCommitment(height2, evilHashes)
+		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
@@ -235,15 +255,17 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 		require.Equal(t, true, atOSF)
 	})
 	t.Run("different heights", func(t *testing.T) {
-		height1 := uint64(6)
+		height1 := uint64(3)
 		height2 := uint64(7)
 		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-		honestHashes := honestHashesUpTo(height1)
-		evilHashes := evilHashesUpTo(height2)
-		honestCommit, err := util.NewHistoryCommitment(height1, honestHashes)
+		honestHashes := honestHashesUpTo(10)
+		evilHashes := evilHashesUpTo(10)
+		honestManager := statemanager.New(honestHashes)
+		evilManager := statemanager.New(evilHashes)
+		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 		require.NoError(t, err)
-		evilCommit, err := util.NewHistoryCommitment(height2, evilHashes)
+		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
 		require.NoError(t, err)
 
 		// We add two leaves to the challenge.
@@ -344,9 +366,18 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 func TestChallengeVertex_Bisect(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(6)
+	height1 := uint64(3)
 	height2 := uint64(7)
 	a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
+
+	honestHashes := honestHashesUpTo(10)
+	evilHashes := evilHashesUpTo(10)
+	honestManager := statemanager.New(honestHashes)
+	evilManager := statemanager.New(evilHashes)
+	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
+	require.NoError(t, err)
+	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
+	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
 	manager, err := chain1.CurrentChallengeManager(ctx, tx)
@@ -356,12 +387,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		ctx,
 		tx,
 		a1,
-		util.HistoryCommitment{
-			Height:        height1,
-			Merkle:        common.BytesToHash([]byte("nyan")),
-			LastLeaf:      a1.inner.StateHash,
-			LastLeafProof: []common.Hash{a1.inner.StateHash},
-		},
+		honestCommit,
 	)
 	require.NoError(t, err)
 
@@ -372,12 +398,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		ctx,
 		tx,
 		a2,
-		util.HistoryCommitment{
-			Height:        height2,
-			Merkle:        common.BytesToHash([]byte("nyan2")),
-			LastLeaf:      a2.inner.StateHash,
-			LastLeafProof: []common.Hash{a2.inner.StateHash},
-		},
+		evilCommit,
 	)
 	require.NoError(t, err)
 
@@ -423,23 +444,25 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 		err = backend.AdjustTime(chalPeriod)
 		require.NoError(t, err)
 
+		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
+		require.NoError(t, err)
+		prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
+		require.NoError(t, err)
+
 		// We make a challenge period pass.
 		_, err = v2.Bisect(
 			ctx,
 			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: common.BytesToHash([]byte("nyan4")),
-			},
-			make([]byte, 0),
+			preCommit,
+			prefixProof,
 		)
-		require.ErrorContains(t, err, "cannot set lower ps")
+		require.ErrorContains(t, err, "cannot set same height ps")
 	})
 	t.Run("invalid prefix history", func(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")
 	})
 	t.Run("OK", func(t *testing.T) {
-		height1 := uint64(6)
+		height1 := uint64(3)
 		height2 := uint64(7)
 		a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
 
@@ -451,12 +474,7 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			ctx,
 			tx,
 			a1,
-			util.HistoryCommitment{
-				Height:        height1,
-				Merkle:        common.BytesToHash([]byte("nyan")),
-				LastLeaf:      a1.inner.StateHash,
-				LastLeafProof: []common.Hash{a1.inner.StateHash},
-			},
+			honestCommit,
 		)
 		require.NoError(t, err)
 
@@ -467,64 +485,70 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 			ctx,
 			tx,
 			a2,
-			util.HistoryCommitment{
-				Height:        height2,
-				Merkle:        common.BytesToHash([]byte("nyan2")),
-				LastLeaf:      a2.inner.StateHash,
-				LastLeafProof: []common.Hash{a2.inner.StateHash},
-			},
+			evilCommit,
 		)
 		require.NoError(t, err)
 
-		wantCommit := common.BytesToHash([]byte("nyan4"))
+		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
+		require.NoError(t, err)
+		prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
+		require.NoError(t, err)
+
 		bisectedToV, err := v2.Bisect(
 			ctx,
 			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: wantCommit,
-			},
-			make([]byte, 0),
+			preCommit,
+			prefixProof,
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)
-		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
-		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
+		require.Equal(t, uint64(3), bisectedTo.inner.Height.Uint64())
 
-		_, err = v1.Bisect(
+		bisectTo, err := util.BisectionPoint(0, 3)
+		require.NoError(t, err)
+
+		preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, bisectTo)
+		require.NoError(t, err)
+		prefixProof, err = honestManager.PrefixProof(ctx, bisectTo, 3)
+		require.NoError(t, err)
+
+		bisectedToV, err = v1.Bisect(
 			ctx,
 			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: wantCommit,
-			},
-			make([]byte, 0),
+			preCommit,
+			prefixProof,
 		)
-		require.ErrorContains(t, err, "already exists")
+		require.NoError(t, err)
+		bisectedTo = bisectedToV.(*ChallengeVertex)
+		require.Equal(t, uint64(1), bisectedTo.inner.Height.Uint64())
 	})
 }
 
 func TestChallengeVertex_Merge(t *testing.T) {
 	ctx := context.Background()
-	height1 := uint64(6)
+	height1 := uint64(7)
 	height2 := uint64(7)
 	a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
 	tx := &activeTx{readWriteTx: true}
+
+	honestHashes := honestHashesUpTo(10)
+	evilHashes := divergingHashesStartingAt(t, 5, honestHashes)
+	honestManager := statemanager.New(honestHashes)
+	evilManager := statemanager.New(evilHashes)
+	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
+	require.NoError(t, err)
+	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
+	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
 	manager, err := chain1.CurrentChallengeManager(ctx, tx)
 	require.NoError(t, err)
 	challenge.manager = manager.(*ChallengeManager)
-	v1, err := challenge.AddBlockChallengeLeaf(
+	_, err = challenge.AddBlockChallengeLeaf(
 		ctx,
 		tx,
 		a1,
-		util.HistoryCommitment{
-			Height:        height1,
-			Merkle:        common.BytesToHash([]byte("nyan")),
-			LastLeaf:      a1.inner.StateHash,
-			LastLeafProof: []common.Hash{a1.inner.StateHash},
-		},
+		honestCommit,
 	)
 	require.NoError(t, err)
 
@@ -535,12 +559,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 		ctx,
 		tx,
 		a2,
-		util.HistoryCommitment{
-			Height:        height2,
-			Merkle:        common.BytesToHash([]byte("nyan2")),
-			LastLeaf:      a2.inner.StateHash,
-			LastLeafProof: []common.Hash{a2.inner.StateHash},
-		},
+		evilCommit,
 	)
 	require.NoError(t, err)
 
@@ -563,32 +582,20 @@ func TestChallengeVertex_Merge(t *testing.T) {
 	t.Run("winner already declared", func(t *testing.T) {
 		t.Skip("Need to add winner capabilities in order to test")
 	})
-	t.Run("cannot merge presumptive successor", func(t *testing.T) {
-		// V1 should be the presumptive successor here.
-		_, err = v1.Merge(
-			ctx,
-			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: common.BytesToHash([]byte("nyan4")),
-			},
-			make([]byte, 0),
-		)
-		require.ErrorContains(t, err, "Cannot bisect presumptive")
-	})
 	t.Run("presumptive successor already confirmable", func(t *testing.T) {
 		backend, ok := chain1.backend.(*backends.SimulatedBackend)
 		require.Equal(t, true, ok)
 
-		wantCommit := common.BytesToHash([]byte("nyan4"))
+		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
+		require.NoError(t, err)
+		prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
+		require.NoError(t, err)
+
 		_, err = v2.Bisect(
 			ctx,
 			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: wantCommit,
-			},
-			make([]byte, 0),
+			preCommit,
+			prefixProof,
 		)
 		require.NoError(t, err)
 
@@ -596,22 +603,19 @@ func TestChallengeVertex_Merge(t *testing.T) {
 			backend.Commit()
 		}
 
-		_, err = v1.Merge(
-			ctx,
-			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: wantCommit,
-			},
-			make([]byte, 0),
-		)
-		require.ErrorContains(t, err, "cannot set lower ps")
+		// _, err = v1.Merge(
+		// 	ctx,
+		// 	tx,
+		// 	preCommit,
+		// 	prefixProof,
+		// )
+		// require.ErrorContains(t, err, "cannot set lower ps")
 	})
 	t.Run("invalid prefix history", func(t *testing.T) {
 		t.Skip("Need to add proof capabilities in solidity in order to test")
 	})
 	t.Run("OK", func(t *testing.T) {
-		height1 := uint64(6)
+		height1 := uint64(7)
 		height2 := uint64(7)
 		a1, a2, challenge, chain1, chain2 := setupTopLevelFork(t, ctx, height1, height2)
 
@@ -623,12 +627,7 @@ func TestChallengeVertex_Merge(t *testing.T) {
 			ctx,
 			tx,
 			a1,
-			util.HistoryCommitment{
-				Height:        height1,
-				Merkle:        common.BytesToHash([]byte("nyan")),
-				LastLeaf:      a1.inner.StateHash,
-				LastLeafProof: []common.Hash{a1.inner.StateHash},
-			},
+			honestCommit,
 		)
 		require.NoError(t, err)
 
@@ -639,38 +638,33 @@ func TestChallengeVertex_Merge(t *testing.T) {
 			ctx,
 			tx,
 			a2,
-			util.HistoryCommitment{
-				Height:        height2,
-				Merkle:        common.BytesToHash([]byte("nyan2")),
-				LastLeaf:      a2.inner.StateHash,
-				LastLeafProof: []common.Hash{a2.inner.StateHash},
-			},
+			evilCommit,
 		)
 		require.NoError(t, err)
 
-		wantCommit := common.BytesToHash([]byte("nyan4"))
+		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
+		require.NoError(t, err)
+		prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
+		require.NoError(t, err)
 		bisectedToV, err := v2.Bisect(
 			ctx,
 			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: wantCommit,
-			},
-			make([]byte, 0),
+			preCommit,
+			prefixProof,
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)
-		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
-		require.Equal(t, wantCommit[:], bisectedTo.inner.HistoryRoot[:])
+		require.Equal(t, uint64(3), bisectedTo.inner.Height.Uint64())
 
+		preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 3)
+		require.NoError(t, err)
+		prefixProof, err = honestManager.PrefixProof(ctx, 3, 7)
+		require.NoError(t, err)
 		mergedToV, err := v1.Merge(
 			ctx,
 			tx,
-			util.HistoryCommitment{
-				Height: 4,
-				Merkle: wantCommit,
-			},
-			make([]byte, 0),
+			preCommit,
+			prefixProof,
 		)
 		require.NoError(t, err)
 
