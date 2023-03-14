@@ -59,12 +59,12 @@ func (v *vertexTracker) bisect(
 		if err != nil {
 			return errors.Wrapf(
 				err,
-				"%s could not bisect height=%d,commit=%s to height%d,commit=%s",
+				"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
 				v.cfg.validatorName,
 				bisectTo,
-				util.Trunc(validatorChallengeVertex.HistoryCommitment().Merkle.Bytes()),
-				historyCommit.Height,
 				util.Trunc(historyCommit.Merkle.Bytes()),
+				validatorChallengeVertex.HistoryCommitment().Height,
+				util.Trunc(validatorChallengeVertex.HistoryCommitment().Merkle.Bytes()),
 			)
 		}
 		bisectedVertex = bisected
