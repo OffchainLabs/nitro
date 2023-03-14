@@ -127,9 +127,12 @@ func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.Stat
 
 // HistoryCommitmentUpTo gets the history commitment for the merkle expansion up to a height.
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+	// The size is the number of elements being committed to. For example, if the height is 7, there will
+	// be 8 elements being committed to from [0, 7] inclusive.
+	size := height + 1
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height],
+		s.stateRoots[:size],
 	)
 }
 
@@ -258,14 +261,15 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
 // from a low point to a high point specified as arguments.
 func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
-	prefixExpansion := util.ExpansionFromLeaves(s.stateRoots[:lo])
+	loSize := lo + 1
+	hiSize := hi + 1
+	prefixExpansion := util.ExpansionFromLeaves(s.stateRoots[:loSize])
 	prefixProof := util.GeneratePrefixProof(
-		lo,
+		loSize,
 		prefixExpansion,
-		s.stateRoots[lo:hi],
+		s.stateRoots[loSize:hiSize],
 	)
-	_, numRead := util.MerkleExpansionFromCompact(prefixProof, lo)
+	_, numRead := util.MerkleExpansionFromCompact(prefixProof, loSize)
 	onlyProof := prefixProof[numRead:]
-	fmt.Println(len(prefixExpansion), len(onlyProof))
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }

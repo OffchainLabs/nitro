@@ -32,7 +32,7 @@ library LeafAdderLib {
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
             MerkleTreeLib.hasState(
-                leafData.historyRoot, leafData.lastState, leafData.height-1, leafData.lastStatehistoryProof
+                leafData.historyRoot, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
             ),
             "Last state not in history"
         );

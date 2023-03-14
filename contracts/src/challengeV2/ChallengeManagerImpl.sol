@@ -140,7 +140,7 @@ library ChallengeManagerLib {
         (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
 
         MerkleTreeLib.verifyPrefixProof(
-            prefixHistoryRoot, bHeight, vertices[vId].historyRoot, vertices[vId].height, preExpansion, proof
+            prefixHistoryRoot, bHeight+1, vertices[vId].historyRoot, vertices[vId].height+1, preExpansion, proof
         );
 
         return (ChallengeVertexLib.id(challengeId, prefixHistoryRoot, bHeight), bHeight);
@@ -457,20 +457,6 @@ contract ChallengeManagerImpl is IChallengeManager {
             afterHistoryInclusionProof
         );
         challenges[challengeId].winningClaim = winnerVId;
-    }
-
-
-    function prefixProofVerification(
-        bytes32 prefixHistoryRoot,
-        uint256 preHeight,
-        bytes32 historyRoot,
-        uint256 postHeight,
-        bytes calldata proof
-    ) public pure {
-        (bytes32[] memory preExpansion, bytes32[] memory prefixProof) = abi.decode(proof, (bytes32[], bytes32[]));
-        MerkleTreeLib.verifyPrefixProof(
-            prefixHistoryRoot, preHeight, historyRoot, postHeight, preExpansion, prefixProof
-        );
     }
 
     function bisect(bytes32 vId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32) {

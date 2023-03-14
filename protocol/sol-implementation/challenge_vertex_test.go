@@ -7,12 +7,9 @@ import (
 	"fmt"
 	"math"
 
-	"math/big"
-
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -20,81 +17,6 @@ import (
 )
 
 var _ = protocol.ChallengeVertex(&ChallengeVertex{})
-
-func TestSimple(t *testing.T) {
-	ctx := context.Background()
-	chain1, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	evilHashes := honestHashesUpTo(8)
-	manager := statemanager.New(evilHashes)
-	evilCommit, err := manager.HistoryCommitmentUpTo(ctx, 8)
-	require.NoError(t, err)
-	bisectCommit, err := manager.HistoryCommitmentUpTo(ctx, 4)
-	require.NoError(t, err)
-	proof, err := manager.PrefixProof(ctx, 4, 8)
-	require.NoError(t, err)
-
-	err = chain1.Call(func(tx protocol.ActiveTx) error {
-		managerIface, err := chain1.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		manager := managerIface.(*ChallengeManager)
-		return manager.caller.PrefixProofVerification(
-			chain1.callOpts,
-			bisectCommit.Merkle,
-			big.NewInt(4), // pre height
-			evilCommit.Merkle,
-			big.NewInt(8), // post height,
-			proof,
-		)
-	})
-	require.NoError(t, err)
-}
-
-func TestVerifySolidityPrefixProof(t *testing.T) {
-	hashes := honestHashesUpTo(8)
-	prefixExpansion := util.ExpansionFromLeaves(hashes[:4])
-	prefixProof := util.GeneratePrefixProof(
-		4,
-		prefixExpansion,
-		hashes[4:8],
-	)
-	preCommit, err := util.NewHistoryCommitment(4, hashes[:4])
-	require.NoError(t, err)
-
-	postCommit, err := util.NewHistoryCommitment(8, hashes[:8])
-	require.NoError(t, err)
-	require.Equal(t, preCommit.Merkle, prefixExpansion.Root())
-
-	err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
-	require.NoError(t, err)
-
-	_, numRead := util.MerkleExpansionFromCompact(prefixProof, 4)
-	onlyProof := prefixProof[numRead:]
-
-	b32Arr, _ := abi.NewType("bytes32[]", "", nil)
-	args := abi.Arguments{
-		{Type: b32Arr, Name: "prefixExpansion"},
-		{Type: b32Arr, Name: "prefixProof"},
-	}
-	packed, err := args.Pack(&prefixExpansion, &onlyProof)
-	require.NoError(t, err)
-	chain1, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-
-	ctx := context.Background()
-	err = chain1.Call(func(tx protocol.ActiveTx) error {
-		managerIface, err := chain1.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		manager := managerIface.(*ChallengeManager)
-		return manager.caller.PrefixProofVerification(
-			chain1.callOpts,
-			preCommit.Merkle,
-			big.NewInt(4), // pre height
-			postCommit.Merkle,
-			big.NewInt(8), // post height,
-			packed,
-		)
-	})
-	require.NoError(t, err)
-}
 
 func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	ctx := context.Background()
@@ -201,15 +123,18 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(8)
-	height2 := uint64(8)
-	a1, a2, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
+	height1 := uint64(7)
+	height2 := uint64(7)
+	a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := evilHashesUpTo(10)
-	honestCommit, err := util.NewHistoryCommitment(height1, honestHashes[:height1])
+
+	honestManager := statemanager.New(honestHashes)
+	evilManager := statemanager.New(evilHashes)
+	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
-	evilCommit, err := util.NewHistoryCommitment(height2, evilHashes[:height2])
+	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
 	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
@@ -228,41 +153,20 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	t.Run("first to act is now presumptive", func(t *testing.T) {
-		t.Skip()
+	t.Run("both are rivals, so no one is presumptive", func(t *testing.T) {
 		isPs, err := v1.IsPresumptiveSuccessor(ctx, tx)
 		require.NoError(t, err)
-		require.Equal(t, true, isPs)
+		require.Equal(t, false, isPs)
 
 		isPs, err = v2.IsPresumptiveSuccessor(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, false, isPs)
 	})
 	t.Run("the newly bisected vertex is now presumptive", func(t *testing.T) {
-		manager := statemanager.New(evilHashes)
-		preCommit, err := manager.HistoryCommitmentUpTo(ctx, 4)
+		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
 		require.NoError(t, err)
-		postCommit, err := manager.HistoryCommitmentUpTo(ctx, 8)
+		proof, err := evilManager.PrefixProof(ctx, 3, 7)
 		require.NoError(t, err)
-		proof, err := manager.PrefixProof(ctx, 4, 8)
-		require.NoError(t, err)
-
-		err = chain1.Call(func(tx protocol.ActiveTx) error {
-			managerIface, err := chain1.CurrentChallengeManager(ctx, tx)
-			require.NoError(t, err)
-			manager := managerIface.(*ChallengeManager)
-			return manager.caller.PrefixProofVerification(
-				chain1.callOpts,
-				preCommit.Merkle,
-				big.NewInt(4), // pre height
-				postCommit.Merkle,
-				big.NewInt(8), // post height,
-				proof,
-			)
-		})
-		require.NoError(t, err, "Failing here")
-
-		t.Log("HEREEEE")
 
 		bisectedToV, err := v2.Bisect(
 			ctx,

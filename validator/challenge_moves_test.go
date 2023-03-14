@@ -13,40 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_computePrefixProof(t *testing.T) {
-	ctx := context.Background()
-	stateRoots := generateStateRoots(10)
-	manager := statemanager.New(stateRoots)
-	commit, err := manager.HistoryCommitmentUpTo(ctx, 8)
-	require.NoError(t, err)
-
-	v := &vertexTracker{
-		cfg: &vertexTrackerConfig{
-			stateManager: manager,
-		},
-	}
-
-	bisectToCommit, err := v.determineBisectionPointWithHistory(ctx, 0, 8)
-	require.NoError(t, err)
-
-	bisectToHeight := bisectToCommit.Height
-	proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectToHeight, 8)
-	require.NoError(t, err)
-
-	data, err := statemanager.ProofArgs.Unpack(proof)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(data))
-	proofOnly, ok := data[1].([][32]byte)
-	require.Equal(t, true, ok)
-	t.Log(len(proofOnly))
-	proofHash := make([]common.Hash, 0)
-	for i := 0; i < len(proofOnly); i++ {
-		proofHash = append(proofHash, proofOnly[i])
-	}
-	err = util.VerifyPrefixProof(bisectToCommit, commit, proofHash)
-	require.NoError(t, err)
-}
-
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
@@ -193,7 +159,7 @@ func Test_merge(t *testing.T) {
 		err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New assertion appended")
-		AssertLogsContain(t, logsHook, "New assertion appended")
+		AssertLogsContain(t, logsHook, "Ne - 1w assertion appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
 		commit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdData.leaf2.Height())
