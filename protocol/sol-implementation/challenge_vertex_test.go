@@ -14,9 +14,54 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	"math/big"
 )
 
 var _ = protocol.ChallengeVertex(&ChallengeVertex{})
+
+func TestVerifySolidityPrefixProof(t *testing.T) {
+	hashes := honestHashesUpTo(8)
+	prefixExpansion := util.ExpansionFromLeaves(hashes[:4])
+	prefixProof := util.GeneratePrefixProof(
+		4,
+		prefixExpansion,
+		hashes[4:8],
+	)
+	preCommit, err := util.NewHistoryCommitment(4, hashes[:4])
+	require.NoError(t, err)
+
+	postCommit, err := util.NewHistoryCommitment(8, hashes[:8])
+	require.NoError(t, err)
+	require.Equal(t, preCommit.Merkle, prefixExpansion.Root())
+
+	err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
+	require.NoError(t, err)
+
+	b32Arr, _ := abi.NewType("bytes32[]", "", nil)
+	args := abi.Arguments{
+		{Type: b32Arr, Name: "prefixExpansion"},
+		{Type: b32Arr, Name: "prefixProof"},
+	}
+	packed, err := args.Pack(&prefixExpansion, &prefixProof)
+	require.NoError(t, err)
+	chain1, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
+
+	ctx := context.Background()
+	err = chain1.Call(func(tx protocol.ActiveTx) error {
+		managerIface, err := chain1.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+		manager := managerIface.(*ChallengeManager)
+		return manager.caller.PrefixProofVerification(
+			chain1.callOpts,
+			preCommit.Merkle,
+			big.NewInt(4), // pre height
+			postCommit.Merkle,
+			big.NewInt(8), // post height,
+			packed,
+		)
+	})
+	require.NoError(t, err)
+}
 
 func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	ctx := context.Background()
@@ -190,8 +235,6 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
 		require.NoError(t, err)
 
-		t.Log("totals", len(prefixExpansion), len(prefixProof))
-
 		b32Arr, _ := abi.NewType("bytes32[]", "", nil)
 		args := abi.Arguments{
 			{Type: b32Arr, Name: "prefixExpansion"},
@@ -199,7 +242,6 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		}
 		packed, err := args.Pack(&prefixExpansion, &prefixProof)
 		require.NoError(t, err)
-		t.Logf("GOTEEMMMMM %#x", packed)
 
 		bisectedToV, err := v2.Bisect(
 			ctx,

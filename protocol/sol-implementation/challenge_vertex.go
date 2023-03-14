@@ -153,12 +153,6 @@ func (v *ChallengeVertex) Bisect(
 	history util.HistoryCommitment,
 	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	l1, l2, err := v.manager.caller.DecodeLens(v.manager.assertionChain.callOpts, proof)
-	if err != nil {
-		return nil, errors.Wrap(err, "issue here")
-	}
-	fmt.Printf("Len a %d, and len b %d\n", l1, l2)
-
 	receipt, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Bisect(
 			v.manager.assertionChain.txOpts,
