@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -250,4 +251,30 @@ func assertEqualTx(t *testing.T, a, b *types.Transaction) {
 			testhelpers.FailImpl(t, "Unexpected unmarshalled tx, access list missmatch")
 		}
 	}
+}
+
+func testSubtypedTxOldArbosVersion(t *testing.T, version uint64) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.InitialArbOSVersion = version
+	l2info, l2node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, chainConfig, nil)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+
+	baseFee := GetBaseFee(t, l2client, ctx)
+	tipCap := arbmath.BigMulByUint(baseFee, 2)
+	gasPrice := arbmath.BigAdd(baseFee, tipCap)
+	l2info.GenerateAccount("User1")
+	tx := l2info.PrepareTippingTx("Owner", "User1", gasPrice.Uint64(), tipCap, big.NewInt(1e12), nil)
+	err := l2client.SendTransaction(ctx, tx)
+	if !strings.Contains(err.Error(), types.ErrTxTypeNotSupported.Error()) {
+		testhelpers.FailImpl(t, "tx didn't fail as it should for arbos version:", version, "err:", err)
+	}
+}
+
+func TestSubtypedTxOldArbosVersion(t *testing.T) {
+	testSubtypedTxOldArbosVersion(t, 8)
+	testSubtypedTxOldArbosVersion(t, 9)
+	testSubtypedTxOldArbosVersion(t, 10)
 }

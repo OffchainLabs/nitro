@@ -379,7 +379,10 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbosState *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+	if tx.Type() == types.ArbitrumSubtypedTxType && arbosState.ArbOSVersion() < 11 {
+		return types.ErrTxTypeNotSupported
+	}
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
