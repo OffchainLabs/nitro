@@ -106,6 +106,8 @@ library ChallengeVertexLib {
         address staker,
         uint256 initialPsTimeSec
     ) internal pure returns (ChallengeVertex memory) {
+        // root is at height 0
+        require(height != 0, "Zero height"); 
         require(challengeId != 0, "Zero challenge id");
         require(historyRoot != 0, "Zero history root");
         require(claimId != 0, "Zero claim id");
