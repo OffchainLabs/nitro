@@ -138,9 +138,10 @@ library ChallengeManagerLib {
 
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
         (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
+        require(preExpansion.length == 0, "not equal to 0");
 
         MerkleTreeLib.verifyPrefixProof(
-            prefixHistoryRoot, bHeight, vertices[vId].historyRoot, vertices[vId].height, preExpansion, proof
+            prefixHistoryRoot, bHeight+1, vertices[vId].historyRoot, vertices[vId].height+1, preExpansion, proof
         );
 
         return (ChallengeVertexLib.id(challengeId, prefixHistoryRoot, bHeight), bHeight);

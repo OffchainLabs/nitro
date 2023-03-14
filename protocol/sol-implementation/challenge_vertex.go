@@ -156,19 +156,20 @@ func (v *ChallengeVertex) Bisect(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	history util.HistoryCommitment,
-	proof []common.Hash,
+	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	// Flatten the last leaf proof for submission to the chain.
-	flatProof := make([]byte, 0)
-	for _, h := range proof {
-		flatProof = append(flatProof, h[:]...)
+	l1, l2, err := v.manager.caller.DecodeLens(v.manager.assertionChain.callOpts, proof)
+	if err != nil {
+		return nil, errors.Wrap(err, "issue here")
 	}
+	fmt.Printf("Len a %d, and len b %d\n", l1, l2)
+
 	receipt, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Bisect(
 			v.manager.assertionChain.txOpts,
 			v.id,
 			history.Merkle,
-			flatProof,
+			proof,
 		)
 	})
 	if err != nil {
@@ -203,7 +204,6 @@ func getVertexFromComponents(
 	challengeId [32]byte,
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
-	fmt.Printf("Computing %#x and %#x and %d\n", challengeId, history.Merkle, history.Height)
 	vertexId, err := manager.caller.CalculateChallengeVertexId(
 		opts,
 		challengeId,
