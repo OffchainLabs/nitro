@@ -80,6 +80,9 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
+	if tx.Type() == types.ArbitrumSubtypedTxType && arbos.ArbOSVersion() < 11 {
+		return types.ErrTxTypeNotSupported
+	}
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
