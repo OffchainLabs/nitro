@@ -169,16 +169,29 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		evilCommit, err = util.NewHistoryCommitment(4, evilHashes[:4])
 		require.NoError(t, err)
 
+		prefixExpansion := util.ExpansionFromLeaves(evilHashes[:4])
+		prefixProof := util.GeneratePrefixProof(
+			4,
+			prefixExpansion,
+			evilHashes[4:height2],
+		)
+		totalProof := make([]common.Hash, 0)
+		for _, r := range prefixExpansion {
+			totalProof = append(totalProof, r)
+		}
+		for _, r := range prefixProof {
+			totalProof = append(totalProof, r)
+		}
 		bisectedToV, err := v2.Bisect(
 			ctx,
 			tx,
 			evilCommit,
-			make([]common.Hash, 0),
+			totalProof,
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)
 
-		require.Equal(t, uint64(4), bisectedTo.inner.Height.Uint64())
+		require.Equal(t, uint64(3), bisectedTo.inner.Height.Uint64())
 
 		// V1 should no longer be presumptive.
 		isPs, err := v1.IsPresumptiveSuccessor(ctx, tx)

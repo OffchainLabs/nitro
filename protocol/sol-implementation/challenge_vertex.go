@@ -163,7 +163,7 @@ func (v *ChallengeVertex) Bisect(
 	for _, h := range proof {
 		flatProof = append(flatProof, h[:]...)
 	}
-	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
+	receipt, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Bisect(
 			v.manager.assertionChain.txOpts,
 			v.id,
@@ -180,12 +180,21 @@ func (v *ChallengeVertex) Bisect(
 			return nil, err
 		}
 	}
-	return getVertexFromComponents(
-		v.manager,
-		v.manager.assertionChain.callOpts,
-		v.inner.ChallengeId,
-		history,
-	)
+	if len(receipt.Logs) == 0 {
+		return nil, errors.New("no logs observed from assertion confirmation")
+	}
+	bisection, err := v.manager.filterer.ParseBisected(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse bisection log")
+	}
+	bisectedTo, err := v.manager.GetVertex(ctx, tx, bisection.ToId)
+	if err != nil {
+		return nil, err
+	}
+	if bisectedTo.IsNone() {
+		return nil, ErrNotFound
+	}
+	return bisectedTo.Unwrap(), nil
 }
 
 func getVertexFromComponents(
@@ -194,6 +203,7 @@ func getVertexFromComponents(
 	challengeId [32]byte,
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
+	fmt.Printf("Computing %#x and %#x and %d\n", challengeId, history.Merkle, history.Height)
 	vertexId, err := manager.caller.CalculateChallengeVertexId(
 		opts,
 		challengeId,
