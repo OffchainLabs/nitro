@@ -7,7 +7,7 @@ import (
 
 	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	//"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -21,61 +21,59 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
 	genesisHeight := uint64(0)
-	height1 := uint64(5)
-	height2 := uint64(5)
-	heightDiff := height1 - genesisHeight - 1
-	a1, _, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
-	// t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
-	// 	t.Skip()
-	// 	_, err := challenge.AddBlockChallengeLeaf(
-	// 		ctx,
-	// 		tx,
-	// 		&Assertion{
-	// 			chain: chain1,
-	// 			id:    20,
-	// 			inner: rollupgen.AssertionNode{
-	// 				Height: big.NewInt(1),
-	// 			},
-	// 		},
-	// 		util.HistoryCommitment{
-	// 			Height: height1,
-	// 			Merkle: common.BytesToHash([]byte("bar")),
-	// 		},
-	// 	)
-	// 	require.ErrorContains(t, err, "INVALID_ASSERTION_NUM")
-	// })
-	// t.Run("invalid height", func(t *testing.T) {
-	// 	t.Skip()
-	// 	// Pass in a junk assertion that has no predecessor.
-	// 	_, err := challenge.AddBlockChallengeLeaf(
-	// 		ctx,
-	// 		tx,
-	// 		&Assertion{
-	// 			chain: chain1,
-	// 			id:    1,
-	// 			inner: rollupgen.AssertionNode{
-	// 				Height: big.NewInt(0),
-	// 			},
-	// 		},
-	// 		util.HistoryCommitment{
-	// 			Height: 0,
-	// 			Merkle: common.BytesToHash([]byte("bar")),
-	// 		},
-	// 	)
-	// 	require.ErrorContains(t, err, "Invalid height")
-	// })
-	// t.Run("last state is not assertion claim block hash", func(t *testing.T) {
-	// 	t.Skip("Needs proofs implemented in solidity")
-	// })
-	// t.Run("winner already declared", func(t *testing.T) {
-	// 	t.Skip("Needs winner declaration logic implemented in solidity")
-	// })
-	// t.Run("last state not in history", func(t *testing.T) {
-	// 	t.Skip()
-	// })
-	// t.Run("first state not in history", func(t *testing.T) {
-	// 	t.Skip()
-	// })
+	height1 := uint64(4)
+	height2 := uint64(4)
+	heightDiff := height1 - genesisHeight
+	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
+	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
+		_, err := challenge.AddBlockChallengeLeaf(
+			ctx,
+			tx,
+			&Assertion{
+				chain: chain1,
+				id:    20,
+				inner: rollupgen.AssertionNode{
+					Height: big.NewInt(1),
+				},
+			},
+			util.HistoryCommitment{
+				Height: heightDiff,
+				Merkle: common.BytesToHash([]byte("bar")),
+			},
+		)
+		require.ErrorContains(t, err, "INVALID_ASSERTION_NUM")
+	})
+	t.Run("invalid height", func(t *testing.T) {
+		// Pass in a junk assertion that has no predecessor.
+		_, err := challenge.AddBlockChallengeLeaf(
+			ctx,
+			tx,
+			&Assertion{
+				chain: chain1,
+				id:    1,
+				inner: rollupgen.AssertionNode{
+					Height: big.NewInt(0),
+				},
+			},
+			util.HistoryCommitment{
+				Height: 0,
+				Merkle: common.BytesToHash([]byte("bar")),
+			},
+		)
+		require.ErrorContains(t, err, "Invalid leaf height")
+	})
+	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
+		t.Skip("Needs proofs implemented in solidity")
+	})
+	t.Run("winner already declared", func(t *testing.T) {
+		t.Skip("Needs winner declaration logic implemented in solidity")
+	})
+	t.Run("last state not in history", func(t *testing.T) {
+		t.Skip()
+	})
+	t.Run("first state not in history", func(t *testing.T) {
+		t.Skip()
+	})
 	leaves := make([]common.Hash, 4)
 	for i := range leaves {
 		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
