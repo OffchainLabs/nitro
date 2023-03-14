@@ -253,7 +253,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         sign_extension: true,
         reference_types: false,
         multi_value: true,
-        bulk_memory: true,
+        bulk_memory: true, //we only support the MemoryCopy and MemoryFill opcodes
         simd: false,
         relaxed_simd: false,
         threads: false,

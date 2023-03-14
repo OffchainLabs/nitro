@@ -339,8 +339,7 @@ impl Module {
             .map(|i| types[*i as usize].clone())
             .collect();
 
-        //TODO seraphina: make this a checked conversion the same as below
-        let future_internals_offset: u32 = (code.len() + bin.codes.len()) as u32;
+        let internals_offset: u32 = (code.len() + bin.codes.len()) as u32;
         for c in &bin.codes {
             let idx = code.len();
             let func_ty = func_types[idx].clone();
@@ -354,7 +353,7 @@ impl Module {
                         &func_types,
                         types,
                         func_type_idxs[idx],
-                        future_internals_offset,
+                        internals_offset,
                     )
                 },
                 func_ty,
@@ -499,8 +498,6 @@ impl Module {
         ensure!(!code.is_empty(), "Module has no code");
 
         // Make internal functions
-        let internals_offset = code.len() as u32;
-        assert!(future_internals_offset == internals_offset);
         let mut memory_load_internal_type = FunctionType::default();
         memory_load_internal_type.inputs.push(ArbValueType::I32);
         memory_load_internal_type.outputs.push(ArbValueType::I32);
@@ -542,8 +539,8 @@ impl Module {
             memory_store_internal_type,
         ));
 
-        //we're adding two internal functions here which implement in WAVM the
-        //memory.fill and memory.copy instructions in WASM
+        // we're adding two internal functions here which implement in WAVM the
+        // memory.fill and memory.copy instructions in WASM
         let types = &BULK_MEM_WASM.types;
         assert_eq!(types.len(), 1);
         let func_type = types.get(0).unwrap();
@@ -556,7 +553,7 @@ impl Module {
                         &code.expr,
                         code_vec,
                         floating_point_impls,
-                        &Vec::new(), //only used for Call instrs, which there are none
+                        &Vec::new(), // only used for Call instrs, which there are none
                         types,
                         0,
                         internals_offset,
@@ -567,10 +564,17 @@ impl Module {
             )
             .unwrap()
         });
-        //internals offset + 4
+        // internals offset + 4
         code.push(memset);
-        //internals offset + 5
+        // internals offset + 5
         code.push(memcpy);
+
+        let mut bulk_memory_internal_type = FunctionType::default();
+        bulk_memory_internal_type.inputs.push(ArbValueType::I32);
+        bulk_memory_internal_type.inputs.push(ArbValueType::I32);
+        bulk_memory_internal_type.inputs.push(ArbValueType::I32);
+        func_types.push(bulk_memory_internal_type.clone());
+        func_types.push(bulk_memory_internal_type);
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 

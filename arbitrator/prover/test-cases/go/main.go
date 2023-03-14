@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"runtime"
@@ -52,7 +51,7 @@ func testCompression(data []byte) {
 		panic(err)
 	}
 	if !bytes.Equal(decompressed, data) {
-		panic(("data differs after compression / decompression\nbefore: _" + hex.EncodeToString(data) + "_\nafter: _" + hex.EncodeToString((decompressed)) + "_"))
+		panic(fmt.Sprintf("data differs after compression / decompression\nbefore: _%v__\nafter: _%v_", data, decompressed))
 	}
 }
 
@@ -93,8 +92,7 @@ func main() {
 	println("verified both proofs!\n")
 
 	testCompression([]byte{})
-	testCompression([]byte("RANDOM stuff"))
-	// testCompression([]byte("This is a test string la la la la la la la la la la"))
+	testCompression([]byte("This is a test string la la la la la la la la la la"))
 
 	println("test compression passed!\n")
 }

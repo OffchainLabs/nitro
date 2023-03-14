@@ -25,3 +25,6 @@ prover/test-cases/go/main
 
 # external tools and IDEs
 .vscode
+
+# Prover source wasm 
+prover/*.wasm 

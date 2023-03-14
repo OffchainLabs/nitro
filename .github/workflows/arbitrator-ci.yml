@@ -50,7 +50,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "1.67.1"
+          toolchain: "stable"
           override: true
           components: 'llvm-tools-preview, rustfmt, clippy'
 

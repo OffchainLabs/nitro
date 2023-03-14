@@ -75,7 +75,7 @@ jobs:
       id: install-rust
       with:
         profile: minimal
-        toolchain: "1.67.1"
+        toolchain: "stable"
         override: true
 
     - name: Cache Rust Build Products

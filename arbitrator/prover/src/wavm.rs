@@ -991,7 +991,7 @@ pub fn wasm_to_wavm(
                     MemoryInit, DataDrop, TableInit, ElemDrop,
                     TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                 )
-            ) => bail!("bulk-memory-operations extension not supported {:?}", unsupported),
+            ) => bail!("table-elements extension not supported; bulk-memory-operations extension partially supported {:?}", unsupported),
 
             unsupported @ (
                 dot!(
