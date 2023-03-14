@@ -153,14 +153,18 @@ func (v *ChallengeVertex) Bisect(
 	history util.HistoryCommitment,
 	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	receipt, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
-		return v.manager.writer.Bisect(
-			v.manager.assertionChain.txOpts,
-			v.id,
-			history.Merkle,
-			proof,
-		)
-	})
+	receipt, err := transact(
+		ctx,
+		v.manager.assertionChain.backend,
+		v.manager.assertionChain.headerReader,
+		func() (*types.Transaction, error) {
+			return v.manager.writer.Bisect(
+				v.manager.assertionChain.txOpts,
+				v.id,
+				history.Merkle,
+				proof,
+			)
+		})
 	if err != nil {
 		errS := err.Error()
 		switch {

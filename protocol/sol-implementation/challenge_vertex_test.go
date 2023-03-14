@@ -10,6 +10,7 @@ import (
 	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -19,6 +20,34 @@ import (
 )
 
 var _ = protocol.ChallengeVertex(&ChallengeVertex{})
+
+func TestSimple(t *testing.T) {
+	ctx := context.Background()
+	chain1, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
+	evilHashes := honestHashesUpTo(8)
+	manager := statemanager.New(evilHashes)
+	evilCommit, err := manager.HistoryCommitmentUpTo(ctx, 8)
+	require.NoError(t, err)
+	bisectCommit, err := manager.HistoryCommitmentUpTo(ctx, 4)
+	require.NoError(t, err)
+	proof, err := manager.PrefixProof(ctx, 4, 8)
+	require.NoError(t, err)
+
+	err = chain1.Call(func(tx protocol.ActiveTx) error {
+		managerIface, err := chain1.CurrentChallengeManager(ctx, tx)
+		require.NoError(t, err)
+		manager := managerIface.(*ChallengeManager)
+		return manager.caller.PrefixProofVerification(
+			chain1.callOpts,
+			bisectCommit.Merkle,
+			big.NewInt(4), // pre height
+			evilCommit.Merkle,
+			big.NewInt(8), // post height,
+			proof,
+		)
+	})
+	require.NoError(t, err)
+}
 
 func TestVerifySolidityPrefixProof(t *testing.T) {
 	hashes := honestHashesUpTo(8)
@@ -70,39 +99,31 @@ func TestVerifySolidityPrefixProof(t *testing.T) {
 func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(6)
-	height2 := uint64(7)
+	height1 := uint64(8)
+	height2 := uint64(4)
 	a1, a2, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 
-	genesisAssertion, err := chain1.AssertionBySequenceNum(ctx, tx, 0)
+	// We add two leaves to the challenge.
+	honestHashes := honestHashesUpTo(height1)
+	evilHashes := evilHashesUpTo(height2)
+	honestCommit, err := util.NewHistoryCommitment(height1, honestHashes)
 	require.NoError(t, err)
-	genesis := genesisAssertion.(*Assertion)
+	evilCommit, err := util.NewHistoryCommitment(height2, evilHashes)
+	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
 	v1, err := challenge.AddBlockChallengeLeaf(
 		ctx,
 		tx,
 		a1,
-		util.HistoryCommitment{
-			Height:        height1,
-			Merkle:        common.BytesToHash([]byte("nyan")),
-			FirstLeaf:     genesis.inner.StateHash,
-			LastLeaf:      a1.inner.StateHash,
-			LastLeafProof: []common.Hash{a1.inner.StateHash},
-		},
+		honestCommit,
 	)
 	require.NoError(t, err)
 	_, err = challenge.AddBlockChallengeLeaf(
 		ctx,
 		tx,
 		a2,
-		util.HistoryCommitment{
-			Height:        height2,
-			Merkle:        common.BytesToHash([]byte("nyan2")),
-			FirstLeaf:     genesis.inner.StateHash,
-			LastLeaf:      a2.inner.StateHash,
-			LastLeafProof: []common.Hash{a2.inner.StateHash},
-		},
+		evilCommit,
 	)
 	require.NoError(t, err)
 
@@ -180,9 +201,9 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(4)
+	height1 := uint64(8)
 	height2 := uint64(8)
-	a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
+	a1, a2, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := evilHashesUpTo(10)
@@ -190,8 +211,6 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	require.NoError(t, err)
 	evilCommit, err := util.NewHistoryCommitment(height2, evilHashes[:height2])
 	require.NoError(t, err)
-
-	t.Log("got here")
 
 	// We add two leaves to the challenge.
 	v1, err := challenge.AddBlockChallengeLeaf(
@@ -220,38 +239,36 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 		require.Equal(t, false, isPs)
 	})
 	t.Run("the newly bisected vertex is now presumptive", func(t *testing.T) {
-		evilCommit, err = util.NewHistoryCommitment(4, evilHashes[:4])
+		manager := statemanager.New(evilHashes)
+		preCommit, err := manager.HistoryCommitmentUpTo(ctx, 4)
+		require.NoError(t, err)
+		postCommit, err := manager.HistoryCommitmentUpTo(ctx, 8)
+		require.NoError(t, err)
+		proof, err := manager.PrefixProof(ctx, 4, 8)
 		require.NoError(t, err)
 
-		prefixExpansion := util.ExpansionFromLeaves(evilHashes[:4])
-		prefixProof := util.GeneratePrefixProof(
-			4,
-			prefixExpansion,
-			evilHashes[4:height2],
-		)
+		err = chain1.Call(func(tx protocol.ActiveTx) error {
+			managerIface, err := chain1.CurrentChallengeManager(ctx, tx)
+			require.NoError(t, err)
+			manager := managerIface.(*ChallengeManager)
+			return manager.caller.PrefixProofVerification(
+				chain1.callOpts,
+				preCommit.Merkle,
+				big.NewInt(4), // pre height
+				postCommit.Merkle,
+				big.NewInt(8), // post height,
+				proof,
+			)
+		})
+		require.NoError(t, err, "Failing here")
 
-		preCommit, err := util.NewHistoryCommitment(4, evilHashes[:4])
-		require.NoError(t, err)
-		postCommit, err := util.NewHistoryCommitment(height2, evilHashes[:height2])
-		require.NoError(t, err)
-		require.Equal(t, preCommit.Merkle, prefixExpansion.Root())
-
-		err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
-		require.NoError(t, err)
-
-		b32Arr, _ := abi.NewType("bytes32[]", "", nil)
-		args := abi.Arguments{
-			{Type: b32Arr, Name: "prefixExpansion"},
-			{Type: b32Arr, Name: "prefixProof"},
-		}
-		packed, err := args.Pack(&prefixExpansion, &prefixProof)
-		require.NoError(t, err)
+		t.Log("HEREEEE")
 
 		bisectedToV, err := v2.Bisect(
 			ctx,
 			tx,
-			evilCommit,
-			packed,
+			preCommit,
+			proof,
 		)
 		require.NoError(t, err)
 		bisectedTo := bisectedToV.(*ChallengeVertex)

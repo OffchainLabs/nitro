@@ -266,5 +266,6 @@ func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, err
 	)
 	_, numRead := util.MerkleExpansionFromCompact(prefixProof, lo)
 	onlyProof := prefixProof[numRead:]
+	fmt.Println(len(prefixExpansion), len(onlyProof))
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
