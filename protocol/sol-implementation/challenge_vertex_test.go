@@ -175,6 +175,15 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 			prefixExpansion,
 			evilHashes[4:height2],
 		)
+
+		preCommit, err := util.NewHistoryCommitment(4, evilHashes[:4])
+		require.NoError(t, err)
+		postCommit, err := util.NewHistoryCommitment(height2, evilHashes[:height2])
+		require.NoError(t, err)
+
+		err = util.VerifyPrefixProof(preCommit, postCommit, prefixProof)
+		require.NoError(t, err)
+
 		totalProof := make([]common.Hash, 0)
 		for _, r := range prefixExpansion {
 			totalProof = append(totalProof, r)
