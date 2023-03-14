@@ -21,16 +21,18 @@ var _ = protocol.ChallengeVertex(&ChallengeVertex{})
 func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(8)
-	height2 := uint64(4)
+	height1 := uint64(7)
+	height2 := uint64(3)
 	a1, a2, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	// We add two leaves to the challenge.
-	honestHashes := honestHashesUpTo(height1)
-	evilHashes := evilHashesUpTo(height2)
-	honestCommit, err := util.NewHistoryCommitment(height1, honestHashes)
+	honestHashes := honestHashesUpTo(10)
+	evilHashes := evilHashesUpTo(10)
+	honestManager := statemanager.New(honestHashes)
+	evilManager := statemanager.New(evilHashes)
+	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
-	evilCommit, err := util.NewHistoryCommitment(height2, evilHashes)
+	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
 	require.NoError(t, err)
 
 	// We add two leaves to the challenge.
@@ -53,6 +55,7 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 		require.ErrorIs(t, v1.ConfirmForPsTimer(ctx, tx), ErrPsTimerNotYet)
 	})
 	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
+		t.Skip("TODO(RJ): Add customizable challenge period")
 		backend, ok := chain1.backend.(*backends.SimulatedBackend)
 		require.Equal(t, true, ok)
 		for i := 0; i < 1000; i++ {

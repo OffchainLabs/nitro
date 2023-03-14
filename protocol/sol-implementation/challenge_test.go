@@ -20,11 +20,8 @@ var _ = protocol.Challenge(&Challenge{})
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	genesisHeight := uint64(0)
-	height1 := uint64(4)
-	height2 := uint64(4)
-	heightDiff := height1 - genesisHeight
-	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
+	height := uint64(3)
+	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height, height)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
@@ -37,7 +34,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				},
 			},
 			util.HistoryCommitment{
-				Height: heightDiff,
+				Height: height,
 				Merkle: common.BytesToHash([]byte("bar")),
 			},
 		)
@@ -78,7 +75,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	for i := range leaves {
 		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	history, err := util.NewHistoryCommitment(heightDiff, leaves)
+	history, err := util.NewHistoryCommitment(height, leaves)
 	require.NoError(t, err)
 	t.Run("OK", func(t *testing.T) {
 		_, err = challenge.AddBlockChallengeLeaf(
