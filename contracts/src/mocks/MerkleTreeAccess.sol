@@ -4,23 +4,23 @@ pragma solidity ^0.8.17;
 import "../challengeV2/libraries/MerkleTreeLib.sol";
 
 contract MerkleTreeAccess {
-    function root(bytes32[] memory me) internal pure returns (bytes32) {
+    function root(bytes32[] memory me) external pure returns (bytes32) {
         return MerkleTreeLib.root(me);
     }
 
     function appendCompleteSubTree(bytes32[] memory me, uint256 level, bytes32 subtreeRoot)
-        internal
+        external
         pure
         returns (bytes32[] memory)
     {
         return MerkleTreeLib.appendCompleteSubTree(me, level, subtreeRoot);
     }
 
-    function appendLeaf(bytes32[] memory me, bytes32 leaf) internal pure returns (bytes32[] memory) {
+    function appendLeaf(bytes32[] memory me, bytes32 leaf) external pure returns (bytes32[] memory) {
         return MerkleTreeLib.appendLeaf(me, leaf);
     }
 
-    function maximumAppendBetween(uint256 startSize, uint256 endSize) internal pure returns (uint256) {
+    function maximumAppendBetween(uint256 startSize, uint256 endSize) external pure returns (uint256) {
         return MerkleTreeLib.maximumAppendBetween(startSize, endSize);
     }
 
@@ -31,12 +31,12 @@ contract MerkleTreeAccess {
         uint256 postSize,
         bytes32[] memory preExpansion,
         bytes32[] memory proof
-    ) internal pure {
+    ) external pure {
         MerkleTreeLib.verifyPrefixProof(preRoot, preSize, postRoot, postSize, preExpansion, proof);
     }
 
     function hasState(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
-        internal
+        external
         pure
         returns (bool)
     {
