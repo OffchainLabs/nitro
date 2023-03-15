@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/gobwas/ws"
@@ -39,6 +40,9 @@ type ClientConnection struct {
 
 	compression bool
 	flateReader *wsflate.Reader
+
+	delay          time.Duration
+	delayDecayRate float64
 }
 
 func NewClientConnection(
@@ -48,6 +52,8 @@ func NewClientConnection(
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	delay time.Duration,
+	delayDecayRate float64,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
@@ -61,6 +67,8 @@ func NewClientConnection(
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
+		delay:           delay,
+		delayDecayRate:  delayDecayRate,
 	}
 }
 
@@ -80,6 +88,13 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			case <-ctx.Done():
 				return
 			case data := <-cc.out:
+				time.Sleep(cc.delay)
+				if cc.delay != 0 {
+					cc.delay = time.Duration(float64(cc.delay) * cc.delayDecayRate)
+					if cc.delay == 0 {
+						log.Trace("Client now connected without delay", "client", cc.Name)
+					}
+				}
 				err := cc.writeRaw(data)
 				if err != nil {
 					logWarn(err, "error writing data to client")

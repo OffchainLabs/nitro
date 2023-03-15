@@ -61,6 +61,8 @@ type BroadcasterConfig struct {
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
+	ClientDelay        time.Duration           `koanf:"client-delay" reload:"hot"`
+	ClientDelayDecay   float64                 `koanf:"client-delay-decay" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -93,6 +95,8 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
+	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay messages sent to each client by this amount, starting from initial connect")
+	f.Float64(prefix+".client-delay-decay", DefaultBroadcasterConfig.ClientDelayDecay, "factor to multiply the client's decay by for each message sent, eg 0: removes the delay after the first message, 0.5: halves the delay after each message, 1: keeps the delay the same for each message")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -116,6 +120,8 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	ClientDelay:        0,
+	ClientDelayDecay:   0,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -139,6 +145,8 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	ClientDelay:        0,
+	ClientDelayDecay:   0,
 }
 
 type WSBroadcastServer struct {
