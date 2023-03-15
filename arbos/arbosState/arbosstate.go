@@ -229,7 +229,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true, stateDB, chainConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -237,19 +237,23 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return aState, nil
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, stateDB vm.StateDB) error {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(
+	currentTimestamp uint64, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		return state.UpgradeArbosVersion(upgradeTo, false, stateDB)
+		return state.UpgradeArbosVersion(upgradeTo, false, stateDB, chainConfig)
 	}
 	return nil
 }
 
-var ErrFatalNodeOutOfDate = errors.New("please upgrade to latest version of node software")
+var ErrFatalNodeOutOfDate = errors.New("please upgrade to the latest version of the node software")
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, stateDB vm.StateDB) error {
+func (state *ArbosState) UpgradeArbosVersion(
+	upgradeTo uint64, firstTime bool, stateDB vm.StateDB, chainConfig *params.ChainConfig,
+) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -280,12 +284,27 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 		case 8:
 			// no state changes needed
 		case 9:
-			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
+			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
+				l1pricing.L1PricerFundsPoolAddress,
+			)))
 		case 10:
 			// TODO: move to the first version that introduces stylus
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+
+			if !chainConfig.DebugMode() {
+				// This upgrade isn't finalized so we only want to support it for testing
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					state.arbosVersion+1,
+					ErrFatalNodeOutOfDate,
+				)
+			}
 		default:
-			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
+			return fmt.Errorf(
+				"the chain is upgrading to unsupported ArbOS version %v, %w",
+				state.arbosVersion+1,
+				ErrFatalNodeOutOfDate,
+			)
 		}
 		state.arbosVersion++
 	}

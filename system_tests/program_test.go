@@ -108,8 +108,8 @@ func setupProgramTest(t *testing.T, file string) (
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.ArbitratorValidator = true
-	l2config.BlockValidator.JitValidator = true
+	l2config.BlockValidator.Enable = true
+	AddDefaultValNode(t, ctx, l2config, true)
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 

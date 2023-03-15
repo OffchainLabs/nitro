@@ -3,8 +3,6 @@
 
 use crate::{binary::FloatType, utils::Bytes32};
 use arbutil::Color;
-use wasmparser::{FuncType, Type};
-
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
@@ -15,6 +13,7 @@ use std::{
     fmt::Display,
     ops::Add,
 };
+use wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -280,20 +279,23 @@ impl Value {
             }
         }
     }
+}
 
-    pub fn pretty_print(&self) -> String {
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let lparem = "(".grey();
         let rparem = ")".grey();
 
         macro_rules! single {
             ($ty:expr, $value:expr) => {{
-                format!("{}{}{}{}", $ty.grey(), lparem, $value, rparem)
+                write!(f, "{}{}{}{}", $ty.grey(), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
                 let eq = "=".grey();
-                format!(
+                write!(
+                    f,
                     "{}{}{} {} {}{}",
                     $ty.grey(),
                     lparem,
@@ -321,17 +323,10 @@ impl Value {
             }
             Value::F32(value) => single!("f32", *value),
             Value::F64(value) => single!("f64", *value),
-            Value::RefNull => "null".into(),
-            Value::FuncRef(func) => format!("func {}", func),
-            Value::InternalRef(pc) => format!("{}", pc),
+            Value::RefNull => write!(f, "null"),
+            Value::FuncRef(func) => write!(f, "func {func}"),
+            Value::InternalRef(pc) => write!(f, "{pc}"),
         }
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let text = self.pretty_print();
-        write!(f, "{}", text)
     }
 }
 

@@ -3,6 +3,8 @@
 
 package precompiles
 
+import "errors"
+
 // All calls to this precompile are authorized by the DebugPrecompile wrapper,
 // which ensures these methods are not accessible in production.
 type ArbDebug struct {
@@ -43,4 +45,8 @@ func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
 // Caller becomes a chain owner
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
 	return c.State.ChainOwners().Add(c.caller)
+}
+
+func (con ArbDebug) LegacyError(c ctx) error {
+	return errors.New("example legacy error")
 }
