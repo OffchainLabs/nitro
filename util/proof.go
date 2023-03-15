@@ -48,6 +48,8 @@ func MerkleRoot(tree [][]common.Hash) (common.Hash, error) {
 // ComputeMerkleTree from a list of hashes. If not a power of two,
 // pads with empty [32]byte{} until the length is a power of two.
 // Creates a tree where the last level is the root.
+// This is inspired by the Sparse Merkle Tree data structure from
+// https://github.com/prysmaticlabs/prysm/tree/develop/container/trie/sparse_merkle.go
 func ComputeMerkleTree(items []common.Hash) [][]common.Hash {
 	leaves := make([]common.Hash, len(items))
 	for i, r := range items {
