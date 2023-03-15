@@ -121,19 +121,19 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
-	flatLastLeafProof := make([]byte, 0)
-	lastLeafProof := make([][32]byte, 0)
-	for _, h := range history.LastLeafProof {
+	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
+	lastLeafProof := make([][32]byte, len(history.LastLeafProof))
+	for i, h := range history.LastLeafProof {
 		var r [32]byte
 		copy(r[:], h[:])
-		lastLeafProof = append(lastLeafProof, r)
 		flatLastLeafProof = append(flatLastLeafProof, r[:]...)
+		lastLeafProof[i] = r
 	}
-	firstLeafProof := make([][32]byte, 0)
-	for _, h := range history.FirstLeafProof {
+	firstLeafProof := make([][32]byte, len(history.FirstLeafProof))
+	for i, h := range history.FirstLeafProof {
 		var r [32]byte
 		copy(r[:], h[:])
-		firstLeafProof = append(firstLeafProof, r)
+		firstLeafProof[i] = r
 	}
 	callOpts := c.manager.assertionChain.callOpts
 	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
@@ -202,20 +202,20 @@ func (c *Challenge) AddSubChallengeLeaf(
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
-	flatLastLeafProof := make([]byte, 0)
-	lastLeafProof := make([][32]byte, 0)
-	for _, h := range history.LastLeafProof {
+	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
+	lastLeafProof := make([][32]byte, len(history.LastLeafProof))
+	for i, h := range history.LastLeafProof {
 		var r [32]byte
 		copy(r[:], h[:])
-		lastLeafProof = append(lastLeafProof, r)
 		flatLastLeafProof = append(flatLastLeafProof, r[:]...)
+		lastLeafProof[i] = r
 	}
 
-	firstLeafProof := make([][32]byte, 0)
-	for _, h := range history.FirstLeafProof {
+	firstLeafProof := make([][32]byte, len(history.FirstLeafProof))
+	for i, h := range history.FirstLeafProof {
 		var r [32]byte
 		copy(r[:], h[:])
-		firstLeafProof = append(firstLeafProof, r)
+		firstLeafProof[i] = r
 	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
