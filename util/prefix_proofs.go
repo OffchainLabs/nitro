@@ -66,6 +66,17 @@ const (
 	MAX_LEVEL = uint64(256)
 )
 
+var (
+	ErrLevelTooHigh                      = errors.New("level too high")
+	ErrCannotAppendEmpty                 = errors.New("cannot append empty")
+	ErrCannotAppendAboveLeastSignificant = errors.New("cannot append above least significant")
+	ErrStartNotLessThanEnd               = errors.New("start not less than end")
+	ErrCannotBeZero                      = errors.New("cannot be zero")
+	ErrRootMismatch                      = errors.New("root mismatch")
+	ErrIncompleteProof                   = errors.New("incomplete proof usage")
+	ErrSizeNotLeqPostSize                = errors.New("size not <= post size")
+)
+
 func leastSignificantBit(x uint64) uint64 {
 	return uint64(bits.TrailingZeros64(x))
 }
@@ -115,10 +126,10 @@ func appendCompleteSubTree(
 	// we use number representations of the levels elsewhere, so we need to ensure we're appending a leve
 	// that's too high to use in uint
 	if level >= MAX_LEVEL {
-		return nil, errors.New("level too high")
+		return nil, ErrLevelTooHigh
 	}
 	if subtreeRoot == (common.Hash{}) {
-		return nil, errors.New("cannot append empty subtree")
+		return nil, ErrCannotAppendEmpty
 	}
 
 	empty := make([]common.Hash, level+1)
@@ -135,7 +146,7 @@ func appendCompleteSubTree(
 	if level >= uint64(len(me)) {
 		// This technically isn't necessary since it would be caught by the i < level check
 		// on the last loop of the for-loop below, but we add it for a clearer error message
-		return nil, errors.New("level greater than highest level of current expansion")
+		return nil, ErrLevelTooHigh
 	}
 
 	accumHash := subtreeRoot
@@ -151,7 +162,7 @@ func appendCompleteSubTree(
 		if i < level {
 			// we're below the level we want to append - no complete sub trees allowed down here
 			// if the level is 0 there are no complete subtrees, and we therefore cannot be too low
-			return nil, errors.New("append above least significant bit")
+			return nil, ErrCannotAppendAboveLeastSignificant
 		}
 		// we're at or above the level
 		if accumHash == (common.Hash{}) {
@@ -181,7 +192,7 @@ func appendCompleteSubTree(
 	}
 
 	if uint64(len(next)) < MAX_LEVEL+1 {
-		return nil, errors.New("level too high")
+		return nil, ErrLevelTooHigh
 	}
 	return me, nil
 }
@@ -217,7 +228,7 @@ func maximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	// endSize looks like:   xxxxxxzzzz
 	// where x are the complete sub trees they share, and y and z are the subtrees they dont
 	if startSize < endSize {
-		return 0, errors.New("start not less than end")
+		return 0, ErrStartNotLessThanEnd
 	}
 
 	// remove the high order bits that are shared
@@ -238,7 +249,7 @@ func maximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 		return mostSignificantBit(z), nil
 	}
 	// since we enforce that start < end, we know that y and z cannot both be 0
-	return 0, errors.New("both y and z cannot be zero")
+	return 0, ErrCannotBeZero
 }
 
 type verifyPrefixProofConfig struct {
@@ -255,13 +266,13 @@ type verifyPrefixProofConfig struct {
 // and then checking that the root of the calculated post tree is equal to the supplied one
 func verifyPrefixProof(cfg *verifyPrefixProofConfig) error {
 	if cfg.preSize == 0 {
-		return errors.New("presize cannot be 0")
+		return ErrCannotBeZero
 	}
 	if root(cfg.preExpansion) != cfg.preRoot {
-		return errors.New("pre expansion root mismatch")
+		return ErrRootMismatch
 	}
 	if cfg.preSize >= cfg.postSize {
-		return errors.New("pre size not less than post size")
+		return ErrStartNotLessThanEnd
 	}
 	preExpansion := cfg.preExpansion
 	size := cfg.preSize
@@ -278,15 +289,15 @@ func verifyPrefixProof(cfg *verifyPrefixProofConfig) error {
 		numLeaves := 1 << level
 		size += uint64(numLeaves)
 		if size > cfg.postSize {
-			return errors.New("size is not <= post size")
+			return ErrSizeNotLeqPostSize
 		}
 		proofIndex++
 	}
 	if root(preExpansion) != cfg.postRoot {
-		return errors.New("post expansion root not equal post")
+		return ErrRootMismatch
 	}
 	if proofIndex != uint64(len(cfg.prefixProof)) {
-		return errors.New("incomplete proof usage")
+		return ErrIncompleteProof
 	}
 	return nil
 }
