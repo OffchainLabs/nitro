@@ -61,6 +61,7 @@ type BroadcasterConfig struct {
 	RequireCompression bool                    `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 	LimitCatchup       bool                    `koanf:"limit-catchup" reload:"hot"`
 	ConnectionLimits   ConnectionLimiterConfig `koanf:"connection-limits" reload:"hot"`
+	RegistrationDelay  time.Duration           `koanf:"registration-delay" reload:"hot"`
 }
 
 func (bc *BroadcasterConfig) Validate() error {
@@ -93,6 +94,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
+	f.Duration(prefix+".registration-delay", DefaultBroadcasterConfig.RegistrationDelay, "time to wait after client connection has been accepted before registering it and serving feed data")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -116,6 +118,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	RegistrationDelay:  0,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -139,6 +142,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	RequireCompression: false,
 	LimitCatchup:       false,
 	ConnectionLimits:   DefaultConnectionLimiterConfig,
+	RegistrationDelay:  0,
 }
 
 type WSBroadcastServer struct {

@@ -129,8 +129,11 @@ func (cm *ClientManager) Register(
 		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression),
 		true,
 	}
-	cm.clientAction <- createClient
 
+	go func() {
+		time.Sleep(cm.config().RegistrationDelay)
+		cm.clientAction <- createClient
+	}()
 	return createClient.cc
 }
 
