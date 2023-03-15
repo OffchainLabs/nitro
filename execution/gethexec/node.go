@@ -107,14 +107,15 @@ func ConfigDefaultTest() *Config {
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
-	ChainDB      ethdb.Database
-	Backend      *arbitrum.Backend
-	FilterSystem *filters.FilterSystem
-	ArbInterface *ArbInterface
-	ExecEngine   *ExecutionEngine
-	Recorder     *BlockRecorder
-	Sequencer    *Sequencer // either nil or same as TxPublisher
-	TxPublisher  TransactionPublisher
+	ChainDB       ethdb.Database
+	Backend       *arbitrum.Backend
+	FilterSystem  *filters.FilterSystem
+	ArbInterface  *ArbInterface
+	ExecEngine    *ExecutionEngine
+	Recorder      *BlockRecorder
+	Sequencer     *Sequencer // either nil or same as TxPublisher
+	TxPublisher   TransactionPublisher
+	ConfigFetcher ConfigFetcher
 }
 
 func CreateExecutionNode(
@@ -133,7 +134,10 @@ func CreateExecutionNode(
 	var txPublisher TransactionPublisher
 	var sequencer *Sequencer
 
-	l1Reader := headerreader.New(l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+	var l1Reader *headerreader.HeaderReader
+	if l1client != nil {
+		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+	}
 
 	fwTarget := config.ForwardingTarget()
 	if config.Sequencer.Enable {
@@ -213,6 +217,7 @@ func CreateExecutionNode(
 		recorder,
 		sequencer,
 		txPublisher,
+		configFetcher,
 	}, nil
 
 }

@@ -954,7 +954,10 @@ func (n *Node) Start(ctx context.Context) error {
 		execClient = nil
 	}
 	if execClient != nil {
-		execClient.Initialize(ctx, n, n.SyncMonitor)
+		err := execClient.Initialize(ctx, n, n.SyncMonitor)
+		if err != nil {
+			return fmt.Errorf("error initializing exec client: %w", err)
+		}
 	}
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.Execution)
 	err := n.Stack.Start()
