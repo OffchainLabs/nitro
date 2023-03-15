@@ -162,10 +162,9 @@ func (s *Simulated) BigStepLeafCommitment(
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
+	leaves := make([]common.Hash, engine.NumBigSteps()+1)
+	leaves[0] = preState
 
-	expansion := util.NewEmptyMerkleExpansion()
-
-	var total int
 	for i := uint64(0); i < engine.NumBigSteps(); i++ {
 		start, err := engine.StateAfterBigSteps(i)
 		if err != nil {
@@ -175,14 +174,9 @@ func (s *Simulated) BigStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		expansion = expansion.AppendLeaf(intermediateState.Hash())
-		total++
+		leaves[i] = intermediateState.Hash()
 	}
-
-	return util.HistoryCommitment{
-		Height: engine.NumBigSteps(),
-		Merkle: expansion.Root(),
-	}, nil
+	return util.NewHistoryCommitment(engine.NumBigSteps(), leaves)
 }
 
 // TODO(RJ): Implement the Merkleization.
@@ -226,9 +220,7 @@ func (s *Simulated) SmallStepLeafCommitment(
 		return util.HistoryCommitment{}, err
 	}
 
-	expansion := util.NewEmptyMerkleExpansion()
-
-	var total int
+	leaves := make([]common.Hash, engine.NumOpcodes())
 	for i := uint64(0); i < engine.NumOpcodes(); i++ {
 		start, err := engine.StateAfterSmallSteps(i)
 		if err != nil {
@@ -238,14 +230,9 @@ func (s *Simulated) SmallStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		expansion = expansion.AppendLeaf(intermediateState.Hash())
-		total++
+		leaves[i] = intermediateState.Hash()
 	}
-
-	return util.HistoryCommitment{
-		Height: engine.NumOpcodes(),
-		Merkle: expansion.Root(),
-	}, nil
+	return util.NewHistoryCommitment(engine.NumOpcodes(), leaves)
 }
 
 // TODO(RJ): Implement the Merkleization.

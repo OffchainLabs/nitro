@@ -217,20 +217,12 @@ func (c *Challenge) AddSubChallengeLeaf(
 		copy(r[:], h[:])
 		firstLeafProof = append(firstLeafProof, r)
 	}
-
-	prev, err := vertex.Prev(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	if prev.IsNone() {
-		return nil, errors.New("no prev vertex")
-	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
 		ClaimId:                vertex.Id(),
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             prev.Unwrap().HistoryCommitment().Merkle,
+		FirstState:             history.FirstLeaf,
 		FirstStatehistoryProof: firstLeafProof,
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
