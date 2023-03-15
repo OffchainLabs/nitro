@@ -238,13 +238,13 @@ type ChallengeVertex interface {
 		ctx context.Context,
 		tx ActiveTx,
 		history util.HistoryCommitment,
-		proof []common.Hash,
+		proof []byte,
 	) (ChallengeVertex, error)
 	Merge(
 		ctx context.Context,
 		tx ActiveTx,
 		mergingToHistory util.HistoryCommitment,
-		proof []common.Hash,
+		proof []byte,
 	) (ChallengeVertex, error)
 
 	// Mutating calls for confirmations.

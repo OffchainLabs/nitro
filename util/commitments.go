@@ -56,14 +56,25 @@ func NewHistoryCommitment(
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
-	exp := ExpansionFromLeaves(leaves)
+	tree := ComputeMerkleTree(leaves)
+	firstLeafProof, err := GenerateMerkleProof(0, tree)
+	if err != nil {
+		return emptyCommit, err
+	}
+	lastLeafProof, err := GenerateMerkleProof(uint64(len(leaves))-1, tree)
+	if err != nil {
+		return emptyCommit, err
+	}
+	root, err := MerkleRoot(tree)
+	if err != nil {
+		return emptyCommit, err
+	}
 	return HistoryCommitment{
-		Merkle:    exp.Root(),
-		Height:    height,
-		FirstLeaf: leaves[0],
-		LastLeaf:  leaves[len(leaves)-1],
-		// TODO: Implement.
-		FirstLeafProof: make([]common.Hash, 0),
-		LastLeafProof:  []common.Hash{leaves[len(leaves)-1]},
+		Merkle:         root,
+		Height:         height,
+		FirstLeaf:      leaves[0],
+		LastLeaf:       leaves[len(leaves)-1],
+		FirstLeafProof: firstLeafProof,
+		LastLeafProof:  lastLeafProof,
 	}, nil
 }

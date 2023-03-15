@@ -18,7 +18,7 @@ func BisectionPoint(pre, post uint64) (uint64, error) {
 	}
 	matchingBits := bits.LeadingZeros64((post - 1) ^ pre)
 	mask := uint64(math.MaxUint64) << (63 - matchingBits)
-	return (post - 1) & mask, nil
+	return ((post - 1) & mask) - 1, nil
 }
 
 // Truncates a byte slice to 4 bytes and pretty-prints as a hex string.

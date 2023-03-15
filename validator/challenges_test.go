@@ -32,28 +32,28 @@ func TestBlockChallenge(t *testing.T) {
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob.
 	//
-	//                [3]-[4]-[6]-alice
+	//                [2]-[3]-[7]-alice
 	//               /
-	// [genesis]-[2]-
-	//               \[3]-[4]-[6]-bob
+	// [genesis]-[1]-
+	//               \[2]-[3]-[7]-bob
 	//
 	t.Run("two validators opening leaves at same height", func(t *testing.T) {
 		cfg := &blockChallengeTestConfig{
 			numValidators:      2,
-			currentChainHeight: 6,
+			currentChainHeight: 7,
 			validatorNamesByIndex: map[uint64]string{
 				0: "alice",
 				1: "bob",
 			},
 			latestHeightsByIndex: map[uint64]uint64{
-				0: 6,
-				1: 6,
+				0: 7,
+				1: 7,
 			},
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3.
 			divergenceHeightsByIndex: map[uint64]uint64{
-				0: 3,
-				1: 3,
+				0: 2,
+				1: 2,
 			},
 		}
 		// Alice adds a challenge leaf 6, is presumptive.
@@ -70,8 +70,8 @@ func TestBlockChallenge(t *testing.T) {
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
 		runBlockChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")

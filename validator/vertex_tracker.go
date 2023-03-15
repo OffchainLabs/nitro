@@ -42,8 +42,9 @@ func newVertexTracker(
 	cfg *vertexTrackerConfig,
 	challenge protocol.Challenge,
 	vertex protocol.ChallengeVertex,
+	fsmOpts ...util.FsmOpt[vertexTrackerAction, vertexTrackerState],
 ) (*vertexTracker, error) {
-	fsm, err := newVertexTrackerFsm(trackerStarted)
+	fsm, err := newVertexTrackerFsm(trackerStarted, fsmOpts...)
 	if err != nil {
 		return nil, err
 	}
