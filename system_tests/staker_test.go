@@ -23,6 +23,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -65,15 +66,17 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
+	execNodeA := getExecNode(t, l2nodeA)
 
 	if faultyStaker {
 		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil)
+	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), gethexec.ConfigDefaultTest(), nil)
 	defer l2nodeB.StopAndWait()
+	execNodeB := getExecNode(t, l2nodeB)
 
-	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
 			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
@@ -135,7 +138,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution.Recorder,
+		execNodeA,
 		l2nodeA.ArbDB,
 		nil,
 		&blockValidatorConfig,
@@ -161,7 +164,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution.Recorder,
+		execNodeB,
 		l2nodeB.ArbDB,
 		nil,
 		&blockValidatorConfig,

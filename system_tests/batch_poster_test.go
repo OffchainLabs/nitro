@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -35,7 +36,7 @@ func TestBatchPosterParallel(t *testing.T) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
 	conf.BatchPoster.RedisUrl = redisUrl
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -127,9 +128,9 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conf := arbnode.ConfigDefaultL1Test()
+	conf := gethexec.ConfigDefaultTest()
 	conf.Sequencer.MaxTxDataSize = 110000
-	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, conf, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 

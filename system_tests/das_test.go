@@ -22,11 +22,11 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -137,8 +137,10 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
 		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{restServerUrlA}
 		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+		execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
+		Require(t, err)
 
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
 		Require(t, nodeA.Start(ctx))
 		l2clientA := ClientForStack(t, l2stackA)
@@ -151,7 +153,7 @@ func TestDASRekey(t *testing.T) {
 
 		l1NodeConfigB.DataAvailability.L1NodeURL = "none"
 
-		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
+		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 		nodeA.StopAndWait()
 		nodeB.StopAndWait()
@@ -177,15 +179,19 @@ func TestDASRekey(t *testing.T) {
 	l2arbDb, err := l2stackA.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	l2blockchain, err := execution.GetBlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit)
+	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, nil, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
 	Require(t, err)
+
+	execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
+	Require(t, err)
+
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	nodeA.StopAndWait()
@@ -306,9 +312,12 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	l2info.GenerateAccount("User2")
 
+	execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
+	Require(t, err)
+
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
@@ -330,7 +339,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Enable = true
 	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
 	l1NodeConfigB.DataAvailability.L1NodeURL = "none"
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 

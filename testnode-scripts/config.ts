@@ -180,9 +180,7 @@ function writeConfigs(argv: any) {
                 "strategy": "MakeNodes",
                 "target-machine-count": 4,
             },
-            "sequencer": {
-                "enable": false
-            },
+            "sequencer":  false,
             "delayed-sequencer": {
                 "enable": false
             },
@@ -206,6 +204,11 @@ function writeConfigs(argv: any) {
                     }
                 }
             }
+        },
+        "execution" : {
+            "sequencer": {
+                "enable": false
+            },
         },
         "init": {
             "dev-init": "true"
@@ -238,7 +241,8 @@ function writeConfigs(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "unsafe_staker_config.json"), JSON.stringify(unsafeStakerConfig))
 
     let sequencerConfig = JSON.parse(baseConfJSON)
-    sequencerConfig.node.sequencer.enable = true
+    sequencerConfig.execution.sequencer.enable = true
+    sequencerConfig.node.sequencer = true
     sequencerConfig.node["seq-coordinator"].enable = true
     sequencerConfig.node["delayed-sequencer"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))

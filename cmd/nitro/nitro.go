@@ -532,7 +532,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution     gethexec.Config                 `koanf:"exec" reload:"hot"`
+	Execution     gethexec.Config                 `koanf:"execution" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
@@ -568,6 +568,7 @@ var NodeConfigDefault = NodeConfig{
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
+	gethexec.ConfigAddOptions("execution", f)
 	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
@@ -822,7 +823,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 func applyArbitrumOneParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "arb1",
-		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"execution.forwarding-target":        "https://arb1.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
 		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
@@ -838,7 +839,7 @@ func applyArbitrumOneParameters(k *koanf.Koanf) error {
 func applyArbitrumNovaParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                                       "nova",
-		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
+		"execution.forwarding-target":                            "https://nova.arbitrum.io/rpc",
 		"node.feed.input.url":                                    "wss://nova.arbitrum.io/feed",
 		"node.data-availability.enable":                          true,
 		"node.data-availability.rest-aggregator.enable":          true,
@@ -858,7 +859,7 @@ func applyArbitrumNovaParameters(k *koanf.Koanf) error {
 func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "goerli-rollup",
-		"node.forwarding-target":             "https://goerli-rollup.arbitrum.io/rpc",
+		"execution.forwarding-target":        "https://goerli-rollup.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://goerli-rollup.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
 		"l1.rollup.inbox":                    "0x6bebc4925716945d46f0ec336d5c2564f419682c",
@@ -875,7 +876,7 @@ func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
 func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "rinkeby-nitro",
-		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
+		"execution.forwarding-target":        "https://rinkeby.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
 		"l1.rollup.inbox":                    "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",

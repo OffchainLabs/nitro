@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -26,8 +25,7 @@ func TestContractTxDeploy(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeconfig := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, nil, false)
 	defer node.StopAndWait()
 
 	from := common.HexToAddress("0x123412341234")

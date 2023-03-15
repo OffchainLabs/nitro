@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -35,18 +35,20 @@ func TestStaticForwarder(t *testing.T) {
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.BatchPoster.Enable = false
 
-	l2info, nodeA, clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, nil, stackConfig)
+	l2info, nodeA, clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, nil, nil, stackConfig)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
-	nodeConfigB.Sequencer.Enable = false
+	execConfigB := gethexec.ConfigDefaultTest()
+	execConfigB.Sequencer.Enable = false
+	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
-	nodeConfigB.Forwarder.RedisUrl = ""
-	nodeConfigB.ForwardingTargetImpl = ipcPath
+	execConfigB.Forwarder.RedisUrl = ""
+	execConfigB.ForwardingTargetImpl = ipcPath
 	nodeConfigB.BatchPoster.Enable = false
 
-	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nodeConfigB, nil)
+	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nodeConfigB, execConfigB, nil)
 	defer nodeB.StopAndWait()
 
 	l2info.GenerateAccount("User2")
@@ -93,7 +95,7 @@ func createFallbackSequencer(
 	nodeConfig.SeqCoordinator.Enable = false
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
-	return createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, stackConfig)
+	return createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil, stackConfig)
 }
 
 func createForwardingNode(
@@ -113,13 +115,15 @@ func createForwardingNode(
 		ipcConfig.Apply(stackConfig)
 	}
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.Sequencer.Enable = false
+	nodeConfig.Sequencer = false
 	nodeConfig.DelayedSequencer.Enable = false
-	nodeConfig.Forwarder.RedisUrl = redisUrl
-	nodeConfig.ForwardingTargetImpl = fallbackPath
+	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.Sequencer.Enable = false
+	execConfig.Forwarder.RedisUrl = redisUrl
+	execConfig.ForwardingTargetImpl = fallbackPath
 	//	nodeConfig.Feed.Output.Enable = false
 
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, stackConfig)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, execConfig, stackConfig)
 }
 
 func createSequencer(
@@ -141,7 +145,7 @@ func createSequencer(
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
 
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, stackConfig)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, gethexec.ConfigDefaultTest(), stackConfig)
 }
 
 func TestRedisForwarder(t *testing.T) {
@@ -210,7 +214,7 @@ func TestRedisForwarder(t *testing.T) {
 			if err == nil {
 				break
 			}
-			time.Sleep(execution.DefaultTestForwarderConfig.UpdateInterval / 2)
+			time.Sleep(gethexec.DefaultTestForwarderConfig.UpdateInterval / 2)
 		}
 		testhelpers.RequireImpl(t, err)
 		_, err = EnsureTxSucceeded(ctx, clients[i], tx)

@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
@@ -25,10 +25,10 @@ func TestBloom(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeconfig := arbnode.ConfigDefaultL2Test()
-	nodeconfig.RPC.BloomBitsBlocks = 256
-	nodeconfig.RPC.BloomConfirms = 1
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
+	execconfig := gethexec.ConfigDefaultTest()
+	execconfig.RPC.BloomBitsBlocks = 256
+	execconfig.RPC.BloomConfirms = 1
+	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nil, execconfig, false)
 	defer node.StopAndWait()
 
 	l2info.GenerateAccount("User2")
@@ -80,9 +80,9 @@ func TestBloom(t *testing.T) {
 			t.Log("counts: ", i, "/", countsNum)
 		}
 	}
-
+	execNode := getExecNode(t, node)
 	for {
-		sectionSize, sectionNum := node.Execution.Backend.APIBackend().BloomStatus()
+		sectionSize, sectionNum := execNode.Backend.APIBackend().BloomStatus()
 		if sectionSize != 256 {
 			Fail(t, "unexpected section size: ", sectionSize)
 		}

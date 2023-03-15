@@ -13,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -44,13 +45,13 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
 	defer nodeA.StopAndWait()
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
 	defer nodeB.StopAndWait()
 
 	l2info1.GenerateAccount("User2")
@@ -79,7 +80,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
 	defer nodeA.StopAndWait()
 
 	bigChainId, err := client1.ChainID(ctx)
@@ -101,7 +102,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
 	defer nodeC.StopAndWait()
 	StartWatchChanErr(t, ctx, feedErrChan, nodeC)
 
@@ -135,7 +136,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, nil)
+	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, nil, chainConfig, nil)
 	defer requireClose(t, l1stack, "unable to close l1stack")
 	defer nodeA.StopAndWait()
 
@@ -147,7 +148,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC, nil)
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC, gethexec.ConfigDefaultTest(), nil)
 	defer nodeC.StopAndWait()
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -158,7 +159,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB, nil, nil)
 	defer nodeB.StopAndWait()
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -168,12 +169,18 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2clientC.SendTransaction(ctx, fraudTx)
-	if err != nil {
-		t.Fatal("error sending fraud transaction:", err)
+	for i := 0; i < 10; i++ {
+		err := l2clientC.SendTransaction(ctx, fraudTx)
+		if err == nil {
+			break
+		}
+		<-time.After(time.Millisecond * 10)
+		if i == 9 {
+			t.Fatal("error sending fraud transaction:", err)
+		}
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx)
+	_, err := EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	if err != nil {
 		t.Fatal("error ensuring fraud transaction succeeded:", err)
 	}

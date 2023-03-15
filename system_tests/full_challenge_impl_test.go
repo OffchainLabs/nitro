@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -266,7 +267,9 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
+	asserterExec, err := gethexec.CreateExecutionNode(asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
+	Require(t, err)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, conf, chainConfig, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
@@ -275,7 +278,9 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
+	challengerExec, err := gethexec.CreateExecutionNode(challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
+	Require(t, err)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, conf, chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
@@ -323,13 +328,13 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		}
 	}
 
-	asserterGenesis := asserterL2.Execution.ArbInterface.BlockChain().Genesis()
-	challengerGenesis := challengerL2.Execution.ArbInterface.BlockChain().Genesis()
+	asserterGenesis := asserterExec.ArbInterface.BlockChain().Genesis()
+	challengerGenesis := challengerExec.ArbInterface.BlockChain().Genesis()
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
 		Fail(t, "asserter and challenger have different genesis hashes")
 	}
-	asserterLatestBlock := asserterL2.Execution.ArbInterface.BlockChain().CurrentBlock()
-	challengerLatestBlock := challengerL2.Execution.ArbInterface.BlockChain().CurrentBlock()
+	asserterLatestBlock := asserterExec.ArbInterface.BlockChain().CurrentBlock()
+	challengerLatestBlock := challengerExec.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
 		Fail(t, "asserter and challenger have the same end block")
 	}
@@ -364,7 +369,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2.Execution.Recorder, asserterL2ArbDb, nil, &conf.BlockValidator)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2ArbDb, nil, &conf.BlockValidator)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -381,7 +386,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2.Execution.Recorder, challengerL2ArbDb, nil, &conf.BlockValidator)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2ArbDb, nil, &conf.BlockValidator)
 	if err != nil {
 		Fail(t, err)
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
 func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops int, expensiveTx bool, arbitrator bool) {
@@ -34,7 +35,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 		delayEvery = simpletxloops / 3
 	}
 
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, nil, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -45,7 +46,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil, nil)
 	defer nodeB.StopAndWait()
 	l2info.GenerateAccount("User2")
 
@@ -134,8 +135,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fail(t, "did not validate all blocks")
 	}
-	nodeB.Execution.Recorder.TrimAllPrepared(t)
-	finalRefCount := nodeB.Execution.Recorder.RecordingDBReferenceCount()
+	gethExec, ok := nodeB.Execution.(*gethexec.ExecutionNode)
+	if !ok {
+		t.Fail()
+	}
+	gethExec.Recorder.TrimAllPrepared(t)
+	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
