@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
 var (
 	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
 	// ProofArgs for submission to the protocol.
