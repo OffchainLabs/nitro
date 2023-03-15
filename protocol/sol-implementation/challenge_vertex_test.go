@@ -841,7 +841,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 			id:      [32]byte{},
 			manager: chalManager,
 		}, bigStepCommit)
-		require.ErrorContains(t, err, "execution reverted: Vertex does not exist")
+		require.ErrorContains(t, err, "execution reverted: Claim does not exist")
 	})
 	t.Run("claim has invalid succession challenge", func(t *testing.T) {
 		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, parent, bigStepCommit)
