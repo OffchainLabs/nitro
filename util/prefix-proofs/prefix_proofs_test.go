@@ -108,9 +108,9 @@ func FuzzMaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
 	merkleTreeContract, _ := setupMerkleTreeContract(f)
 	opts := &bind.CallOpts{}
 	f.Fuzz(func(t *testing.T, pre, post uint64) {
-		gotGo, _ := prefixproofs.MaximumAppendBetween(pre, post)
-		gotSol, _ := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(pre)), big.NewInt(int64(post)))
-		if gotSol != nil {
+		gotGo, err1 := prefixproofs.MaximumAppendBetween(pre, post)
+		gotSol, err2 := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(pre)), big.NewInt(int64(post)))
+		if err1 == nil && err2 == nil {
 			if gotSol.Uint64() != gotGo {
 				t.Errorf("sol %d != go %d", gotSol.Uint64(), gotGo)
 			}
