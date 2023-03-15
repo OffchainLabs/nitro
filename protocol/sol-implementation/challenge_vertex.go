@@ -125,19 +125,14 @@ func (v *ChallengeVertex) Merge(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	mergingToHistory util.HistoryCommitment,
-	proof []common.Hash,
+	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	// Flatten the last leaf proof for submission to the chain.
-	flatProof := make([]byte, 0)
-	for _, h := range proof {
-		flatProof = append(flatProof, h[:]...)
-	}
 	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Merge(
 			v.manager.assertionChain.txOpts,
 			v.id,
 			mergingToHistory.Merkle,
-			flatProof,
+			proof,
 		)
 	})
 	if err != nil {
@@ -156,21 +151,20 @@ func (v *ChallengeVertex) Bisect(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	history util.HistoryCommitment,
-	proof []common.Hash,
+	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	// Flatten the last leaf proof for submission to the chain.
-	flatProof := make([]byte, 0)
-	for _, h := range proof {
-		flatProof = append(flatProof, h[:]...)
-	}
-	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
-		return v.manager.writer.Bisect(
-			v.manager.assertionChain.txOpts,
-			v.id,
-			history.Merkle,
-			flatProof,
-		)
-	})
+	receipt, err := transact(
+		ctx,
+		v.manager.assertionChain.backend,
+		v.manager.assertionChain.headerReader,
+		func() (*types.Transaction, error) {
+			return v.manager.writer.Bisect(
+				v.manager.assertionChain.txOpts,
+				v.id,
+				history.Merkle,
+				proof,
+			)
+		})
 	if err != nil {
 		errS := err.Error()
 		switch {
@@ -180,12 +174,21 @@ func (v *ChallengeVertex) Bisect(
 			return nil, err
 		}
 	}
-	return getVertexFromComponents(
-		v.manager,
-		v.manager.assertionChain.callOpts,
-		v.inner.ChallengeId,
-		history,
-	)
+	if len(receipt.Logs) == 0 {
+		return nil, errors.New("no logs observed from assertion confirmation")
+	}
+	bisection, err := v.manager.filterer.ParseBisected(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse bisection log")
+	}
+	bisectedTo, err := v.manager.GetVertex(ctx, tx, bisection.ToId)
+	if err != nil {
+		return nil, err
+	}
+	if bisectedTo.IsNone() {
+		return nil, ErrNotFound
+	}
+	return bisectedTo.Unwrap(), nil
 }
 
 func getVertexFromComponents(

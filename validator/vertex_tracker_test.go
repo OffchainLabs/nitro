@@ -202,9 +202,11 @@ func Test_act(t *testing.T) {
 		err = honestTracker.act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerBisecting), int(honestTracker.fsm.Current().State))
+
 		err = honestTracker.act(ctx)
 		require.NoError(t, err)
-		require.Equal(t, int(trackerMerging), int(honestTracker.fsm.Current().State))
+
+		require.Equal(t, trackerMerging.String(), honestTracker.fsm.Current().State.String())
 		err = honestTracker.act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerStarted), int(honestTracker.fsm.Current().State))
@@ -216,8 +218,8 @@ func Test_act(t *testing.T) {
 func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vertexTracker) {
 	logsHook := test.NewGlobal()
 	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
-		divergeHeight: 65,
-		numBlocks:     100,
+		divergeHeight: 32,
+		numBlocks:     63,
 	})
 
 	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
@@ -304,6 +306,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 		},
 		challenge,
 		leafVertexToBisect,
+		util.WithTrackedTransitions[vertexTrackerAction, vertexTrackerState](),
 	)
 	require.NoError(t, err)
 	tracker2, err := newVertexTracker(
@@ -317,6 +320,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 		},
 		challenge,
 		honestLeafVertex,
+		util.WithTrackedTransitions[vertexTrackerAction, vertexTrackerState](),
 	)
 	require.NoError(t, err)
 	return tracker1, tracker2

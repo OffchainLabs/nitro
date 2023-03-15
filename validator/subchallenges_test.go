@@ -7,8 +7,6 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,12 +92,9 @@ func TestFullChallengeResolution(t *testing.T) {
 		commit2, err = evilManager.SmallStepLeafCommitment(ctx, 0, 1)
 		require.NoError(t, err)
 
-		proof := hexutil.MustDecode("0x0000000000000000000000000000000000000000000000000000000000000001")
-		commit1.LastLeafProof = []common.Hash{common.BytesToHash(proof)}
 		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
 		require.NoError(t, err)
 		t.Log("Alice (honest) added leaf at height 1")
-		commit1.LastLeafProof = []common.Hash{common.BytesToHash(proof)}
 		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex2, commit2)
 		require.NoError(t, err)
 		t.Log("Bob added leaf at height 1")

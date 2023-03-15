@@ -23,6 +23,7 @@ type ChallengeManager struct {
 	addr           common.Address
 	caller         *challengeV2gen.ChallengeManagerImplCaller
 	writer         *challengeV2gen.ChallengeManagerImplTransactor
+	filterer       *challengeV2gen.ChallengeManagerImplFilterer
 }
 
 // ChallengeManager returns an instance of the current challenge manager
@@ -43,6 +44,7 @@ func (ac *AssertionChain) CurrentChallengeManager(
 		addr:           addr,
 		caller:         &managerBinding.ChallengeManagerImplCaller,
 		writer:         &managerBinding.ChallengeManagerImplTransactor,
+		filterer:       &managerBinding.ChallengeManagerImplFilterer,
 	}, nil
 }
 

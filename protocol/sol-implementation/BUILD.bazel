@@ -41,6 +41,8 @@ go_test(
         "//solgen/go/challengeV2gen",
         "//solgen/go/ospgen",
         "//solgen/go/rollupgen",
+        "//state-manager",
+        "//testing/mocks",
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",

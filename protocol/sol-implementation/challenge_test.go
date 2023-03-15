@@ -5,11 +5,13 @@ import (
 	"math/big"
 	"testing"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,9 +20,8 @@ var _ = protocol.Challenge(&Challenge{})
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(1)
-	height2 := uint64(1)
-	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
+	height := uint64(3)
+	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height, height)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(
 			ctx,
@@ -33,7 +34,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				},
 			},
 			util.HistoryCommitment{
-				Height: height1,
+				Height: height,
 				Merkle: common.BytesToHash([]byte("bar")),
 			},
 		)
@@ -56,7 +57,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 				Merkle: common.BytesToHash([]byte("bar")),
 			},
 		)
-		require.ErrorContains(t, err, "Invalid height")
+		require.ErrorContains(t, err, "Invalid leaf height")
 	})
 	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
 		t.Skip("Needs proofs implemented in solidity")
@@ -70,17 +71,18 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	t.Run("first state not in history", func(t *testing.T) {
 		t.Skip()
 	})
+	leaves := make([]common.Hash, 4)
+	for i := range leaves {
+		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	history, err := util.NewHistoryCommitment(height, leaves)
+	require.NoError(t, err)
 	t.Run("OK", func(t *testing.T) {
-		_, err := challenge.AddBlockChallengeLeaf(
+		_, err = challenge.AddBlockChallengeLeaf(
 			ctx,
 			tx,
 			a1,
-			util.HistoryCommitment{
-				Height:        height1,
-				Merkle:        common.BytesToHash([]byte("nyan")),
-				LastLeaf:      a1.inner.StateHash,
-				LastLeafProof: []common.Hash{a1.inner.StateHash},
-			},
+			history,
 		)
 		require.NoError(t, err)
 
@@ -95,12 +97,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			ctx,
 			tx,
 			a1,
-			util.HistoryCommitment{
-				Height:        height2,
-				Merkle:        common.BytesToHash([]byte("nyan")),
-				LastLeaf:      a1.inner.StateHash,
-				LastLeafProof: []common.Hash{a1.inner.StateHash},
-			},
+			history,
 		)
 		require.ErrorContains(t, err, "already exists")
 	})
