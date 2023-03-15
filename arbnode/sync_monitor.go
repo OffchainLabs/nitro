@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	flag "github.com/spf13/pflag"
 )
 
@@ -14,6 +15,7 @@ type SyncMonitor struct {
 	inboxReader *InboxReader
 	txStreamer  *TransactionStreamer
 	coordinator *SeqCoordinator
+	exec        execution.FullExecutionClient
 	initialized bool
 }
 
@@ -41,10 +43,11 @@ func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".coordinator-msg-lag", DefaultSyncMonitorConfig.CoordinatorMsgLag, "allowed lag between local and remote messages")
 }
 
-func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
+func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, exec execution.FullExecutionClient) {
 	s.inboxReader = inboxReader
 	s.txStreamer = txStreamer
 	s.coordinator = coordinator
+	s.exec = exec
 	s.initialized = true
 }
 
@@ -148,7 +151,7 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	block := s.txStreamer.exec.MessageIndexToBlockNumber(msg - 1)
+	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
 }
 
@@ -160,7 +163,7 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
-	block := s.txStreamer.exec.MessageIndexToBlockNumber(msg - 1)
+	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
 }
 

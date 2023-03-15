@@ -41,7 +41,7 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	chainConfig *params.ChainConfig
-	exec        execution.FullExecutionClient
+	exec        execution.ExecutionSequencer
 	validator   *staker.BlockValidator
 
 	db           ethdb.Database
@@ -86,7 +86,7 @@ func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 func NewTransactionStreamer(
 	db ethdb.Database,
 	chainConfig *params.ChainConfig,
-	exec execution.FullExecutionClient,
+	exec execution.ExecutionSequencer,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,

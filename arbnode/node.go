@@ -521,7 +521,7 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 type Node struct {
 	ArbDB                   ethdb.Database
 	Stack                   *node.Node
-	Execution               execution.ExecutionClient
+	Execution               execution.FullExecutionClient
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
 	DeployInfo              *RollupAddresses
@@ -949,10 +949,23 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
+	execClient, ok := n.Execution.(*gethclient.ExecutionNode)
+	if !ok {
+		execClient = nil
+	}
+	if execClient != nil {
+		execClient.Initialize(ctx, n, n.SyncMonitor)
+	}
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.Execution)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
+	}
+	if execClient != nil {
+		err := execClient.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting exec client: %w", err)
+		}
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
@@ -1050,6 +1063,13 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
+	execClient, ok := n.Execution.(*gethclient.ExecutionNode)
+	if !ok {
+		execClient = nil
+	}
+	if execClient != nil {
+		execClient.StopAndWait()
+	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()
 	}

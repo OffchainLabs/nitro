@@ -444,7 +444,6 @@ func mainImpl() int {
 		chainDb,
 		l2BlockChain,
 		l1Client,
-		nil, // TODO
 		func() *gethclient.Config { return &liveNodeConfig.get().Execution },
 	)
 	if err != nil {

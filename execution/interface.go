@@ -50,6 +50,7 @@ type ExecutionRecorder interface {
 
 // needed for sequencer
 type ExecutionSequencer interface {
+	ExecutionClient
 	Pause()
 	Activate()
 	ForwardTo(url string) error

@@ -89,14 +89,7 @@ var ConfigDefault = Config{
 	Caching:                DefaultCachingConfig,
 }
 
-func ConfigDefaultL1Test() *Config {
-	config := ConfigDefaultL1NonSequencerTest()
-	config.Sequencer = TestSequencerConfig
-
-	return config
-}
-
-func ConfigDefaultL1NonSequencerTest() *Config {
+func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -104,7 +97,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	return &config
 }
 
-func ConfigDefaultL2Test() *Config {
+func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
 
@@ -129,7 +122,6 @@ func CreateExecutionNode(
 	chainDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	syncMonitor arbitrum.SyncProgressBackend,
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
@@ -174,7 +166,7 @@ func CreateExecutionNode(
 		LogCacheSize: config.RPC.FilterLogCacheSize,
 		Timeout:      config.RPC.FilterTimeout,
 	}
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, syncMonitor, filterConfig)
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +217,7 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}) error {
+func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, sync arbitrum.SyncProgressBackend) error {
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
@@ -234,6 +226,10 @@ func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}) err
 	err = n.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return fmt.Errorf("error initializing transaction publisher: %w", err)
+	}
+	err = n.Backend.APIBackend().SetSyncBackend(sync)
+	if err != nil {
+		return fmt.Errorf("error setting sync backend: %w", err)
 	}
 	return nil
 }
