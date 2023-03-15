@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"fmt"
-
 	"crypto/ecdsa"
 	"math/big"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -16,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -82,6 +82,147 @@ func TestLeastSignificantBit_GoSolidityEquivalence(t *testing.T) {
 func TestMostSignificantBit_GoSolidityEquivalence(t *testing.T) {
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
 	runBitEquivalenceTest(t, merkleTreeContract.MostSignificantBit, prefixproofs.MostSignificantBit)
+}
+
+func FuzzVerifyPrefixProof_Go(f *testing.F) {
+	ctx := context.Background()
+	hashes := make([]common.Hash, 10)
+	for i := 0; i < len(hashes); i++ {
+		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	manager := statemanager.New(hashes)
+
+	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
+	require.NoError(f, err)
+	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, 7)
+	require.NoError(f, err)
+	packedProof, err := manager.PrefixProof(ctx, 3, 7)
+	require.NoError(f, err)
+
+	data, err := statemanager.ProofArgs.Unpack(packedProof)
+	require.NoError(f, err)
+	preExpansion := data[0].([][32]byte)
+	proof := data[1].([][32]byte)
+	preExp := make([]byte, 0)
+	for _, item := range preExpansion {
+		preExp = append(preExp, item[:]...)
+	}
+	prefixProof := make([]byte, 0)
+	for _, item := range proof {
+		prefixProof = append(prefixProof, item[:]...)
+	}
+
+	testcases := []prefixproofs.VerifyPrefixProofConfig{
+		{
+			PreRoot:  loCommit.Merkle,
+			PreSize:  4,
+			PostRoot: hiCommit.Merkle,
+			PostSize: 8,
+		},
+		{
+			PreRoot:  loCommit.Merkle,
+			PreSize:  0,
+			PostRoot: hiCommit.Merkle,
+			PostSize: 0,
+		},
+		{
+			PreRoot:  loCommit.Merkle,
+			PreSize:  0,
+			PostRoot: hiCommit.Merkle,
+			PostSize: 100,
+		},
+	}
+	for _, tc := range testcases {
+		f.Add(tc.PreRoot.String(), tc.PreSize, tc.PostRoot.String(), tc.PostSize, hexutil.Encode(preExp), hexutil.Encode(prefixProof))
+	}
+	merkleTreeContract, _ := setupMerkleTreeContract(f)
+	opts := &bind.CallOpts{}
+	f.Fuzz(func(
+		t *testing.T,
+		preRootF string,
+		preSizeF uint64,
+		postRootF string,
+		postSizeF uint64,
+		preExpansionF string,
+		prefixProofF string,
+	) {
+		preExpF := make([]common.Hash, 0)
+		preArray := make([][32]byte, 0)
+		decodedExp, err := hexutil.Decode(preExpansionF)
+		if err != nil {
+			return
+		}
+		for i := 0; i < len(decodedExp); i += 32 {
+			if i+32 <= len(decodedExp) {
+				preExpF = append(preExpF, common.BytesToHash(decodedExp[i:i+32]))
+
+				var r [32]byte
+				copy(r[:], decodedExp[i:i+32])
+				preArray = append(preArray, r)
+			} else {
+				preExpF = append(preExpF, common.BytesToHash(decodedExp[i:]))
+
+				var r [32]byte
+				copy(r[:], decodedExp[i:])
+				preArray = append(preArray, r)
+			}
+		}
+
+		proofF := make([]common.Hash, 0)
+		proofArray := make([][32]byte, 0)
+		decodedProof, err := hexutil.Decode(prefixProofF)
+		if err != nil {
+			return
+		}
+		for i := 0; i < len(decodedProof); i += 32 {
+			if i+32 <= len(decodedProof) {
+				proofF = append(proofF, common.BytesToHash(decodedProof[i:i+32]))
+
+				var r [32]byte
+				copy(r[:], decodedProof[i:i+32])
+				proofArray = append(proofArray, r)
+			} else {
+				proofF = append(proofF, common.BytesToHash(decodedProof[i:]))
+
+				var r [32]byte
+				copy(r[:], decodedProof[i:])
+				proofArray = append(proofArray, r)
+			}
+		}
+		preRoot, err := hexutil.Decode(preRootF)
+		if err != nil {
+			return
+		}
+		postRoot, err := hexutil.Decode(postRootF)
+		if err != nil {
+			return
+		}
+		cfg := &prefixproofs.VerifyPrefixProofConfig{
+			PreRoot:      common.BytesToHash(preRoot),
+			PreSize:      preSizeF,
+			PostRoot:     common.BytesToHash(postRoot),
+			PostSize:     postSizeF,
+			PreExpansion: preExpF,
+			PrefixProof:  proofF,
+		}
+		goErr := prefixproofs.VerifyPrefixProofGo(cfg)
+		solErr := merkleTreeContract.VerifyPrefixProof(
+			opts,
+			cfg.PreRoot,
+			big.NewInt(int64(cfg.PreSize)),
+			cfg.PostRoot,
+			big.NewInt(int64(cfg.PostSize)),
+			preArray,
+			proofArray,
+		)
+
+		if goErr == nil && solErr != nil {
+			t.Errorf("Go verified, but solidity failed to verify: %+v", cfg)
+		}
+		if goErr != nil && solErr == nil {
+			t.Errorf("Solidity verified, but go failed to verify: %+v", cfg)
+		}
+	})
 }
 
 func FuzzMaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
@@ -214,14 +355,15 @@ func runBitEquivalenceTest(
 }
 
 func setupMerkleTreeContract(t testing.TB) (*mocksgen.MerkleTreeAccess, *backends.SimulatedBackend) {
-	t.Helper()
 	ctx := context.Background()
 	numChains := uint64(1)
 	accs, backend := setupAccounts(t, numChains)
 	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
 	headerReader.Start(ctx)
 	_, _, merkleTreeContract, err := mocksgen.DeployMerkleTreeAccess(accs[0].txOpts, backend)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	backend.Commit()
 	return merkleTreeContract, backend
 }
@@ -233,16 +375,19 @@ type testAccount struct {
 }
 
 func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
-	t.Helper()
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
 
 	accs := make([]*testAccount, numAccounts)
 	for i := uint64(0); i < numAccounts; i++ {
 		privKey, err := crypto.GenerateKey()
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
 		pubKeyECDSA, ok := privKey.Public().(*ecdsa.PublicKey)
-		require.Equal(t, true, ok)
+		if !ok {
+			t.Fatal("not ok")
+		}
 
 		// Strip off the 0x and the first 2 characters 04 which is always the
 		// EC prefix and is not required.
@@ -253,7 +398,9 @@ func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.
 		addr := crypto.PubkeyToAddress(privKey.PublicKey)
 		chainID := big.NewInt(1337)
 		txOpts, err := bind.NewKeyedTransactorWithChainID(privKey, chainID)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
 		startingBalance, _ := new(big.Int).SetString(
 			"100000000000000000000000000000000000000",
 			10,

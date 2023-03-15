@@ -80,6 +80,7 @@ var (
 	ErrRootMismatch                      = errors.New("root mismatch")
 	ErrIncompleteProof                   = errors.New("incomplete proof usage")
 	ErrSizeNotLeqPostSize                = errors.New("size not <= post size")
+	ErrIndexOutOfRange                   = errors.New("index out of range")
 )
 
 // LeastSignificantBit of a 64bit unsigned integer.
@@ -310,6 +311,9 @@ func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
 		level, err := MaximumAppendBetween(size, cfg.PostSize)
 		if err != nil {
 			return err
+		}
+		if proofIndex >= uint64(len(cfg.PrefixProof)) {
+			return ErrIndexOutOfRange
 		}
 		preExpansion, err = AppendCompleteSubTree(
 			preExpansion, level, cfg.PrefixProof[proofIndex],
