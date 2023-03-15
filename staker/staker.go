@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -57,7 +58,6 @@ type L1ValidatorConfig struct {
 	MakeAssertionInterval    time.Duration     `koanf:"make-assertion-interval"`
 	L1PostingStrategy        L1PostingStrategy `koanf:"posting-strategy"`
 	DisableChallenge         bool              `koanf:"disable-challenge"`
-	TargetMachineCount       int               `koanf:"target-machine-count"`
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
 	UseSmartContractWallet   bool              `koanf:"use-smart-contract-wallet"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
@@ -74,7 +74,6 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	MakeAssertionInterval:    time.Hour,
 	L1PostingStrategy:        L1PostingStrategy{},
 	DisableChallenge:         false,
-	TargetMachineCount:       4,
 	ConfirmationBlocks:       12,
 	UseSmartContractWallet:   false,
 	OnlyCreateWalletContract: false,
@@ -91,7 +90,6 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
-	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
@@ -214,7 +212,15 @@ func (s *Staker) Initialize(ctx context.Context) error {
 func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
-	s.CallIteratively(func(ctx context.Context) time.Duration {
+	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
+		defer func() {
+			panicErr := recover()
+			if panicErr != nil {
+				log.Error("staker Act call panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
+				s.builder.ClearTransactions()
+				returningWait = time.Minute
+			}
+		}()
 		err := s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
@@ -522,7 +528,6 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxTracker,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
-			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,
 		)
 		if err != nil {
@@ -670,6 +675,9 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 		stakerInfo, err := s.rollup.StakerInfo(ctx, staker)
 		if err != nil {
 			return fmt.Errorf("error getting staker %v info: %w", staker, err)
+		}
+		if stakerInfo == nil {
+			return fmt.Errorf("staker %v (returned from ValidatorUtils's GetStakers function) not found in rollup", staker)
 		}
 		if stakerInfo.CurrentChallenge != nil {
 			continue
