@@ -82,6 +82,7 @@ var (
 	ErrSizeNotLeqPostSize                = errors.New("size not <= post size")
 )
 
+// LeastSignificantBit of a 64bit unsigned integer.
 func LeastSignificantBit(x uint64) (uint64, error) {
 	if x == 0 {
 		return 0, ErrCannotBeZero
@@ -89,6 +90,7 @@ func LeastSignificantBit(x uint64) (uint64, error) {
 	return uint64(bits.TrailingZeros64(x)), nil
 }
 
+// MostSignificantBit of a 64bit unsigned integer.
 func MostSignificantBit(x uint64) (uint64, error) {
 	if x == 0 {
 		return 0, ErrCannotBeZero
@@ -105,15 +107,17 @@ func Root(me []common.Hash) common.Hash {
 	for i := 0; i < len(me); i++ {
 		val := me[i]
 		if empty {
-			empty = false
-			accum = val
+			if val != (common.Hash{}) {
+				empty = false
+				accum = val
 
-			// the tree is balanced if the only non zero entry in the merkle extension
-			// us the last entry
-			// otherwise the lowest level entry needs to be combined with a zero to balance the bottom
-			// level, after which zeros in the merkle extension above that will balance the rest
-			if i != len(me)-1 {
-				accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
+				// the tree is balanced if the only non zero entry in the merkle extension
+				// us the last entry
+				// otherwise the lowest level entry needs to be combined with a zero to balance the bottom
+				// level, after which zeros in the merkle extension above that will balance the rest
+				if i != len(me)-1 {
+					accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
+				}
 			}
 		} else if (val != common.Hash{}) {
 			accum = crypto.Keccak256Hash(val.Bytes(), accum.Bytes())
@@ -149,15 +153,16 @@ func AppendCompleteSubTree(
 			if i == level {
 				empty[i] = subtreeRoot
 				return empty, nil
+			} else {
+				empty[i] = common.Hash{}
 			}
-			empty[i] = common.Hash{}
 		}
 	}
 
 	if level >= uint64(len(me)) {
 		// This technically isn't necessary since it would be caught by the i < level check
 		// on the last loop of the for-loop below, but we add it for a clearer error message
-		return nil, ErrLevelTooHigh
+		return nil, errors.Wrap(ErrLevelTooHigh, "failing before for loop")
 	}
 
 	accumHash := subtreeRoot
@@ -202,7 +207,7 @@ func AppendCompleteSubTree(
 		next = append(next, accumHash)
 	}
 
-	if uint64(len(next)) < MAX_LEVEL+1 {
+	if uint64(len(next)) >= MAX_LEVEL+1 {
 		return nil, ErrLevelTooHigh
 	}
 	return me, nil
@@ -238,8 +243,8 @@ func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	// startSize looks like: xxxxxxyyyy
 	// endSize looks like:   xxxxxxzzzz
 	// where x are the complete sub trees they share, and y and z are the subtrees they dont
-	if startSize < endSize {
-		return 0, ErrStartNotLessThanEnd
+	if startSize >= endSize {
+		return 0, errors.Wrapf(ErrStartNotLessThanEnd, "start %d, end %d", startSize, endSize)
 	}
 
 	// remove the high order bits that are shared
@@ -264,7 +269,7 @@ func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 		return MostSignificantBit(z)
 	}
 	// since we enforce that start < end, we know that y and z cannot both be 0
-	return 0, ErrCannotBeZero
+	return 0, errors.Wrap(ErrCannotBeZero, "y and z cannot both be 0")
 }
 
 type VerifyPrefixProofConfig struct {
@@ -287,24 +292,37 @@ func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
 		return errors.Wrap(ErrRootMismatch, "pre expansion root mismatch")
 	}
 	if cfg.PreSize >= cfg.PostSize {
-		return errors.Wrapf(ErrStartNotLessThanEnd, "presize %d >= postsize %d", cfg.PreSize, cfg.PostSize)
+		return errors.Wrapf(
+			ErrStartNotLessThanEnd,
+			"presize %d >= postsize %d",
+			cfg.PreSize,
+			cfg.PostSize,
+		)
 	}
 	preExpansion := cfg.PreExpansion
 	size := cfg.PreSize
 	proofIndex := uint64(0)
+
 	for size < cfg.PostSize {
 		level, err := MaximumAppendBetween(size, cfg.PostSize)
 		if err != nil {
 			return err
 		}
-		preExpansion, err = AppendCompleteSubTree(preExpansion, level, cfg.PrefixProof[proofIndex])
+		preExpansion, err = AppendCompleteSubTree(
+			preExpansion, level, cfg.PrefixProof[proofIndex],
+		)
 		if err != nil {
 			return err
 		}
 		numLeaves := 1 << level
 		size += uint64(numLeaves)
 		if size > cfg.PostSize {
-			return errors.Wrapf(ErrSizeNotLeqPostSize, "size %d > postsize %d", size, cfg.PostSize)
+			return errors.Wrapf(
+				ErrSizeNotLeqPostSize,
+				"size %d > postsize %d",
+				size,
+				cfg.PostSize,
+			)
 		}
 		proofIndex++
 	}
@@ -312,7 +330,12 @@ func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
 		return errors.Wrap(ErrRootMismatch, "post expansion root mismatch")
 	}
 	if proofIndex != uint64(len(cfg.PrefixProof)) {
-		return errors.Wrapf(ErrIncompleteProof, "proof index %d, proof length %d", proofIndex, len(cfg.PrefixProof))
+		return errors.Wrapf(
+			ErrIncompleteProof,
+			"proof index %d, proof length %d",
+			proofIndex,
+			len(cfg.PrefixProof),
+		)
 	}
 	return nil
 }

@@ -22,6 +22,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMaximumAppendBetween_GoSolidityEquivalence(t *testing.T) {
+	merkleTreeContract, _ := setupMerkleTreeContract(t)
+	preSize := uint64(4)
+	postSize := uint64(8)
+	gotGo, err := prefixproofs.MaximumAppendBetween(preSize, postSize)
+	require.NoError(t, err)
+
+	opts := &bind.CallOpts{}
+	gotSol, err := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(preSize)), big.NewInt(int64(postSize)))
+	require.NoError(t, err)
+	require.Equal(t, gotSol.Uint64(), gotGo)
+}
+
 func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
