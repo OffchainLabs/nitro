@@ -51,8 +51,8 @@ func TestMerkleProof(t *testing.T) {
 	computedRoot, err := CalculateRootFromProof(proof, index, leaves[index])
 	require.NoError(t, err)
 	t.Run("proof verifies", func(t *testing.T) {
-		root, err := MerkleRoot(tree)
-		require.NoError(t, err)
+		root, err2 := MerkleRoot(tree)
+		require.NoError(t, err2)
 		require.Equal(t, root, computedRoot)
 	})
 	t.Run("first leaf proof", func(t *testing.T) {
@@ -62,8 +62,8 @@ func TestMerkleProof(t *testing.T) {
 		require.Equal(t, true, len(proof) > 0)
 		computedRoot, err = CalculateRootFromProof(proof, index, leaves[index])
 		require.NoError(t, err)
-		root, err := MerkleRoot(tree)
-		require.NoError(t, err)
+		root, err3 := MerkleRoot(tree)
+		require.NoError(t, err3)
 		require.Equal(t, root, computedRoot)
 	})
 	t.Run("last leaf proof", func(t *testing.T) {
