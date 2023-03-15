@@ -288,7 +288,7 @@ type VerifyPrefixProofConfig struct {
 // Verify that a pre-root commits to a prefix of the leaves committed by a post-root
 // Verifies by appending sub trees to the pre tree until we get to the size of the post tree
 // and then checking that the root of the calculated post tree is equal to the supplied one
-func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
+func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 	if cfg.PreSize == 0 {
 		return errors.Wrap(ErrCannotBeZero, "presize was 0")
 	}

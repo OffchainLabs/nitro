@@ -63,7 +63,7 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = prefixproofs.VerifyPrefixProofGo(&prefixproofs.VerifyPrefixProofConfig{
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
 		PreRoot:      loCommit.Merkle,
 		PreSize:      4,
 		PostRoot:     hiCommit.Merkle,
@@ -205,7 +205,7 @@ func FuzzVerifyPrefixProof_Go(f *testing.F) {
 			PreExpansion: preExpF,
 			PrefixProof:  proofF,
 		}
-		goErr := prefixproofs.VerifyPrefixProofGo(cfg)
+		goErr := prefixproofs.VerifyPrefixProof(cfg)
 		solErr := merkleTreeContract.VerifyPrefixProof(
 			opts,
 			cfg.PreRoot,
