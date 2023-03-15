@@ -7,7 +7,6 @@ go_library(
         "count_up_timer.go",
         "fsm.go",
         "option_type.go",
-        "prefix_proofs.go",
         "proof.go",
         "simulated_backend_wrapper.go",
         "thread_safe_slice.go",
