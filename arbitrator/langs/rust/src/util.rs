@@ -1,6 +1,11 @@
-use std::{array::TryFromSliceError, borrow::Borrow, fmt::{self, Debug, Display, Formatter}, ops::{Deref, DerefMut}};
+use std::{
+    array::TryFromSliceError,
+    borrow::Borrow,
+    fmt::{self, Debug, Display, Formatter},
+    ops::{Deref, DerefMut},
+};
 
-#[derive(Default)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Bytes20(pub [u8; 20]);
 
@@ -82,7 +87,7 @@ impl Debug for Bytes20 {
     }
 }
 
-#[derive(Default)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
@@ -163,4 +168,3 @@ impl Debug for Bytes32 {
         write!(f, "{}", hex::encode(self))
     }
 }
-

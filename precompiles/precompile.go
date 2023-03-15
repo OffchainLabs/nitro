@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -548,8 +549,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo := insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 
-	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, &ArbWasm{Address: hex("71")}))
+	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
+	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
 	ArbWasm.arbosVersion = 11
+	programs.ProgramNotCompiledError = ArbWasmImpl.ProgramNotCompiledError
+	programs.ProgramOutOfDateError = ArbWasmImpl.ProgramOutOfDateError
+	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))

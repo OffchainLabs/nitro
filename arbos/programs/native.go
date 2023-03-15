@@ -16,20 +16,24 @@ uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost);
 */
 import "C"
 import (
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type u8 = C.uint8_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
+type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 
 func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) error {
@@ -88,13 +92,42 @@ func callUserWasm(
 		db.SetState(program, key, value)
 		return cost, nil
 	}
+	callContract := func(contract common.Address, input []byte, gas uint64, value *big.Int) ([]byte, uint64, error) {
+		if readOnly && value.Sign() != 0 {
+			return nil, 0, vm.ErrWriteProtection
+		}
+		if value.Sign() != 0 {
+			gas = arbmath.SaturatingUAdd(gas, params.CallStipend) // should we do this?
+		}
+
+		// TODO: comply with the yellow paper
+		//     63/64th's rule?
+		//     update scope'd contract gas?
+		//
+		// TODO: handle custom return data
+		//
+		// funcs to look at
+		//     operations_acl.go makeCallVariantGasCallEIP2929
+		//
+
+		evm := interpreter.Evm()
+		evm.StateDB.AddAddressToAccessList(contract)
+
+		ret, returnGas, err := evm.Call(scope.Contract, contract, input, gas, value)
+		if err != nil && errors.Is(err, vm.ErrExecutionReverted) {
+			ret = []byte{}
+		}
+		scope.Contract.Gas += returnGas
+		interpreter.SetReturnData(common.CopyBytes(ret))
+		return ret, scope.Contract.Gas, err
+	}
 
 	output := &C.RustVec{}
 	status := userStatus(C.stylus_call(
 		goSlice(module),
 		goSlice(calldata),
 		stylusParams.encode(),
-		newAPI(getBytes32, setBytes32),
+		newAPI(getBytes32, setBytes32, callContract),
 		output,
 		(*u64)(gas),
 	))
@@ -137,6 +170,31 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64) u8 {
 	return apiSuccess
 }
 
+//export callContractImpl
+func callContractImpl(api usize, contract bytes20, data *C.RustVec, gas *u64, value bytes32) u8 {
+	closure, err := getAPI(api)
+	if err != nil {
+		log.Error(err.Error())
+		return apiFailure
+	}
+
+	result, gasLeft, err := closure.callContract(contract.toAddress(), data.read(), uint64(*gas), value.toBig())
+	data.overwrite(result)
+	if err != nil {
+		return apiFailure
+	}
+	*gas = u64(gasLeft)
+	return apiSuccess
+}
+
+func (value bytes20) toAddress() common.Address {
+	addr := common.Address{}
+	for index, b := range value.bytes {
+		addr[index] = byte(b)
+	}
+	return addr
+}
+
 func (value bytes32) toHash() common.Hash {
 	hash := common.Hash{}
 	for index, b := range value.bytes {
@@ -165,6 +223,10 @@ func (vec *C.RustVec) intoBytes() []byte {
 	slice := vec.read()
 	C.stylus_free(*vec)
 	return slice
+}
+
+func (vec *C.RustVec) overwrite(data []byte) {
+	C.stylus_overwrite_vec(vec, goSlice(data))
 }
 
 func goSlice(slice []byte) C.GoSliceData {

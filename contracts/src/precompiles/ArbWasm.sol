@@ -29,4 +29,8 @@ interface ArbWasm {
     // @notice gets the fixed-cost overhead needed to initiate a hostio call
     // @return cost the cost (in wasm gas) of starting a stylus hostio call
     function wasmHostioCost() external view returns (uint64 price);
+
+    error ProgramNotCompiled();
+    error ProgramOutOfDate(uint32 version);
+    error ProgramUpToDate();
 }

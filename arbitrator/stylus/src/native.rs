@@ -3,16 +3,19 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    host, GoAPI,
+    host, GoAPI, RustVec,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
-use prover::programs::{
-    counter::{Counter, CountingMachine, OP_OFFSETS},
-    depth::STYLUS_STACK_LEFT,
-    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
-    prelude::*,
-    start::STYLUS_START,
+use prover::{
+    programs::{
+        counter::{Counter, CountingMachine, OP_OFFSETS},
+        depth::STYLUS_STACK_LEFT,
+        meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
+        prelude::*,
+        start::STYLUS_START,
+    },
+    utils::Bytes20,
 };
 use std::{
     collections::BTreeMap,
@@ -82,6 +85,8 @@ impl NativeInstance {
                 "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
                 "account_load_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_load_bytes32),
                 "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
+                "call_contract" => Function::new_typed_with_env(&mut store, &func_env, host::call_contract),
+                "read_return_data" => Function::new_typed_with_env(&mut store, &func_env, host::read_return_data),
             },
         };
         if debug_funcs {
@@ -140,6 +145,7 @@ impl NativeInstance {
 
         let get = api.get_bytes32;
         let set = api.set_bytes32;
+        let call = api.call_contract;
         let id = api.id;
 
         let get_bytes32 = Box::new(move |key| unsafe {
@@ -152,8 +158,19 @@ impl NativeInstance {
             let status = set(id, key, value, &mut cost as *mut _);
             (cost, status != 0)
         });
-        let call_contract =
-            Box::new(move |_contract, _input, _gas, _value| unimplemented!("contract call"));
+        let call_contract = Box::new(move |contract: Bytes20, input, gas, value| unsafe {
+            let mut gas_left = gas;
+            let mut data = RustVec::new(input); // used for both input and output
+
+            let status = call(
+                id,
+                contract,
+                &mut data as *mut _,
+                &mut gas_left as *mut _,
+                value,
+            );
+            (data.into_vec(), 0, status)
+        });
 
         env.set_evm_api(get_bytes32, set_bytes32, call_contract)
     }
@@ -228,6 +245,9 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
+        (u32 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u32 { panic!("incomplete import") })
+        };
         ($($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
         };
@@ -238,6 +258,8 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "return_data" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
+            "call_contract" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32, _: u32|),
+            "read_return_data" => stub!(|_: u32|),
         },
     };
     if config.debug.debug_funcs {

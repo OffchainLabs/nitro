@@ -37,6 +37,10 @@ const (
 	wasmHostioCostOffset
 )
 
+var ProgramNotCompiledError func() error
+var ProgramOutOfDateError func(version uint32) error
+var ProgramUpToDateError func() error
+
 func Initialize(sto *storage.Storage) {
 	wasmGasPrice := sto.OpenStorageBackedBips(wasmGasPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
@@ -97,7 +101,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 		return 0, err
 	}
 	if latest >= version {
-		return 0, errors.New("program is current")
+		return 0, ProgramUpToDateError()
 	}
 
 	wasm, err := getWasm(statedb, program)
@@ -127,10 +131,10 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	if programVersion == 0 {
-		return nil, errors.New("program not compiled")
+		return nil, ProgramNotCompiledError()
 	}
 	if programVersion != stylusVersion {
-		return nil, errors.New("program out of date, please recompile")
+		return nil, ProgramOutOfDateError(programVersion)
 	}
 	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
 	if err != nil {

@@ -105,10 +105,12 @@ stylus_test_fallible_wasm   = $(call get_stylus_test_wasm,fallible)
 stylus_test_fallible_src    = $(call get_stylus_test_rust,fallible)
 stylus_test_storage_wasm    = $(call get_stylus_test_wasm,storage)
 stylus_test_storage_src     = $(call get_stylus_test_rust,storage)
+stylus_test_calls_wasm      = $(call get_stylus_test_wasm,calls)
+stylus_test_calls_src       = $(call get_stylus_test_rust,calls)
 stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_calls_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -339,6 +341,10 @@ $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_calls_wasm): $(stylus_test_calls_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 

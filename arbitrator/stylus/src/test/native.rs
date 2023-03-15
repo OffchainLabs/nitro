@@ -9,7 +9,10 @@
 use crate::{
     native::NativeInstance,
     run::RunProgram,
-    test::api::{TestEvmContracts, TestEvmStorage},
+    test::{
+        api::{TestEvmContracts, TestEvmStorage},
+        random_bytes20, random_bytes32,
+    },
 };
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
@@ -24,7 +27,7 @@ use prover::{
     utils::{Bytes20, Bytes32},
     Machine,
 };
-use std::{path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::wasmparser::Operator;
 use wasmer::{
     imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
@@ -59,6 +62,17 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     let module = Module::new(&store, wat)?;
     let instance = Instance::new(&mut store, &module, &Imports::new())?;
     Ok(NativeInstance::new_sans_env(instance, store))
+}
+
+fn new_native_with_evm(
+    file: &str,
+    config: &StylusConfig,
+) -> Result<(NativeInstance, TestEvmContracts, TestEvmStorage)> {
+    let storage = TestEvmStorage::default();
+    let contracts = TestEvmContracts::new(config);
+    let mut native = NativeInstance::from_path(file, config)?;
+    native.set_test_evm_api(Bytes20::default(), storage.clone(), contracts.clone());
+    Ok((native, contracts, storage))
 }
 
 fn uniform_cost_config() -> StylusConfig {
@@ -451,7 +465,7 @@ fn test_storage() -> Result<()> {
     let api = native.set_test_evm_api(
         address,
         TestEvmStorage::default(),
-        TestEvmContracts::default(),
+        TestEvmContracts::new(&config),
     );
 
     run_native(&mut native, &args)?;
@@ -460,5 +474,78 @@ fn test_storage() -> Result<()> {
     args[0] = 0x00; // load the value
     let output = run_native(&mut native, &args)?;
     assert_eq!(output, value);
+    Ok(())
+}
+
+#[test]
+fn test_calls() -> Result<()> {
+    // in call.rs
+    //     the first bytes determines the number of calls to make
+    //     each call starts with a length specifying how many input bytes it constitutes
+    //     the first 20 bytes select the address you want to call, with the rest being calldata
+    //
+    // in storage.rs
+    //     an input starting with 0x00 will induce a storage read
+    //     all other inputs induce a storage write
+
+    let calls_addr = random_bytes20();
+    let store_addr = random_bytes20();
+    println!("calls.wasm {}", calls_addr);
+    println!("store.wasm {}", store_addr);
+
+    let mut slots = HashMap::new();
+
+    /// Forms a 2ary call tree where each leaf writes a random storage cell.
+    fn nest(
+        level: usize,
+        calls: Bytes20,
+        store: Bytes20,
+        slots: &mut HashMap<Bytes32, Bytes32>,
+    ) -> Vec<u8> {
+        let mut args = vec![];
+
+        if level == 0 {
+            args.extend(store); // call storage.wasm
+
+            let key = random_bytes32();
+            let value = random_bytes32();
+            slots.insert(key, value);
+
+            // insert value @ key
+            args.push(0x01);
+            args.extend(key);
+            args.extend(value);
+            return args;
+        }
+
+        // do the two following calls
+        args.extend(calls);
+        args.push(2);
+
+        for _ in 0..2 {
+            let inner = nest(level - 1, calls, store, slots);
+            args.extend(u32::to_be_bytes(inner.len() as u32));
+            args.extend(inner);
+        }
+        args
+    }
+
+    // drop the first address to start the call tree
+    let tree = nest(3, calls_addr, store_addr, &mut slots);
+    let args = tree[20..].to_vec();
+    println!("ARGS {}", hex::encode(&args));
+
+    let filename = "tests/calls/target/wasm32-unknown-unknown/release/calls.wasm";
+    let config = uniform_cost_config();
+
+    let (mut native, mut contracts, storage) = new_native_with_evm(&filename, &config)?;
+    contracts.insert(calls_addr, "calls")?;
+    contracts.insert(store_addr, "storage")?;
+
+    run_native(&mut native, &args)?;
+
+    for (key, value) in slots {
+        assert_eq!(storage.get_bytes32(store_addr, key), Some(value));
+    }
     Ok(())
 }

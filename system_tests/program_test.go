@@ -29,8 +29,7 @@ import (
 )
 
 func TestProgramKeccak(t *testing.T) {
-	file := "../arbitrator/stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm"
-	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, file)
+	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, rustFile("keccak"))
 	defer cleanup()
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -78,8 +77,7 @@ func TestProgramKeccak(t *testing.T) {
 }
 
 func TestProgramError(t *testing.T) {
-	file := "../arbitrator/stylus/tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm"
-	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file)
+	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("fallible"))
 	defer cleanup()
 
 	// ensure tx passes
@@ -101,8 +99,7 @@ func TestProgramError(t *testing.T) {
 }
 
 func TestProgramStorage(t *testing.T) {
-	file := "../arbitrator/stylus/tests/storage/target/wasm32-unknown-unknown/release/storage.wasm"
-	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file)
+	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"))
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -134,6 +131,73 @@ func TestProgramStorage(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
+func TestProgramCalls(t *testing.T) {
+	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("calls"))
+	defer cleanup()
+
+	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	colors.PrintGrey("calls.wasm   ", callsAddr)
+	colors.PrintGrey("storage.wasm ", storeAddr)
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	slots := make(map[common.Hash]common.Hash)
+
+	var nest func(level uint) []uint8
+	nest = func(level uint) []uint8 {
+		args := []uint8{}
+
+		if level == 0 {
+			args = append(args, storeAddr[:]...)
+
+			key := testhelpers.RandomHash()
+			value := testhelpers.RandomHash()
+			slots[key] = value
+
+			// insert value @ key
+			args = append(args, 0x01)
+			args = append(args, key[:]...)
+			args = append(args, value[:]...)
+			return args
+		}
+
+		// do the two following calls
+		args = append(args, callsAddr[:]...)
+		args = append(args, 2)
+
+		for i := 0; i < 2; i++ {
+			inner := nest(level - 1)
+			args = append(args, arbmath.Uint32ToBytes(uint32(len(inner)))...)
+			args = append(args, inner...)
+		}
+		return args
+	}
+	tree := nest(3)[20:]
+	colors.PrintGrey(common.Bytes2Hex(tree))
+
+	tx := l2info.PrepareTxTo("Owner", &callsAddr, l2info.TransferGas, big.NewInt(0), tree)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	for key, value := range slots {
+		storedBytes, err := l2client.StorageAt(ctx, storeAddr, key, nil)
+		Require(t, err)
+		storedValue := common.BytesToHash(storedBytes)
+		if value != storedValue {
+			Fail(t, "wrong value", value, storedValue)
+		}
+	}
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, file string) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
@@ -156,8 +220,6 @@ func setupProgramTest(t *testing.T, file string) (
 	}
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
-	Require(t, err)
 
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
@@ -188,24 +250,42 @@ func setupProgramTest(t *testing.T, file string) (
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
 	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))
 
+	programAddress := deployWasm(t, ctx, auth, l2client, file)
+
+	return ctx, node, l2info, l2client, auth, programAddress, cleanup
+}
+
+func deployWasm(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
+) common.Address {
 	wasmSource, err := os.ReadFile(file)
 	Require(t, err)
 	wasm, err := arbcompress.CompressWell(wasmSource)
 	Require(t, err)
 
-	wasm = append(state.StylusPrefix, wasm...)
-
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
+
+	wasm = append(state.StylusPrefix, wasm...)
 
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err)
+
 	timed(t, "compile", func() {
-		ensure(arbWasm.CompileProgram(&auth, programAddress))
+		tx, err := arbWasm.CompileProgram(&auth, programAddress)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
 	})
 
-	return ctx, node, l2info, l2client, auth, programAddress, cleanup
+	return programAddress
+}
+
+func rustFile(name string) string {
+	return fmt.Sprintf("../arbitrator/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
 }
 
 func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
