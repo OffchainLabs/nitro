@@ -140,7 +140,7 @@ library ChallengeManagerLib {
         (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
 
         MerkleTreeLib.verifyPrefixProof(
-            prefixHistoryRoot, bHeight+1, vertices[vId].historyRoot, vertices[vId].height+1, preExpansion, proof
+            prefixHistoryRoot, bHeight + 1, vertices[vId].historyRoot, vertices[vId].height + 1, preExpansion, proof
         );
 
         return (ChallengeVertexLib.id(challengeId, prefixHistoryRoot, bHeight), bHeight);
