@@ -254,11 +254,3 @@ func runBisectionTest(
 	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
 	return bisectedVertex
 }
-
-func generateStateRoots(numBlocks uint64) []common.Hash {
-	var ret []common.Hash
-	for i := uint64(0); i < numBlocks; i++ {
-		ret = append(ret, util.HashForUint(i))
-	}
-	return ret
-}

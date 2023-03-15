@@ -26,6 +26,7 @@ func TestHistoryCommitment_LeafProofs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, history.Merkle, computed)
 	computed, err = CalculateRootFromProof(history.FirstLeafProof, 0, history.FirstLeaf)
+	require.NoError(t, err)
 	require.Equal(t, history.Merkle, computed)
 }
 
