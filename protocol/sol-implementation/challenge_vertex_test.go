@@ -808,153 +808,81 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		})
 		require.ErrorContains(t, err, "Has presumptive successor")
 	})
+}
 
-	var bigStepLeaf protocol.ChallengeVertex
-	height1 = uint64(7)
-	height2 = uint64(7)
-	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
+func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
+	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
+	bigStepChal, parent, firstChild, chalManager := setupBigStepSubChallenge(t)
 
-	t.Run("Can create succession challenge", func(t *testing.T) {
-		honestHashes := honestHashesUpTo(10)
-		evilHashes := divergingHashesStartingAt(t, 3, honestHashes)
-		honestManager := statemanager.New(honestHashes)
-		evilManager := statemanager.New(evilHashes)
-		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
-		require.NoError(t, err)
-		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
-		require.NoError(t, err)
+	subChalHashes := make([]common.Hash, 8)
+	for i := range subChalHashes {
+		subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
+	}
+	bigStepManager := statemanager.New(subChalHashes)
+	bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, firstChild.HistoryCommitment().Height)
+	require.NoError(t, err)
 
-		// We add two leaves to the challenge.
-		v1, err := challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			a1,
-			honestCommit,
-		)
-		require.NoError(t, err)
+	leaf := &mocks.MockChallengeVertex{
+		MockId: firstChild.Id(),
+		MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
+			MockHistory: util.HistoryCommitment{
+				Merkle: subChalHashes[0],
+			},
+		})),
+	}
 
-		v2, err := challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			a2,
-			evilCommit,
-		)
-		require.NoError(t, err)
-
-		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
-		require.NoError(t, err)
-		prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
-		require.NoError(t, err)
-
-		v2Height3V, err := v2.Bisect(
-			ctx,
-			tx,
-			preCommit,
-			prefixProof,
-		)
-		require.NoError(t, err)
-		v2Height3 := v2Height3V.(*ChallengeVertex)
-		require.Equal(t, uint64(3), v2Height3.inner.Height.Uint64())
-
-		preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 3)
-		require.NoError(t, err)
-		prefixProof, err = honestManager.PrefixProof(ctx, 3, 7)
-		require.NoError(t, err)
-
-		v1Height3V, err := v1.Bisect(
-			ctx,
-			tx,
-			preCommit,
-			prefixProof,
-		)
-		require.NoError(t, err)
-		v1Height3 := v1Height3V.(*ChallengeVertex)
-		require.Equal(t, uint64(3), v1Height3.inner.Height.Uint64())
-
-		preCommit, err = evilManager.HistoryCommitmentUpTo(ctx, 1)
-		require.NoError(t, err)
-		prefixProof, err = evilManager.PrefixProof(ctx, 1, 3)
-		require.NoError(t, err)
-		v2Height1V, err := v2Height3.Bisect(
-			ctx,
-			tx,
-			preCommit,
-			prefixProof,
-		)
-		require.NoError(t, err)
-		v2Height1 := v2Height1V.(*ChallengeVertex)
-		require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
-
-		preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 1)
-		require.NoError(t, err)
-		prefixProof, err = honestManager.PrefixProof(ctx, 1, 3)
-		require.NoError(t, err)
-
-		v1Height1V, err := v1Height3.Merge(
-			ctx,
-			tx,
-			preCommit,
-			prefixProof,
-		)
-		require.NoError(t, err)
-		v1Height1 := v1Height1V.(*ChallengeVertex)
-		require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
-
-		preCommit, err = evilManager.HistoryCommitmentUpTo(ctx, 2)
-		require.NoError(t, err)
-		prefixProof, err = evilManager.PrefixProof(ctx, 2, 3)
-		require.NoError(t, err)
-		v2Height2V, err := v2Height3.Bisect(
-			ctx,
-			tx,
-			preCommit,
-			prefixProof,
-		)
-		require.NoError(t, err)
-		v2Height2 := v2Height2V.(*ChallengeVertex)
-		require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
-
-		preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 2)
-		require.NoError(t, err)
-		prefixProof, err = honestManager.PrefixProof(ctx, 2, 3)
-		require.NoError(t, err)
-		v1Height2V, err := v1Height3.Merge(
-			ctx,
-			tx,
-			preCommit,
-			prefixProof,
-		)
-		require.NoError(t, err)
-		v1Height2 := v1Height2V.(*ChallengeVertex)
-		require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
-
-		bigStepChal, err := v1Height2.CreateSubChallenge(ctx, tx)
-		require.NoError(t, err)
-
-		subChalHashes := make([]common.Hash, 8)
-		for i := range subChalHashes {
-			subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
-		}
-		bigStepManager := statemanager.New(subChalHashes)
-		bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, v1Height3.HistoryCommitment().Height)
-		require.NoError(t, err)
-
-		leaf := &mocks.MockChallengeVertex{
-			MockId: v1Height3.id,
-			MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
-				MockHistory: util.HistoryCommitment{
-					Merkle: subChalHashes[0],
-				},
-			})),
-		}
-		bigStepLeaf, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, leaf, bigStepCommit)
-		require.NoError(t, err)
+	t.Run("empty history root", func(t *testing.T) {
+		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, firstChild, util.HistoryCommitment{})
+		require.ErrorContains(t, err, "execution reverted: Empty historyRoot")
 	})
-	t.Run("cannot confirm sub challenge", func(t *testing.T) {
+	t.Run("vertex does not exist", func(t *testing.T) {
+		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, &ChallengeVertex{
+			id:      [32]byte{},
+			manager: chalManager,
+		}, bigStepCommit)
+		require.ErrorContains(t, err, "execution reverted: Vertex does not exist")
+	})
+	t.Run("claim has invalid succession challenge", func(t *testing.T) {
+		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, parent, bigStepCommit)
+		require.ErrorContains(t, err, "execution reverted: Claim has invalid succession challenge")
+	})
+	t.Run("OK", func(t *testing.T) {
+		bigStepLeaf, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, leaf, bigStepCommit)
+		require.NoError(t, err)
+		require.False(t, bigStepLeaf.Id() == [32]byte{}) // Should have a non-empty ID
+	})
+}
+
+func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
+	ctx := context.Background()
+	tx := &activeTx{readWriteTx: true}
+	bigStepChal, _, firstChild, chalManager := setupBigStepSubChallenge(t)
+
+	subChalHashes := make([]common.Hash, 8)
+	for i := range subChalHashes {
+		subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
+	}
+	bigStepManager := statemanager.New(subChalHashes)
+	bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, firstChild.HistoryCommitment().Height)
+	require.NoError(t, err)
+
+	leaf := &mocks.MockChallengeVertex{
+		MockId: firstChild.Id(),
+		MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
+			MockHistory: util.HistoryCommitment{
+				Merkle: subChalHashes[0],
+			},
+		})),
+	}
+	bigStepLeaf, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, leaf, bigStepCommit)
+	require.NoError(t, err)
+
+	t.Run("can't confirm sub challenge", func(t *testing.T) {
 		require.ErrorContains(t, bigStepLeaf.ConfirmForPsTimer(ctx, tx), "ps timer has not exceeded challenge period")
 	})
 	t.Run("can confirm sub challenge", func(t *testing.T) {
-		backend, ok := chain.backend.(*backends.SimulatedBackend)
+		backend, ok := chalManager.assertionChain.backend.(*backends.SimulatedBackend)
 		require.Equal(t, true, ok)
 		for i := 0; i < 1000; i++ {
 			backend.Commit()
@@ -963,12 +891,19 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 	})
 }
 
-func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
+func setupBigStepSubChallenge(t *testing.T) (
+	subChal protocol.Challenge,
+	parent protocol.ChallengeVertex,
+	firstChild protocol.ChallengeVertex,
+	chalManager *ChallengeManager,
+) {
+	t.Helper()
 	ctx := context.Background()
 	tx := &activeTx{readWriteTx: true}
 	height1 := uint64(7)
 	height2 := uint64(7)
-	a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
+	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
+
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := divergingHashesStartingAt(t, 3, honestHashes)
 	honestManager := statemanager.New(honestHashes)
@@ -1000,36 +935,36 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
 	require.NoError(t, err)
 
-	v2Height4V, err := v2.Bisect(
+	v2Height3V, err := v2.Bisect(
 		ctx,
 		tx,
 		preCommit,
 		prefixProof,
 	)
 	require.NoError(t, err)
-	v2Height4 := v2Height4V.(*ChallengeVertex)
-	require.Equal(t, uint64(3), v2Height4.inner.Height.Uint64())
+	v2Height3 := v2Height3V.(*ChallengeVertex)
+	require.Equal(t, uint64(3), v2Height3.inner.Height.Uint64())
 
 	preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 3)
 	require.NoError(t, err)
 	prefixProof, err = honestManager.PrefixProof(ctx, 3, 7)
 	require.NoError(t, err)
 
-	v1Height4V, err := v1.Bisect(
+	v1Height3V, err := v1.Bisect(
 		ctx,
 		tx,
 		preCommit,
 		prefixProof,
 	)
 	require.NoError(t, err)
-	v1Height4 := v1Height4V.(*ChallengeVertex)
-	require.Equal(t, uint64(3), v1Height4.inner.Height.Uint64())
+	v1Height3 := v1Height3V.(*ChallengeVertex)
+	require.Equal(t, uint64(3), v1Height3.inner.Height.Uint64())
 
 	preCommit, err = evilManager.HistoryCommitmentUpTo(ctx, 1)
 	require.NoError(t, err)
 	prefixProof, err = evilManager.PrefixProof(ctx, 1, 3)
 	require.NoError(t, err)
-	v2Height1V, err := v2Height4.Bisect(
+	v2Height1V, err := v2Height3.Bisect(
 		ctx,
 		tx,
 		preCommit,
@@ -1044,7 +979,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	prefixProof, err = honestManager.PrefixProof(ctx, 1, 3)
 	require.NoError(t, err)
 
-	v1Height1V, err := v1Height4.Merge(
+	v1Height1V, err := v1Height3.Merge(
 		ctx,
 		tx,
 		preCommit,
@@ -1058,7 +993,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	require.NoError(t, err)
 	prefixProof, err = evilManager.PrefixProof(ctx, 2, 3)
 	require.NoError(t, err)
-	v2Height2V, err := v2Height4.Bisect(
+	v2Height2V, err := v2Height3.Bisect(
 		ctx,
 		tx,
 		preCommit,
@@ -1072,7 +1007,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	require.NoError(t, err)
 	prefixProof, err = honestManager.PrefixProof(ctx, 2, 3)
 	require.NoError(t, err)
-	v1Height2V, err := v1Height4.Merge(
+	v1Height2V, err := v1Height3.Merge(
 		ctx,
 		tx,
 		preCommit,
@@ -1082,192 +1017,12 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	v1Height2 := v1Height2V.(*ChallengeVertex)
 	require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
 
-	bigStepChal, err := v1Height2.CreateSubChallenge(ctx, tx)
+	subChal, err = v1Height2.CreateSubChallenge(ctx, tx)
 	require.NoError(t, err)
-
-	t.Run("empty history root", func(t *testing.T) {
-		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{})
-		require.ErrorContains(t, err, "execution reverted: Empty historyRoot")
-	})
-	t.Run("vertex does not exist", func(t *testing.T) {
-		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, &ChallengeVertex{
-			id:      [32]byte{},
-			manager: challenge.manager,
-		}, util.HistoryCommitment{
-			Height: 2,
-			Merkle: honestCommit.Merkle,
-		})
-		require.ErrorContains(t, err, "execution reverted: Vertex does not exist")
-	})
-	t.Run("claim has invalid succession challenge", func(t *testing.T) {
-		_, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height2, util.HistoryCommitment{
-			Height: 2,
-			Merkle: honestCommit.Merkle,
-		})
-		require.ErrorContains(t, err, "execution reverted: Claim has invalid succession challenge")
-	})
-	t.Run("create sub challenge leaf rival 1", func(t *testing.T) {
-		v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
-			Height: 1,
-			Merkle: honestCommit.Merkle,
-		})
-		require.NoError(t, err)
-		require.False(t, v.Id() == [32]byte{}) // Should have a non-empty ID
-	})
-	t.Run("create sub challenge leaf rival 2", func(t *testing.T) {
-		v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, v2Height1, util.HistoryCommitment{
-			Height: 1,
-			Merkle: honestCommit.Merkle,
-		})
-		require.NoError(t, err)
-		require.False(t, v.Id() == [32]byte{}) // Should have a non-empty ID
-	})
-}
-
-func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
-	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
-	height1 := uint64(6)
-	height2 := uint64(7)
-	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
-
-	v1, err := challenge.AddBlockChallengeLeaf(
-		ctx,
-		tx,
-		a1,
-		util.HistoryCommitment{
-			Height:        height1,
-			Merkle:        common.BytesToHash([]byte("nyan")),
-			LastLeaf:      a1.inner.StateHash,
-			LastLeafProof: []common.Hash{a1.inner.StateHash},
-		},
-	)
+	firstChild = v1Height3
+	parent = v1Height2
+	cm, err := chain.CurrentChallengeManager(ctx, tx)
 	require.NoError(t, err)
-
-	v2, err := challenge.AddBlockChallengeLeaf(
-		ctx,
-		tx,
-		a2,
-		util.HistoryCommitment{
-			Height:        height2,
-			Merkle:        common.BytesToHash([]byte("nyan2")),
-			LastLeaf:      a2.inner.StateHash,
-			LastLeafProof: []common.Hash{a2.inner.StateHash},
-		},
-	)
-	require.NoError(t, err)
-
-	v1Commit := common.BytesToHash([]byte("nyan"))
-	v2Commit := common.BytesToHash([]byte("nyan2"))
-	v2Height4V, err := v2.Bisect(
-		ctx,
-		tx,
-		util.HistoryCommitment{
-			Height: 4,
-			Merkle: v2Commit,
-		},
-		make([]byte, 0),
-	)
-	require.NoError(t, err)
-	v2Height4 := v2Height4V.(*ChallengeVertex)
-	require.Equal(t, uint64(4), v2Height4.inner.Height.Uint64())
-	require.Equal(t, v2Commit[:], v2Height4.inner.HistoryRoot[:])
-
-	v1Height4V, err := v1.Bisect(
-		ctx,
-		tx,
-		util.HistoryCommitment{
-			Height: 4,
-			Merkle: v1Commit,
-		},
-		make([]byte, 0),
-	)
-	require.NoError(t, err)
-	v1Height4 := v1Height4V.(*ChallengeVertex)
-	require.Equal(t, uint64(4), v1Height4.inner.Height.Uint64())
-	require.Equal(t, v1Commit[:], v1Height4.inner.HistoryRoot[:])
-
-	v2Height2V, err := v2Height4.Bisect(
-		ctx,
-		tx,
-		util.HistoryCommitment{
-			Height: 2,
-			Merkle: v2Commit,
-		},
-		make([]byte, 0),
-	)
-	require.NoError(t, err)
-	v2Height2 := v2Height2V.(*ChallengeVertex)
-	require.Equal(t, uint64(2), v2Height2.inner.Height.Uint64())
-	require.Equal(t, v2Commit[:], v2Height2.inner.HistoryRoot[:])
-
-	v1Height2V, err := v1Height4.Bisect(
-		ctx,
-		tx,
-		util.HistoryCommitment{
-			Height: 2,
-			Merkle: v1Commit,
-		},
-		make([]byte, 0),
-	)
-	require.NoError(t, err)
-	v1Height2 := v1Height2V.(*ChallengeVertex)
-	require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
-	require.Equal(t, v1Commit[:], v1Height2.inner.HistoryRoot[:])
-
-	v1Height1V, err := v1Height2.Bisect(
-		ctx,
-		tx,
-		util.HistoryCommitment{
-			Height: 1,
-			Merkle: v1Commit,
-		},
-		make([]byte, 0),
-	)
-	require.NoError(t, err)
-	v1Height1 := v1Height1V.(*ChallengeVertex)
-	require.Equal(t, uint64(1), v1Height1.inner.Height.Uint64())
-	require.Equal(t, v1Commit[:], v1Height1.inner.HistoryRoot[:])
-
-	v2Height1V, err := v2Height2.Bisect(
-		ctx,
-		tx,
-		util.HistoryCommitment{
-			Height: 1,
-			Merkle: v2Commit,
-		},
-		make([]byte, 0),
-	)
-	require.NoError(t, err)
-	v2Height1 := v2Height1V.(*ChallengeVertex)
-	require.Equal(t, uint64(1), v2Height1.inner.Height.Uint64())
-	require.Equal(t, v2Commit[:], v2Height1.inner.HistoryRoot[:])
-
-	genesisVertex, err := challenge.manager.caller.GetVertex(challenge.manager.assertionChain.callOpts, v2Height1.inner.PredecessorId)
-	require.NoError(t, err)
-	genesis := &ChallengeVertex{
-		inner:   genesisVertex,
-		id:      v2Height1.inner.PredecessorId,
-		manager: challenge.manager,
-	}
-	bigStepChal, err := genesis.CreateSubChallenge(context.Background(), tx)
-	require.NoError(t, err)
-
-	v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, v1Height1, util.HistoryCommitment{
-		Height: 1,
-		Merkle: v1Commit,
-	})
-	require.NoError(t, err)
-
-	t.Run("can't confirm sub challenge", func(t *testing.T) {
-		require.ErrorContains(t, v.ConfirmForPsTimer(ctx, tx), "ps timer has not exceeded challenge period")
-	})
-	t.Run("can confirm sub challenge", func(t *testing.T) {
-		backend, ok := chain.backend.(*backends.SimulatedBackend)
-		require.Equal(t, true, ok)
-		for i := 0; i < 1000; i++ {
-			backend.Commit()
-		}
-		require.NoError(t, v.ConfirmForPsTimer(ctx, tx))
-	})
+	chalManager = cm.(*ChallengeManager)
+	return
 }
