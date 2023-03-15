@@ -14,6 +14,10 @@ contract MerkleTreeAccess {
         return MerkleTreeLib.root(me);
     }
 
+    function maskMsb(uint256 msb) external pure returns (uint64) {
+        return uint64((1<<(msb) + 1) - 1);
+    }
+
     function appendCompleteSubTree(bytes32[] memory me, uint256 level, bytes32 subtreeRoot)
         external
         pure

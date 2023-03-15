@@ -22,19 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMaximumAppendBetween_GoSolidityEquivalence(t *testing.T) {
-	merkleTreeContract, _ := setupMerkleTreeContract(t)
-	preSize := uint64(4)
-	postSize := uint64(8)
-	gotGo, err := prefixproofs.MaximumAppendBetween(preSize, postSize)
-	require.NoError(t, err)
-
-	opts := &bind.CallOpts{}
-	gotSol, err := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(preSize)), big.NewInt(int64(postSize)))
-	require.NoError(t, err)
-	require.Equal(t, gotSol.Uint64(), gotGo)
-}
-
 func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
@@ -95,6 +82,40 @@ func TestLeastSignificantBit_GoSolidityEquivalence(t *testing.T) {
 func TestMostSignificantBit_GoSolidityEquivalence(t *testing.T) {
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
 	runBitEquivalenceTest(t, merkleTreeContract.MostSignificantBit, prefixproofs.MostSignificantBit)
+}
+
+func FuzzMaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
+	type prePost struct {
+		pre  uint64
+		post uint64
+	}
+	testcases := []prePost{
+		{4, 8},
+		{10, 0},
+		{0, 0},
+		{0, 1},
+		{3, 3},
+		{3, 4},
+		{0, 15},
+		{128, 512},
+		{128, 200},
+		{128, 1 << 20},
+		{1 << 20, 1<<20 + 1},
+	}
+	for _, tc := range testcases {
+		f.Add(tc.pre, tc.post)
+	}
+	merkleTreeContract, _ := setupMerkleTreeContract(f)
+	opts := &bind.CallOpts{}
+	f.Fuzz(func(t *testing.T, pre, post uint64) {
+		gotGo, _ := prefixproofs.MaximumAppendBetween(pre, post)
+		gotSol, _ := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(pre)), big.NewInt(int64(post)))
+		if gotSol != nil {
+			if gotSol.Uint64() != gotGo {
+				t.Errorf("sol %d != go %d", gotSol.Uint64(), gotGo)
+			}
+		}
+	})
 }
 
 func FuzzBitUtils_GoSolidityEquivalence(f *testing.F) {

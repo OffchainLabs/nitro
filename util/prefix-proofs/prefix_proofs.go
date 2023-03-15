@@ -253,7 +253,7 @@ func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 		return 0, err
 	}
 
-	mask := uint64((1<<(msb) + 1) - 1)
+	mask := uint64((1 << (msb + 1)) - 1)
 	y := startSize & mask
 	z := endSize & mask
 
