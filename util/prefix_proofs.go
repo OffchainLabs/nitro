@@ -77,18 +77,18 @@ var (
 	ErrSizeNotLeqPostSize                = errors.New("size not <= post size")
 )
 
-func leastSignificantBit(x uint64) uint64 {
+func LeastSignificantBit(x uint64) uint64 {
 	return uint64(bits.TrailingZeros64(x))
 }
 
-func mostSignificantBit(x uint64) uint64 {
+func MostSignificantBit(x uint64) uint64 {
 	return uint64(63 - bits.LeadingZeros64(x))
 }
 
 // The root of the subtree. A collision free commitment to the contents of the tree.
 // The root of a tree is defined as the cumulative hashing of the roots of
 // all its subtrees. Returns 0 for empty tree.
-func root(me []common.Hash) common.Hash {
+func Root(me []common.Hash) common.Hash {
 	empty := true
 	var accum common.Hash
 	for i := 0; i < len(me); i++ {
@@ -120,7 +120,7 @@ func root(me []common.Hash) common.Hash {
 // / exact power of two (complete), and must equal to or less than the least signficant bit
 // / in the existing tree.
 // / If the me is empty, will just append directly.
-func appendCompleteSubTree(
+func AppendCompleteSubTree(
 	me []common.Hash, level uint64, subtreeRoot common.Hash,
 ) ([]common.Hash, error) {
 	// we use number representations of the levels elsewhere, so we need to ensure we're appending a leve
@@ -200,12 +200,12 @@ func appendCompleteSubTree(
 // / Append a leaf to a subtree
 // / Leaves are just complete subtrees at level 0, however we hash the leaf before putting it
 // / into the tree to avoid root collisions.
-func appendLeaf(
+func AppendLeaf(
 	me []common.Hash, leaf [32]byte,
 ) ([]common.Hash, error) {
 	// it's important that we hash the leaf, this ensures that this leaf cannot be a collision with any other non leaf
 	// or root node, since these are always the hash of 64 bytes of data, and we're hashing 32 bytes
-	return appendCompleteSubTree(me, 0, crypto.Keccak256Hash(leaf[:]))
+	return AppendCompleteSubTree(me, 0, crypto.Keccak256Hash(leaf[:]))
 }
 
 // / Find the highest level which can be appended to tree of size startSize without
@@ -213,7 +213,7 @@ func appendLeaf(
 // / Subtrees can only be appended according to certain rules, see tree description at top of file
 // / for details. A subtree can only be appended if it is at the same level, or below, the current lowest
 // / subtree in the expansion
-func maximumAppendBetween(startSize, endSize uint64) (uint64, error) {
+func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	// Since the tree is binary we can represent it using the binary representation of a number
 	// We use size here instead of height since height is zero indexed
 	// As described above, subtrees can only be appended to a tree if they are at the same level, or below,
@@ -232,7 +232,7 @@ func maximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	}
 
 	// remove the high order bits that are shared
-	msb := mostSignificantBit(startSize ^ endSize)
+	msb := MostSignificantBit(startSize ^ endSize)
 	mask := uint64((1<<(msb) + 1) - 1)
 	y := startSize & mask
 	z := endSize & mask
@@ -240,63 +240,63 @@ func maximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	// Since in the verification we will be appending at start size, the highest level at which we
 	// can append is the lowest complete subtree - the least significant bit
 	if y != 0 {
-		return leastSignificantBit(y), nil
+		return LeastSignificantBit(y), nil
 	}
 	// y == 0, therefore we can append at any of levels where start and end differ
 	// The highest level that we can append at without surpassing the end, is the most significant
 	// bit of the end
 	if z != 0 {
-		return mostSignificantBit(z), nil
+		return MostSignificantBit(z), nil
 	}
 	// since we enforce that start < end, we know that y and z cannot both be 0
 	return 0, ErrCannotBeZero
 }
 
-type verifyPrefixProofConfig struct {
-	preRoot      common.Hash
-	preSize      uint64
-	postRoot     common.Hash
-	postSize     uint64
-	preExpansion []common.Hash
-	prefixProof  []common.Hash
+type VerifyPrefixProofConfig struct {
+	PreRoot      common.Hash
+	PreSize      uint64
+	PostRoot     common.Hash
+	PostSize     uint64
+	PreExpansion []common.Hash
+	PrefixProof  []common.Hash
 }
 
 // Verify that a pre-root commits to a prefix of the leaves committed by a post-root
 // Verifies by appending sub trees to the pre tree until we get to the size of the post tree
 // and then checking that the root of the calculated post tree is equal to the supplied one
-func verifyPrefixProof(cfg *verifyPrefixProofConfig) error {
-	if cfg.preSize == 0 {
+func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
+	if cfg.PreSize == 0 {
 		return ErrCannotBeZero
 	}
-	if root(cfg.preExpansion) != cfg.preRoot {
+	if Root(cfg.PreExpansion) != cfg.PreRoot {
 		return ErrRootMismatch
 	}
-	if cfg.preSize >= cfg.postSize {
+	if cfg.PreSize >= cfg.PostSize {
 		return ErrStartNotLessThanEnd
 	}
-	preExpansion := cfg.preExpansion
-	size := cfg.preSize
+	preExpansion := cfg.PreExpansion
+	size := cfg.PreSize
 	proofIndex := uint64(0)
-	for size < cfg.postSize {
-		level, err := maximumAppendBetween(size, cfg.postSize)
+	for size < cfg.PostSize {
+		level, err := MaximumAppendBetween(size, cfg.PostSize)
 		if err != nil {
 			return err
 		}
-		preExpansion, err = appendCompleteSubTree(preExpansion, level, cfg.prefixProof[proofIndex])
+		preExpansion, err = AppendCompleteSubTree(preExpansion, level, cfg.PrefixProof[proofIndex])
 		if err != nil {
 			return err
 		}
 		numLeaves := 1 << level
 		size += uint64(numLeaves)
-		if size > cfg.postSize {
+		if size > cfg.PostSize {
 			return ErrSizeNotLeqPostSize
 		}
 		proofIndex++
 	}
-	if root(preExpansion) != cfg.postRoot {
+	if Root(preExpansion) != cfg.PostRoot {
 		return ErrRootMismatch
 	}
-	if proofIndex != uint64(len(cfg.prefixProof)) {
+	if proofIndex != uint64(len(cfg.PrefixProof)) {
 		return ErrIncompleteProof
 	}
 	return nil
