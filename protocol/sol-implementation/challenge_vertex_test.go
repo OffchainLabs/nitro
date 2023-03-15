@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"math"
 
+	"math/rand"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	"math/rand"
 )
 
 var _ = protocol.ChallengeVertex(&ChallengeVertex{})
@@ -807,12 +809,12 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.ErrorContains(t, err, "Has presumptive successor")
 	})
 
-	var bigStepChal protocol.Challenge
+	var bigStepLeaf protocol.ChallengeVertex
+	height1 = uint64(7)
+	height2 = uint64(7)
+	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 
 	t.Run("Can create succession challenge", func(t *testing.T) {
-		height1 = uint64(7)
-		height2 = uint64(7)
-		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
 		honestHashes := honestHashesUpTo(10)
 		evilHashes := divergingHashesStartingAt(t, 3, honestHashes)
 		honestManager := statemanager.New(honestHashes)
@@ -844,36 +846,36 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		prefixProof, err := evilManager.PrefixProof(ctx, 3, 7)
 		require.NoError(t, err)
 
-		v2Height4V, err := v2.Bisect(
+		v2Height3V, err := v2.Bisect(
 			ctx,
 			tx,
 			preCommit,
 			prefixProof,
 		)
 		require.NoError(t, err)
-		v2Height4 := v2Height4V.(*ChallengeVertex)
-		require.Equal(t, uint64(3), v2Height4.inner.Height.Uint64())
+		v2Height3 := v2Height3V.(*ChallengeVertex)
+		require.Equal(t, uint64(3), v2Height3.inner.Height.Uint64())
 
 		preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 3)
 		require.NoError(t, err)
 		prefixProof, err = honestManager.PrefixProof(ctx, 3, 7)
 		require.NoError(t, err)
 
-		v1Height4V, err := v1.Bisect(
+		v1Height3V, err := v1.Bisect(
 			ctx,
 			tx,
 			preCommit,
 			prefixProof,
 		)
 		require.NoError(t, err)
-		v1Height4 := v1Height4V.(*ChallengeVertex)
-		require.Equal(t, uint64(3), v1Height4.inner.Height.Uint64())
+		v1Height3 := v1Height3V.(*ChallengeVertex)
+		require.Equal(t, uint64(3), v1Height3.inner.Height.Uint64())
 
 		preCommit, err = evilManager.HistoryCommitmentUpTo(ctx, 1)
 		require.NoError(t, err)
 		prefixProof, err = evilManager.PrefixProof(ctx, 1, 3)
 		require.NoError(t, err)
-		v2Height1V, err := v2Height4.Bisect(
+		v2Height1V, err := v2Height3.Bisect(
 			ctx,
 			tx,
 			preCommit,
@@ -888,7 +890,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		prefixProof, err = honestManager.PrefixProof(ctx, 1, 3)
 		require.NoError(t, err)
 
-		v1Height1V, err := v1Height4.Merge(
+		v1Height1V, err := v1Height3.Merge(
 			ctx,
 			tx,
 			preCommit,
@@ -902,7 +904,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.NoError(t, err)
 		prefixProof, err = evilManager.PrefixProof(ctx, 2, 3)
 		require.NoError(t, err)
-		v2Height2V, err := v2Height4.Bisect(
+		v2Height2V, err := v2Height3.Bisect(
 			ctx,
 			tx,
 			preCommit,
@@ -916,7 +918,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		require.NoError(t, err)
 		prefixProof, err = honestManager.PrefixProof(ctx, 2, 3)
 		require.NoError(t, err)
-		v1Height2V, err := v1Height4.Merge(
+		v1Height2V, err := v1Height3.Merge(
 			ctx,
 			tx,
 			preCommit,
@@ -926,16 +928,30 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		v1Height2 := v1Height2V.(*ChallengeVertex)
 		require.Equal(t, uint64(2), v1Height2.inner.Height.Uint64())
 
-		bigStepChal, err = v1Height2.CreateSubChallenge(ctx, tx)
+		bigStepChal, err := v1Height2.CreateSubChallenge(ctx, tx)
+		require.NoError(t, err)
+
+		subChalHashes := make([]common.Hash, 8)
+		for i := range subChalHashes {
+			subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
+		}
+		bigStepManager := statemanager.New(subChalHashes)
+		bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, v1Height3.HistoryCommitment().Height)
+		require.NoError(t, err)
+
+		leaf := &mocks.MockChallengeVertex{
+			MockId: v1Height3.id,
+			MockPrev: util.Some(protocol.ChallengeVertex(&mocks.MockChallengeVertex{
+				MockHistory: util.HistoryCommitment{
+					Merkle: subChalHashes[0],
+				},
+			})),
+		}
+		bigStepLeaf, err = bigStepChal.AddSubChallengeLeaf(ctx, tx, leaf, bigStepCommit)
 		require.NoError(t, err)
 	})
-	v, err := bigStepChal.AddSubChallengeLeaf(ctx, tx, 1, util.HistoryCommitment{
-		Height: 1,
-		Merkle: nil,
-	})
-	require.NoError(t, err)
 	t.Run("cannot confirm sub challenge", func(t *testing.T) {
-		require.ErrorContains(t, v.ConfirmForPsTimer(ctx, tx), "ps timer has not exceeded challenge period")
+		require.ErrorContains(t, bigStepLeaf.ConfirmForPsTimer(ctx, tx), "ps timer has not exceeded challenge period")
 	})
 	t.Run("can confirm sub challenge", func(t *testing.T) {
 		backend, ok := chain.backend.(*backends.SimulatedBackend)
@@ -943,7 +959,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			backend.Commit()
 		}
-		require.NoError(t, v.ConfirmForPsTimer(ctx, tx))
+		require.NoError(t, bigStepLeaf.ConfirmForPsTimer(ctx, tx))
 	})
 }
 

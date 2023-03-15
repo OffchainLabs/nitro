@@ -211,6 +211,13 @@ func (c *Challenge) AddSubChallengeLeaf(
 		flatLastLeafProof = append(flatLastLeafProof, r[:]...)
 	}
 
+	firstLeafProof := make([][32]byte, 0)
+	for _, h := range history.FirstLeafProof {
+		var r [32]byte
+		copy(r[:], h[:])
+		firstLeafProof = append(firstLeafProof, r)
+	}
+
 	prev, err := vertex.Prev(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -218,20 +225,13 @@ func (c *Challenge) AddSubChallengeLeaf(
 	if prev.IsNone() {
 		return nil, errors.New("no prev vertex")
 	}
-	parentVertex, err := c.manager.caller.GetVertex(
-		c.manager.assertionChain.callOpts,
-		prev.Unwrap().Id(),
-	)
-	if err != nil {
-		return nil, err
-	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
 		ClaimId:                vertex.Id(),
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             parentVertex.HistoryRoot,
-		FirstStatehistoryProof: make([][32]byte, 0), // TODO: Add in.
+		FirstState:             prev.Unwrap().HistoryCommitment().Merkle,
+		FirstStatehistoryProof: firstLeafProof,
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
 	}
