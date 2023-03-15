@@ -178,25 +178,28 @@ func AppendCompleteSubTree(
 		if i < level {
 			// we're below the level we want to append - no complete sub trees allowed down here
 			// if the level is 0 there are no complete subtrees, and we therefore cannot be too low
-			return nil, ErrCannotAppendAboveLeastSignificant
-		}
-		// we're at or above the level
-		if accumHash == (common.Hash{}) {
-			// no more changes to propagate upwards - just fill the tree
-			next[i] = me[i]
+			if me[i] != (common.Hash{}) {
+				return nil, ErrCannotAppendAboveLeastSignificant
+			}
 		} else {
-			// we have a change to propagate
-			if me[i] == (common.Hash{}) {
-				// if the level is currently empty we can just add the change
-				next[i] = accumHash
-				// and then there's nothing more to propagate
-				accumHash = common.Hash{}
+			// we're at or above the level
+			if accumHash == (common.Hash{}) {
+				// no more changes to propagate upwards - just fill the tree
+				next[i] = me[i]
 			} else {
-				// if the level is not currently empty then we combine it with propagation
-				// change, and propagate that to the level above. This level is now part of a complete subtree
-				// so we zero it out
-				next[i] = common.Hash{}
-				accumHash = crypto.Keccak256Hash(me[i].Bytes(), accumHash.Bytes())
+				// we have a change to propagate
+				if me[i] == (common.Hash{}) {
+					// if the level is currently empty we can just add the change
+					next[i] = accumHash
+					// and then there's nothing more to propagate
+					accumHash = common.Hash{}
+				} else {
+					// if the level is not currently empty then we combine it with propagation
+					// change, and propagate that to the level above. This level is now part of a complete subtree
+					// so we zero it out
+					next[i] = common.Hash{}
+					accumHash = crypto.Keccak256Hash(me[i].Bytes(), accumHash.Bytes())
+				}
 			}
 		}
 	}
@@ -210,7 +213,7 @@ func AppendCompleteSubTree(
 	if uint64(len(next)) >= MAX_LEVEL+1 {
 		return nil, ErrLevelTooHigh
 	}
-	return me, nil
+	return next, nil
 }
 
 // Append a leaf to a subtree
