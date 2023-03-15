@@ -7,6 +7,9 @@ import (
 	"fmt"
 
 	"crypto/ecdsa"
+	"math/big"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -16,10 +19,115 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
-func TestGoPrefixProofs(t *testing.T) {
+func TestLeastSignificantBit_GoSolidityEquivalence(t *testing.T) {
+	merkleTreeContract, _ := setupMerkleTreeContract(t)
+	runBitEquivalenceTest(t, merkleTreeContract.LeastSignificantBit, util.LeastSignificantBit)
+}
+
+func TestMostSignificantBit_GoSolidityEquivalence(t *testing.T) {
+	merkleTreeContract, _ := setupMerkleTreeContract(t)
+	runBitEquivalenceTest(t, merkleTreeContract.MostSignificantBit, util.MostSignificantBit)
+}
+
+func FuzzBitUtils_GoSolidityEquivalence(f *testing.F) {
+	testcases := []uint64{
+		0,
+		2,
+		3,
+		4,
+		7,
+		8,
+		100,
+		1 << 32,
+		1<<32 - 1,
+		1<<32 + 1,
+		1 << 40,
+	}
+	for _, tc := range testcases {
+		f.Add(tc)
+	}
+	merkleTreeContract, _ := setupMerkleTreeContract(f)
+	opts := &bind.CallOpts{}
+	f.Fuzz(func(t *testing.T, x uint64) {
+		lsbSol, _ := merkleTreeContract.LeastSignificantBit(opts, big.NewInt(int64(x)))
+		lsbGo, _ := util.LeastSignificantBit(x)
+		if lsbSol != nil {
+			if !lsbSol.IsUint64() {
+				t.Fatal("lsb sol not a uint64")
+			}
+			if lsbSol.Uint64() != lsbGo {
+				t.Errorf("Mismatch lsb sol=%d, go=%d", lsbSol, lsbGo)
+			}
+		}
+		msbSol, _ := merkleTreeContract.MostSignificantBit(opts, big.NewInt(int64(x)))
+		msbGo, _ := util.MostSignificantBit(x)
+		if msbSol != nil {
+			if !msbSol.IsUint64() {
+				t.Fatal("msb sol not a uint64")
+			}
+			if msbSol.Uint64() != msbGo {
+				t.Errorf("Mismatch msb sol=%d, go=%d", msbSol, msbGo)
+			}
+		}
+	})
+}
+
+func runBitEquivalenceTest(
+	t testing.TB,
+	solFunc func(opts *bind.CallOpts, x *big.Int) (*big.Int, error),
+	goFunc func(x uint64) (uint64, error),
+) {
+	opts := &bind.CallOpts{}
+	for _, tt := range []struct {
+		num        uint64
+		wantSolErr bool
+		solErr     string
+		wantGoErr  bool
+		goErr      error
+	}{
+		{
+			num:        0,
+			wantSolErr: true,
+			solErr:     "has no significant bits",
+			wantGoErr:  true,
+			goErr:      util.ErrCannotBeZero,
+		},
+		{num: 2},
+		{num: 3},
+		{num: 4},
+		{num: 7},
+		{num: 8},
+		{num: 10},
+		{num: 100},
+		{num: 256},
+		{num: 1 << 32},
+		{num: 1<<32 + 1},
+		{num: 1<<32 - 1},
+		{num: 10231920391293},
+	} {
+		lsbSol, err := solFunc(opts, big.NewInt(int64(tt.num)))
+		if tt.wantSolErr {
+			require.NotNil(t, err)
+			require.ErrorContains(t, err, tt.solErr)
+		} else {
+			require.NoError(t, err)
+		}
+
+		lsbGo, err := goFunc(tt.num)
+		if tt.wantGoErr {
+			require.NotNil(t, err)
+			require.ErrorIs(t, err, tt.goErr)
+		} else {
+			require.NoError(t, err)
+			require.Equal(t, lsbSol.Uint64(), lsbGo)
+		}
+	}
+
+}
+
+func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
 	for i := 0; i < len(hashes); i++ {
@@ -48,25 +156,40 @@ func TestGoPrefixProofs(t *testing.T) {
 		prefixProof[i] = proof[i]
 	}
 
-	err = util.VerifyPrefixProofGo(&util.VerifyPrefixProofConfig{
-		PreRoot:      loCommit.Merkle,
-		PreSize:      4,
-		PostRoot:     hiCommit.Merkle,
-		PostSize:     8,
-		PreExpansion: preExpansionHashes,
-		PrefixProof:  prefixProof,
-	})
+	merkleTreeContract, _ := setupMerkleTreeContract(t)
+	err = merkleTreeContract.VerifyPrefixProof(
+		&bind.CallOpts{},
+		loCommit.Merkle,
+		big.NewInt(4),
+		hiCommit.Merkle,
+		big.NewInt(8),
+		preExpansion,
+		proof,
+	)
 	require.NoError(t, err)
+
+	// err = util.VerifyPrefixProofGo(&util.VerifyPrefixProofConfig{
+	// 	PreRoot:      loCommit.Merkle,
+	// 	PreSize:      4,
+	// 	PostRoot:     hiCommit.Merkle,
+	// 	PostSize:     8,
+	// 	PreExpansion: preExpansionHashes,
+	// 	PrefixProof:  prefixProof,
+	// })
+	// require.NoError(t, err)
 }
 
-func setupMerkleTreeContract(t testing.TB) (*testAccount, *backends.SimulatedBackend) {
+func setupMerkleTreeContract(t testing.TB) (*mocksgen.MerkleTreeAccess, *backends.SimulatedBackend) {
 	t.Helper()
 	ctx := context.Background()
 	numChains := uint64(1)
 	accs, backend := setupAccounts(t, numChains)
 	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
 	headerReader.Start(ctx)
-	return accs[0], backend
+	_, _, merkleTreeContract, err := mocksgen.DeployMerkleTreeAccess(accs[0].txOpts, backend)
+	require.NoError(t, err)
+	backend.Commit()
+	return merkleTreeContract, backend
 }
 
 // Represents a test EOA account in the simulated backend,

@@ -4,6 +4,12 @@ pragma solidity ^0.8.17;
 import "../challengeV2/libraries/MerkleTreeLib.sol";
 
 contract MerkleTreeAccess {
+    function mostSignificantBit(uint256 x) external pure returns (uint256) {
+        return UintUtils.mostSignificantBit(x);
+    }
+    function leastSignificantBit(uint256 x) external pure returns (uint256) {
+        return UintUtils.leastSignificantBit(x);
+    }
     function root(bytes32[] memory me) external pure returns (bytes32) {
         return MerkleTreeLib.root(me);
     }

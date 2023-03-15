@@ -77,12 +77,18 @@ var (
 	ErrSizeNotLeqPostSize                = errors.New("size not <= post size")
 )
 
-func LeastSignificantBit(x uint64) uint64 {
-	return uint64(bits.TrailingZeros64(x))
+func LeastSignificantBit(x uint64) (uint64, error) {
+	if x == 0 {
+		return 0, ErrCannotBeZero
+	}
+	return uint64(bits.TrailingZeros64(x)), nil
 }
 
-func MostSignificantBit(x uint64) uint64 {
-	return uint64(63 - bits.LeadingZeros64(x))
+func MostSignificantBit(x uint64) (uint64, error) {
+	if x == 0 {
+		return 0, ErrCannotBeZero
+	}
+	return uint64(63 - bits.LeadingZeros64(x)), nil
 }
 
 // The root of the subtree. A collision free commitment to the contents of the tree.
@@ -114,12 +120,12 @@ func Root(me []common.Hash) common.Hash {
 	return accum
 }
 
-// / Append a complete subtree to an existing tree
-// / See above description of trees for rules on how appending can occur.
-// / Briefly, appending works like binary addition only that the value being added be an
-// / exact power of two (complete), and must equal to or less than the least signficant bit
-// / in the existing tree.
-// / If the me is empty, will just append directly.
+// Append a complete subtree to an existing tree
+// See above description of trees for rules on how appending can occur.
+// Briefly, appending works like binary addition only that the value being added be an
+// exact power of two (complete), and must equal to or less than the least signficant bit
+// in the existing tree.
+// If the me is empty, will just append directly.
 func AppendCompleteSubTree(
 	me []common.Hash, level uint64, subtreeRoot common.Hash,
 ) ([]common.Hash, error) {
@@ -197,9 +203,9 @@ func AppendCompleteSubTree(
 	return me, nil
 }
 
-// / Append a leaf to a subtree
-// / Leaves are just complete subtrees at level 0, however we hash the leaf before putting it
-// / into the tree to avoid root collisions.
+// Append a leaf to a subtree
+// Leaves are just complete subtrees at level 0, however we hash the leaf before putting it
+// into the tree to avoid root collisions.
 func AppendLeaf(
 	me []common.Hash, leaf [32]byte,
 ) ([]common.Hash, error) {
@@ -208,11 +214,11 @@ func AppendLeaf(
 	return AppendCompleteSubTree(me, 0, crypto.Keccak256Hash(leaf[:]))
 }
 
-// / Find the highest level which can be appended to tree of size startSize without
-// / creating a tree with size greater than end size (inclusive)
-// / Subtrees can only be appended according to certain rules, see tree description at top of file
-// / for details. A subtree can only be appended if it is at the same level, or below, the current lowest
-// / subtree in the expansion
+// Find the highest level which can be appended to tree of size startSize without
+// creating a tree with size greater than end size (inclusive)
+// Subtrees can only be appended according to certain rules, see tree description at top of file
+// for details. A subtree can only be appended if it is at the same level, or below, the current lowest
+// subtree in the expansion
 func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	// Since the tree is binary we can represent it using the binary representation of a number
 	// We use size here instead of height since height is zero indexed
@@ -232,7 +238,11 @@ func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	}
 
 	// remove the high order bits that are shared
-	msb := MostSignificantBit(startSize ^ endSize)
+	msb, err := MostSignificantBit(startSize ^ endSize)
+	if err != nil {
+		return 0, err
+	}
+
 	mask := uint64((1<<(msb) + 1) - 1)
 	y := startSize & mask
 	z := endSize & mask
@@ -240,13 +250,13 @@ func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	// Since in the verification we will be appending at start size, the highest level at which we
 	// can append is the lowest complete subtree - the least significant bit
 	if y != 0 {
-		return LeastSignificantBit(y), nil
+		return LeastSignificantBit(y)
 	}
 	// y == 0, therefore we can append at any of levels where start and end differ
 	// The highest level that we can append at without surpassing the end, is the most significant
 	// bit of the end
 	if z != 0 {
-		return MostSignificantBit(z), nil
+		return MostSignificantBit(z)
 	}
 	// since we enforce that start < end, we know that y and z cannot both be 0
 	return 0, ErrCannotBeZero
