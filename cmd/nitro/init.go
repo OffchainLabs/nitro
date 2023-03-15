@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
-	"github.com/offchainlabs/nitro/execution/gethclient"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -176,13 +176,13 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
-			if chainConfig := gethclient.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
+			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
-				l2BlockChain, err := gethclient.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+				l2BlockChain, err := gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -261,11 +261,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
-		chainConfig = gethclient.TryReadStoredChainConfig(chainDb)
+		chainConfig = gethexec.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = gethclient.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
+		l2BlockChain, err = gethexec.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Execution.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -307,7 +307,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		l2BlockChain, err = gethclient.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
+		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}

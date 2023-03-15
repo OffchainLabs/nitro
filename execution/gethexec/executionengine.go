@@ -1,4 +1,4 @@
-package gethclient
+package gethexec
 
 import (
 	"context"

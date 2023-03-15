@@ -49,7 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/execution/gethclient"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -381,7 +381,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), gethclient.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching))
 	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
 		// Calling Stop on the blockchain multiple times does nothing
@@ -439,12 +439,12 @@ func mainImpl() int {
 		log.Warn("couldn't init validation node", "err", err)
 	}
 
-	execNode, err := gethclient.CreateExecutionNode(
+	execNode, err := gethexec.CreateExecutionNode(
 		stack,
 		chainDb,
 		l2BlockChain,
 		l1Client,
-		func() *gethclient.Config { return &liveNodeConfig.get().Execution },
+		func() *gethexec.Config { return &liveNodeConfig.get().Execution },
 	)
 	if err != nil {
 		log.Error("failed to create execution node", "err", err)
@@ -532,7 +532,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution     gethclient.Config               `koanf:"exec" reload:"hot"`
+	Execution     gethexec.Config                 `koanf:"exec" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
