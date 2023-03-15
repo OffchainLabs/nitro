@@ -1,3 +1,8 @@
+// Package prefixproofs defines utilities for creating Merkle prefix proofs for binary
+// trees. It is used extensively in the challenge protocol for making challenge moves on-chain.
+// These utilities also have equivalent counterparts written in Solidity under
+// MerkleTreeLib.sol, which must be thoroughly tested against to ensure safety.
+//
 // Binary trees
 // --------------------------------------------------------------------------------------------
 // A complete tree is a balanced binary tree - each node has two children except the leaf
@@ -52,7 +57,7 @@
 //
 // ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
 // --------------------------------------------------------------------------------------------
-package util
+package prefixproofs
 
 import (
 	"github.com/ethereum/go-ethereum/common"
@@ -276,13 +281,13 @@ type VerifyPrefixProofConfig struct {
 // and then checking that the root of the calculated post tree is equal to the supplied one
 func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
 	if cfg.PreSize == 0 {
-		return ErrCannotBeZero
+		return errors.Wrap(ErrCannotBeZero, "presize was 0")
 	}
 	if Root(cfg.PreExpansion) != cfg.PreRoot {
-		return ErrRootMismatch
+		return errors.Wrap(ErrRootMismatch, "pre expansion root mismatch")
 	}
 	if cfg.PreSize >= cfg.PostSize {
-		return ErrStartNotLessThanEnd
+		return errors.Wrapf(ErrStartNotLessThanEnd, "presize %d >= postsize %d", cfg.PreSize, cfg.PostSize)
 	}
 	preExpansion := cfg.PreExpansion
 	size := cfg.PreSize
@@ -299,15 +304,15 @@ func VerifyPrefixProofGo(cfg *VerifyPrefixProofConfig) error {
 		numLeaves := 1 << level
 		size += uint64(numLeaves)
 		if size > cfg.PostSize {
-			return ErrSizeNotLeqPostSize
+			return errors.Wrapf(ErrSizeNotLeqPostSize, "size %d > postsize %d", size, cfg.PostSize)
 		}
 		proofIndex++
 	}
 	if Root(preExpansion) != cfg.PostRoot {
-		return ErrRootMismatch
+		return errors.Wrap(ErrRootMismatch, "post expansion root mismatch")
 	}
 	if proofIndex != uint64(len(cfg.PrefixProof)) {
-		return ErrIncompleteProof
+		return errors.Wrapf(ErrIncompleteProof, "proof index %d, proof length %d", proofIndex, len(cfg.PrefixProof))
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package util_test
+package prefixproofs_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -62,25 +63,25 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// err = util.VerifyPrefixProofGo(&util.VerifyPrefixProofConfig{
-	// 	PreRoot:      loCommit.Merkle,
-	// 	PreSize:      4,
-	// 	PostRoot:     hiCommit.Merkle,
-	// 	PostSize:     8,
-	// 	PreExpansion: preExpansionHashes,
-	// 	PrefixProof:  prefixProof,
-	// })
-	// require.NoError(t, err)
+	err = prefixproofs.VerifyPrefixProofGo(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      loCommit.Merkle,
+		PreSize:      4,
+		PostRoot:     hiCommit.Merkle,
+		PostSize:     8,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	require.NoError(t, err)
 }
 
 func TestLeastSignificantBit_GoSolidityEquivalence(t *testing.T) {
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
-	runBitEquivalenceTest(t, merkleTreeContract.LeastSignificantBit, util.LeastSignificantBit)
+	runBitEquivalenceTest(t, merkleTreeContract.LeastSignificantBit, prefixproofs.LeastSignificantBit)
 }
 
 func TestMostSignificantBit_GoSolidityEquivalence(t *testing.T) {
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
-	runBitEquivalenceTest(t, merkleTreeContract.MostSignificantBit, util.MostSignificantBit)
+	runBitEquivalenceTest(t, merkleTreeContract.MostSignificantBit, prefixproofs.MostSignificantBit)
 }
 
 func FuzzBitUtils_GoSolidityEquivalence(f *testing.F) {
@@ -104,7 +105,7 @@ func FuzzBitUtils_GoSolidityEquivalence(f *testing.F) {
 	opts := &bind.CallOpts{}
 	f.Fuzz(func(t *testing.T, x uint64) {
 		lsbSol, _ := merkleTreeContract.LeastSignificantBit(opts, big.NewInt(int64(x)))
-		lsbGo, _ := util.LeastSignificantBit(x)
+		lsbGo, _ := prefixproofs.LeastSignificantBit(x)
 		if lsbSol != nil {
 			if !lsbSol.IsUint64() {
 				t.Fatal("lsb sol not a uint64")
@@ -114,7 +115,7 @@ func FuzzBitUtils_GoSolidityEquivalence(f *testing.F) {
 			}
 		}
 		msbSol, _ := merkleTreeContract.MostSignificantBit(opts, big.NewInt(int64(x)))
-		msbGo, _ := util.MostSignificantBit(x)
+		msbGo, _ := prefixproofs.MostSignificantBit(x)
 		if msbSol != nil {
 			if !msbSol.IsUint64() {
 				t.Fatal("msb sol not a uint64")
@@ -144,7 +145,7 @@ func runBitEquivalenceTest(
 			wantSolErr: true,
 			solErr:     "has no significant bits",
 			wantGoErr:  true,
-			goErr:      util.ErrCannotBeZero,
+			goErr:      prefixproofs.ErrCannotBeZero,
 		},
 		{num: 2},
 		{num: 3},
