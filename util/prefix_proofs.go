@@ -1,3 +1,57 @@
+// Binary trees
+// --------------------------------------------------------------------------------------------
+// A complete tree is a balanced binary tree - each node has two children except the leaf
+// Leaves have no children, they are a complete tree of size one
+// Any tree (can be incomplete) can be represented as a collection of complete sub trees.
+// Since the tree is binary only one or zero complete tree at each level is enough to define any size of tree.
+// The root of a tree (incomplete or otherwise) is defined as the cumulative hashing of all of the
+// roots of each of it's complete and empty subtrees.
+// ---------
+// eg. Below a tree of size 3 is represented as the composition of 2 complete subtrees, one of size
+// 2 (AB) and one of size one (C).
+//    AB
+//   /  \
+//  A    B    C
+
+// Merkle expansions and roots
+// --------------------------------------------------------------------------------------------
+// The minimal amount of information we need to keep in order to compute the root of a tree
+// is the roots of each of it's sub trees, and the levels of each of those trees
+// A "merkle expansion" (ME) is this information - it is a vector of roots of each complete subtree,
+// the level of the tree being the index in the vector, the subtree root being the value.
+// The root is calculated by hashing each of the levels of the subtree together, adding zero hashes
+// where relevant to make a balanced tree.
+// ---------
+// eg. from the example above
+// ME of the AB tree = (0, AB), root=AB
+// ME of the C tree = (C), root=(C, 0)
+// ME of the composed ABC tree = (AB, C), root=hash(AB, hash(C, 0)) - here C is hashed with 0
+// to balance the tree, before then being hashed with AB.
+
+// Tree operations
+// --------------------------------------------------------------------------------------------
+// Binary trees are modified by adding or subtracting complete subtrees, however this libary
+// supports additive only trees since we dont have a specific use for subtraction at the moment.
+// We call adding a complete subtree to an existing tree "appending", appending has the following
+// rules:
+// 1. Only a complete sub trees can be appended
+// 2. Complete sub trees can only be appended at the level of the lowest complete subtree in the tree, or below
+// 3. If the existing tree is empty a sub tree can be appended at any level
+// When appending a sub tree we may increase the size of the merkle expansion vector, in the same
+// that adding 1 to a binary number may increase the index of its most significant bit
+// ---------
+// eg. A complete subtree can only be appended to the ABC tree at level 0, since the its lowest complete
+// subtree (C) is at level 0. Doing so would create a complete sub tree at level 1, which would in turn
+// cause the creation of new size 4 sub tree
+//
+//	                               ABCD
+//	                             /     \
+//	  AB                        AB     CD
+//	 /  \         +       =    /  \   /  \
+//	A    B    C       D       A    B C    D
+//
+// ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
+// --------------------------------------------------------------------------------------------
 package util
 
 import (
@@ -5,6 +59,11 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 	"math/bits"
+)
+
+const (
+	// MAX_LEVEL for our binary trees.
+	MAX_LEVEL = uint64(256)
 )
 
 func leastSignificantBit(x uint64) uint64 {
@@ -15,6 +74,9 @@ func mostSignificantBit(x uint64) uint64 {
 	return uint64(63 - bits.LeadingZeros64(x))
 }
 
+// The root of the subtree. A collision free commitment to the contents of the tree.
+// The root of a tree is defined as the cumulative hashing of the roots of
+// all its subtrees. Returns 0 for empty tree.
 func root(me []common.Hash) common.Hash {
 	empty := true
 	var accum common.Hash
@@ -23,23 +85,36 @@ func root(me []common.Hash) common.Hash {
 		if empty {
 			empty = false
 			accum = val
+
+			// the tree is balanced if the only non zero entry in the merkle extension
+			// us the last entry
+			// otherwise the lowest level entry needs to be combined with a zero to balance the bottom
+			// level, after which zeros in the merkle extension above that will balance the rest
 			if i != len(me)-1 {
 				accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
 			}
 		} else if (val != common.Hash{}) {
 			accum = crypto.Keccak256Hash(val.Bytes(), accum.Bytes())
 		} else {
+			// by definition we always complete trees by appending zeros to the right
 			accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
 		}
 	}
 	return accum
 }
 
+// / Append a complete subtree to an existing tree
+// / See above description of trees for rules on how appending can occur.
+// / Briefly, appending works like binary addition only that the value being added be an
+// / exact power of two (complete), and must equal to or less than the least signficant bit
+// / in the existing tree.
+// / If the me is empty, will just append directly.
 func appendCompleteSubTree(
 	me []common.Hash, level uint64, subtreeRoot common.Hash,
 ) ([]common.Hash, error) {
-	// MAX_LEVEL
-	if level >= 32 {
+	// we use number representations of the levels elsewhere, so we need to ensure we're appending a leve
+	// that's too high to use in uint
+	if level >= MAX_LEVEL {
 		return nil, errors.New("level too high")
 	}
 	if subtreeRoot == (common.Hash{}) {
@@ -58,59 +133,111 @@ func appendCompleteSubTree(
 	}
 
 	if level >= uint64(len(me)) {
+		// This technically isn't necessary since it would be caught by the i < level check
+		// on the last loop of the for-loop below, but we add it for a clearer error message
 		return nil, errors.New("level greater than highest level of current expansion")
 	}
 
 	accumHash := subtreeRoot
 	next := make([]common.Hash, len(me))
 
+	// loop through all the levels in self and try to append the new subtree
+	// since each node has two children by appending a subtree we may complete another one
+	// in the level above. So we move through the levels updating the result at each level
 	for i := uint64(0); i < uint64(len(me)); i++ {
+		// we can only append at the level of the smallest complete sub tree or below
+		// appending above this level would mean create "holes" in the tree
+		// we can find the smallest complete sub tree by looking for the first entry in the merkle expansion
 		if i < level {
+			// we're below the level we want to append - no complete sub trees allowed down here
+			// if the level is 0 there are no complete subtrees, and we therefore cannot be too low
 			return nil, errors.New("append above least significant bit")
 		}
+		// we're at or above the level
 		if accumHash == (common.Hash{}) {
+			// no more changes to propagate upwards - just fill the tree
 			next[i] = me[i]
 		} else {
+			// we have a change to propagate
 			if me[i] == (common.Hash{}) {
+				// if the level is currently empty we can just add the change
 				next[i] = accumHash
+				// and then there's nothing more to propagate
 				accumHash = common.Hash{}
 			} else {
+				// if the level is not currently empty then we combine it with propagation
+				// change, and propagate that to the level above. This level is now part of a complete subtree
+				// so we zero it out
 				next[i] = common.Hash{}
 				accumHash = crypto.Keccak256Hash(me[i].Bytes(), accumHash.Bytes())
 			}
 		}
 	}
 
+	// we had a final change to propagate above the existing highest complete sub tree
+	// so we have a new highest complete sub tree in the level above
 	if accumHash != (common.Hash{}) {
 		next = append(next, accumHash)
 	}
 
-	if len(next) < 32+1 {
+	if uint64(len(next)) < MAX_LEVEL+1 {
 		return nil, errors.New("level too high")
 	}
 	return me, nil
 }
 
+// / Append a leaf to a subtree
+// / Leaves are just complete subtrees at level 0, however we hash the leaf before putting it
+// / into the tree to avoid root collisions.
 func appendLeaf(
 	me []common.Hash, leaf [32]byte,
 ) ([]common.Hash, error) {
+	// it's important that we hash the leaf, this ensures that this leaf cannot be a collision with any other non leaf
+	// or root node, since these are always the hash of 64 bytes of data, and we're hashing 32 bytes
 	return appendCompleteSubTree(me, 0, crypto.Keccak256Hash(leaf[:]))
 }
 
+// / Find the highest level which can be appended to tree of size startSize without
+// / creating a tree with size greater than end size (inclusive)
+// / Subtrees can only be appended according to certain rules, see tree description at top of file
+// / for details. A subtree can only be appended if it is at the same level, or below, the current lowest
+// / subtree in the expansion
 func maximumAppendBetween(startSize, endSize uint64) (uint64, error) {
+	// Since the tree is binary we can represent it using the binary representation of a number
+	// We use size here instead of height since height is zero indexed
+	// As described above, subtrees can only be appended to a tree if they are at the same level, or below,
+	// the current lowest subtree.
+	// In this function we want to find the level of the highest tree that can be appended to the current
+	// tree, without the resulting tree surpassing the end point. We do this by looking at the difference
+	// between the start and end size, and iteratively reducing it in the maximal way.
+
+	// The start and end size will share some higher order bits, below that they differ, and it is this
+	// difference that we need to fill in the minimum number of appends
+	// startSize looks like: xxxxxxyyyy
+	// endSize looks like:   xxxxxxzzzz
+	// where x are the complete sub trees they share, and y and z are the subtrees they dont
 	if startSize < endSize {
 		return 0, errors.New("start not less than end")
 	}
+
+	// remove the high order bits that are shared
 	msb := mostSignificantBit(startSize ^ endSize)
 	mask := uint64((1<<(msb) + 1) - 1)
 	y := startSize & mask
 	z := endSize & mask
+
+	// Since in the verification we will be appending at start size, the highest level at which we
+	// can append is the lowest complete subtree - the least significant bit
 	if y != 0 {
 		return leastSignificantBit(y), nil
 	}
+	// y == 0, therefore we can append at any of levels where start and end differ
+	// The highest level that we can append at without surpassing the end, is the most significant
+	// bit of the end
 	if z != 0 {
 		return mostSignificantBit(z), nil
 	}
+	// since we enforce that start < end, we know that y and z cannot both be 0
 	return 0, errors.New("both y and z cannot be zero")
 }
 
@@ -123,6 +250,9 @@ type verifyPrefixProofConfig struct {
 	prefixProof  []common.Hash
 }
 
+// Verify that a pre-root commits to a prefix of the leaves committed by a post-root
+// Verifies by appending sub trees to the pre tree until we get to the size of the post tree
+// and then checking that the root of the calculated post tree is equal to the supplied one
 func verifyPrefixProof(cfg *verifyPrefixProofConfig) error {
 	if cfg.preSize == 0 {
 		return errors.New("presize cannot be 0")
@@ -132,6 +262,31 @@ func verifyPrefixProof(cfg *verifyPrefixProofConfig) error {
 	}
 	if cfg.preSize >= cfg.postSize {
 		return errors.New("pre size not less than post size")
+	}
+	preExpansion := cfg.preExpansion
+	size := cfg.preSize
+	proofIndex := uint64(0)
+	for size < cfg.postSize {
+		level, err := maximumAppendBetween(size, cfg.postSize)
+		if err != nil {
+			return err
+		}
+		preExpansion, err = appendCompleteSubTree(preExpansion, level, cfg.prefixProof[proofIndex])
+		if err != nil {
+			return err
+		}
+		numLeaves := 1 << level
+		size += uint64(numLeaves)
+		if size > cfg.postSize {
+			return errors.New("size is not <= post size")
+		}
+		proofIndex++
+	}
+	if root(preExpansion) != cfg.postRoot {
+		return errors.New("post expansion root not equal post")
+	}
+	if proofIndex != uint64(len(cfg.prefixProof)) {
+		return errors.New("incomplete proof usage")
 	}
 	return nil
 }
