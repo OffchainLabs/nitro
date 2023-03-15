@@ -36,7 +36,7 @@ impl TestEvmStorage {
         let mut storage = self.clone();
         Box::new(move |key, value| {
             drop(storage.set_bytes32(program, key, value));
-            (22100, false)
+            Ok(22100)
         })
     }
 }

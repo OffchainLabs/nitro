@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::{bail, eyre, ErrReport};
+use eyre::{eyre, ErrReport};
 use ouroboros::self_referencing;
 use prover::{
     programs::{
@@ -98,8 +98,13 @@ pub struct MeterData {
     pub pricing: PricingParams,
 }
 
+/// State load: key → (value, cost)
 pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
-pub type StoreBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> (u64, bool) + Send>;
+
+/// State store: (key, value) → (cost, error)
+pub type StoreBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
+
+/// Contract call: (contract, calldata, gas, value) → (return_data, gas, status)
 pub type CallContract =
     Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (Vec<u8>, u64, UserOutcomeKind) + Send>;
 
@@ -243,11 +248,7 @@ impl EvmAPI {
     }
 
     pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> eyre::Result<u64> {
-        let (cost, err) = (self.store_bytes32)(key, value);
-        if err {
-            bail!("write protection");
-        }
-        Ok(cost)
+        (self.store_bytes32)(key, value)
     }
 
     pub fn call_contract(

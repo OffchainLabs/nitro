@@ -3,7 +3,7 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    host, GoAPI,
+    host, GoAPI, RustVec,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
@@ -148,9 +148,14 @@ impl NativeInstance {
             (value, cost)
         });
         let set_bytes32 = Box::new(move |key, value| unsafe {
+            let mut error = RustVec::new(vec![]);
             let mut cost = 0;
-            let status = set(id, key, value, &mut cost as *mut _);
-            (cost, status != 0)
+            let status = set(id, key, value, &mut cost as *mut _, &mut error as *mut _);
+            let error = error.into_vec(); // done here to always drop
+            match status {
+                0 => Ok(cost),
+                _ => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
+            }
         });
         let call_contract =
             Box::new(move |_contract, _input, _gas, _value| unimplemented!("contract call"));

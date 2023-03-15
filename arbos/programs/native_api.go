@@ -16,9 +16,9 @@ Bytes32 getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost) {
     return getBytes32Impl(api, key, cost);
 }
 
-uint8_t setBytes32Impl(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost);
-uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost) {
-    return setBytes32Impl(api, key, value, cost);
+uint8_t setBytes32Impl(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error);
+uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error) {
+    return setBytes32Impl(api, key, value, cost, error);
 }
 */
 import "C"
@@ -35,9 +35,11 @@ import (
 var apiClosures sync.Map
 var apiIds int64 // atomic
 
-type getBytes32Type func(key common.Hash) (common.Hash, uint64)
-type setBytes32Type func(key, value common.Hash) (uint64, error)
-type callContractType func(contract common.Address, input []byte, gas uint64, value *big.Int) ([]byte, uint64, error)
+type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
+type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
+type callContractType func(
+	contract common.Address, input []byte, gas uint64, value *big.Int) (output []byte, gas_left uint64, err error,
+)
 
 type apiClosure struct {
 	getBytes32   getBytes32Type

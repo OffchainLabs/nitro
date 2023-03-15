@@ -12,7 +12,7 @@ package programs
 #include "arbitrator.h"
 
 Bytes32 getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost);
-uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost);
+uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error);
 */
 import "C"
 import (
@@ -123,14 +123,16 @@ func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
 }
 
 //export setBytes32Impl
-func setBytes32Impl(api usize, key, value bytes32, cost *u64) u8 {
+func setBytes32Impl(api usize, key, value bytes32, cost *u64, vec *C.RustVec) u8 {
 	closure, err := getAPI(api)
 	if err != nil {
+		vec.setString(err.Error())
 		log.Error(err.Error())
 		return apiFailure
 	}
 	gas, err := closure.setBytes32(key.toHash(), value.toHash())
 	if err != nil {
+		vec.setString(err.Error())
 		return apiFailure
 	}
 	*cost = u64(gas)
@@ -165,6 +167,14 @@ func (vec *C.RustVec) intoBytes() []byte {
 	slice := vec.read()
 	C.stylus_free(*vec)
 	return slice
+}
+
+func (vec *C.RustVec) setString(data string) {
+	vec.setBytes([]byte(data))
+}
+
+func (vec *C.RustVec) setBytes(data []byte) {
+	C.stylus_vec_set_bytes(vec, goSlice(data))
 }
 
 func goSlice(slice []byte) C.GoSliceData {
