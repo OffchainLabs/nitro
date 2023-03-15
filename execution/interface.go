@@ -61,6 +61,8 @@ type FullExecutionClient interface {
 	ExecutionRecorder
 	ExecutionSequencer
 
+	Maintenance() error
+
 	// TODO: only used to get safe/finalized block numbers
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
 }

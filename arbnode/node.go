@@ -15,7 +15,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -31,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethclient"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -594,10 +594,9 @@ func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
 	exec execution.FullExecutionClient,
-	chainDb ethdb.Database,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
-	l2BlockChain *core.BlockChain,
+	l2Config *params.ChainConfig,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
@@ -611,7 +610,6 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	l2Config := l2BlockChain.Config()
 	l2ChainId := l2Config.ChainID.Uint64()
 
 	//TODO:
@@ -672,8 +670,8 @@ func createNodeImpl(
 	} else if config.Sequencer && (!config.Dangerous.NoCoordinator) {
 		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 	}
-	dbs := []ethdb.Database{chainDb, arbDb}
-	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs)
+	dbs := []ethdb.Database{arbDb}
+	maintenanceRunner, err := NewMaintenanceRunner(func() *MaintenanceConfig { return &configFetcher.Get().Maintenance }, coordinator, dbs, exec)
 	if err != nil {
 		return nil, err
 	}
@@ -762,7 +760,7 @@ func createNodeImpl(
 			}
 			daReader = das.NewReaderPanicWrapper(daReader)
 		}
-	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
+	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
@@ -912,17 +910,16 @@ func CreateNode(
 	ctx context.Context,
 	stack *node.Node,
 	exec execution.FullExecutionClient,
-	chainDb ethdb.Database,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
-	l2BlockChain *core.BlockChain,
+	l2Config *params.ChainConfig,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -940,8 +937,7 @@ func CreateNode(
 			Namespace: "arbvalidator",
 			Version:   "1.0",
 			Service: &BlockValidatorDebugAPI{
-				val:        currentNode.StatelessBlockValidator,
-				blockchain: l2BlockChain,
+				val: currentNode.StatelessBlockValidator,
 			},
 			Public: false,
 		})

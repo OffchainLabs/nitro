@@ -331,3 +331,7 @@ func (n *ExecutionNode) SetTransactionStreamer(streamer execution.TransactionStr
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }
+
+func (n *ExecutionNode) Maintenance() error {
+	return n.ChainDB.Compact(nil, nil)
+}
