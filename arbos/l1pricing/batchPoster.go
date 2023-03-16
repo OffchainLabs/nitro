@@ -45,9 +45,9 @@ func InitializeBatchPostersTable(storage *storage.Storage) error {
 	return addressSet.Initialize(storage.OpenSubStorage(PosterAddrsKey))
 }
 
-func OpenBatchPostersTable(storage *storage.Storage, arbosVersion uint64) *BatchPostersTable {
+func OpenBatchPostersTable(storage *storage.Storage) *BatchPostersTable {
 	return &BatchPostersTable{
-		posterAddrs:   addressSet.OpenAddressSet(storage.OpenSubStorage(PosterAddrsKey), arbosVersion),
+		posterAddrs:   addressSet.OpenAddressSet(storage.OpenSubStorage(PosterAddrsKey)),
 		posterInfo:    storage.OpenSubStorage(PosterInfoKey),
 		totalFundsDue: storage.OpenStorageBackedBigInt(totalFundsDueOffset),
 	}

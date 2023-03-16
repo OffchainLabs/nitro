@@ -16,19 +16,17 @@ type AddressSet struct {
 	backingStorage *storage.Storage
 	size           storage.StorageBackedUint64
 	byAddress      *storage.Storage
-	arbosVersion   uint64
 }
 
 func Initialize(sto *storage.Storage) error {
 	return sto.SetUint64ByUint64(0, 0)
 }
 
-func OpenAddressSet(sto *storage.Storage, arbosVersion uint64) *AddressSet {
+func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
 		sto,
 		sto.OpenStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
-		arbosVersion,
 	}
 }
 
@@ -111,7 +109,7 @@ func (aset *AddressSet) Add(addr common.Address) error {
 	return err
 }
 
-func (aset *AddressSet) Remove(addr common.Address) error {
+func (aset *AddressSet) Remove(addr common.Address, arbosVersion uint64) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	slot, err := aset.byAddress.GetUint64(addrAsHash)
 	if slot == 0 || err != nil {
@@ -134,7 +132,7 @@ func (aset *AddressSet) Remove(addr common.Address) error {
 		if err != nil {
 			return err
 		}
-		if aset.arbosVersion >= 11 {
+		if arbosVersion >= 11 {
 			err = aset.byAddress.Set(atSize, util.UintToHash(slot))
 			if err != nil {
 				return err
