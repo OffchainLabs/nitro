@@ -9,15 +9,16 @@ import (
 	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto, common.Address{})
+	err := InitializeL1PricingState(sto, common.Address{}, params.ArbitrumDevTestParams().InitialArbOSVersion)
 	Require(t, err)
-	ps := OpenL1PricingState(sto)
+	ps := OpenL1PricingState(sto, params.ArbitrumDevTestParams().InitialArbOSVersion)
 
 	tyme, err := ps.LastUpdateTime()
 	Require(t, err)

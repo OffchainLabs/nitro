@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 )
@@ -18,7 +19,7 @@ func TestBatchPosterTable(t *testing.T) {
 	err := InitializeBatchPostersTable(sto)
 	Require(t, err)
 
-	bpTable := OpenBatchPostersTable(sto)
+	bpTable := OpenBatchPostersTable(sto, params.ArbitrumDevTestParams().InitialArbOSVersion)
 
 	addr1 := common.Address{1, 2, 3}
 	pay1 := common.Address{4, 5, 6, 7}

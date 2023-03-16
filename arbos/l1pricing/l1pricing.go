@@ -82,12 +82,12 @@ const (
 var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
 var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
-func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
+func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, arbosVersion uint64) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
 	}
-	bpTable := OpenBatchPostersTable(bptStorage)
+	bpTable := OpenBatchPostersTable(bptStorage, arbosVersion)
 	if _, err := bpTable.AddPoster(BatchPosterAddress, BatchPosterPayToAddress); err != nil {
 		return err
 	}
@@ -115,10 +115,10 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	return nil
 }
 
-func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
+func OpenL1PricingState(sto *storage.Storage, arbosVersion uint64) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		OpenBatchPostersTable(sto.OpenSubStorage(BatchPosterTableKey)),
+		OpenBatchPostersTable(sto.OpenSubStorage(BatchPosterTableKey), arbosVersion),
 		sto.OpenStorageBackedAddress(payRewardsToOffset),
 		sto.OpenStorageBackedBigUint(equilibrationUnitsOffset),
 		sto.OpenStorageBackedUint64(inertiaOffset),
