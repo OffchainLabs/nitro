@@ -195,6 +195,9 @@ type Challenge interface {
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
 	Challenger() common.Address
+	SubchallengeClaimVertex(
+		ctx context.Context, tx ActiveTx,
+	) (ChallengeVertex, error)
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(

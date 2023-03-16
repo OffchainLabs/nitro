@@ -21,6 +21,27 @@ func (c *Challenge) Challenger() common.Address {
 	return c.inner.Challenger
 }
 
+func (c *Challenge) SubchallengeClaimVertex(
+	ctx context.Context, tx protocol.ActiveTx,
+) (protocol.ChallengeVertex, error) {
+	rootVertex, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+	if err != nil {
+		return nil, err
+	}
+	if rootVertex.IsNone() {
+		return nil, ErrNotFound
+	}
+	root := rootVertex.Unwrap().(*ChallengeVertex)
+	claimVertex, err := c.manager.GetVertex(ctx, tx, root.inner.ClaimId)
+	if err != nil {
+		return nil, err
+	}
+	if claimVertex.IsNone() {
+		return nil, ErrNotFound
+	}
+	return claimVertex.Unwrap(), nil
+}
+
 func (c *Challenge) RootAssertion(
 	ctx context.Context, tx protocol.ActiveTx,
 ) (protocol.Assertion, error) {

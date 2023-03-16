@@ -423,7 +423,7 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	var err error
 	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		// TODO: Need the root assertion block number.
-		rootAssertion, err := subChallenge.RootAssertion(ctx, tx)
+		claimVertex, err := subChallenge.SubchallengeClaimVertex(ctx, tx)
 		if err != nil {
 			return errors.Wrap(err, "no root assertion rip")
 		}
@@ -438,14 +438,14 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 				"fromStateRoot": util.Trunc(fromState.Bytes()),
 				"toStateRoot":   util.Trunc(toState.Bytes()),
 			}).Info("Big step leaf commit")
-			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, rootAssertion.Height(), fromHeight, toHeight, fromState, toState)
+			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, claimVertex.HistoryCommitment().Height, fromHeight, toHeight, fromState, toState)
 		case protocol.SmallStepChallenge:
 			log.WithFields(logrus.Fields{
 				"name":          vt.cfg.validatorName,
 				"fromStateRoot": util.Trunc(fromState.Bytes()),
 				"toStateRoot":   util.Trunc(toState.Bytes()),
 			}).Info("Small step leaf commit")
-			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, rootAssertion.Height(), fromHeight, toHeight, fromState, toState)
+			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, claimVertex.HistoryCommitment().Height, fromHeight, toHeight, fromState, toState)
 		default:
 			return errors.New("unsupported subchallenge type for creating leaf commitment")
 		}

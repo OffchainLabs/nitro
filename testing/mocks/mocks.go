@@ -262,15 +262,16 @@ func (m *MockActiveTx) Sender() common.Address {
 
 type MockChallenge struct {
 	mock.Mock
-	MockID                protocol.ChallengeHash
-	MockType              protocol.ChallengeType
-	MockWinningAssertion  util.Option[protocol.AssertionHash]
-	MockAssertion         protocol.Assertion
-	MockRootVertex        protocol.ChallengeVertex
-	MockCreationTime      time.Time
-	MockParentStateCommit util.StateCommitment
-	MockWinnerVertex      util.Option[protocol.ChallengeVertex]
-	MockChallenger        common.Address
+	MockID                      protocol.ChallengeHash
+	MockType                    protocol.ChallengeType
+	MockWinningAssertion        util.Option[protocol.AssertionHash]
+	MockAssertion               protocol.Assertion
+	MockRootVertex              protocol.ChallengeVertex
+	MockSubchallengeClaimVertex protocol.ChallengeVertex
+	MockCreationTime            time.Time
+	MockParentStateCommit       util.StateCommitment
+	MockWinnerVertex            util.Option[protocol.ChallengeVertex]
+	MockChallenger              common.Address
 }
 
 // Getters.
@@ -292,6 +293,12 @@ func (m *MockChallenge) RootAssertion(ctx context.Context, tx protocol.ActiveTx)
 
 func (m *MockChallenge) RootVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
 	return m.MockRootVertex, nil
+}
+
+func (m *MockChallenge) SubchallengeClaimVertex(
+	ctx context.Context, tx protocol.ActiveTx,
+) (protocol.ChallengeVertex, error) {
+	return m.MockSubchallengeClaimVertex, nil
 }
 
 func (m *MockChallenge) GetCreationTime(ctx context.Context, tx protocol.ActiveTx) (time.Time, error) {
