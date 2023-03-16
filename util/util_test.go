@@ -27,12 +27,12 @@ func TestBisectionPoint(t *testing.T) {
 		{31, 33, 32},
 		{32, 34, 33},
 		{13, 15, 14},
-		{0, 9, 8},
-		{0, 13, 8},
-		{0, 15, 8},
-		{13, 17, 16},
-		{13, 31, 16},
-		{15, 31, 16},
+		{0, 9, 7},
+		{0, 13, 7},
+		{0, 15, 7},
+		{13, 17, 15},
+		{13, 31, 15},
+		{15, 31, 15},
 	}
 	for _, testCase := range testCases {
 		res, err := BisectionPoint(testCase.pre, testCase.post)

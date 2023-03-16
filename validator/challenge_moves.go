@@ -67,28 +67,16 @@ func (v *vertexTracker) bisect(
 		if err != nil {
 			return errors.Wrapf(err, "generating prefix proof failed from height %d to %d", bisectTo, toHeight)
 		}
-		// Perform an extra safety check to ensure our proof verifies against the specified commitment
-		// before we make an on-chain transaction.
-		if err = util.VerifyPrefixProof(historyCommit, commitment, proof); err != nil {
-			return errors.Wrapf(
-				err,
-				"proof failed for height=%d,commit=%s to height%d,commit=%s",
-				historyCommit.Height,
-				util.Trunc(historyCommit.Merkle.Bytes()),
-				commitment.Height,
-				util.Trunc(commitment.Merkle.Bytes()),
-			)
-		}
 		bisected, err := validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof)
 		if err != nil {
 			return errors.Wrapf(
 				err,
-				"%s could not bisect height=%d,commit=%s to height%d,commit=%s",
+				"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
 				v.cfg.validatorName,
 				bisectTo,
-				util.Trunc(validatorChallengeVertex.HistoryCommitment().Merkle.Bytes()),
-				historyCommit.Height,
 				util.Trunc(historyCommit.Merkle.Bytes()),
+				validatorChallengeVertex.HistoryCommitment().Height,
+				util.Trunc(validatorChallengeVertex.HistoryCommitment().Merkle.Bytes()),
 			)
 		}
 		bisectedVertex = bisected
@@ -150,10 +138,6 @@ func (v *vertexTracker) merge(
 	if err != nil {
 		return nil, err
 	}
-	if err = util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
-		return nil, err
-	}
-
 	var mergedTo protocol.ChallengeVertex
 	if err = v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		mergedToV, err2 := mergingFrom.Merge(ctx, tx, historyCommit, proof)

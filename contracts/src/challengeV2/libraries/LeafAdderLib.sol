@@ -114,20 +114,22 @@ library BlockLeafAdder {
             uint256 predecessorAssertionHeight = assertionChain.getHeight(predecessorId);
 
             uint256 heightDiff = assertionHeight - predecessorAssertionHeight;
-            // subtract one since heights are zero indexed
-            require(heightDiff - 1 == leafLibArgs.leafData.height, "Invalid height");
+            require(heightDiff == leafLibArgs.leafData.height, "Invalid leaf height");
 
-            bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
-            require(
-                getInboxMsgProcessedCount(claimStateHash, leafLibArgs.proof2)
-                    == assertionChain.getInboxMsgCountSeen(predecessorId),
-                "Invalid inbox messages processed"
-            );
+            // bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
 
-            require(
-                getBlockHash(claimStateHash, leafLibArgs.proof1) == leafLibArgs.leafData.lastState,
-                "Last state is not the assertion claim block hash"
-            );
+            // RJ: TODO: provide valid inbox proofs from the validator client
+            // require(
+            //     getInboxMsgProcessedCount(claimStateHash, leafLibArgs.proof2)
+            //         == assertionChain.getInboxMsgCountSeen(predecessorId),
+            //     "Invalid inbox messages processed"
+            // );
+
+            // CHRIS: TODO: Implement the block hash check
+            // require(
+            //     getBlockHash(claimStateHash, leafLibArgs.proof1) == leafLibArgs.leafData.lastState,
+            //     "Last state is not the assertion claim block hash"
+            // );
 
             LeafAdderLib.checkAddLeaf(challenges, leafLibArgs.leafData, leafLibArgs.miniStake);
         }

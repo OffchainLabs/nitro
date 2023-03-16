@@ -13,6 +13,7 @@ go_library(
         "//protocol",
         "//state-manager/backend",
         "//util",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
     ],

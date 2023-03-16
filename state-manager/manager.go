@@ -10,9 +10,20 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"math/rand"
+)
+
+// Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
+var (
+	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
+	// ProofArgs for submission to the protocol.
+	ProofArgs = abi.Arguments{
+		{Type: b32Arr, Name: "prefixExpansion"},
+		{Type: b32Arr, Name: "prefixProof"},
+	}
 )
 
 // Manager defines a struct that can provide local state data and historical
@@ -28,7 +39,7 @@ type Manager interface {
 	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
 	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
 	HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error)
-	PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error)
+	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
 	BigStepLeafCommitment(
 		ctx context.Context,
 		blockNum,
@@ -176,9 +187,12 @@ func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.Stat
 
 // HistoryCommitmentUpTo gets the history commitment for the merkle expansion up to a height.
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+	// The size is the number of elements being committed to. For example, if the height is 7, there will
+	// be 8 elements being committed to from [0, 7] inclusive.
+	size := height + 1
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height+1],
+		s.stateRoots[:size],
 	)
 }
 
@@ -222,12 +236,11 @@ func (s *Simulated) BigStepLeafCommitment(
 	)
 }
 
-// TODO(RJ): Deduplicate.
 func (s *Simulated) BigStepCommitmentUpTo(
 	ctx context.Context,
 	blockNum uint64,
-	startBlockHash,
-	endBlockHash common.Hash,
+	startState,
+	endState common.Hash,
 	toBigStep uint64,
 ) (util.HistoryCommitment, error) {
 	cfg := execution.DefaultConfig()
@@ -237,18 +250,17 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	if s.numOpcodesPerBigStep > 0 {
 		cfg.BigStepSize = s.numOpcodesPerBigStep
 	}
-	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
+	engine, err := execution.NewExecutionEngine(blockNum, startState, endState, cfg)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-
-	expansion := util.NewEmptyMerkleExpansion()
+	leaves := make([]common.Hash, engine.NumBigSteps()+1)
+	leaves[0] = startState
 
 	if engine.NumBigSteps() < toBigStep {
 		return util.HistoryCommitment{}, errors.New("not enough big steps")
 	}
 
-	var endHash common.Hash
 	// Up to and including the specified big step.
 	for i := uint64(0); i <= toBigStep; i++ {
 		start, err := engine.StateAfterBigSteps(i)
@@ -270,18 +282,9 @@ func (s *Simulated) BigStepCommitmentUpTo(
 			}
 			hash = crypto.Keccak256Hash(junkRoot)
 		}
-		if i+1 == toBigStep {
-			endHash = hash
-		}
-		expansion = expansion.AppendLeaf(hash)
+		leaves[i] = hash
 	}
-
-	return util.HistoryCommitment{
-		Height:    toBigStep,
-		Merkle:    expansion.Root(),
-		FirstLeaf: startBlockHash,
-		LastLeaf:  endHash,
-	}, nil
+	return util.NewHistoryCommitment(toBigStep, leaves)
 }
 
 // SmallStepLeafCommitment produces a small step history commitment which includes
@@ -327,8 +330,8 @@ func (s *Simulated) SmallStepLeafCommitment(
 func (s *Simulated) SmallStepCommitmentUpTo(
 	ctx context.Context,
 	blockNum uint64,
-	startBlockHash,
-	endBlockHash common.Hash,
+	startState,
+	endState common.Hash,
 	toStep uint64,
 ) (util.HistoryCommitment, error) {
 	cfg := execution.DefaultConfig()
@@ -338,18 +341,15 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 	if s.numOpcodesPerBigStep > 0 {
 		cfg.BigStepSize = s.numOpcodesPerBigStep
 	}
-	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
+	engine, err := execution.NewExecutionEngine(blockNum, startState, endState, cfg)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-
-	expansion := util.NewEmptyMerkleExpansion()
-
 	if engine.NumOpcodes() < toStep {
 		return util.HistoryCommitment{}, errors.New("not enough small steps")
 	}
+	leaves := make([]common.Hash, engine.NumOpcodes())
 
-	var endHash common.Hash
 	// Up to and including the specified small step.
 	for i := uint64(0); i <= toStep; i++ {
 		start, err := engine.StateAfterSmallSteps(i)
@@ -371,27 +371,23 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 			}
 			hash = crypto.Keccak256Hash(junkRoot)
 		}
-		if i+1 == toStep {
-			endHash = hash
-		}
-		expansion = expansion.AppendLeaf(hash)
+		leaves[i] = hash
 	}
-
-	return util.HistoryCommitment{
-		Height:    toStep,
-		Merkle:    expansion.Root(),
-		FirstLeaf: startBlockHash,
-		LastLeaf:  endHash,
-	}, nil
+	return util.NewHistoryCommitment(toStep, leaves)
 }
 
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
 // from a low point to a high point specified as arguments.
-func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Hash, error) {
-	exp := util.ExpansionFromLeaves(s.stateRoots[:lo])
-	return util.GeneratePrefixProof(
-		lo,
-		exp,
-		s.stateRoots[lo:hi+1],
-	), nil
+func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
+	loSize := lo + 1
+	hiSize := hi + 1
+	prefixExpansion := util.ExpansionFromLeaves(s.stateRoots[:loSize])
+	prefixProof := util.GeneratePrefixProof(
+		loSize,
+		prefixExpansion,
+		s.stateRoots[loSize:hiSize],
+	)
+	_, numRead := util.MerkleExpansionFromCompact(prefixProof, loSize)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }

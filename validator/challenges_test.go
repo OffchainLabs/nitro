@@ -39,7 +39,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//
 	// At the assertion chain level, the fork is at height 2.
 	//
-	//                [3]-[4]-[6]-alice
+	//                [2]-[3]-[7]-alice
 	//               /
 	// [genesis]-[2]-
 	//               \
@@ -64,10 +64,10 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
-			currentChainHeight: 6,
+			currentChainHeight: 7,
 			// The latest assertion height each validator has seen.
-			aliceHeight: 6,
-			bobHeight:   6,
+			aliceHeight: 7,
+			bobHeight:   7,
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3 at all subchallenge levels.
 			assertionDivergenceHeight:    3,
@@ -90,8 +90,8 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedMerges = 1
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")

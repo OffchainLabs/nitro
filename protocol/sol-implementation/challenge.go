@@ -121,16 +121,22 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
-	lastLeafProof := make([]byte, 0)
-	for _, h := range history.LastLeafProof {
-		lastLeafProof = append(lastLeafProof, h[:]...)
+	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
+	lastLeafProof := make([][32]byte, len(history.LastLeafProof))
+	for i, h := range history.LastLeafProof {
+		var r [32]byte
+		copy(r[:], h[:])
+		flatLastLeafProof = append(flatLastLeafProof, r[:]...)
+		lastLeafProof[i] = r
+	}
+	firstLeafProof := make([][32]byte, len(history.FirstLeafProof))
+	for i, h := range history.FirstLeafProof {
+		var r [32]byte
+		copy(r[:], h[:])
+		firstLeafProof[i] = r
 	}
 	callOpts := c.manager.assertionChain.callOpts
 	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
-	if err != nil {
-		return nil, err
-	}
-	prevAssertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +145,8 @@ func (c *Challenge) AddBlockChallengeLeaf(
 		ClaimId:                assertionId,
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             prevAssertion.StateHash(),
-		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
+		FirstState:             history.FirstLeaf,
+		FirstStatehistoryProof: firstLeafProof,
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
 	}
@@ -153,11 +159,11 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	_, err = transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err = transact(ctx, c.manager.assertionChain.backend, c.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
-			lastLeafProof,
+			flatLastLeafProof,
 			make([]byte, 0), // Inbox proof
 		)
 	})
@@ -196,32 +202,28 @@ func (c *Challenge) AddSubChallengeLeaf(
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
-	lastLeafProof := make([]byte, 0)
-	for _, h := range history.LastLeafProof {
-		lastLeafProof = append(lastLeafProof, h[:]...)
+	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
+	lastLeafProof := make([][32]byte, len(history.LastLeafProof))
+	for i, h := range history.LastLeafProof {
+		var r [32]byte
+		copy(r[:], h[:])
+		flatLastLeafProof = append(flatLastLeafProof, r[:]...)
+		lastLeafProof[i] = r
 	}
 
-	prev, err := vertex.Prev(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	if prev.IsNone() {
-		return nil, errors.New("no prev vertex")
-	}
-	parentVertex, err := c.manager.caller.GetVertex(
-		c.manager.assertionChain.callOpts,
-		prev.Unwrap().Id(),
-	)
-	if err != nil {
-		return nil, err
+	firstLeafProof := make([][32]byte, len(history.FirstLeafProof))
+	for i, h := range history.FirstLeafProof {
+		var r [32]byte
+		copy(r[:], h[:])
+		firstLeafProof[i] = r
 	}
 	leafData := challengeV2gen.AddLeafArgs{
 		ChallengeId:            c.id,
 		ClaimId:                vertex.Id(),
 		Height:                 big.NewInt(int64(history.Height)),
 		HistoryRoot:            history.Merkle,
-		FirstState:             parentVertex.HistoryRoot,
-		FirstStatehistoryProof: make([]byte, 0), // TODO: Add in.
+		FirstState:             history.FirstLeaf,
+		FirstStatehistoryProof: firstLeafProof,
 		LastState:              history.LastLeaf,
 		LastStatehistoryProof:  lastLeafProof,
 	}
@@ -234,12 +236,12 @@ func (c *Challenge) AddSubChallengeLeaf(
 	opts := copyTxOpts(c.manager.assertionChain.txOpts)
 	opts.Value = miniStake
 
-	_, err = transact(ctx, c.manager.assertionChain.backend, func() (*types.Transaction, error) {
+	_, err = transact(ctx, c.manager.assertionChain.backend, c.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return c.manager.writer.AddLeaf(
 			opts,
 			leafData,
-			lastLeafProof,
-			lastLeafProof, // TODO(RJ): Should be different for big and small step.
+			flatLastLeafProof,
+			flatLastLeafProof, // TODO(RJ): Should be different for big and small step.
 		)
 	})
 	if err != nil {
