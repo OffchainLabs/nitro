@@ -35,11 +35,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
-	validatorConfig.BlockValidator.ArbitratorValidator = arbitrator
-	validatorConfig.BlockValidator.JitValidator = !arbitrator
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig)
+	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig, nil)
 	defer nodeB.StopAndWait()
 	l2info.GenerateAccount("User2")
 
@@ -128,7 +127,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	finalRefCount := nodeB.BlockValidator.RecordDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
-	largestRefCount := lastBlockNow.NumberU64() + 1 - lastBlock.NumberU64()
+	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
+	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
 		Fail(t, "unexpected refcount:", finalRefCount)
 	}

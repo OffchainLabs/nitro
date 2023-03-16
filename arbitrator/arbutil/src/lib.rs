@@ -7,7 +7,7 @@ pub mod format;
 pub mod math;
 pub mod operator;
 
-pub use color::Color;
+pub use color::{Color, DebugColor};
 
 #[cfg(feature = "wavm")]
 pub mod wavm;

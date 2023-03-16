@@ -231,6 +231,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		timer := time.NewTimer(s.config().PollInterval)
 		select {
 		case h := <-inputChannel:
+			log.Trace("got new header from L1", "number", h.Number, "hash", h.Hash(), "header", h)
 			s.possiblyBroadcast(h)
 			timer.Stop()
 		case <-timer.C:

@@ -178,7 +178,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -188,7 +188,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 				if err != nil {
-					return chainDb, nil, err
+					return chainDb, l2BlockChain, err
 				}
 				return chainDb, l2BlockChain, nil
 			}
@@ -219,7 +219,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
 	if err != nil {
 		return chainDb, nil, err
 	}
@@ -315,12 +315,12 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	txIndexWg.Wait()
 	err = chainDb.Sync()
 	if err != nil {
-		return chainDb, nil, err
+		return chainDb, l2BlockChain, err
 	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 	if err != nil {
-		return chainDb, nil, err
+		return chainDb, l2BlockChain, err
 	}
 
 	return chainDb, l2BlockChain, nil

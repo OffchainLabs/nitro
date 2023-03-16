@@ -3,7 +3,7 @@
 
 #![cfg(feature = "native")]
 
-use arbutil::{format, Color};
+use arbutil::{format, Color, DebugColor};
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
@@ -340,11 +340,14 @@ fn main() -> Result<()> {
                 println!("{} {}", "Error guards ".grey(), format::commas(guards));
             }
             print!(
-                "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
-                proofs.len(),
-                mach.get_steps(),
-                next_opcode,
-                next_inst.argument_data,
+                "Generating proof {} (inst {}) for {}{}",
+                proofs.len().blue(),
+                mach.get_steps().blue(),
+                next_opcode.debug_mint(),
+                match next_inst.argument_data {
+                    0 => "".into(),
+                    v => format!(" with data 0x{v:x}"),
+                }
             );
             std::io::stdout().flush().unwrap();
             let before = mach.hash();
