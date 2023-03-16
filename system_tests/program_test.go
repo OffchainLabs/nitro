@@ -72,16 +72,6 @@ func keccakTest(t *testing.T, jit bool) {
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 
-	doUntil(t, 20*time.Millisecond, 50, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
-	})
-
 	validateBlocks(t, 1, ctx, node, l2client)
 }
 
@@ -191,6 +181,17 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 }
 
 func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
+
+	doUntil(t, 20*time.Millisecond, 50, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
+		Require(t, err)
+		return meta.MessageCount == messageCount
+	})
+
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
