@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"math/big"
 
+	"math/rand"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/rand"
 )
 
 // Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts

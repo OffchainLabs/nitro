@@ -43,7 +43,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//               /
 	// [genesis]-[2]-
 	//               \
-	//                [3]-[4]-[6]-bob
+	//                [3]-[4]-[7]-bob
 	//
 	// At the big step challenge level, the fork is at height 2 (big step number 2).
 	//
@@ -71,27 +71,27 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3 at all subchallenge levels.
 			assertionDivergenceHeight:    3,
-			numBigStepsAtAssertionHeight: 10,
+			numBigStepsAtAssertionHeight: 7,
 			bigStepDivergenceHeight:      3,
-			numSmallStepsAtBigStep:       10,
+			numSmallStepsAtBigStep:       7,
 			smallStepDivergenceHeight:    3,
 		}
-		// Alice adds a challenge leaf 6, is presumptive.
-		// Bob adds leaf 6.
-		// Bob bisects to 4, is presumptive.
-		// Alice bisects to 4.
-		// Alice bisects to 2, is presumptive.
-		// Bob merges to 2.
-		// Bob bisects from 4 to 3, is presumptive.
-		// Alice bisects from 4 to 3.
+		// Alice adds a challenge leaf 7, is presumptive.
+		// Bob adds leaf 7.
+		// Bob bisects to 3, is presumptive.
+		// Alice bisects to 3.
+		// Alice bisects to 1, is presumptive.
+		// Bob merges to 1.
+		// Bob bisects from 3 to 2, is presumptive.
+		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
 		cfg.expectedVerticesAdded = 2
-		cfg.expectedBisections = 5
-		cfg.expectedMerges = 1
+		cfg.expectedBisections = 4
+		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 1")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")
@@ -202,13 +202,13 @@ func prepareHonestStates(
 
 	// Initialize each validator associated state roots which diverge
 	// at specified points in the test config.
-	honestStates := make([]*protocol.ExecutionState, chainHeight)
-	honestInboxCounts := make([]*big.Int, chainHeight)
+	honestStates := make([]*protocol.ExecutionState, chainHeight+1)
+	honestInboxCounts := make([]*big.Int, chainHeight+1)
 	honestStates[0] = genesisState
 	honestInboxCounts[0] = big.NewInt(1)
 
 	var honestBlockHash common.Hash
-	for i := uint64(1); i < chainHeight; i++ {
+	for i := uint64(1); i <= chainHeight; i++ {
 		honestBlockHash = backend.Commit()
 		state := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
@@ -279,7 +279,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		cfg.currentChainHeight,
 		prevInboxMaxCount,
 	)
-
 	maliciousStates, maliciousInboxCounts := prepareMaliciousStates(
 		t,
 		cfg,
@@ -288,12 +287,16 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		prevInboxMaxCount,
 	)
 
+	managerOpts := []statemanager.Opt{
+		statemanager.WithMaxWavmOpcodesPerBlock(64),
+		statemanager.WithNumOpcodesPerBigStep(8),
+	}
+
 	// Initialize each validator.
 	honestManager, err := statemanager.NewWithAssertionStates(
 		honestStates,
 		honestInboxCounts,
-		statemanager.WithMaxWavmOpcodesPerBlock(100), // TODO(RJ): Configure.
-		statemanager.WithNumOpcodesPerBigStep(10),
+		managerOpts...,
 	)
 	require.NoError(t, err)
 	aliceAddr := accs[1].accountAddr
@@ -311,13 +314,15 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	)
 	require.NoError(t, err)
 
+	managerOpts = append(
+		managerOpts,
+		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
+		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
+	)
 	maliciousManager, err := statemanager.NewWithAssertionStates(
 		maliciousStates,
 		maliciousInboxCounts,
-		statemanager.WithMaxWavmOpcodesPerBlock(100), // TODO(RJ): Configure.
-		statemanager.WithNumOpcodesPerBigStep(10),
-		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
-		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
+		managerOpts...,
 	)
 	require.NoError(t, err)
 	bobAddr := accs[1].accountAddr
