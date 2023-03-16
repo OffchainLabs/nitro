@@ -163,31 +163,29 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		log.Info("Checking one-step-proof against protocol")
 		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
-		// event, ok := current.SourceEvent.(openSubchallenge)
-		// if !ok {
-		// 	return fmt.Errorf("bad source event: %s", event)
-		// }
-		// subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
-		// if err != nil {
-		// 	return err
-		// }
-		// return vt.fsm.Do(openSubchallengeLeaf{
-		// 	subChallenge:    subChallenge,
-		// 	forkPointVertex: event.forkPointVertex,
-		// })
-		return vt.fsm.Do(openSubchallenge{})
+		event, ok := current.SourceEvent.(openSubchallenge)
+		if !ok {
+			return fmt.Errorf("bad source event: %s", event)
+		}
+		subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
+		if err != nil {
+			return errors.Wrap(err, "FAILS HERE")
+		}
+		return vt.fsm.Do(openSubchallengeLeaf{
+			subChallenge:    subChallenge,
+			forkPointVertex: event.forkPointVertex,
+		})
 	case trackerAddingSubchallengeLeaf:
-		// event, ok := current.SourceEvent.(openSubchallengeLeaf)
-		// if !ok {
-		// 	return fmt.Errorf("bad source event: %s", event)
-		// }
-		// if err := vt.openSubchallengeLeaf(
-		// 	ctx, event.forkPointVertex, event.subChallenge,
-		// ); err != nil {
-		// 	return err
-		// }
-		// return vt.fsm.Do(awaitSubchallengeResolution{})
-		return vt.fsm.Do(openSubchallengeLeaf{})
+		event, ok := current.SourceEvent.(openSubchallengeLeaf)
+		if !ok {
+			return fmt.Errorf("bad source event: %s", event)
+		}
+		if err := vt.openSubchallengeLeaf(
+			ctx, event.forkPointVertex, event.subChallenge,
+		); err != nil {
+			return errors.Wrap(err, "CANNOT OPEN LEAF")
+		}
+		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
@@ -424,9 +422,10 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	var history util.HistoryCommitment
 	var err error
 	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
+		// TODO: Need the root assertion block number.
 		rootAssertion, err := subChallenge.RootAssertion(ctx, tx)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "no root assertion rip")
 		}
 		fromHeight := prevVertex.HistoryCommitment().Height
 		toHeight := vt.vertex.HistoryCommitment().Height
