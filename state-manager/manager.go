@@ -251,6 +251,8 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	if s.numOpcodesPerBigStep > 0 {
 		cfg.BigStepSize = s.numOpcodesPerBigStep
 	}
+	// TODO: FROM: state root height A to B instead.
+	// TODO: When doing small step, specify the specific opcode start and end as well.
 	engine, err := execution.NewExecutionEngine(blockNum, startState, endState, cfg)
 	if err != nil {
 		return util.HistoryCommitment{}, err
