@@ -13,14 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 const LocalServerAddressForTest = "localhost"
 
-func NewRestfulDasServerOnRandomPort(address string, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, int, error) {
+func NewRestfulDasServerOnRandomPort(address string, storageService StorageService) (*RestfulDasServer, int, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:0", address))
 	if err != nil {
 		return nil, 0, err
@@ -29,7 +28,7 @@ func NewRestfulDasServerOnRandomPort(address string, storageService arbstate.Dat
 	if !ok {
 		return nil, 0, errors.New("attempt to listen on TCP returned non-TCP address")
 	}
-	rds, err := NewRestfulDasServerOnListener(listener, genericconf.HTTPServerTimeoutConfigDefault, storageService)
+	rds, err := NewRestfulDasServerOnListener(listener, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -182,7 +182,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string, ctx context.Con
 			if err != nil {
 				return nil, err
 			}
-			info.Nonce += 1 // we don't set Nonce, but try to keep track..
+			atomic.AddUint64(&info.Nonce, 1) // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%

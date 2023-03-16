@@ -28,9 +28,17 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestProgramKeccak(t *testing.T) {
+func TestProgramKeccakJIT(t *testing.T) {
+	keccakTest(t, true)
+}
+
+func TestProgramKeccakArb(t *testing.T) {
+	keccakTest(t, false)
+}
+
+func keccakTest(t *testing.T, jit bool) {
 	file := "../arbitrator/stylus/tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm"
-	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, file)
+	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, file, jit)
 	defer cleanup()
 
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
@@ -64,22 +72,20 @@ func TestProgramKeccak(t *testing.T) {
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 
-	doUntil(t, 20*time.Millisecond, 50, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
-		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
-		Require(t, err)
-		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
-		Require(t, err)
-		return meta.MessageCount == messageCount
-	})
-
 	validateBlocks(t, 1, ctx, node, l2client)
 }
 
-func TestProgramError(t *testing.T) {
+func TestProgramErrorsJIT(t *testing.T) {
+	errorTest(t, true)
+}
+
+func TestProgramErrorsArb(t *testing.T) {
+	errorTest(t, false)
+}
+
+func errorTest(t *testing.T, jit bool) {
 	file := "../arbitrator/stylus/tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm"
-	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file)
+	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file, jit)
 	defer cleanup()
 
 	// ensure tx passes
@@ -100,7 +106,7 @@ func TestProgramError(t *testing.T) {
 	validateBlocks(t, 7, ctx, node, l2client)
 }
 
-func setupProgramTest(t *testing.T, file string) (
+func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -108,10 +114,10 @@ func setupProgramTest(t *testing.T, file string) (
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.ArbitratorValidator = true
-	l2config.BlockValidator.JitValidator = true
+	l2config.BlockValidator.Enable = true
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
+	AddDefaultValNode(t, ctx, l2config, jit)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
 
@@ -175,30 +181,36 @@ func setupProgramTest(t *testing.T, file string) (
 }
 
 func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
+
+	doUntil(t, 20*time.Millisecond, 50, func() bool {
+		batchCount, err := node.InboxTracker.GetBatchCount()
+		Require(t, err)
+		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		Require(t, err)
+		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
+		Require(t, err)
+		return meta.MessageCount == messageCount
+	})
+
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
 	success := true
-	validate := func(jit bool, name string, start uint64) {
-		for block := start; block <= blockHeight; block++ {
-			header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
-			Require(t, err)
+	for block := start; block <= blockHeight; block++ {
+		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
+		Require(t, err)
 
-			now := time.Now()
-			correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, !jit, common.Hash{})
-			Require(t, err, "block", block)
-			passed := formatTime(time.Since(now))
-			if correct {
-				colors.PrintMint("yay!! we ", name, "-validated block ", block, " in ", passed)
-			} else {
-				colors.PrintRed("failed to ", name, "-validate block ", block, " in ", passed)
-			}
-			success = success && correct
+		now := time.Now()
+		correct, err := node.StatelessBlockValidator.ValidateBlock(ctx, header, false, common.Hash{})
+		Require(t, err, "block", block)
+		passed := formatTime(time.Since(now))
+		if correct {
+			colors.PrintMint("yay!! we validated block ", block, " in ", passed)
+		} else {
+			colors.PrintRed("failed to validate block ", block, " in ", passed)
 		}
+		success = success && correct
 	}
-
-	validate(true, "jit", 1)
-	validate(false, "full", start)
 	if !success {
 		Fail(t)
 	}

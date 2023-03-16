@@ -1,11 +1,11 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package server_arb
 
 /*
 #cgo CFLAGS: -g -Wall -I../target/include/
-#cgo LDFLAGS: ${SRCDIR}/../target/lib/libstylus.a -ldl -lm
+#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 #include <stdlib.h>
 
@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func CreateCByteArray(input []byte) C.CByteArray {
@@ -40,7 +41,7 @@ func DestroyCByteArray(cbyte C.CByteArray) {
 	C.free(unsafe.Pointer(cbyte.ptr))
 }
 
-func GlobalStateToC(gsIn GoGlobalState) C.GlobalState {
+func GlobalStateToC(gsIn validator.GoGlobalState) C.GlobalState {
 	gs := C.GlobalState{}
 	gs.u64_vals[0] = C.uint64_t(gsIn.Batch)
 	gs.u64_vals[1] = C.uint64_t(gsIn.PosInBatch)
@@ -53,7 +54,7 @@ func GlobalStateToC(gsIn GoGlobalState) C.GlobalState {
 	return gs
 }
 
-func GlobalStateFromC(gs C.GlobalState) GoGlobalState {
+func GlobalStateFromC(gs C.GlobalState) validator.GoGlobalState {
 	var blockHash common.Hash
 	for i := range blockHash {
 		blockHash[i] = byte(gs.bytes32_vals[0].bytes[i])
@@ -62,7 +63,7 @@ func GlobalStateFromC(gs C.GlobalState) GoGlobalState {
 	for i := range sendRoot {
 		sendRoot[i] = byte(gs.bytes32_vals[1].bytes[i])
 	}
-	return GoGlobalState{
+	return validator.GoGlobalState{
 		Batch:      uint64(gs.u64_vals[0]),
 		PosInBatch: uint64(gs.u64_vals[1]),
 		BlockHash:  blockHash,
