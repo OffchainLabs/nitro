@@ -205,7 +205,7 @@ func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uin
 }
 
 func (c *nonceCache) Finalize(block *types.Block) {
-	// Note: we don't use c.Matches here because the header will have changed
+	// Note: we don't use c.matches here because the header will have changed
 	if c.block == block.ParentHash() {
 		c.block = block.Hash()
 		c.dirty = nil
@@ -215,7 +215,7 @@ func (c *nonceCache) Finalize(block *types.Block) {
 }
 
 func (c *nonceCache) Caching() bool {
-	return c.cache != nil
+	return c.cache != nil && c.cache.Size() > 0
 }
 
 func (c *nonceCache) Resize(newSize int) {
