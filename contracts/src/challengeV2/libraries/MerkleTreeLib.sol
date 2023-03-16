@@ -332,39 +332,6 @@ library MerkleTreeLib {
         revert("Both y and z cannot be zero");
     }
 
-    /// @notice Verify that a pre-root commits to a prefix of the leaves committed by a post-root
-    /// @dev    Verifies by appending sub trees to the pre tree until we get to the size of the post tree
-    ///         and then checking that the root of the calculated post tree is equal to the supplied one
-    function partialCompute(
-        bytes32 preRoot,
-        uint256 preSize,
-        bytes32 postRoot,
-        uint256 postSize,
-        bytes32[] memory preExpansion,
-        bytes32[] memory proof
-    ) internal pure returns (bytes32[] memory) {
-        require(preSize > 0, "Pre-size cannot be 0");
-        require(root(preExpansion) == preRoot, "Pre expansion root mismatch");
-        require(preSize < postSize, "Pre size not less than post size");
-
-        uint256 size = preSize;
-        uint256 proofIndex = 0;
-
-        // Iteratively append a tree at the maximum possible level until we get to the post size
-        while (size < postSize) {
-            uint256 level = maximumAppendBetween(size, postSize);
-
-            preExpansion = appendCompleteSubTree(preExpansion, level, proof[proofIndex]);
-
-            uint256 numLeaves = 1 << level;
-            size += numLeaves;
-            assert(size <= postSize);
-            proofIndex++;
-        }
-
-        return preExpansion;
-    }
-
     function verifyPrefixProof(
         bytes32 preRoot,
         uint256 preSize,
