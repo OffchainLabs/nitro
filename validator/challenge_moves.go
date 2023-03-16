@@ -26,10 +26,8 @@ func (v *vertexTracker) determineBisectionPointWithHistory(
 		historyCommit, err = v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
 	case protocol.BigStepChallenge:
 		// TODO: Need the block hash of the one-step-fork point.
-		fmt.Println("CALLED BIG")
 		historyCommit, err = v.cfg.stateManager.BigStepCommitmentUpTo(ctx, 0, common.Hash{}, common.Hash{}, bisectTo)
 	case protocol.SmallStepChallenge:
-		fmt.Println("CALLED BIG")
 		historyCommit, err = v.cfg.stateManager.SmallStepCommitmentUpTo(ctx, 0, common.Hash{}, common.Hash{}, bisectTo)
 	}
 	if err != nil {
