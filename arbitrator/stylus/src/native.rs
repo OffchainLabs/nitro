@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{SystemStateData, WasmEnv},
-    host,
+    env::{MeterData, WasmEnv},
+    host, GoAPI, RustVec,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
@@ -48,6 +48,14 @@ impl NativeInstance {
         self.env.as_ref(&self.store)
     }
 
+    pub fn env_mut(&mut self) -> &mut WasmEnv {
+        self.env.as_mut(&mut self.store)
+    }
+
+    pub fn config(&self) -> StylusConfig {
+        self.env().config.clone()
+    }
+
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
     pub unsafe fn deserialize(module: &[u8], config: StylusConfig) -> Result<Self> {
@@ -66,13 +74,23 @@ impl NativeInstance {
     }
 
     fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
+        let debug_funcs = env.config.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
-        let imports = imports! {
+        let mut imports = imports! {
             "forward" => {
                 "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
                 "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
+                "account_load_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_load_bytes32),
+                "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
             },
         };
+        if debug_funcs {
+            imports.define(
+                "forward",
+                "debug_println",
+                Function::new_typed_with_env(&mut store, &func_env, host::debug_println),
+            );
+        }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
         let memory = exports.get_memory("memory")?.clone();
@@ -83,7 +101,7 @@ impl NativeInstance {
 
         let env = func_env.as_mut(&mut store);
         env.memory = Some(memory);
-        env.state = Some(SystemStateData {
+        env.meter = Some(MeterData {
             gas_left,
             gas_status,
             pricing: env.config.pricing,
@@ -115,6 +133,34 @@ impl NativeInstance {
             bail!("global {} does not exist", name.red())
         };
         global.set(store, value.into()).map_err(ErrReport::msg)
+    }
+
+    pub fn set_go_api(&mut self, api: GoAPI) {
+        let env = self.env.as_mut(&mut self.store);
+
+        let get = api.get_bytes32;
+        let set = api.set_bytes32;
+        let id = api.id;
+
+        let get_bytes32 = Box::new(move |key| unsafe {
+            let mut cost = 0;
+            let value = get(id, key, &mut cost as *mut _);
+            (value, cost)
+        });
+        let set_bytes32 = Box::new(move |key, value| unsafe {
+            let mut error = RustVec::new(vec![]);
+            let mut cost = 0;
+            let status = set(id, key, value, &mut cost as *mut _, &mut error as *mut _);
+            let error = error.into_vec(); // done here to always drop
+            match status {
+                0 => Ok(cost),
+                _ => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
+            }
+        });
+        let call_contract =
+            Box::new(move |_contract, _input, _gas, _value| unimplemented!("contract call"));
+
+        env.set_evm_api(get_bytes32, set_bytes32, call_contract)
     }
 }
 
@@ -186,12 +232,22 @@ impl StartlessMachine for NativeInstance {
 pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
     let module = Module::new(&store, wasm)?;
-    let imports = imports! {
+    macro_rules! stub {
+        ($($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
+        };
+    }
+    let mut imports = imports! {
         "forward" => {
-            "read_args" => Function::new_typed(&mut store, |_: u32| {}),
-            "return_data" => Function::new_typed(&mut store, |_: u32, _: u32| {}),
+            "read_args" => stub!(|_: u32|),
+            "return_data" => stub!(|_: u32, _: u32|),
+            "account_load_bytes32" => stub!(|_: u32, _: u32|),
+            "account_store_bytes32" => stub!(|_: u32, _: u32|),
         },
     };
+    if config.debug.debug_funcs {
+        imports.define("forward", "debug_println", stub!(|_: u32, _: u32|));
+    }
     Instance::new(&mut store, &module, &imports)?;
 
     let module = module.serialize()?;

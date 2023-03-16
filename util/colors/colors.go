@@ -3,7 +3,10 @@
 
 package colors
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+)
 
 var Red = "\033[31;1m"
 var Blue = "\033[34;1m"
@@ -47,4 +50,12 @@ func PrintYellow(args ...interface{}) {
 	print(Yellow)
 	fmt.Print(args...)
 	println(Clear)
+}
+
+func Uncolor(text string) string {
+	uncolor := regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
+	unwhite := regexp.MustCompile(`\s+`)
+
+	text = uncolor.ReplaceAllString(text, "")
+	return unwhite.ReplaceAllString(text, " ")
 }

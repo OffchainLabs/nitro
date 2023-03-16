@@ -97,11 +97,22 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 }
 
-func (p *TxProcessor) ExecuteWASM(contract *vm.Contract, input []byte, readOnly bool, txContext vm.TxContext, blockContext vm.BlockContext) ([]byte, error) {
-	// We recieve a number of extra args here to prepare for being stateful and context-aware execution
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+
+	contract := scope.Contract
+	program := contract.Address()
+
+	var tracingInfo *util.TracingInfo
+	if interpreter.Config().Debug {
+		caller := contract.CallerAddress
+		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, program, util.TracingDuringEVM)
+	}
+
 	return p.state.Programs().CallProgram(
+		scope,
 		p.evm.StateDB,
-		contract.Address(),
+		interpreter,
+		tracingInfo,
 		input,
 		&contract.Gas,
 	)

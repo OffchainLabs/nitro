@@ -3,9 +3,11 @@
 
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::programs::prelude::*;
+use prover::{programs::prelude::*, utils::Bytes32};
 use run::RunProgram;
 use std::mem;
+
+pub use prover;
 
 mod env;
 pub mod host;
@@ -24,6 +26,7 @@ pub struct GoParams {
     max_depth: u32,
     wasm_gas_price: u64,
     hostio_cost: u64,
+    debug_mode: usize,
 }
 
 impl GoParams {
@@ -32,17 +35,18 @@ impl GoParams {
         config.depth.max_depth = self.max_depth;
         config.pricing.wasm_gas_price = self.wasm_gas_price;
         config.pricing.hostio_cost = self.hostio_cost;
+        config.debug.debug_funcs = self.debug_mode != 0;
         config
     }
 }
 
 #[repr(C)]
-pub struct GoSlice {
+pub struct GoSliceData {
     ptr: *const u8,
     len: usize,
 }
 
-impl GoSlice {
+impl GoSliceData {
     unsafe fn slice(&self) -> &[u8] {
         std::slice::from_raw_parts(self.ptr, self.len)
     }
@@ -50,37 +54,52 @@ impl GoSlice {
 
 #[repr(C)]
 pub struct RustVec {
-    ptr: *mut *mut u8,
-    len: *mut usize,
-    cap: *mut usize,
+    ptr: *mut u8,
+    len: usize,
+    cap: usize,
 }
 
 impl RustVec {
+    fn new(vec: Vec<u8>) -> Self {
+        let mut rust_vec = Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        };
+        unsafe { rust_vec.write(vec) };
+        rust_vec
+    }
+
+    unsafe fn into_vec(self) -> Vec<u8> {
+        Vec::from_raw_parts(self.ptr, self.len, self.cap)
+    }
+
     unsafe fn write(&mut self, mut vec: Vec<u8>) {
-        let ptr = vec.as_mut_ptr();
-        let len = vec.len();
-        let cap = vec.capacity();
+        self.ptr = vec.as_mut_ptr();
+        self.len = vec.len();
+        self.cap = vec.capacity();
         mem::forget(vec);
-        *self.ptr = ptr;
-        *self.len = len;
-        *self.cap = cap;
     }
 
     unsafe fn write_err(&mut self, err: ErrReport) {
-        let msg = format!("{:?}", err);
-        let vec = msg.into_bytes();
-        self.write(vec)
+        self.write(format!("{err:?}").into_bytes());
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
-    wasm: GoSlice,
+    wasm: GoSliceData,
     version: u32,
-    mut output: RustVec,
+    debug_mode: usize,
+    output: *mut RustVec,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
-    let config = StylusConfig::version(version);
+    let output = &mut *output;
+
+    let mut config = StylusConfig::version(version);
+    if debug_mode != 0 {
+        config.debug.debug_funcs = true;
+    }
 
     match native::module(wasm, config) {
         Ok(module) => {
@@ -94,12 +113,20 @@ pub unsafe extern "C" fn stylus_compile(
     }
 }
 
+#[repr(C)]
+pub struct GoAPI {
+    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
+    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64, *mut RustVec) -> u8,
+    pub id: usize,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
-    module: GoSlice,
-    calldata: GoSlice,
+    module: GoSliceData,
+    calldata: GoSliceData,
     params: GoParams,
-    mut output: RustVec,
+    go_api: GoAPI,
+    output: *mut RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
@@ -107,6 +134,7 @@ pub unsafe extern "C" fn stylus_call(
     let config = params.config();
     let pricing = config.pricing;
     let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
+    let output = &mut *output;
 
     macro_rules! error {
         ($msg:expr, $report:expr) => {{
@@ -125,6 +153,7 @@ pub unsafe extern "C" fn stylus_call(
         Ok(instance) => instance,
         Err(error) => error!("failed to instantiate program", error),
     };
+    instance.set_go_api(go_api);
     instance.set_gas(wasm_gas);
 
     let (status, outs) = match instance.run_main(&calldata, &config) {
@@ -144,6 +173,14 @@ pub unsafe extern "C" fn stylus_call(
 
 #[no_mangle]
 pub unsafe extern "C" fn stylus_free(vec: RustVec) {
-    let vec = Vec::from_raw_parts(*vec.ptr, *vec.len, *vec.cap);
-    mem::drop(vec)
+    mem::drop(vec.into_vec())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustVec, data: GoSliceData) {
+    let rust = &mut *rust;
+    let mut vec = Vec::from_raw_parts(rust.ptr, rust.len, rust.cap);
+    vec.clear();
+    vec.extend(data.slice());
+    rust.write(vec);
 }

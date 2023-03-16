@@ -1,10 +1,15 @@
-// Copyright 2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2022-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+pub use util::{Bytes20, Bytes32};
+
+pub mod debug;
+mod util;
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub fn read_args(dest: *mut u8);
-    pub fn return_data(data: *const u8, len: usize);
+    pub(crate) fn read_args(dest: *mut u8);
+    pub(crate) fn return_data(data: *const u8, len: usize);
 }
 
 pub fn args(len: usize) -> Vec<u8> {
@@ -36,4 +41,20 @@ macro_rules! arbitrum_main {
             status
         }
     };
+}
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn account_load_bytes32(key: *const u8, dest: *mut u8);
+    pub(crate) fn account_store_bytes32(key: *const u8, value: *const u8);
+}
+
+pub fn load_bytes32(key: Bytes32) -> Bytes32 {
+    let mut data = [0; 32];
+    unsafe { account_load_bytes32(key.ptr(), data.as_mut_ptr()) };
+    Bytes32(data)
+}
+
+pub fn store_bytes32(key: Bytes32, data: Bytes32) {
+    unsafe { account_store_bytes32(key.ptr(), data.ptr()) };
 }

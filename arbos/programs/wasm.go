@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -35,12 +36,21 @@ func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, wasmGasPrice, hostioCost u64) *rustConfig
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32) error {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32, debug bool) error {
 	_, err := compileMachine(db, program, wasm, version)
 	return err
 }
 
-func callUserWasm(db vm.StateDB, program addr, calldata []byte, gas *uint64, params *goParams) ([]byte, error) {
+func callUserWasm(
+	scope *vm.ScopeContext,
+	db vm.StateDB,
+	_ *vm.EVMInterpreter,
+	_ *util.TracingInfo,
+	calldata []byte,
+	gas *uint64,
+	params *goParams,
+) ([]byte, error) {
+	program := scope.Contract.Address()
 	wasm, err := getWasm(db, program)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)

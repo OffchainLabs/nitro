@@ -106,6 +106,40 @@ func errorTest(t *testing.T, jit bool) {
 	validateBlocks(t, 7, ctx, node, l2client)
 }
 
+func TestProgramStorage(t *testing.T) {
+	file := "../arbitrator/stylus/tests/storage/target/wasm32-unknown-unknown/release/storage.wasm"
+	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, file, true)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	key := testhelpers.RandomHash()
+	value := testhelpers.RandomHash()
+
+	storeArgs := []byte{0x01}
+	storeArgs = append(storeArgs, key.Bytes()...)
+	storeArgs = append(storeArgs, value.Bytes()...)
+
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), storeArgs)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	storedBytes, err := l2client.StorageAt(ctx, programAddress, key, nil)
+	Require(t, err)
+	storedValue := common.BytesToHash(storedBytes)
+	if value != storedValue {
+		Fail(t, "wrong value", value, storedValue)
+	}
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {

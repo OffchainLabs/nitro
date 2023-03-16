@@ -525,7 +525,7 @@ impl<'a> WasmBinary<'a> {
         bound.update_module(self)?;
         start.update_module(self)?;
 
-        let count = config.debug.as_ref().map(|_| Counter::new());
+        let count = config.debug.count_ops.then(|| Counter::new());
         if let Some(count) = &count {
             count.update_module(self)?;
         }

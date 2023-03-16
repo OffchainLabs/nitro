@@ -64,10 +64,13 @@ impl Display for UserOutcome {
         use UserOutcome::*;
         match self {
             Success(data) => write!(f, "success {}", hex::encode(data)),
-            Revert(data) => write!(f, "revert {}", hex::encode(data)),
             Failure(err) => write!(f, "failure {:?}", err),
             OutOfGas => write!(f, "out of gas"),
             OutOfStack => write!(f, "out of stack"),
+            Revert(data) => {
+                let text = String::from_utf8(data.clone()).unwrap_or(hex::encode(data));
+                write!(f, "revert {text}")
+            }
         }
     }
 }

@@ -1,0 +1,7 @@
+language = "C"
+include_guard = "arbitrator_bindings"
+
+[parse]
+parse_deps = true
+include = ["prover"]
+extra_bindings = ["prover"]

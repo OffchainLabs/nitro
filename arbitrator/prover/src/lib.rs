@@ -9,7 +9,6 @@ pub mod machine;
 /// cbindgen:ignore
 mod memory;
 mod merkle;
-/// cbindgen:ignore
 pub mod programs;
 mod reinterpret;
 pub mod utils;

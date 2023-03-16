@@ -1,11 +1,15 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::ErrReport;
+use eyre::{eyre, ErrReport};
 use ouroboros::self_referencing;
-use prover::programs::{
-    config::{PricingParams, StylusConfig},
-    meter::{MachineMeter, MeteredMachine},
+use prover::{
+    programs::{
+        config::{PricingParams, StylusConfig},
+        meter::{MachineMeter, MeteredMachine},
+        run::UserOutcomeKind,
+    },
+    utils::{Bytes20, Bytes32},
 };
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
@@ -51,6 +55,16 @@ impl MemoryViewContainer {
         Ok(data)
     }
 
+    pub fn read_bytes20(&self, ptr: u32) -> eyre::Result<Bytes20> {
+        let data = self.read_slice(ptr, 20)?;
+        Ok(data.try_into()?)
+    }
+
+    pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
+        let data = self.read_slice(ptr, 32)?;
+        Ok(data.try_into()?)
+    }
+
     pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
         self.view().write(ptr.into(), src)
     }
@@ -66,20 +80,38 @@ pub struct WasmEnv {
     pub outs: Vec<u8>,
     /// Mechanism for reading and writing the module's memory
     pub memory: Option<Memory>,
-    /// Mechanism for accessing stylus-specific global state
-    pub state: Option<SystemStateData>,
+    /// Mechanism for accessing metering-specific global state
+    pub meter: Option<MeterData>,
+    /// Mechanism for reading and writing permanent storage, and doing calls
+    pub evm: Option<EvmAPI>,
     /// The instance's config
     pub config: StylusConfig,
 }
 
 #[derive(Clone, Debug)]
-pub struct SystemStateData {
+pub struct MeterData {
     /// The amount of wasm gas left
     pub gas_left: Global,
     /// Whether the instance has run out of gas
     pub gas_status: Global,
     /// The pricing parameters associated with this program's environment
     pub pricing: PricingParams,
+}
+
+/// State load: key → (value, cost)
+pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
+
+/// State store: (key, value) → (cost, error)
+pub type StoreBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
+
+/// Contract call: (contract, calldata, gas, value) → (return_data, gas, status)
+pub type CallContract =
+    Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (Vec<u8>, u64, UserOutcomeKind) + Send>;
+
+pub struct EvmAPI {
+    load_bytes32: LoadBytes32,
+    store_bytes32: StoreBytes32,
+    call_contract: CallContract,
 }
 
 impl WasmEnv {
@@ -90,45 +122,66 @@ impl WasmEnv {
         }
     }
 
+    pub fn set_evm_api(
+        &mut self,
+        load_bytes32: LoadBytes32,
+        store_bytes32: StoreBytes32,
+        call_contract: CallContract,
+    ) {
+        self.evm = Some(EvmAPI {
+            load_bytes32,
+            store_bytes32,
+            call_contract,
+        })
+    }
+
+    pub fn evm(&mut self) -> eyre::Result<&mut EvmAPI> {
+        self.evm.as_mut().ok_or_else(|| eyre!("no evm api"))
+    }
+
     pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
         MemoryViewContainer::create(env)
     }
 
-    pub fn data<'a, 'b: 'a>(env: &'a mut WasmEnvMut<'b>) -> (&'a mut WasmEnv, MemoryViewContainer) {
+    pub fn data<'a, 'b: 'a>(env: &'a mut WasmEnvMut<'b>) -> (&'a mut Self, MemoryViewContainer) {
         let memory = MemoryViewContainer::create(env);
         (env.data_mut(), memory)
     }
 
-    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<SystemState<'a>, Escape> {
-        let state = env.data().state.clone().unwrap();
+    pub fn meter<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> MeterState<'a> {
+        let state = env.data().meter.clone().unwrap();
         let store = env.as_store_mut();
-        let mut state = SystemState::new(state, store);
+        MeterState::new(state, store)
+    }
+
+    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<MeterState<'a>, Escape> {
+        let mut state = Self::meter(env);
         state.buy_gas(state.pricing.hostio_cost)?;
         Ok(state)
     }
 }
 
-pub struct SystemState<'a> {
-    state: SystemStateData,
+pub struct MeterState<'a> {
+    state: MeterData,
     store: StoreMut<'a>,
 }
 
-impl<'a> Deref for SystemState<'a> {
-    type Target = SystemStateData;
+impl<'a> Deref for MeterState<'a> {
+    type Target = MeterData;
 
     fn deref(&self) -> &Self::Target {
         &self.state
     }
 }
 
-impl<'a> DerefMut for SystemState<'a> {
+impl<'a> DerefMut for MeterState<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state
     }
 }
 
-impl<'a> SystemState<'a> {
-    fn new(state: SystemStateData, store: StoreMut<'a>) -> Self {
+impl<'a> MeterState<'a> {
+    fn new(state: MeterData, store: StoreMut<'a>) -> Self {
         Self { state, store }
     }
 
@@ -149,9 +202,23 @@ impl<'a> SystemState<'a> {
         }
         Ok(())
     }
+
+    /// Checks if the user has enough evm gas, but doesn't burn any
+    pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
+        let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) else {
+            return Ok(())
+        };
+        let MachineMeter::Ready(gas_left) = self.gas_left() else {
+            return Escape::out_of_gas();
+        };
+        match gas_left < wasm_gas {
+            true => Escape::out_of_gas(),
+            false => Ok(()),
+        }
+    }
 }
 
-impl<'a> MeteredMachine for SystemState<'a> {
+impl<'a> MeteredMachine for MeterState<'a> {
     fn gas_left(&mut self) -> MachineMeter {
         let store = &mut self.store;
         let state = &self.state;
@@ -175,6 +242,26 @@ impl<'a> MeteredMachine for SystemState<'a> {
     }
 }
 
+impl EvmAPI {
+    pub fn load_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
+        (self.load_bytes32)(key)
+    }
+
+    pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> eyre::Result<u64> {
+        (self.store_bytes32)(key, value)
+    }
+
+    pub fn call_contract(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        gas: u64,
+        value: Bytes32,
+    ) -> (Vec<u8>, u64, UserOutcomeKind) {
+        (self.call_contract)(contract, input, gas, value)
+    }
+}
+
 pub type MaybeEscape = Result<(), Escape>;
 
 #[derive(Error, Debug)]
@@ -188,7 +275,11 @@ pub enum Escape {
 }
 
 impl Escape {
-    pub fn out_of_gas() -> MaybeEscape {
+    pub fn internal<T>(error: &'static str) -> Result<T, Escape> {
+        Err(Self::Internal(eyre!(error)))
+    }
+
+    pub fn out_of_gas<T>() -> Result<T, Escape> {
         Err(Self::OutOfGas)
     }
 }

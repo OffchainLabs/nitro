@@ -1,12 +1,16 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(
     clippy::field_reassign_with_default,
     clippy::inconsistent_digit_grouping
 )]
 
-use crate::{native::NativeInstance, run::RunProgram};
+use crate::{
+    native::NativeInstance,
+    run::RunProgram,
+    test::api::{TestEvmContracts, TestEvmStorage},
+};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
@@ -17,6 +21,7 @@ use prover::{
         start::StartMover,
         MiddlewareWrapper, ModuleMod,
     },
+    utils::{Bytes20, Bytes32},
     Machine,
 };
 use std::{path::Path, sync::Arc};
@@ -58,12 +63,28 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
 fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
-    config.add_debug_params();
+    config.debug.count_ops = true;
+    config.debug.debug_funcs = true;
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;
     config.costs = |_| 1;
     config
+}
+
+fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
+    let config = native.env().config.clone();
+    match native.run_main(&args, &config)? {
+        UserOutcome::Success(output) => Ok(output),
+        err => bail!("user program failure: {}", err.red()),
+    }
+}
+
+fn run_machine(machine: &mut Machine, args: &[u8], config: &StylusConfig) -> Result<Vec<u8>> {
+    match machine.run_main(&args, &config)? {
+        UserOutcome::Success(output) => Ok(output),
+        err => bail!("user program failure: {}", err.red()),
+    }
 }
 
 fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
@@ -331,16 +352,12 @@ fn test_rust() -> Result<()> {
 
     let config = uniform_cost_config();
     let mut native = NativeInstance::from_path(filename, &config)?;
-    match native.run_main(&args, &config)? {
-        UserOutcome::Success(output) => assert_eq!(hex::encode(output), hash),
-        err => bail!("user program failure: {}", err.red()),
-    }
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(hex::encode(output), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => assert_eq!(hex::encode(output), hash),
-        err => bail!("user program failure: {}", err.red()),
-    }
+    let output = run_machine(&mut machine, &args, &config)?;
+    assert_eq!(hex::encode(output), hash);
 
     check_instrumentation(native, machine)
 }
@@ -365,16 +382,12 @@ fn test_c() -> Result<()> {
     let args_string = hex::encode(&args);
 
     let mut native = NativeInstance::from_path(filename, &config)?;
-    match native.run_main(&args, &config)? {
-        UserOutcome::Success(output) => assert_eq!(hex::encode(output), args_string),
-        err => bail!("user program failure: {}", err.red()),
-    }
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(hex::encode(output), args_string);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => assert_eq!(hex::encode(output), args_string),
-        err => bail!("user program failure: {}", err.red()),
-    }
+    let output = run_machine(&mut machine, &args, &config)?;
+    assert_eq!(hex::encode(output), args_string);
 
     check_instrumentation(native, machine)
 }
@@ -414,5 +427,38 @@ fn test_fallible() -> Result<()> {
     let native_counts = native.operator_counts()?;
     let machine_counts = machine.operator_counts()?;
     assert_eq!(native_counts, machine_counts);
+    Ok(())
+}
+
+#[test]
+fn test_storage() -> Result<()> {
+    // in storage.rs
+    //     an input starting with 0x00 will induce a storage read
+    //     all other inputs induce a storage write
+
+    let filename = "tests/storage/target/wasm32-unknown-unknown/release/storage.wasm";
+    let config = uniform_cost_config();
+
+    let key = crypto::keccak(filename.as_bytes());
+    let value = crypto::keccak("value".as_bytes());
+
+    let mut args = vec![0x01];
+    args.extend(key);
+    args.extend(value);
+
+    let address = Bytes20::default();
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    let api = native.set_test_evm_api(
+        address,
+        TestEvmStorage::default(),
+        TestEvmContracts::default(),
+    );
+
+    run_native(&mut native, &args)?;
+    assert_eq!(api.get_bytes32(address, Bytes32(key)), Some(Bytes32(value)));
+
+    args[0] = 0x00; // load the value
+    let output = run_native(&mut native, &args)?;
+    assert_eq!(output, value);
     Ok(())
 }

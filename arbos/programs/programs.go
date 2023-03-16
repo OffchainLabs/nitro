@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -86,7 +87,7 @@ func (p Programs) SetWasmHostioCost(cost uint64) error {
 	return p.wasmHostioCost.Set(cost)
 }
 
-func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (uint32, error) {
+func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, err
@@ -103,15 +104,17 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address) (ui
 	if err != nil {
 		return 0, err
 	}
-	if err := compileUserWasm(statedb, program, wasm, version); err != nil {
+	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(program.Hash(), version)
 }
 
 func (p Programs) CallProgram(
+	scope *vm.ScopeContext,
 	statedb vm.StateDB,
-	program common.Address,
+	interpreter *vm.EVMInterpreter,
+	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	gas *uint64,
 ) ([]byte, error) {
@@ -119,7 +122,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	programVersion, err := p.machineVersions.GetUint32(program.Hash())
+	programVersion, err := p.machineVersions.GetUint32(scope.Contract.Address().Hash())
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +132,11 @@ func (p Programs) CallProgram(
 	if programVersion != stylusVersion {
 		return nil, errors.New("program out of date, please recompile")
 	}
-	params, err := p.goParams(programVersion)
+	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(statedb, program, calldata, gas, params)
+	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, gas, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -153,9 +156,10 @@ type goParams struct {
 	maxDepth     uint32
 	wasmGasPrice uint64
 	hostioCost   uint64
+	debugMode    uint64
 }
 
-func (p Programs) goParams(version uint32) (*goParams, error) {
+func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
@@ -173,6 +177,9 @@ func (p Programs) goParams(version uint32) (*goParams, error) {
 		maxDepth:     maxDepth,
 		wasmGasPrice: wasmGasPrice.Uint64(),
 		hostioCost:   hostioCost,
+	}
+	if debug {
+		config.debugMode = 1
 	}
 	return config, nil
 }

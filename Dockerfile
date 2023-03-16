@@ -81,9 +81,9 @@ FROM rust:1.65-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make && \
+    apt-get install -y make wabt && \
     cargo install --force cbindgen
-COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY arbitrator/Cargo.* arbitrator/stylus/cbindgen.toml arbitrator/stylus/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover

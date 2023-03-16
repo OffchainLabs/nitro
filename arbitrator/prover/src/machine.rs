@@ -1025,7 +1025,7 @@ impl Machine {
     pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(&config)?;
+        let stylus_data = bin.instrument(config)?;
 
         let forward = include_bytes!("../../../target/machines/latest/forward.wasm");
         let forward = parse(forward, Path::new("forward"))?;
@@ -1057,7 +1057,7 @@ impl Machine {
         version: u32,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {
-        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = StylusConfig::version(version);
         let stylus_data = bin.instrument(&config)?;
 
@@ -2221,26 +2221,26 @@ impl Machine {
                 Opcode::ReadPreImage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) = self.preimage_resolver.get(self.context, hash) {
-                            let offset = usize::try_from(offset).unwrap();
-                            let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
-                            let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-                            let success = module.memory.store_slice_aligned(ptr.into(), read);
-                            assert!(success, "Failed to write to previously read memory");
-                            self.value_stack.push(Value::I32(len as u32));
-                        } else {
-                            eprintln!(
-                                "{} for hash {}",
-                                "Missing requested preimage".red(),
-                                hash.red(),
-                            );
-                            self.print_backtrace(true);
-                            bail!("missing requested preimage for hash {}", hash);
-                        }
-                    } else {
-                        error!();
-                    }
+
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!()
+                    };
+                    let Some(preimage) = self.preimage_resolver.get(self.context, hash) else {
+                        eprintln!(
+                            "{} for hash {}",
+                            "Missing requested preimage".red(),
+                            hash.red(),
+                        );
+                        self.print_backtrace(true);
+                        bail!("missing requested preimage for hash {}", hash)
+                    };
+
+                    let offset = usize::try_from(offset).unwrap();
+                    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
+                    let read = preimage.get(offset..(offset + len)).unwrap_or_default();
+                    let success = module.memory.store_slice_aligned(ptr.into(), read);
+                    assert!(success, "Failed to write to previously read memory");
+                    self.value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadInboxMessage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
@@ -2726,7 +2726,7 @@ impl Machine {
             }
             LinkModule | UnlinkModule => {
                 if op == LinkModule {
-                    let leaf_index = match self.value_stack.get(self.value_stack.len() - 1) {
+                    let leaf_index = match self.value_stack.last() {
                         Some(Value::I32(x)) => *x as usize / Memory::LEAF_SIZE,
                         x => fail!("module pointer has invalid type {x:?}"),
                     };
