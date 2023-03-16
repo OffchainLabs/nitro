@@ -42,7 +42,18 @@ contract MerkleTreeAccess {
         bytes32[] memory preExpansion,
         bytes32[] memory proof
     ) external pure {
-        MerkleTreeLib.verifyPrefixProof(preRoot, preSize, postRoot, postSize, preExpansion, proof);
+        return MerkleTreeLib.verifyPrefixProof(preRoot, preSize, postRoot, postSize, preExpansion, proof);
+    }
+
+    function partialCompute(
+        bytes32 preRoot,
+        uint256 preSize,
+        bytes32 postRoot,
+        uint256 postSize,
+        bytes32[] memory preExpansion,
+        bytes32[] memory proof
+    ) external pure returns (bytes32[] memory) {
+        return MerkleTreeLib.partialCompute(preRoot, preSize, postRoot, postSize, preExpansion, proof);
     }
 
     function hasState(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)

@@ -30,37 +30,36 @@ func TestGoFailingFuzzTest(t *testing.T) {
 	expansionRaw := hexutil.MustDecode("0X000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008d68097Af7f27A85fefB268e5B1e9B5eef40e63fd0CC59e2B4C077fd79ABddeC")
 	proofRaw := hexutil.MustDecode("0Xf33B5757f8CC18013A35072A9d7015CeB97f82Af403C903B2e1d118D135831")
 
-	preExpansionHash := make([]common.Hash, 0)
 	preExpansionArray := make([][32]byte, 0)
-
 	for i := 0; i < len(expansionRaw); i += 32 {
+		var r [32]byte
 		if i+32 <= len(expansionRaw) {
-			preExpansionHash = append(preExpansionHash, common.BytesToHash(expansionRaw[i:i+32]))
-			var r [32]byte
 			copy(r[:], expansionRaw[i:i+32])
-			preExpansionArray = append(preExpansionArray, r)
 		} else {
-			preExpansionHash = append(preExpansionHash, common.BytesToHash(expansionRaw[i:]))
-			var r [32]byte
 			copy(r[:], expansionRaw[i:])
-			preExpansionArray = append(preExpansionArray, r)
 		}
+		preExpansionArray = append(preExpansionArray, r)
 	}
 
-	proofHash := make([]common.Hash, 0)
+	preExpansionHash := make([]common.Hash, len(preExpansionArray))
+	for i := range preExpansionArray {
+		preExpansionHash[i] = preExpansionArray[i]
+	}
+
 	proofArray := make([][32]byte, 0)
 	for i := 0; i < len(proofRaw); i += 32 {
+		var r [32]byte
 		if i+32 <= len(proofRaw) {
-			proofHash = append(proofHash, common.BytesToHash(proofRaw[i:i+32]))
-			var r [32]byte
 			copy(r[:], proofRaw[i:i+32])
-			proofArray = append(proofArray, r)
 		} else {
-			proofHash = append(proofHash, common.BytesToHash(proofRaw[i:]))
-			var r [32]byte
 			copy(r[:], proofRaw[i:])
-			proofArray = append(proofArray, r)
 		}
+		proofArray = append(proofArray, r)
+	}
+
+	proofHash := make([]common.Hash, len(proofArray))
+	for i := range proofArray {
+		proofHash[i] = proofArray[i]
 	}
 
 	merkleTreeContract, _ := setupMerkleTreeContract(t)

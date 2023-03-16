@@ -60,6 +60,7 @@
 package prefixproofs
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
@@ -285,6 +286,57 @@ type VerifyPrefixProofConfig struct {
 	PrefixProof  []common.Hash
 }
 
+func PartialCompute(cfg *VerifyPrefixProofConfig) ([]common.Hash, error) {
+	if cfg.PreSize == 0 {
+		return nil, errors.Wrap(ErrCannotBeZero, "presize was 0")
+	}
+	if Root(cfg.PreExpansion) != cfg.PreRoot {
+		return nil, errors.Wrap(ErrRootMismatch, "pre expansion root mismatch")
+	}
+	if cfg.PreSize >= cfg.PostSize {
+		return nil, errors.Wrapf(
+			ErrStartNotLessThanEnd,
+			"presize %d >= postsize %d",
+			cfg.PreSize,
+			cfg.PostSize,
+		)
+	}
+	preExpansion := cfg.PreExpansion
+	size := cfg.PreSize
+	proofIndex := uint64(0)
+
+	for size < cfg.PostSize {
+		level, err := MaximumAppendBetween(size, cfg.PostSize)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("Got level", level)
+		if proofIndex >= uint64(len(cfg.PrefixProof)) {
+			return nil, ErrIndexOutOfRange
+		}
+		preExpansion, err = AppendCompleteSubTree(
+			preExpansion, level, cfg.PrefixProof[proofIndex],
+		)
+		if err != nil {
+			return nil, err
+		}
+		numLeaves := 1 << level
+		size += uint64(numLeaves)
+		fmt.Println("Got numleaves", numLeaves)
+		fmt.Println("Got size", size)
+		if size > cfg.PostSize {
+			return nil, errors.Wrapf(
+				ErrSizeNotLeqPostSize,
+				"size %d > postsize %d",
+				size,
+				cfg.PostSize,
+			)
+		}
+		proofIndex++
+	}
+	return preExpansion, nil
+}
+
 // Verify that a pre-root commits to a prefix of the leaves committed by a post-root
 // Verifies by appending sub trees to the pre tree until we get to the size of the post tree
 // and then checking that the root of the calculated post tree is equal to the supplied one
@@ -333,8 +385,14 @@ func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 		}
 		proofIndex++
 	}
-	if Root(preExpansion) != cfg.PostRoot {
-		return errors.Wrap(ErrRootMismatch, "post expansion root mismatch")
+	gotRoot := Root(preExpansion)
+	if gotRoot != cfg.PostRoot {
+		return errors.Wrapf(
+			ErrRootMismatch,
+			"post expansion root mismatch got %#x, wanted %#x",
+			gotRoot,
+			cfg.PostRoot,
+		)
 	}
 	if proofIndex != uint64(len(cfg.PrefixProof)) {
 		return errors.Wrapf(
