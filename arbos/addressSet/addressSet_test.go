@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -52,9 +51,9 @@ func TestAddressSet(t *testing.T) {
 	statedb, _ := (db).(*state.StateDB)
 	stateHashBeforeChanges := statedb.IntermediateRoot(false)
 
-	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
-	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
-	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
+	addr1 := testhelpers.RandomAddress()
+	addr2 := testhelpers.RandomAddress()
+	addr3 := testhelpers.RandomAddress()
 	possibleAddresses := []common.Address{addr1, addr2, addr3}
 
 	Require(t, aset.Add(addr1))
@@ -144,9 +143,9 @@ func TestAddressSetAllMembers(t *testing.T) {
 	aset := OpenAddressSet(sto)
 	version := params.ArbitrumDevTestParams().InitialArbOSVersion
 
-	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
-	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
-	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
+	addr1 := testhelpers.RandomAddress()
+	addr2 := testhelpers.RandomAddress()
+	addr3 := testhelpers.RandomAddress()
 	possibleAddresses := []common.Address{addr1, addr2, addr3}
 
 	Require(t, aset.Add(addr1))
