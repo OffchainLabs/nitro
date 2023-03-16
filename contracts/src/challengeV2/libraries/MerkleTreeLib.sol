@@ -332,6 +332,9 @@ library MerkleTreeLib {
         revert("Both y and z cannot be zero");
     }
 
+    /// @notice Verify that a pre-root commits to a prefix of the leaves committed by a post-root
+    /// @dev    Verifies by appending sub trees to the pre tree until we get to the size of the post tree
+    ///         and then checking that the root of the calculated post tree is equal to the supplied one
     function verifyPrefixProof(
         bytes32 preRoot,
         uint256 preSize,
