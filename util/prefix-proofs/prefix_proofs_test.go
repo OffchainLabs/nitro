@@ -22,6 +22,70 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGoFailingFuzzTest(t *testing.T) {
+	preRoot := hexutil.MustDecode("0x8d68097Af7f27A85fefB268e5B1e9B5eef40e63fd0CC59e2B4C077fd79ABddeC")
+	preHeight := uint64(4)
+	postRoot := hexutil.MustDecode("0x0A67518C3889d1662998592B444f649ed6518ff579C361f7ff588ABe702B435C")
+	postHeight := uint64(8)
+	expansionRaw := hexutil.MustDecode("0X000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008d68097Af7f27A85fefB268e5B1e9B5eef40e63fd0CC59e2B4C077fd79ABddeC")
+	proofRaw := hexutil.MustDecode("0Xf33B5757f8CC18013A35072A9d7015CeB97f82Af403C903B2e1d118D135831")
+
+	preExpansionHash := make([]common.Hash, 0)
+	preExpansionArray := make([][32]byte, 0)
+
+	for i := 0; i < len(expansionRaw); i += 32 {
+		if i+32 <= len(expansionRaw) {
+			preExpansionHash = append(preExpansionHash, common.BytesToHash(expansionRaw[i:i+32]))
+			var r [32]byte
+			copy(r[:], expansionRaw[i:i+32])
+			preExpansionArray = append(preExpansionArray, r)
+		} else {
+			preExpansionHash = append(preExpansionHash, common.BytesToHash(expansionRaw[i:]))
+			var r [32]byte
+			copy(r[:], expansionRaw[i:])
+			preExpansionArray = append(preExpansionArray, r)
+		}
+	}
+
+	proofHash := make([]common.Hash, 0)
+	proofArray := make([][32]byte, 0)
+	for i := 0; i < len(proofRaw); i += 32 {
+		if i+32 <= len(proofRaw) {
+			proofHash = append(proofHash, common.BytesToHash(proofRaw[i:i+32]))
+			var r [32]byte
+			copy(r[:], proofRaw[i:i+32])
+			proofArray = append(proofArray, r)
+		} else {
+			proofHash = append(proofHash, common.BytesToHash(proofRaw[i:]))
+			var r [32]byte
+			copy(r[:], proofRaw[i:])
+			proofArray = append(proofArray, r)
+		}
+	}
+
+	merkleTreeContract, _ := setupMerkleTreeContract(t)
+	solErr := merkleTreeContract.VerifyPrefixProof(
+		&bind.CallOpts{},
+		common.BytesToHash(preRoot),
+		big.NewInt(int64(preHeight)),
+		common.BytesToHash(postRoot),
+		big.NewInt(int64(postHeight)),
+		preExpansionArray,
+		proofArray,
+	)
+	require.NoError(t, solErr)
+
+	goErr := prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      common.BytesToHash(preRoot),
+		PreSize:      preHeight,
+		PostRoot:     common.BytesToHash(postRoot),
+		PostSize:     postHeight,
+		PreExpansion: preExpansionHash,
+		PrefixProof:  proofHash,
+	})
+	require.NoError(t, goErr)
+}
+
 func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
