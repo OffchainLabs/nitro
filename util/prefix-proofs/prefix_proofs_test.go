@@ -211,46 +211,44 @@ func FuzzVerifyPrefixProof_Go(f *testing.F) {
 	) {
 		preExpF := make([]common.Hash, 0)
 		preArray := make([][32]byte, 0)
-		decodedExp, err := hexutil.Decode(preExpansionF)
+		expansionRaw, err := hexutil.Decode(preExpansionF)
 		if err != nil {
 			return
 		}
-		for i := 0; i < len(decodedExp); i += 32 {
-			if i+32 <= len(decodedExp) {
-				preExpF = append(preExpF, common.BytesToHash(decodedExp[i:i+32]))
-
-				var r [32]byte
-				copy(r[:], decodedExp[i:i+32])
-				preArray = append(preArray, r)
+		proofRaw, err := hexutil.Decode(prefixProofF)
+		if err != nil {
+			return
+		}
+		preExpansionArray := make([][32]byte, 0)
+		for i := 0; i < len(expansionRaw); i += 32 {
+			var r [32]byte
+			if i+32 <= len(expansionRaw) {
+				copy(r[:], expansionRaw[i:i+32])
 			} else {
-				preExpF = append(preExpF, common.BytesToHash(decodedExp[i:]))
-
-				var r [32]byte
-				copy(r[:], decodedExp[i:])
-				preArray = append(preArray, r)
+				copy(r[:], expansionRaw[i:])
 			}
+			preExpansionArray = append(preExpansionArray, r)
 		}
 
-		proofF := make([]common.Hash, 0)
+		preExpansionHash := make([]common.Hash, len(preExpansionArray))
+		for i := range preExpansionArray {
+			preExpansionHash[i] = preExpansionArray[i]
+		}
+
 		proofArray := make([][32]byte, 0)
-		decodedProof, err := hexutil.Decode(prefixProofF)
-		if err != nil {
-			return
-		}
-		for i := 0; i < len(decodedProof); i += 32 {
-			if i+32 <= len(decodedProof) {
-				proofF = append(proofF, common.BytesToHash(decodedProof[i:i+32]))
-
-				var r [32]byte
-				copy(r[:], decodedProof[i:i+32])
-				proofArray = append(proofArray, r)
+		for i := 0; i < len(proofRaw); i += 32 {
+			var r [32]byte
+			if i+32 <= len(proofRaw) {
+				copy(r[:], proofRaw[i:i+32])
 			} else {
-				proofF = append(proofF, common.BytesToHash(decodedProof[i:]))
-
-				var r [32]byte
-				copy(r[:], decodedProof[i:])
-				proofArray = append(proofArray, r)
+				copy(r[:], proofRaw[i:])
 			}
+			proofArray = append(proofArray, r)
+		}
+
+		proofHash := make([]common.Hash, len(proofArray))
+		for i := range proofArray {
+			proofHash[i] = proofArray[i]
 		}
 		preRoot, err := hexutil.Decode(preRootF)
 		if err != nil {
@@ -266,7 +264,7 @@ func FuzzVerifyPrefixProof_Go(f *testing.F) {
 			PostRoot:     common.BytesToHash(postRoot),
 			PostSize:     postSizeF,
 			PreExpansion: preExpF,
-			PrefixProof:  proofF,
+			PrefixProof:  proofHash,
 		}
 		goErr := prefixproofs.VerifyPrefixProof(cfg)
 		solErr := merkleTreeContract.VerifyPrefixProof(
