@@ -23,9 +23,7 @@ func TestWorstCaseBigStepBisections(t *testing.T) {
 			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
 		)
 	}
-	engine99, err := NewExecutionEngine(99, hashes[98], hashes[99], &Config{
-		FixedNumSteps: MaxInstructionsPerBlock,
-	})
+	engine99, err := NewExecutionEngine(99, hashes[98], hashes[99], DefaultConfig())
 	require.NoError(t, err)
 	numSteps := engine99.NumOpcodes()
 	numBigSteps := engine99.NumBigSteps()
@@ -58,7 +56,7 @@ func TestExecutionEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	numSteps := engine99.NumOpcodes()
-	if numSteps == 0 || numSteps > MaxInstructionsPerBlock {
+	if numSteps == 0 || numSteps > DefaultConfig().MaxInstructionsPerBlock {
 		t.Fatal(numSteps)
 	}
 
