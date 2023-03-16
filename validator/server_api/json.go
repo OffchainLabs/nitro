@@ -1,10 +1,15 @@
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package server_api
 
 import (
 	"encoding/base64"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -13,12 +18,19 @@ type BatchInfoJson struct {
 	DataB64 string
 }
 
+type UserWasmJson struct {
+	NoncanonicalHash common.Hash
+	CompressedWasm   string
+	Wasm             string
+}
+
 type ValidationInputJson struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	PreimagesB64  map[string]string
 	BatchInfo     []BatchInfoJson
+	UserWasms     map[string]UserWasmJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
 }
@@ -31,6 +43,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  make(map[string]string),
+		UserWasms:     make(map[string]UserWasmJson),
 	}
 	for hash, data := range entry.Preimages {
 		encHash := base64.StdEncoding.EncodeToString(hash.Bytes())
@@ -40,6 +53,17 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
+	}
+	for call, wasm := range entry.UserWasms {
+		callBytes := arbmath.Uint32ToBytes(call.Version)
+		callBytes = append(callBytes, call.Address.Bytes()...)
+		encCall := base64.StdEncoding.EncodeToString(callBytes)
+		encWasm := UserWasmJson{
+			NoncanonicalHash: wasm.NoncanonicalHash,
+			CompressedWasm:   base64.StdEncoding.EncodeToString(wasm.CompressedWasm),
+			Wasm:             base64.StdEncoding.EncodeToString(wasm.Wasm),
+		}
+		res.UserWasms[encCall] = encWasm
 	}
 	return res
 }
@@ -51,6 +75,7 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     make(map[common.Hash][]byte),
+		UserWasms:     make(state.UserWasms),
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
@@ -78,6 +103,30 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 			Data:   data,
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	for call, wasm := range entry.UserWasms {
+		callBytes, err := base64.StdEncoding.DecodeString(call)
+		if err != nil {
+			return nil, err
+		}
+		decCall := state.WasmCall{
+			Version: arbmath.Uint32FromBytes(callBytes[:4]),
+			Address: common.BytesToAddress(callBytes[4:]),
+		}
+		compressed, err := base64.StdEncoding.DecodeString(wasm.CompressedWasm)
+		if err != nil {
+			return nil, err
+		}
+		uncompressed, err := base64.StdEncoding.DecodeString(wasm.Wasm)
+		if err != nil {
+			return nil, err
+		}
+		decWasm := state.UserWasm{
+			NoncanonicalHash: wasm.NoncanonicalHash,
+			CompressedWasm:   compressed,
+			Wasm:             uncompressed,
+		}
+		valInput.UserWasms[decCall] = &decWasm
 	}
 	return valInput, nil
 }

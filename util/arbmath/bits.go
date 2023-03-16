@@ -44,3 +44,8 @@ func Uint32ToBytes(value uint32) []byte {
 	binary.BigEndian.PutUint32(result, value)
 	return result
 }
+
+// Uint32FromBytes creates a uint32 from its big-endian representation
+func Uint32FromBytes(value []byte) uint32 {
+	return binary.BigEndian.Uint32(value)
+}

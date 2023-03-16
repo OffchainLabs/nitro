@@ -954,7 +954,7 @@ func (v *BlockValidator) Initialize() error {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
-	err := stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe,
+	err := stopwaiter.CallIterativelyWith(&v.StopWaiterSafe,
 		func(ctx context.Context, unused struct{}) time.Duration {
 			v.sendRecords(ctx)
 			v.sendValidations(ctx)
