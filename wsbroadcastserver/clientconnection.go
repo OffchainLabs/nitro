@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 
+	"github.com/gammazero/deque"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
@@ -80,34 +81,99 @@ func (cc *ClientConnection) Compression() bool {
 	return cc.compression
 }
 
+type msgWithScheduledTime struct {
+	data  []byte
+	delay time.Duration
+}
+
+type delayQueue struct {
+	sync.RWMutex
+	deque   deque.Deque[msgWithScheduledTime]
+	pending chan struct{}
+}
+
+func NewDelayQueue() *delayQueue {
+	return &delayQueue{pending: make(chan struct{})}
+}
+
+func (d *delayQueue) Front() msgWithScheduledTime {
+	d.RLock()
+	defer d.RUnlock()
+	return d.deque.Front()
+}
+
+func (d *delayQueue) PopFront() msgWithScheduledTime {
+	d.Lock()
+	defer d.Unlock()
+	return d.deque.PopFront()
+}
+
+func (d *delayQueue) PushBack(msg msgWithScheduledTime) {
+	d.Lock()
+	defer d.Unlock()
+	d.deque.PushBack(msg)
+	select {
+	case d.pending <- struct{}{}:
+	default:
+	}
+}
+
+func (d *delayQueue) Len() int {
+	d.RLock()
+	defer d.RUnlock()
+	return d.deque.Len()
+}
+
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
+
+	delayQueue := NewDelayQueue()
+
 	cc.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case data := <-cc.out:
-				time.Sleep(cc.delay)
+				delayQueue.PushBack(
+					msgWithScheduledTime{
+						data,
+						cc.delay,
+					})
+
 				if cc.delay != 0 {
 					cc.delay = time.Duration(float64(cc.delay) * cc.delayDecayRate)
 					if cc.delay == 0 {
 						log.Trace("Client now connected without delay", "client", cc.Name)
 					}
 				}
-				err := cc.writeRaw(data)
-				if err != nil {
-					logWarn(err, "error writing data to client")
-					cc.clientManager.Remove(cc)
-					return
+			}
+		}
+	})
+
+	cc.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-delayQueue.pending:
+				for delayQueue.Len() != 0 {
+					msg := delayQueue.PopFront()
+
+					time.Sleep(msg.delay)
+
+					err := cc.writeRaw(msg.data)
+					if err != nil {
+						logWarn(err, fmt.Sprintf("Error writing data to client %s", cc.Name))
+						cc.clientManager.Remove(cc)
+					}
 				}
 			}
 		}
 	})
 }
 
-func (cc *ClientConnection) StopOnly() {
-	// Ignore errors from conn.Close since we are just shutting down
+func (cc *ClientConnection) StopOnly() { // Ignore errors from conn.Close since we are just shutting down
 	_ = cc.conn.Close()
 	if cc.Started() {
 		cc.StopWaiter.StopOnly()
