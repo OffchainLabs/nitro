@@ -94,7 +94,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.RequireCompression, "require clients to use compression")
 	f.Bool(prefix+".limit-catchup", DefaultBroadcasterConfig.LimitCatchup, "only supply catchup buffer if requested sequence number is reasonable")
 	ConnectionLimiterConfigAddOptions(prefix+".connection-limits", f)
-	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay messages sent to each client by this amount, starting from initial connect")
+	f.Duration(prefix+".client-delay", DefaultBroadcasterConfig.ClientDelay, "delay the first messages sent to each client by this amount")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
