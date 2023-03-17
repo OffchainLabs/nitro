@@ -7,7 +7,6 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,9 +69,9 @@ func TestFullChallengeResolution(t *testing.T) {
 		require.Equal(t, protocol.BigStepChallenge, subChal.GetType())
 		t.Log("Created BigStepChallenge")
 
-		commit1, err = honestManager.BigStepLeafCommitment(ctx, 0, 0, 1, common.Hash{}, common.Hash{})
+		commit1, err = honestManager.BigStepLeafCommitment(ctx, 0, 1)
 		require.NoError(t, err)
-		commit2, err = evilManager.BigStepLeafCommitment(ctx, 0, 0, 1, common.Hash{}, common.Hash{})
+		commit2, err = evilManager.BigStepLeafCommitment(ctx, 0, 1)
 		require.NoError(t, err)
 
 		vertex1, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
@@ -97,9 +96,9 @@ func TestFullChallengeResolution(t *testing.T) {
 		require.Equal(t, protocol.SmallStepChallenge, subChal.GetType())
 		t.Log("Created SmallStepChallenge")
 
-		commit1, err = honestManager.SmallStepLeafCommitment(ctx, 0, 0, 1, common.Hash{}, common.Hash{})
+		commit1, err = honestManager.SmallStepLeafCommitment(ctx, 0, 1)
 		require.NoError(t, err)
-		commit2, err = evilManager.SmallStepLeafCommitment(ctx, 0, 0, 1, common.Hash{}, common.Hash{})
+		commit2, err = evilManager.SmallStepLeafCommitment(ctx, 0, 1)
 		require.NoError(t, err)
 
 		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
