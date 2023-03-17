@@ -29,17 +29,14 @@ go_test(
     srcs = [
         "commitments_test.go",
         "fsm_test.go",
-        "prefix_proofs_test.go",
         "thread_safe_slice_test.go",
         "time_reference_test.go",
         "util_test.go",
     ],
     embed = [":util"],
     deps = [
-        "//state-manager",
         "//util/inclusion-proofs",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_stretchr_testify//require",
     ],
 )

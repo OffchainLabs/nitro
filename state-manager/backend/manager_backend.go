@@ -36,7 +36,7 @@ func (s *SimulatedManagerBackend) GetMerkleRoot(ctx context.Context, start uint6
 	}
 	exp, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[start : end+1])
 	if err != nil {
-		return common.Hash{}, nil
+		return common.Hash{}, err
 	}
 	return prefixproofs.Root(exp), nil
 }
