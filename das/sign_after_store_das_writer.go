@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -62,18 +61,18 @@ func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }
 
-// SignAfterStoreDAS provides DAS signature functionality over a StorageService
-// by adapting DataAvailabilityService.Store(...) to StorageService.Put(...).
+// SignAfterStoreDASWriter provides DAS signature functionality over a StorageService
+// by adapting DataAvailabilityServiceWriter.Store(...) to StorageService.Put(...).
 // There are two different signature functionalities it provides:
 //
-// 1) SignAfterStoreDAS.Store(...) assembles the returned hash into a
+// 1) SignAfterStoreDASWriter.Store(...) assembles the returned hash into a
 // DataAvailabilityCertificate and signs it with its BLS private key.
 //
-// 2) If Sequencer Inbox contract details are provided when a SignAfterStoreDAS is
+// 2) If Sequencer Inbox contract details are provided when a SignAfterStoreDASWriter is
 // constructed, calls to Store(...) will try to verify the passed-in data's signature
 // is from the batch poster. If the contract details are not provided, then the
 // signature is not checked, which is useful for testing.
-type SignAfterStoreDAS struct {
+type SignAfterStoreDASWriter struct {
 	privKey        blsSignatures.PrivateKey
 	pubKey         *blsSignatures.PublicKey
 	keysetHash     [32]byte
@@ -86,13 +85,13 @@ type SignAfterStoreDAS struct {
 	extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
 }
 
-func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDAS, error) {
+func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDASWriter, error) {
 	privKey, err := config.KeyConfig.BLSPrivKey()
 	if err != nil {
 		return nil, err
 	}
 	if config.L1NodeURL == "none" {
-		return NewSignAfterStoreDASWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
+		return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
 	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
@@ -103,22 +102,22 @@ func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, st
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewSignAfterStoreDASWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
+		return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
 
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(*seqInboxAddress, l1client)
 	if err != nil {
 		return nil, err
 	}
-	return NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, config.ExtraSignatureCheckingPublicKey)
+	return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, seqInboxCaller, storageService, config.ExtraSignatureCheckingPublicKey)
 }
 
-func NewSignAfterStoreDASWithSeqInboxCaller(
+func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 	privKey blsSignatures.PrivateKey,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	storageService StorageService,
 	extraSignatureCheckingPublicKey string,
-) (*SignAfterStoreDAS, error) {
+) (*SignAfterStoreDASWriter, error) {
 	publicKey, err := blsSignatures.PublicKeyFromPrivateKey(privKey)
 	if err != nil {
 		return nil, err
@@ -169,7 +168,7 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 		}
 	}
 
-	return &SignAfterStoreDAS{
+	return &SignAfterStoreDASWriter{
 		privKey:         privKey,
 		pubKey:          &publicKey,
 		keysetHash:      ksHash,
@@ -180,10 +179,10 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	}, nil
 }
 
-func (d *SignAfterStoreDAS) Store(
+func (d *SignAfterStoreDASWriter) Store(
 	ctx context.Context, message []byte, timeout uint64, sig []byte,
 ) (c *arbstate.DataAvailabilityCertificate, err error) {
-	log.Trace("das.SignAfterStoreDAS.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
+	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
 	var verified bool
 	if d.extraBpVerifier != nil {
 		verified = d.extraBpVerifier(message, timeout, sig)
@@ -230,18 +229,6 @@ func (d *SignAfterStoreDAS) Store(
 	return c, nil
 }
 
-func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return d.storageService.GetByHash(ctx, hash)
-}
-
-func (d *SignAfterStoreDAS) String() string {
-	return fmt.Sprintf("SignAfterStoreDAS{%v}", hexutil.Encode(blsSignatures.PublicKeyToBytes(*d.pubKey)))
-}
-
-func (d *SignAfterStoreDAS) HealthCheck(ctx context.Context) error {
-	return d.storageService.HealthCheck(ctx)
-}
-
-func (d *SignAfterStoreDAS) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return d.storageService.ExpirationPolicy(ctx)
+func (d *SignAfterStoreDASWriter) String() string {
+	return fmt.Sprintf("SignAfterStoreDASWriter{%v}", hexutil.Encode(blsSignatures.PublicKeyToBytes(*d.pubKey)))
 }

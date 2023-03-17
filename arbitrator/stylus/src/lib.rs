@@ -119,7 +119,7 @@ pub unsafe extern "C" fn stylus_compile(
 #[repr(C)]
 pub struct GoAPI {
     pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
-    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64) -> u8,
+    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64, *mut RustVec) -> u8,
     pub call_contract:
         unsafe extern "C" fn(usize, Bytes20, *mut RustVec, *mut u64, Bytes32) -> UserOutcomeKind,
     pub id: usize,
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn stylus_free(vec: RustVec) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn stylus_overwrite_vec(rust: *mut RustVec, data: GoSliceData) {
+pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustVec, data: GoSliceData) {
     let rust = &mut *rust;
     let mut vec = Vec::from_raw_parts(rust.ptr, rust.len, rust.cap);
     vec.clear();

@@ -5,6 +5,9 @@ use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::Color;
 use prover::programs::prelude::*;
 
+// params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
+const SSTORE_SENTRY_EVM_GAS: u64 = 2300;
+
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
 
@@ -36,7 +39,7 @@ pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> 
 
 pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -> MaybeEscape {
     let mut meter = WasmEnv::begin(&mut env)?;
-    meter.require_evm_gas(2300)?; // params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
+    meter.require_evm_gas(SSTORE_SENTRY_EVM_GAS)?;
 
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;

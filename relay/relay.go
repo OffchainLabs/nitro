@@ -51,7 +51,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, config.Queue)
 
 	clients, err := broadcastclients.NewBroadcastClients(
-		config.Node.Feed.Input,
+		func() *broadcastclient.Config { return &config.Node.Feed.Input },
 		config.L2.ChainId,
 		0,
 		&q,

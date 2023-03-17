@@ -112,7 +112,7 @@ func (s *RedisStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) e
 	return nil
 }
 
-var StorageRaceErr = errors.New("storage race error")
+var ErrStorageRace = errors.New("storage race error")
 
 func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
 	if newItem == nil {
@@ -132,11 +132,11 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		pipe := tx.TxPipeline()
 		if len(haveItems) == 0 {
 			if prevItem != nil {
-				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", StorageRaceErr, index)
+				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", ErrStorageRace, index)
 			}
 		} else if len(haveItems) == 1 {
 			if prevItem == nil {
-				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", StorageRaceErr, index)
+				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", ErrStorageRace, index)
 			}
 			verifiedItem, err := s.peelVerifySignature([]byte(haveItems[0]))
 			if err != nil {
@@ -147,7 +147,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 				return err
 			}
 			if !bytes.Equal(verifiedItem, prevItemEncoded) {
-				return fmt.Errorf("%w: replacing different item than expected at index %v", StorageRaceErr, index)
+				return fmt.Errorf("%w: replacing different item than expected at index %v", ErrStorageRace, index)
 			}
 			err = pipe.ZRem(ctx, s.key, haveItems[0]).Err()
 			if err != nil {
@@ -179,7 +179,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		if errors.Is(err, redis.TxFailedErr) {
 			// Unfortunately, we can't wrap two errors.
 			//nolint:errorlint
-			err = fmt.Errorf("%w: %v", StorageRaceErr, err.Error())
+			err = fmt.Errorf("%w: %v", ErrStorageRace, err.Error())
 		}
 		return err
 	}
