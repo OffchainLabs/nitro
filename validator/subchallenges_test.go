@@ -21,8 +21,16 @@ func TestFullChallengeResolution(t *testing.T) {
 	})
 	t.Log("Alice (honest) and Bob have a fork at height 1")
 	// TODO: Customize the statemanager to allow fixed num steps.
-	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
-	evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+	honestManager := statemanager.New(
+		createdData.honestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	evilManager := statemanager.New(
+		createdData.evilValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
 
 	// Next, we create a challenge.
 	honestChain := createdData.assertionChains[1]
@@ -109,18 +117,16 @@ func TestFullChallengeResolution(t *testing.T) {
 		t.Log("Alice and Bob's BigStepChallenge vertices are at a one-step-fork")
 		t.Log("Reached one-step-proof in SmallStepChallenge")
 
-		preStateRoot := createdData.honestValidatorStateRoots[0]
-		postStateRoot := createdData.honestValidatorStateRoots[1]
-		honestEngine, err := execution.NewExecutionEngine(1, preStateRoot, postStateRoot, &execution.Config{
-			FixedNumSteps: 1,
-		})
+		honestEngine, err := execution.NewExecutionEngine(&execution.MachineConfig{
+			MaxInstructionsPerBlock: 1,
+			BigStepSize:             1,
+		}, createdData.honestValidatorStateRoots[0:2])
 		require.NoError(t, err)
 
-		evilPreStateRoot := createdData.evilValidatorStateRoots[0]
-		evilPostStateRoot := createdData.evilValidatorStateRoots[1]
-		evilEngine, err := execution.NewExecutionEngine(1, evilPreStateRoot, evilPostStateRoot, &execution.Config{
-			FixedNumSteps: 1,
-		})
+		evilEngine, err := execution.NewExecutionEngine(&execution.MachineConfig{
+			MaxInstructionsPerBlock: 1,
+			BigStepSize:             1,
+		}, createdData.evilValidatorStateRoots[0:2])
 		require.NoError(t, err)
 
 		preState, err := honestEngine.StateAfterSmallSteps(0)

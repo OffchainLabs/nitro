@@ -23,7 +23,7 @@ func TestWorstCaseBigStepBisections(t *testing.T) {
 			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
 		)
 	}
-	engine99, err := NewExecutionEngine(99, hashes[98], hashes[99], DefaultConfig())
+	engine99, err := NewExecutionEngine(DefaultMachineConfig(), hashes[98:100])
 	require.NoError(t, err)
 	numSteps := engine99.NumOpcodes()
 	numBigSteps := engine99.NumBigSteps()
@@ -39,7 +39,7 @@ func TestWorstCaseBigStepBisections(t *testing.T) {
 		totalBisections++
 	}
 	t.Logf("Total bisections: %d", totalBisections)
-	require.Equal(t, 22, totalBisections)
+	require.Equal(t, 23, totalBisections)
 }
 
 func TestExecutionEngine(t *testing.T) {
@@ -51,12 +51,13 @@ func TestExecutionEngine(t *testing.T) {
 			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
 		)
 	}
-	engine99, err := NewExecutionEngine(99, hashes[98], hashes[99], DefaultConfig())
+	engine99, err := NewExecutionEngine(DefaultMachineConfig(), hashes[98:100])
 	if err != nil {
 		t.Fatal(err)
 	}
 	numSteps := engine99.NumOpcodes()
-	if numSteps == 0 || numSteps > DefaultConfig().MaxInstructionsPerBlock {
+	numHashes := uint64(len(hashes[98:100]))
+	if numSteps == 0 || numSteps > numHashes*DefaultMachineConfig().MaxInstructionsPerBlock {
 		t.Fatal(numSteps)
 	}
 

@@ -202,26 +202,30 @@ func (m *MockStateManager) BigStepLeafCommitment(
 
 func (m *MockStateManager) BigStepCommitmentUpTo(
 	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
 	toBigStep uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, toBigStep)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, toBigStep)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepLeafCommitment(
 	ctx context.Context,
-	fromBigStep,
-	toBigStep uint64,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, fromBigStep, toBigStep)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepCommitmentUpTo(
 	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
 	toStep uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, toStep)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, toStep)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
