@@ -39,28 +39,28 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//
 	// At the assertion chain level, the fork is at height 2.
 	//
-	//                [2]-[3]-[7]-alice
+	//                [3]-[7]-alice
 	//               /
 	// [genesis]-[2]-
 	//               \
-	//                [3]-[4]-[7]-bob
+	//                [3]-[7]-bob
 	//
 	// At the big step challenge level, the fork is at height 2 (big step number 2).
 	//
-	//                    [3]-[4]-[6]-alice
+	//                    [3]-[7]-alice
 	//                   /
 	// [big_step_root]-[2]
 	//                   \
-	//                    [3]-[4]-[6]-bob
+	//                    [3]-[7]-bob
 	//
 	//
 	// At the small step challenge level the fork is at height 2 (wavm opcode 2).
 	//
-	//                      [3]-[4]-[6]-alice
+	//                      [3]-[7]-alice
 	//                     /
 	// [small_step_root]-[2]
 	//                     \
-	//                      [3]-[4]-[6]-bob
+	//                      [3]-[7]-bob
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
@@ -90,8 +90,8 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 12")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 12")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")

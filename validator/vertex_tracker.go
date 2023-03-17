@@ -163,29 +163,31 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		log.Info("Checking one-step-proof against protocol")
 		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
-		event, ok := current.SourceEvent.(openSubchallenge)
-		if !ok {
-			return fmt.Errorf("bad source event: %s", event)
-		}
-		subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
-		if err != nil {
-			return err
-		}
-		return vt.fsm.Do(openSubchallengeLeaf{
-			subChallenge:    subChallenge,
-			forkPointVertex: event.forkPointVertex,
-		})
+		// event, ok := current.SourceEvent.(openSubchallenge)
+		// if !ok {
+		// 	return fmt.Errorf("bad source event: %s", event)
+		// }
+		// subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
+		// if err != nil {
+		// 	return err
+		// }
+		// return vt.fsm.Do(openSubchallengeLeaf{
+		// 	subChallenge:    subChallenge,
+		// 	forkPointVertex: event.forkPointVertex,
+		// })
+		return vt.fsm.Do(openSubchallenge{})
 	case trackerAddingSubchallengeLeaf:
-		event, ok := current.SourceEvent.(openSubchallengeLeaf)
-		if !ok {
-			return fmt.Errorf("bad source event: %s", event)
-		}
-		if err := vt.openSubchallengeLeaf(
-			ctx, event.forkPointVertex, event.subChallenge,
-		); err != nil {
-			return errors.Wrap(err, "CANNOT OPEN LEAF")
-		}
-		return vt.fsm.Do(awaitSubchallengeResolution{})
+		// event, ok := current.SourceEvent.(openSubchallengeLeaf)
+		// if !ok {
+		// 	return fmt.Errorf("bad source event: %s", event)
+		// }
+		// if err := vt.openSubchallengeLeaf(
+		// 	ctx, event.forkPointVertex, event.subChallenge,
+		// ); err != nil {
+		// 	return errors.Wrap(err, "CANNOT OPEN LEAF")
+		// }
+		// return vt.fsm.Do(awaitSubchallengeResolution{})
+		return vt.fsm.Do(openSubchallengeLeaf{})
 	case trackerBisecting:
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
