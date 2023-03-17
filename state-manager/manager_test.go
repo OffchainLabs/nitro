@@ -22,7 +22,7 @@ func TestDivergenceGranularity(t *testing.T) {
 	bigStepSize := uint64(10)
 	maxOpcodesPerBlock := uint64(100)
 
-	honestStates, honestRoots, honestCounts := setupStates(t, numStates, 0 /* honest */)
+	honestStates, _, honestCounts := setupStates(t, numStates, 0 /* honest */)
 	honestManager, err := NewWithAssertionStates(
 		honestStates,
 		honestCounts,
@@ -31,29 +31,25 @@ func TestDivergenceGranularity(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	blockNum := uint64(1)
 	fromBlock := uint64(1)
 	toBlock := uint64(2)
 	honestCommit, err := honestManager.BigStepLeafCommitment(
 		ctx,
-		blockNum,
 		fromBlock,
 		toBlock,
-		honestRoots[fromBlock],
-		honestRoots[toBlock],
 	)
 	require.NoError(t, err)
 
 	t.Log("Big step leaf commitment height", honestCommit.Height)
 
-	divergenceHeight := uint64(4)
-	evilStates, evilRoots, evilCounts := setupStates(t, numStates, divergenceHeight)
+	divergenceHeight := uint64(3)
+	evilStates, _, evilCounts := setupStates(t, numStates, divergenceHeight)
 
 	evilManager, err := NewWithAssertionStates(
 		evilStates,
 		evilCounts,
-		WithBigStepStateDivergenceHeight(divergenceHeight),   // Diverges at the 4th big step.
-		WithSmallStepStateDivergenceHeight(divergenceHeight), // Diverges at the 4th small step, within the 4th big step.
+		WithBigStepStateDivergenceHeight(divergenceHeight),   // Diverges at the 3rd big step.
+		WithSmallStepStateDivergenceHeight(divergenceHeight), // Diverges at the 3rd small step, within the 3rd big step.
 		WithMaxWavmOpcodesPerBlock(maxOpcodesPerBlock),
 		WithNumOpcodesPerBigStep(bigStepSize),
 	)
@@ -62,11 +58,8 @@ func TestDivergenceGranularity(t *testing.T) {
 	// Big step challenge granularity.
 	evilCommit, err := evilManager.BigStepLeafCommitment(
 		ctx,
-		blockNum,
 		fromBlock,
 		toBlock,
-		evilRoots[fromBlock],
-		evilRoots[toBlock],
 	)
 	require.NoError(t, err)
 
@@ -78,17 +71,15 @@ func TestDivergenceGranularity(t *testing.T) {
 	checkHeight := divergenceHeight - 1
 	honestCommit, err = honestManager.BigStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		honestRoots[fromBlock],
-		honestRoots[toBlock],
+		fromBlock,
+		toBlock,
 		checkHeight,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.BigStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		evilRoots[fromBlock],
-		evilRoots[toBlock],
+		fromBlock,
+		toBlock,
 		checkHeight,
 	)
 	require.NoError(t, err)
@@ -97,17 +88,15 @@ func TestDivergenceGranularity(t *testing.T) {
 	// Check if big step commitments between the validators disagree starting at the divergence height.
 	honestCommit, err = honestManager.BigStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		honestRoots[fromBlock],
-		honestRoots[toBlock],
+		fromBlock,
+		toBlock,
 		divergenceHeight,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.BigStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		evilRoots[fromBlock],
-		evilRoots[toBlock],
+		fromBlock,
+		toBlock,
 		divergenceHeight,
 	)
 	require.NoError(t, err)
@@ -117,25 +106,17 @@ func TestDivergenceGranularity(t *testing.T) {
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 
 	// Small step challenge granularity.
-	fromBigStep := divergenceHeight - 1
-	toBigStep := divergenceHeight
 	honestCommit, err = honestManager.SmallStepLeafCommitment(
 		ctx,
-		blockNum,
-		fromBigStep,
-		toBigStep,
-		honestRoots[fromBlock],
-		honestRoots[toBlock],
+		fromBlock,
+		toBlock,
 	)
 	require.NoError(t, err)
 
 	evilCommit, err = evilManager.SmallStepLeafCommitment(
 		ctx,
-		blockNum,
-		fromBigStep,
-		toBigStep,
-		evilRoots[fromBlock],
-		evilRoots[toBlock],
+		fromBlock,
+		toBlock,
 	)
 	require.NoError(t, err)
 
@@ -148,17 +129,15 @@ func TestDivergenceGranularity(t *testing.T) {
 	checkHeight = divergenceHeight - 1
 	honestCommit, err = honestManager.SmallStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		honestRoots[fromBlock],
-		honestRoots[toBlock],
+		fromBlock,
+		toBlock,
 		checkHeight,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.SmallStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		evilRoots[fromBlock],
-		evilRoots[toBlock],
+		fromBlock,
+		toBlock,
 		checkHeight,
 	)
 	require.NoError(t, err)
@@ -167,17 +146,15 @@ func TestDivergenceGranularity(t *testing.T) {
 	// Check if small step commitments between the validators disagree starting at the divergence height.
 	honestCommit, err = honestManager.SmallStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		honestRoots[fromBlock],
-		honestCommit.LastLeaf,
+		fromBlock,
+		toBlock,
 		divergenceHeight,
 	)
 	require.NoError(t, err)
 	evilCommit, err = evilManager.SmallStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		evilRoots[fromBlock],
-		evilCommit.LastLeaf,
+		fromBlock,
+		toBlock,
 		divergenceHeight,
 	)
 	require.NoError(t, err)

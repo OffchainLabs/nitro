@@ -47,29 +47,22 @@ type Manager interface {
 		blockNum,
 		fromAssertionHeight,
 		toAssertionHeight uint64,
-		fromStateHash,
-		toStateHash common.Hash,
 	) (util.HistoryCommitment, error)
 	BigStepCommitmentUpTo(
 		ctx context.Context,
-		blockNum uint64,
-		startBlockHash,
-		endBlockHash common.Hash,
+		fromAssertionHeight,
+		toAssertionHeight,
 		toBigStep uint64,
 	) (util.HistoryCommitment, error)
 	SmallStepLeafCommitment(
 		ctx context.Context,
-		blockNum,
-		fromBigStep,
-		toBigStep uint64,
-		fromStateHash,
-		toStateHash common.Hash,
+		fromAssertionHeight,
+		toAssertionHeight uint64,
 	) (util.HistoryCommitment, error)
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
-		blockNum uint64,
-		startBlockHash,
-		endBlockHash common.Hash,
+		fromAssertionHeight,
+		toAssertionHeight,
 		toStep uint64,
 	) (util.HistoryCommitment, error)
 }
@@ -205,90 +198,61 @@ func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (u
 // between those two heights and produce a commitment.
 func (s *Simulated) BigStepLeafCommitment(
 	ctx context.Context,
-	blockNum uint64,
 	fromAssertionHeight,
 	toAssertionHeight uint64,
-	startBlockHash,
-	endBlockHash common.Hash,
 ) (util.HistoryCommitment, error) {
-	if toAssertionHeight != fromAssertionHeight+1 {
+	if fromAssertionHeight+1 != toAssertionHeight {
 		return util.HistoryCommitment{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
 			fromAssertionHeight,
 			toAssertionHeight,
 		)
 	}
-	cfg := execution.DefaultConfig()
-	if s.maxWavmOpcodes > 0 {
-		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
-	}
-	if s.numOpcodesPerBigStep > 0 {
-		cfg.BigStepSize = s.numOpcodesPerBigStep
-	}
-	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
+	// Number of big steps between assertion heights A and B will be
+	// fixed in this simulated state manager. It is simply the max number of opcodes
+	// per block divided by the size of a big step.
+	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
 	return s.BigStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		startBlockHash,
-		endBlockHash,
-		engine.NumBigSteps()-1,
+		fromAssertionHeight,
+		toAssertionHeight,
+		numBigSteps,
+	)
+}
+
+func (s *Simulated) setupEngine(fromHeight, toHeight uint64) (*execution.Engine, error) {
+	machineCfg := execution.DefaultMachineConfig()
+	if s.maxWavmOpcodes > 0 {
+		machineCfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		machineCfg.BigStepSize = s.numOpcodesPerBigStep
+	}
+	return execution.NewExecutionEngine(
+		machineCfg,
+		s.stateRoots[fromHeight:toHeight+1],
 	)
 }
 
 func (s *Simulated) BigStepCommitmentUpTo(
 	ctx context.Context,
-	blockNum uint64,
-	startState,
-	endState common.Hash,
+	fromAssertionHeight,
+	toAssertionHeight,
 	toBigStep uint64,
 ) (util.HistoryCommitment, error) {
-	cfg := execution.DefaultConfig()
-	if s.maxWavmOpcodes > 0 {
-		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
-	}
-	if s.numOpcodesPerBigStep > 0 {
-		cfg.BigStepSize = s.numOpcodesPerBigStep
-	}
-	// TODO: FROM: state root height A to B instead.
-	// TODO: When doing small step, specify the specific opcode start and end as well.
-	engine, err := execution.NewExecutionEngine(blockNum, startState, endState, cfg)
+	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	leaves := make([]common.Hash, engine.NumBigSteps()+1)
-	leaves[0] = startState
-
 	if engine.NumBigSteps() < toBigStep {
 		return util.HistoryCommitment{}, errors.New("not enough big steps")
 	}
-
-	// Up to and including the specified big step.
-	for i := uint64(0); i <= toBigStep; i++ {
-		start, err := engine.StateAfterBigSteps(i)
-		if err != nil {
-			return util.HistoryCommitment{}, err
-		}
-		intermediateState, err := start.NextState()
-		if err != nil {
-			return util.HistoryCommitment{}, err
-		}
-		var hash common.Hash
-		if s.bigStepDivergenceHeight == 0 || i < s.bigStepDivergenceHeight {
-			hash = intermediateState.Hash()
-		} else {
-			junkRoot := make([]byte, 32)
-			_, err := rand.Read(junkRoot)
-			if err != nil {
-				return util.HistoryCommitment{}, err
-			}
-			hash = crypto.Keccak256Hash(junkRoot)
-		}
-		leaves[i] = hash
-	}
-	return util.NewHistoryCommitment(toBigStep, leaves)
+	return s.commitmentFromEngineSteps(
+		toBigStep,
+		s.bigStepDivergenceHeight,
+		engine,
+		engine.StateAfterBigSteps,
+	)
 }
 
 // SmallStepLeafCommitment produces a small step history commitment which includes
@@ -298,65 +262,57 @@ func (s *Simulated) BigStepCommitmentUpTo(
 // between those two values and produce a commitment.
 func (s *Simulated) SmallStepLeafCommitment(
 	ctx context.Context,
-	blockNum uint64,
-	fromBigStep,
-	toBigStep uint64,
-	startBlockHash,
-	endBlockHash common.Hash,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
-	if toBigStep != fromBigStep+1 {
+	if fromAssertionHeight+1 != toAssertionHeight {
 		return util.HistoryCommitment{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
-			fromBigStep,
-			toBigStep,
+			fromAssertionHeight,
+			toAssertionHeight,
 		)
-	}
-	cfg := execution.DefaultConfig()
-	if s.maxWavmOpcodes > 0 {
-		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
-	}
-	if s.numOpcodesPerBigStep > 0 {
-		cfg.BigStepSize = s.numOpcodesPerBigStep
-	}
-	engine, err := execution.NewExecutionEngine(blockNum, startBlockHash, endBlockHash, cfg)
-	if err != nil {
-		return util.HistoryCommitment{}, err
 	}
 	return s.SmallStepCommitmentUpTo(
 		ctx,
-		blockNum,
-		startBlockHash,
-		endBlockHash,
-		engine.NumOpcodes()-1,
+		fromAssertionHeight,
+		toAssertionHeight,
+		s.numOpcodesPerBigStep,
 	)
 }
 
 func (s *Simulated) SmallStepCommitmentUpTo(
 	ctx context.Context,
-	blockNum uint64,
-	startState,
-	endState common.Hash,
-	toStep uint64,
+	fromAssertionHeight,
+	toAssertionHeight,
+	toPc uint64,
 ) (util.HistoryCommitment, error) {
-	cfg := execution.DefaultConfig()
-	if s.maxWavmOpcodes > 0 {
-		cfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
-	}
-	if s.numOpcodesPerBigStep > 0 {
-		cfg.BigStepSize = s.numOpcodesPerBigStep
-	}
-	engine, err := execution.NewExecutionEngine(blockNum, startState, endState, cfg)
+	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	if engine.NumOpcodes() < toStep {
+	if engine.NumOpcodes() < toPc {
 		return util.HistoryCommitment{}, errors.New("not enough small steps")
 	}
-	leaves := make([]common.Hash, engine.NumOpcodes())
+	return s.commitmentFromEngineSteps(
+		toPc,
+		s.smallStepDivergenceHeight,
+		engine,
+		engine.StateAfterSmallSteps,
+	)
+}
+
+func (s *Simulated) commitmentFromEngineSteps(
+	toStep,
+	divergenceHeight uint64,
+	engine execution.EngineAtBlock,
+	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
+) (util.HistoryCommitment, error) {
+	leaves := make([]common.Hash, toStep+1)
+	leaves[0] = engine.FirstState()
 
 	// Up to and including the specified small step.
 	for i := uint64(0); i <= toStep; i++ {
-		start, err := engine.StateAfterSmallSteps(i)
+		start, err := stepperFn(i)
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
@@ -365,7 +321,7 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 			return util.HistoryCommitment{}, err
 		}
 		var hash common.Hash
-		if s.smallStepDivergenceHeight == 0 || i < s.smallStepDivergenceHeight {
+		if divergenceHeight == 0 || i < divergenceHeight {
 			hash = intermediateState.Hash()
 		} else {
 			junkRoot := make([]byte, 32)
