@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"math/rand"
+	"crypto/rand"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
