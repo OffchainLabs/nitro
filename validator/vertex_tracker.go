@@ -169,7 +169,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		}
 		subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
 		if err != nil {
-			return errors.Wrap(err, "FAILS HERE")
+			return err
 		}
 		return vt.fsm.Do(openSubchallengeLeaf{
 			subChallenge:    subChallenge,
