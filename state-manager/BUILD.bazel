@@ -16,6 +16,7 @@ go_library(
         "//util/prefix-proofs",
         "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
     ],
 )
 
@@ -24,6 +25,7 @@ go_test(
     srcs = ["manager_test.go"],
     embed = [":state-manager"],
     deps = [
+        "//protocol",
         "//util/prefix-proofs",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
