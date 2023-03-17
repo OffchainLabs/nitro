@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
+	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -35,7 +34,11 @@ func (s *SimulatedManagerBackend) GetMerkleRoot(ctx context.Context, start uint6
 	if start >= uint64(len(s.stateRoots)) || end >= uint64(len(s.stateRoots)) || start > end {
 		return common.Hash{}, errors.New("commitment height out of range")
 	}
-	return util.ExpansionFromLeaves(s.stateRoots[start : end+1]).Root(), nil
+	exp, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[start : end+1])
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return prefixproofs.Root(exp), nil
 }
 
 // GetStateRoot gets the state root at a specified height from our local list of state roots.
