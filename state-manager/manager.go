@@ -44,7 +44,6 @@ type Manager interface {
 	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
 	BigStepLeafCommitment(
 		ctx context.Context,
-		blockNum,
 		fromAssertionHeight,
 		toAssertionHeight uint64,
 	) (util.HistoryCommitment, error)

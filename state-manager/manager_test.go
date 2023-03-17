@@ -16,6 +16,8 @@ import (
 	"math/rand"
 )
 
+var _ = Manager(&Simulated{})
+
 func TestDivergenceGranularity(t *testing.T) {
 	ctx := context.Background()
 	numStates := uint64(10)
