@@ -293,52 +293,26 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	}
 
 	// Initialize each validator.
-	honestManager, err := statemanager.NewWithAssertionStates(
-		honestStates,
-		honestInboxCounts,
-		managerOpts...,
-	)
-	require.NoError(t, err)
-	aliceAddr := accs[1].accountAddr
-	alice, err := New(
-		ctx,
-		chains[1], // Chain 0 is reserved for admin controls.
-		backend,
-		honestManager,
-		addrs.Rollup,
-		WithName("alice"),
-		WithAddress(aliceAddr),
-		WithDisableLeafCreation(),
-		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
-	)
-	require.NoError(t, err)
-
-	managerOpts = append(
-		managerOpts,
-		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
-		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
-	)
-	maliciousManager, err := statemanager.NewWithAssertionStates(
-		maliciousStates,
-		maliciousInboxCounts,
-		managerOpts...,
-	)
-	require.NoError(t, err)
-	bobAddr := accs[1].accountAddr
-	bob, err := New(
-		ctx,
-		chains[2], // Chain 0 is reserved for admin controls.
-		backend,
-		maliciousManager,
-		addrs.Rollup,
-		WithName("bob"),
-		WithAddress(bobAddr),
-		WithDisableLeafCreation(),
-		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
-	)
-	require.NoError(t, err)
+	validators := make([]*Validator, cfg.numValidators)
+	for i := 0; i < len(validators); i++ {
+		manager, err := statemanager.NewWithAssertionStates(vStates[i], vInboxCounts[i])
+		require.NoError(t, err)
+		addr := accs[i+1].accountAddr
+		v, valErr := New(
+			ctx,
+			chains[i+1], // Chain 0 is reserved for admin
+			backend,
+			manager,
+			addrs.Rollup,
+			WithName(cfg.validatorNamesByIndex[uint64(i)]),
+			WithAddress(addr),
+			WithDisableLeafCreation(),
+			WithTimeReference(ref),
+			WithChallengeVertexWakeInterval(time.Millisecond*10),
+		)
+		require.NoError(t, valErr)
+		validators[i] = v
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()

@@ -26,17 +26,6 @@ go_test(
     embed = [":state-manager"],
     deps = [
         "//protocol",
-        "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//crypto",
-        "@com_github_stretchr_testify//require",
-    ],
-)
-
-go_test(
-    name = "state-manager_test",
-    srcs = ["manager_test.go"],
-    embed = [":state-manager"],
-    deps = [
         "//util/prefix-proofs",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//crypto",
