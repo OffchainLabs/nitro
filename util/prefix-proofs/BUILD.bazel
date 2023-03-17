@@ -15,6 +15,7 @@ go_library(
 go_test(
     name = "prefix-proofs_test",
     srcs = ["prefix_proofs_test.go"],
+    data = glob(["testdata/**"]),
     deps = [
         ":prefix-proofs",
         "//solgen/go/mocksgen",
