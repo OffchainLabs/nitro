@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	"errors"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/inclusion-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -56,16 +57,16 @@ func NewHistoryCommitment(
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
-	tree := ComputeMerkleTree(leaves)
-	firstLeafProof, err := GenerateMerkleProof(0, tree)
+	tree := inclusionproofs.ComputeMerkleTree(leaves)
+	firstLeafProof, err := inclusionproofs.GenerateMerkleProof(0, tree)
 	if err != nil {
 		return emptyCommit, err
 	}
-	lastLeafProof, err := GenerateMerkleProof(uint64(len(leaves))-1, tree)
+	lastLeafProof, err := inclusionproofs.GenerateMerkleProof(uint64(len(leaves))-1, tree)
 	if err != nil {
 		return emptyCommit, err
 	}
-	root, err := MerkleRoot(tree)
+	root, err := inclusionproofs.MerkleRoot(tree)
 	if err != nil {
 		return emptyCommit, err
 	}

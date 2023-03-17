@@ -276,6 +276,63 @@ func MaximumAppendBetween(startSize, endSize uint64) (uint64, error) {
 	return 0, errors.Wrap(ErrCannotBeZero, "y and z cannot both be 0")
 }
 
+func GeneratePrefixProof(
+	prefixHeight uint64,
+	prefixExpansion MerkleExpansion,
+	leaves []common.Hash,
+	rootFetcher MerkleExpansionRootFetcherFunc,
+) ([]common.Hash, error) {
+	height := prefixHeight
+	postHeight := height + uint64(len(leaves))
+	proof, _ := prefixExpansion.Compact()
+	for height < postHeight {
+		// extHeight looks like   xxxxxxx0yyy
+		// post.height looks like xxxxxxx1zzz
+		firstDiffBit, err := MostSignificantBit(height ^ postHeight)
+		if err != nil {
+			return nil, err
+		}
+		mask := (uint64(1) << firstDiffBit) - 1
+		yyy := height & mask
+		zzz := postHeight & mask
+		if yyy != 0 {
+			lowBit, err := LeastSignificantBit(yyy)
+			if err != nil {
+				return nil, err
+			}
+			numLeaves := uint64(1) << lowBit
+			root, err := rootFetcher(leaves, numLeaves)
+			if err != nil {
+				return nil, err
+			}
+			proof = append(proof, root)
+			leaves = leaves[numLeaves:]
+			height += numLeaves
+		} else if zzz != 0 {
+			highBit, err := MostSignificantBit(yyy)
+			if err != nil {
+				return nil, err
+			}
+			numLeaves := uint64(1) << highBit
+			root, err := rootFetcher(leaves, numLeaves)
+			if err != nil {
+				return nil, err
+			}
+			proof = append(proof, root)
+			leaves = leaves[numLeaves:]
+			height += numLeaves
+		} else {
+			root, err := rootFetcher(leaves, uint64(len(leaves)))
+			if err != nil {
+				return nil, err
+			}
+			proof = append(proof, root)
+			height = postHeight
+		}
+	}
+	return proof, nil
+}
+
 type VerifyPrefixProofConfig struct {
 	PreRoot      common.Hash
 	PreSize      uint64

@@ -10,6 +10,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -251,13 +252,20 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
 	loSize := lo + 1
 	hiSize := hi + 1
-	prefixExpansion := util.ExpansionFromLeaves(s.stateRoots[:loSize])
-	prefixProof := util.GeneratePrefixProof(
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[:loSize])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
 		loSize,
 		prefixExpansion,
 		s.stateRoots[loSize:hiSize],
+		prefixproofs.RootFetcherFromExpansion,
 	)
-	_, numRead := util.MerkleExpansionFromCompact(prefixProof, loSize)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
 	onlyProof := prefixProof[numRead:]
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
