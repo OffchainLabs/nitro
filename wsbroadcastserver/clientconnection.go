@@ -39,6 +39,8 @@ type ClientConnection struct {
 
 	compression bool
 	flateReader *wsflate.Reader
+
+	delay time.Duration
 }
 
 func NewClientConnection(
@@ -48,6 +50,7 @@ func NewClientConnection(
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	delay time.Duration,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
@@ -61,6 +64,7 @@ func NewClientConnection(
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
+		delay:           delay,
 	}
 }
 
@@ -75,6 +79,30 @@ func (cc *ClientConnection) Compression() bool {
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
+		if cc.delay != 0 {
+			var delayQueue [][]byte
+			t := time.NewTimer(cc.delay)
+			done := false
+			for !done {
+				select {
+				case <-ctx.Done():
+					return
+				case data := <-cc.out:
+					delayQueue = append(delayQueue, data)
+				case <-t.C:
+					for _, data := range delayQueue {
+						err := cc.writeRaw(data)
+						if err != nil {
+							logWarn(err, "error writing data to client")
+							cc.clientManager.Remove(cc)
+							return
+						}
+					}
+					done = true
+				}
+			}
+		}
+
 		for {
 			select {
 			case <-ctx.Done():

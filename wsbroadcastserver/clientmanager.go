@@ -126,7 +126,7 @@ func (cm *ClientManager) Register(
 	compression bool,
 ) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression),
+		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP, compression, cm.config().ClientDelay),
 		true,
 	}
 	cm.clientAction <- createClient
