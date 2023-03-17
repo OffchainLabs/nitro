@@ -193,13 +193,10 @@ func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit util.S
 
 func (m *MockStateManager) BigStepLeafCommitment(
 	ctx context.Context,
-	blockNum,
 	fromAssertionHeight,
 	toAssertionHeight uint64,
-	fromStateHash,
-	toStateHash common.Hash,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, blockNum, fromAssertionHeight, toAssertionHeight, fromStateHash, toStateHash)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
