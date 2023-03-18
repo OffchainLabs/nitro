@@ -397,7 +397,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	// Initialize each validator.
 	validators := make([]*Validator, cfg.numValidators)
 	for i := 0; i < len(validators); i++ {
-		manager := statemanager.NewWithExecutionStates(vStates[i], vInboxCounts[i])
+		manager, err := statemanager.NewWithAssertionStates(vStates[i], vInboxCounts[i])
 		require.NoError(t, err)
 		addr := accs[i+1].accountAddr
 		v, valErr := New(
