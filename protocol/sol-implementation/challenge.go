@@ -42,24 +42,30 @@ func (c *Challenge) SubchallengeClaimVertex(
 	return claimVertex.Unwrap(), nil
 }
 
-func (c *Challenge) RootAssertion(
+func (c *Challenge) RootAssertionHeight(
 	ctx context.Context, tx protocol.ActiveTx,
-) (protocol.Assertion, error) {
+) (uint64, error) {
 	rootVertex, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	if rootVertex.IsNone() {
-		return nil, errors.New("root vertex not found")
+		return 0, errors.New("root vertex not found")
 	}
 	root := rootVertex.Unwrap().(*ChallengeVertex)
-	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
-	if err != nil {
-		return nil, err
-	}
-	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
-	if err != nil {
-		return nil, err
+	switch c.GetType() {
+	case protocol.BlockChallenge:
+		assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
+		if err != nil {
+			return 0, err
+		}
+		assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
+		if err != nil {
+			return 0, err
+		}
+		return assertion.Height(), nil
+	case protocol.BigStepChallenge:
+	case protocol.SmallStepChallenge:
 	}
 	return assertion, nil
 }
