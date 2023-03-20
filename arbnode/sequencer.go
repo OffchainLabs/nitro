@@ -410,7 +410,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
-		if err != nil {
+		if err.IsError() {
 			nonceCacheRejectedCounter.Inc(1)
 			return err
 		}
@@ -655,13 +655,8 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 			// It's impossible for this tx to succeed so far,
 			// because its nonce is lower than the state nonce
 			// or higher than the highest tx nonce we've seen.
-			err := MakeNonceError(sender, txNonce, stateNonce)
-			if errors.Is(err, core.ErrNonceTooHigh) {
-				var nonceError NonceError
-				if !errors.As(err, &nonceError) {
-					log.Warn("unreachable nonce error is not nonceError")
-					continue
-				}
+			nonceError := MakeNonceError(sender, txNonce, stateNonce)
+			if nonceError.IsNonceTooHigh() {
 				// Retry this transaction if its predecessor appears
 				if s.nonceFailures.Contains(nonceError) {
 					queueItem.returnResult(err)
@@ -669,7 +664,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 					s.nonceFailures.Add(nonceError, queueItem)
 				}
 				continue
-			} else if err != nil {
+			} else if nonceError.IsError() {
 				nonceCacheRejectedCounter.Inc(1)
 				queueItem.returnResult(err)
 				continue
