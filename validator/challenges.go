@@ -16,7 +16,7 @@ import (
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
 func (v *Validator) onChallengeStarted(
-	ctx context.Context, ev protocol.Challenge,
+	ctx context.Context, tx protocol.ActiveTx, ev protocol.Challenge,
 ) error {
 	var challengedAssertion protocol.Assertion
 	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
@@ -53,7 +53,7 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker := challengeVertex.MiniStaker()
+	staker := challengeVertex.MiniStaker(ctx, tx)
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
@@ -79,14 +79,14 @@ func (v *Validator) onChallengeStarted(
 	if err != nil {
 		return err
 	}
-	go tracker.spawn(ctx)
+	go tracker.spawn(ctx, tx)
 	return nil
 }
 
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.Assertion) error {
+func (v *Validator) challengeAssertion(ctx context.Context, tx protocol.ActiveTx, assertion protocol.Assertion) error {
 	var challenge protocol.Challenge
 	var err error
 	challenge, err = v.submitProtocolChallenge(ctx, assertion.PrevSeqNum())
@@ -132,7 +132,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	if err != nil {
 		return err
 	}
-	go tracker.spawn(ctx)
+	go tracker.spawn(ctx, tx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name

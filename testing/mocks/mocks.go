@@ -31,15 +31,15 @@ func (m *MockChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
 	return m.MockSeqNum
 }
 
-func (m *MockChallengeVertex) Status() protocol.AssertionState {
+func (m *MockChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) protocol.AssertionState {
 	return m.MockStatus
 }
 
-func (m *MockChallengeVertex) HistoryCommitment() util.HistoryCommitment {
+func (m *MockChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) util.HistoryCommitment {
 	return m.MockHistory
 }
 
-func (m *MockChallengeVertex) MiniStaker() common.Address {
+func (m *MockChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) common.Address {
 	return m.MockMiniStaker
 }
 
@@ -270,11 +270,11 @@ func (m *MockChallenge) Id() protocol.ChallengeHash {
 	return m.MockID
 }
 
-func (m *MockChallenge) GetType() protocol.ChallengeType {
+func (m *MockChallenge) GetType(ctx context.Context, tx protocol.ActiveTx) protocol.ChallengeType {
 	return m.MockType
 }
 
-func (m *MockChallenge) WinningClaim() util.Option[protocol.AssertionHash] {
+func (m *MockChallenge) WinningClaim(ctx context.Context, tx protocol.ActiveTx) util.Option[protocol.AssertionHash] {
 	return m.MockWinningAssertion
 }
 
@@ -303,7 +303,7 @@ func (m *MockChallenge) Completed(ctx context.Context, tx protocol.ActiveTx) (bo
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockChallenge) Challenger() common.Address {
+func (m *MockChallenge) Challenger(ctx context.Context, tx protocol.ActiveTx) common.Address {
 	return m.MockChallenger
 }
 

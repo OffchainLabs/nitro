@@ -38,7 +38,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		chal, err := honestChain.CreateSuccessionChallenge(ctx, tx, 0)
 		require.NoError(t, err)
 
-		require.Equal(t, protocol.BlockChallenge, chal.GetType())
+		require.Equal(t, protocol.BlockChallenge, chal.GetType(ctx, tx))
 		t.Log("Created BlockChallenge")
 
 		commit1, err := honestManager.HistoryCommitmentUpTo(ctx, createdData.leaf1.Height())
@@ -65,7 +65,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		subChal, err := parentVertex.CreateSubChallenge(ctx, tx)
 		require.NoError(t, err)
 
-		require.Equal(t, protocol.BigStepChallenge, subChal.GetType())
+		require.Equal(t, protocol.BigStepChallenge, subChal.GetType(ctx, tx))
 		t.Log("Created BigStepChallenge")
 
 		commit1, err = honestManager.BigStepLeafCommitment(ctx, 0, 1)
@@ -92,7 +92,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		subChal, err = parentVertex.CreateSubChallenge(ctx, tx)
 		require.NoError(t, err)
 
-		require.Equal(t, protocol.SmallStepChallenge, subChal.GetType())
+		require.Equal(t, protocol.SmallStepChallenge, subChal.GetType(ctx, tx))
 		t.Log("Created SmallStepChallenge")
 
 		commit1, err = honestManager.SmallStepLeafCommitment(ctx, 0, 1)

@@ -12,7 +12,7 @@ var _ = protocol.ChallengeManager(&ChallengeManager{})
 
 func TestGetChallengeByID(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	height1 := uint64(6)
 	height2 := uint64(7)
 	_, _, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
@@ -31,7 +31,7 @@ func TestGetChallengeByID(t *testing.T) {
 		require.Equal(t, false, fetched.IsNone())
 		fChal := fetched.Unwrap()
 
-		require.Equal(t, protocol.BlockChallenge, fChal.GetType())
-		require.Equal(t, true, fChal.WinningClaim().IsNone())
+		require.Equal(t, protocol.BlockChallenge, fChal.GetType(ctx, tx))
+		require.Equal(t, true, fChal.WinningClaim(ctx, tx).IsNone())
 	})
 }

@@ -13,7 +13,7 @@ import (
 // Subscribes to events fired by the rollup contracts in order to listen to
 // new assertion creations or challenge start events from the protocol.
 // TODO: Brittle - should be based on querying the chain instead.
-func (v *Validator) handleRollupEvents(ctx context.Context) {
+func (v *Validator) handleRollupEvents(ctx context.Context, tx protocol.ActiveTx) {
 	assertionCreatedChan := make(chan *rollupgen.RollupCoreAssertionCreated, 1)
 	challengeCreatedChan := make(chan *challengeV2gen.ChallengeManagerImplChallengeCreated, 1)
 	assertionSub, err := v.rollupFilterer.WatchAssertionCreated(&bind.WatchOpts{}, assertionCreatedChan, nil, nil, nil)
@@ -57,10 +57,10 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 				continue
 			}
 			// Ignore challenges from self.
-			if isFromSelf(v.address, challenge.Challenger()) {
+			if isFromSelf(v.address, challenge.Challenger(ctx, tx)) {
 				continue
 			}
-			if err := v.onChallengeStarted(ctx, challenge); err != nil {
+			if err := v.onChallengeStarted(ctx, tx, challenge); err != nil {
 				log.Error(err)
 			}
 		case assertionCreated := <-assertionCreatedChan:
@@ -85,7 +85,7 @@ func (v *Validator) handleRollupEvents(ctx context.Context) {
 			if assertionNum == uint64(assertion.SeqNum()) {
 				continue
 			}
-			if err := v.onLeafCreated(ctx, assertion); err != nil {
+			if err := v.onLeafCreated(ctx, tx, assertion); err != nil {
 				log.Error(err)
 			}
 		}

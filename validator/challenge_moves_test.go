@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -15,6 +16,7 @@ import (
 
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("bad bisection points", func(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 			divergeHeight: 10,
@@ -49,7 +51,7 @@ func Test_bisect(t *testing.T) {
 				validatorAddress: validator.address,
 			},
 		}
-		_, err = v.bisect(ctx, vertex)
+		_, err = v.bisect(ctx, tx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("bisects", func(t *testing.T) {
@@ -83,6 +85,7 @@ func Test_bisect(t *testing.T) {
 			t,
 			logsHook,
 			ctx,
+			tx,
 			honestValidator,
 			evilValidator,
 			createdData.leaf1,
@@ -90,13 +93,14 @@ func Test_bisect(t *testing.T) {
 		)
 
 		// Expect to bisect to 31.
-		commitment := bisectedTo.HistoryCommitment()
+		commitment := bisectedTo.HistoryCommitment(ctx, tx)
 		require.Equal(t, uint64(31), commitment.Height)
 	})
 }
 
 func Test_merge(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
@@ -128,6 +132,7 @@ func Test_merge(t *testing.T) {
 			t,
 			logsHook,
 			ctx,
+			tx,
 			honestValidator,
 			evilValidator,
 			createdData.leaf1,
@@ -171,7 +176,7 @@ func Test_merge(t *testing.T) {
 				validatorAddress: honestValidator.address,
 			},
 		}
-		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
+		mergingTo, err := v.merge(ctx, tx, challengeId, bisectedTo, vertexToMergeFrom)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex")
 		require.Equal(t, bisectedTo.Id(), mergingTo.Id())
@@ -182,14 +187,15 @@ func runBisectionTest(
 	t *testing.T,
 	logsHook *test.Hook,
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	honestValidator,
 	evilValidator *Validator,
 	leaf1,
 	leaf2 protocol.Assertion,
 ) protocol.ChallengeVertex {
-	err := honestValidator.onLeafCreated(ctx, leaf1)
+	err := honestValidator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
-	err = honestValidator.onLeafCreated(ctx, leaf2)
+	err = honestValidator.onLeafCreated(ctx, tx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
@@ -241,13 +247,13 @@ func runBisectionTest(
 		},
 	}
 
-	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx, tx, vertexToBisect)
 	require.NoError(t, err)
 
-	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertex.HistoryCommitment().Height)
+	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertex.HistoryCommitment(ctx, tx).Height)
 	require.NoError(t, err)
 
-	commitment := bisectedVertex.HistoryCommitment()
+	commitment := bisectedVertex.HistoryCommitment(ctx, tx)
 	require.NoError(t, err)
 	require.Equal(t, commitment.Hash(), shouldBisectToCommit.Hash())
 

@@ -21,13 +21,13 @@ var (
 	_ = protocol.AssertionChain(&AssertionChain{})
 	_ = protocol.ChainReadWriter(&AssertionChain{})
 	_ = protocol.Assertion(&Assertion{})
-	_ = protocol.ActiveTx(&activeTx{})
+	_ = protocol.ActiveTx(&ActiveTx{})
 )
 
 func TestAssertionStateHash(t *testing.T) {
 	ctx := context.Background()
 	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	assertion, err := chain.LatestConfirmed(ctx, tx)
 	require.NoError(t, err)
 
@@ -44,7 +44,7 @@ func TestAssertionStateHash(t *testing.T) {
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
@@ -148,7 +148,7 @@ func TestCreateAssertion(t *testing.T) {
 func TestAssertionBySequenceNum(t *testing.T) {
 	ctx := context.Background()
 	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 
 	resp, err := chain.AssertionBySequenceNum(ctx, tx, 0)
 	require.NoError(t, err)
@@ -161,7 +161,7 @@ func TestAssertionBySequenceNum(t *testing.T) {
 
 func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
 		chain, _, _, backend, _ := setupAssertionChainWithChallengeManager(t)
 
@@ -213,7 +213,7 @@ func TestAssertion_Confirm(t *testing.T) {
 
 func TestAssertion_Reject(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 
 	t.Run("Can reject assertion", func(t *testing.T) {
 		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
@@ -268,7 +268,7 @@ func TestAssertion_Reject(t *testing.T) {
 func TestChallengePeriodSeconds(t *testing.T) {
 	ctx := context.Background()
 	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	manager, err := chain.CurrentChallengeManager(ctx, tx)
 	require.NoError(t, err)
 
@@ -279,7 +279,7 @@ func TestChallengePeriodSeconds(t *testing.T) {
 
 func TestCreateSuccessionChallenge(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	t.Run("assertion does not exist", func(t *testing.T) {
 		chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 		_, err := chain.CreateSuccessionChallenge(ctx, tx, 2)

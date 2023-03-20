@@ -173,15 +173,15 @@ const (
 type Challenge interface {
 	// Getters.
 	Id() ChallengeHash
-	GetType() ChallengeType
-	WinningClaim() util.Option[AssertionHash]
+	GetType(ctx context.Context, tx ActiveTx) ChallengeType
+	WinningClaim(ctx context.Context, tx ActiveTx) util.Option[AssertionHash]
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
 	RootVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
 	GetCreationTime(ctx context.Context, tx ActiveTx) (time.Time, error)
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
-	Challenger() common.Address
+	Challenger(ctx context.Context, tx ActiveTx) common.Address
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(
@@ -205,9 +205,9 @@ type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
 	SequenceNum() VertexSequenceNumber
-	Status() AssertionState
-	HistoryCommitment() util.HistoryCommitment
-	MiniStaker() common.Address
+	Status(ctx context.Context, tx ActiveTx) AssertionState
+	HistoryCommitment(ctx context.Context, tx ActiveTx) util.HistoryCommitment
+	MiniStaker(ctx context.Context, tx ActiveTx) common.Address
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
 	HasConfirmedSibling(

@@ -173,8 +173,8 @@ func New(
 	return v, nil
 }
 
-func (v *Validator) Start(ctx context.Context) {
-	go v.handleRollupEvents(ctx)
+func (v *Validator) Start(ctx context.Context, tx protocol.ActiveTx) {
+	go v.handleRollupEvents(ctx, tx)
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)
 	}
@@ -354,6 +354,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 // Processes new leaf creation events from the protocol that were not initiated by self.
 func (v *Validator) onLeafCreated(
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	assertion protocol.Assertion,
 ) error {
 	log.WithFields(logrus.Fields{
@@ -396,7 +397,7 @@ func (v *Validator) onLeafCreated(
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, assertion)
+	return v.challengeAssertion(ctx, tx, assertion)
 }
 
 func isFromSelf(self, staker common.Address) bool {

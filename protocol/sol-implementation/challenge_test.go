@@ -18,7 +18,7 @@ var _ = protocol.Challenge(&Challenge{})
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	height := uint64(3)
 	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height, height)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 
 		v, err := challenge.RootVertex(ctx, tx)
 		require.NoError(t, err)
-		want, err := challenge.manager().GetVertex(ctx, tx, v.Id())
+		want, err := challenge.manager(ctx, tx).GetVertex(ctx, tx, v.Id())
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})
@@ -103,7 +103,7 @@ func setupTopLevelFork(
 	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
 	t.Helper()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	chain1, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 	prev := uint64(0)
 

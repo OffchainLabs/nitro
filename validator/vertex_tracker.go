@@ -56,8 +56,8 @@ func newVertexTracker(
 	}, nil
 }
 
-func (v *vertexTracker) spawn(ctx context.Context) {
-	commitment := v.vertex.HistoryCommitment()
+func (v *vertexTracker) spawn(ctx context.Context, tx protocol.ActiveTx) {
+	commitment := v.vertex.HistoryCommitment(ctx, tx)
 	log.WithFields(logrus.Fields{
 		"height":        commitment.Height,
 		"merkle":        util.Trunc(commitment.Merkle[:]),
@@ -84,7 +84,7 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 				}).Debug("Vertex tracker received notice of a confirmation, exiting")
 				return
 			}
-			if err := v.act(ctx); err != nil {
+			if err := v.act(ctx, tx); err != nil {
 				log.Error(err)
 			}
 		case <-ctx.Done():
@@ -117,7 +117,7 @@ func (vt *vertexTracker) trackerShouldComplete(ctx context.Context) (bool, error
 	return challengeCompleted || siblingConfirmed, nil
 }
 
-func (vt *vertexTracker) act(ctx context.Context) error {
+func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 	current := vt.fsm.Current()
 	switch current.State {
 	case trackerStarted:
@@ -125,7 +125,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		atOneStepFork, err := vt.checkOneStepFork(ctx, prevVertex)
+		atOneStepFork, err := vt.checkOneStepFork(ctx, tx, prevVertex)
 		if err != nil {
 			return err
 		}
@@ -149,10 +149,10 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		}
 		log.WithField("name", vt.cfg.validatorName).Infof(
 			"Reached one-step-fork at %d and commitment %s",
-			event.forkPointVertex.HistoryCommitment().Height,
-			util.Trunc(event.forkPointVertex.HistoryCommitment().Merkle.Bytes()),
+			event.forkPointVertex.HistoryCommitment(ctx, tx).Height,
+			util.Trunc(event.forkPointVertex.HistoryCommitment(ctx, tx).Merkle.Bytes()),
 		)
-		if vt.challenge.GetType() == protocol.SmallStepChallenge {
+		if vt.challenge.GetType(ctx, tx) == protocol.SmallStepChallenge {
 			return vt.fsm.Do(actOneStepProof{})
 		}
 		return vt.fsm.Do(openSubchallenge{})
@@ -167,7 +167,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		return vt.fsm.Do(openSubchallengeLeaf{})
 	case trackerBisecting:
 		// TODO: Seems to allow for double bisections?
-		bisectedTo, err := vt.bisect(ctx, vt.vertex)
+		bisectedTo, err := vt.bisect(ctx, tx, vt.vertex)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
 				return vt.fsm.Do(merge{})
@@ -182,10 +182,10 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		go tracker.spawn(ctx)
+		go tracker.spawn(ctx, tx)
 		return vt.fsm.Do(backToStart{})
 	case trackerMerging:
-		mergedTo, err := vt.mergeToExistingVertex(ctx)
+		mergedTo, err := vt.mergeToExistingVertex(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		go tracker.spawn(ctx)
+		go tracker.spawn(ctx, tx)
 
 		// TODO: This seems wrong...what to do?
 		return vt.fsm.Do(backToStart{})
@@ -237,9 +237,9 @@ func (vt *vertexTracker) isPresumptive(ctx context.Context) (bool, error) {
 	return isPresumptive, nil
 }
 
-func (vt *vertexTracker) checkOneStepFork(ctx context.Context, prevVertex protocol.ChallengeVertex) (bool, error) {
-	commitment := vt.vertex.HistoryCommitment()
-	prevCommitment := prevVertex.HistoryCommitment()
+func (vt *vertexTracker) checkOneStepFork(ctx context.Context, tx protocol.ActiveTx, prevVertex protocol.ChallengeVertex) (bool, error) {
+	commitment := vt.vertex.HistoryCommitment(ctx, tx)
+	prevCommitment := prevVertex.HistoryCommitment(ctx, tx)
 	if commitment.Height != prevCommitment.Height+1 {
 		return false, nil
 	}
@@ -278,7 +278,7 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 // Merges to a vertex that already exists in the protocol by fetching its history commit
 // from our state manager and then performing a merge transaction in the chain. Then,
 // this method returns the vertex it merged to.
-func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
+func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
 	var prev protocol.ChallengeVertex
 	var mergingInto protocol.ChallengeVertex
 	var parentCommit util.StateCommitment
@@ -295,8 +295,8 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 		if err != nil {
 			return err
 		}
-		prevCommitment := prev.HistoryCommitment()
-		commitment := v.vertex.HistoryCommitment()
+		prevCommitment := prev.HistoryCommitment(ctx, tx)
+		commitment := v.vertex.HistoryCommitment(ctx, tx)
 		parentHeight := prevCommitment.Height
 		toHeight := commitment.Height
 
@@ -330,7 +330,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 		return nil, err
 	}
 	mergingFrom := v.vertex
-	mergedTo, err := v.merge(ctx, protocol.ChallengeHash(parentCommit.Hash()), mergingInto, mergingFrom)
+	mergedTo, err := v.merge(ctx, tx, protocol.ChallengeHash(parentCommit.Hash()), mergingInto, mergingFrom)
 	if err != nil {
 		return nil, err
 	}
@@ -341,9 +341,9 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 // TODO: Refactor as this function does too much. A vertex tracker should only be responsible
 // for confirming its own vertex, not subchallenge vertices.
 // nolint:unused
-func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
+func (v *vertexTracker) confirmed(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
 	// Can't confirm if the vertex is not in correct state.
-	status := v.vertex.Status()
+	status := v.vertex.Status(ctx, tx)
 	if status != protocol.AssertionPending {
 		return false, nil
 	}
@@ -359,7 +359,7 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 		if prev.IsNone() {
 			return errors.New("no prev vertex")
 		}
-		prevStatus := prev.Unwrap().Status()
+		prevStatus := prev.Unwrap().Status(ctx, tx)
 		// TODO: Vertex status different from assertion status.
 		if prevStatus != protocol.AssertionConfirmed {
 			return nil
