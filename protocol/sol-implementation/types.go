@@ -1,10 +1,12 @@
 package solimpl
 
 import (
+	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 )
 
 // Assertion is a wrapper around the binding to the type
@@ -46,7 +48,18 @@ func (a *Assertion) StateHash() (common.Hash, error) {
 }
 
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
-	return nil, nil
+	assertionNode, err := a.chain.userLogic.GetAssertion(a.chain.callOpts, a.id)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Equal(assertionNode.StateHash[:], make([]byte, 32)) {
+		return nil, errors.Wrapf(
+			ErrNotFound,
+			"assertion with id %d",
+			a.id,
+		)
+	}
+	return &assertionNode, nil
 }
 
 // Challenge is a developer-friendly wrapper around

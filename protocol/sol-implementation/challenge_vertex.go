@@ -339,10 +339,26 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 	return chal.Unwrap(), nil
 }
 
-func (v *ChallengeVertex) inner(ctx context.Context, tx protocol.ActiveTx) (*challengeV2gen.ChallengeVertex, error) {
-	return nil, nil
+func (v *ChallengeVertex) inner(ctx context.Context, tx protocol.ActiveTx) (challengeV2gen.ChallengeVertex, error) {
+	manager, err := v.manager(ctx, tx)
+	if err != nil {
+		return challengeV2gen.ChallengeVertex{}, err
+	}
+	vertexInner, err := manager.caller.GetVertex(v.chain.callOpts, v.id)
+	if err != nil {
+		return challengeV2gen.ChallengeVertex{}, err
+	}
+	return vertexInner, nil
 }
 
 func (v *ChallengeVertex) manager(ctx context.Context, tx protocol.ActiveTx) (*ChallengeManager, error) {
-	return nil, nil
+	manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	challengeManager, ok := manager.(*ChallengeManager)
+	if !ok {
+		return nil, errors.New("challengemanager is not expected concrete type")
+	}
+	return challengeManager, nil
 }

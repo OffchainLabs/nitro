@@ -329,10 +329,27 @@ func (c *Challenge) AddSubChallengeLeaf(
 	}, nil
 }
 
-func (c *Challenge) inner(ctx context.Context, tx protocol.ActiveTx) (*challengeV2gen.Challenge, error) {
-	return nil, nil
+func (c *Challenge) inner(ctx context.Context, tx protocol.ActiveTx) (challengeV2gen.Challenge, error) {
+	manager, err := c.manager(ctx, tx)
+	if err != nil {
+		return challengeV2gen.Challenge{}, err
+	}
+
+	challengeInner, err := manager.caller.GetChallenge(c.chain.callOpts, c.id)
+	if err != nil {
+		return challengeV2gen.Challenge{}, err
+	}
+	return challengeInner, nil
 }
 
 func (c *Challenge) manager(ctx context.Context, tx protocol.ActiveTx) (*ChallengeManager, error) {
-	return nil, nil
+	manager, err := c.chain.CurrentChallengeManager(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	challengeManager, ok := manager.(*ChallengeManager)
+	if !ok {
+		return nil, errors.New("challengemanager is not expected concrete type")
+	}
+	return challengeManager, nil
 }
