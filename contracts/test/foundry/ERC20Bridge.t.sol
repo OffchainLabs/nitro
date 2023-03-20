@@ -48,7 +48,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
     function test_initialize_revert_ZeroAddressToken() public {
         IERC20Bridge noTokenBridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
-        vm.expectRevert(InvalidToken.selector);
+        vm.expectRevert(abi.encodeWithSelector(InvalidTokenSet.selector, address(0)));
         noTokenBridge.initialize(IOwnable(rollup), address(0));
     }
 
@@ -335,6 +335,18 @@ contract ERC20BridgeTest is AbsBridgeTest {
         // executeCall shall revert when 'to' is not contract
         address to = address(234);
         vm.expectRevert(abi.encodeWithSelector(NotContract.selector, address(to)));
+        vm.prank(outbox);
+        bridge.executeCall({to: to, value: 10, data: "some data"});
+    }
+
+    function test_executeCall_revert_CallTargetNotAllowed() public {
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        // executeCall shall revert when 'to' is not contract
+        address to = address(nativeToken);
+        vm.expectRevert(abi.encodeWithSelector(CallTargetNotAllowed.selector, to));
         vm.prank(outbox);
         bridge.executeCall({to: to, value: 10, data: "some data"});
     }
