@@ -412,7 +412,8 @@ func (v *Validator) onLeafCreated(
 		if err != nil {
 			return err
 		}
-		prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, assertionPrevSeqNum)
+		var prevAssertion protocol.Assertion
+		prevAssertion, err = v.chain.AssertionBySequenceNum(ctx, tx, assertionPrevSeqNum)
 		if err != nil {
 			return err
 		}
