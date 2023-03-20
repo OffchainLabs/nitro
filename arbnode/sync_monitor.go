@@ -90,7 +90,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 
 	if s.inboxReader != nil {
 		batchSeen := s.inboxReader.GetLastSeenBatchCount()
-		_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
 
 		if (batchSeen == 0) || // error or not yet read inbox
 			(batchProcessed < batchSeen) { // unprocessed inbox messages
