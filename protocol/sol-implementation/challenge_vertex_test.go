@@ -696,7 +696,7 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 			chain: challenge.chain,
 		}
 		_, err := vertex.CreateSubChallenge(ctx, tx)
-		require.ErrorContains(t, err, "execution reverted: Challenge does not exist")
+		require.ErrorContains(t, err, "execution reverted: Vertex does not exist")
 	})
 
 	honestHashes := honestHashesUpTo(10)

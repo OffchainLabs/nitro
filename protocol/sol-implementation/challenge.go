@@ -84,7 +84,7 @@ func (c *Challenge) WinningClaim(ctx context.Context, tx protocol.ActiveTx) (uti
 		return util.None[protocol.AssertionHash](), err
 	}
 	if cInner.WinningClaim == [32]byte{} {
-		return util.None[protocol.AssertionHash](), ErrNotFound
+		return util.None[protocol.AssertionHash](), nil
 	}
 	return util.Some[protocol.AssertionHash](cInner.WinningClaim), nil
 }
