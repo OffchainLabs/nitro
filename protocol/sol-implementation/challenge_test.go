@@ -7,7 +7,6 @@ import (
 
 	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -29,9 +28,6 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			&Assertion{
 				chain: chain1,
 				id:    20,
-				inner: rollupgen.AssertionNode{
-					Height: big.NewInt(1),
-				},
 			},
 			util.HistoryCommitment{
 				Height: height,
@@ -48,9 +44,6 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			&Assertion{
 				chain: chain1,
 				id:    1,
-				inner: rollupgen.AssertionNode{
-					Height: big.NewInt(0),
-				},
 			},
 			util.HistoryCommitment{
 				Height: 0,
@@ -88,7 +81,7 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 
 		v, err := challenge.RootVertex(ctx, tx)
 		require.NoError(t, err)
-		want, err := challenge.manager.GetVertex(ctx, tx, v.Id())
+		want, err := challenge.manager().GetVertex(ctx, tx, v.Id())
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})

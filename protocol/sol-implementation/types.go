@@ -2,7 +2,6 @@ package solimpl
 
 import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,11 +15,10 @@ type Assertion struct {
 	StateCommitment util.StateCommitment
 	chain           *AssertionChain
 	id              uint64
-	inner           rollupgen.AssertionNode
 }
 
 func (a *Assertion) Height() uint64 {
-	return a.inner.Height.Uint64()
+	return a.inner().Height.Uint64()
 }
 
 func (a *Assertion) SeqNum() protocol.AssertionSequenceNumber {
@@ -28,19 +26,22 @@ func (a *Assertion) SeqNum() protocol.AssertionSequenceNumber {
 }
 
 func (a *Assertion) PrevSeqNum() protocol.AssertionSequenceNumber {
-	return protocol.AssertionSequenceNumber(a.inner.PrevNum)
+	return protocol.AssertionSequenceNumber(a.inner().PrevNum)
 }
 
 func (a *Assertion) StateHash() common.Hash {
-	return a.inner.StateHash
+	return a.inner().StateHash
+}
+
+func (a *Assertion) inner() *rollupgen.AssertionNode {
+	return nil
 }
 
 // Challenge is a developer-friendly wrapper around
 // the protocol struct with the same name.
 type Challenge struct {
-	manager *ChallengeManager
-	id      [32]byte
-	inner   challengeV2gen.Challenge
+	chain *AssertionChain
+	id    [32]byte
 }
 
 // ChallengeType defines an enum of the same name
@@ -57,7 +58,6 @@ const (
 // ChallengeVertex is a developer-friendly wrapper around
 // the protocol struct with the same name.
 type ChallengeVertex struct {
-	manager *ChallengeManager
-	id      [32]byte
-	inner   challengeV2gen.ChallengeVertex
+	chain *AssertionChain
+	id    [32]byte
 }

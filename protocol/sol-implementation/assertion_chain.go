@@ -201,7 +201,6 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 	return &Assertion{
 		id:    uint64(assertionNum),
 		chain: ac,
-		inner: res,
 		StateCommitment: util.StateCommitment{
 			Height:    res.Height.Uint64(),
 			StateRoot: res.StateHash,
