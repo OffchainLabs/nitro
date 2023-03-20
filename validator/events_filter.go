@@ -57,7 +57,11 @@ func (v *Validator) handleRollupEvents(ctx context.Context, tx protocol.ActiveTx
 				continue
 			}
 			// Ignore challenges from self.
-			if isFromSelf(v.address, challenge.Challenger(ctx, tx)) {
+			challenger, err := challenge.Challenger(ctx, tx)
+			if err != nil {
+				log.Error(err)
+			}
+			if isFromSelf(v.address, challenger) {
 				continue
 			}
 			if err := v.onChallengeStarted(ctx, tx, challenge); err != nil {

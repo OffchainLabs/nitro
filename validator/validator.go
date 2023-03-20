@@ -223,7 +223,11 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	}); err != nil {
 		return nil, err
 	}
-	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx, parentAssertion.Height())
+	parentAssertionHeight, err := parentAssertion.Height()
+	if err != nil {
+		return nil, err
+	}
+	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx, parentAssertionHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -249,12 +253,24 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	case err != nil:
 		return nil, err
 	}
+	parentAssertionStateHash, err := parentAssertion.StateHash()
+	if err != nil {
+		return nil, err
+	}
+	leafStateHash, err := leaf.StateHash()
+	if err != nil {
+		return nil, err
+	}
+	leafHeight, err := leaf.Height()
+	if err != nil {
+		return nil, err
+	}
 	logFields := logrus.Fields{
 		"name":               v.name,
-		"parentHeight":       fmt.Sprintf("%+v", parentAssertion.Height()),
-		"parentStateHash":    fmt.Sprintf("%#x", parentAssertion.StateHash()),
-		"assertionHeight":    leaf.Height(),
-		"assertionStateHash": fmt.Sprintf("%#x", leaf.StateHash()),
+		"parentHeight":       fmt.Sprintf("%+v", parentAssertionHeight),
+		"parentStateHash":    fmt.Sprintf("%#x", parentAssertionStateHash),
+		"assertionHeight":    leafHeight,
+		"assertionStateHash": fmt.Sprintf("%#x", leafStateHash),
 	}
 	log.WithFields(logFields).Info("Submitted assertion")
 
@@ -263,15 +279,14 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	v.assertionsLock.Lock()
 	// TODO: Store a more minimal struct, with only what we need.
 	v.assertions[leaf.SeqNum()] = leaf
-	key := parentAssertion.StateHash()
-	v.sequenceNumbersByParentStateCommitment[key] = append(
-		v.sequenceNumbersByParentStateCommitment[key],
+	v.sequenceNumbersByParentStateCommitment[parentAssertionStateHash] = append(
+		v.sequenceNumbersByParentStateCommitment[parentAssertionStateHash],
 		leaf.SeqNum(),
 	)
 	v.assertionsLock.Unlock()
 
 	v.leavesLock.Lock()
-	v.createdAssertions[leaf.StateHash()] = leaf
+	v.createdAssertions[leafStateHash] = leaf
 	v.leavesLock.Unlock()
 	return leaf, nil
 }
@@ -304,9 +319,17 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 		if !ok {
 			continue
 		}
+		height, err := a.Height()
+		if err != nil {
+			return 0, err
+		}
+		stateHash, err := a.StateHash()
+		if err != nil {
+			return 0, err
+		}
 		if v.stateManager.HasStateCommitment(ctx, util.StateCommitment{
-			Height:    a.Height(),
-			StateRoot: a.StateHash(),
+			Height:    height,
+			StateRoot: stateHash,
 		}) {
 			return a.SeqNum(), nil
 		}
@@ -337,8 +360,12 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 
 	// TODO: Handle validator process dying here.
 	<-ctx.Done()
+	leafHeight, err := leaf.Height()
+	if err != nil {
+		panic(err)
+	}
 	logFields := logrus.Fields{
-		"height":      leaf.Height(),
+		"height":      leafHeight,
 		"sequenceNum": leaf.SeqNum(),
 	}
 	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
@@ -357,10 +384,18 @@ func (v *Validator) onLeafCreated(
 	tx protocol.ActiveTx,
 	assertion protocol.Assertion,
 ) error {
+	assertionStateHash, err := assertion.StateHash()
+	if err != nil {
+		return err
+	}
+	assertionHeight, err := assertion.Height()
+	if err != nil {
+		return err
+	}
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
-		"stateHash": fmt.Sprintf("%#x", assertion.StateHash()),
-		"height":    assertion.Height(),
+		"stateHash": fmt.Sprintf("%#x", assertionStateHash),
+		"height":    assertionHeight,
 	}).Info("New assertion appended to protocol")
 	// Detect if there is a fork, then decide if we want to challenge.
 	// We check if the parent assertion has > 1 child.
@@ -372,7 +407,11 @@ func (v *Validator) onLeafCreated(
 	// Keep track of assertions by parent state root to more easily detect forks.
 	var prev protocol.Assertion
 	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
+		assertionPrevSeqNum, err := assertion.PrevSeqNum()
+		if err != nil {
+			return err
+		}
+		prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, assertionPrevSeqNum)
 		if err != nil {
 			return err
 		}
@@ -383,7 +422,10 @@ func (v *Validator) onLeafCreated(
 	}
 
 	v.assertionsLock.Lock()
-	key := prev.StateHash()
+	key, err := prev.StateHash()
+	if err != nil {
+		return err
+	}
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
 		assertion.SeqNum(),

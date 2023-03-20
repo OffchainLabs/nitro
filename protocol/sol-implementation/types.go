@@ -17,24 +17,36 @@ type Assertion struct {
 	id              uint64
 }
 
-func (a *Assertion) Height() uint64 {
-	return a.inner().Height.Uint64()
+func (a *Assertion) Height() (uint64, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return 0, err
+	}
+	return inner.Height.Uint64(), nil
 }
 
 func (a *Assertion) SeqNum() protocol.AssertionSequenceNumber {
 	return protocol.AssertionSequenceNumber(a.id)
 }
 
-func (a *Assertion) PrevSeqNum() protocol.AssertionSequenceNumber {
-	return protocol.AssertionSequenceNumber(a.inner().PrevNum)
+func (a *Assertion) PrevSeqNum() (protocol.AssertionSequenceNumber, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return 0, err
+	}
+	return protocol.AssertionSequenceNumber(inner.PrevNum), nil
 }
 
-func (a *Assertion) StateHash() common.Hash {
-	return a.inner().StateHash
+func (a *Assertion) StateHash() (common.Hash, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return inner.StateHash, nil
 }
 
-func (a *Assertion) inner() *rollupgen.AssertionNode {
-	return nil
+func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
+	return nil, nil
 }
 
 // Challenge is a developer-friendly wrapper around

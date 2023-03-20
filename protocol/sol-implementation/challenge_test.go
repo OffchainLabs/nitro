@@ -81,7 +81,9 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 
 		v, err := challenge.RootVertex(ctx, tx)
 		require.NoError(t, err)
-		want, err := challenge.manager(ctx, tx).GetVertex(ctx, tx, v.Id())
+		challengeManager, err := challenge.manager(ctx, tx)
+		require.NoError(t, err)
+		want, err := challengeManager.GetVertex(ctx, tx, v.Id())
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})

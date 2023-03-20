@@ -208,7 +208,9 @@ func createTwoValidatorFork(
 	}
 	genesisStateHash := protocol.ComputeStateHash(genesisState, big.NewInt(1))
 
-	require.Equal(t, genesisStateHash, genesis.StateHash(), "Genesis state hash unequal")
+	actualGenesisStateHash, err := genesis.StateHash()
+	require.NoError(t, err)
+	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
 
 	height := uint64(0)
 	honestValidatorStateRoots := make([]common.Hash, 0)
@@ -270,7 +272,9 @@ func createTwoValidatorFork(
 	})
 	require.NoError(t, err)
 
-	honestValidatorStateRoots = append(honestValidatorStateRoots, assertion.StateHash())
+	assertionStateHash, err := assertion.StateHash()
+	require.NoError(t, err)
+	honestValidatorStateRoots = append(honestValidatorStateRoots, assertionStateHash)
 
 	evilPostState := &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState{
@@ -296,7 +300,9 @@ func createTwoValidatorFork(
 	})
 	require.NoError(t, err)
 
-	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertion.StateHash())
+	forkedAssertionStateHash, err := forkedAssertion.StateHash()
+	require.NoError(t, err)
+	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertionStateHash)
 
 	return &createdValidatorFork{
 		leaf1:                     assertion,
@@ -332,9 +338,13 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
 			v.assertions[a.SeqNum()] = a
+			height, err := a.Height()
+			require.NoError(t, err)
+			stateHash, err := a.StateHash()
+			require.NoError(t, err)
 			s.On("HasStateCommitment", ctx, util.StateCommitment{
-				Height:    a.Height(),
-				StateRoot: a.StateHash(),
+				Height:    height,
+				StateRoot: stateHash,
 			}).Return(true)
 		}
 		p.On("LatestConfirmed", ctx, tx).Return(assertions[0], nil)
@@ -349,15 +359,19 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
 			v.assertions[a.SeqNum()] = a
+			height, err := a.Height()
+			require.NoError(t, err)
+			stateHash, err := a.StateHash()
+			require.NoError(t, err)
 			if i <= 5 {
 				s.On("HasStateCommitment", ctx, util.StateCommitment{
-					Height:    a.Height(),
-					StateRoot: a.StateHash(),
+					Height:    height,
+					StateRoot: stateHash,
 				}).Return(true)
 			} else {
 				s.On("HasStateCommitment", ctx, util.StateCommitment{
-					Height:    a.Height(),
-					StateRoot: a.StateHash(),
+					Height:    height,
+					StateRoot: stateHash,
 				}).Return(false)
 			}
 		}

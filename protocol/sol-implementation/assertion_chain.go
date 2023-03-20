@@ -231,7 +231,10 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
-	prevHeight := prev.Height()
+	prevHeight, err := prev.Height()
+	if err != nil {
+		return nil, err
+	}
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}

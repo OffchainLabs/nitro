@@ -53,7 +53,10 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker := challengeVertex.MiniStaker(ctx, tx)
+	staker, err := challengeVertex.MiniStaker(ctx, tx)
+	if err != nil {
+		return err
+	}
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
@@ -89,10 +92,14 @@ func (v *Validator) onChallengeStarted(
 func (v *Validator) challengeAssertion(ctx context.Context, tx protocol.ActiveTx, assertion protocol.Assertion) error {
 	var challenge protocol.Challenge
 	var err error
-	challenge, err = v.submitProtocolChallenge(ctx, assertion.PrevSeqNum())
+	assertionPrevSeqNum, err := assertion.PrevSeqNum()
+	if err != nil {
+		return err
+	}
+	challenge, err = v.submitProtocolChallenge(ctx, assertionPrevSeqNum)
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
-			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, assertion.PrevSeqNum())
+			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, assertionPrevSeqNum)
 			if fetchErr != nil {
 				return fetchErr
 			}
@@ -136,7 +143,10 @@ func (v *Validator) challengeAssertion(ctx context.Context, tx protocol.ActiveTx
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"] = assertion.PrevSeqNum()
+	logFields["parentAssertionSeqNum"], err = assertion.PrevSeqNum()
+	if err != nil {
+		return err
+	}
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
 	return nil
 }
@@ -155,7 +165,11 @@ func (v *Validator) addChallengeVertex(
 		if err != nil {
 			return err
 		}
-		historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		assertionHeight, err := assertion.Height()
+		if err != nil {
+			return err
+		}
+		historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 		if err != nil {
 			return err
 		}

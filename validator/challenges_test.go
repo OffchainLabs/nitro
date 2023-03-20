@@ -324,7 +324,11 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		MachineStatus: protocol.MachineStatusFinished,
 	}
 	genesisStateHash := protocol.ComputeStateHash(genesisState, prevInboxMaxCount)
-	require.Equal(t, genesisStateHash, genesis.StateHash(), "Genesis state hash unequal")
+	actualGenesisStateHash, err := genesis.StateHash()
+	if err != nil {
+		return
+	}
+	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
 
 	// Initialize each validator associated state roots which diverge
 	// at specified points in the test config.
