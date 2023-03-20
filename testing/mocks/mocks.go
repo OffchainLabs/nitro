@@ -186,6 +186,28 @@ func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]
 	return args.Get(0).([]byte), args.Error(1)
 }
 
+func (m *MockStateManager) BigStepPrefixProof(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	lo,
+	hi uint64,
+) ([]byte, error) {
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, lo, hi)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockStateManager) SmallStepPrefixProof(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	lo,
+	hi uint64,
+) ([]byte, error) {
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, lo, hi)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
 func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit util.StateCommitment) bool {
 	args := m.Called(ctx, commit)
 	return args.Bool(0)

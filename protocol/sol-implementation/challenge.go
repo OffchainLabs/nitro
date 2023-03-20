@@ -11,6 +11,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/sirupsen/logrus"
 )
 
 func (c *Challenge) Id() protocol.ChallengeHash {
@@ -40,7 +41,8 @@ func (c *Challenge) RootAssertion(
 		}
 		return c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
 	case protocol.BigStepChallenge:
-		subchallengeRootVertex, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+		logrus.Info("We are in a big step challenge yo")
+		subchallengeRootVertex, err := c.manager.GetVertex(ctx, tx, root.inner.ClaimId)
 		if err != nil {
 			return nil, err
 		}
@@ -48,6 +50,7 @@ func (c *Challenge) RootAssertion(
 			return nil, errors.New("subchallenge root vertex not found")
 		}
 		subchallengeRoot := rootVertex.Unwrap().(*ChallengeVertex)
+		logrus.Infof("Got subchallenge root vertex, height %d", subchallengeRoot.inner.Height.Uint64())
 		blockChallengeGot, err := c.manager.GetChallenge(ctx, tx, subchallengeRoot.inner.ChallengeId)
 		if err != nil {
 			return nil, err
@@ -56,6 +59,7 @@ func (c *Challenge) RootAssertion(
 			return nil, errors.New("subchallenge root vertex not found")
 		}
 		blockChallenge := blockChallengeGot.Unwrap().(*Challenge)
+		logrus.Infof("Got subchallenge root vertex's challenge of type %s", blockChallengeGot.Unwrap().GetType())
 		blockChallengeRootVertex, err := c.manager.GetVertex(ctx, tx, blockChallenge.inner.RootId)
 		if err != nil {
 			return nil, err

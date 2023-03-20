@@ -18,6 +18,46 @@ import (
 
 var _ = Manager(&Simulated{})
 
+func TestPrefixProof(t *testing.T) {
+	ctx := context.Background()
+	hashes := make([]common.Hash, 10)
+	for i := 0; i < len(hashes); i++ {
+		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	manager := New(hashes)
+
+	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
+	require.NoError(t, err)
+	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, 7)
+	require.NoError(t, err)
+	packedProof, err := manager.PrefixProof(ctx, 3, 7)
+	require.NoError(t, err)
+
+	data, err := ProofArgs.Unpack(packedProof)
+	require.NoError(t, err)
+	preExpansion := data[0].([][32]byte)
+	proof := data[1].([][32]byte)
+
+	preExpansionHashes := make([]common.Hash, len(preExpansion))
+	for i := 0; i < len(preExpansion); i++ {
+		preExpansionHashes[i] = preExpansion[i]
+	}
+	prefixProof := make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		prefixProof[i] = proof[i]
+	}
+
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      loCommit.Merkle,
+		PreSize:      4,
+		PostRoot:     hiCommit.Merkle,
+		PostSize:     8,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	require.NoError(t, err)
+}
+
 func TestDivergenceGranularity(t *testing.T) {
 	ctx := context.Background()
 	numStates := uint64(10)

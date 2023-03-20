@@ -41,7 +41,6 @@ type Manager interface {
 	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
 	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
 	HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error)
-	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
 	BigStepLeafCommitment(
 		ctx context.Context,
 		fromAssertionHeight,
@@ -64,6 +63,21 @@ type Manager interface {
 		toAssertionHeight,
 		toStep uint64,
 	) (util.HistoryCommitment, error)
+	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
+	BigStepPrefixProof(
+		ctx context.Context,
+		fromAssertionHeight,
+		toAssertionHeight,
+		lo,
+		hi uint64,
+	) ([]byte, error)
+	SmallStepPrefixProof(
+		ctx context.Context,
+		fromAssertionHeight,
+		toAssertionHeight,
+		lo,
+		hi uint64,
+	) ([]byte, error)
 }
 
 // Simulated defines a very naive state manager that is initialized from a list of predetermined
@@ -250,12 +264,16 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	if engine.NumBigSteps() < toBigStep {
 		return util.HistoryCommitment{}, errors.New("not enough big steps")
 	}
-	return s.commitmentFromEngineSteps(
+	leaves, err := s.intermediateLeavesFromEngineSteps(
 		toBigStep,
 		s.bigStepDivergenceHeight,
 		engine,
 		engine.StateAfterBigSteps,
 	)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return util.NewHistoryCommitment(toBigStep, leaves)
 }
 
 // SmallStepLeafCommitment produces a small step history commitment which includes
@@ -296,32 +314,36 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 	if engine.NumOpcodes() < toPc {
 		return util.HistoryCommitment{}, errors.New("not enough small steps")
 	}
-	return s.commitmentFromEngineSteps(
+	leaves, err := s.intermediateLeavesFromEngineSteps(
 		toPc,
 		s.smallStepDivergenceHeight,
 		engine,
 		engine.StateAfterSmallSteps,
 	)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return util.NewHistoryCommitment(toPc, leaves)
 }
 
-func (s *Simulated) commitmentFromEngineSteps(
+func (s *Simulated) intermediateLeavesFromEngineSteps(
 	toStep,
 	divergenceHeight uint64,
 	engine execution.EngineAtBlock,
 	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
-) (util.HistoryCommitment, error) {
+) ([]common.Hash, error) {
 	leaves := make([]common.Hash, toStep+1)
 	leaves[0] = engine.FirstState()
 
-	// Up to and including the specified small step.
+	// Up to and including the specified step.
 	for i := uint64(0); i <= toStep; i++ {
 		start, err := stepperFn(i)
 		if err != nil {
-			return util.HistoryCommitment{}, err
+			return nil, err
 		}
 		intermediateState, err := start.NextState()
 		if err != nil {
-			return util.HistoryCommitment{}, err
+			return nil, err
 		}
 		var hash common.Hash
 		if divergenceHeight == 0 || i < divergenceHeight {
@@ -330,13 +352,99 @@ func (s *Simulated) commitmentFromEngineSteps(
 			junkRoot := make([]byte, 32)
 			_, err := rand.Read(junkRoot)
 			if err != nil {
-				return util.HistoryCommitment{}, err
+				return nil, err
 			}
 			hash = crypto.Keccak256Hash(junkRoot)
 		}
 		leaves[i] = hash
 	}
-	return util.NewHistoryCommitment(toStep, leaves)
+	return leaves, nil
+}
+
+func (s *Simulated) BigStepPrefixProof(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	lo,
+	hi uint64,
+) ([]byte, error) {
+	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
+	if err != nil {
+		return nil, err
+	}
+	if engine.NumOpcodes() < hi {
+		return nil, err
+	}
+	loSize := lo + 1
+	hiSize := hi + 1
+	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
+		hiSize,
+		s.smallStepDivergenceHeight,
+		engine,
+		engine.StateAfterBigSteps,
+	)
+	if err != nil {
+		return nil, err
+	}
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(prefixLeaves[:loSize])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
+		loSize,
+		prefixExpansion,
+		prefixLeaves[loSize:hiSize],
+		prefixproofs.RootFetcherFromExpansion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+}
+
+func (s *Simulated) SmallStepPrefixProof(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	lo,
+	hi uint64,
+) ([]byte, error) {
+	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
+	if err != nil {
+		return nil, err
+	}
+	if engine.NumOpcodes() < hi {
+		return nil, err
+	}
+	loSize := lo + 1
+	hiSize := hi + 1
+	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
+		hiSize,
+		s.smallStepDivergenceHeight,
+		engine,
+		engine.StateAfterSmallSteps,
+	)
+	if err != nil {
+		return nil, err
+	}
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(prefixLeaves[:loSize])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
+		loSize,
+		prefixExpansion,
+		prefixLeaves[loSize:hiSize],
+		prefixproofs.RootFetcherFromExpansion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
 
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots

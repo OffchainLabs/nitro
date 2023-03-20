@@ -163,31 +163,29 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		log.Info("Checking one-step-proof against protocol")
 		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
-		// event, ok := current.SourceEvent.(openSubchallenge)
-		// if !ok {
-		// 	return fmt.Errorf("bad source event: %s", event)
-		// }
-		// subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
-		// if err != nil {
-		// 	return err
-		// }
-		// return vt.fsm.Do(openSubchallengeLeaf{
-		// 	subChallenge:    subChallenge,
-		// 	forkPointVertex: event.forkPointVertex,
-		// })
-		return vt.fsm.Do(openSubchallenge{})
+		event, ok := current.SourceEvent.(openSubchallenge)
+		if !ok {
+			return fmt.Errorf("bad source event: %s", event)
+		}
+		subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
+		if err != nil {
+			return err
+		}
+		return vt.fsm.Do(openSubchallengeLeaf{
+			subChallenge:    subChallenge,
+			forkPointVertex: event.forkPointVertex,
+		})
 	case trackerAddingSubchallengeLeaf:
-		// event, ok := current.SourceEvent.(openSubchallengeLeaf)
-		// if !ok {
-		// 	return fmt.Errorf("bad source event: %s", event)
-		// }
-		// if err := vt.openSubchallengeLeaf(
-		// 	ctx, event.forkPointVertex, event.subChallenge,
-		// ); err != nil {
-		// 	return errors.Wrap(err, "CANNOT OPEN LEAF")
-		// }
-		// return vt.fsm.Do(awaitSubchallengeResolution{})
-		return vt.fsm.Do(openSubchallengeLeaf{})
+		event, ok := current.SourceEvent.(openSubchallengeLeaf)
+		if !ok {
+			return fmt.Errorf("bad source event: %s", event)
+		}
+		if err := vt.openSubchallengeLeaf(
+			ctx, event.forkPointVertex, event.subChallenge,
+		); err != nil {
+			return errors.Wrap(err, "CANNOT OPEN LEAF")
+		}
+		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
@@ -300,8 +298,9 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 // this method returns the vertex it merged to.
 func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
 	var prev protocol.ChallengeVertex
-	var mergingInto protocol.ChallengeVertex
 	var parentCommit util.StateCommitment
+	var mergeHistory util.HistoryCommitment
+	var prefixProof []byte
 	if err := v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
 		prevV, err := v.vertex.Prev(ctx, tx)
 		if err != nil {
@@ -315,12 +314,13 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 		if err != nil {
 			return err
 		}
+		parentCommit = parentStateCommitment
 		prevCommitment := prev.HistoryCommitment()
 		commitment := v.vertex.HistoryCommitment()
 		parentHeight := prevCommitment.Height
 		toHeight := commitment.Height
 
-		mergingToHistory, err := v.determineBisectionPointWithHistory(
+		mergingToHistory, proof, err := v.determineBisectionHistoryWithProof(
 			ctx,
 			parentHeight,
 			toHeight,
@@ -328,29 +328,13 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 		if err != nil {
 			return err
 		}
-		manager, err := v.cfg.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
-		}
-		vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, v.challenge.Id(), mergingToHistory)
-		if err != nil {
-			return err
-		}
-		vertex, err := manager.GetVertex(ctx, tx, vertexId)
-		if err != nil {
-			return err
-		}
-		if vertex.IsNone() {
-			return errors.New("no vertex found to merge into")
-		}
-		mergingInto = vertex.Unwrap()
-		parentCommit = parentStateCommitment
+		mergeHistory = mergingToHistory
+		prefixProof = proof
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	mergingFrom := v.vertex
-	mergedTo, err := v.merge(ctx, protocol.ChallengeHash(parentCommit.Hash()), mergingInto, mergingFrom)
+	mergedTo, err := v.merge(ctx, protocol.ChallengeHash(parentCommit.Hash()), mergeHistory, prefixProof)
 	if err != nil {
 		return nil, err
 	}
@@ -424,26 +408,34 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 	var history util.HistoryCommitment
 	var err error
 	if err = vt.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
-		fromHeight := prevVertex.HistoryCommitment().Height
-		toHeight := vt.vertex.HistoryCommitment().Height
+		fromVertexHeight := prevVertex.HistoryCommitment().Height
+		toVertexHeight := vt.vertex.HistoryCommitment().Height
 
-		// TODO: Need the root assertion height.
+		rootAssertion, err := vt.challenge.RootAssertion(ctx, tx)
+		if err != nil {
+			return err
+		}
+
+		fromAssertionHeight := rootAssertion.Height()
+		toAssertionHeight := fromAssertionHeight + 1
 
 		switch subChallenge.GetType() {
 		case protocol.BigStepChallenge:
 			log.WithFields(logrus.Fields{
-				"name":       vt.cfg.validatorName,
-				"fromHeight": fromHeight,
-				"toHeight":   toHeight,
+				"name":             vt.cfg.validatorName,
+				"fromVertexHeight": fromVertexHeight,
+				"toVertexHeight":   toVertexHeight,
 			}).Info("Big step leaf commit")
-			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, 0, 1)
+			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromAssertionHeight, toAssertionHeight)
+			fmt.Printf("%+v\n", history)
 		case protocol.SmallStepChallenge:
-			log.WithFields(logrus.Fields{
-				"name":       vt.cfg.validatorName,
-				"fromHeight": fromHeight,
-				"toHeight":   toHeight,
-			}).Info("Small step leaf commit")
-			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, 0, 1)
+			return errors.New("not supported")
+			// log.WithFields(logrus.Fields{
+			// 	"name":       vt.cfg.validatorName,
+			// 	"fromHeight": fromHeight,
+			// 	"toHeight":   toHeight,
+			// }).Info("Small step leaf commit")
+			// history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, 0, 1)
 		default:
 			return errors.New("unsupported subchallenge type for creating leaf commitment")
 		}

@@ -85,13 +85,13 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Bob bisects from 3 to 2, is presumptive.
 		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
-		cfg.expectedVerticesAdded = 2
+		cfg.expectedVerticesAdded = 4
 		cfg.expectedBisections = 4
 		cfg.expectedMerges = 2
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 488")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 838")
 	})
 	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
 		t.Skip("Flakey")
@@ -292,8 +292,8 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	honestManager, err := statemanager.NewWithAssertionStates(
 		honestStates,
 		honestInboxCounts,
-		statemanager.WithMaxWavmOpcodesPerBlock(100), // TODO(RJ): Configure.
-		statemanager.WithNumOpcodesPerBigStep(10),
+		statemanager.WithMaxWavmOpcodesPerBlock(56), // TODO(RJ): Configure.
+		statemanager.WithNumOpcodesPerBigStep(8),
 	)
 	require.NoError(t, err)
 	aliceAddr := accs[1].accountAddr
@@ -314,8 +314,8 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	maliciousManager, err := statemanager.NewWithAssertionStates(
 		maliciousStates,
 		maliciousInboxCounts,
-		statemanager.WithMaxWavmOpcodesPerBlock(100), // TODO(RJ): Configure.
-		statemanager.WithNumOpcodesPerBigStep(10),
+		statemanager.WithMaxWavmOpcodesPerBlock(56), // TODO(RJ): Configure.
+		statemanager.WithNumOpcodesPerBigStep(8),
 		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
