@@ -116,6 +116,8 @@ type ExecutionNode struct {
 	Sequencer     *Sequencer // either nil or same as TxPublisher
 	TxPublisher   TransactionPublisher
 	ConfigFetcher ConfigFetcher
+	L1Reader      *headerreader.HeaderReader
+	ClassicOutbox *ClassicOutboxRetriever
 }
 
 func CreateExecutionNode(
@@ -162,7 +164,7 @@ func CreateExecutionNode(
 
 	strictnessFetcher := func() uint { return configFetcher().TxPreCheckerStrictness }
 	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, strictnessFetcher)
-	arbInterface, err := NewArbInterface(execEngine, txPublisher)
+	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +175,17 @@ func CreateExecutionNode(
 	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	var classicOutbox *ClassicOutboxRetriever
+	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
+	if err != nil {
+		if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
+			log.Warn("Classic Msg Database not found", "err", err)
+		}
+		classicOutbox = nil
+	} else {
+		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 	}
 
 	apis := []rpc.API{{
@@ -218,11 +231,13 @@ func CreateExecutionNode(
 		sequencer,
 		txPublisher,
 		configFetcher,
+		l1Reader,
+		classicOutbox,
 	}, nil
 
 }
 
-func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, sync arbitrum.SyncProgressBackend) error {
+func (n *ExecutionNode) Initialize(ctx context.Context, sync arbitrum.SyncProgressBackend) error {
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
@@ -320,15 +335,19 @@ func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil
 func (n *ExecutionNode) Pause() {
 	n.Sequencer.Pause()
 }
+
 func (n *ExecutionNode) Activate() {
 	n.Sequencer.Activate()
 }
+
 func (n *ExecutionNode) ForwardTo(url string) error {
 	return n.Sequencer.ForwardTo(url)
 }
+
 func (n *ExecutionNode) SetTransactionStreamer(streamer execution.TransactionStreamer) {
 	n.ExecEngine.SetTransactionStreamer(streamer)
 }
+
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }

@@ -81,6 +81,10 @@ func (s *ExecutionEngine) SetTransactionStreamer(streamer execution.TransactionS
 	s.streamer = streamer
 }
 
+func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+	return s.streamer
+}
+
 func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
 	if count == 0 {
 		return errors.New("cannot reorg out genesis")

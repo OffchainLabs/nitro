@@ -20,30 +20,31 @@ type TransactionPublisher interface {
 }
 
 type ArbInterface struct {
-	exec        *ExecutionEngine
+	blockchain  *core.BlockChain
+	node        *ExecutionNode
 	txPublisher TransactionPublisher
-	arbNode     interface{}
 }
 
-func NewArbInterface(exec *ExecutionEngine, txPublisher TransactionPublisher) (*ArbInterface, error) {
+func NewArbInterface(blockchain *core.BlockChain, txPublisher TransactionPublisher) (*ArbInterface, error) {
 	return &ArbInterface{
-		exec:        exec,
+		blockchain:  blockchain,
 		txPublisher: txPublisher,
 	}, nil
 }
 
-func (a *ArbInterface) Initialize(arbnode interface{}) {
-	a.arbNode = arbnode
+func (a *ArbInterface) Initialize(node *ExecutionNode) {
+	a.node = node
 }
 
 func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	return a.txPublisher.PublishTransaction(ctx, tx)
 }
 
+// might be used before Initialize
 func (a *ArbInterface) BlockChain() *core.BlockChain {
-	return a.exec.bc
+	return a.blockchain
 }
 
 func (a *ArbInterface) ArbNode() interface{} {
-	return a.arbNode
+	return a.node
 }

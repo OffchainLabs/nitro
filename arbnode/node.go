@@ -537,7 +537,6 @@ type Node struct {
 	SeqCoordinator          *SeqCoordinator
 	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
-	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
@@ -617,16 +616,6 @@ func createNodeImpl(
 	// config.Dangerous.ReorgToBlock >= 0 {
 
 	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
-	var classicOutbox *ClassicOutboxRetriever
-	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
-	if err != nil {
-		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
-			log.Warn("Classic Msg Database not found", "err", err)
-		}
-		classicOutbox = nil
-	} else {
-		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
-	}
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
@@ -717,7 +706,6 @@ func createNodeImpl(
 			coordinator,
 			maintenanceRunner,
 			nil,
-			classicOutbox,
 			syncMonitor,
 			configFetcher,
 			ctx,
@@ -894,7 +882,6 @@ func createNodeImpl(
 		coordinator,
 		maintenanceRunner,
 		dasLifecycleManager,
-		classicOutbox,
 		syncMonitor,
 		configFetcher,
 		ctx,
@@ -954,7 +941,7 @@ func (n *Node) Start(ctx context.Context) error {
 		execClient = nil
 	}
 	if execClient != nil {
-		err := execClient.Initialize(ctx, n, n.SyncMonitor)
+		err := execClient.Initialize(ctx, n.SyncMonitor)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}

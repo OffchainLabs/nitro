@@ -182,6 +182,11 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
+func (t *InboxTracker) GetBatchL1Block(seqNum uint64) (uint64, error) {
+	metadata, err := t.GetBatchMetadata(seqNum)
+	return metadata.L1Block, err
+}
+
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
@@ -199,6 +204,44 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (t *InboxTracker) FindL1BatchForMessage(pos arbutil.MessageIndex) (uint64, error) {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return 0, err
+	}
+	low := uint64(0)
+	high := batchCount - 1
+	// Iteration preconditions:
+	// - high >= low
+	// - msgCount(low - 1) <= pos implies low <= target
+	// - msgCount(high) > pos implies high >= target
+	// Therefore, if low == high, then low == high == target
+	for {
+		// Due to integer rounding, mid >= low && mid < high
+		mid := (low + high) / 2
+		count, err := t.GetBatchMessageCount(mid)
+		if err != nil {
+			return 0, err
+		}
+		if count < pos {
+			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
+			// Keeps low precondition as msgCount(mid) < pos
+			low = mid + 1
+		} else if count == pos {
+			return mid + 1, err
+		} else if count == pos+1 || mid == low { // implied: count > pos
+			return mid, nil
+		} else { // implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < lowHigh
+			// Keeps high precondition as msgCount(mid) > pos
+			high = mid
+		}
+		if high == low {
+			return high, err
+		}
+	}
 }
 
 func (t *InboxTracker) populateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {

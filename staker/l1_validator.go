@@ -302,7 +302,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			batchNum = localBatchCount - 1
 			validatedCount = messageCount
 		} else {
-			batchNum, err = FindBatchContainingMessageIndex(v.inboxTracker, validatedCount-1, localBatchCount)
+			batchNum, err = v.inboxTracker.FindL1BatchForMessage(validatedCount - 1)
 			if err != nil {
 				return nil, false, err
 			}

@@ -752,6 +752,14 @@ func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
 	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
 
+func (s *TransactionStreamer) FindL1BatchForMessage(pos arbutil.MessageIndex) (uint64, error) {
+	return s.inboxReader.tracker.FindL1BatchForMessage(pos)
+}
+
+func (s *TransactionStreamer) GetBatchL1Block(seqNum uint64) (uint64, error) {
+	return s.inboxReader.tracker.GetBatchL1Block(seqNum)
+}
+
 // The caller must hold the insertionMutex
 func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	if s.coordinator != nil {
