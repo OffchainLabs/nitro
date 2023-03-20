@@ -406,8 +406,9 @@ func (v *Validator) onLeafCreated(
 
 	// Keep track of assertions by parent state root to more easily detect forks.
 	var prev protocol.Assertion
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		assertionPrevSeqNum, err := assertion.PrevSeqNum()
+	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
+		var assertionPrevSeqNum protocol.AssertionSequenceNumber
+		assertionPrevSeqNum, err = assertion.PrevSeqNum()
 		if err != nil {
 			return err
 		}
