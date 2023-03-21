@@ -13,6 +13,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var ErrNoRootVertex = errors.New("root vertex not found")
+
 func (c *Challenge) Id() protocol.ChallengeHash {
 	return c.id
 }
@@ -29,7 +31,7 @@ func (c *Challenge) RootAssertion(
 		return nil, err
 	}
 	if rootVertex.IsNone() {
-		return nil, errors.New("root vertex not found")
+		return nil, ErrNoRootVertex
 	}
 	root := rootVertex.Unwrap().(*ChallengeVertex)
 	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
@@ -56,7 +58,7 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 		return nil, err
 	}
 	if rootV.IsNone() {
-		return nil, errors.New("no root vertex for challenge found")
+		return nil, ErrNoRootVertex
 	}
 	root, ok := rootV.Unwrap().(*ChallengeVertex)
 	if !ok {
@@ -67,7 +69,7 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 		return nil, err
 	}
 	if claimVertexV.IsNone() {
-		return nil, errors.New("no root vertex for challenge found")
+		return nil, ErrNoRootVertex
 	}
 	claimVertex := claimVertexV.Unwrap()
 
@@ -97,7 +99,7 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 		return nil, err
 	}
 	if bigStepRootV.IsNone() {
-		return nil, errors.New("no root vertex for challenge found")
+		return nil, ErrNoRootVertex
 	}
 	bigStepRoot, ok := bigStepRootV.Unwrap().(*ChallengeVertex)
 	if !ok {
@@ -151,7 +153,7 @@ func (c *Challenge) ParentStateCommitment(
 		return util.StateCommitment{}, err
 	}
 	if v.IsNone() {
-		return util.StateCommitment{}, errors.New("no root vertex for challenge")
+		return util.StateCommitment{}, ErrNoRootVertex
 	}
 	concreteV, ok := v.Unwrap().(*ChallengeVertex)
 	if !ok {
@@ -313,7 +315,7 @@ func (c *Challenge) AddSubChallengeLeaf(
 			opts,
 			leafData,
 			flatLastLeafProof,
-			flatLastLeafProof, // TODO(RJ): Should be different for big and small step.
+			flatLastLeafProof,
 		)
 	})
 	if err != nil {
