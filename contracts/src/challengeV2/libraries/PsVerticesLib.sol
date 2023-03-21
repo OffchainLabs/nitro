@@ -4,8 +4,7 @@ pragma solidity ^0.8.17;
 import "../DataEntities.sol";
 import "./ChallengeVertexLib.sol";
 
-/// @title Presumptive Successor Vertices library
-/// @author Offchain Labs
+/// @title  Presumptive Successor Vertices library
 /// @notice A collection of challenge vertices linked by: predecessorId, psId and lowestHeightSuccessorId
 ///         This library allows vertices to be connected and these ids updated only in ways that preserve
 ///         presumptive successor behaviour

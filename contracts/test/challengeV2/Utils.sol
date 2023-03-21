@@ -2,6 +2,8 @@
 pragma solidity ^0.8.17;
 
 import "../../src/challengeV2/libraries/MerkleTreeLib.sol";
+import "../../src/challengeV2/libraries/UintUtilsLib.sol";
+import "../../src/challengeV2/libraries/ArrayUtilsLib.sol";
 import "forge-std/Test.sol";
 
 contract Random {
@@ -37,9 +39,10 @@ library Logger {
 }
 
 library ProofUtils {
-    // CHRIS: TODO: known risk in unbounded loop
-    // CHRIS: TODO: document that this is end exclusive
     /// @notice Create a merkle expansion from an array of leaves
+    /// @param leaves The leaves to form into an expansion
+    /// @param leafStartIndex The subset of the leaves to start the expansion from - inclusive
+    /// @param leafEndIndex The subset of the leaves to end the expansion from - exclusive
     function expansionFromLeaves(bytes32[] memory leaves, uint256 leafStartIndex, uint256 leafEndIndex)
         internal
         pure
@@ -85,7 +88,7 @@ library ProofUtils {
             uint256 endIndex = startIndex + numLeaves;
             // create a complete sub tree at the specified level
             bytes32[] memory exp = expansionFromLeaves(newLeaves, startIndex, endIndex);
-            proof = ArrayUtils.append(proof, MerkleTreeLib.root(exp));
+            proof = ArrayUtilsLib.append(proof, MerkleTreeLib.root(exp));
 
             size += numLeaves;
 
@@ -101,7 +104,7 @@ library ProofUtils {
         bytes32[][] memory fullT = fullTree(leaves);
         if (leaves.length == 1) return new bytes32[](0);
 
-        uint256 maxLevel = UintUtils.mostSignificantBit(leaves.length - 1);
+        uint256 maxLevel = UintUtilsLib.mostSignificantBit(leaves.length - 1);
 
         bytes32[] memory proof = new bytes32[](maxLevel + 1);
 
@@ -118,8 +121,8 @@ library ProofUtils {
     }
 
     function fullTree(bytes32[] memory leaves) internal pure returns (bytes32[][] memory) {
-        uint256 msb = UintUtils.mostSignificantBit(leaves.length);
-        uint256 lsb = UintUtils.leastSignificantBit(leaves.length);
+        uint256 msb = UintUtilsLib.mostSignificantBit(leaves.length);
+        uint256 lsb = UintUtilsLib.leastSignificantBit(leaves.length);
 
         uint256 maxLevel = msb == lsb ? msb : msb + 1;
 

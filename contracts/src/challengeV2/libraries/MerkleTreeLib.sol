@@ -2,179 +2,81 @@
 pragma solidity ^0.8.17;
 
 import "../../libraries/MerkleLib.sol";
+import "./ArrayUtilsLib.sol";
+import "./UintUtilsLib.sol";
 
-library ArrayUtils {
-    function append(bytes32[] memory arr, bytes32 newItem) internal pure returns (bytes32[] memory) {
-        bytes32[] memory clone = new bytes32[](arr.length + 1);
-        for (uint256 i = 0; i < arr.length; i++) {
-            clone[i] = arr[i];
-        }
-        clone[clone.length - 1] = newItem;
-        return clone;
-    }
-
-    // start index inclusive, end index not
-    function slice(bytes32[] memory arr, uint256 startIndex, uint256 endIndex)
-        internal
-        pure
-        returns (bytes32[] memory)
-    {
-        bytes32[] memory newArr = new bytes32[](endIndex - startIndex);
-        for (uint256 i = startIndex; i < endIndex; i++) {
-            newArr[i - startIndex] = arr[i];
-        }
-        return newArr;
-    }
-
-    function concat(bytes32[] memory arr1, bytes32[] memory arr2) internal pure returns (bytes32[] memory) {
-        bytes32[] memory full = new bytes32[](arr1.length + arr2.length);
-        for (uint256 i = 0; i < arr1.length; i++) {
-            full[i] = arr1[i];
-        }
-        for (uint256 i = 0; i < arr2.length; i++) {
-            full[arr1.length + i] = arr2[i];
-        }
-        return full;
-    }
-}
-
-// CHRIS: TODO: rework this file and add proper unit tests - not just round trips
-// CHRIS: TODO: integration test with proof.go?
-// CHRIS: TODO: revert everything to pure
-// CHRIS: TODO: consolidate with the existing merklelib
-// CHRIS: TODO: sort out hasstate
-// CHRIS: TODO: copied from challengemanager lib - should remove and reuse
-// CHRIS: TODO: uncomment the contents of hasState
-// CHRIS: TODO: document and test hasState
-
-library UintUtils {
-    // Find the index (from least sig) of the least significant bit
-    function leastSignificantBit(uint256 x) internal pure returns (uint256 msb) {
-        require(x > 0, "Zero has no significant bits");
-
-        uint256 i = 0;
-        while ((x <<= 1) != 0) {
-            ++i;
-        }
-        return 256 - i - 1;
-    }
-
-    // take from https://solidity-by-example.org/bitwise/
-    // Find the index (from least sig) of the most significant bit using binary search
-    function mostSignificantBit(uint256 x) internal pure returns (uint256 msb) {
-        require(x != 0, "Zero has no significant bits");
-
-        // x >= 2 ** 128
-        if (x >= 0x100000000000000000000000000000000) {
-            x >>= 128;
-            msb += 128;
-        }
-        // x >= 2 ** 64
-        if (x >= 0x10000000000000000) {
-            x >>= 64;
-            msb += 64;
-        }
-        // x >= 2 ** 32
-        if (x >= 0x100000000) {
-            x >>= 32;
-            msb += 32;
-        }
-        // x >= 2 ** 16
-        if (x >= 0x10000) {
-            x >>= 16;
-            msb += 16;
-        }
-        // x >= 2 ** 8
-        if (x >= 0x100) {
-            x >>= 8;
-            msb += 8;
-        }
-        // x >= 2 ** 4
-        if (x >= 0x10) {
-            x >>= 4;
-            msb += 4;
-        }
-        // x >= 2 ** 2
-        if (x >= 0x4) {
-            x >>= 2;
-            msb += 2;
-        }
-        // x >= 2 ** 1
-        if (x >= 0x2) msb += 1;
-    }
-}
-
+/// @title   Binary merkle tree utilities
+/// @notice
+///         Binary trees
+///         --------------------------------------------------------------------------------------------
+///         A complete tree is a balanced binary tree - each node has two children except the leaf
+///         Leaves have no children, they are a complete tree of size one
+///         Any tree (can be incomplete) can be represented as a collection of complete sub trees.
+///         Since the tree is binary only one or zero complete tree at each level is enough to define any size of tree.
+///         The root of a tree (incomplete or otherwise) is defined as the cumulative hashing of all of the
+///         roots of each of it's complete and empty subtrees.
+///         ---------
+///         eg. Below a tree of size 3 is represented as the composition of 2 complete subtrees, one of size
+///         2 (AB) and one of size one (C).
+///            AB
+///           /  \
+///          A    B    C
+///
+///         Merkle expansions and roots
+///         --------------------------------------------------------------------------------------------
+///         The minimal amount of information we need to keep in order to compute the root of a tree
+///         is the roots of each of it's sub trees, and the levels of each of those trees
+///         A "merkle expansion" (ME) is this information - it is a vector of roots of each complete subtree,
+///         the level of the tree being the index in the vector, the subtree root being the value.
+///         The root is calculated by hashing each of the levels of the subtree together, adding zero hashes
+///         where relevant to make a balanced tree.
+///         ---------
+///         eg. from the example above
+///         ME of the AB tree = (0, AB), root=AB
+///         ME of the C tree = (C), root=(C, 0)
+///         ME of the composed ABC tree = (AB, C), root=hash(AB, hash(C, 0)) - here C is hashed with 0
+///         to balance the tree, before then being hashed with AB.
+///
+///         Tree operations
+///         --------------------------------------------------------------------------------------------
+///         Binary trees are modified by adding or subtracting complete subtrees, however this libary
+///         supports additive only trees since we dont have a specific use for subtraction at the moment.
+///         We call adding a complete subtree to an existing tree "appending", appending has the following
+///         rules:
+///         1. Only a complete sub trees can be appended
+///         2. Complete sub trees can only be appended at the level of the lowest complete subtree in the tree, or below
+///         3. If the existing tree is empty a sub tree can be appended at any level
+///         When appending a sub tree we may increase the size of the merkle expansion vector, in the same
+///         that adding 1 to a binary number may increase the index of its most significant bit
+///         ---------
+///         eg. A complete subtree can only be appended to the ABC tree at level 0, since the its lowest complete
+///         subtree (C) is at level 0. Doing so would create a complete sub tree at level 1, which would in turn
+///         cause the creation of new size 4 sub tree
+///
+///                                         ABCD
+///                                       /     \
+///            AB                        AB     CD
+///           /  \         +       =    /  \   /  \
+///          A    B    C       D       A    B C    D
+///
+///         ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
+///         --------------------------------------------------------------------------------------------
 library MerkleTreeLib {
     uint256 public constant MAX_LEVEL = 256;
 
-    // CHRIS: TODO: update comments for size
-
-    // Binary trees
-    // --------------------------------------------------------------------------------------------
-    // A complete tree is a balanced binary tree - each node has two children except the leaf
-    // Leaves have no children, they are a complete tree of size one
-    // Any tree (can be incomplete) can be represented as a collection of complete sub trees.
-    // Since the tree is binary only one or zero complete tree at each level is enough to define any size of tree.
-    // The root of a tree (incomplete or otherwise) is defined as the cumulative hashing of all of the
-    // roots of each of it's complete and empty subtrees.
-    // ---------
-    // eg. Below a tree of size 3 is represented as the composition of 2 complete subtrees, one of size
-    // 2 (AB) and one of size one (C).
-    //    AB
-    //   /  \
-    //  A    B    C
-
-    // Merkle expansions and roots
-    // --------------------------------------------------------------------------------------------
-    // The minimal amount of information we need to keep in order to compute the root of a tree
-    // is the roots of each of it's sub trees, and the levels of each of those trees
-    // A "merkle expansion" (ME) is this information - it is a vector of roots of each complete subtree,
-    // the level of the tree being the index in the vector, the subtree root being the value.
-    // The root is calculated by hashing each of the levels of the subtree together, adding zero hashes
-    // where relevant to make a balanced tree.
-    // ---------
-    // eg. from the example above
-    // ME of the AB tree = (0, AB), root=AB
-    // ME of the C tree = (C), root=(C, 0)
-    // ME of the composed ABC tree = (AB, C), root=hash(AB, hash(C, 0)) - here C is hashed with 0
-    // to balance the tree, before then being hashed with AB.
-
-    // Tree operations
-    // --------------------------------------------------------------------------------------------
-    // Binary trees are modified by adding or subtracting complete subtrees, however this libary
-    // supports additive only trees since we dont have a specific use for subtraction at the moment.
-    // We call adding a complete subtree to an existing tree "appending", appending has the following
-    // rules:
-    // 1. Only a complete sub trees can be appended
-    // 2. Complete sub trees can only be appended at the level of the lowest complete subtree in the tree, or below
-    // 3. If the existing tree is empty a sub tree can be appended at any level
-    // When appending a sub tree we may increase the size of the merkle expansion vector, in the same
-    // that adding 1 to a binary number may increase the index of its most significant bit
-    // ---------
-    // eg. A complete subtree can only be appended to the ABC tree at level 0, since the its lowest complete
-    // subtree (C) is at level 0. Doing so would create a complete sub tree at level 1, which would in turn
-    // cause the creation of new size 4 sub tree
-    //
-    //                                 ABCD
-    //                               /     \
-    //    AB                        AB     CD
-    //   /  \         +       =    /  \   /  \
-    //  A    B    C       D       A    B C    D
-    //
-    // ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
-    // --------------------------------------------------------------------------------------------
-
     /// @notice The root of the subtree. A collision free commitment to the contents of the tree.
     /// @dev    The root of a tree is defined as the cumulative hashing of the
-    //          roots of all of it's subtrees. Returns 0 for empty tree.
+    ///         roots of all of it's subtrees. Returns 0 for empty tree.
+    /// @param me   The merkle expansion to calculate the root of
     function root(bytes32[] memory me) internal pure returns (bytes32) {
-        bool empty = true;
+        require(me.length > 0, "Empty merkle expansion");
+        require(me.length <= MAX_LEVEL, "Merkle expansion too large");
+
         bytes32 accum = 0;
         for (uint256 i = 0; i < me.length; i++) {
             bytes32 val = me[i];
-            if (empty) {
+            if (accum == 0) {
                 if (val != 0) {
-                    empty = false;
                     accum = val;
 
                     // the tree is balanced if the only non zero entry in the merkle extension
@@ -186,6 +88,8 @@ library MerkleTreeLib {
                     }
                 }
             } else if (val != 0) {
+                // accum represents the smaller sub trees, since it is earlier in the expansion
+                // we put the larger subtrees on the left
                 accum = keccak256(abi.encodePacked(val, accum));
             } else {
                 // by definition we always complete trees by appending zeros to the right
@@ -202,6 +106,9 @@ library MerkleTreeLib {
     ///         exact power of two (complete), and must equal to or less than the least signficant bit
     ///         in the existing tree.
     ///         If the me is empty, will just append directly.
+    /// @param me           The merkle expansion to append a complete sub tree to
+    /// @param level        The level at which to append the complete subtree
+    /// @param subtreeRoot  The root of the complete subtree to be appended
     function appendCompleteSubTree(bytes32[] memory me, uint256 level, bytes32 subtreeRoot)
         internal
         pure
@@ -211,27 +118,29 @@ library MerkleTreeLib {
         // that's too high to use in uint
         require(level < MAX_LEVEL, "Level too high");
         require(subtreeRoot != 0, "Cannot append empty subtree");
+        require(me.length <= MAX_LEVEL, "Merkle expansion too large");
 
-        bytes32[] memory empty = new bytes32[](level + 1);
         if (me.length == 0) {
-            for (uint256 i = 0; i <= level; i++) {
-                if (i == level) {
-                    empty[i] = subtreeRoot;
-                    return empty;
-                } else {
-                    empty[i] = 0;
-                }
-            }
+            bytes32[] memory empty = new bytes32[](level + 1);
+            empty[level] = subtreeRoot;
+            return empty;
         }
 
-        if (level >= me.length) {
-            // This technically isn't necessary since it would be caught by the i < level check
-            // on the last loop of the for-loop below, but we add it for a clearer error message
-            revert("Level greater than highest level of current expansion");
-        }
+        // This technically isn't necessary since it would be caught by the i < level check
+        // on the last loop of the for-loop below, but we add it for a clearer error message
+        require(level < me.length, "Level greater than highest level of current expansion");
 
         bytes32 accumHash = subtreeRoot;
-        bytes32[] memory next = new bytes32[](me.length);
+        uint256 meSize = treeSize(me);
+        // we'll throw an arithmetic error here upon overflow, so we ensure that
+        // that we're never creating a expansion with more than MAX_LEVEL entries
+        uint256 postSize = meSize + 2 ** level;
+
+        // if by appending the sub tree we increase the numbe of most sig bits of the size, that means
+        // we'll need more space in the expansion to describe the tree, so we enlarge by one
+        bytes32[] memory next = UintUtilsLib.mostSignificantBit(postSize) > UintUtilsLib.mostSignificantBit(meSize)
+            ? new bytes32[](me.length + 1)
+            : new bytes32[](me.length );
 
         // loop through all the levels in self and try to append the new subtree
         // since each node has two children by appending a subtree we may complete another one
@@ -268,12 +177,15 @@ library MerkleTreeLib {
         }
 
         // we had a final change to propagate above the existing highest complete sub tree
-        // so we have a new highest complete sub tree in the level above
+        // so we have a new highest complete sub tree in the level above - this was why we
+        // increased the storeage above
         if (accumHash != 0) {
-            next = ArrayUtils.append(next, accumHash);
+            next[next.length - 1] = accumHash;
         }
 
-        require(next.length < MAX_LEVEL + 1, "Level too high");
+        // it should never be possible to achieve this ever we sized the array correctly
+        // so this is just a sanity check
+        require(next[next.length - 1] != 0, "Last entry zero");
 
         return next;
     }
@@ -281,6 +193,8 @@ library MerkleTreeLib {
     /// @notice Append a leaf to a subtree
     /// @dev    Leaves are just complete subtrees at level 0, however we hash the leaf before putting it
     ///         into the tree to avoid root collisions.
+    /// @param me   The merkle expansion to append a leaf to
+    /// @param leaf The leaf to append - will be hashed in here before appending
     function appendLeaf(bytes32[] memory me, bytes32 leaf) internal pure returns (bytes32[] memory) {
         // it's important that we hash the leaf, this ensures that this leaf cannot be a collision with any other non leaf
         // or root node, since these are always the hash of 64 bytes of data, and we're hashing 32 bytes
@@ -292,9 +206,10 @@ library MerkleTreeLib {
     /// @dev    Subtrees can only be appended according to certain rules, see tree description at top of file
     ///         for details. A subtree can only be appended if it is at the same level, or below, the current lowest
     ///         subtree in the expansion
+    /// @param startSize    The size of the start tree to find the maximum append to
+    /// @param endSize      The size of the end tree to find a maximum append under
     function maximumAppendBetween(uint256 startSize, uint256 endSize) internal pure returns (uint256) {
         // Since the tree is binary we can represent it using the binary representation of a number
-        // We use size here instead of height since height is zero indexed
         // As described above, subtrees can only be appended to a tree if they are at the same level, or below,
         // the current lowest subtree.
         // In this function we want to find the level of the highest tree that can be appended to the current
@@ -310,7 +225,7 @@ library MerkleTreeLib {
         require(startSize < endSize, "Start not less than end");
 
         // remove the high order bits that are shared
-        uint256 msb = UintUtils.mostSignificantBit(startSize ^ endSize);
+        uint256 msb = UintUtilsLib.mostSignificantBit(startSize ^ endSize);
         uint256 mask = (1 << (msb) + 1) - 1;
         uint256 y = startSize & mask;
         uint256 z = endSize & mask;
@@ -318,23 +233,42 @@ library MerkleTreeLib {
         // Since in the verification we will be appending at start size, the highest level at which we
         // can append is the lowest complete subtree - the least significant bit
         if (y != 0) {
-            return UintUtils.leastSignificantBit(y);
+            return UintUtilsLib.leastSignificantBit(y);
         }
 
         // y == 0, therefore we can append at any of levels where start and end differ
         // The highest level that we can append at without surpassing the end, is the most significant
         // bit of the end
         if (z != 0) {
-            return UintUtils.mostSignificantBit(z);
+            return UintUtilsLib.mostSignificantBit(z);
         }
 
         // since we enforce that start < end, we know that y and z cannot both be 0
         revert("Both y and z cannot be zero");
     }
 
+    /// @notice Calculate the full tree size represented by a merkle expansion
+    /// @param me   The merkle expansion to calculate the tree size of
+    function treeSize(bytes32[] memory me) internal pure returns (uint256) {
+        uint256 sum = 0;
+        for (uint256 i = 0; i < me.length; i++) {
+            if (me[i] != 0) {
+                sum += 2 ** i;
+            }
+        }
+        return sum;
+    }
+
     /// @notice Verify that a pre-root commits to a prefix of the leaves committed by a post-root
     /// @dev    Verifies by appending sub trees to the pre tree until we get to the size of the post tree
     ///         and then checking that the root of the calculated post tree is equal to the supplied one
+    /// @param preRoot      The root of the tree which is a prefix of the post tree
+    /// @param preSize      The size of the pre-tree
+    /// @param postRoot     The root the post-tree - the tree which we're proving pre is a prefix of
+    /// @param postSize     The size of the post-tree
+    /// @param preExpansion The merkle expansion of the pre-tree
+    /// @param proof        The proof is the minimum set of complete sub-tree hashes that can be appended to
+    ///                     the pre-tree in order to form the post tree
     function verifyPrefixProof(
         bytes32 preRoot,
         uint256 preSize,
@@ -345,16 +279,20 @@ library MerkleTreeLib {
     ) internal pure {
         require(preSize > 0, "Pre-size cannot be 0");
         require(root(preExpansion) == preRoot, "Pre expansion root mismatch");
+        require(treeSize(preExpansion) == preSize, "Pre size does not match expansion");
         require(preSize < postSize, "Pre size not less than post size");
 
         uint256 size = preSize;
         uint256 proofIndex = 0;
+        // we clone here to avoid mutating the input arguments
+        // which could be unexpected for callers
+        bytes32[] memory exp = ArrayUtilsLib.slice(preExpansion, 0, preExpansion.length);
 
         // Iteratively append a tree at the maximum possible level until we get to the post size
         while (size < postSize) {
             uint256 level = maximumAppendBetween(size, postSize);
 
-            preExpansion = appendCompleteSubTree(preExpansion, level, proof[proofIndex]);
+            exp = appendCompleteSubTree(exp, level, proof[proofIndex]);
 
             uint256 numLeaves = 1 << level;
             size += numLeaves;
@@ -363,15 +301,21 @@ library MerkleTreeLib {
         }
 
         // Check that the calculated root is equal to the provided post root
-        require(root(preExpansion) == postRoot, "Post expansion root not equal post");
+        require(root(exp) == postRoot, "Post expansion root not equal post");
 
         // ensure that we consumed the full proof
+        // this is just a safety check to guard against mistakenly supplied args
         require(proofIndex == proof.length, "Incomplete proof usage");
     }
 
     /// @notice Using the provided proof verify that the provided leaf is included in the roothash at
-    ///         the specified index
-    function hasState(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
+    ///         the specified index. Note that here we use a 0-indexed value for the leaf number, whereas
+    ///         elsewhere we use size.
+    /// @param rootHash The root hash to prove inclusion in
+    /// @param leaf     The leaf preimage to prove inclusion - will be hashed in here before checking inclusion
+    /// @param index    The index of the leaf in the tree
+    /// @param proof    The path from the leaf to the root
+    function verifyInclusionProof(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
         internal
         pure
         returns (bool)

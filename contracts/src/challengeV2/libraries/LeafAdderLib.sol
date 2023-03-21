@@ -31,7 +31,7 @@ library LeafAdderLib {
 
         // CHRIS: TODO: also check the root is in the history at height 0/1?
         require(
-            MerkleTreeLib.hasState(
+            MerkleTreeLib.verifyInclusionProof(
                 leafData.historyRoot, leafData.lastState, leafData.height, leafData.lastStatehistoryProof
             ),
             "Last state not in history"
@@ -39,7 +39,9 @@ library LeafAdderLib {
 
         // CHRIS: TODO: do we need to pass in first state if we can derive it from the root id?
         require(
-            MerkleTreeLib.hasState(leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof),
+            MerkleTreeLib.verifyInclusionProof(
+                leafData.historyRoot, leafData.firstState, 0, leafData.firstStatehistoryProof
+            ),
             "First state not in history"
         );
 
@@ -253,7 +255,7 @@ library SmallStepLeafAdder {
             // regardless of the height
             // CHRIS: TODO: skip the test for now, as I'm not sure it's relevant
             // require(
-            //     MerkleTreeLib.hasState(
+            //     MerkleTreeLib.verifyInclusionProof(
             //         vertices[leafLibArgs.leafData.claimId].historyRoot,
             //         leafLibArgs.leafData.lastState,
             //         vertices[leafLibArgs.leafData.claimId].height,
