@@ -227,7 +227,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		// Terminal state does nothing. The vertex tracker will end next time it acts.
 		isPs, err := vt.isPresumptive(ctx)
 		if err != nil {
-			return errors.Wrap(err, "could ont check if presumptive")
+			return errors.Wrap(err, "could not check if presumptive")
 		}
 		if !isPs {
 			return vt.fsm.Do(backToStart{})
