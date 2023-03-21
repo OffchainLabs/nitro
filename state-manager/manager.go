@@ -249,6 +249,7 @@ func (s *Simulated) setupEngine(fromHeight, toHeight uint64) (*execution.Engine,
 	)
 }
 
+// BigStepCommitmentUpTo creates a history commitment up to a big step.
 func (s *Simulated) BigStepCommitmentUpTo(
 	ctx context.Context,
 	fromAssertionHeight,
@@ -302,6 +303,7 @@ func (s *Simulated) SmallStepLeafCommitment(
 	)
 }
 
+// SmallStepCommitmentUpTo creates a history commitment up to a program counter (step).
 func (s *Simulated) SmallStepCommitmentUpTo(
 	ctx context.Context,
 	fromAssertionHeight,
@@ -330,6 +332,7 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 	return util.NewHistoryCommitment(toPc, leaves)
 }
 
+// Generates the intermediate machine hashes up to a certain step from a given engine.
 func (s *Simulated) intermediateLeavesFromEngineSteps(
 	toStep,
 	fromAssertionHeight,
@@ -352,6 +355,9 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 			return nil, err
 		}
 		var hash common.Hash
+
+		// For testing purposes, if we want to diverge from the honest
+		// hashes starting at a specified hash.
 		if divergenceHeight == 0 || i+1 < divergenceHeight {
 			hash = intermediateState.Hash()
 		} else {
@@ -362,6 +368,7 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 	return leaves, nil
 }
 
+// BigStepPrefixProof for a big step subchallenge from assertion N to N+1 from a height lo to hi.
 func (s *Simulated) BigStepPrefixProof(
 	ctx context.Context,
 	fromAssertionHeight,
@@ -369,6 +376,9 @@ func (s *Simulated) BigStepPrefixProof(
 	lo,
 	hi uint64,
 ) ([]byte, error) {
+	if fromAssertionHeight+1 != toAssertionHeight {
+		return nil, errors.New("assertions are not one height apart")
+	}
 	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
 		return nil, err
@@ -376,38 +386,19 @@ func (s *Simulated) BigStepPrefixProof(
 	if engine.NumOpcodes() < hi {
 		return nil, err
 	}
-	loSize := lo + 1
-	hiSize := hi + 1
-	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
-		hiSize,
+	return s.subchallengePrefixProof(
+		engine,
 		fromAssertionHeight,
 		toAssertionHeight,
 		protocol.BigStepChallenge,
 		s.bigStepDivergenceHeight,
-		engine,
+		lo,
+		hi,
 		engine.StateAfterBigSteps,
 	)
-	if err != nil {
-		return nil, err
-	}
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(prefixLeaves[:loSize])
-	if err != nil {
-		return nil, err
-	}
-	prefixProof, err := prefixproofs.GeneratePrefixProof(
-		loSize,
-		prefixExpansion,
-		prefixLeaves[loSize:hiSize],
-		prefixproofs.RootFetcherFromExpansion,
-	)
-	if err != nil {
-		return nil, err
-	}
-	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
-	onlyProof := prefixProof[numRead:]
-	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
 
+// SmallStepPrefixProof for a small step subchallenge from assertion N to N+1 from a height lo to hi.
 func (s *Simulated) SmallStepPrefixProof(
 	ctx context.Context,
 	fromAssertionHeight,
@@ -415,6 +406,9 @@ func (s *Simulated) SmallStepPrefixProof(
 	lo,
 	hi uint64,
 ) ([]byte, error) {
+	if fromAssertionHeight+1 != toAssertionHeight {
+		return nil, errors.New("assertions are not one height apart")
+	}
 	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
 		return nil, err
@@ -422,16 +416,38 @@ func (s *Simulated) SmallStepPrefixProof(
 	if engine.NumOpcodes() < hi {
 		return nil, err
 	}
+	return s.subchallengePrefixProof(
+		engine,
+		fromAssertionHeight,
+		toAssertionHeight,
+		protocol.SmallStepChallenge,
+		s.smallStepDivergenceHeight,
+		lo,
+		hi,
+		engine.StateAfterSmallSteps,
+	)
+}
+
+func (s *Simulated) subchallengePrefixProof(
+	engine execution.EngineAtBlock,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
+	challengeType protocol.ChallengeType,
+	divergenceHeight uint64,
+	lo,
+	hi uint64,
+	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
+) ([]byte, error) {
 	loSize := lo + 1
 	hiSize := hi + 1
 	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
 		hiSize,
 		fromAssertionHeight,
 		toAssertionHeight,
-		protocol.SmallStepChallenge,
-		s.smallStepDivergenceHeight,
+		challengeType,
+		divergenceHeight,
 		engine,
-		engine.StateAfterSmallSteps,
+		stepperFn,
 	)
 	if err != nil {
 		return nil, err
