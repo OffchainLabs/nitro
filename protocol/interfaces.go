@@ -169,6 +169,11 @@ func (ct ChallengeType) String() string {
 	}
 }
 
+// IsSubChallenge returns true if the challenge type is either big or small step.
+func (ct ChallengeType) IsSubChallenge() bool {
+	return ct == BigStepChallenge || ct == SmallStepChallenge
+}
+
 // AssertionState represents the enum with the same name
 // in the protocol smart contracts.
 type AssertionState uint8

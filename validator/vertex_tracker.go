@@ -329,11 +329,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 	}); err != nil {
 		return nil, err
 	}
-	mergedTo, err := v.merge(ctx, mergeHistory, prefixProof)
-	if err != nil {
-		return nil, err
-	}
-	return mergedTo, nil
+	return v.merge(ctx, mergeHistory, prefixProof)
 }
 
 // Opens a subchallenge on a parent vertex. This function determines the type of subchallenge

@@ -48,7 +48,7 @@ func (c *Challenge) RootAssertion(
 // of S is A. If two validators open a subchallenge S' at vertex B in BigStepChallenge, the TopLevelClaimVertex
 // is vertex A.
 func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
-	if c.GetType() == protocol.BlockChallenge {
+	if !c.GetType().IsSubChallenge() {
 		return nil, errors.New("not a subchallenge")
 	}
 	rootV, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
@@ -58,7 +58,10 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 	if rootV.IsNone() {
 		return nil, errors.New("no root vertex for challenge found")
 	}
-	root := rootV.Unwrap().(*ChallengeVertex)
+	root, ok := rootV.Unwrap().(*ChallengeVertex)
+	if !ok {
+		return nil, errors.New("root vertex is not *solimpl.ChallengeVertex type")
+	}
 	claimVertexV, err := c.manager.GetVertex(ctx, tx, root.inner.ClaimId)
 	if err != nil {
 		return nil, err
@@ -66,22 +69,29 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 	if claimVertexV.IsNone() {
 		return nil, errors.New("no root vertex for challenge found")
 	}
-	claimVertex := claimVertexV
+	claimVertex := claimVertexV.Unwrap()
 
 	// If we are in a big step challenge, the claim vertex is the top-level vertex of the
 	// corresponding BlockChallenge, so we are done.
 	if c.GetType() == protocol.BigStepChallenge {
-		return claimVertex.Unwrap(), nil
+		return claimVertex, nil
 	}
 
 	// Otherwise, a bit more work is required.
 	// Get the root vertex of the BigStepChallenge claimVertex belongs to.
-	bigStepChallengeId := claimVertex.Unwrap().(*ChallengeVertex).inner.ChallengeId
+	claimVertexItem, ok := claimVertex.(*ChallengeVertex)
+	if !ok {
+		return nil, errors.New("claim vertex is not *solimpl.ChallengeVertex type")
+	}
+	bigStepChallengeId := claimVertexItem.inner.ChallengeId
 	bigStepC, err := c.manager.GetChallenge(ctx, tx, bigStepChallengeId)
 	if err != nil {
 		return nil, err
 	}
-	bigStepChallenge := bigStepC.Unwrap().(*Challenge)
+	bigStepChallenge, ok := bigStepC.Unwrap().(*Challenge)
+	if !ok {
+		return nil, errors.New("big challenge is not *solimpl.Challenge type")
+	}
 	bigStepRootV, err := c.manager.GetVertex(ctx, tx, bigStepChallenge.inner.RootId)
 	if err != nil {
 		return nil, err
@@ -89,7 +99,10 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 	if bigStepRootV.IsNone() {
 		return nil, errors.New("no root vertex for challenge found")
 	}
-	bigStepRoot := bigStepRootV.Unwrap().(*ChallengeVertex)
+	bigStepRoot, ok := bigStepRootV.Unwrap().(*ChallengeVertex)
+	if !ok {
+		return nil, errors.New("big step root vertex is not *solimpl.ChallengeVertex type")
+	}
 
 	// Get the claim vertex of the BigStepChallenge's root vertex.
 	claimVertexV, err = c.manager.GetVertex(ctx, tx, bigStepRoot.inner.ClaimId)
