@@ -109,7 +109,7 @@ func (m *MockChallengeVertex) Bisect(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	history util.HistoryCommitment,
-	proof []common.Hash,
+	proof []byte,
 ) (protocol.ChallengeVertex, error) {
 	args := m.Called(ctx, tx, history, proof)
 	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
@@ -119,7 +119,7 @@ func (m *MockChallengeVertex) Merge(
 	ctx context.Context,
 	tx protocol.ActiveTx,
 	mergingToHistory util.HistoryCommitment,
-	proof []common.Hash,
+	proof []byte,
 ) (protocol.ChallengeVertex, error) {
 	args := m.Called(ctx, tx, mergingToHistory, proof)
 	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
@@ -181,9 +181,9 @@ func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uin
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
-func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error) {
+func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]byte, error) {
 	args := m.Called(ctx, from, to)
-	return args.Get(0).([]common.Hash), args.Error(1)
+	return args.Get(0).([]byte), args.Error(1)
 }
 
 func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit util.StateCommitment) bool {
@@ -202,26 +202,30 @@ func (m *MockStateManager) BigStepLeafCommitment(
 
 func (m *MockStateManager) BigStepCommitmentUpTo(
 	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
 	toBigStep uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, toBigStep)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, toBigStep)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepLeafCommitment(
 	ctx context.Context,
-	fromBigStep,
-	toBigStep uint64,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, fromBigStep, toBigStep)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
 func (m *MockStateManager) SmallStepCommitmentUpTo(
 	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
 	toStep uint64,
 ) (util.HistoryCommitment, error) {
-	args := m.Called(ctx, toStep)
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, toStep)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 

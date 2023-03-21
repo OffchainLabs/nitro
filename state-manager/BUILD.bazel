@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "state-manager",
@@ -13,6 +13,22 @@ go_library(
         "//protocol",
         "//state-manager/backend",
         "//util",
+        "//util/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+    ],
+)
+
+go_test(
+    name = "state-manager_test",
+    srcs = ["manager_test.go"],
+    embed = [":state-manager"],
+    deps = [
+        "//protocol",
+        "//util/prefix-proofs",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_stretchr_testify//require",
     ],
 )

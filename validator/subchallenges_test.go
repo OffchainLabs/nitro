@@ -7,8 +7,6 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,8 +21,16 @@ func TestFullChallengeResolution(t *testing.T) {
 	})
 	t.Log("Alice (honest) and Bob have a fork at height 1")
 	// TODO: Customize the statemanager to allow fixed num steps.
-	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
-	evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+	honestManager := statemanager.New(
+		createdData.honestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	evilManager := statemanager.New(
+		createdData.evilValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
 
 	// Next, we create a challenge.
 	honestChain := createdData.assertionChains[1]
@@ -94,12 +100,9 @@ func TestFullChallengeResolution(t *testing.T) {
 		commit2, err = evilManager.SmallStepLeafCommitment(ctx, 0, 1)
 		require.NoError(t, err)
 
-		proof := hexutil.MustDecode("0x0000000000000000000000000000000000000000000000000000000000000001")
-		commit1.LastLeafProof = []common.Hash{common.BytesToHash(proof)}
 		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex1, commit1)
 		require.NoError(t, err)
 		t.Log("Alice (honest) added leaf at height 1")
-		commit1.LastLeafProof = []common.Hash{common.BytesToHash(proof)}
 		_, err = subChal.AddSubChallengeLeaf(ctx, tx, vertex2, commit2)
 		require.NoError(t, err)
 		t.Log("Bob added leaf at height 1")
@@ -114,18 +117,16 @@ func TestFullChallengeResolution(t *testing.T) {
 		t.Log("Alice and Bob's BigStepChallenge vertices are at a one-step-fork")
 		t.Log("Reached one-step-proof in SmallStepChallenge")
 
-		preStateRoot := createdData.honestValidatorStateRoots[0]
-		postStateRoot := createdData.honestValidatorStateRoots[1]
-		honestEngine, err := execution.NewExecutionEngine(1, preStateRoot, postStateRoot, &execution.Config{
-			FixedNumSteps: 1,
-		})
+		honestEngine, err := execution.NewExecutionEngine(&execution.MachineConfig{
+			MaxInstructionsPerBlock: 1,
+			BigStepSize:             1,
+		}, createdData.honestValidatorStateRoots[0:2])
 		require.NoError(t, err)
 
-		evilPreStateRoot := createdData.evilValidatorStateRoots[0]
-		evilPostStateRoot := createdData.evilValidatorStateRoots[1]
-		evilEngine, err := execution.NewExecutionEngine(1, evilPreStateRoot, evilPostStateRoot, &execution.Config{
-			FixedNumSteps: 1,
-		})
+		evilEngine, err := execution.NewExecutionEngine(&execution.MachineConfig{
+			MaxInstructionsPerBlock: 1,
+			BigStepSize:             1,
+		}, createdData.evilValidatorStateRoots[0:2])
 		require.NoError(t, err)
 
 		preState, err := honestEngine.StateAfterSmallSteps(0)

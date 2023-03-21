@@ -6,6 +6,7 @@ import (
 
 	statemanagerbackend "github.com/OffchainLabs/challenge-protocol-v2/state-manager/backend"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -77,7 +78,7 @@ func (m *ManagerProvider) HistoryCommitmentUpTo(ctx context.Context, height uint
 func (m *ManagerProvider) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Hash, error) {
 	highBit := 63 - bits.LeadingZeros64(lo)
 	proofStart := uint64(0)
-	var exp util.MerkleExpansion
+	var exp prefixproofs.MerkleExpansion
 	for i := highBit; i >= 0; i-- {
 		if (lo & (1 << i)) > 0 {
 			root, err := m.ManagerBackend.GetMerkleRoot(ctx, proofStart, proofStart+(1<<i)-1)
@@ -88,12 +89,14 @@ func (m *ManagerProvider) PrefixProof(ctx context.Context, lo, hi uint64) ([]com
 			proofStart = proofStart + (1 << i)
 		}
 	}
-	return util.GeneratePrefixProofBackend(
+	return prefixproofs.GeneratePrefixProof(
 		lo,
 		exp,
-		hi,
-		func(lo uint64, hi uint64) (common.Hash, error) { return m.ManagerBackend.GetMerkleRoot(ctx, lo, hi) },
-	), nil
+		nil,
+		func(_ []common.Hash, toHeight uint64) (common.Hash, error) {
+			return m.ManagerBackend.GetMerkleRoot(ctx, 0, hi)
+		},
+	)
 }
 
 // HasHistoryCommitment checks if a history commitment matches our merkle expansion for the specified height.

@@ -10,6 +10,7 @@ import (
 // be allowed to transition states depending on the rules this transition table.
 func newVertexTrackerFsm(
 	startState vertexTrackerState,
+	fsmOpts ...util.FsmOpt[vertexTrackerAction, vertexTrackerState],
 ) (*util.Fsm[vertexTrackerAction, vertexTrackerState], error) {
 	transitions := []*util.FsmEvent[vertexTrackerAction, vertexTrackerState]{
 		{
@@ -98,5 +99,5 @@ func newVertexTrackerFsm(
 			To:   trackerConfirming,
 		},
 	}
-	return util.NewFsm(startState, transitions)
+	return util.NewFsm(startState, transitions, fsmOpts...)
 }

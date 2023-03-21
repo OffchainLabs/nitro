@@ -7,10 +7,25 @@ import (
 	"fmt"
 	"math/big"
 
+	"crypto/rand"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+)
+
+// Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
+var (
+	b32Arr, _ = abi.NewType("bytes32[]", "", nil)
+	// ProofArgs for submission to the protocol.
+	ProofArgs = abi.Arguments{
+		{Type: b32Arr, Name: "prefixExpansion"},
+		{Type: b32Arr, Name: "prefixProof"},
+	}
 )
 
 // Manager defines a struct that can provide local state data and historical
@@ -26,7 +41,7 @@ type Manager interface {
 	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
 	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
 	HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error)
-	PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error)
+	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
 	BigStepLeafCommitment(
 		ctx context.Context,
 		fromAssertionHeight,
@@ -34,15 +49,19 @@ type Manager interface {
 	) (util.HistoryCommitment, error)
 	BigStepCommitmentUpTo(
 		ctx context.Context,
+		fromAssertionHeight,
+		toAssertionHeight,
 		toBigStep uint64,
 	) (util.HistoryCommitment, error)
 	SmallStepLeafCommitment(
 		ctx context.Context,
-		fromBigStep,
-		toBigStep uint64,
+		fromAssertionHeight,
+		toAssertionHeight uint64,
 	) (util.HistoryCommitment, error)
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
+		fromAssertionHeight,
+		toAssertionHeight,
 		toStep uint64,
 	) (util.HistoryCommitment, error)
 }
@@ -50,36 +69,85 @@ type Manager interface {
 // Simulated defines a very naive state manager that is initialized from a list of predetermined
 // state roots. It can produce state and history commitments from those roots.
 type Simulated struct {
-	stateRoots      []common.Hash
-	executionStates []*protocol.ExecutionState
-	inboxMaxCounts  []*big.Int
+	stateRoots                []common.Hash
+	executionStates           []*protocol.ExecutionState
+	inboxMaxCounts            []*big.Int
+	maxWavmOpcodes            uint64
+	numOpcodesPerBigStep      uint64
+	bigStepDivergenceHeight   uint64
+	smallStepDivergenceHeight uint64
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
-func New(stateRoots []common.Hash) *Simulated {
+func New(stateRoots []common.Hash, opts ...Opt) *Simulated {
 	if len(stateRoots) == 0 {
 		panic("must have state roots")
 	}
-	return &Simulated{stateRoots: stateRoots}
+	s := &Simulated{stateRoots: stateRoots}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
-// New simulated manager from a list of predefined state roots, useful for tests and simulations.
-func NewWithExecutionStates(executionStates []*protocol.ExecutionState, inboxMaxCounts []*big.Int) *Simulated {
-	if len(executionStates) == 0 {
-		panic("must have execution states")
+type Opt func(*Simulated)
+
+func WithMaxWavmOpcodesPerBlock(maxOpcodes uint64) Opt {
+	return func(s *Simulated) {
+		s.maxWavmOpcodes = maxOpcodes
 	}
-	if len(executionStates) != len(inboxMaxCounts) {
-		panic("number of exec states must match number of inbox max counts")
+}
+
+func WithNumOpcodesPerBigStep(numOpcodes uint64) Opt {
+	return func(s *Simulated) {
+		s.numOpcodesPerBigStep = numOpcodes
 	}
-	stateRoots := make([]common.Hash, len(executionStates))
+}
+
+func WithBigStepStateDivergenceHeight(divergenceHeight uint64) Opt {
+	return func(s *Simulated) {
+		s.bigStepDivergenceHeight = divergenceHeight
+	}
+}
+
+func WithSmallStepStateDivergenceHeight(divergenceHeight uint64) Opt {
+	return func(s *Simulated) {
+		s.smallStepDivergenceHeight = divergenceHeight
+	}
+}
+
+// NewWithAssertionStates creates a simulated state manager from a list of predefined state roots for
+// the top-level assertion chain, useful for tests and simulation purposes in block challenges.
+// This also allows for specifying the honest states for big and small step subchallenges along
+// with the point at which the state manager should diverge from the honest computation.
+func NewWithAssertionStates(
+	assertionChainExecutionStates []*protocol.ExecutionState,
+	inboxMaxCounts []*big.Int,
+	opts ...Opt,
+) (*Simulated, error) {
+	if len(assertionChainExecutionStates) == 0 {
+		return nil, errors.New("must have execution states")
+	}
+	if len(assertionChainExecutionStates) != len(inboxMaxCounts) {
+		return nil, fmt.Errorf(
+			"number of exec states %d must match number of inbox max counts %d",
+			len(assertionChainExecutionStates),
+			len(inboxMaxCounts),
+		)
+	}
+	stateRoots := make([]common.Hash, len(assertionChainExecutionStates))
 	for i := 0; i < len(stateRoots); i++ {
-		stateRoots[i] = protocol.ComputeStateHash(executionStates[i], big.NewInt(2))
+		stateRoots[i] = protocol.ComputeStateHash(assertionChainExecutionStates[i], big.NewInt(2))
 	}
-	return &Simulated{
+	s := &Simulated{
 		stateRoots:      stateRoots,
-		executionStates: executionStates,
+		executionStates: assertionChainExecutionStates,
 		inboxMaxCounts:  inboxMaxCounts,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
 }
 
 // LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has
@@ -117,9 +185,12 @@ func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.Stat
 
 // HistoryCommitmentUpTo gets the history commitment for the merkle expansion up to a height.
 func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+	// The size is the number of elements being committed to. For example, if the height is 7, there will
+	// be 8 elements being committed to from [0, 7] inclusive.
+	size := height + 1
 	return util.NewHistoryCommitment(
 		height,
-		s.stateRoots[:height+1],
+		s.stateRoots[:size],
 	)
 }
 
@@ -133,53 +204,58 @@ func (s *Simulated) BigStepLeafCommitment(
 	fromAssertionHeight,
 	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
-	if toAssertionHeight != fromAssertionHeight+1 {
+	if fromAssertionHeight+1 != toAssertionHeight {
 		return util.HistoryCommitment{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
 			fromAssertionHeight,
 			toAssertionHeight,
 		)
 	}
+	// Number of big steps between assertion heights A and B will be
+	// fixed in this simulated state manager. It is simply the max number of opcodes
+	// per block divided by the size of a big step.
+	numBigSteps := s.maxWavmOpcodes / s.numOpcodesPerBigStep
+	return s.BigStepCommitmentUpTo(
+		ctx,
+		fromAssertionHeight,
+		toAssertionHeight,
+		numBigSteps,
+	)
+}
 
-	preState := s.stateRoots[fromAssertionHeight]
-	postState := s.stateRoots[toAssertionHeight]
-	engine, err := execution.NewExecutionEngine(toAssertionHeight, preState, postState, &execution.Config{
-		FixedNumSteps: 1,
-	})
+func (s *Simulated) setupEngine(fromHeight, toHeight uint64) (*execution.Engine, error) {
+	machineCfg := execution.DefaultMachineConfig()
+	if s.maxWavmOpcodes > 0 {
+		machineCfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		machineCfg.BigStepSize = s.numOpcodesPerBigStep
+	}
+	return execution.NewExecutionEngine(
+		machineCfg,
+		s.stateRoots[fromHeight:toHeight+1],
+	)
+}
+
+func (s *Simulated) BigStepCommitmentUpTo(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	toBigStep uint64,
+) (util.HistoryCommitment, error) {
+	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-
-	expansion := util.NewEmptyMerkleExpansion()
-
-	var total int
-	for i := uint64(0); i < engine.NumBigSteps(); i++ {
-		start, err := engine.StateAfterBigSteps(i)
-		if err != nil {
-			return util.HistoryCommitment{}, err
-		}
-		intermediateState, err := start.NextState()
-		if err != nil {
-			return util.HistoryCommitment{}, err
-		}
-		expansion = expansion.AppendLeaf(intermediateState.Hash())
-		total++
+	if engine.NumBigSteps() < toBigStep {
+		return util.HistoryCommitment{}, errors.New("not enough big steps")
 	}
-
-	return util.HistoryCommitment{
-		Height: engine.NumBigSteps(),
-		Merkle: expansion.Root(),
-	}, nil
-}
-
-// TODO(RJ): Implement the Merkleization.
-func (s *Simulated) BigStepCommitmentUpTo(
-	ctx context.Context,
-	toBigStep uint64,
-) (util.HistoryCommitment, error) {
-	return util.HistoryCommitment{
-		Height: toBigStep,
-	}, nil
+	return s.commitmentFromEngineSteps(
+		toBigStep,
+		s.bigStepDivergenceHeight,
+		engine,
+		engine.StateAfterBigSteps,
+	)
 }
 
 // SmallStepLeafCommitment produces a small step history commitment which includes
@@ -189,35 +265,57 @@ func (s *Simulated) BigStepCommitmentUpTo(
 // between those two values and produce a commitment.
 func (s *Simulated) SmallStepLeafCommitment(
 	ctx context.Context,
-	fromBigStep,
-	toBigStep uint64,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
-	if toBigStep != fromBigStep+1 {
+	if fromAssertionHeight+1 != toAssertionHeight {
 		return util.HistoryCommitment{}, fmt.Errorf(
 			"from height %d is not one-step away from to height %d",
-			fromBigStep,
-			toBigStep,
+			fromAssertionHeight,
+			toAssertionHeight,
 		)
 	}
-	// TODO: Not state roots but rather intermediate wavm roots in a big step challenge.
-	// We should probably pass these into the function.
-	preState := s.stateRoots[fromBigStep]
-	postState := s.stateRoots[toBigStep]
+	return s.SmallStepCommitmentUpTo(
+		ctx,
+		fromAssertionHeight,
+		toAssertionHeight,
+		s.numOpcodesPerBigStep,
+	)
+}
 
-	// TODO: Args should be block num instead of big step num, and pre/post states should
-	// be top-level states in this case.
-	engine, err := execution.NewExecutionEngine(toBigStep, preState, postState, &execution.Config{
-		FixedNumSteps: 1,
-	})
+func (s *Simulated) SmallStepCommitmentUpTo(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	toPc uint64,
+) (util.HistoryCommitment, error) {
+	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
+	if engine.NumOpcodes() < toPc {
+		return util.HistoryCommitment{}, errors.New("not enough small steps")
+	}
+	return s.commitmentFromEngineSteps(
+		toPc,
+		s.smallStepDivergenceHeight,
+		engine,
+		engine.StateAfterSmallSteps,
+	)
+}
 
-	expansion := util.NewEmptyMerkleExpansion()
+func (s *Simulated) commitmentFromEngineSteps(
+	toStep,
+	divergenceHeight uint64,
+	engine execution.EngineAtBlock,
+	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
+) (util.HistoryCommitment, error) {
+	leaves := make([]common.Hash, toStep+1)
+	leaves[0] = engine.FirstState()
 
-	var total int
-	for i := uint64(0); i < engine.NumOpcodes(); i++ {
-		start, err := engine.StateAfterSmallSteps(i)
+	// Up to and including the specified small step.
+	for i := uint64(0); i <= toStep; i++ {
+		start, err := stepperFn(i)
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
@@ -225,33 +323,41 @@ func (s *Simulated) SmallStepLeafCommitment(
 		if err != nil {
 			return util.HistoryCommitment{}, err
 		}
-		expansion = expansion.AppendLeaf(intermediateState.Hash())
-		total++
+		var hash common.Hash
+		if divergenceHeight == 0 || i < divergenceHeight {
+			hash = intermediateState.Hash()
+		} else {
+			junkRoot := make([]byte, 32)
+			_, err := rand.Read(junkRoot)
+			if err != nil {
+				return util.HistoryCommitment{}, err
+			}
+			hash = crypto.Keccak256Hash(junkRoot)
+		}
+		leaves[i] = hash
 	}
-
-	return util.HistoryCommitment{
-		Height: engine.NumOpcodes(),
-		Merkle: expansion.Root(),
-	}, nil
-}
-
-// TODO(RJ): Implement the Merkleization.
-func (s *Simulated) SmallStepCommitmentUpTo(
-	ctx context.Context,
-	toStep uint64,
-) (util.HistoryCommitment, error) {
-	return util.HistoryCommitment{
-		Height: toStep,
-	}, nil
+	return util.NewHistoryCommitment(toStep, leaves)
 }
 
 // PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
 // from a low point to a high point specified as arguments.
-func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]common.Hash, error) {
-	exp := util.ExpansionFromLeaves(s.stateRoots[:lo])
-	return util.GeneratePrefixProof(
-		lo,
-		exp,
-		s.stateRoots[lo:hi+1],
-	), nil
+func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
+	loSize := lo + 1
+	hiSize := hi + 1
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[:loSize])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
+		loSize,
+		prefixExpansion,
+		s.stateRoots[loSize:hiSize],
+		prefixproofs.RootFetcherFromExpansion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }

@@ -142,6 +142,14 @@ func (f *Fsm[E, T]) Do(event E) error {
 	return nil
 }
 
+// TrackedTransitions returns a list of all transitions the FSM has executed so far.
+func (f *Fsm[E, T]) TrackedTransitions() ([]*transitionMade[E, T], error) {
+	if !f.trackingTransitions {
+		return nil, errors.New("fsm not enabled to track transition history")
+	}
+	return f.transitionsExecuted, nil
+}
+
 // Current returns the current state of the FSM, containing the state value
 // and source event it used to get there, if any.
 func (f *Fsm[E, T]) Current() *CurrentState[E, T] {

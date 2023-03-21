@@ -7,7 +7,6 @@ go_library(
         "count_up_timer.go",
         "fsm.go",
         "option_type.go",
-        "proof.go",
         "simulated_backend_wrapper.go",
         "thread_safe_slice.go",
         "time_reference.go",
@@ -16,6 +15,7 @@ go_library(
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/util",
     visibility = ["//visibility:public"],
     deps = [
+        "//util/inclusion-proofs",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//core/types",
@@ -27,16 +27,16 @@ go_library(
 go_test(
     name = "util_test",
     srcs = [
+        "commitments_test.go",
         "fsm_test.go",
-        "proof_test.go",
         "thread_safe_slice_test.go",
         "time_reference_test.go",
         "util_test.go",
     ],
     embed = [":util"],
     deps = [
+        "//util/inclusion-proofs",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_stretchr_testify//require",
     ],
 )
