@@ -4,6 +4,7 @@ go_library(
     name = "execution",
     srcs = ["engine.go"],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/execution",
+    testonly = True,
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//common",

@@ -5,6 +5,7 @@ go_library(
     srcs = ["manager_backend.go"],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/state-manager/backend",
     visibility = ["//visibility:public"],
+    testonly = True,
     deps = [
         "//util/prefix-proofs",
         "@com_github_ethereum_go_ethereum//common",
