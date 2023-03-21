@@ -59,12 +59,13 @@ func newVertexTracker(
 
 func (v *vertexTracker) spawn(ctx context.Context) {
 	commitment := v.vertex.HistoryCommitment()
-	log.WithFields(logrus.Fields{
+	fields := logrus.Fields{
 		"height":        commitment.Height,
 		"merkle":        util.Trunc(commitment.Merkle[:]),
 		"validatorName": v.cfg.validatorName,
 		"challengeType": v.challenge.GetType(),
-	}).Info("Tracking challenge vertex")
+	}
+	log.WithFields(fields).Info("Tracking challenge vertex")
 
 	t := v.cfg.timeRef.NewTicker(v.cfg.actEveryNSeconds)
 	defer t.Stop()
@@ -75,28 +76,18 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 			// or if a rival vertex exists that has been confirmed before acting.
 			shouldComplete, err := v.trackerShouldComplete(ctx)
 			if err != nil {
-				log.WithError(err)
+				log.WithError(err).WithFields(fields).Error("Could not check if vertex tracker should complete")
 				continue
 			}
 			if shouldComplete {
-				log.WithFields(logrus.Fields{
-					"height":        commitment.Height,
-					"merkle":        util.Trunc(commitment.Merkle[:]),
-					"validatorName": v.cfg.validatorName,
-					"challengeType": v.challenge.GetType(),
-				}).Debug("Vertex tracker received notice of a confirmation, exiting")
+				log.WithFields(fields).Debug("Vertex tracker received notice of a confirmation, exiting")
 				return
 			}
 			if err := v.act(ctx); err != nil {
 				log.Error(err)
 			}
 		case <-ctx.Done():
-			log.WithFields(logrus.Fields{
-				"height":        commitment.Height,
-				"merkle":        util.Trunc(commitment.Merkle[:]),
-				"challengeType": v.challenge.GetType(),
-				"validatorName": v.cfg.validatorName,
-			}).Debug("Challenge goroutine exiting")
+			log.WithFields(fields).Debug("Challenge goroutine exiting")
 			return
 		}
 	}
