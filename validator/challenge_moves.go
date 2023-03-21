@@ -149,7 +149,6 @@ func (v *vertexTracker) bisect(
 // also need to fetch vertex we are merging to by reading it from the goimpl.
 func (v *vertexTracker) merge(
 	ctx context.Context,
-	challengeCommitHash protocol.ChallengeHash,
 	mergingToCommit util.HistoryCommitment,
 	proof []byte,
 ) (protocol.ChallengeVertex, error) {

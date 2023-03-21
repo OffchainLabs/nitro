@@ -75,7 +75,7 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 			// or if a rival vertex exists that has been confirmed before acting.
 			shouldComplete, err := v.trackerShouldComplete(ctx)
 			if err != nil {
-				log.Error(err)
+				log.WithError(err)
 				continue
 			}
 			if shouldComplete {
@@ -128,15 +128,15 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 	case trackerStarted:
 		prevVertex, err := vt.prevVertex(ctx)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could not get prev")
 		}
 		atOneStepFork, err := vt.checkOneStepFork(ctx, prevVertex)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could not check one step fork")
 		}
 		isPresumptive, err := vt.isPresumptive(ctx)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could not check presumptive")
 		}
 		if atOneStepFork {
 			return vt.fsm.Do(actOneStepFork{
@@ -193,7 +193,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if err := vt.openSubchallengeLeaf(
 			ctx, event.forkPointVertex, event.subChallenge,
 		); err != nil {
-			return err
+			return errors.Wrap(err, "could not open subchallenge leaf")
 		}
 		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
@@ -202,7 +202,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
 				return vt.fsm.Do(merge{})
 			}
-			return err
+			return errors.Wrap(err, "could not bisect")
 		}
 		tracker, err := newVertexTracker(
 			vt.cfg,
@@ -210,14 +210,14 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			bisectedTo,
 		)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could not create new vertex tracker")
 		}
 		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
 	case trackerMerging:
 		mergedTo, err := vt.mergeToExistingVertex(ctx)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could not merge")
 		}
 		tracker, err := newVertexTracker(
 			vt.cfg,
@@ -225,7 +225,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			mergedTo,
 		)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could not create new vertex tracker")
 		}
 		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
@@ -236,7 +236,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		// Terminal state does nothing. The vertex tracker will end next time it acts.
 		isPs, err := vt.isPresumptive(ctx)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "could ont check if presumptive")
 		}
 		if !isPs {
 			return vt.fsm.Do(backToStart{})
@@ -308,7 +308,6 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 // this method returns the vertex it merged to.
 func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
 	var prev protocol.ChallengeVertex
-	var parentCommit util.StateCommitment
 	var mergeHistory util.HistoryCommitment
 	var prefixProof []byte
 	if err := v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
@@ -320,11 +319,6 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 			return errors.New("no prev vertex found")
 		}
 		prev = prevV.Unwrap()
-		parentStateCommitment, err := v.challenge.ParentStateCommitment(ctx, tx)
-		if err != nil {
-			return err
-		}
-		parentCommit = parentStateCommitment
 		prevCommitment := prev.HistoryCommitment()
 		commitment := v.vertex.HistoryCommitment()
 		parentHeight := prevCommitment.Height
@@ -344,7 +338,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 	}); err != nil {
 		return nil, err
 	}
-	mergedTo, err := v.merge(ctx, protocol.ChallengeHash(parentCommit.Hash()), mergeHistory, prefixProof)
+	mergedTo, err := v.merge(ctx, mergeHistory, prefixProof)
 	if err != nil {
 		return nil, err
 	}
@@ -468,8 +462,9 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		"name":                      vt.cfg.validatorName,
 		"upperLevelForkPoint":       prevVertex.HistoryCommitment().Height,
 		"upperLevelForkPointMerkle": util.Trunc(prevVertex.HistoryCommitment().Merkle.Bytes()),
-		"height":                    history.Height,
-		"merkle":                    util.Trunc(history.Merkle.Bytes()),
+		"height":                    subChalLeaf.HistoryCommitment().Height,
+		"leafFirstState":            util.Trunc(history.FirstLeaf.Bytes()),
+		"leafCommitment":            util.Trunc(subChalLeaf.HistoryCommitment().Merkle.Bytes()),
 		"subChallengeType":          subChallenge.GetType(),
 	}).Info("Added subchallenge leaf, now tracking its vertex")
 	tracker, err := newVertexTracker(

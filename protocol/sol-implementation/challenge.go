@@ -2,7 +2,6 @@ package solimpl
 
 import (
 	"context"
-	"errors"
 	"math/big"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/pkg/errors"
 )
 
 func (c *Challenge) Id() protocol.ChallengeHash {
@@ -34,7 +34,7 @@ func (c *Challenge) RootAssertion(
 	root := rootVertex.Unwrap().(*ChallengeVertex)
 	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "HERE IN ROOT")
 	}
 	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
 	if err != nil {

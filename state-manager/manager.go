@@ -339,11 +339,10 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 	engine execution.EngineAtBlock,
 	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
 ) ([]common.Hash, error) {
-	leaves := make([]common.Hash, toStep+1)
-	leaves[0] = engine.FirstState()
-
+	leaves := make([]common.Hash, 0)
+	leaves = append(leaves, engine.FirstState())
 	// Up to and including the specified step.
-	for i := uint64(0); i <= toStep; i++ {
+	for i := uint64(0); i < toStep; i++ {
 		start, err := stepperFn(i)
 		if err != nil {
 			return nil, err
@@ -358,7 +357,7 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 		} else {
 			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromAssertionHeight, toAssertionHeight, chalType)))
 		}
-		leaves[i] = hash
+		leaves = append(leaves, hash)
 	}
 	return leaves, nil
 }
