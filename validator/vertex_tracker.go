@@ -155,7 +155,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			return vt.fsm.Do(actOneStepProof{})
 		}
 		return vt.fsm.Do(openSubchallenge{
-			forkPointVertex: event.forkPointVertex,
+			challengeForkVertex: event.forkPointVertex,
 		})
 	case trackerAtOneStepProof:
 		log.WithFields(logrus.Fields{
@@ -168,13 +168,13 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("bad source event: %s", event)
 		}
-		subChallenge, err := vt.openSubchallenge(ctx, event.forkPointVertex)
+		subChallenge, err := vt.openSubchallenge(ctx, event.challengeForkVertex)
 		if err != nil {
 			return err
 		}
 		return vt.fsm.Do(openSubchallengeLeaf{
 			subChallenge:    subChallenge,
-			forkPointVertex: event.forkPointVertex,
+			forkPointVertex: event.challengeForkVertex,
 		})
 	case trackerAddingSubchallengeLeaf:
 		event, ok := current.SourceEvent.(openSubchallengeLeaf)

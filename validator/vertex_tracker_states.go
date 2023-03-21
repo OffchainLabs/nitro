@@ -91,7 +91,7 @@ type actOneStepProof struct{}
 // Tracker will open a subchallenge on its vertex.
 type openSubchallenge struct {
 	// The parent vertex of the rival vertices in the one-step-fork.
-	forkPointVertex protocol.ChallengeVertex
+	challengeForkVertex protocol.ChallengeVertex
 }
 
 // Tracker will add a subchallenge on its vertex's subchallenge.
