@@ -63,6 +63,7 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 		"height":        commitment.Height,
 		"merkle":        util.Trunc(commitment.Merkle[:]),
 		"validatorName": v.cfg.validatorName,
+		"challengeType": v.challenge.GetType(),
 	}).Info("Tracking challenge vertex")
 
 	t := v.cfg.timeRef.NewTicker(v.cfg.actEveryNSeconds)
@@ -82,6 +83,7 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 					"height":        commitment.Height,
 					"merkle":        util.Trunc(commitment.Merkle[:]),
 					"validatorName": v.cfg.validatorName,
+					"challengeType": v.challenge.GetType(),
 				}).Debug("Vertex tracker received notice of a confirmation, exiting")
 				return
 			}
@@ -150,7 +152,10 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("bad source event: %s", event)
 		}
-		log.WithField("name", vt.cfg.validatorName).Infof(
+		log.WithFields(logrus.Fields{
+			"name":          vt.cfg.validatorName,
+			"challengeType": vt.challenge.GetType(),
+		}).Infof(
 			"Reached one-step-fork at %d and commitment %s",
 			event.forkPointVertex.HistoryCommitment().Height,
 			util.Trunc(event.forkPointVertex.HistoryCommitment().Merkle.Bytes()),
@@ -162,7 +167,10 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			forkPointVertex: event.forkPointVertex,
 		})
 	case trackerAtOneStepProof:
-		log.Info("Checking one-step-proof against protocol")
+		log.WithFields(logrus.Fields{
+			"name":          vt.cfg.validatorName,
+			"challengeType": vt.challenge.GetType(),
+		}).Info("Checking one-step-proof against protocol")
 		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
 		event, ok := current.SourceEvent.(openSubchallenge)
@@ -185,7 +193,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if err := vt.openSubchallengeLeaf(
 			ctx, event.forkPointVertex, event.subChallenge,
 		); err != nil {
-			return errors.Wrap(err, "CANNOT OPEN LEAF")
+			return err
 		}
 		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
@@ -424,20 +432,22 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		switch subChallenge.GetType() {
 		case protocol.BigStepChallenge:
 			log.WithFields(logrus.Fields{
-				"name":             vt.cfg.validatorName,
-				"fromVertexHeight": fromVertexHeight,
-				"toVertexHeight":   toVertexHeight,
+				"name":                vt.cfg.validatorName,
+				"fromVertexHeight":    fromVertexHeight,
+				"toVertexHeight":      toVertexHeight,
+				"fromAssertionHeight": fromAssertionHeight,
+				"toAssertionHeight":   toAssertionHeight,
 			}).Info("Big step leaf commit")
 			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromAssertionHeight, toAssertionHeight)
-			log.Infof("%+v\n", history)
 		case protocol.SmallStepChallenge:
-			return errors.New("not supported")
-			// log.WithFields(logrus.Fields{
-			// 	"name":       vt.cfg.validatorName,
-			// 	"fromHeight": fromHeight,
-			// 	"toHeight":   toHeight,
-			// }).Info("Small step leaf commit")
-			// history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, 0, 1)
+			log.WithFields(logrus.Fields{
+				"name":                vt.cfg.validatorName,
+				"fromVertexHeight":    fromVertexHeight,
+				"toVertexHeight":      toVertexHeight,
+				"fromAssertionHeight": fromAssertionHeight,
+				"toAssertionHeight":   toAssertionHeight,
+			}).Info("Small step leaf commit")
+			history, err = vt.cfg.stateManager.SmallStepLeafCommitment(ctx, fromAssertionHeight, toAssertionHeight)
 		default:
 			return errors.New("unsupported subchallenge type for creating leaf commitment")
 		}

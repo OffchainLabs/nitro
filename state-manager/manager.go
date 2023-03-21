@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"crypto/rand"
-
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -16,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sirupsen/logrus"
 )
 
 // Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
@@ -267,6 +264,9 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	}
 	leaves, err := s.intermediateLeavesFromEngineSteps(
 		toBigStep,
+		fromAssertionHeight,
+		toAssertionHeight,
+		protocol.BigStepChallenge,
 		s.bigStepDivergenceHeight,
 		engine,
 		engine.StateAfterBigSteps,
@@ -274,7 +274,6 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	logrus.Info("Big step leaves count", len(leaves))
 	return util.NewHistoryCommitment(toBigStep, leaves)
 }
 
@@ -318,6 +317,9 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 	}
 	leaves, err := s.intermediateLeavesFromEngineSteps(
 		toPc,
+		fromAssertionHeight,
+		toAssertionHeight,
+		protocol.SmallStepChallenge,
 		s.smallStepDivergenceHeight,
 		engine,
 		engine.StateAfterSmallSteps,
@@ -330,6 +332,9 @@ func (s *Simulated) SmallStepCommitmentUpTo(
 
 func (s *Simulated) intermediateLeavesFromEngineSteps(
 	toStep,
+	fromAssertionHeight,
+	toAssertionHeight uint64,
+	chalType protocol.ChallengeType,
 	divergenceHeight uint64,
 	engine execution.EngineAtBlock,
 	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
@@ -351,12 +356,7 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 		if divergenceHeight == 0 || i < divergenceHeight {
 			hash = intermediateState.Hash()
 		} else {
-			junkRoot := make([]byte, 32)
-			_, err := rand.Read(junkRoot)
-			if err != nil {
-				return nil, err
-			}
-			hash = crypto.Keccak256Hash(junkRoot)
+			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromAssertionHeight, toAssertionHeight, chalType)))
 		}
 		leaves[i] = hash
 	}
@@ -381,7 +381,10 @@ func (s *Simulated) BigStepPrefixProof(
 	hiSize := hi + 1
 	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
 		hiSize,
-		s.smallStepDivergenceHeight,
+		fromAssertionHeight,
+		toAssertionHeight,
+		protocol.BigStepChallenge,
+		s.bigStepDivergenceHeight,
 		engine,
 		engine.StateAfterBigSteps,
 	)
@@ -424,6 +427,9 @@ func (s *Simulated) SmallStepPrefixProof(
 	hiSize := hi + 1
 	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
 		hiSize,
+		fromAssertionHeight,
+		toAssertionHeight,
+		protocol.SmallStepChallenge,
 		s.smallStepDivergenceHeight,
 		engine,
 		engine.StateAfterSmallSteps,

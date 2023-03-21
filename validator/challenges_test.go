@@ -296,8 +296,8 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	honestManager, err := statemanager.NewWithAssertionStates(
 		honestStates,
 		honestInboxCounts,
-		statemanager.WithMaxWavmOpcodesPerBlock(56), // TODO(RJ): Configure.
-		statemanager.WithNumOpcodesPerBigStep(8),
+		statemanager.WithMaxWavmOpcodesPerBlock(49), // TODO(RJ): Configure.
+		statemanager.WithNumOpcodesPerBigStep(7),
 	)
 	require.NoError(t, err)
 	aliceAddr := accs[1].accountAddr
@@ -318,8 +318,8 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	maliciousManager, err := statemanager.NewWithAssertionStates(
 		maliciousStates,
 		maliciousInboxCounts,
-		statemanager.WithMaxWavmOpcodesPerBlock(56), // TODO(RJ): Configure.
-		statemanager.WithNumOpcodesPerBigStep(8),
+		statemanager.WithMaxWavmOpcodesPerBlock(49), // TODO(RJ): Configure.
+		statemanager.WithNumOpcodesPerBigStep(7),
 		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
@@ -335,7 +335,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(bobAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*50),
+		WithChallengeVertexWakeInterval(time.Millisecond*10),
 	)
 	require.NoError(t, err)
 
