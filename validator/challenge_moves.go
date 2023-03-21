@@ -24,11 +24,11 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 
 	if v.challenge.GetType() == protocol.BlockChallenge {
 		historyCommit, commitErr := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
-		if err != nil {
+		if commitErr != nil {
 			return util.HistoryCommitment{}, nil, commitErr
 		}
 		proof, proofErr := v.cfg.stateManager.PrefixProof(ctx, bisectTo, toHeight)
-		if err != nil {
+		if proofErr != nil {
 			return util.HistoryCommitment{}, nil, proofErr
 		}
 		return historyCommit, proof, nil
