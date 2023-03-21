@@ -377,7 +377,11 @@ func (s *Simulated) BigStepPrefixProof(
 	hi uint64,
 ) ([]byte, error) {
 	if fromAssertionHeight+1 != toAssertionHeight {
-		return nil, errors.New("assertions are not one height apart")
+		return nil, fmt.Errorf(
+			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
+			fromAssertionHeight,
+			toAssertionHeight,
+		)
 	}
 	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
@@ -407,7 +411,11 @@ func (s *Simulated) SmallStepPrefixProof(
 	hi uint64,
 ) ([]byte, error) {
 	if fromAssertionHeight+1 != toAssertionHeight {
-		return nil, errors.New("assertions are not one height apart")
+		return nil, fmt.Errorf(
+			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
+			fromAssertionHeight,
+			toAssertionHeight,
+		)
 	}
 	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
 	if err != nil {
