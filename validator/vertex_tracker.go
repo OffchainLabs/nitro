@@ -90,8 +90,10 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 			}
 		case <-ctx.Done():
 			log.WithFields(logrus.Fields{
-				"height": commitment.Height,
-				"merkle": util.Trunc(commitment.Merkle[:]),
+				"height":        commitment.Height,
+				"merkle":        util.Trunc(commitment.Merkle[:]),
+				"challengeType": v.challenge.GetType(),
+				"validatorName": v.cfg.validatorName,
 			}).Debug("Challenge goroutine exiting")
 			return
 		}
@@ -411,12 +413,12 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		fromVertexHeight := prevVertex.HistoryCommitment().Height
 		toVertexHeight := vt.vertex.HistoryCommitment().Height
 
-		rootAssertion, err := vt.challenge.RootAssertion(ctx, tx)
+		topLevelClaimVertex, err := subChallenge.TopLevelClaimVertex(ctx, tx)
 		if err != nil {
 			return err
 		}
 
-		fromAssertionHeight := rootAssertion.Height()
+		fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height
 		toAssertionHeight := fromAssertionHeight + 1
 
 		switch subChallenge.GetType() {
@@ -427,7 +429,7 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 				"toVertexHeight":   toVertexHeight,
 			}).Info("Big step leaf commit")
 			history, err = vt.cfg.stateManager.BigStepLeafCommitment(ctx, fromAssertionHeight, toAssertionHeight)
-			fmt.Printf("%+v\n", history)
+			log.Infof("%+v\n", history)
 		case protocol.SmallStepChallenge:
 			return errors.New("not supported")
 			// log.WithFields(logrus.Fields{

@@ -61,7 +61,7 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 			return util.HistoryCommitment{}, nil, err
 		}
 
-		log.Info("Verifying...")
+		log.Infof("Verifying bisection from vertex with commit %#x and height %d", v.vertex.HistoryCommitment().Merkle, v.vertex.HistoryCommitment().Height)
 		data, err := statemanager.ProofArgs.Unpack(proof)
 		if err != nil {
 			return util.HistoryCommitment{}, nil, err
