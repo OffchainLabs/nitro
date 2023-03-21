@@ -10,6 +10,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Determines the bisection point from parentHeight to toHeight and returns a history
+// commitment with a prefix proof for the action based on the challenge type.
 func (v *vertexTracker) determineBisectionHistoryWithProof(
 	ctx context.Context,
 	parentHeight,
@@ -20,8 +22,7 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 		return util.HistoryCommitment{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", parentHeight, toHeight)
 	}
 
-	switch v.challenge.GetType() {
-	case protocol.BlockChallenge:
+	if v.challenge.GetType() == protocol.BlockChallenge {
 		historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
 		if err != nil {
 			return util.HistoryCommitment{}, nil, err
@@ -31,57 +32,43 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 			return util.HistoryCommitment{}, nil, err
 		}
 		return historyCommit, proof, nil
-	case protocol.BigStepChallenge:
-		var topLevelClaimVertex protocol.ChallengeVertex
-		if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
-			topLevel, err := v.challenge.TopLevelClaimVertex(ctx, tx)
-			if err != nil {
-				return err
-			}
-			topLevelClaimVertex = topLevel
-			return nil
-		}); err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-
-		fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height
-		toAssertionHeight := fromAssertionHeight + 1
-
-		historyCommit, err := v.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
-		if err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-		proof, err := v.cfg.stateManager.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, toHeight)
-		if err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-		return historyCommit, proof, nil
-	case protocol.SmallStepChallenge:
-		var topLevelClaimVertex protocol.ChallengeVertex
-		if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
-			topLevel, err := v.challenge.TopLevelClaimVertex(ctx, tx)
-			if err != nil {
-				return err
-			}
-			topLevelClaimVertex = topLevel
-			return nil
-		}); err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-		fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height
-		toAssertionHeight := fromAssertionHeight + 1
-		historyCommit, err := v.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
-		if err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-		proof, err := v.cfg.stateManager.SmallStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, toHeight)
-		if err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-		return historyCommit, proof, nil
-	default:
-		return util.HistoryCommitment{}, nil, fmt.Errorf("challenge type not supported: %s", v.challenge.GetType())
 	}
+	var topLevelClaimVertex protocol.ChallengeVertex
+	if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
+		topLevel, err := v.challenge.TopLevelClaimVertex(ctx, tx)
+		if err != nil {
+			return err
+		}
+		topLevelClaimVertex = topLevel
+		return nil
+	}); err != nil {
+		return util.HistoryCommitment{}, nil, err
+	}
+
+	fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height
+	toAssertionHeight := fromAssertionHeight + 1
+
+	var historyCommit util.HistoryCommitment
+	var commitErr error
+	var proof []byte
+	var proofErr error
+	switch v.challenge.GetType() {
+	case protocol.BigStepChallenge:
+		historyCommit, commitErr = v.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
+		proof, proofErr = v.cfg.stateManager.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, toHeight)
+	case protocol.SmallStepChallenge:
+		historyCommit, commitErr = v.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
+		proof, proofErr = v.cfg.stateManager.SmallStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, toHeight)
+	default:
+		return util.HistoryCommitment{}, nil, fmt.Errorf("unsupported challenge type: %s", v.challenge.GetType())
+	}
+	if commitErr != nil {
+		return util.HistoryCommitment{}, nil, commitErr
+	}
+	if proofErr != nil {
+		return util.HistoryCommitment{}, nil, proofErr
+	}
+	return historyCommit, proof, nil
 }
 
 // Performs a bisection move during a BlockChallenge in the assertion protocol given
