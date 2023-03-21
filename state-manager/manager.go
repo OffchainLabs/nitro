@@ -352,7 +352,7 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 			return nil, err
 		}
 		var hash common.Hash
-		if divergenceHeight == 0 || i < divergenceHeight {
+		if divergenceHeight == 0 || i+1 < divergenceHeight {
 			hash = intermediateState.Hash()
 		} else {
 			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromAssertionHeight, toAssertionHeight, chalType)))
