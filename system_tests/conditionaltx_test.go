@@ -26,7 +26,7 @@ import (
 func getStorageRootHash(t *testing.T, node *arbnode.Node, address common.Address) common.Hash {
 	t.Helper()
 	statedb, err := node.Backend.ArbInterface().BlockChain().State()
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	trie := statedb.StorageTrie(address)
 	return trie.Hash()
 }
@@ -34,14 +34,14 @@ func getStorageRootHash(t *testing.T, node *arbnode.Node, address common.Address
 func getStorageSlotValue(t *testing.T, node *arbnode.Node, address common.Address) map[common.Hash]common.Hash {
 	t.Helper()
 	statedb, err := node.Backend.ArbInterface().BlockChain().State()
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	slotValue := make(map[common.Hash]common.Hash)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	err = statedb.ForEachStorage(address, func(key, value common.Hash) bool {
 		slotValue[key] = value
 		return true
 	})
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	return slotValue
 }
 
@@ -50,7 +50,7 @@ func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx i
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err != nil {
-		testhelpers.FailImpl(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
+		Fail(t, "SendConditionalTransactionRPC failed, idx:", idx, "err:", err)
 	}
 }
 
@@ -61,15 +61,15 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
-		testhelpers.FailImpl(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx)
+		Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx)
 	} else {
 		var rErr rpc.Error
 		if errors.As(err, &rErr) {
 			if rErr.ErrorCode() != expectedErrorCode {
-				testhelpers.FailImpl(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
+				Fail(t, "unexpected error code, have:", rErr.ErrorCode(), "want:", expectedErrorCode)
 			}
 		} else {
-			testhelpers.FailImpl(t, "unexpected error type, err:", err)
+			Fail(t, "unexpected error type, err:", err)
 		}
 	}
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
@@ -132,14 +132,14 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	currentSlotValueMap2 := getStorageSlotValue(t, node, contractAddress2)
 
 	rpcClient, err := node.Stack.Attach()
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	l2info.GenerateAccount("User2")
 
 	testConditionalTxThatShouldSucceed(t, ctx, -1, l2info, rpcClient, nil)
 
 	block, err := l1client.BlockByNumber(ctx, nil)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	blockNumber := block.NumberU64()
 	blockTime := block.Time()
 	successOptions := getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber, blockTime)
@@ -159,7 +159,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	previousStorageRootHash1 := currentRootHash1
 	currentRootHash1 = getStorageRootHash(t, node, contractAddress1)
 	if bytes.Equal(previousStorageRootHash1.Bytes(), currentRootHash1.Bytes()) {
-		testhelpers.FailImpl(t, "storage root hash didn't change as expected")
+		Fail(t, "storage root hash didn't change as expected")
 	}
 	previousSlotValueMap1 := currentSlotValueMap1
 	currentSlotValueMap1 = getStorageSlotValue(t, node, contractAddress1)
@@ -167,13 +167,13 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	previousStorageRootHash2 := currentRootHash2
 	currentRootHash2 = getStorageRootHash(t, node, contractAddress2)
 	if bytes.Equal(previousStorageRootHash2.Bytes(), currentRootHash2.Bytes()) {
-		testhelpers.FailImpl(t, "storage root hash didn't change as expected")
+		Fail(t, "storage root hash didn't change as expected")
 	}
 	previousSlotValueMap2 := currentSlotValueMap2
 	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
 
 	block, err = l1client.BlockByNumber(ctx, nil)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	blockNumber = block.NumberU64()
 	blockTime = block.Time()
 	successOptions = getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber, blockTime)
@@ -181,7 +181,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 	block, err = l1client.BlockByNumber(ctx, nil)
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 	blockNumber = block.NumberU64()
 	blockTime = block.Time()
 	future := hexutil.Uint64(blockTime + 30)
@@ -189,7 +189,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
 	currentBlockNumber := hexutil.Uint64(blockNumber)
 	if blockNumber == 0 {
-		testhelpers.FailImpl(t, "internal test error: unexpected blockNumber == 0")
+		Fail(t, "internal test error: unexpected blockNumber == 0")
 	}
 	previousBlockNumber := hexutil.Uint64(blockNumber - 1)
 	failOptions := []*arbitrum_types.ConditionalOptions{
@@ -225,13 +225,13 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	l2info, node, client := CreateTestL2(t, ctx)
 	defer node.StopAndWait()
 	rpcClient, err := node.Stack.Attach()
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	contractAddress, simple := deploySimple(t, ctx, auth, client)
 
 	simpleContract, err := abi.JSON(strings.NewReader(mocksgen.SimpleABI))
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	numTxes := 200
 	expectedSuccesses := numTxes / 20
@@ -242,14 +242,14 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		l2info.GenerateAccount(account)
 		tx := l2info.PrepareTx("Owner", account, l2info.TransferGas, big.NewInt(1e16), nil)
 		err := client.SendTransaction(ctx, tx)
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 	for i := numTxes - 1; i >= 0; i-- {
 		expected := i % expectedSuccesses
 		data, err := simpleContract.Pack("logAndIncrement", big.NewInt(int64(expected)))
-		testhelpers.RequireImpl(t, err)
+		Require(t, err)
 		account := fmt.Sprintf("User%v", i)
 		txes = append(txes, l2info.PrepareTxTo(account, &contractAddress, l2info.TransferGas, big.NewInt(0), data))
 		options = append(options, &arbitrum_types.ConditionalOptions{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress: {SlotValue: map[common.Hash]common.Hash{{0}: common.BigToHash(big.NewInt(int64(expected)))}}}})
@@ -276,7 +276,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 		select {
 		case <-success:
 		case <-ctxWithTimeout.Done():
-			testhelpers.FailImpl(t, "test timeouted")
+			Fail(t, "test timeouted")
 		}
 	}
 	cancelCtxWithTimeout()
@@ -289,7 +289,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	for i := genesis + 1; header != nil; i++ {
 		blockReceipts := bc.GetReceiptsByHash(header.Hash())
 		if blockReceipts == nil {
-			testhelpers.FailImpl(t, "Failed to get block receipts, block number:", header.Number)
+			Fail(t, "Failed to get block receipts, block number:", header.Number)
 		}
 		receipts = append(receipts, blockReceipts...)
 		header = bc.GetHeaderByNumber(i)
@@ -301,14 +301,14 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 			parsed, err := simple.ParseLogAndIncrementCalled(*receipt.Logs[0])
 			Require(t, err)
 			if parsed.Expected.Int64() != parsed.Have.Int64() {
-				testhelpers.FailImpl(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
+				Fail(t, "Got invalid log, log.Expected:", parsed.Expected, "log.Have:", parsed.Have)
 			} else {
 				succeeded++
 			}
 		}
 	}
 	if succeeded != expectedSuccesses {
-		testhelpers.FailImpl(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
+		Fail(t, "Unexpected number of successful txes, want:", numTxes, "have:", succeeded)
 	}
 }
 
