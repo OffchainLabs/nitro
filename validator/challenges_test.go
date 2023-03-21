@@ -5,6 +5,7 @@ import (
 	"context"
 	"math/big"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -436,8 +437,11 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	var totalVertexAdded uint64
 	var totalBisections uint64
 	var totalMerges uint64
+	var wg sync.WaitGroup
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		logs := make(chan types.Log, 100)
 		query := ethereum.FilterQuery{
 			Addresses: []common.Address{managerAddr},
@@ -478,7 +482,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		AssertLogsContain(t, hook, "Submitted assertion")
 	}
 
-	<-ctx.Done()
+	wg.Wait()
 	assert.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
 	assert.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
