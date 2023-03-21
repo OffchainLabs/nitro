@@ -82,6 +82,10 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         return context.outputId;
     }
 
+    function l2ToL1WithdrawalAmount() external pure override returns (uint256) {
+        return 0;
+    }
+
     /**
      * @notice Executes a messages in an Outbox entry.
      * @dev Reverts if dispute period hasn't expired, since the outbox entry
@@ -160,7 +164,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         bytes32 item
     ) internal returns (bytes32) {
         if (proof.length >= 256) revert ProofTooLong(proof.length);
-        if (index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
+        if (index >= 2 ** proof.length) revert PathNotMinimal(index, 2 ** proof.length);
 
         // Hash the leaf an extra time to prove it's a leaf
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
@@ -172,11 +176,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         return bytes32(index);
     }
 
-    function executeBridgeCall(
-        address to,
-        uint256 value,
-        bytes memory data
-    ) internal {
+    function executeBridgeCall(address to, uint256 value, bytes memory data) internal {
         (bool success, bytes memory returndata) = bridge.executeCall(to, value, data);
         if (!success) {
             if (returndata.length > 0) {
