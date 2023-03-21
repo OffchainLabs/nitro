@@ -452,7 +452,7 @@ func transact(ctx context.Context, backend ChainBackend, l1Reader *headerreader.
 	if commiter, ok := backend.(ChainCommiter); ok {
 		commiter.Commit()
 	}
-	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
 		return nil, err
 	}
