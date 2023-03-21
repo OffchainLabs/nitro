@@ -337,7 +337,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(bobAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*5),
 	)
 	require.NoError(t, err)
 
