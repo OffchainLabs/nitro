@@ -2,112 +2,146 @@ package arbnode
 
 import (
 	"context"
-	"errors"
-	"sync/atomic"
+	"sync"
+	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
 
 type SyncMonitor struct {
-	config      *SyncMonitorConfig
+	stopwaiter.StopWaiter
+	config      func() *SyncMonitorConfig
 	inboxReader *InboxReader
 	txStreamer  *TransactionStreamer
 	coordinator *SeqCoordinator
-	exec        execution.FullExecutionClient
 	initialized bool
+
+	maxMsgLock          sync.Mutex
+	lastMaxMessageCount arbutil.MessageIndex
+	prevMaxMessageCount arbutil.MessageIndex
 }
 
-func NewSyncMonitor(config *SyncMonitorConfig) *SyncMonitor {
+func NewSyncMonitor(config func() *SyncMonitorConfig) *SyncMonitor {
 	return &SyncMonitor{
 		config: config,
 	}
 }
 
 type SyncMonitorConfig struct {
-	BlockBuildLag               uint64 `koanf:"block-build-lag"`
-	BlockBuildSequencerInboxLag uint64 `koanf:"block-build-sequencer-inbox-lag"`
-	CoordinatorMsgLag           uint64 `koanf:"coordinator-msg-lag"`
+	MsgLag time.Duration `koanf:"msg-lag"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
-	BlockBuildLag:               20,
-	BlockBuildSequencerInboxLag: 0,
-	CoordinatorMsgLag:           15,
+	MsgLag: time.Second,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".block-build-lag", DefaultSyncMonitorConfig.BlockBuildLag, "allowed lag between messages read and blocks built")
-	f.Uint64(prefix+".block-build-sequencer-inbox-lag", DefaultSyncMonitorConfig.BlockBuildSequencerInboxLag, "allowed lag between messages read from sequencer inbox and blocks built")
-	f.Uint64(prefix+".coordinator-msg-lag", DefaultSyncMonitorConfig.CoordinatorMsgLag, "allowed lag between local and remote messages")
+	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, exec execution.FullExecutionClient) {
+func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
 	s.inboxReader = inboxReader
 	s.txStreamer = txStreamer
 	s.coordinator = coordinator
-	s.exec = exec
 	s.initialized = true
 }
 
+func (s *SyncMonitor) updateDelayedMaxMessageCount(ctx context.Context) time.Duration {
+	maxMsg, err := s.maxMessageCount()
+	if err != nil {
+		log.Warn("failed readin max msg count", "err", err)
+		return s.config().MsgLag
+	}
+	s.maxMsgLock.Lock()
+	defer s.maxMsgLock.Unlock()
+	s.prevMaxMessageCount = s.lastMaxMessageCount
+	s.lastMaxMessageCount = maxMsg
+	return s.config().MsgLag
+}
+
+func (s *SyncMonitor) GetDelayedMaxMessageCount() arbutil.MessageIndex {
+	s.maxMsgLock.Lock()
+	defer s.maxMsgLock.Unlock()
+	return s.prevMaxMessageCount
+}
+
+func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
+	msgCount, err := s.txStreamer.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+
+	pending := s.txStreamer.FeedPendingMessageCount()
+	if pending > msgCount {
+		msgCount = pending
+	}
+
+	if s.inboxReader != nil {
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
+
+		if batchProcessed > 0 {
+			batchMsgCount, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
+			if err != nil {
+				return msgCount, err
+			}
+			if batchMsgCount > msgCount {
+				msgCount = batchMsgCount
+			}
+		}
+	}
+
+	if s.coordinator != nil {
+		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount() //NOTE: this creates a remote call
+		if err != nil {
+			return msgCount, err
+		}
+		if coordinatorMessageCount > msgCount {
+			msgCount = coordinatorMessageCount
+		}
+	}
+
+	return msgCount, nil
+}
+
 func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	syncing := false
 	res := make(map[string]interface{})
+
+	if s.Synced() {
+		return res
+	}
 
 	if !s.initialized {
 		res["err"] = "uninitialized"
 		return res
 	}
 
-	broadcasterQueuedMessagesPos := atomic.LoadUint64(&(s.txStreamer.broadcasterQueuedMessagesPos))
-
-	if broadcasterQueuedMessagesPos != 0 { // unprocessed feed
-		syncing = true
-	}
-	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
-
-	builtMessageCount, err := s.txStreamer.exec.HeadMessageNumber()
-	if err != nil {
-		res["blockMessageToMessageCountError"] = err.Error()
-		syncing = true
-		builtMessageCount = 0
-	} else {
-		builtMessageCount++
-		res["messageOfLastBlock"] = builtMessageCount
-	}
+	delayedMax := s.GetDelayedMaxMessageCount()
+	res["delayedMaxMsgCount"] = delayedMax
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
 		res["msgCountError"] = err.Error()
-		syncing = true
-	} else {
-		res["msgCount"] = msgCount
-		if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildLag) < msgCount {
-			syncing = true
-		}
+		return res
 	}
+	res["msgCount"] = msgCount
+
+	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
 
 	if s.inboxReader != nil {
 		batchSeen := s.inboxReader.GetLastSeenBatchCount()
-		batchProcessed := s.inboxReader.GetLastReadBatchCount()
-
-		if (batchSeen == 0) || // error or not yet read inbox
-			(batchProcessed < batchSeen) { // unprocessed inbox messages
-			syncing = true
-		}
 		res["batchSeen"] = batchSeen
+
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
 		res["batchProcessed"] = batchProcessed
 
-		processedMetadata, err := s.inboxReader.Tracker().GetBatchMetadata(batchProcessed - 1)
+		processedBatchMsgs, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
 		if err != nil {
 			res["batchMetadataError"] = err.Error()
-			syncing = true
 		} else {
-			res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-			if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
-				syncing = true
-			}
+			res["messageOfProcessedBatch"] = processedBatchMsgs
 		}
 
 		l1reader := s.inboxReader.l1Reader
@@ -127,46 +161,47 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount() //NOTE: this creates a remote call
 		if err != nil {
 			res["coordinatorMsgCountError"] = err.Error()
-			syncing = true
 		} else {
 			res["coordinatorMessageCount"] = coordinatorMessageCount
-			if msgCount+arbutil.MessageIndex(s.config.CoordinatorMsgLag) < coordinatorMessageCount {
-				syncing = true
-			}
 		}
-	}
-
-	if !syncing {
-		return make(map[string]interface{})
 	}
 
 	return res
 }
 
-func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	if s.inboxReader == nil || !s.initialized {
-		return 0, errors.New("not set up for safeblock")
-	}
-	msg, err := s.inboxReader.GetSafeMsgCount(ctx)
-	if err != nil {
-		return 0, err
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
-}
-
-func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	if s.inboxReader == nil || !s.initialized {
-		return 0, errors.New("not set up for safeblock")
-	}
-	msg, err := s.inboxReader.GetFinalizedMsgCount(ctx)
-	if err != nil {
-		return 0, err
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
+func (s *SyncMonitor) Start(ctx_in context.Context) {
+	s.StopWaiter.Start(ctx_in, s)
+	s.CallIteratively(s.updateDelayedMaxMessageCount)
 }
 
 func (s *SyncMonitor) Synced() bool {
-	return len(s.SyncProgressMap()) == 0
+	if !s.initialized {
+		return false
+	}
+	if !s.Started() {
+		return false
+	}
+	delayedMax := s.GetDelayedMaxMessageCount()
+
+	msgCount, err := s.txStreamer.GetMessageCount()
+	if err != nil {
+		return false
+	}
+
+	if delayedMax > msgCount {
+		return false
+	}
+
+	if s.inboxReader != nil {
+		batchSeen := s.inboxReader.GetLastSeenBatchCount()
+		if batchSeen == 0 {
+			return false
+		}
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
+
+		if batchProcessed < batchSeen {
+			return false
+		}
+	}
+	return true
 }

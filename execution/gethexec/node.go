@@ -116,6 +116,7 @@ type ExecutionNode struct {
 	Sequencer     *Sequencer // either nil or same as TxPublisher
 	TxPublisher   TransactionPublisher
 	ConfigFetcher ConfigFetcher
+	SyncMonitor   *SyncMonitor
 	L1Reader      *headerreader.HeaderReader
 	ClassicOutbox *ClassicOutboxRetriever
 }
@@ -177,6 +178,8 @@ func CreateExecutionNode(
 		return nil, err
 	}
 
+	syncMon := NewSyncMonitor(execEngine)
+
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
@@ -231,13 +234,14 @@ func CreateExecutionNode(
 		sequencer,
 		txPublisher,
 		configFetcher,
+		syncMon,
 		l1Reader,
 		classicOutbox,
 	}, nil
 
 }
 
-func (n *ExecutionNode) Initialize(ctx context.Context, sync arbitrum.SyncProgressBackend) error {
+func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
@@ -247,7 +251,7 @@ func (n *ExecutionNode) Initialize(ctx context.Context, sync arbitrum.SyncProgre
 	if err != nil {
 		return fmt.Errorf("error initializing transaction publisher: %w", err)
 	}
-	err = n.Backend.APIBackend().SetSyncBackend(sync)
+	err = n.Backend.APIBackend().SetSyncBackend(n.SyncMonitor)
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
@@ -265,10 +269,9 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
-	// TODO after separation
-	// if n.L1Reader != nil {
-	// 	n.L1Reader.Start(ctx)
-	// }
+	if n.L1Reader != nil {
+		n.L1Reader.Start(ctx)
+	}
 	return nil
 }
 
@@ -279,10 +282,9 @@ func (n *ExecutionNode) StopAndWait() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
-	// TODO after separation
-	// if n.L1Reader != nil && n.L1Reader.Started() {
-	// 	n.L1Reader.StopAndWait()
-	// }
+	if n.L1Reader != nil && n.L1Reader.Started() {
+		n.L1Reader.StopAndWait()
+	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
 	}
@@ -344,8 +346,9 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 	return n.Sequencer.ForwardTo(url)
 }
 
-func (n *ExecutionNode) SetTransactionStreamer(streamer execution.TransactionStreamer) {
-	n.ExecEngine.SetTransactionStreamer(streamer)
+func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
+	n.ExecEngine.SetTransactionStreamer(consensus)
+	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {

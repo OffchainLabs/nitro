@@ -27,9 +27,9 @@ import (
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc       *core.BlockChain
-	streamer execution.TransactionStreamer
-	recorder *BlockRecorder
+	bc        *core.BlockChain
+	consensus execution.FullConsensusClient
+	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -71,18 +71,18 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 	s.reorgSequencing = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(streamer execution.TransactionStreamer) {
+func (s *ExecutionEngine) SetTransactionStreamer(consensus execution.FullConsensusClient) {
 	if s.Started() {
-		panic("trying to set transaction streamer after start")
+		panic("trying to set transaction consensus after start")
 	}
-	if s.streamer != nil {
-		panic("trying to set transaction streamer when already set")
+	if s.consensus != nil {
+		panic("trying to set transaction consensus when already set")
 	}
-	s.streamer = streamer
+	s.consensus = consensus
 }
 
 func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
-	return s.streamer
+	return s.consensus
 }
 
 func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
@@ -298,7 +298,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
 	if err != nil {
 		return err
 	}
@@ -395,6 +395,10 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
+	batchFetcher := func(num uint64) ([]byte, error) {
+		return s.consensus.FetchBatch(s.GetContext(), num)
+	}
+
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -402,7 +406,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		s.streamer.FetchBatch,
+		batchFetcher,
 	)
 
 	return block, statedb, receipts, err

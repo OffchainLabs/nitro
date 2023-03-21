@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -614,8 +615,10 @@ func createNodeImpl(
 	//TODO:
 	// var reorgingToBlock *types.Block
 	// config.Dangerous.ReorgToBlock >= 0 {
-
-	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
+	syncConfigFetcher := func() *SyncMonitorConfig {
+		return &configFetcher.Get().SyncMonitor
+	}
+	syncMonitor := NewSyncMonitor(syncConfigFetcher)
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
@@ -941,17 +944,18 @@ func (n *Node) Start(ctx context.Context) error {
 		execClient = nil
 	}
 	if execClient != nil {
-		err := execClient.Initialize(ctx, n.SyncMonitor)
+		err := execClient.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.Execution)
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
 	if execClient != nil {
+		execClient.SetConsensusClient(n)
 		err := execClient.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting exec client: %w", err)
@@ -1112,4 +1116,41 @@ func (n *Node) StopAndWait() {
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stak close", "err", err)
 	}
+}
+
+func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
+	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
+}
+
+func (n *Node) FindL1BatchForMessage(message arbutil.MessageIndex) (uint64, error) {
+	return n.InboxTracker.FindL1BatchForMessage(message)
+}
+
+func (n *Node) GetBatchL1Block(seqNum uint64) (uint64, error) {
+	return n.InboxTracker.GetBatchL1Block(seqNum)
+}
+
+func (n *Node) SyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.SyncProgressMap()
+}
+
+func (n *Node) GetDelayedMaxMessageCount() arbutil.MessageIndex {
+	return n.SyncMonitor.GetDelayedMaxMessageCount()
+}
+
+// TODO: switch from pulling to pushing safe/finalized
+func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetSafeMsgCount(ctx)
+}
+
+func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetFinalizedMsgCount(ctx)
+}
+
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+}
+
+func (n *Node) ExpectChosenSequencer() error {
+	return n.TxStreamer.ExpectChosenSequencer()
 }

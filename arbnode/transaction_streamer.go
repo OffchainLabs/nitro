@@ -100,7 +100,6 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 	}
-	streamer.exec.SetTransactionStreamer(streamer)
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
@@ -367,6 +366,21 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
+}
+
+func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
+	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
 }
 
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
@@ -746,18 +760,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	return nil
-}
-
-func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
-	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
-}
-
-func (s *TransactionStreamer) FindL1BatchForMessage(pos arbutil.MessageIndex) (uint64, error) {
-	return s.inboxReader.tracker.FindL1BatchForMessage(pos)
-}
-
-func (s *TransactionStreamer) GetBatchL1Block(seqNum uint64) (uint64, error) {
-	return s.inboxReader.tracker.GetBatchL1Block(seqNum)
 }
 
 // The caller must hold the insertionMutex

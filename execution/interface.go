@@ -54,7 +54,6 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
-	SetTransactionStreamer(streamer TransactionStreamer)
 }
 
 type FullExecutionClient interface {
@@ -64,19 +63,33 @@ type FullExecutionClient interface {
 
 	Maintenance() error
 
-	// TODO: only used to get safe/finalized block numbers
-	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
+	SetConsensusClient(consensus FullConsensusClient)
 }
 
 // not implemented in execution, used as input
+// BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(batchNum uint64) ([]byte, error)
+	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error)
 	FindL1BatchForMessage(message arbutil.MessageIndex) (uint64, error)
 	GetBatchL1Block(seqNum uint64) (uint64, error)
 }
 
-type TransactionStreamer interface {
-	BatchFetcher
+type ConsensusInfo interface {
+	SyncProgressMap() map[string]interface{}
+	GetDelayedMaxMessageCount() arbutil.MessageIndex
+
+	// TODO: switch from pulling to pushing safe/finalized
+	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+}
+
+type ConsensusSequencer interface {
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
 	ExpectChosenSequencer() error
+}
+
+type FullConsensusClient interface {
+	BatchFetcher
+	ConsensusInfo
+	ConsensusSequencer
 }
