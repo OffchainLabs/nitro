@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/big"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -90,9 +89,6 @@ type InboxReader struct {
 
 	// Atomic
 	lastSeenBatchCount uint64
-
-	// Behind the mutex
-	lastReadMutex      sync.RWMutex
 	lastReadBatchCount uint64
 }
 
@@ -346,9 +342,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			// There's nothing to do
 			from = arbmath.BigAddByUint(currentHeight, 1)
 			blocksToFetch = config.DefaultBlocksToRead
-			r.lastReadMutex.Lock()
-			r.lastReadBatchCount = checkingBatchCount
-			r.lastReadMutex.Unlock()
+			atomic.StoreUint64(&r.lastReadBatchCount, checkingBatchCount)
 			storeSeenBatchCount()
 			if !r.caughtUp {
 				r.caughtUp = true
@@ -480,9 +474,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				if len(sequencerBatches) > 0 {
 					readAnyBatches = true
-					r.lastReadMutex.Lock()
-					r.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
-					r.lastReadMutex.Unlock()
+					atomic.StoreUint64(&r.lastReadBatchCount, sequencerBatches[len(sequencerBatches)-1].SequenceNumber+1)
 					storeSeenBatchCount()
 				}
 			}
@@ -509,9 +501,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 		}
 
 		if !readAnyBatches {
-			r.lastReadMutex.Lock()
-			r.lastReadBatchCount = checkingBatchCount
-			r.lastReadMutex.Unlock()
+			atomic.StoreUint64(&r.lastReadBatchCount, checkingBatchCount)
 			storeSeenBatchCount()
 		}
 	}
@@ -582,9 +572,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 }
 
 func (r *InboxReader) GetLastReadBatchCount() uint64 {
-	r.lastReadMutex.RLock()
-	defer r.lastReadMutex.RUnlock()
-	return r.lastReadBatchCount
+	return atomic.LoadUint64(&r.lastReadBatchCount)
 }
 
 // GetLastSeenBatchCount returns how many sequencer batches the inbox reader has read in from L1.
