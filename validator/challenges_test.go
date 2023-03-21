@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"math/big"
-	"math/rand"
 	"testing"
 	"time"
 
+	"encoding/binary"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -20,6 +20,7 @@ import (
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"math"
 )
 
 var (
@@ -177,6 +178,7 @@ func prepareHonestStates(
 	ctx context.Context,
 	chain protocol.Protocol,
 	backend *backends.SimulatedBackend,
+	honestHashes []common.Hash,
 	chainHeight uint64,
 	prevInboxMaxCount *big.Int,
 ) ([]*protocol.ExecutionState, []*big.Int) {
@@ -207,12 +209,11 @@ func prepareHonestStates(
 	honestStates[0] = genesisState
 	honestInboxCounts[0] = big.NewInt(1)
 
-	var honestBlockHash common.Hash
 	for i := uint64(1); i <= chainHeight; i++ {
-		honestBlockHash = backend.Commit()
+		backend.Commit()
 		state := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
-				BlockHash: honestBlockHash,
+				BlockHash: honestHashes[i],
 				Batch:     1,
 			},
 			MachineStatus: protocol.MachineStatusFinished,
@@ -227,6 +228,7 @@ func prepareHonestStates(
 func prepareMaliciousStates(
 	t testing.TB,
 	cfg *challengeProtocolTestConfig,
+	evilHashes []common.Hash,
 	honestStates []*protocol.ExecutionState,
 	honestInboxCounts []*big.Int,
 	prevInboxMaxCount *big.Int,
@@ -241,13 +243,9 @@ func prepareMaliciousStates(
 			states[j] = honestStates[j]
 			inboxCounts[j] = honestInboxCounts[j]
 		} else {
-			junkRoot := make([]byte, 32)
-			_, err := rand.Read(junkRoot)
-			require.NoError(t, err)
-			blockHash := crypto.Keccak256Hash(junkRoot)
 			evilState := &protocol.ExecutionState{
 				GlobalState: protocol.GoGlobalState{
-					BlockHash: blockHash,
+					BlockHash: evilHashes[j],
 					Batch:     1,
 				},
 				MachineStatus: protocol.MachineStatusFinished,
@@ -271,11 +269,16 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		backend.Commit()
 	}
 
+	honestHashes := honestHashesForUints(0, cfg.currentChainHeight+1)
+	evilHashes := evilHashesForUints(0, cfg.currentChainHeight+1)
+	require.Equal(t, len(honestHashes), len(evilHashes))
+
 	honestStates, honestInboxCounts := prepareHonestStates(
 		t,
 		ctx,
 		chains[1],
 		backend,
+		honestHashes,
 		cfg.currentChainHeight,
 		prevInboxMaxCount,
 	)
@@ -283,6 +286,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	maliciousStates, maliciousInboxCounts := prepareMaliciousStates(
 		t,
 		cfg,
+		evilHashes,
 		honestStates,
 		honestInboxCounts,
 		prevInboxMaxCount,
@@ -331,7 +335,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(bobAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*50),
 	)
 	require.NoError(t, err)
 
@@ -400,4 +404,24 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	assert.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
 	assert.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
+}
+
+func evilHashesForUints(lo, hi uint64) []common.Hash {
+	ret := []common.Hash{}
+	for i := lo; i < hi; i++ {
+		ret = append(ret, hashForUint(math.MaxUint64-i))
+	}
+	return ret
+}
+
+func honestHashesForUints(lo, hi uint64) []common.Hash {
+	ret := []common.Hash{}
+	for i := lo; i < hi; i++ {
+		ret = append(ret, hashForUint(i))
+	}
+	return ret
+}
+
+func hashForUint(x uint64) common.Hash {
+	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, x))
 }

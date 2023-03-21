@@ -276,15 +276,16 @@ func (m *MockActiveTx) Sender() common.Address {
 
 type MockChallenge struct {
 	mock.Mock
-	MockID                protocol.ChallengeHash
-	MockType              protocol.ChallengeType
-	MockWinningAssertion  util.Option[protocol.AssertionHash]
-	MockAssertion         protocol.Assertion
-	MockRootVertex        protocol.ChallengeVertex
-	MockCreationTime      time.Time
-	MockParentStateCommit util.StateCommitment
-	MockWinnerVertex      util.Option[protocol.ChallengeVertex]
-	MockChallenger        common.Address
+	MockID                  protocol.ChallengeHash
+	MockType                protocol.ChallengeType
+	MockWinningAssertion    util.Option[protocol.AssertionHash]
+	MockAssertion           protocol.Assertion
+	MockRootVertex          protocol.ChallengeVertex
+	MockCreationTime        time.Time
+	MockParentStateCommit   util.StateCommitment
+	MockWinnerVertex        util.Option[protocol.ChallengeVertex]
+	MockChallenger          common.Address
+	MockTopLevelClaimVertex protocol.ChallengeVertex
 }
 
 // Getters.
@@ -302,6 +303,10 @@ func (m *MockChallenge) WinningClaim() util.Option[protocol.AssertionHash] {
 
 func (m *MockChallenge) RootAssertion(ctx context.Context, tx protocol.ActiveTx) (protocol.Assertion, error) {
 	return m.MockAssertion, nil
+}
+
+func (m *MockChallenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
+	return m.MockTopLevelClaimVertex, nil
 }
 
 func (m *MockChallenge) RootVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {

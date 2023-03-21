@@ -24,7 +24,11 @@ func TestPrefixProof(t *testing.T) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager := New(hashes)
+	manager := New(
+		hashes,
+		WithMaxWavmOpcodesPerBlock(56),
+		WithNumOpcodesPerBigStep(8),
+	)
 
 	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
 	require.NoError(t, err)
@@ -52,6 +56,48 @@ func TestPrefixProof(t *testing.T) {
 		PreSize:      4,
 		PostRoot:     hiCommit.Merkle,
 		PostSize:     8,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	require.NoError(t, err)
+
+	from := uint64(2)
+	to := uint64(3)
+	bigFrom := uint64(3)
+	bigTo := uint64(7)
+
+	bigCommit, err := manager.BigStepLeafCommitment(ctx, from, to)
+	require.NoError(t, err)
+
+	bigBisectCommit, err := manager.BigStepCommitmentUpTo(ctx, from, to, bigFrom)
+	require.NoError(t, err)
+	require.Equal(t, bigFrom, bigBisectCommit.Height)
+
+	bigProof, err := manager.BigStepPrefixProof(ctx, from, to, bigFrom, bigTo)
+	require.NoError(t, err)
+
+	data, err = ProofArgs.Unpack(bigProof)
+	require.NoError(t, err)
+	preExpansion = data[0].([][32]byte)
+	proof = data[1].([][32]byte)
+
+	preExpansionHashes = make([]common.Hash, len(preExpansion))
+	for i := 0; i < len(preExpansion); i++ {
+		preExpansionHashes[i] = preExpansion[i]
+	}
+	prefixProof = make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		prefixProof[i] = proof[i]
+	}
+
+	computed := prefixproofs.Root(preExpansionHashes)
+	require.Equal(t, bigBisectCommit.Merkle, computed)
+
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      bigBisectCommit.Merkle,
+		PreSize:      bigFrom + 1,
+		PostRoot:     bigCommit.Merkle,
+		PostSize:     bigTo + 1,
 		PreExpansion: preExpansionHashes,
 		PrefixProof:  prefixProof,
 	})

@@ -190,6 +190,7 @@ type Challenge interface {
 	WinningClaim() util.Option[AssertionHash]
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
 	RootVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
+	TopLevelClaimVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
 	GetCreationTime(ctx context.Context, tx ActiveTx) (time.Time, error)
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)

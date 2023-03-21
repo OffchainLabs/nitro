@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 // Defines the ABI encoding structure for submission of prefix proofs to the protocol contracts
@@ -273,6 +274,7 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
+	logrus.Info("Big step leaves count", len(leaves))
 	return util.NewHistoryCommitment(toBigStep, leaves)
 }
 

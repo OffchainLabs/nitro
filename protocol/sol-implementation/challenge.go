@@ -11,7 +11,6 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/sirupsen/logrus"
 )
 
 func (c *Challenge) Id() protocol.ChallengeHash {
@@ -33,50 +32,74 @@ func (c *Challenge) RootAssertion(
 		return nil, errors.New("root vertex not found")
 	}
 	root := rootVertex.Unwrap().(*ChallengeVertex)
-	switch c.GetType() {
-	case protocol.BlockChallenge:
-		assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
-		if err != nil {
-			return nil, err
-		}
-		return c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
-	case protocol.BigStepChallenge:
-		logrus.Info("We are in a big step challenge yo")
-		subchallengeRootVertex, err := c.manager.GetVertex(ctx, tx, root.inner.ClaimId)
-		if err != nil {
-			return nil, err
-		}
-		if subchallengeRootVertex.IsNone() {
-			return nil, errors.New("subchallenge root vertex not found")
-		}
-		subchallengeRoot := rootVertex.Unwrap().(*ChallengeVertex)
-		logrus.Infof("Got subchallenge root vertex, height %d", subchallengeRoot.inner.Height.Uint64())
-		blockChallengeGot, err := c.manager.GetChallenge(ctx, tx, subchallengeRoot.inner.ChallengeId)
-		if err != nil {
-			return nil, err
-		}
-		if blockChallengeGot.IsNone() {
-			return nil, errors.New("subchallenge root vertex not found")
-		}
-		blockChallenge := blockChallengeGot.Unwrap().(*Challenge)
-		logrus.Infof("Got subchallenge root vertex's challenge of type %s", blockChallengeGot.Unwrap().GetType())
-		blockChallengeRootVertex, err := c.manager.GetVertex(ctx, tx, blockChallenge.inner.RootId)
-		if err != nil {
-			return nil, err
-		}
-		if blockChallengeRootVertex.IsNone() {
-			return nil, errors.New("root vertex not found")
-		}
-		root = blockChallengeRootVertex.Unwrap().(*ChallengeVertex)
-		assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
-		if err != nil {
-			return nil, err
-		}
-		return c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
-	case protocol.SmallStepChallenge:
-		return nil, errors.New("cannot get root assertion for small step")
+	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
+	if err != nil {
+		return nil, err
 	}
-	return nil, errors.New("does not work")
+	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
+	if err != nil {
+		return nil, err
+	}
+	return assertion, nil
+}
+
+// TopLevelClaimVertex gets the vertex at the BlockChallenge level that originated a subchallenge.
+// For example, if two validators open a subchallenge S at vertex A in a BlockChallenge, the TopLevelClaimVertex
+// of S is A. If two validators open a subchallenge S' at vertex B in BigStepChallenge, the TopLevelClaimVertex
+// is vertex A.
+func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
+	if c.GetType() == protocol.BlockChallenge {
+		return nil, errors.New("not a subchallenge")
+	}
+	rootV, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+	if err != nil {
+		return nil, err
+	}
+	if rootV.IsNone() {
+		return nil, errors.New("no root vertex for challenge found")
+	}
+	root := rootV.Unwrap().(*ChallengeVertex)
+	claimVertexV, err := c.manager.GetVertex(ctx, tx, root.inner.ClaimId)
+	if err != nil {
+		return nil, err
+	}
+	if claimVertexV.IsNone() {
+		return nil, errors.New("no root vertex for challenge found")
+	}
+	claimVertex := claimVertexV
+
+	// If we are in a big step challenge, the claim vertex is the top-level vertex of the
+	// corresponding BlockChallenge, so we are done.
+	if c.GetType() == protocol.BigStepChallenge {
+		return claimVertex.Unwrap(), nil
+	}
+
+	// Otherwise, a bit more work is required.
+	// Get the root vertex of the BigStepChallenge claimVertex belongs to.
+	bigStepChallengeId := claimVertex.Unwrap().(*ChallengeVertex).inner.ChallengeId
+	bigStepC, err := c.manager.GetChallenge(ctx, tx, bigStepChallengeId)
+	if err != nil {
+		return nil, err
+	}
+	bigStepChallenge := bigStepC.Unwrap().(*Challenge)
+	bigStepRootV, err := c.manager.GetVertex(ctx, tx, bigStepChallenge.inner.RootId)
+	if err != nil {
+		return nil, err
+	}
+	if bigStepRootV.IsNone() {
+		return nil, errors.New("no root vertex for challenge found")
+	}
+	bigStepRoot := bigStepRootV.Unwrap().(*ChallengeVertex)
+
+	// Get the claim vertex of the BigStepChallenge's root vertex.
+	claimVertexV, err = c.manager.GetVertex(ctx, tx, bigStepRoot.inner.ClaimId)
+	if err != nil {
+		return nil, err
+	}
+	if claimVertexV.IsNone() {
+		return nil, errors.New("no claim vertex for BigStepChallenge found")
+	}
+	return claimVertexV.Unwrap(), nil
 }
 
 func (c *Challenge) RootVertex(

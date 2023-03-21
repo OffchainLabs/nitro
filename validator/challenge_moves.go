@@ -5,7 +5,10 @@ import (
 	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -20,18 +23,6 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 		return util.HistoryCommitment{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", parentHeight, toHeight)
 	}
 
-	var challengeRootAssertion protocol.Assertion
-	if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
-		rootAssertion, err := v.challenge.RootAssertion(ctx, tx)
-		if err != nil {
-			return err
-		}
-		challengeRootAssertion = rootAssertion
-		return nil
-	}); err != nil {
-		return util.HistoryCommitment{}, nil, err
-	}
-
 	switch v.challenge.GetType() {
 	case protocol.BlockChallenge:
 		historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
@@ -44,10 +35,23 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 		}
 		return historyCommit, proof, nil
 	case protocol.BigStepChallenge:
+		var topLevelClaimVertex protocol.ChallengeVertex
+		if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
+			topLevel, err := v.challenge.TopLevelClaimVertex(ctx, tx)
+			if err != nil {
+				return err
+			}
+			topLevelClaimVertex = topLevel
+			return nil
+		}); err != nil {
+			return util.HistoryCommitment{}, nil, err
+		}
 
-		fromAssertionHeight := challengeRootAssertion.Height()
+		fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height
 		toAssertionHeight := fromAssertionHeight + 1
-		log.Infof("Root assertion from %d to %d", fromAssertionHeight, toAssertionHeight)
+		log.Infof("Root from %d to %d, with bisection %d to %d", fromAssertionHeight, toAssertionHeight, bisectTo, toHeight)
+
+		// I need the height of the blockchallenge claim vertex! Then, it is just that height + 1.
 		historyCommit, err := v.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
 		if err != nil {
 			return util.HistoryCommitment{}, nil, err
@@ -56,11 +60,53 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 		if err != nil {
 			return util.HistoryCommitment{}, nil, err
 		}
+
+		log.Info("Verifying...")
+		data, err := statemanager.ProofArgs.Unpack(proof)
+		if err != nil {
+			return util.HistoryCommitment{}, nil, err
+		}
+		preExpansion := data[0].([][32]byte)
+		pureProof := data[1].([][32]byte)
+
+		preExpansionHashes := make([]common.Hash, len(preExpansion))
+		for i := 0; i < len(preExpansion); i++ {
+			preExpansionHashes[i] = preExpansion[i]
+		}
+		prefixProof := make([]common.Hash, len(pureProof))
+		for i := 0; i < len(pureProof); i++ {
+			prefixProof[i] = pureProof[i]
+		}
+		// Do a prefix proof verification for sainty.
+		if err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+			PreRoot:      historyCommit.Merkle,
+			PreSize:      bisectTo + 1,
+			PostRoot:     v.vertex.HistoryCommitment().Merkle,
+			PostSize:     toHeight + 1,
+			PreExpansion: preExpansionHashes,
+			PrefixProof:  prefixProof,
+		}); err != nil {
+			return util.HistoryCommitment{}, nil, errors.Wrapf(err, "val: %s", v.cfg.validatorName)
+		}
+
 		return historyCommit, proof, nil
 	case protocol.SmallStepChallenge:
-		fromAssertionHeight := challengeRootAssertion.Height()
+		var topLevelClaimVertex protocol.ChallengeVertex
+		if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
+			topLevel, err := v.challenge.TopLevelClaimVertex(ctx, tx)
+			if err != nil {
+				return err
+			}
+			topLevelClaimVertex = topLevel
+			return nil
+		}); err != nil {
+			return util.HistoryCommitment{}, nil, err
+		}
+		fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height
 		toAssertionHeight := fromAssertionHeight + 1
 		log.Infof("Root assertion from %d to %d", fromAssertionHeight, toAssertionHeight)
+
+		// I need the height of the blockchallenge claim vertex! Then, it is just that height + 1.
 		historyCommit, err := v.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
 		if err != nil {
 			return util.HistoryCommitment{}, nil, err
@@ -95,7 +141,6 @@ func (v *vertexTracker) bisect(
 		prevCommitment := prev.Unwrap().HistoryCommitment()
 		parentHeight := prevCommitment.Height
 
-		log.Infof("Bisecting...parent %d to %d", parentHeight, toHeight)
 		historyCommit, proof, err := v.determineBisectionHistoryWithProof(ctx, parentHeight, toHeight)
 		if err != nil {
 			return err
