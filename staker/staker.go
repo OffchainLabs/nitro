@@ -752,7 +752,7 @@ func (s *Staker) Strategy() StakerStrategy {
 func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 	txSenderAddress := s.wallet.TxSenderAddress()
 	if txSenderAddress == nil {
-		log.Error("failed to get staker's tx sender address")
+		stakerBalanceGauge.Update(0)
 		return
 	}
 	balance, err := s.client.BalanceAt(ctx, *txSenderAddress, nil)
