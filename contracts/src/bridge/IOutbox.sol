@@ -46,6 +46,11 @@ interface IOutbox {
     /// @return outputId returns the unique output identifier of the L2 to L1 tx or 0 if no L2 to L1 transaction is active
     function l2ToL1OutputId() external view returns (bytes32);
 
+    /// @notice In case of ERC20 token based rollup function will return amount of native tokens withdrawn from L2, or 0 if no L2 to L1 transaction is active
+    ///         In case of standard ETH based rollup function will always return 0. If there is active L2 to L1 TX, withdrawn amount can be read from msg.value
+    /// @return withdrawalAmount
+    function l2ToL1WithdrawalAmount() external view returns (uint256);
+
     /**
      * @notice Executes a messages in an Outbox entry.
      * @dev Reverts if dispute period hasn't expired, since the outbox entry
