@@ -23,21 +23,21 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 	}
 
 	if v.challenge.GetType() == protocol.BlockChallenge {
-		historyCommit, err := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
+		historyCommit, commitErr := v.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
 		if err != nil {
-			return util.HistoryCommitment{}, nil, err
+			return util.HistoryCommitment{}, nil, commitErr
 		}
-		proof, err := v.cfg.stateManager.PrefixProof(ctx, bisectTo, toHeight)
+		proof, proofErr := v.cfg.stateManager.PrefixProof(ctx, bisectTo, toHeight)
 		if err != nil {
-			return util.HistoryCommitment{}, nil, err
+			return util.HistoryCommitment{}, nil, proofErr
 		}
 		return historyCommit, proof, nil
 	}
 	var topLevelClaimVertex protocol.ChallengeVertex
 	if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
-		topLevel, err := v.challenge.TopLevelClaimVertex(ctx, tx)
-		if err != nil {
-			return err
+		topLevel, claimErr := v.challenge.TopLevelClaimVertex(ctx, tx)
+		if claimErr != nil {
+			return claimErr
 		}
 		topLevelClaimVertex = topLevel
 		return nil

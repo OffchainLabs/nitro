@@ -360,7 +360,7 @@ func (v *vertexTracker) openSubchallenge(
 		case protocol.BigStepChallenge:
 			subChalToCreate = protocol.SmallStepChallenge
 		default:
-			errors.New("unsupported challenge type to create")
+			return errors.New("unsupported challenge type to create")
 		}
 		subChal, err = prevVertex.CreateSubChallenge(ctx, tx)
 		if err != nil {
@@ -406,9 +406,9 @@ func (vt *vertexTracker) openSubchallengeLeaf(
 		fromVertexHeight := prevVertex.HistoryCommitment().Height
 		toVertexHeight := vt.vertex.HistoryCommitment().Height
 
-		topLevelClaimVertex, err := subChallenge.TopLevelClaimVertex(ctx, tx)
-		if err != nil {
-			return err
+		topLevelClaimVertex, claimErr := subChallenge.TopLevelClaimVertex(ctx, tx)
+		if claimErr != nil {
+			return claimErr
 		}
 
 		fromAssertionHeight := topLevelClaimVertex.HistoryCommitment().Height

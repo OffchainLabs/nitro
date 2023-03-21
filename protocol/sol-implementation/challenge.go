@@ -34,7 +34,7 @@ func (c *Challenge) RootAssertion(
 	root := rootVertex.Unwrap().(*ChallengeVertex)
 	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
 	if err != nil {
-		return nil, errors.Wrap(err, "HERE IN ROOT")
+		return nil, err
 	}
 	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
 	if err != nil {
