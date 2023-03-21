@@ -1006,6 +1006,7 @@ dependencies = [
 name = "prover"
 version = "0.1.0"
 dependencies = [
+ "arbutil",
  "bincode",
  "brotli2",
  "digest",

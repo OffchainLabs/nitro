@@ -174,3 +174,9 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {
 	return int(atomic.LoadInt32(&b.messageCount))
 }
+
+// Not thread safe
+func (b *SequenceNumberCatchupBuffer) Reset(messages []*BroadcastFeedMessage) {
+	b.messages = messages
+	atomic.StoreInt32(&b.messageCount, int32(len(messages)))
+}

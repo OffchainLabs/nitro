@@ -70,7 +70,7 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 	}
 }
 
-func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
+func (b *Broadcaster) NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
@@ -96,7 +96,7 @@ func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbu
 			log.Error("recovered error in BroadcastSingle", "recover", r)
 		}
 	}()
-	bfm, err := b.newBroadcastFeedMessage(msg, seq)
+	bfm, err := b.NewBroadcastFeedMessage(msg, seq)
 	if err != nil {
 		return err
 	}
@@ -155,4 +155,9 @@ func (b *Broadcaster) StopAndWait() {
 
 func (b *Broadcaster) Started() bool {
 	return b.server.Started()
+}
+
+// Not thread safe
+func (b *Broadcaster) PopulateBacklog(messages []*BroadcastFeedMessage) {
+	b.catchupBuffer.Reset(messages)
 }
