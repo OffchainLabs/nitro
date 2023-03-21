@@ -39,7 +39,6 @@ go_test(
     ],
     embed = [":validator"],
     deps = [
-        "//execution",
         "//protocol",
         "//protocol/sol-implementation",
         "//solgen/go/bridgegen",
