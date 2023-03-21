@@ -207,7 +207,7 @@ func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uin
 }
 
 func (c *nonceCache) Finalize(block *types.Block) {
-	// Note: we don't use c.Matches here because the header will have changed
+	// Note: we don't use c.matches here because the header will have changed
 	if c.block == block.ParentHash() {
 		c.block = block.Hash()
 		c.dirty = nil
@@ -217,7 +217,7 @@ func (c *nonceCache) Finalize(block *types.Block) {
 }
 
 func (c *nonceCache) Caching() bool {
-	return c.cache != nil
+	return c.cache != nil && c.cache.Size() > 0
 }
 
 func (c *nonceCache) Resize(newSize int) {
@@ -613,13 +613,13 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 			queueItem.returnResult(err)
 			continue
 		}
-		stateNonce, pending := pendingNonces[sender]
+		stateNonce := s.nonceCache.Get(latestHeader, latestState, sender)
+		pendingNonce, pending := pendingNonces[sender]
 		if !pending {
-			stateNonce = s.nonceCache.Get(latestHeader, latestState, sender)
+			pendingNonce = stateNonce
 		}
 		txNonce := tx.Nonce()
-		err = MakeNonceError(sender, txNonce, stateNonce)
-		if err == nil {
+		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
 			nextKey := addressAndNonce{sender, txNonce + 1}
 			revivingFailure, exists := s.nonceFailures.Get(nextKey)
@@ -635,7 +635,11 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 					nextQueueItem = &revivingFailure.queueItem
 				}
 			}
-		} else {
+		} else if txNonce < stateNonce || txNonce > pendingNonce {
+			// It's impossible for this tx to succeed so far,
+			// because its nonce is lower than the state nonce
+			// or higher than the highest tx nonce we've seen.
+			err := MakeNonceError(sender, txNonce, stateNonce)
 			if errors.Is(err, core.ErrNonceTooHigh) {
 				// Retry this transaction if its predecessor appears
 				key := addressAndNonce{sender, txNonce}
@@ -653,11 +657,18 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 						nonceFailureCacheOverflowCounter.Inc(1)
 					}
 				}
-			} else {
+				continue
+			} else if err != nil {
+				nonceCacheRejectedCounter.Inc(1)
 				queueItem.returnResult(err)
+				continue
+			} else {
+				log.Warn("unreachable nonce err == nil condition hit in precheckNonces")
 			}
-			continue
 		}
+		// If neither if condition was hit, then txNonce >= stateNonce && txNonce < pendingNonce
+		// This tx might still go through if previous txs fail.
+		// We'll include it in the output queue in case that happens.
 		outputQueueItems = append(outputQueueItems, queueItem)
 	}
 	nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
