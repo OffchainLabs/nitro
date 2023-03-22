@@ -28,32 +28,8 @@ type ChallengeHash common.Hash
 // constructed as a keccak256 hash of some of its internals.
 type VertexHash common.Hash
 
-// ActiveTx is a transaction that is currently being processed.
-type ActiveTx interface {
-	FinalizedBlockNumber() *big.Int // Finalized block number.
-	HeadBlockNumber() *big.Int      // If nil, uses the latest block in the chain.
-	ReadOnly() bool                 // Checks if a transaction is read-only.
-	Sender() common.Address
-}
-
-// ChainReader can only make non-mutating calls to a backing blockchain.
-// It executes a callback and feeds it an ActiveTx type which includes relevant
-// data about the chain, such as the finalized block number and head block number.
-type ChainReader interface {
-	Call(callback func(ActiveTx) error) error
-}
-
-// ChainReadWriter can make mutating and non-mutating calls to a backing blockchain.
-// It can executes a callbacks and feed them an ActiveTx type which includes relevant
-// data about the chain, such as the finalized block number and head block number.
-type ChainReadWriter interface {
-	ChainReader
-	Tx(callback func(ActiveTx) error) error
-}
-
 // Protocol --
 type Protocol interface {
-	ChainReadWriter
 	AssertionChain
 }
 
@@ -62,78 +38,36 @@ type Protocol interface {
 // which is used for all challenges in the protocol.
 type AssertionChain interface {
 	// Read-only methods.
-	NumAssertions(
-		ctx context.Context,
-		tx ActiveTx,
-	) (uint64, error)
-	AssertionBySequenceNum(
-		ctx context.Context,
-		tx ActiveTx,
-		seqNum AssertionSequenceNumber,
-	) (Assertion, error)
-	LatestConfirmed(ctx context.Context, tx ActiveTx) (Assertion, error)
-	CurrentChallengeManager(ctx context.Context, tx ActiveTx) (ChallengeManager, error)
-	GetAssertionId(
-		ctx context.Context,
-		tx ActiveTx,
-		seqNum AssertionSequenceNumber,
-	) (AssertionHash, error)
-	GetAssertionNum(
-		ctx context.Context,
-		tx ActiveTx,
-		assertionHash AssertionHash,
-	) (AssertionSequenceNumber, error)
+	NumAssertions(ctx context.Context) (uint64, error)
+	AssertionBySequenceNum(ctx context.Context, seqNum AssertionSequenceNumber) (Assertion, error)
+	LatestConfirmed(ctx context.Context) (Assertion, error)
+	CurrentChallengeManager(ctx context.Context) (ChallengeManager, error)
+	GetAssertionId(ctx context.Context, seqNum AssertionSequenceNumber) (AssertionHash, error)
+	GetAssertionNum(ctx context.Context, assertionHash AssertionHash) (AssertionSequenceNumber, error)
 
 	// Mutating methods.
 	CreateAssertion(
 		ctx context.Context,
-		tx ActiveTx,
 		height uint64,
 		prevSeqNum AssertionSequenceNumber,
 		prevAssertionState *ExecutionState,
 		postState *ExecutionState,
 		prevInboxMaxCount *big.Int,
 	) (Assertion, error)
-	CreateSuccessionChallenge(
-		ctx context.Context, tx ActiveTx, seqNum AssertionSequenceNumber,
-	) (Challenge, error)
-	Confirm(
-		ctx context.Context, tx ActiveTx, blockHash, sendRoot common.Hash,
-	) error
-	Reject(
-		ctx context.Context, tx ActiveTx, staker common.Address,
-	) error
+	CreateSuccessionChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (Challenge, error)
+	Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error
+	Reject(ctx context.Context, staker common.Address) error
 }
 
 // ChallengeManager allows for retrieving details of challenges such
 // as challenges themselves, vertices, or constants such as the challenge period seconds.
 type ChallengeManager interface {
 	Address() common.Address
-	ChallengePeriodSeconds(
-		ctx context.Context, tx ActiveTx,
-	) (time.Duration, error)
-	CalculateChallengeHash(
-		ctx context.Context,
-		tx ActiveTx,
-		itemId common.Hash,
-		challengeType ChallengeType,
-	) (ChallengeHash, error)
-	CalculateChallengeVertexId(
-		ctx context.Context,
-		tx ActiveTx,
-		challengeId ChallengeHash,
-		history util.HistoryCommitment,
-	) (VertexHash, error)
-	GetVertex(
-		ctx context.Context,
-		tx ActiveTx,
-		vertexId VertexHash,
-	) (util.Option[ChallengeVertex], error)
-	GetChallenge(
-		ctx context.Context,
-		tx ActiveTx,
-		challengeId ChallengeHash,
-	) (util.Option[Challenge], error)
+	ChallengePeriodSeconds(ctx context.Context) (time.Duration, error)
+	CalculateChallengeHash(ctx context.Context, itemId common.Hash, challengeType ChallengeType) (ChallengeHash, error)
+	CalculateChallengeVertexId(ctx context.Context, challengeId ChallengeHash, history util.HistoryCommitment) (VertexHash, error)
+	GetVertex(ctx context.Context, vertexId VertexHash) (util.Option[ChallengeVertex], error)
+	GetChallenge(ctx context.Context, challengeId ChallengeHash) (util.Option[Challenge], error)
 }
 
 // Assertion represents a top-level claim in the protocol about the
@@ -173,26 +107,24 @@ const (
 type Challenge interface {
 	// Getters.
 	Id() ChallengeHash
-	GetType(ctx context.Context, tx ActiveTx) (ChallengeType, error)
-	WinningClaim(ctx context.Context, tx ActiveTx) (util.Option[AssertionHash], error)
-	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
-	RootVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
-	GetCreationTime(ctx context.Context, tx ActiveTx) (time.Time, error)
-	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
-	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
-	Completed(ctx context.Context, tx ActiveTx) (bool, error)
-	Challenger(ctx context.Context, tx ActiveTx) (common.Address, error)
+	GetType(ctx context.Context) (ChallengeType, error)
+	WinningClaim(ctx context.Context) (util.Option[AssertionHash], error)
+	RootAssertion(ctx context.Context) (Assertion, error)
+	RootVertex(ctx context.Context) (ChallengeVertex, error)
+	GetCreationTime(ctx context.Context) (time.Time, error)
+	ParentStateCommitment(ctx context.Context) (util.StateCommitment, error)
+	WinnerVertex(ctx context.Context) (util.Option[ChallengeVertex], error)
+	Completed(ctx context.Context) (bool, error)
+	Challenger(ctx context.Context) (common.Address, error)
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(
 		ctx context.Context,
-		tx ActiveTx,
 		assertion Assertion,
 		history util.HistoryCommitment,
 	) (ChallengeVertex, error)
 	AddSubChallengeLeaf(
 		ctx context.Context,
-		tx ActiveTx,
 		vertex ChallengeVertex,
 		history util.HistoryCommitment,
 	) (ChallengeVertex, error)
@@ -205,50 +137,28 @@ type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
 	SequenceNum() VertexSequenceNumber
-	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)
-	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
-	MiniStaker(ctx context.Context, tx ActiveTx) (common.Address, error)
-	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
-	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)
-	HasConfirmedSibling(
-		ctx context.Context,
-		tx ActiveTx,
-	) (bool, error)
+	Status(ctx context.Context) (AssertionState, error)
+	HistoryCommitment(ctx context.Context) (util.HistoryCommitment, error)
+	MiniStaker(ctx context.Context) (common.Address, error)
+	Prev(ctx context.Context) (util.Option[ChallengeVertex], error)
+	GetSubChallenge(ctx context.Context) (util.Option[Challenge], error)
+	HasConfirmedSibling(ctx context.Context) (bool, error)
 
 	// Presumptive status / timer readers.
-	EligibleForNewSuccessor(ctx context.Context, tx ActiveTx) (bool, error)
-	IsPresumptiveSuccessor(ctx context.Context, tx ActiveTx) (bool, error)
-	PresumptiveSuccessor(
-		ctx context.Context, tx ActiveTx,
-	) (util.Option[ChallengeVertex], error)
-	PsTimer(ctx context.Context, tx ActiveTx) (uint64, error)
-	ChessClockExpired(
-		ctx context.Context,
-		tx ActiveTx,
-		challengePeriodSeconds time.Duration,
-	) (bool, error)
-	ChildrenAreAtOneStepFork(ctx context.Context, tx ActiveTx) (bool, error)
+	EligibleForNewSuccessor(ctx context.Context) (bool, error)
+	IsPresumptiveSuccessor(ctx context.Context) (bool, error)
+	PresumptiveSuccessor(ctx context.Context) (util.Option[ChallengeVertex], error)
+	PsTimer(ctx context.Context) (uint64, error)
+	ChessClockExpired(ctx context.Context, challengePeriodSeconds time.Duration) (bool, error)
+	ChildrenAreAtOneStepFork(ctx context.Context) (bool, error)
 
 	// Mutating calls for challenge moves.
-	CreateSubChallenge(
-		ctx context.Context,
-		tx ActiveTx,
-	) (Challenge, error)
-	Bisect(
-		ctx context.Context,
-		tx ActiveTx,
-		history util.HistoryCommitment,
-		proof []byte,
-	) (ChallengeVertex, error)
-	Merge(
-		ctx context.Context,
-		tx ActiveTx,
-		mergingToHistory util.HistoryCommitment,
-		proof []byte,
-	) (ChallengeVertex, error)
+	CreateSubChallenge(ctx context.Context) (Challenge, error)
+	Bisect(ctx context.Context, history util.HistoryCommitment, proof []byte) (ChallengeVertex, error)
+	Merge(ctx context.Context, mergingToHistory util.HistoryCommitment, proof []byte) (ChallengeVertex, error)
 
 	// Mutating calls for confirmations.
-	ConfirmForPsTimer(ctx context.Context, tx ActiveTx) error
-	ConfirmForChallengeDeadline(ctx context.Context, tx ActiveTx) error
-	ConfirmForSubChallengeWin(ctx context.Context, tx ActiveTx) error
+	ConfirmForPsTimer(ctx context.Context) error
+	ConfirmForChallengeDeadline(ctx context.Context) error
+	ConfirmForSubChallengeWin(ctx context.Context) error
 }

@@ -3,7 +3,6 @@ package validator
 import (
 	"bytes"
 	"context"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -292,7 +291,6 @@ type blockChallengeTestConfig struct {
 func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
 	require.Equal(t, true, cfg.numValidators > 1, "Need at least 2 validators")
 	ctx := context.Background()
-	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	ref := util.NewRealTimeReference()
 	chains, accs, addrs, backend := setupAssertionChains(t, uint64(cfg.numValidators)+1)
 	prevInboxMaxCount := big.NewInt(1)
@@ -307,15 +305,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	}
 
 	// Initialize each validator's associated state roots which diverge
-	var genesis protocol.Assertion
-	err := chains[1].Call(func(tx protocol.ActiveTx) error {
-		genesisAssertion, err := chains[1].AssertionBySequenceNum(ctx, tx, 0)
-		if err != nil {
-			return err
-		}
-		genesis = genesisAssertion
-		return nil
-	})
+	genesis, err := chains[1].AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
 	genesisState := &protocol.ExecutionState{
@@ -429,17 +419,13 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 
 	// We fire off each validator's background routines.
 	for _, val := range validators {
-		go val.Start(ctx, tx)
+		go val.Start(ctx)
 	}
 
 	var managerAddr common.Address
-	err = chains[1].Call(func(tx protocol.ActiveTx) error {
-		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		managerAddr = manager.Address()
-		return nil
-	})
+	manager, err := chains[1].CurrentChallengeManager(ctx)
 	require.NoError(t, err)
+	managerAddr = manager.Address()
 
 	var totalVertexAdded uint64
 	var totalBisections uint64

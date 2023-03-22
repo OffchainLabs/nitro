@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -16,7 +15,6 @@ import (
 
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
-	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("bad bisection points", func(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 			divergeHeight: 10,
@@ -51,7 +49,7 @@ func Test_bisect(t *testing.T) {
 				validatorAddress: validator.address,
 			},
 		}
-		_, err = v.bisect(ctx, tx, vertex)
+		_, err = v.bisect(ctx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("bisects", func(t *testing.T) {
@@ -85,7 +83,6 @@ func Test_bisect(t *testing.T) {
 			t,
 			logsHook,
 			ctx,
-			tx,
 			honestValidator,
 			evilValidator,
 			createdData.leaf1,
@@ -93,7 +90,7 @@ func Test_bisect(t *testing.T) {
 		)
 
 		// Expect to bisect to 31.
-		commitment, err := bisectedTo.HistoryCommitment(ctx, tx)
+		commitment, err := bisectedTo.HistoryCommitment(ctx)
 		require.NoError(t, err)
 		require.Equal(t, uint64(31), commitment.Height)
 	})
@@ -101,7 +98,6 @@ func Test_bisect(t *testing.T) {
 
 func Test_merge(t *testing.T) {
 	ctx := context.Background()
-	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
@@ -133,7 +129,6 @@ func Test_merge(t *testing.T) {
 			t,
 			logsHook,
 			ctx,
-			tx,
 			honestValidator,
 			evilValidator,
 			createdData.leaf1,
@@ -150,25 +145,21 @@ func Test_merge(t *testing.T) {
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom protocol.ChallengeVertex
 		var challengeId protocol.ChallengeHash
-		err = honestValidator.chain.Call(func(tx protocol.ActiveTx) error {
-			genesisId, err := honestValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
-			require.NoError(t, err)
-			manager, err := honestValidator.chain.CurrentChallengeManager(ctx, tx)
-			require.NoError(t, err)
-			chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-			require.NoError(t, err)
-
-			challengeId = chalId
-
-			vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalId, mergingFromHistory)
-			require.NoError(t, err)
-
-			mergingFromV, err := manager.GetVertex(ctx, tx, vertexId)
-			require.NoError(t, err)
-			vertexToMergeFrom = mergingFromV.Unwrap()
-			return nil
-		})
+		genesisId, err := honestValidator.chain.GetAssertionId(ctx, protocol.AssertionSequenceNumber(0))
 		require.NoError(t, err)
+		manager, err := honestValidator.chain.CurrentChallengeManager(ctx)
+		require.NoError(t, err)
+		chalId, err := manager.CalculateChallengeHash(ctx, common.Hash(genesisId), protocol.BlockChallenge)
+		require.NoError(t, err)
+
+		challengeId = chalId
+
+		vertexId, err := manager.CalculateChallengeVertexId(ctx, chalId, mergingFromHistory)
+		require.NoError(t, err)
+
+		mergingFromV, err := manager.GetVertex(ctx, vertexId)
+		require.NoError(t, err)
+		vertexToMergeFrom = mergingFromV.Unwrap()
 
 		// Perform a merge move to the bisected vertex from an origin.
 		v := vertexTracker{
@@ -179,7 +170,7 @@ func Test_merge(t *testing.T) {
 				validatorAddress: honestValidator.address,
 			},
 		}
-		mergingTo, err := v.merge(ctx, tx, challengeId, bisectedTo, vertexToMergeFrom)
+		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex")
 		require.Equal(t, bisectedTo.Id(), mergingTo.Id())
@@ -190,15 +181,14 @@ func runBisectionTest(
 	t *testing.T,
 	logsHook *test.Hook,
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	honestValidator,
 	evilValidator *Validator,
 	leaf1,
 	leaf2 protocol.Assertion,
 ) protocol.ChallengeVertex {
-	err := honestValidator.onLeafCreated(ctx, tx, leaf1)
+	err := honestValidator.onLeafCreated(ctx,  leaf1)
 	require.NoError(t, err)
-	err = honestValidator.onLeafCreated(ctx, tx, leaf2)
+	err = honestValidator.onLeafCreated(ctx,  leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
@@ -207,41 +197,33 @@ func runBisectionTest(
 	var vertexToBisect protocol.ChallengeVertex
 	var chalId protocol.ChallengeHash
 
-	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		genesisId, err := evilValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
-		require.NoError(t, err)
-		manager, err := evilValidator.chain.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-		require.NoError(t, err)
+	genesisId, err := evilValidator.chain.GetAssertionId(ctx, protocol.AssertionSequenceNumber(0))
+	require.NoError(t, err)
+	manager, err := evilValidator.chain.CurrentChallengeManager(ctx)
+	require.NoError(t, err)
+	chalIdComputed, err := manager.CalculateChallengeHash(ctx, common.Hash(genesisId), protocol.BlockChallenge)
+	require.NoError(t, err)
 
-		chalId = chalIdComputed
+	chalId = chalIdComputed
 
-		challenge, err := manager.GetChallenge(ctx, tx, chalId)
-		require.NoError(t, err)
-		require.Equal(t, false, challenge.IsNone())
-		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
-		require.NoError(t, err)
+	challenge, err := manager.GetChallenge(ctx, chalId)
+	require.NoError(t, err)
+	require.Equal(t, false, challenge.IsNone())
+	assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(2))
+	require.NoError(t, err)
 
-		assertionHeight, err := assertion.Height()
+	assertionHeight, err := assertion.Height()
 		require.NoError(t, err)
 		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
-		require.NoError(t, err)
-		vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, honestCommit)
-		require.NoError(t, err)
-		vertexToBisect = vToBisect
-		return nil
-	})
 	require.NoError(t, err)
+	vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, assertion, honestCommit)
+	require.NoError(t, err)
+	vertexToBisect = vToBisect
 
 	// Check presumptive statuses.
-	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
-		require.NoError(t, err)
-		require.Equal(t, false, isPs)
-		return nil
-	})
+	isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx)
 	require.NoError(t, err)
+	require.Equal(t, false, isPs)
 
 	v := vertexTracker{
 		cfg: &vertexTrackerConfig{
@@ -252,15 +234,15 @@ func runBisectionTest(
 		},
 	}
 
-	bisectedVertex, err := v.bisect(ctx, tx, vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx,  vertexToBisect)
 	require.NoError(t, err)
 
-	bisectedVertexHistoryCommitment, err := bisectedVertex.HistoryCommitment(ctx, tx)
+	bisectedVertexHistoryCommitment, err := bisectedVertex.HistoryCommitment(ctx)
 	require.NoError(t, err)
 	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertexHistoryCommitment.Height)
 	require.NoError(t, err)
 
-	commitment, err := bisectedVertex.HistoryCommitment(ctx, tx)
+	commitment, err := bisectedVertex.HistoryCommitment(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commitment.Hash(), shouldBisectToCommit.Hash())
 

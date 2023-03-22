@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -13,7 +12,7 @@ import (
 // Subscribes to events fired by the rollup contracts in order to listen to
 // challenge start events from the protocol.
 // TODO: Brittle - should be based on querying the chain instead.
-func (v *Validator) handleChallengeEvents(ctx context.Context, tx protocol.ActiveTx) {
+func (v *Validator) handleChallengeEvents(ctx context.Context) {
 	challengeCreatedChan := make(chan *challengeV2gen.ChallengeManagerImplChallengeCreated, 1)
 	chalSub, err := v.chalManager.WatchChallengeCreated(&bind.WatchOpts{}, challengeCreatedChan)
 	if err != nil {
@@ -27,65 +26,48 @@ func (v *Validator) handleChallengeEvents(ctx context.Context, tx protocol.Activ
 		case err := <-chalSub.Err():
 			log.Fatal(err)
 		case chalCreated := <-challengeCreatedChan:
-			var challenge protocol.Challenge
-			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-				manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-				if err != nil {
-					return err
-				}
-				retrieved, err := manager.GetChallenge(ctx, tx, chalCreated.ChallengeId)
-				if err != nil {
-					return err
-				}
-				if retrieved.IsNone() {
-					return fmt.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
-				}
-				challenge = retrieved.Unwrap()
-				return nil
-			}); err != nil {
-				log.Error(err)
+			manager, err := v.chain.CurrentChallengeManager(ctx)
+			if err != nil {
+				log.WithError(err).Error("Failed to get current challenge manager")
 				continue
 			}
+			retrieved, err := manager.GetChallenge(ctx, chalCreated.ChallengeId)
+			if err != nil {
+				log.WithError(err).Error("Failed to get challenge")
+				continue
+			}
+			if retrieved.IsNone() {
+				log.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
+				continue
+			}
+			challenge := retrieved.Unwrap()
 			// Ignore challenges from self.
-			challenger, err := challenge.Challenger(ctx, tx)
+			challenger, err := challenge.Challenger(ctx)
 			if err != nil {
 				log.Error(err)
 			}
 			if isFromSelf(v.address, challenger) {
 				continue
 			}
-			if err := v.onChallengeStarted(ctx, tx, challenge); err != nil {
+			if err := v.onChallengeStarted(ctx, challenge); err != nil {
 				log.Error(err)
 			}
 		}
 	}
 }
 
-func (v *Validator) handleAssertions(ctx context.Context, tx protocol.ActiveTx) time.Duration {
-	var numberOfAssertions uint64
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		retrieved, err := v.chain.NumAssertions(ctx, tx)
-		if err != nil {
-			return err
-		}
-		numberOfAssertions = retrieved
-		return nil
-	}); err != nil {
+func (v *Validator) handleAssertions(ctx context.Context) time.Duration {
+	numberOfAssertions, err := v.chain.NumAssertions(ctx)
+	if err != nil {
 		log.Error(err)
 		return v.newAssertionCheckInterval
 	}
-	var latestConfirmedAssertion uint64
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		retrieved, err := v.chain.LatestConfirmed(ctx, tx)
-		if err != nil {
-			return err
-		}
-		latestConfirmedAssertion = uint64(retrieved.SeqNum())
-		return nil
-	}); err != nil {
+	retrieved, err := v.chain.LatestConfirmed(ctx)
+	if err != nil {
 		log.Error(err)
 		return v.newAssertionCheckInterval
 	}
+	latestConfirmedAssertion := uint64(retrieved.SeqNum())
 
 	for i := latestConfirmedAssertion; i < numberOfAssertions; i++ {
 		v.assertionsLock.RLock()
@@ -94,15 +76,8 @@ func (v *Validator) handleAssertions(ctx context.Context, tx protocol.ActiveTx) 
 		if ok {
 			continue
 		}
-		var assertion protocol.Assertion
-		if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-			retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(i))
-			if err != nil {
-				return err
-			}
-			assertion = retrieved
-			return nil
-		}); err != nil {
+		assertion, err := v.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(i))
+		if err != nil {
 			log.Error(err)
 			continue
 		}
@@ -116,7 +91,7 @@ func (v *Validator) handleAssertions(ctx context.Context, tx protocol.ActiveTx) 
 		if selfStakedAssertion {
 			continue
 		}
-		if err := v.onLeafCreated(ctx, tx, assertion); err != nil {
+		if err := v.onLeafCreated(ctx, assertion); err != nil {
 			log.Error(err)
 		}
 	}

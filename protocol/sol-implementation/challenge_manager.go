@@ -27,9 +27,7 @@ type ChallengeManager struct {
 
 // CurrentChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
-func (ac *AssertionChain) CurrentChallengeManager(
-	ctx context.Context, tx protocol.ActiveTx,
-) (protocol.ChallengeManager, error) {
+func (ac *AssertionChain) CurrentChallengeManager(ctx context.Context) (protocol.ChallengeManager, error) {
 	addr, err := ac.userLogic.ChallengeManager(ac.callOpts)
 	if err != nil {
 		return nil, err
@@ -52,9 +50,7 @@ func (cm *ChallengeManager) Address() common.Address {
 }
 
 // ChallengePeriodSeconds --
-func (cm *ChallengeManager) ChallengePeriodSeconds(
-	ctx context.Context, tx protocol.ActiveTx,
-) (time.Duration, error) {
+func (cm *ChallengeManager) ChallengePeriodSeconds(ctx context.Context) (time.Duration, error) {
 	res, err := cm.caller.ChallengePeriodSec(cm.assertionChain.callOpts)
 	if err != nil {
 		return time.Second, err
@@ -65,7 +61,6 @@ func (cm *ChallengeManager) ChallengePeriodSeconds(
 // CalculateChallengeHash calculates the challenge hash for a given assertion and challenge type.
 func (cm *ChallengeManager) CalculateChallengeHash(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	itemId common.Hash,
 	cType protocol.ChallengeType,
 ) (protocol.ChallengeHash, error) {
@@ -78,7 +73,6 @@ func (cm *ChallengeManager) CalculateChallengeHash(
 
 func (cm *ChallengeManager) CalculateChallengeVertexId(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	challengeId protocol.ChallengeHash,
 	history util.HistoryCommitment,
 ) (protocol.VertexHash, error) {
@@ -97,7 +91,6 @@ func (cm *ChallengeManager) CalculateChallengeVertexId(
 // GetVertex returns the challenge vertex for the given vertexId.
 func (cm *ChallengeManager) GetVertex(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	vertexId protocol.VertexHash,
 ) (util.Option[protocol.ChallengeVertex], error) {
 	_, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
@@ -113,7 +106,6 @@ func (cm *ChallengeManager) GetVertex(
 // GetChallenge returns the challenge for the given challengeId.
 func (cm *ChallengeManager) GetChallenge(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	challengeId protocol.ChallengeHash,
 ) (util.Option[protocol.Challenge], error) {
 	_, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)

@@ -125,23 +125,16 @@ func New(
 	for _, o := range opts {
 		o(v)
 	}
-	var chalManagerAddr common.Address
-	var genesis protocol.Assertion
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, 0)
-		if err != nil {
-			return err
-		}
-		chalManager, err := v.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
-		}
-		chalManagerAddr = chalManager.Address()
-		genesis = genesisAssertion
-		return nil
-	}); err != nil {
+	genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, 0)
+	if err != nil {
 		return nil, err
 	}
+	chalManager, err := v.chain.CurrentChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	chalManagerAddr := chalManager.Address()
+
 	rollup, err := rollupgen.NewRollupCore(rollupAddr, backend)
 	if err != nil {
 		return nil, err
@@ -150,23 +143,23 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	chalManager, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
+	chalManagerFilterer, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
 	if err != nil {
 		return nil, err
 	}
 	v.rollup = rollup
 	v.rollupFilterer = rollupFilterer
-	v.assertions[0] = genesis
+	v.assertions[0] = genesisAssertion
 	v.chalManagerAddr = chalManagerAddr
-	v.chalManager = chalManager
+	v.chalManager = chalManagerFilterer
 	return v, nil
 }
 
-func (v *Validator) Start(ctx context.Context, tx protocol.ActiveTx) {
-	go v.handleChallengeEvents(ctx, tx)
+func (v *Validator) Start(ctx context.Context) {
+	go v.handleChallengeEvents(ctx)
 	v.StopWaiter.Start(ctx, v)
 	v.CallIteratively(func(ctxInternal context.Context) time.Duration {
-		return v.handleAssertions(ctxInternal, tx)
+		return v.handleAssertions(ctxInternal)
 	})
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)
@@ -207,14 +200,8 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	if err != nil {
 		return nil, err
 	}
-	var parentAssertion protocol.Assertion
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		parentAssertion, err = v.chain.AssertionBySequenceNum(ctx, tx, parentAssertionSeq)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	parentAssertion, err := v.chain.AssertionBySequenceNum(ctx, parentAssertionSeq)
+	if err != nil {
 		return nil, err
 	}
 	parentAssertionHeight, err := parentAssertion.Height()
@@ -225,22 +212,7 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	if err != nil {
 		return nil, err
 	}
-	var leaf protocol.Assertion
-	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		leaf, err = v.chain.CreateAssertion(
-			ctx,
-			tx,
-			assertionToCreate.Height,
-			parentAssertionSeq,
-			assertionToCreate.PreState,
-			assertionToCreate.PostState,
-			assertionToCreate.InboxMaxCount,
-		)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	leaf, err := v.chain.CreateAssertion(ctx, assertionToCreate.Height, parentAssertionSeq, assertionToCreate.PreState, assertionToCreate.PostState, assertionToCreate.InboxMaxCount)
 	switch {
 	case errors.Is(err, solimpl.ErrAlreadyExists):
 		return nil, errors.Wrap(err, "assertion already exists, unable to create new leaf")
@@ -289,23 +261,15 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
 func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.AssertionSequenceNumber, error) {
-	var numAssertions uint64
-	var latestConfirmed protocol.AssertionSequenceNumber
-	var err error
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		numAssertions, err = v.chain.NumAssertions(ctx, tx)
-		if err != nil {
-			return err
-		}
-		latestConfirmedFetched, err2 := v.chain.LatestConfirmed(ctx, tx)
-		if err2 != nil {
-			return err2
-		}
-		latestConfirmed = latestConfirmedFetched.SeqNum()
-		return nil
-	}); err != nil {
+	numAssertions, err := v.chain.NumAssertions(ctx)
+	if err != nil {
 		return 0, err
 	}
+	latestConfirmedFetched, err := v.chain.LatestConfirmed(ctx)
+	if err != nil {
+		return 0, err
+	}
+	latestConfirmed := latestConfirmedFetched.SeqNum()
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
 	for s := protocol.AssertionSequenceNumber(numAssertions); s > latestConfirmed; s-- {
@@ -334,22 +298,15 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
 func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf protocol.Assertion) {
-	var chalPeriod time.Duration
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
-		}
-		challengePeriodLength, err2 := manager.ChallengePeriodSeconds(ctx, tx)
-		if err2 != nil {
-			return err2
-		}
-		chalPeriod = challengePeriodLength
-		return nil
-	}); err != nil {
-		panic(err)
+	manager, err := v.chain.CurrentChallengeManager(ctx)
+	if err != nil {
+		panic(err) // TODO: handle error instead of panic.
 	}
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(chalPeriod))
+	challengePeriodLength, err := manager.ChallengePeriodSeconds(ctx)
+	if err != nil {
+		panic(err) // TODO: handle error instead of panic.
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(challengePeriodLength))
 	defer cancel()
 
 	// TODO: Handle validator process dying here.
@@ -362,10 +319,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 		"height":      leafHeight,
 		"sequenceNum": leaf.SeqNum(),
 	}
-	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
-		// TODO: Add fields.
-		return v.chain.Confirm(ctx, tx, common.Hash{}, common.Hash{})
-	}); err != nil {
+	if err := v.chain.Confirm(ctx, common.Hash{}, common.Hash{}); err != nil {
 		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")
 		return
 	}
@@ -375,7 +329,6 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 // Processes new leaf creation events from the protocol that were not initiated by self.
 func (v *Validator) onLeafCreated(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	assertion protocol.Assertion,
 ) error {
 	assertionStateHash, err := assertion.StateHash()
@@ -399,26 +352,17 @@ func (v *Validator) onLeafCreated(
 	v.assertionsLock.Unlock()
 
 	// Keep track of assertions by parent state root to more easily detect forks.
-	var prev protocol.Assertion
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		var assertionPrevSeqNum protocol.AssertionSequenceNumber
-		assertionPrevSeqNum, err = assertion.PrevSeqNum()
-		if err != nil {
-			return err
-		}
-		var prevAssertion protocol.Assertion
-		prevAssertion, err = v.chain.AssertionBySequenceNum(ctx, tx, assertionPrevSeqNum)
-		if err != nil {
-			return err
-		}
-		prev = prevAssertion
-		return nil
-	}); err != nil {
+	assertionPrevSeqNum, err := assertion.PrevSeqNum()
+	if err != nil {
+		return err
+	}
+	prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, assertionPrevSeqNum)
+	if err != nil {
 		return err
 	}
 
 	v.assertionsLock.Lock()
-	key, err := prev.StateHash()
+	key, err := prevAssertion.StateHash()
 	if err != nil {
 		return err
 	}
@@ -435,7 +379,7 @@ func (v *Validator) onLeafCreated(
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, tx, assertion)
+	return v.challengeAssertion(ctx, assertion)
 }
 
 func isFromSelf(self, staker common.Address) bool {
