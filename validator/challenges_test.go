@@ -348,10 +348,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	// We fire off each validator's background routines.
-	go alice.Start(ctx)
-	go bob.Start(ctx)
-
 	var managerAddr common.Address
 	err = chains[1].Call(func(tx protocol.ActiveTx) error {
 		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
@@ -400,14 +396,100 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		}
 	}()
 
-	time.Sleep(time.Second)
-
 	// Submit leaf creation manually for each validator.
-	_, err = alice.SubmitLeafCreation(ctx)
+	latestHonest, err := honestManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	_, err = bob.SubmitLeafCreation(ctx)
+	var honestAssertion protocol.Assertion
+	err = alice.chain.Tx(func(tx protocol.ActiveTx) error {
+		a, createErr := alice.chain.CreateAssertion(
+			ctx,
+			tx,
+			latestHonest.Height,
+			0,
+			latestHonest.PreState,
+			latestHonest.PostState,
+			latestHonest.InboxMaxCount,
+		)
+		require.NoError(t, createErr)
+		honestAssertion = a
+		return nil
+	})
 	require.NoError(t, err)
-	AssertLogsContain(t, hook, "Submitted assertion")
+
+	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx, 0)
+	require.NoError(t, err)
+	var evilAssertion protocol.Assertion
+	err = bob.chain.Tx(func(tx protocol.ActiveTx) error {
+		a, createErr := bob.chain.CreateAssertion(
+			ctx,
+			tx,
+			latestEvil.Height,
+			0,
+			latestEvil.PreState,
+			latestEvil.PostState,
+			latestEvil.InboxMaxCount,
+		)
+		require.NoError(t, createErr)
+		evilAssertion = a
+		return nil
+	})
+	require.NoError(t, err)
+
+	challenge, err := alice.submitProtocolChallenge(ctx, 0)
+	require.NoError(t, err)
+
+	var honestLeaf protocol.ChallengeVertex
+	err = alice.chain.Tx(func(tx protocol.ActiveTx) error {
+		historyCommit, err := honestManager.HistoryCommitmentUpTo(ctx, honestAssertion.Height())
+		require.NoError(t, err)
+		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, honestAssertion, historyCommit)
+		require.NoError(t, err)
+		honestLeaf = leaf
+		return nil
+	})
+	require.NoError(t, err)
+
+	var evilLeaf protocol.ChallengeVertex
+	err = bob.chain.Tx(func(tx protocol.ActiveTx) error {
+		historyCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, evilAssertion.Height())
+		require.NoError(t, err)
+		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, evilAssertion, historyCommit)
+		require.NoError(t, err)
+		evilLeaf = leaf
+		return nil
+	})
+	require.NoError(t, err)
+
+	aliceTracker, err := newVertexTracker(
+		&vertexTrackerConfig{
+			timeRef:          alice.timeRef,
+			actEveryNSeconds: alice.challengeVertexWakeInterval,
+			chain:            alice.chain,
+			stateManager:     alice.stateManager,
+			validatorName:    alice.name,
+			validatorAddress: alice.address,
+		},
+		challenge,
+		honestLeaf,
+	)
+	require.NoError(t, err)
+
+	bobTracker, err := newVertexTracker(
+		&vertexTrackerConfig{
+			timeRef:          bob.timeRef,
+			actEveryNSeconds: bob.challengeVertexWakeInterval,
+			chain:            bob.chain,
+			stateManager:     bob.stateManager,
+			validatorName:    bob.name,
+			validatorAddress: bob.address,
+		},
+		challenge,
+		evilLeaf,
+	)
+	require.NoError(t, err)
+
+	go aliceTracker.spawn(ctx)
+	go bobTracker.spawn(ctx)
 
 	wg.Wait()
 	assert.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
