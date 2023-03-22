@@ -2,18 +2,17 @@ package statemanager
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
 	"math/big"
+	"math/rand"
 	"testing"
 
-	"fmt"
-
-	"encoding/binary"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	"math/rand"
 )
 
 var _ = Manager(&Simulated{})
@@ -332,7 +331,7 @@ func TestPrefixProofs(t *testing.T) {
 }
 
 func hashesForUints(lo, hi uint64) []common.Hash {
-	ret := []common.Hash{}
+	var ret []common.Hash
 	for i := lo; i < hi; i++ {
 		ret = append(ret, hashForUint(i))
 	}

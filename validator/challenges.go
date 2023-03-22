@@ -6,7 +6,6 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -18,15 +17,8 @@ import (
 func (v *Validator) onChallengeStarted(
 	ctx context.Context, ev protocol.Challenge,
 ) error {
-	var challengedAssertion protocol.Assertion
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		rootAssertion, err := ev.RootAssertion(ctx, tx)
-		if err != nil {
-			return err
-		}
-		challengedAssertion = rootAssertion
-		return nil
-	}); err != nil {
+	challengedAssertion, err := ev.RootAssertion(ctx)
+	if err != nil {
 		return err
 	}
 
@@ -53,15 +45,8 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	var staker common.Address
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		miniStaker, err := challengeVertex.MiniStaker(ctx, tx)
-		if err != nil {
-			return err
-		}
-		staker = miniStaker
-		return nil
-	}); err != nil {
+	staker, err := challengeVertex.MiniStaker(ctx)
+	if err != nil {
 		return err
 	}
 	if name, ok := v.knownValidatorNames[staker]; ok {
@@ -166,28 +151,21 @@ func (v *Validator) addChallengeVertex(
 	if err != nil {
 		return nil, err
 	}
-	var createdVertex protocol.ChallengeVertex
-	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
-		assertion, err := v.chain.AssertionBySequenceNum(ctx, tx, latestValidAssertionSeq)
-		if err != nil {
-			return err
-		}
-		assertionHeight, err := assertion.Height()
-		if err != nil {
-			return err
-		}
-		historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
-		if err != nil {
-			return err
-		}
-		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, assertion, historyCommit)
-		if err != nil {
-			return errors.Wrap(err, "could not add challenge leaf to challenge")
-		}
-		createdVertex = leaf
-		return nil
-	}); err != nil {
+	assertion, err := v.chain.AssertionBySequenceNum(ctx, latestValidAssertionSeq)
+	if err != nil {
 		return nil, err
+	}
+	assertionHeight, err := assertion.Height()
+	if err != nil {
+		return nil, err
+	}
+	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
+	if err != nil {
+		return nil, err
+	}
+	createdVertex, err := challenge.AddBlockChallengeLeaf(ctx, assertion, historyCommit)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not add challenge leaf to challenge")
 	}
 	return createdVertex, nil
 }
@@ -196,16 +174,9 @@ func (v *Validator) submitProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.AssertionSequenceNumber,
 ) (protocol.Challenge, error) {
-	var challenge protocol.Challenge
-	var err error
-	if err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		challenge, err = v.chain.CreateSuccessionChallenge(ctx, tx, parentAssertionSeqNum)
-		if err != nil {
-			return errors.Wrap(err, "could not submit challenge")
-		}
-		return nil
-	}); err != nil {
-		return nil, err
+	challenge, err := v.chain.CreateSuccessionChallenge(ctx, parentAssertionSeqNum)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not submit challenge")
 	}
 	return challenge, nil
 }
@@ -216,31 +187,20 @@ func (v *Validator) fetchProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.AssertionSequenceNumber,
 ) (protocol.Challenge, error) {
-	var err error
-	var challenge util.Option[protocol.Challenge]
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		assertionId, err2 := v.chain.GetAssertionId(ctx, tx, parentAssertionSeqNum)
-		if err2 != nil {
-			return err2
-		}
-		manager, err3 := v.chain.CurrentChallengeManager(ctx, tx)
-		if err3 != nil {
-			return err3
-		}
-		chalHash, err4 := manager.CalculateChallengeHash(ctx, tx, common.Hash(assertionId), protocol.BlockChallenge)
-		if err4 != nil {
-			return err4
-		}
-		challenge, err = manager.GetChallenge(
-			ctx,
-			tx,
-			chalHash,
-		)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	assertionId, err := v.chain.GetAssertionId(ctx, parentAssertionSeqNum)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get assertion ID")
+	}
+	manager, err := v.chain.CurrentChallengeManager(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get current challenge manager")
+	}
+	chalHash, err := manager.CalculateChallengeHash(ctx, common.Hash(assertionId), protocol.BlockChallenge)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not calculate challenge hash")
+	}
+	challenge, err := manager.GetChallenge(ctx, chalHash)
+	if err != nil {
 		return nil, errors.Wrap(err, "could not get challenge from protocol")
 	}
 	if challenge.IsNone() {

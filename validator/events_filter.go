@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -27,25 +26,21 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 		case err := <-chalSub.Err():
 			log.Fatal(err)
 		case chalCreated := <-challengeCreatedChan:
-			var challenge protocol.Challenge
-			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-				manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-				if err != nil {
-					return err
-				}
-				retrieved, err := manager.GetChallenge(ctx, tx, chalCreated.ChallengeId)
-				if err != nil {
-					return err
-				}
-				if retrieved.IsNone() {
-					return fmt.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
-				}
-				challenge = retrieved.Unwrap()
-				return nil
-			}); err != nil {
-				log.Error(err)
+			manager, err := v.chain.CurrentChallengeManager(ctx)
+			if err != nil {
+				log.WithError(err).Error("Failed to get current challenge manager")
 				continue
 			}
+			retrieved, err := manager.GetChallenge(ctx, chalCreated.ChallengeId)
+			if err != nil {
+				log.WithError(err).Error("Failed to get challenge")
+				continue
+			}
+			if retrieved.IsNone() {
+				log.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
+				continue
+			}
+			challenge := retrieved.Unwrap()
 			// Ignore challenges from self.
 			challenger := challenge.Challenger()
 			if isFromSelf(v.address, challenger) {
@@ -64,47 +59,26 @@ func (v *Validator) pollForAssertions(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			var numberOfAssertions uint64
-			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-				retrieved, err := v.chain.NumAssertions(ctx, tx)
-				if err != nil {
-					return err
-				}
-				numberOfAssertions = retrieved
-				return nil
-			}); err != nil {
+			numberOfAssertions, err := v.chain.NumAssertions(ctx)
+			if err != nil {
 				log.Error(err)
 				continue
 			}
-			var latestConfirmedAssertion uint64
-			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-				retrieved, err := v.chain.LatestConfirmed(ctx, tx)
-				if err != nil {
-					return err
-				}
-				latestConfirmedAssertion = uint64(retrieved.SeqNum())
-				return nil
-			}); err != nil {
+			latestConfirmedAssertion, err := v.chain.LatestConfirmed(ctx)
+			if err != nil {
 				log.Error(err)
 				continue
 			}
 
-			for i := latestConfirmedAssertion; i < numberOfAssertions; i++ {
+			for i := uint64(latestConfirmedAssertion.SeqNum()); i < numberOfAssertions; i++ {
 				v.assertionsLock.RLock()
 				_, ok := v.assertions[protocol.AssertionSequenceNumber(i)]
 				v.assertionsLock.RUnlock()
 				if ok {
 					continue
 				}
-				var assertion protocol.Assertion
-				if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-					retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(i))
-					if err != nil {
-						return err
-					}
-					assertion = retrieved
-					return nil
-				}); err != nil {
+				assertion, err := v.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(i))
+				if err != nil {
 					log.Error(err)
 					continue
 				}

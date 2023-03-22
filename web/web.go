@@ -2,6 +2,7 @@ package web
 
 import (
 	"embed"
+
 	"github.com/labstack/echo/v5"
 )
 

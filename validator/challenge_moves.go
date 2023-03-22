@@ -33,15 +33,8 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 		}
 		return historyCommit, proof, nil
 	}
-	var topLevelClaimVertex protocol.ChallengeVertex
-	if err = v.cfg.chain.Call(func(tx protocol.ActiveTx) error {
-		topLevel, claimErr := v.challenge.TopLevelClaimVertex(ctx, tx)
-		if claimErr != nil {
-			return claimErr
-		}
-		topLevelClaimVertex = topLevel
-		return nil
-	}); err != nil {
+	topLevelClaimVertex, err := v.challenge.TopLevelClaimVertex(ctx)
+	if err != nil {
 		return util.HistoryCommitment{}, nil, err
 	}
 
@@ -78,49 +71,40 @@ func (v *vertexTracker) bisect(
 	ctx context.Context,
 	validatorChallengeVertex protocol.ChallengeVertex,
 ) (protocol.ChallengeVertex, error) {
-	var bisectedVertex protocol.ChallengeVertex
-	var isPresumptive bool
-
-	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
-		commitment := validatorChallengeVertex.HistoryCommitment()
-		toHeight := commitment.Height
-		prev, err := validatorChallengeVertex.Prev(ctx, tx)
-		if err != nil {
-			return err
-		}
-		prevCommitment := prev.Unwrap().HistoryCommitment()
-		parentHeight := prevCommitment.Height
-
-		historyCommit, proof, err := v.determineBisectionHistoryWithProof(ctx, parentHeight, toHeight)
-		if err != nil {
-			return err
-		}
-		bisectTo := historyCommit.Height
-		bisected, err := validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof)
-		if err != nil {
-			couldNotBisectErr := err
-			validatorChallengeVertexHistoryCommitment := validatorChallengeVertex.HistoryCommitment()
-			return errors.Wrapf(
-				couldNotBisectErr,
-				"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
-				v.cfg.validatorName,
-				bisectTo,
-				util.Trunc(historyCommit.Merkle.Bytes()),
-				validatorChallengeVertexHistoryCommitment.Height,
-				util.Trunc(validatorChallengeVertexHistoryCommitment.Merkle.Bytes()),
-			)
-		}
-		bisectedVertex = bisected
-		bisectedVertexIsPresumptiveSuccessor, err := bisectedVertex.IsPresumptiveSuccessor(ctx, tx)
-		if err != nil {
-			return err
-		}
-		isPresumptive = bisectedVertexIsPresumptiveSuccessor
-		return nil
-	}); err != nil {
+	commitment := validatorChallengeVertex.HistoryCommitment()
+	toHeight := commitment.Height
+	prev, err := validatorChallengeVertex.Prev(ctx)
+	if err != nil {
 		return nil, err
 	}
-	bisectedVertexCommitment := bisectedVertex.HistoryCommitment()
+	prevCommitment := prev.Unwrap().HistoryCommitment()
+	parentHeight := prevCommitment.Height
+
+	historyCommit, proof, err := v.determineBisectionHistoryWithProof(ctx, parentHeight, toHeight)
+	if err != nil {
+		return nil, err
+	}
+	bisectTo := historyCommit.Height
+	bisected, err := validatorChallengeVertex.Bisect(ctx, historyCommit, proof)
+	if err != nil {
+		couldNotBisectErr := err
+		validatorChallengeVertexHistoryCommitment := validatorChallengeVertex.HistoryCommitment()
+		return nil, errors.Wrapf(
+			couldNotBisectErr,
+			"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
+			v.cfg.validatorName,
+			bisectTo,
+			util.Trunc(historyCommit.Merkle.Bytes()),
+			validatorChallengeVertexHistoryCommitment.Height,
+			util.Trunc(validatorChallengeVertexHistoryCommitment.Merkle.Bytes()),
+		)
+	}
+	bisectedVertexIsPresumptiveSuccessor, err := bisected.IsPresumptiveSuccessor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	isPresumptive := bisectedVertexIsPresumptiveSuccessor
+	bisectedVertexCommitment := bisected.HistoryCommitment()
 	validatorChallengeVertexHistoryCommitment := validatorChallengeVertex.HistoryCommitment()
 	log.WithFields(logrus.Fields{
 		"name":               v.cfg.validatorName,
@@ -131,7 +115,7 @@ func (v *vertexTracker) bisect(
 		"bisectedTo":         bisectedVertexCommitment.Height,
 		"bisectedToMerkle":   util.Trunc(bisectedVertexCommitment.Merkle[:]),
 	}).Info("Successfully bisected to vertex")
-	return bisectedVertex, nil
+	return bisected, nil
 }
 
 // Performs a merge move during a BlockChallenge in the assertion protocol given
@@ -142,15 +126,8 @@ func (v *vertexTracker) merge(
 	mergingToCommit util.HistoryCommitment,
 	proof []byte,
 ) (protocol.ChallengeVertex, error) {
-	var mergedTo protocol.ChallengeVertex
-	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
-		mergedToV, err2 := v.vertex.Merge(ctx, tx, mergingToCommit, proof)
-		if err2 != nil {
-			return err2
-		}
-		mergedTo = mergedToV
-		return nil
-	}); err != nil {
+	mergedTo, err := v.vertex.Merge(ctx, mergingToCommit, proof)
+	if err != nil {
 		return nil, errors.Wrapf(
 			err,
 			"%s could not merge vertex at height=%d,commit=%s to height%d,commit=%s",

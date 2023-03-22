@@ -188,13 +188,7 @@ func prepareHonestStates(
 ) ([]*protocol.ExecutionState, []*big.Int) {
 	t.Helper()
 	// Initialize each validator's associated state roots which diverge
-	var genesis protocol.Assertion
-	err := chain.Call(func(tx protocol.ActiveTx) error {
-		genesisAssertion, err := chain.AssertionBySequenceNum(ctx, tx, 0)
-		require.NoError(t, err)
-		genesis = genesisAssertion
-		return nil
-	})
+	genesis, err := chain.AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
 	genesisState := &protocol.ExecutionState{
@@ -352,13 +346,9 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	defer cancel()
 
 	var managerAddr common.Address
-	err = chains[1].Call(func(tx protocol.ActiveTx) error {
-		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		managerAddr = manager.Address()
-		return nil
-	})
+	manager, err := chains[1].CurrentChallengeManager(ctx)
 	require.NoError(t, err)
+	managerAddr = manager.Address()
 
 	var totalVertexAdded uint64
 	var totalBisections uint64
@@ -402,70 +392,44 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	// Submit leaf creation manually for each validator.
 	latestHonest, err := honestManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	var honestAssertion protocol.Assertion
-	err = alice.chain.Tx(func(tx protocol.ActiveTx) error {
-		a, createErr := alice.chain.CreateAssertion(
-			ctx,
-			tx,
-			latestHonest.Height,
-			0,
-			latestHonest.PreState,
-			latestHonest.PostState,
-			latestHonest.InboxMaxCount,
-		)
-		require.NoError(t, createErr)
-		honestAssertion = a
-		return nil
-	})
+	honestAssertion, err := alice.chain.CreateAssertion(
+		ctx,
+		latestHonest.Height,
+		0,
+		latestHonest.PreState,
+		latestHonest.PostState,
+		latestHonest.InboxMaxCount,
+	)
 	require.NoError(t, err)
 
 	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	var evilAssertion protocol.Assertion
-	err = bob.chain.Tx(func(tx protocol.ActiveTx) error {
-		a, createErr := bob.chain.CreateAssertion(
-			ctx,
-			tx,
-			latestEvil.Height,
-			0,
-			latestEvil.PreState,
-			latestEvil.PostState,
-			latestEvil.InboxMaxCount,
-		)
-		require.NoError(t, createErr)
-		evilAssertion = a
-		return nil
-	})
+	evilAssertion, err := bob.chain.CreateAssertion(
+		ctx,
+		latestEvil.Height,
+		0,
+		latestEvil.PreState,
+		latestEvil.PostState,
+		latestEvil.InboxMaxCount,
+	)
 	require.NoError(t, err)
 
 	challenge, err := alice.submitProtocolChallenge(ctx, 0)
 	require.NoError(t, err)
 
-	var honestLeaf protocol.ChallengeVertex
-	err = alice.chain.Tx(func(tx protocol.ActiveTx) error {
-		height, err := honestAssertion.Height()
-		require.NoError(t, err)
-
-		historyCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height)
-		require.NoError(t, err)
-		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, honestAssertion, historyCommit)
-		require.NoError(t, err)
-		honestLeaf = leaf
-		return nil
-	})
+	height, err := honestAssertion.Height()
 	require.NoError(t, err)
 
-	var evilLeaf protocol.ChallengeVertex
-	err = bob.chain.Tx(func(tx protocol.ActiveTx) error {
-		height, err := evilAssertion.Height()
-		require.NoError(t, err)
-		historyCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, height)
-		require.NoError(t, err)
-		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, evilAssertion, historyCommit)
-		require.NoError(t, err)
-		evilLeaf = leaf
-		return nil
-	})
+	historyCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height)
+	require.NoError(t, err)
+	honestLeaf, err := challenge.AddBlockChallengeLeaf(ctx, honestAssertion, historyCommit)
+	require.NoError(t, err)
+
+	height, err = evilAssertion.Height()
+	require.NoError(t, err)
+	historyCommit, err = maliciousManager.HistoryCommitmentUpTo(ctx, height)
+	require.NoError(t, err)
+	evilLeaf, err := challenge.AddBlockChallengeLeaf(ctx, evilAssertion, historyCommit)
 	require.NoError(t, err)
 
 	aliceTracker, err := newVertexTracker(

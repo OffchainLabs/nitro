@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	ErrChallengeNotFound = errors.New("challenge not found")
-	ErrPsTimerNotYet     = errors.New("ps timer has not exceeded challenge period")
+	ErrPsTimerNotYet = errors.New("ps timer has not exceeded challenge period")
 )
 
 // ChallengeManager --
@@ -26,11 +25,9 @@ type ChallengeManager struct {
 	filterer       *challengeV2gen.ChallengeManagerImplFilterer
 }
 
-// ChallengeManager returns an instance of the current challenge manager
+// CurrentChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
-func (ac *AssertionChain) CurrentChallengeManager(
-	ctx context.Context, tx protocol.ActiveTx,
-) (protocol.ChallengeManager, error) {
+func (ac *AssertionChain) CurrentChallengeManager(ctx context.Context) (protocol.ChallengeManager, error) {
 	addr, err := ac.userLogic.ChallengeManager(ac.callOpts)
 	if err != nil {
 		return nil, err
@@ -53,9 +50,7 @@ func (cm *ChallengeManager) Address() common.Address {
 }
 
 // ChallengePeriodSeconds --
-func (cm *ChallengeManager) ChallengePeriodSeconds(
-	ctx context.Context, tx protocol.ActiveTx,
-) (time.Duration, error) {
+func (cm *ChallengeManager) ChallengePeriodSeconds(ctx context.Context) (time.Duration, error) {
 	res, err := cm.caller.ChallengePeriodSec(cm.assertionChain.callOpts)
 	if err != nil {
 		return time.Second, err
@@ -63,10 +58,9 @@ func (cm *ChallengeManager) ChallengePeriodSeconds(
 	return time.Second * time.Duration(res.Uint64()), nil
 }
 
-// CalculateChallengeId calculates the challenge hash for a given assertion and challenge type.
+// CalculateChallengeHash calculates the challenge hash for a given assertion and challenge type.
 func (cm *ChallengeManager) CalculateChallengeHash(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	itemId common.Hash,
 	cType protocol.ChallengeType,
 ) (protocol.ChallengeHash, error) {
@@ -79,7 +73,6 @@ func (cm *ChallengeManager) CalculateChallengeHash(
 
 func (cm *ChallengeManager) CalculateChallengeVertexId(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	challengeId protocol.ChallengeHash,
 	history util.HistoryCommitment,
 ) (protocol.VertexHash, error) {
@@ -92,13 +85,12 @@ func (cm *ChallengeManager) CalculateChallengeVertexId(
 	if err != nil {
 		return protocol.VertexHash{}, err
 	}
-	return protocol.VertexHash(vertexId), nil
+	return vertexId, nil
 }
 
 // GetVertex returns the challenge vertex for the given vertexId.
 func (cm *ChallengeManager) GetVertex(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	vertexId protocol.VertexHash,
 ) (util.Option[protocol.ChallengeVertex], error) {
 	innerV, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
@@ -116,7 +108,6 @@ func (cm *ChallengeManager) GetVertex(
 // GetChallenge returns the challenge for the given challengeId.
 func (cm *ChallengeManager) GetChallenge(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	challengeId protocol.ChallengeHash,
 ) (util.Option[protocol.Challenge], error) {
 	innerC, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)

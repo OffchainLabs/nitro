@@ -2,7 +2,6 @@ package statemanager
 
 import (
 	"context"
-
 	"errors"
 	"fmt"
 	"math/big"
@@ -10,7 +9,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -26,7 +25,7 @@ var (
 	}
 )
 
-// Manager defines a struct that can provide local state data and historical
+// AssertionToCreate defines a struct that can provide local state data and historical
 // Merkle commitments to L2 state for the validator.
 type AssertionToCreate struct {
 	PreState      *protocol.ExecutionState
@@ -162,7 +161,7 @@ func NewWithAssertionStates(
 	return s, nil
 }
 
-// LatestStateCommitment gets the state commitment corresponding to the last, local state root the manager has
+// LatestAssertionCreationData gets the state commitment corresponding to the last, local state root the manager has
 // and a pre-state based on a height of the previous assertion the validator should build upon.
 func (s *Simulated) LatestAssertionCreationData(
 	ctx context.Context,

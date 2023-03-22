@@ -51,14 +51,6 @@ func DefaultMachineConfig() *MachineConfig {
 	}
 }
 
-// BigStepHeight computes the big step an opcode index is in, 1-indexed.
-func BigStepHeight(bigStepSize uint64, opcodeIndex uint64) uint64 {
-	if opcodeIndex < bigStepSize {
-		return 1
-	}
-	return opcodeIndex / bigStepSize
-}
-
 // Engine can provide an execution engine for a specific pre-state of an L2 block,
 // giving access to a state iterator to advance opcode-by-opcode and fetch one-step-proofs.
 type Engine struct {
@@ -96,7 +88,7 @@ func (engine *Engine) LastState() common.Hash {
 
 // Serialize an execution engine.
 func (engine *Engine) Serialize() []byte {
-	ret := []byte{}
+	var ret []byte
 	ret = append(ret, engine.startStateRoot.Bytes()...)
 	ret = append(ret, engine.endStateRoot.Bytes()...)
 	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)

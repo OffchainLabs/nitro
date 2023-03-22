@@ -23,13 +23,13 @@ func (v *ChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
 	return 0
 }
 
-func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
+func (v *ChallengeVertex) Prev(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
 	// Refreshes the vertex.
-	manager, err := v.manager(ctx, tx)
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
 	}
-	vertex, err := manager.GetVertex(ctx, tx, v.id)
+	vertex, err := manager.GetVertex(ctx, v.id)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
 	}
@@ -40,16 +40,16 @@ func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.
 	if !ok {
 		return util.None[protocol.ChallengeVertex](), ErrNotFound
 	}
-	unwrappedVertexInner, err := unwrappedVertex.inner(ctx, tx)
+	unwrappedVertexInner, err := unwrappedVertex.inner(ctx)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
 	}
-	return manager.GetVertex(ctx, tx, unwrappedVertexInner.PredecessorId)
+	return manager.GetVertex(ctx, unwrappedVertexInner.PredecessorId)
 }
 
-func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (protocol.AssertionState, error) {
+func (v *ChallengeVertex) Status(ctx context.Context) (protocol.AssertionState, error) {
 	// TODO: Should be vertex status.
-	inner, err := v.inner(ctx, tx)
+	inner, err := v.inner(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -63,51 +63,45 @@ func (v *ChallengeVertex) HistoryCommitment() util.HistoryCommitment {
 	}
 }
 
-func (v *ChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
-	inner, err := v.inner(ctx, tx)
+func (v *ChallengeVertex) MiniStaker(ctx context.Context) (common.Address, error) {
+	inner, err := v.inner(ctx)
 	if err != nil {
 		return common.Address{}, err
 	}
 	return inner.Staker, nil
 }
 
-func (v *ChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error) {
+func (v *ChallengeVertex) GetSubChallenge(ctx context.Context) (util.Option[protocol.Challenge], error) {
 	return util.None[protocol.Challenge](), errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) PresumptiveSuccessor(
-	ctx context.Context, tx protocol.ActiveTx,
-) (util.Option[protocol.ChallengeVertex], error) {
+func (v *ChallengeVertex) PresumptiveSuccessor(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
 	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) PsTimer(ctx context.Context, tx protocol.ActiveTx) (uint64, error) {
+func (v *ChallengeVertex) PsTimer(ctx context.Context) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) ChessClockExpired(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	challengePeriodSeconds time.Duration,
-) (bool, error) {
+func (v *ChallengeVertex) ChessClockExpired(ctx context.Context, challengePeriodSeconds time.Duration) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error {
+func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context) error {
 	return errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx protocol.ActiveTx) error {
+func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context) error {
 	return errors.New("unimplemented")
 }
 
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
-func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -116,8 +110,8 @@ func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context, tx protocol.A
 
 // IsPresumptiveSuccessor checks if a vertex is the presumptive successor
 // within its challenge.
-func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -126,8 +120,8 @@ func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context, tx protoco
 
 // ChildrenAreAtOneStepFork checks if child vertices are at a one-step-fork in the challenge
 // it is contained in.
-func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -148,13 +142,8 @@ func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx proto
 
 // Merge a challenge vertex to another by providing its history
 // commitment and a prefix proof.
-func (v *ChallengeVertex) Merge(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	mergingToHistory util.HistoryCommitment,
-	proof []byte,
-) (protocol.ChallengeVertex, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) Merge(ctx context.Context, mergingToHistory util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -169,13 +158,12 @@ func (v *ChallengeVertex) Merge(
 	if err != nil {
 		return nil, err
 	}
-	inner, err := v.inner(ctx, tx)
+	inner, err := v.inner(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return getVertexFromComponents(
 		ctx,
-		tx,
 		manager,
 		inner.ChallengeId,
 		mergingToHistory,
@@ -183,13 +171,8 @@ func (v *ChallengeVertex) Merge(
 }
 
 // Bisect a challenge vertex by providing a history commitment.
-func (v *ChallengeVertex) Bisect(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	history util.HistoryCommitment,
-	proof []byte,
-) (protocol.ChallengeVertex, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) Bisect(ctx context.Context, history util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +204,7 @@ func (v *ChallengeVertex) Bisect(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse bisection log")
 	}
-	bisectedTo, err := manager.GetVertex(ctx, tx, bisection.ToId)
+	bisectedTo, err := manager.GetVertex(ctx, bisection.ToId)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +216,6 @@ func (v *ChallengeVertex) Bisect(
 
 func getVertexFromComponents(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	manager *ChallengeManager,
 	challengeId [32]byte,
 	history util.HistoryCommitment,
@@ -249,7 +231,6 @@ func getVertexFromComponents(
 	}
 	vOpt, err := manager.GetVertex(
 		ctx,
-		tx,
 		vertexId,
 	)
 	if err != nil {
@@ -261,8 +242,8 @@ func getVertexFromComponents(
 	return vOpt.Unwrap(), nil
 }
 
-func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return err
 	}
@@ -283,16 +264,16 @@ func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.Act
 	}
 }
 
-func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.ActiveTx) (protocol.Challenge, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (protocol.Challenge, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
-	inner, err := v.inner(ctx, tx)
+	inner, err := v.inner(ctx)
 	if err != nil {
 		return nil, err
 	}
-	currentChallenge, err := manager.GetChallenge(ctx, tx, inner.ChallengeId)
+	currentChallenge, err := manager.GetChallenge(ctx, inner.ChallengeId)
 	if err != nil {
 		return nil, err
 	}
@@ -322,11 +303,11 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 		return nil, errors.Wrap(err, "submitting subchallenge to chain failed")
 	}
 
-	challengeId, err := manager.CalculateChallengeHash(ctx, tx, v.id, subChallengeType)
+	challengeId, err := manager.CalculateChallengeHash(ctx, v.id, subChallengeType)
 	if err != nil {
 		return nil, err
 	}
-	chal, err := manager.GetChallenge(ctx, tx, challengeId)
+	chal, err := manager.GetChallenge(ctx, challengeId)
 	if err != nil {
 		return nil, err
 	}
@@ -336,8 +317,8 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 	return chal.Unwrap(), nil
 }
 
-func (v *ChallengeVertex) inner(ctx context.Context, tx protocol.ActiveTx) (challengeV2gen.ChallengeVertex, error) {
-	manager, err := v.manager(ctx, tx)
+func (v *ChallengeVertex) inner(ctx context.Context) (challengeV2gen.ChallengeVertex, error) {
+	manager, err := v.manager(ctx)
 	if err != nil {
 		return challengeV2gen.ChallengeVertex{}, err
 	}
@@ -348,8 +329,8 @@ func (v *ChallengeVertex) inner(ctx context.Context, tx protocol.ActiveTx) (chal
 	return vertexInner, nil
 }
 
-func (v *ChallengeVertex) manager(ctx context.Context, tx protocol.ActiveTx) (*ChallengeManager, error) {
-	manager, err := v.chain.CurrentChallengeManager(ctx, tx)
+func (v *ChallengeVertex) manager(ctx context.Context) (*ChallengeManager, error) {
+	manager, err := v.chain.CurrentChallengeManager(ctx)
 	if err != nil {
 		return nil, err
 	}

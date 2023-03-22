@@ -25,41 +25,17 @@ import (
 )
 
 var (
-	ErrUnconfirmedParent   = errors.New("parent assertion is not confirmed")
-	ErrNoUnresolved        = errors.New("no assertion to resolve")
-	ErrNonPendingAssertion = errors.New("assertion is not pending")
-	ErrRejectedAssertion   = errors.New("assertion already rejected")
-	ErrInvalidChildren     = errors.New("invalid children")
-	ErrNotFound            = errors.New("item not found on-chain")
-	ErrAlreadyExists       = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist    = errors.New("assertion predecessor does not exist")
-	ErrTooLate             = errors.New("too late to create assertion sibling")
-	ErrTooSoon             = errors.New("too soon to confirm assertion")
-	ErrInvalidHeight       = errors.New("invalid assertion height")
+	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
+	ErrNoUnresolved      = errors.New("no assertion to resolve")
+	ErrRejectedAssertion = errors.New("assertion already rejected")
+	ErrInvalidChildren   = errors.New("invalid children")
+	ErrNotFound          = errors.New("item not found on-chain")
+	ErrAlreadyExists     = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
+	ErrTooLate           = errors.New("too late to create assertion sibling")
+	ErrTooSoon           = errors.New("too soon to confirm assertion")
+	ErrInvalidHeight     = errors.New("invalid assertion height")
 )
-
-type ActiveTx struct {
-	ReadWriteTx bool
-	finalized   *big.Int
-	head        *big.Int
-	sender      common.Address
-}
-
-func (a *ActiveTx) FinalizedBlockNumber() *big.Int {
-	return a.finalized
-}
-
-func (a *ActiveTx) HeadBlockNumber() *big.Int {
-	return a.head
-}
-
-func (a *ActiveTx) ReadOnly() bool {
-	return !a.ReadWriteTx
-}
-
-func (a *ActiveTx) Sender() common.Address {
-	return a.sender
-}
 
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
@@ -71,7 +47,7 @@ type ChainBackend interface {
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
 // for testing purposes.
-type ChainCommiter interface {
+type ChainCommitter interface {
 	Commit() common.Hash
 }
 
@@ -132,62 +108,13 @@ func NewAssertionChain(
 	return chain, nil
 }
 
-// Tx enables a mutating call to the chain.
-func (chain *AssertionChain) Tx(cb func(protocol.ActiveTx) error) error {
-	head := chain.backend.Blockchain().CurrentHeader()
-	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
-	var headNum *big.Int
-	var finalizedNum *big.Int
-	if finalized != nil {
-		finalizedNum = finalized.Number()
-	}
-	if head != nil {
-		headNum = head.Number
-	}
-	tx := &ActiveTx{
-		ReadWriteTx: true,
-		head:        headNum,
-		finalized:   finalizedNum,
-		sender:      chain.stakerAddr,
-	}
-	return cb(tx)
-}
-
-// Call enables a non-mutating call to the chain.
-func (chain *AssertionChain) Call(cb func(protocol.ActiveTx) error) error {
-	head := chain.backend.Blockchain().CurrentHeader()
-	finalized := chain.backend.Blockchain().CurrentFinalizedBlock()
-	var headNum *big.Int
-	var finalizedNum *big.Int
-	if finalized != nil {
-		finalizedNum = finalized.Number()
-	}
-	if head != nil {
-		headNum = head.Number
-	}
-	tx := &ActiveTx{
-		ReadWriteTx: false,
-		head:        headNum,
-		finalized:   finalizedNum,
-		sender:      chain.stakerAddr,
-	}
-	return cb(tx)
-}
-
-func (ac *AssertionChain) NumAssertions(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-) (uint64, error) {
+func (ac *AssertionChain) NumAssertions(ctx context.Context) (uint64, error) {
 	return ac.rollup.NumAssertions(ac.callOpts)
 }
 
 // AssertionBySequenceNum --
-func (ac *AssertionChain) AssertionBySequenceNum(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	assertionNum protocol.AssertionSequenceNumber,
-) (protocol.Assertion, error) {
-	res, err := ac.userLogic.GetAssertion(ac.callOpts, uint64(assertionNum))
+func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Assertion, error) {
+	res, err := ac.userLogic.GetAssertion(ac.callOpts, uint64(seqNum))
 	if err != nil {
 		return nil, err
 	}
@@ -195,11 +122,11 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 		return nil, errors.Wrapf(
 			ErrNotFound,
 			"assertion with id %d",
-			assertionNum,
+			seqNum,
 		)
 	}
 	return &Assertion{
-		id:    uint64(assertionNum),
+		id:    uint64(seqNum),
 		chain: ac,
 		StateCommitment: util.StateCommitment{
 			Height:    res.Height.Uint64(),
@@ -208,26 +135,25 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 	}, nil
 }
 
-func (ac *AssertionChain) LatestConfirmed(ctx context.Context, tx protocol.ActiveTx) (protocol.Assertion, error) {
+func (ac *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
 	res, err := ac.rollup.LatestConfirmed(ac.callOpts)
 	if err != nil {
 		return nil, err
 	}
-	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(res))
+	return ac.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(res))
 }
 
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
 // and a commitment to a post-state.
 func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	height uint64,
 	prevAssertionId protocol.AssertionSequenceNumber,
 	prevAssertionState *protocol.ExecutionState,
 	postState *protocol.ExecutionState,
 	prevInboxMaxCount *big.Int,
 ) (protocol.Assertion, error) {
-	prev, err := ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(prevAssertionId))
+	prev, err := ac.AssertionBySequenceNum(ctx, prevAssertionId)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
@@ -267,22 +193,14 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse assertion creation log")
 	}
-	return ac.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
+	return ac.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
 }
 
-func (ac *AssertionChain) GetAssertionId(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	seqNum protocol.AssertionSequenceNumber,
-) (protocol.AssertionHash, error) {
+func (ac *AssertionChain) GetAssertionId(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.AssertionHash, error) {
 	return ac.userLogic.GetAssertionId(ac.callOpts, uint64(seqNum))
 }
 
-func (ac *AssertionChain) GetAssertionNum(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	assertionHash protocol.AssertionHash,
-) (protocol.AssertionSequenceNumber, error) {
+func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.AssertionSequenceNumber, error) {
 	res, err := ac.userLogic.GetAssertionNum(ac.callOpts, assertionHash)
 	if err != nil {
 		return 0, err
@@ -291,11 +209,7 @@ func (ac *AssertionChain) GetAssertionNum(
 }
 
 // CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	seqNum protocol.AssertionSequenceNumber,
-) (protocol.Challenge, error) {
+func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
 	_, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.CreateChallenge(
 			ac.txOpts,
@@ -305,7 +219,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	if err2 := handleCreateSuccessionChallengeError(err, uint64(seqNum)); err2 != nil {
 		return nil, err2
 	}
-	manager, err := ac.CurrentChallengeManager(ctx, tx)
+	manager, err := ac.CurrentChallengeManager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -313,11 +227,11 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 	if err != nil {
 		return nil, err
 	}
-	challengeId, err := manager.CalculateChallengeHash(ctx, tx, assertionId, protocol.BlockChallenge)
+	challengeId, err := manager.CalculateChallengeHash(ctx, assertionId, protocol.BlockChallenge)
 	if err != nil {
 		return nil, err
 	}
-	chal, err := manager.GetChallenge(ctx, tx, challengeId)
+	chal, err := manager.GetChallenge(ctx, challengeId)
 	if err != nil {
 		return nil, err
 	}
@@ -325,9 +239,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(
 }
 
 // Confirm creates a confirmation for an assertion at the block hash and send root.
-func (ac *AssertionChain) Confirm(
-	ctx context.Context, tx protocol.ActiveTx, blockHash, sendRoot common.Hash,
-) error {
+func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
 	receipt, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot)
 	})
@@ -354,14 +266,14 @@ func (ac *AssertionChain) Confirm(
 	}
 	if confirmed.BlockHash != blockHash {
 		return fmt.Errorf(
-			"Wanted assertion at block hash %#x confirmed, but block hash was %#x",
+			"wanted assertion at block hash %#x confirmed, but block hash was %#x",
 			blockHash,
 			confirmed.BlockHash,
 		)
 	}
 	if confirmed.SendRoot != sendRoot {
 		return fmt.Errorf(
-			"Wanted assertion at send root %#x confirmed, but send root was %#x",
+			"wanted assertion at send root %#x confirmed, but send root was %#x",
 			sendRoot,
 			confirmed.SendRoot,
 		)
@@ -370,9 +282,7 @@ func (ac *AssertionChain) Confirm(
 }
 
 // Reject creates a rejection for the given assertion.
-func (ac *AssertionChain) Reject(
-	ctx context.Context, tx protocol.ActiveTx, staker common.Address,
-) error {
+func (ac *AssertionChain) Reject(ctx context.Context, staker common.Address) error {
 	_, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
 		return ac.userLogic.RejectNextAssertion(ac.txOpts, staker)
 	})
@@ -451,7 +361,7 @@ func transact(ctx context.Context, backend ChainBackend, l1Reader *headerreader.
 	if err != nil {
 		return nil, err
 	}
-	if commiter, ok := backend.(ChainCommiter); ok {
+	if commiter, ok := backend.(ChainCommitter); ok {
 		commiter.Commit()
 	}
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
