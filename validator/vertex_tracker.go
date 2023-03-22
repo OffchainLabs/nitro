@@ -189,13 +189,10 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		}
 		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
-		bisectedTo, bisectToCommit, err := vt.bisect(ctx, vt.vertex)
+		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
-				return vt.fsm.Do(merge{
-					bisectingTo:       bisectToCommit.Height,
-					bisectingToCommit: bisectToCommit.Merkle,
-				})
+				return vt.fsm.Do(merge{})
 			}
 			log.WithError(err).WithFields(logrus.Fields{
 				"height":        vt.vertex.HistoryCommitment().Height,

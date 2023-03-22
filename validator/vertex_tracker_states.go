@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // Defines a state in a finite state machine that aids
@@ -106,16 +105,10 @@ type openSubchallengeLeaf struct {
 type awaitSubchallengeResolution struct{}
 
 // Tracker will attempt to bisect its vertex.
-type bisect struct {
-	bisectingTo       uint64
-	bisectingToCommit common.Hash
-}
+type bisect struct{}
 
 // Tracker will attempt to merge its vertex.
-type merge struct {
-	bisectingTo       uint64
-	bisectingToCommit common.Hash
-}
+type merge struct{}
 
 // Tracker will attempt to confirm a challenge winner.
 type confirmWinner struct{}

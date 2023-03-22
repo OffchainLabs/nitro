@@ -77,10 +77,9 @@ func (v *vertexTracker) determineBisectionHistoryWithProof(
 func (v *vertexTracker) bisect(
 	ctx context.Context,
 	validatorChallengeVertex protocol.ChallengeVertex,
-) (protocol.ChallengeVertex, util.HistoryCommitment, error) {
+) (protocol.ChallengeVertex, error) {
 	var bisectedVertex protocol.ChallengeVertex
 	var isPresumptive bool
-	var bisectToCommit util.HistoryCommitment
 
 	if err := v.cfg.chain.Tx(func(tx protocol.ActiveTx) error {
 		commitment := validatorChallengeVertex.HistoryCommitment()
@@ -96,7 +95,6 @@ func (v *vertexTracker) bisect(
 		if err != nil {
 			return err
 		}
-		bisectToCommit = historyCommit
 		bisectTo := historyCommit.Height
 		bisected, err := validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof)
 		if err != nil {
@@ -118,7 +116,7 @@ func (v *vertexTracker) bisect(
 		isPresumptive = bisectedVertexIsPresumptiveSuccessor
 		return nil
 	}); err != nil {
-		return nil, bisectToCommit, err
+		return nil, err
 	}
 	bisectedVertexCommitment := bisectedVertex.HistoryCommitment()
 	log.WithFields(logrus.Fields{
@@ -130,7 +128,7 @@ func (v *vertexTracker) bisect(
 		"bisectedTo":         bisectedVertexCommitment.Height,
 		"bisectedToMerkle":   util.Trunc(bisectedVertexCommitment.Merkle[:]),
 	}).Info("Successfully bisected to vertex")
-	return bisectedVertex, bisectToCommit, nil
+	return bisectedVertex, nil
 }
 
 // Performs a merge move during a BlockChallenge in the assertion protocol given

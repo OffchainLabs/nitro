@@ -52,7 +52,7 @@ func Test_bisect(t *testing.T) {
 				MockType: protocol.BlockChallenge,
 			},
 		}
-		_, _, err = v.bisect(ctx, vertex)
+		_, err = v.bisect(ctx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("bisects", func(t *testing.T) {
@@ -251,7 +251,7 @@ func runBisectionTest(
 		},
 	}
 
-	bisectedVertex, _, err := v.bisect(ctx, vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
 	require.NoError(t, err)
 
 	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertex.HistoryCommitment().Height)
