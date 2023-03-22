@@ -89,7 +89,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Bob bisects from 3 to 2, is presumptive.
 		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
-		cfg.expectedLeavesAdded = 6 // TODO: Rename to leaf
+		cfg.expectedLeavesAdded = 6
 		cfg.expectedBisections = 12
 		cfg.expectedMerges = 6
 		hook := test.NewGlobal()
