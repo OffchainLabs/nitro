@@ -418,6 +418,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			WithDisableLeafCreation(),
 			WithTimeReference(ref),
 			WithChallengeVertexWakeInterval(time.Millisecond*10),
+			WithNewAssertionCheckInterval(time.Millisecond),
 		)
 		require.NoError(t, valErr)
 		validators[i] = v
