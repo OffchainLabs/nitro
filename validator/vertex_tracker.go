@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -13,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"strings"
 )
 
 var (
@@ -91,66 +89,6 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 			}
 		case <-ctx.Done():
 			log.WithFields(fields).Debug("Challenge goroutine exiting")
-			var b strings.Builder
-			transitions, err := v.fsm.TrackedTransitions()
-			if err != nil {
-				panic(err)
-			}
-			for _, transition := range transitions {
-				if bisectEv, ok := transition.Event.(bisect); ok {
-					if bisectEv.bisectingToCommit == (common.Hash{}) {
-
-						fmt.Fprintf(
-							&b,
-							"pre-state %s --- first_bisection ---> post-state %s\n",
-							transition.From,
-							transition.To,
-						)
-					} else {
-						fmt.Fprintf(
-							&b,
-							"pre-state %s --- bisect(to=%d, to-commit=%s) ---> post-state %s\n",
-							transition.From,
-							bisectEv.bisectingTo,
-							util.Trunc(bisectEv.bisectingToCommit.Bytes()),
-							transition.To,
-						)
-					}
-
-				} else if mergeEv, ok := transition.Event.(merge); ok {
-
-					fmt.Fprintf(
-						&b,
-						"pre-state %s --- merge(to=%d, to-commit=%s) ---> post-state %s\n",
-						transition.From,
-						mergeEv.bisectingTo,
-						util.Trunc(mergeEv.bisectingToCommit.Bytes()),
-						transition.To,
-					)
-
-				} else {
-					fmt.Fprintf(
-						&b,
-						"pre-state %s --- %s event ---> post-state %s\n",
-						transition.From,
-						transition.Event,
-						transition.To,
-					)
-				}
-			}
-			dumpDir := fmt.Sprintf("/tmp/dumps/%s/%s", v.cfg.validatorAddress.Hex(), v.cfg.validatorName)
-			if err = os.MkdirAll(dumpDir, 0777); err != nil {
-				panic(err)
-			}
-			fpath := fmt.Sprintf("%s-%s-%d-%s.txt", dumpDir, v.challenge.GetType(), v.vertex.HistoryCommitment().Height, util.Trunc(v.vertex.HistoryCommitment().Merkle.Bytes()))
-
-			f, err := os.Create(fpath)
-			if err != nil {
-				panic(err)
-			}
-			if _, err = f.Write([]byte(b.String())); err != nil {
-				panic(err)
-			}
 			return
 		}
 	}
