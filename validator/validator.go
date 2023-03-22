@@ -149,23 +149,16 @@ func New(
 	for _, o := range opts {
 		o(v)
 	}
-	var chalManagerAddr common.Address
-	var genesis protocol.Assertion
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, 0)
-		if err != nil {
-			return err
-		}
-		chalManager, err := v.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
-		}
-		chalManagerAddr = chalManager.Address()
-		genesis = genesisAssertion
-		return nil
-	}); err != nil {
+	genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, 0)
+	if err != nil {
 		return nil, err
 	}
+	chalManager, err := v.chain.CurrentChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	chalManagerAddr := chalManager.Address()
+
 	rollup, err := rollupgen.NewRollupCore(rollupAddr, backend)
 	if err != nil {
 		return nil, err
@@ -174,15 +167,15 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	chalManager, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
+	chalManager2, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
 	if err != nil {
 		return nil, err
 	}
 	v.rollup = rollup
 	v.rollupFilterer = rollupFilterer
-	v.assertions[0] = genesis
+	v.assertions[0] = genesisAssertion
 	v.chalManagerAddr = chalManagerAddr
-	v.chalManager = chalManager
+	v.chalManager = chalManager2
 	return v, nil
 }
 
@@ -228,36 +221,15 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 	if err != nil {
 		return nil, err
 	}
-	var parentAssertion protocol.Assertion
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		parentAssertion, err = v.chain.AssertionBySequenceNum(ctx, tx, parentAssertionSeq)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	parentAssertion, err := v.chain.AssertionBySequenceNum(ctx, parentAssertionSeq)
+	if err != nil {
 		return nil, err
 	}
 	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx, parentAssertion.Height())
 	if err != nil {
 		return nil, err
 	}
-	var leaf protocol.Assertion
-	err = v.chain.Tx(func(tx protocol.ActiveTx) error {
-		leaf, err = v.chain.CreateAssertion(
-			ctx,
-			tx,
-			assertionToCreate.Height,
-			parentAssertionSeq,
-			assertionToCreate.PreState,
-			assertionToCreate.PostState,
-			assertionToCreate.InboxMaxCount,
-		)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	leaf, err := v.chain.CreateAssertion(ctx, assertionToCreate.Height, parentAssertionSeq, assertionToCreate.PreState, assertionToCreate.PostState, assertionToCreate.InboxMaxCount)
 	switch {
 	case errors.Is(err, solimpl.ErrAlreadyExists):
 		return nil, errors.Wrap(err, "assertion already exists, unable to create new leaf")
@@ -295,23 +267,15 @@ func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion,
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
 func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.AssertionSequenceNumber, error) {
-	var numAssertions uint64
-	var latestConfirmed protocol.AssertionSequenceNumber
-	var err error
-	if err = v.chain.Call(func(tx protocol.ActiveTx) error {
-		numAssertions, err = v.chain.NumAssertions(ctx, tx)
-		if err != nil {
-			return err
-		}
-		latestConfirmedFetched, err2 := v.chain.LatestConfirmed(ctx, tx)
-		if err2 != nil {
-			return err2
-		}
-		latestConfirmed = latestConfirmedFetched.SeqNum()
-		return nil
-	}); err != nil {
+	numAssertions, err := v.chain.NumAssertions(ctx)
+	if err != nil {
 		return 0, err
 	}
+	latestConfirmedFetched, err2 := v.chain.LatestConfirmed(ctx)
+	if err2 != nil {
+		return 0, err2
+	}
+	latestConfirmed := latestConfirmedFetched.SeqNum()
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
 	for s := protocol.AssertionSequenceNumber(numAssertions); s > latestConfirmed; s-- {
@@ -333,20 +297,15 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
 func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf protocol.Assertion) {
 	var chalPeriod time.Duration
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-		if err != nil {
-			return err
-		}
-		challengePeriodLength, err2 := manager.ChallengePeriodSeconds(ctx, tx)
-		if err2 != nil {
-			return err2
-		}
-		chalPeriod = challengePeriodLength
-		return nil
-	}); err != nil {
-		panic(err)
+	manager, err := v.chain.CurrentChallengeManager(ctx)
+	if err != nil {
+		panic(err) // TODO: handle error instead of panic.
 	}
+	challengePeriodLength, err2 := manager.ChallengePeriodSeconds(ctx)
+	if err2 != nil {
+		panic(err2) // TODO: handle error instead of panic.
+	}
+	chalPeriod = challengePeriodLength
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(chalPeriod))
 	defer cancel()
 
@@ -356,10 +315,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 		"height":      leaf.Height(),
 		"sequenceNum": leaf.SeqNum(),
 	}
-	if err := v.chain.Tx(func(tx protocol.ActiveTx) error {
-		// TODO: Add fields.
-		return v.chain.Confirm(ctx, tx, common.Hash{}, common.Hash{})
-	}); err != nil {
+	if err := v.chain.Confirm(ctx, common.Hash{}, common.Hash{}); err != nil {
 		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")
 		return
 	}
@@ -384,15 +340,9 @@ func (v *Validator) onLeafCreated(
 	v.assertionsLock.Unlock()
 
 	// Keep track of assertions by parent state root to more easily detect forks.
-	var prev protocol.Assertion
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, tx, assertion.PrevSeqNum())
-		if err != nil {
-			return err
-		}
-		prev = prevAssertion
-		return nil
-	}); err != nil {
+	//var prev protocol.Assertion
+	prev, err := v.chain.AssertionBySequenceNum(ctx, assertion.PrevSeqNum())
+	if err != nil {
 		return err
 	}
 

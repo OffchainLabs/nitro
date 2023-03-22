@@ -25,7 +25,6 @@ func Test_act(t *testing.T) {
 	ctx := context.Background()
 	t.Run("logs one-step-fork and returns", func(t *testing.T) {
 		hook := test.NewGlobal()
-		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 1,
 		}
@@ -40,7 +39,6 @@ func Test_act(t *testing.T) {
 		prevV.On(
 			"ChildrenAreAtOneStepFork",
 			ctx,
-			tx,
 		).Return(
 			true, nil,
 		)
@@ -53,23 +51,22 @@ func Test_act(t *testing.T) {
 		vertex.On(
 			"IsPresumptiveSuccessor",
 			ctx,
-			tx,
 		).Return(
 			false, nil,
 		)
 		challenge := &mocks.MockChallenge{}
-		p.On("CurrentChallengeManager", ctx, tx).Return(
+		p.On("CurrentChallengeManager", ctx).Return(
 			manager,
 			nil,
 		)
-		manager.On("GetVertex", ctx, tx, protocol.VertexHash(vertex.Id())).Return(
+		manager.On("GetVertex", ctx, protocol.VertexHash(vertex.Id())).Return(
 			util.Some(protocol.ChallengeVertex(vertex)),
 			nil,
 		)
-		challenge.On("Completed", ctx, tx).Return(
+		challenge.On("Completed", ctx).Return(
 			false, nil,
 		)
-		vertex.On("HasConfirmedSibling", ctx, tx).Return(
+		vertex.On("HasConfirmedSibling", ctx).Return(
 			false, nil,
 		)
 
@@ -90,13 +87,12 @@ func Test_act(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
 	})
 	t.Run("vertex prev is nil and returns", func(t *testing.T) {
-		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 1,
 		}
 		p := &mocks.MockProtocol{}
 		manager := &mocks.MockChallengeManager{}
-		p.On("CurrentChallengeManager", ctx, tx).Return(
+		p.On("CurrentChallengeManager", ctx).Return(
 			manager,
 			nil,
 		)
@@ -104,7 +100,7 @@ func Test_act(t *testing.T) {
 			MockHistory: history,
 			MockPrev:    util.None[protocol.ChallengeVertex](),
 		}
-		manager.On("GetVertex", ctx, tx, protocol.VertexHash{}).Return(
+		manager.On("GetVertex", ctx, protocol.VertexHash{}).Return(
 			util.Some(protocol.ChallengeVertex(vertex)),
 			nil,
 		)
@@ -120,7 +116,6 @@ func Test_act(t *testing.T) {
 		require.ErrorIs(t, err, ErrPrevNone)
 	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
-		tx := &mocks.MockActiveTx{ReadWriteTx: false}
 		history := util.HistoryCommitment{
 			Height: 2,
 		}
@@ -135,7 +130,6 @@ func Test_act(t *testing.T) {
 		prevV.On(
 			"ChildrenAreAtOneStepFork",
 			ctx,
-			tx,
 		).Return(
 			false, nil,
 		)
@@ -146,21 +140,21 @@ func Test_act(t *testing.T) {
 			MockStatus:  protocol.AssertionPending,
 		}
 		challenge := &mocks.MockChallenge{}
-		p.On("CurrentChallengeManager", ctx, tx).Return(
+		p.On("CurrentChallengeManager", ctx).Return(
 			manager,
 			nil,
 		)
-		manager.On("GetVertex", ctx, tx, protocol.VertexHash(vertex.Id())).Return(
+		manager.On("GetVertex", ctx, protocol.VertexHash(vertex.Id())).Return(
 			util.Some(protocol.ChallengeVertex(vertex)),
 			nil,
 		)
-		challenge.On("Completed", ctx, tx).Return(
+		challenge.On("Completed", ctx).Return(
 			false, nil,
 		)
-		vertex.On("HasConfirmedSibling", ctx, tx).Return(
+		vertex.On("HasConfirmedSibling", ctx).Return(
 			false, nil,
 		)
-		vertex.On("IsPresumptiveSuccessor", ctx, tx).Return(
+		vertex.On("IsPresumptiveSuccessor", ctx).Return(
 			true, nil,
 		)
 
@@ -254,47 +248,39 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 	var leafVertexToBisect protocol.ChallengeVertex
 	var challenge protocol.Challenge
 
-	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		genesisId, err := evilValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
-		require.NoError(t, err)
-		manager, err := evilValidator.chain.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-		require.NoError(t, err)
-
-		chal, err := manager.GetChallenge(ctx, tx, chalIdComputed)
-		require.NoError(t, err)
-		require.Equal(t, false, chal.IsNone())
-		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
-		require.NoError(t, err)
-
-		evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
-		require.NoError(t, err)
-		honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
-		require.NoError(t, err)
-		vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, evilCommit)
-		require.NoError(t, err)
-
-		honestLeafId, err := manager.CalculateChallengeVertexId(ctx, tx, chalIdComputed, honestCommit)
-		require.NoError(t, err)
-		honestLeaf, err := manager.GetVertex(ctx, tx, honestLeafId)
-		require.NoError(t, err)
-
-		honestLeafVertex = honestLeaf.Unwrap()
-		leafVertexToBisect = vToBisect
-		challenge = chal.Unwrap()
-		return nil
-	})
+	genesisId, err := evilValidator.chain.GetAssertionId(ctx, protocol.AssertionSequenceNumber(0))
 	require.NoError(t, err)
+	manager, err := evilValidator.chain.CurrentChallengeManager(ctx)
+	require.NoError(t, err)
+	chalIdComputed, err := manager.CalculateChallengeHash(ctx, common.Hash(genesisId), protocol.BlockChallenge)
+	require.NoError(t, err)
+
+	chal, err := manager.GetChallenge(ctx, chalIdComputed)
+	require.NoError(t, err)
+	require.Equal(t, false, chal.IsNone())
+	assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(2))
+	require.NoError(t, err)
+
+	evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+	require.NoError(t, err)
+	honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+	require.NoError(t, err)
+	vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, assertion, evilCommit)
+	require.NoError(t, err)
+
+	honestLeafId, err := manager.CalculateChallengeVertexId(ctx, chalIdComputed, honestCommit)
+	require.NoError(t, err)
+	honestLeaf, err := manager.GetVertex(ctx, honestLeafId)
+	require.NoError(t, err)
+
+	honestLeafVertex = honestLeaf.Unwrap()
+	leafVertexToBisect = vToBisect
+	challenge = chal.Unwrap()
 
 	// Check presumptive statuses.
-	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		isPs, err := leafVertexToBisect.IsPresumptiveSuccessor(ctx, tx)
-		require.NoError(t, err)
-		require.Equal(t, false, isPs)
-		return nil
-	})
+	isPs, err := leafVertexToBisect.IsPresumptiveSuccessor(ctx)
 	require.NoError(t, err)
+	require.Equal(t, false, isPs)
 	tracker1, err := newVertexTracker(
 		&vertexTrackerConfig{
 			timeRef:               util.NewArtificialTimeReference(),

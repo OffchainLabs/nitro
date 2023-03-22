@@ -21,10 +21,8 @@ func (c *Challenge) Challenger() common.Address {
 	return c.inner.Challenger
 }
 
-func (c *Challenge) RootAssertion(
-	ctx context.Context, tx protocol.ActiveTx,
-) (protocol.Assertion, error) {
-	rootVertex, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+func (c *Challenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
+	rootVertex, err := c.manager.GetVertex(ctx, c.inner.RootId)
 	if err != nil {
 		return nil, err
 	}
@@ -32,22 +30,20 @@ func (c *Challenge) RootAssertion(
 		return nil, errors.New("root vertex not found")
 	}
 	root := rootVertex.Unwrap().(*ChallengeVertex)
-	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, tx, root.inner.ClaimId)
+	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, root.inner.ClaimId)
 	if err != nil {
 		return nil, err
 	}
-	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, assertionNum)
+	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, assertionNum)
 	if err != nil {
 		return nil, err
 	}
 	return assertion, nil
 }
 
-func (c *Challenge) RootVertex(
-	ctx context.Context, tx protocol.ActiveTx,
-) (protocol.ChallengeVertex, error) {
+func (c *Challenge) RootVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
 	rootId := c.inner.RootId
-	v, err := c.manager.GetVertex(ctx, tx, rootId)
+	v, err := c.manager.GetVertex(ctx, rootId)
 	if err != nil {
 		return nil, err
 	}
@@ -65,16 +61,12 @@ func (c *Challenge) GetType() protocol.ChallengeType {
 	return protocol.ChallengeType(c.inner.ChallengeType)
 }
 
-func (c *Challenge) GetCreationTime(
-	ctx context.Context, tx protocol.ActiveTx,
-) (time.Time, error) {
+func (c *Challenge) GetCreationTime(ctx context.Context) (time.Time, error) {
 	return time.Time{}, errors.New("unimplemented")
 }
 
-func (c *Challenge) ParentStateCommitment(
-	ctx context.Context, tx protocol.ActiveTx,
-) (util.StateCommitment, error) {
-	v, err := c.manager.GetVertex(ctx, tx, c.inner.RootId)
+func (c *Challenge) ParentStateCommitment(ctx context.Context) (util.StateCommitment, error) {
+	v, err := c.manager.GetVertex(ctx, c.inner.RootId)
 	if err != nil {
 		return util.StateCommitment{}, err
 	}
@@ -91,7 +83,7 @@ func (c *Challenge) ParentStateCommitment(
 	if err != nil {
 		return util.StateCommitment{}, err
 	}
-	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(assertionSeqNum))
+	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(assertionSeqNum))
 	if err != nil {
 		return util.StateCommitment{}, err
 	}
@@ -101,25 +93,16 @@ func (c *Challenge) ParentStateCommitment(
 	}, nil
 }
 
-func (c *Challenge) WinnerVertex(
-	ctx context.Context, tx protocol.ActiveTx,
-) (util.Option[protocol.ChallengeVertex], error) {
+func (c *Challenge) WinnerVertex(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
 	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
 }
 
-func (c *Challenge) Completed(
-	ctx context.Context, tx protocol.ActiveTx,
-) (bool, error) {
+func (c *Challenge) Completed(ctx context.Context) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
 // AddBlockChallengeLeaf vertex to a BlockChallenge using an assertion and a history commitment.
-func (c *Challenge) AddBlockChallengeLeaf(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	assertion protocol.Assertion,
-	history util.HistoryCommitment,
-) (protocol.ChallengeVertex, error) {
+func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protocol.Assertion, history util.HistoryCommitment) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
 	lastLeafProof := make([][32]byte, len(history.LastLeafProof))
@@ -195,12 +178,7 @@ func (c *Challenge) AddBlockChallengeLeaf(
 }
 
 // AddSubChallengeLeaf adds the appropriate leaf to the challenge based on a vertex and history commitment.
-func (c *Challenge) AddSubChallengeLeaf(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	vertex protocol.ChallengeVertex,
-	history util.HistoryCommitment,
-) (protocol.ChallengeVertex, error) {
+func (c *Challenge) AddSubChallengeLeaf(ctx context.Context, vertex protocol.ChallengeVertex, history util.HistoryCommitment) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
 	lastLeafProof := make([][32]byte, len(history.LastLeafProof))

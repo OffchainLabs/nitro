@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -28,24 +27,21 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 			log.Fatal(err)
 		case chalCreated := <-challengeCreatedChan:
 			var challenge protocol.Challenge
-			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-				manager, err := v.chain.CurrentChallengeManager(ctx, tx)
-				if err != nil {
-					return err
-				}
-				retrieved, err := manager.GetChallenge(ctx, tx, chalCreated.ChallengeId)
-				if err != nil {
-					return err
-				}
-				if retrieved.IsNone() {
-					return fmt.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
-				}
-				challenge = retrieved.Unwrap()
-				return nil
-			}); err != nil {
-				log.Error(err)
+			manager, err := v.chain.CurrentChallengeManager(ctx)
+			if err != nil {
+				log.WithError(err).Error("Failed to get current challenge manager")
 				continue
 			}
+			retrieved, err := manager.GetChallenge(ctx, chalCreated.ChallengeId)
+			if err != nil {
+				log.WithError(err).Error("Failed to get challenge")
+				continue
+			}
+			if retrieved.IsNone() {
+				log.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
+				continue
+			}
+			challenge = retrieved.Unwrap()
 			// Ignore challenges from self.
 			if isFromSelf(v.address, challenge.Challenger()) {
 				continue
@@ -58,30 +54,17 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 }
 
 func (v *Validator) handleAssertions(ctx context.Context) time.Duration {
-	var numberOfAssertions uint64
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		retrieved, err := v.chain.NumAssertions(ctx, tx)
-		if err != nil {
-			return err
-		}
-		numberOfAssertions = retrieved
-		return nil
-	}); err != nil {
+	numberOfAssertions, err := v.chain.NumAssertions(ctx)
+	if err != nil {
 		log.Error(err)
 		return v.newAssertionCheckInterval
 	}
-	var latestConfirmedAssertion uint64
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		retrieved, err := v.chain.LatestConfirmed(ctx, tx)
-		if err != nil {
-			return err
-		}
-		latestConfirmedAssertion = uint64(retrieved.SeqNum())
-		return nil
-	}); err != nil {
+	retrieved, err := v.chain.LatestConfirmed(ctx)
+	if err != nil {
 		log.Error(err)
 		return v.newAssertionCheckInterval
 	}
+	latestConfirmedAssertion := uint64(retrieved.SeqNum())
 
 	for i := latestConfirmedAssertion; i < numberOfAssertions; i++ {
 		v.assertionsLock.RLock()
@@ -90,15 +73,8 @@ func (v *Validator) handleAssertions(ctx context.Context) time.Duration {
 		if ok {
 			continue
 		}
-		var assertion protocol.Assertion
-		if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-			retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(i))
-			if err != nil {
-				return err
-			}
-			assertion = retrieved
-			return nil
-		}); err != nil {
+		assertion, err := v.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(i))
+		if err != nil {
 			log.Error(err)
 			continue
 		}

@@ -142,25 +142,21 @@ func Test_merge(t *testing.T) {
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom protocol.ChallengeVertex
 		var challengeId protocol.ChallengeHash
-		err = honestValidator.chain.Call(func(tx protocol.ActiveTx) error {
-			genesisId, err := honestValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
-			require.NoError(t, err)
-			manager, err := honestValidator.chain.CurrentChallengeManager(ctx, tx)
-			require.NoError(t, err)
-			chalId, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-			require.NoError(t, err)
-
-			challengeId = chalId
-
-			vertexId, err := manager.CalculateChallengeVertexId(ctx, tx, chalId, mergingFromHistory)
-			require.NoError(t, err)
-
-			mergingFromV, err := manager.GetVertex(ctx, tx, vertexId)
-			require.NoError(t, err)
-			vertexToMergeFrom = mergingFromV.Unwrap()
-			return nil
-		})
+		genesisId, err := honestValidator.chain.GetAssertionId(ctx, protocol.AssertionSequenceNumber(0))
 		require.NoError(t, err)
+		manager, err := honestValidator.chain.CurrentChallengeManager(ctx)
+		require.NoError(t, err)
+		chalId, err := manager.CalculateChallengeHash(ctx, common.Hash(genesisId), protocol.BlockChallenge)
+		require.NoError(t, err)
+
+		challengeId = chalId
+
+		vertexId, err := manager.CalculateChallengeVertexId(ctx, chalId, mergingFromHistory)
+		require.NoError(t, err)
+
+		mergingFromV, err := manager.GetVertex(ctx, vertexId)
+		require.NoError(t, err)
+		vertexToMergeFrom = mergingFromV.Unwrap()
 
 		// Perform a merge move to the bisected vertex from an origin.
 		v := vertexTracker{
@@ -198,39 +194,31 @@ func runBisectionTest(
 	var vertexToBisect protocol.ChallengeVertex
 	var chalId protocol.ChallengeHash
 
-	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		genesisId, err := evilValidator.chain.GetAssertionId(ctx, tx, protocol.AssertionSequenceNumber(0))
-		require.NoError(t, err)
-		manager, err := evilValidator.chain.CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		chalIdComputed, err := manager.CalculateChallengeHash(ctx, tx, common.Hash(genesisId), protocol.BlockChallenge)
-		require.NoError(t, err)
-
-		chalId = chalIdComputed
-
-		challenge, err := manager.GetChallenge(ctx, tx, chalId)
-		require.NoError(t, err)
-		require.Equal(t, false, challenge.IsNone())
-		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
-		require.NoError(t, err)
-
-		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
-		require.NoError(t, err)
-		vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, honestCommit)
-		require.NoError(t, err)
-		vertexToBisect = vToBisect
-		return nil
-	})
+	genesisId, err := evilValidator.chain.GetAssertionId(ctx, protocol.AssertionSequenceNumber(0))
 	require.NoError(t, err)
+	manager, err := evilValidator.chain.CurrentChallengeManager(ctx)
+	require.NoError(t, err)
+	chalIdComputed, err := manager.CalculateChallengeHash(ctx, common.Hash(genesisId), protocol.BlockChallenge)
+	require.NoError(t, err)
+
+	chalId = chalIdComputed
+
+	challenge, err := manager.GetChallenge(ctx, chalId)
+	require.NoError(t, err)
+	require.Equal(t, false, challenge.IsNone())
+	assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(2))
+	require.NoError(t, err)
+
+	honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+	require.NoError(t, err)
+	vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, assertion, honestCommit)
+	require.NoError(t, err)
+	vertexToBisect = vToBisect
 
 	// Check presumptive statuses.
-	err = evilValidator.chain.Tx(func(tx protocol.ActiveTx) error {
-		isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx, tx)
-		require.NoError(t, err)
-		require.Equal(t, false, isPs)
-		return nil
-	})
+	isPs, err := vertexToBisect.IsPresumptiveSuccessor(ctx)
 	require.NoError(t, err)
+	require.Equal(t, false, isPs)
 
 	v := vertexTracker{
 		cfg: &vertexTrackerConfig{

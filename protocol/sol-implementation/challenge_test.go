@@ -19,44 +19,33 @@ var _ = protocol.Challenge(&Challenge{})
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
 	height := uint64(3)
 	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height, height)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
-		_, err := challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			&Assertion{
-				chain: chain1,
-				id:    20,
-				inner: rollupgen.AssertionNode{
-					Height: big.NewInt(1),
-				},
+		_, err := challenge.AddBlockChallengeLeaf(ctx, &Assertion{
+			chain: chain1,
+			id:    20,
+			inner: rollupgen.AssertionNode{
+				Height: big.NewInt(1),
 			},
-			util.HistoryCommitment{
-				Height: height,
-				Merkle: common.BytesToHash([]byte("bar")),
-			},
-		)
+		}, util.HistoryCommitment{
+			Height: height,
+			Merkle: common.BytesToHash([]byte("bar")),
+		})
 		require.ErrorContains(t, err, "INVALID_ASSERTION_NUM")
 	})
 	t.Run("invalid height", func(t *testing.T) {
 		// Pass in a junk assertion that has no predecessor.
-		_, err := challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			&Assertion{
-				chain: chain1,
-				id:    1,
-				inner: rollupgen.AssertionNode{
-					Height: big.NewInt(0),
-				},
+		_, err := challenge.AddBlockChallengeLeaf(ctx, &Assertion{
+			chain: chain1,
+			id:    1,
+			inner: rollupgen.AssertionNode{
+				Height: big.NewInt(0),
 			},
-			util.HistoryCommitment{
-				Height: 0,
-				Merkle: common.BytesToHash([]byte("bar")),
-			},
-		)
+		}, util.HistoryCommitment{
+			Height: 0,
+			Merkle: common.BytesToHash([]byte("bar")),
+		})
 		require.ErrorContains(t, err, "Invalid leaf height")
 	})
 	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
@@ -78,27 +67,17 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	history, err := util.NewHistoryCommitment(height, leaves)
 	require.NoError(t, err)
 	t.Run("OK", func(t *testing.T) {
-		_, err = challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			a1,
-			history,
-		)
+		_, err = challenge.AddBlockChallengeLeaf(ctx, a1, history)
 		require.NoError(t, err)
 
-		v, err := challenge.RootVertex(ctx, tx)
+		v, err := challenge.RootVertex(ctx)
 		require.NoError(t, err)
-		want, err := challenge.manager.GetVertex(ctx, tx, v.Id())
+		want, err := challenge.manager.GetVertex(ctx, v.Id())
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})
 	t.Run("already exists", func(t *testing.T) {
-		_, err := challenge.AddBlockChallengeLeaf(
-			ctx,
-			tx,
-			a1,
-			history,
-		)
+		_, err := challenge.AddBlockChallengeLeaf(ctx, a1, history)
 		require.ErrorContains(t, err, "already exists")
 	})
 }
@@ -110,7 +89,6 @@ func setupTopLevelFork(
 	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
 	t.Helper()
-	tx := &activeTx{readWriteTx: true}
 	chain1, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 	prev := uint64(0)
 
@@ -136,15 +114,7 @@ func setupTopLevelFork(
 		MachineStatus: protocol.MachineStatusFinished,
 	}
 	prevInboxMaxCount := big.NewInt(1)
-	a1, err := chain1.CreateAssertion(
-		ctx,
-		tx,
-		height1,
-		protocol.AssertionSequenceNumber(prev),
-		prevState,
-		postState,
-		prevInboxMaxCount,
-	)
+	a1, err := chain1.CreateAssertion(ctx, height1, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 	require.NoError(t, err)
 
 	chain2, err := NewAssertionChain(
@@ -159,18 +129,10 @@ func setupTopLevelFork(
 	require.NoError(t, err)
 
 	postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
-	a2, err := chain2.CreateAssertion(
-		ctx,
-		tx,
-		height2,
-		protocol.AssertionSequenceNumber(prev),
-		prevState,
-		postState,
-		prevInboxMaxCount,
-	)
+	a2, err := chain2.CreateAssertion(ctx, height2, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 	require.NoError(t, err)
 
-	challenge, err := chain2.CreateSuccessionChallenge(ctx, tx, 0)
+	challenge, err := chain2.CreateSuccessionChallenge(ctx, 0)
 	require.NoError(t, err)
 	return a1.(*Assertion), a2.(*Assertion), challenge.(*Challenge), chain1, chain2
 }

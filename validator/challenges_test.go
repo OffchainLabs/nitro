@@ -305,15 +305,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	}
 
 	// Initialize each validator's associated state roots which diverge
-	var genesis protocol.Assertion
-	err := chains[1].Call(func(tx protocol.ActiveTx) error {
-		genesisAssertion, err := chains[1].AssertionBySequenceNum(ctx, tx, 0)
-		if err != nil {
-			return err
-		}
-		genesis = genesisAssertion
-		return nil
-	})
+	genesis, err := chains[1].AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
 	genesisState := &protocol.ExecutionState{
@@ -427,13 +419,9 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	}
 
 	var managerAddr common.Address
-	err = chains[1].Call(func(tx protocol.ActiveTx) error {
-		manager, err := chains[1].CurrentChallengeManager(ctx, tx)
-		require.NoError(t, err)
-		managerAddr = manager.Address()
-		return nil
-	})
+	manager, err := chains[1].CurrentChallengeManager(ctx)
 	require.NoError(t, err)
+	managerAddr = manager.Address()
 
 	var totalVertexAdded uint64
 	var totalBisections uint64

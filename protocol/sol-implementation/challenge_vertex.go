@@ -23,9 +23,9 @@ func (v *ChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
 	return 0
 }
 
-func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.ChallengeVertex], error) {
+func (v *ChallengeVertex) Prev(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
 	// Refreshes the vertex.
-	vertex, err := v.manager.GetVertex(ctx, tx, v.id)
+	vertex, err := v.manager.GetVertex(ctx, v.id)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
 	}
@@ -37,7 +37,7 @@ func (v *ChallengeVertex) Prev(ctx context.Context, tx protocol.ActiveTx) (util.
 		return util.None[protocol.ChallengeVertex](), ErrNotFound
 	}
 	v.inner = innerV.inner
-	return v.manager.GetVertex(ctx, tx, v.inner.PredecessorId)
+	return v.manager.GetVertex(ctx, v.inner.PredecessorId)
 }
 
 func (v *ChallengeVertex) Status() protocol.AssertionState {
@@ -56,54 +56,48 @@ func (v *ChallengeVertex) MiniStaker() common.Address {
 	return v.inner.Staker
 }
 
-func (v *ChallengeVertex) GetSubChallenge(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.Challenge], error) {
+func (v *ChallengeVertex) GetSubChallenge(ctx context.Context) (util.Option[protocol.Challenge], error) {
 	return util.None[protocol.Challenge](), errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) PresumptiveSuccessor(
-	ctx context.Context, tx protocol.ActiveTx,
-) (util.Option[protocol.ChallengeVertex], error) {
+func (v *ChallengeVertex) PresumptiveSuccessor(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
 	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) PsTimer(ctx context.Context, tx protocol.ActiveTx) (uint64, error) {
+func (v *ChallengeVertex) PsTimer(ctx context.Context) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) ChessClockExpired(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	challengePeriodSeconds time.Duration,
-) (bool, error) {
+func (v *ChallengeVertex) ChessClockExpired(ctx context.Context, challengePeriodSeconds time.Duration) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context, tx protocol.ActiveTx) error {
+func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context) error {
 	return errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context, tx protocol.ActiveTx) error {
+func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context) error {
 	return errors.New("unimplemented")
 }
 
 // HasConfirmedSibling checks if the vertex has a confirmed sibling in the protocol.
-func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+func (v *ChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, error) {
 	return v.manager.caller.HasConfirmedSibling(v.manager.assertionChain.callOpts, v.id)
 }
 
 // IsPresumptiveSuccessor checks if a vertex is the presumptive successor
 // within its challenge.
-func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+func (v *ChallengeVertex) IsPresumptiveSuccessor(ctx context.Context) (bool, error) {
 	return v.manager.caller.IsPresumptiveSuccessor(v.manager.assertionChain.callOpts, v.id)
 }
 
 // ChildrenAreAtOneStepFork checks if child vertices are at a one-step-fork in the challenge
 // it is contained in.
-func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx protocol.ActiveTx) (bool, error) {
+func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, error) {
 	atFork, err := v.manager.caller.ChildrenAreAtOneStepFork(v.manager.assertionChain.callOpts, v.id)
 	if err != nil {
 		errS := err.Error()
@@ -121,12 +115,7 @@ func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context, tx proto
 
 // Merge a challenge vertex to another by providing its history
 // commitment and a prefix proof.
-func (v *ChallengeVertex) Merge(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	mergingToHistory util.HistoryCommitment,
-	proof []byte,
-) (protocol.ChallengeVertex, error) {
+func (v *ChallengeVertex) Merge(ctx context.Context, mergingToHistory util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
 	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.Merge(
 			v.manager.assertionChain.txOpts,
@@ -147,12 +136,7 @@ func (v *ChallengeVertex) Merge(
 }
 
 // Bisect a challenge vertex by providing a history commitment.
-func (v *ChallengeVertex) Bisect(
-	ctx context.Context,
-	tx protocol.ActiveTx,
-	history util.HistoryCommitment,
-	proof []byte,
-) (protocol.ChallengeVertex, error) {
+func (v *ChallengeVertex) Bisect(ctx context.Context, history util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
 	receipt, err := transact(
 		ctx,
 		v.manager.assertionChain.backend,
@@ -181,7 +165,7 @@ func (v *ChallengeVertex) Bisect(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse bisection log")
 	}
-	bisectedTo, err := v.manager.GetVertex(ctx, tx, bisection.ToId)
+	bisectedTo, err := v.manager.GetVertex(ctx, bisection.ToId)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +204,7 @@ func getVertexFromComponents(
 	}, nil
 }
 
-func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {
+func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {
 	_, err := transact(ctx, v.manager.assertionChain.backend, v.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
 		return v.manager.writer.ConfirmForPsTimer(
 			v.manager.assertionChain.txOpts,
@@ -238,8 +222,8 @@ func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.Act
 	}
 }
 
-func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.ActiveTx) (protocol.Challenge, error) {
-	currentChallenge, err := v.manager.GetChallenge(ctx, tx, v.inner.ChallengeId)
+func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (protocol.Challenge, error) {
+	currentChallenge, err := v.manager.GetChallenge(ctx, v.inner.ChallengeId)
 	if err != nil {
 		return nil, err
 	}
@@ -266,11 +250,11 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 		return nil, err
 	}
 
-	challengeId, err := v.manager.CalculateChallengeHash(ctx, tx, v.id, subChallengeType)
+	challengeId, err := v.manager.CalculateChallengeHash(ctx, v.id, subChallengeType)
 	if err != nil {
 		return nil, err
 	}
-	chal, err := v.manager.GetChallenge(ctx, tx, challengeId)
+	chal, err := v.manager.GetChallenge(ctx, challengeId)
 	if err != nil {
 		return nil, err
 	}
