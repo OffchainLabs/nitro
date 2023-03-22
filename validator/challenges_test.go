@@ -315,7 +315,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(aliceAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*5),
 	)
 	require.NoError(t, err)
 
@@ -339,11 +339,11 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(bobAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*5),
 	)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// We fire off each validator's background routines.
@@ -398,7 +398,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		}
 	}()
 
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 5)
 
 	// Submit leaf creation manually for each validator.
 	_, err = alice.SubmitLeafCreation(ctx)

@@ -266,10 +266,7 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 				"challengeType": vt.challenge.GetType(),
 				"address":       util.Trunc(vt.cfg.validatorAddress.Bytes()),
 			}).Error("could not bisect")
-			return vt.fsm.Do(bisect{
-				bisectingTo:       bisectToCommit.Height,
-				bisectingToCommit: bisectToCommit.Merkle,
-			})
+			return vt.fsm.Do(backToStart{})
 		}
 		tracker, err := newVertexTracker(
 			vt.cfg,
@@ -277,7 +274,14 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			bisectedTo,
 		)
 		if err != nil {
-			return errors.Wrap(err, "could not create new vertex tracker")
+			log.WithError(err).WithFields(logrus.Fields{
+				"height":        vt.vertex.HistoryCommitment().Height,
+				"merkle":        util.Trunc(vt.vertex.HistoryCommitment().Merkle.Bytes()),
+				"validatorName": vt.cfg.validatorName,
+				"challengeType": vt.challenge.GetType(),
+				"address":       util.Trunc(vt.cfg.validatorAddress.Bytes()),
+			}).Error("could not create new vertex tracker")
+			return vt.fsm.Do(backToStart{})
 		}
 		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
