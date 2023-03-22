@@ -4,7 +4,7 @@ rankdir=LR
 color=black
 arrowhead=open
 node [shape=record, style=filled, fillcolor=gray95 fontname="Courier New"]
-2 [label="Outbox \<\<Contract\>\>\n | {{ slot| 0 | 1 | 2 | 3 | 4-7 } | { type: \<inherited contract\>.variable (bytes) | {  unallocated (12)  |  address: AbsOutbox.rollup (20) } | {  unallocated (12)  |  IBridge: AbsOutbox.bridge (20) } | {  mapping\(uint256=\>bytes32\): AbsOutbox.spent (32) } | {  mapping\(bytes32=\>bytes32\): AbsOutbox.roots (32) } | { <11> L2ToL1Context: AbsOutbox.context (128) }}}"]
+2 [label="ERC20Outbox \<\<Contract\>\>\n | {{ slot| 0 | 1 | 2 | 3 | 4-7 } | { type: \<inherited contract\>.variable (bytes) | {  unallocated (12)  |  address: AbsOutbox.rollup (20) } | {  unallocated (12)  |  IBridge: AbsOutbox.bridge (20) } | {  mapping\(uint256=\>bytes32\): AbsOutbox.spent (32) } | {  mapping\(bytes32=\>bytes32\): AbsOutbox.roots (32) } | { <11> L2ToL1Context: AbsOutbox.context (128) }}}"]
 
 1 [label="L2ToL1Context \<\<Struct\>\>\n | {{ slot| 4 | 5 | 6 | 7 } | { type: variable (bytes) | {  uint128: timestamp (16)  |  uint128: l2Block (16) } | {  bytes32: outputId (32) } | {  uint96: l1Block (12)  |  address: sender (20) } | {  uint256: withdrawalAmount (32) }}}"]
 
