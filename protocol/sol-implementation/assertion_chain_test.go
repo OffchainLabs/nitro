@@ -21,13 +21,13 @@ var (
 	_ = protocol.AssertionChain(&AssertionChain{})
 	_ = protocol.ChainReadWriter(&AssertionChain{})
 	_ = protocol.Assertion(&Assertion{})
-	_ = protocol.ActiveTx(&activeTx{})
+	_ = protocol.ActiveTx(&ActiveTx{})
 )
 
 func TestAssertionStateHash(t *testing.T) {
 	ctx := context.Background()
 	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	assertion, err := chain.LatestConfirmed(ctx, tx)
 	require.NoError(t, err)
 
@@ -38,13 +38,15 @@ func TestAssertionStateHash(t *testing.T) {
 		MachineStatus: protocol.MachineStatusFinished,
 	}
 	computed := protocol.ComputeStateHash(execState, big.NewInt(1))
-	require.Equal(t, computed, assertion.StateHash())
+	stateHash, err := assertion.StateHash()
+	require.NoError(t, err)
+	require.Equal(t, computed, stateHash)
 }
 
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
@@ -82,7 +84,9 @@ func TestCreateAssertion(t *testing.T) {
 		)
 		require.NoError(t, err)
 		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
-		require.Equal(t, computed, created.StateHash(), "Unequal computed hash")
+		stateHash, err := created.StateHash()
+		require.NoError(t, err)
+		require.Equal(t, computed, stateHash, "Unequal computed hash")
 
 		_, err = chain.CreateAssertion(
 			ctx,
@@ -141,19 +145,23 @@ func TestCreateAssertion(t *testing.T) {
 		)
 		require.NoError(t, err)
 		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
-		require.Equal(t, computed, forked.StateHash(), "Unequal computed hash")
+		stateHash, err := forked.StateHash()
+		require.NoError(t, err)
+		require.Equal(t, computed, stateHash, "Unequal computed hash")
 	})
 }
 
 func TestAssertionBySequenceNum(t *testing.T) {
 	ctx := context.Background()
 	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 
 	resp, err := chain.AssertionBySequenceNum(ctx, tx, 0)
 	require.NoError(t, err)
 
-	require.Equal(t, true, resp.StateHash() != [32]byte{})
+	stateHash, err := resp.StateHash()
+	require.NoError(t, err)
+	require.Equal(t, true, stateHash != [32]byte{})
 
 	_, err = chain.AssertionBySequenceNum(ctx, tx, 1)
 	require.ErrorIs(t, err, ErrNotFound)
@@ -161,7 +169,7 @@ func TestAssertionBySequenceNum(t *testing.T) {
 
 func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
 		chain, _, _, backend, _ := setupAssertionChainWithChallengeManager(t)
 
@@ -213,7 +221,7 @@ func TestAssertion_Confirm(t *testing.T) {
 
 func TestAssertion_Reject(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 
 	t.Run("Can reject assertion", func(t *testing.T) {
 		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
@@ -268,7 +276,7 @@ func TestAssertion_Reject(t *testing.T) {
 func TestChallengePeriodSeconds(t *testing.T) {
 	ctx := context.Background()
 	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	manager, err := chain.CurrentChallengeManager(ctx, tx)
 	require.NoError(t, err)
 
@@ -279,7 +287,7 @@ func TestChallengePeriodSeconds(t *testing.T) {
 
 func TestCreateSuccessionChallenge(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	t.Run("assertion does not exist", func(t *testing.T) {
 		chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 		_, err := chain.CreateSuccessionChallenge(ctx, tx, 2)

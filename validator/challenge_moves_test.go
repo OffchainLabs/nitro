@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -15,6 +16,7 @@ import (
 
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("bad bisection points", func(t *testing.T) {
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 			divergeHeight: 10,
@@ -52,7 +54,7 @@ func Test_bisect(t *testing.T) {
 				MockType: protocol.BlockChallenge,
 			},
 		}
-		_, err = v.bisect(ctx, vertex)
+		_, err = v.bisect(ctx, tx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
 	})
 	t.Run("bisects", func(t *testing.T) {
@@ -86,6 +88,7 @@ func Test_bisect(t *testing.T) {
 			t,
 			logsHook,
 			ctx,
+			tx,
 			honestValidator,
 			evilValidator,
 			createdData.leaf1,
@@ -93,13 +96,15 @@ func Test_bisect(t *testing.T) {
 		)
 
 		// Expect to bisect to 31.
-		commitment := bisectedTo.HistoryCommitment()
+		commitment, err := bisectedTo.HistoryCommitment(ctx, tx)
+		require.NoError(t, err)
 		require.Equal(t, uint64(31), commitment.Height)
 	})
 }
 
 func Test_merge(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("OK", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
@@ -131,6 +136,7 @@ func Test_merge(t *testing.T) {
 			t,
 			logsHook,
 			ctx,
+			tx,
 			honestValidator,
 			evilValidator,
 			createdData.leaf1,
@@ -189,14 +195,15 @@ func runBisectionTest(
 	t *testing.T,
 	logsHook *test.Hook,
 	ctx context.Context,
+	tx protocol.ActiveTx,
 	honestValidator,
 	evilValidator *Validator,
 	leaf1,
 	leaf2 protocol.Assertion,
 ) protocol.ChallengeVertex {
-	err := honestValidator.onLeafCreated(ctx, leaf1)
+	err := honestValidator.onLeafCreated(ctx, tx, leaf1)
 	require.NoError(t, err)
-	err = honestValidator.onLeafCreated(ctx, leaf2)
+	err = honestValidator.onLeafCreated(ctx, tx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
@@ -221,7 +228,9 @@ func runBisectionTest(
 		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
 		require.NoError(t, err)
 
-		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		assertionHeight, err := assertion.Height()
+		require.NoError(t, err)
+		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 		require.NoError(t, err)
 		vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, honestCommit)
 		require.NoError(t, err)
@@ -251,13 +260,15 @@ func runBisectionTest(
 		},
 	}
 
-	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx, tx, vertexToBisect)
 	require.NoError(t, err)
 
-	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertex.HistoryCommitment().Height)
+	bisectedVertexHistoryCommitment, err := bisectedVertex.HistoryCommitment(ctx, tx)
+	require.NoError(t, err)
+	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertexHistoryCommitment.Height)
 	require.NoError(t, err)
 
-	commitment := bisectedVertex.HistoryCommitment()
+	commitment, err := bisectedVertex.HistoryCommitment(ctx, tx)
 	require.NoError(t, err)
 	require.Equal(t, commitment.Hash(), shouldBisectToCommit.Hash())
 

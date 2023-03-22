@@ -38,26 +38,26 @@ var (
 	ErrInvalidHeight       = errors.New("invalid assertion height")
 )
 
-type activeTx struct {
-	readWriteTx bool
+type ActiveTx struct {
+	ReadWriteTx bool
 	finalized   *big.Int
 	head        *big.Int
 	sender      common.Address
 }
 
-func (a *activeTx) FinalizedBlockNumber() *big.Int {
+func (a *ActiveTx) FinalizedBlockNumber() *big.Int {
 	return a.finalized
 }
 
-func (a *activeTx) HeadBlockNumber() *big.Int {
+func (a *ActiveTx) HeadBlockNumber() *big.Int {
 	return a.head
 }
 
-func (a *activeTx) ReadOnly() bool {
-	return !a.readWriteTx
+func (a *ActiveTx) ReadOnly() bool {
+	return !a.ReadWriteTx
 }
 
-func (a *activeTx) Sender() common.Address {
+func (a *ActiveTx) Sender() common.Address {
 	return a.sender
 }
 
@@ -144,8 +144,8 @@ func (chain *AssertionChain) Tx(cb func(protocol.ActiveTx) error) error {
 	if head != nil {
 		headNum = head.Number
 	}
-	tx := &activeTx{
-		readWriteTx: true,
+	tx := &ActiveTx{
+		ReadWriteTx: true,
 		head:        headNum,
 		finalized:   finalizedNum,
 		sender:      chain.stakerAddr,
@@ -165,8 +165,8 @@ func (chain *AssertionChain) Call(cb func(protocol.ActiveTx) error) error {
 	if head != nil {
 		headNum = head.Number
 	}
-	tx := &activeTx{
-		readWriteTx: false,
+	tx := &ActiveTx{
+		ReadWriteTx: false,
 		head:        headNum,
 		finalized:   finalizedNum,
 		sender:      chain.stakerAddr,
@@ -201,7 +201,6 @@ func (ac *AssertionChain) AssertionBySequenceNum(
 	return &Assertion{
 		id:    uint64(assertionNum),
 		chain: ac,
-		inner: res,
 		StateCommitment: util.StateCommitment{
 			Height:    res.Height.Uint64(),
 			StateRoot: res.StateHash,
@@ -232,7 +231,10 @@ func (ac *AssertionChain) CreateAssertion(
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
-	prevHeight := prev.Height()
+	prevHeight, err := prev.Height()
+	if err != nil {
+		return nil, err
+	}
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}

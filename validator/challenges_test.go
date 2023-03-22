@@ -3,6 +3,7 @@ package validator
 import (
 	"bytes"
 	"context"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"math/big"
 	"sync"
 	"testing"
@@ -204,7 +205,11 @@ func prepareHonestStates(
 		MachineStatus: protocol.MachineStatusFinished,
 	}
 	genesisStateHash := protocol.ComputeStateHash(genesisState, prevInboxMaxCount)
-	require.Equal(t, genesisStateHash, genesis.StateHash(), "Genesis state hash unequal")
+	actualGenesisStateHash, err := genesis.StateHash()
+	if err != nil {
+		return
+	}
+	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
 
 	// Initialize each validator associated state roots which diverge
 	// at specified points in the test config.

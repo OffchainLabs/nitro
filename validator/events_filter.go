@@ -13,7 +13,7 @@ import (
 // Subscribes to events fired by the rollup contracts in order to listen to
 // challenge start events from the protocol.
 // TODO: Brittle - should be based on querying the chain instead.
-func (v *Validator) handleChallengeEvents(ctx context.Context) {
+func (v *Validator) handleChallengeEvents(ctx context.Context, tx protocol.ActiveTx) {
 	challengeCreatedChan := make(chan *challengeV2gen.ChallengeManagerImplChallengeCreated, 1)
 	chalSub, err := v.chalManager.WatchChallengeCreated(&bind.WatchOpts{}, challengeCreatedChan)
 	if err != nil {
@@ -47,10 +47,14 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 				continue
 			}
 			// Ignore challenges from self.
-			if isFromSelf(v.address, challenge.Challenger()) {
+			challenger, err := challenge.Challenger(ctx, tx)
+			if err != nil {
+				log.Error(err)
+			}
+			if isFromSelf(v.address, challenger) {
 				continue
 			}
-			if err := v.onChallengeStarted(ctx, challenge); err != nil {
+			if err := v.onChallengeStarted(ctx, tx, challenge); err != nil {
 				log.Error(err)
 			}
 		}

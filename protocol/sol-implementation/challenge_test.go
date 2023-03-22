@@ -7,7 +7,6 @@ import (
 
 	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,7 +18,7 @@ var _ = protocol.Challenge(&Challenge{})
 
 func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	ctx := context.Background()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	height := uint64(3)
 	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height, height)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
@@ -29,9 +28,6 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			&Assertion{
 				chain: chain1,
 				id:    20,
-				inner: rollupgen.AssertionNode{
-					Height: big.NewInt(1),
-				},
 			},
 			util.HistoryCommitment{
 				Height: height,
@@ -48,9 +44,6 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 			&Assertion{
 				chain: chain1,
 				id:    1,
-				inner: rollupgen.AssertionNode{
-					Height: big.NewInt(0),
-				},
 			},
 			util.HistoryCommitment{
 				Height: 0,
@@ -88,7 +81,9 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 
 		v, err := challenge.RootVertex(ctx, tx)
 		require.NoError(t, err)
-		want, err := challenge.manager.GetVertex(ctx, tx, v.Id())
+		challengeManager, err := challenge.manager(ctx, tx)
+		require.NoError(t, err)
+		want, err := challengeManager.GetVertex(ctx, tx, v.Id())
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})
@@ -110,7 +105,7 @@ func setupTopLevelFork(
 	height2 uint64,
 ) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
 	t.Helper()
-	tx := &activeTx{readWriteTx: true}
+	tx := &ActiveTx{ReadWriteTx: true}
 	chain1, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 	prev := uint64(0)
 

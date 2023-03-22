@@ -24,6 +24,7 @@ import (
 
 func Test_onLeafCreation(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
@@ -48,7 +49,7 @@ func Test_onLeafCreation(t *testing.T) {
 		p.On("AssertionBySequenceNum", ctx, &mocks.MockActiveTx{}, prev.SeqNum()).Return(prev, nil)
 		v.chain = p
 
-		err := v.onLeafCreated(ctx, ev)
+		err := v.onLeafCreated(ctx, tx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
@@ -56,6 +57,7 @@ func Test_onLeafCreation(t *testing.T) {
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		ctx := context.Background()
+		tx := &solimpl.ActiveTx{ReadWriteTx: true}
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 			divergeHeight: 10,
 			numBlocks:     100,
@@ -72,22 +74,23 @@ func Test_onLeafCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		err = validator.onLeafCreated(ctx, createdData.leaf1)
+		err = validator.onLeafCreated(ctx, tx, createdData.leaf1)
 		require.NoError(t, err)
 
-		err = validator.onLeafCreated(ctx, createdData.leaf2)
+		err = validator.onLeafCreated(ctx, tx, createdData.leaf2)
 		require.NoError(t, err)
 
 		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-		err = validator.onLeafCreated(ctx, createdData.leaf2)
+		err = validator.onLeafCreated(ctx, tx, createdData.leaf2)
 		require.ErrorContains(t, err, "Vertex already exists")
 	})
 }
 
 func Test_onChallengeStarted(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	logsHook := test.NewGlobal()
 
 	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
@@ -105,10 +108,10 @@ func Test_onChallengeStarted(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = validator.onLeafCreated(ctx, createdData.leaf1)
+	err = validator.onLeafCreated(ctx, tx, createdData.leaf1)
 	require.NoError(t, err)
 
-	err = validator.onLeafCreated(ctx, createdData.leaf2)
+	err = validator.onLeafCreated(ctx, tx, createdData.leaf2)
 	require.NoError(t, err)
 
 	AssertLogsContain(t, logsHook, "New assertion appended")
@@ -205,7 +208,9 @@ func createTwoValidatorFork(
 	}
 	genesisStateHash := protocol.ComputeStateHash(genesisState, big.NewInt(1))
 
-	require.Equal(t, genesisStateHash, genesis.StateHash(), "Genesis state hash unequal")
+	actualGenesisStateHash, err := genesis.StateHash()
+	require.NoError(t, err)
+	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
 
 	height := uint64(0)
 	honestValidatorStateRoots := make([]common.Hash, 0)
@@ -267,7 +272,9 @@ func createTwoValidatorFork(
 	})
 	require.NoError(t, err)
 
-	honestValidatorStateRoots = append(honestValidatorStateRoots, assertion.StateHash())
+	assertionStateHash, err := assertion.StateHash()
+	require.NoError(t, err)
+	honestValidatorStateRoots = append(honestValidatorStateRoots, assertionStateHash)
 
 	evilPostState := &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState{
@@ -293,7 +300,9 @@ func createTwoValidatorFork(
 	})
 	require.NoError(t, err)
 
-	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertion.StateHash())
+	forkedAssertionStateHash, err := forkedAssertion.StateHash()
+	require.NoError(t, err)
+	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertionStateHash)
 
 	return &createdValidatorFork{
 		leaf1:                     assertion,
@@ -329,9 +338,13 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
 			v.assertions[a.SeqNum()] = a
+			height, err := a.Height()
+			require.NoError(t, err)
+			stateHash, err := a.StateHash()
+			require.NoError(t, err)
 			s.On("HasStateCommitment", ctx, util.StateCommitment{
-				Height:    a.Height(),
-				StateRoot: a.StateHash(),
+				Height:    height,
+				StateRoot: stateHash,
 			}).Return(true)
 		}
 		p.On("LatestConfirmed", ctx, tx).Return(assertions[0], nil)
@@ -346,15 +359,19 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
 			v.assertions[a.SeqNum()] = a
+			height, err := a.Height()
+			require.NoError(t, err)
+			stateHash, err := a.StateHash()
+			require.NoError(t, err)
 			if i <= 5 {
 				s.On("HasStateCommitment", ctx, util.StateCommitment{
-					Height:    a.Height(),
-					StateRoot: a.StateHash(),
+					Height:    height,
+					StateRoot: stateHash,
 				}).Return(true)
 			} else {
 				s.On("HasStateCommitment", ctx, util.StateCommitment{
-					Height:    a.Height(),
-					StateRoot: a.StateHash(),
+					Height:    height,
+					StateRoot: stateHash,
 				}).Return(false)
 			}
 		}
