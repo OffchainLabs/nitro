@@ -45,13 +45,17 @@ contract ERC20OutboxTest is AbsOutboxTest {
         // store root
         vm.prank(rollup);
         outbox.updateSendRoot(
-            0xcb920246c89b1654256473a041b5231711799d82dcae749351c758af797598e3,
-            0xcb920246c89b1654256473a041b5231711799d82dcae749351c758af797598e3
+            0x7e87df146feb0900d5a441d1d081867190b34395307698f4e879c8164cd9a7f9,
+            0x7e87df146feb0900d5a441d1d081867190b34395307698f4e879c8164cd9a7f9
         );
+
+        // create msg receiver on L1
+        ERC20L2ToL1Target target = new ERC20L2ToL1Target();
+        target.setOutbox(address(outbox));
 
         //// execute transaction
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
-        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+        uint256 targetTokenBalanceBefore = nativeToken.balanceOf(address(target));
 
         bytes32[] memory proof = new bytes32[](5);
         proof[0] = bytes32(0x1216ff070e3c87b032d79b298a3e98009ddd13bf8479b843e225857ca5f950e7);
@@ -61,16 +65,17 @@ contract ERC20OutboxTest is AbsOutboxTest {
         proof[4] = bytes32(0x477ce2b0bc8035ae3052b7339c7496531229bd642bb1871d81618cf93a4d2d1a);
 
         uint256 withdrawalAmount = 15;
+        bytes memory data = abi.encodeWithSignature("receiveHook()");
         outbox.executeTransaction({
             proof: proof,
             index: 12,
             l2Sender: user,
-            to: user,
+            to: address(target),
             l2Block: 300,
             l1Block: 20,
             l2Timestamp: 1234,
             value: withdrawalAmount,
-            data: ""
+            data: data
         });
 
         uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
@@ -80,12 +85,20 @@ contract ERC20OutboxTest is AbsOutboxTest {
             "Invalid bridge token balance"
         );
 
-        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        uint256 targetTokenBalanceAfter = nativeToken.balanceOf(address(target));
         assertEq(
-            userTokenBalanceAfter - userTokenBalanceBefore,
+            targetTokenBalanceAfter - targetTokenBalanceBefore,
             withdrawalAmount,
-            "Invalid user token balance"
+            "Invalid target token balance"
         );
+
+        /// check context was properly set during execution
+        assertEq(uint256(target.l2Block()), 300, "Invalid l2Block");
+        assertEq(uint256(target.timestamp()), 1234, "Invalid timestamp");
+        assertEq(uint256(target.outputId()), 12, "Invalid outputId");
+        assertEq(target.sender(), user, "Invalid sender");
+        assertEq(uint256(target.l1Block()), 20, "Invalid l1Block");
+        assertEq(uint256(target.withdrawalAmount()), withdrawalAmount, "Invalid withdrawalAmount");
     }
 
     function test_executeTransaction_revert_CallTargetNotAllowed() public {
@@ -135,5 +148,32 @@ contract ERC20OutboxTest is AbsOutboxTest {
 
         uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
         assertEq(userTokenBalanceAfter, userTokenBalanceBefore, "Invalid user token balance");
+    }
+}
+
+/**
+ * Contract for testing L2 to L1 msgs
+ */
+contract ERC20L2ToL1Target {
+    address public outbox;
+
+    uint128 public l2Block;
+    uint128 public timestamp;
+    bytes32 public outputId;
+    address public sender;
+    uint96 public l1Block;
+    uint256 public withdrawalAmount;
+
+    function receiveHook() external payable {
+        l2Block = uint128(IOutbox(outbox).l2ToL1Block());
+        timestamp = uint128(IOutbox(outbox).l2ToL1Timestamp());
+        outputId = IOutbox(outbox).l2ToL1OutputId();
+        sender = IOutbox(outbox).l2ToL1Sender();
+        l1Block = uint96(IOutbox(outbox).l2ToL1EthBlock());
+        withdrawalAmount = ERC20Outbox(outbox).l2ToL1WithdrawalAmount();
+    }
+
+    function setOutbox(address _outbox) external {
+        outbox = _outbox;
     }
 }
