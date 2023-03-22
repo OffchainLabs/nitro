@@ -88,7 +88,7 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
     function l2ToL1Block() external view returns (uint256) {
         uint128 l2Block = context.l2Block;
         // we don't return the default context value to avoid a breaking change in the API
-        if (l2Block == L1BLOCK_DEFAULT_CONTEXT) return uint256(0);
+        if (l2Block == L2BLOCK_DEFAULT_CONTEXT) return uint256(0);
         return uint256(l2Block);
     }
 
