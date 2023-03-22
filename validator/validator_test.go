@@ -197,7 +197,7 @@ func createTwoValidatorFork(
 	honestValidatorStateRoots = append(honestValidatorStateRoots, genesisStateHash)
 	evilValidatorStateRoots = append(evilValidatorStateRoots, genesisStateHash)
 
-	honestBlockHash := common.Hash{}
+	var honestBlockHash common.Hash
 	for i := uint64(1); i < numBlocks; i++ {
 		height += 1
 		honestBlockHash = backend.Commit()
