@@ -12,15 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
-	"time"
 )
 
 func (v *ChallengeVertex) Id() [32]byte {
 	return v.id
-}
-
-func (v *ChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
-	return 0
 }
 
 func (v *ChallengeVertex) Prev(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
@@ -75,24 +70,12 @@ func (v *ChallengeVertex) GetSubChallenge(ctx context.Context) (util.Option[prot
 	return util.None[protocol.Challenge](), errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) EligibleForNewSuccessor(ctx context.Context) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
 func (v *ChallengeVertex) PresumptiveSuccessor(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
 	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
 }
 
 func (v *ChallengeVertex) PsTimer(ctx context.Context) (uint64, error) {
 	return 0, errors.New("unimplemented")
-}
-
-func (v *ChallengeVertex) ChessClockExpired(ctx context.Context, challengePeriodSeconds time.Duration) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
-func (v *ChallengeVertex) ConfirmForChallengeDeadline(ctx context.Context) error {
-	return errors.New("unimplemented")
 }
 
 func (v *ChallengeVertex) ConfirmForSubChallengeWin(ctx context.Context) error {

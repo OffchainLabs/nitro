@@ -488,13 +488,5 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 		}
 		return true, nil
 	}
-
-	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
-	if v.cfg.timeRef.Get().After(v.cfg.challengeCreationTime.Add(2 * v.cfg.challengePeriodLength)) {
-		if confirmErr := v.vertex.ConfirmForChallengeDeadline(ctx); confirmErr != nil {
-			return false, err
-		}
-		return true, nil
-	}
 	return false, nil
 }
