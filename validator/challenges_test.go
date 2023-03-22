@@ -3,7 +3,6 @@ package validator
 import (
 	"bytes"
 	"context"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"math/big"
 	"sync"
 	"testing"
@@ -206,9 +205,8 @@ func prepareHonestStates(
 	}
 	genesisStateHash := protocol.ComputeStateHash(genesisState, prevInboxMaxCount)
 	actualGenesisStateHash, err := genesis.StateHash()
-	if err != nil {
-		return
-	}
+	require.NoError(t, err)
+
 	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
 
 	// Initialize each validator associated state roots which diverge
@@ -445,7 +443,10 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 
 	var honestLeaf protocol.ChallengeVertex
 	err = alice.chain.Tx(func(tx protocol.ActiveTx) error {
-		historyCommit, err := honestManager.HistoryCommitmentUpTo(ctx, honestAssertion.Height())
+		height, err := honestAssertion.Height()
+		require.NoError(t, err)
+
+		historyCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height)
 		require.NoError(t, err)
 		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, honestAssertion, historyCommit)
 		require.NoError(t, err)
@@ -456,7 +457,9 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 
 	var evilLeaf protocol.ChallengeVertex
 	err = bob.chain.Tx(func(tx protocol.ActiveTx) error {
-		historyCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, evilAssertion.Height())
+		height, err := evilAssertion.Height()
+		require.NoError(t, err)
+		historyCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, height)
 		require.NoError(t, err)
 		leaf, err := challenge.AddBlockChallengeLeaf(ctx, tx, evilAssertion, historyCommit)
 		require.NoError(t, err)
