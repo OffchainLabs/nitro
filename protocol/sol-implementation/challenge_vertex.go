@@ -57,15 +57,11 @@ func (v *ChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) (pro
 	return protocol.AssertionState(inner.Status), nil
 }
 
-func (v *ChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) (util.HistoryCommitment, error) {
-	inner, err := v.inner(ctx, tx)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
+func (v *ChallengeVertex) HistoryCommitment() util.HistoryCommitment {
 	return util.HistoryCommitment{
-		Height: inner.Height.Uint64(),
-		Merkle: inner.HistoryRoot,
-	}, nil
+		Height: v.height,
+		Merkle: v.historyCommit,
+	}
 }
 
 func (v *ChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
@@ -303,17 +299,13 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context, tx protocol.Ac
 	}
 	challenge := currentChallenge.Unwrap()
 	var subChallengeType protocol.ChallengeType
-	challengeType, err := challenge.GetType(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	switch challengeType {
+	switch challenge.GetType() {
 	case protocol.BlockChallenge:
 		subChallengeType = protocol.BigStepChallenge
 	case protocol.BigStepChallenge:
 		subChallengeType = protocol.SmallStepChallenge
 	default:
-		return nil, fmt.Errorf("cannot make subchallenge for challenge type %d", challengeType)
+		return nil, fmt.Errorf("cannot make subchallenge for challenge type %d", challenge.GetType())
 	}
 
 	if _, err = transact(ctx, v.chain.backend, v.chain.headerReader, func() (*types.Transaction, error) {

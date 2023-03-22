@@ -57,7 +57,7 @@ func newVertexTracker(
 	}, nil
 }
 
-func (v *vertexTracker) spawn(ctx context.Context, tx protocol.ActiveTx) {
+func (v *vertexTracker) spawn(ctx context.Context) {
 	commitment := v.vertex.HistoryCommitment()
 	fields := logrus.Fields{
 		"height":        commitment.Height,
@@ -84,7 +84,7 @@ func (v *vertexTracker) spawn(ctx context.Context, tx protocol.ActiveTx) {
 				log.WithFields(fields).Debug("Vertex tracker received notice of a confirmation, exiting")
 				return
 			}
-			if err := v.act(ctx, tx); err != nil {
+			if err := v.act(ctx); err != nil {
 				log.Error(err)
 			}
 		case <-ctx.Done():
@@ -114,7 +114,7 @@ func (vt *vertexTracker) trackerShouldComplete(ctx context.Context) (bool, error
 	return challengeCompleted || siblingConfirmed, nil
 }
 
-func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
+func (vt *vertexTracker) act(ctx context.Context) error {
 	current := vt.fsm.Current()
 	switch current.State {
 	case trackerStarted:
@@ -122,7 +122,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		if err != nil {
 			return errors.Wrap(err, "could not get prev")
 		}
-		atOneStepFork, err := vt.checkOneStepFork(ctx, tx, prevVertex)
+		atOneStepFork, err := vt.checkOneStepFork(ctx, prevVertex)
 		if err != nil {
 			return errors.Wrap(err, "could not check one step fork")
 		}
@@ -144,10 +144,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		if !ok {
 			return fmt.Errorf("bad source event: %s", event)
 		}
-		forkPointVertexHistoryCommitment, err := event.forkPointVertex.HistoryCommitment(ctx, tx)
-		if err != nil {
-			return err
-		}
+		forkPointVertexHistoryCommitment := event.forkPointVertex.HistoryCommitment()
 		log.WithFields(logrus.Fields{
 			"name": vt.cfg.validatorName,
 		}).Infof(
@@ -155,10 +152,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 			forkPointVertexHistoryCommitment.Height,
 			util.Trunc(forkPointVertexHistoryCommitment.Merkle.Bytes()),
 		)
-		challengeType, err := vt.challenge.GetType(ctx, tx)
-		if err != nil {
-			return err
-		}
+		challengeType := vt.challenge.GetType()
 		if challengeType == protocol.SmallStepChallenge {
 			return vt.fsm.Do(actOneStepProof{})
 		}
@@ -195,7 +189,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		}
 		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
-		bisectedTo, err := vt.bisect(ctx, tx, vt.vertex)
+		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
 				return vt.fsm.Do(merge{})
@@ -224,10 +218,10 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 			}).Error("could not create new vertex tracker")
 			return vt.fsm.Do(backToStart{})
 		}
-		go tracker.spawn(ctx, tx)
+		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
 	case trackerMerging:
-		mergedTo, err := vt.mergeToExistingVertex(ctx, tx)
+		mergedTo, err := vt.mergeToExistingVertex(ctx)
 		if err != nil {
 			return errors.Wrap(err, "could not merge")
 		}
@@ -239,7 +233,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		if err != nil {
 			return errors.Wrap(err, "could not create new vertex tracker")
 		}
-		go tracker.spawn(ctx, tx)
+		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
 	case trackerConfirming:
 		// TODO: Implement.
@@ -277,15 +271,9 @@ func (vt *vertexTracker) isPresumptive(ctx context.Context) (bool, error) {
 	return isPresumptive, nil
 }
 
-func (vt *vertexTracker) checkOneStepFork(ctx context.Context, tx protocol.ActiveTx, prevVertex protocol.ChallengeVertex) (bool, error) {
-	commitment, err := vt.vertex.HistoryCommitment(ctx, tx)
-	if err != nil {
-		return false, err
-	}
-	prevCommitment, err := prevVertex.HistoryCommitment(ctx, tx)
-	if err != nil {
-		return false, err
-	}
+func (vt *vertexTracker) checkOneStepFork(ctx context.Context, prevVertex protocol.ChallengeVertex) (bool, error) {
+	commitment := vt.vertex.HistoryCommitment()
+	prevCommitment := prevVertex.HistoryCommitment()
 	if commitment.Height != prevCommitment.Height+1 {
 		return false, nil
 	}
@@ -324,7 +312,7 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 // Merges to a vertex that already exists in the protocol by fetching its history commit
 // from our state manager and then performing a merge transaction in the chain. Then,
 // this method returns the vertex it merged to.
-func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
+func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
 	var prev protocol.ChallengeVertex
 	var mergeHistory util.HistoryCommitment
 	var prefixProof []byte
@@ -337,14 +325,8 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context, tx protocol.A
 			return errors.New("no prev vertex found")
 		}
 		prev = prevV.Unwrap()
-		prevCommitment, err := prev.HistoryCommitment(ctx, tx)
-		if err != nil {
-			return err
-		}
-		commitment, err := v.vertex.HistoryCommitment(ctx, tx)
-		if err != nil {
-			return err
-		}
+		prevCommitment := prev.HistoryCommitment()
+		commitment := v.vertex.HistoryCommitment()
 		parentHeight := prevCommitment.Height
 		toHeight := commitment.Height
 

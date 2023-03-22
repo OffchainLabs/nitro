@@ -38,8 +38,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		chal, err := honestChain.CreateSuccessionChallenge(ctx, tx, 0)
 		require.NoError(t, err)
 
-		challengeType, err := chal.GetType(ctx, tx)
-		require.NoError(t, err)
+		challengeType := chal.GetType()
 		require.Equal(t, protocol.BlockChallenge, challengeType)
 		t.Log("Created BlockChallenge")
 
@@ -71,7 +70,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		subChal, err := parentVertex.CreateSubChallenge(ctx, tx)
 		require.NoError(t, err)
 
-		subChalType, err := subChal.GetType(ctx, tx)
+		subChalType := subChal.GetType()
 		require.NoError(t, err)
 		require.Equal(t, protocol.BigStepChallenge, subChalType)
 		t.Log("Created BigStepChallenge")
@@ -100,7 +99,7 @@ func TestFullChallengeResolution(t *testing.T) {
 		subChal, err = parentVertex.CreateSubChallenge(ctx, tx)
 		require.NoError(t, err)
 
-		subChalGetType, err := subChal.GetType(ctx, tx)
+		subChalGetType := subChal.GetType()
 		require.NoError(t, err)
 		require.Equal(t, protocol.SmallStepChallenge, subChalGetType)
 		t.Log("Created SmallStepChallenge")

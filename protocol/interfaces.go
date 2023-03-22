@@ -191,7 +191,7 @@ const (
 type Challenge interface {
 	// Getters.
 	Id() ChallengeHash
-	GetType(ctx context.Context, tx ActiveTx) (ChallengeType, error)
+	GetType() ChallengeType
 	WinningClaim(ctx context.Context, tx ActiveTx) (util.Option[AssertionHash], error)
 	RootAssertion(ctx context.Context, tx ActiveTx) (Assertion, error)
 	RootVertex(ctx context.Context, tx ActiveTx) (ChallengeVertex, error)
@@ -200,7 +200,7 @@ type Challenge interface {
 	ParentStateCommitment(ctx context.Context, tx ActiveTx) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context, tx ActiveTx) (bool, error)
-	Challenger(ctx context.Context, tx ActiveTx) (common.Address, error)
+	Challenger() common.Address
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(
@@ -223,9 +223,9 @@ type Challenge interface {
 type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
+	HistoryCommitment() util.HistoryCommitment
 	SequenceNum() VertexSequenceNumber
 	Status(ctx context.Context, tx ActiveTx) (AssertionState, error)
-	HistoryCommitment(ctx context.Context, tx ActiveTx) (util.HistoryCommitment, error)
 	MiniStaker(ctx context.Context, tx ActiveTx) (common.Address, error)
 	Prev(ctx context.Context, tx ActiveTx) (util.Option[ChallengeVertex], error)
 	GetSubChallenge(ctx context.Context, tx ActiveTx) (util.Option[Challenge], error)

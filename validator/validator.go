@@ -392,7 +392,6 @@ func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf pr
 // Processes new leaf creation events from the protocol that were not initiated by self.
 func (v *Validator) onLeafCreated(
 	ctx context.Context,
-	tx protocol.ActiveTx,
 	assertion protocol.Assertion,
 ) error {
 	assertionStateHash, err := assertion.StateHash()
@@ -452,7 +451,7 @@ func (v *Validator) onLeafCreated(
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, tx, assertion)
+	return v.challengeAssertion(ctx, assertion)
 }
 
 func isFromSelf(self, staker common.Address) bool {

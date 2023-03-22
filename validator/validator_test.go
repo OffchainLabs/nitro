@@ -24,8 +24,6 @@ import (
 
 func Test_onLeafCreation(t *testing.T) {
 	ctx := context.Background()
-	tx := &solimpl.ActiveTx{ReadWriteTx: true}
-	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, s := setupValidator(t)
@@ -49,7 +47,7 @@ func Test_onLeafCreation(t *testing.T) {
 		p.On("AssertionBySequenceNum", ctx, &mocks.MockActiveTx{}, prev.SeqNum()).Return(prev, nil)
 		v.chain = p
 
-		err := v.onLeafCreated(ctx, tx, ev)
+		err := v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
@@ -57,7 +55,6 @@ func Test_onLeafCreation(t *testing.T) {
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		ctx := context.Background()
-		tx := &solimpl.ActiveTx{ReadWriteTx: true}
 		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 			divergeHeight: 10,
 			numBlocks:     100,
@@ -74,23 +71,22 @@ func Test_onLeafCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		err = validator.onLeafCreated(ctx, tx, createdData.leaf1)
+		err = validator.onLeafCreated(ctx, createdData.leaf1)
 		require.NoError(t, err)
 
-		err = validator.onLeafCreated(ctx, tx, createdData.leaf2)
+		err = validator.onLeafCreated(ctx, createdData.leaf2)
 		require.NoError(t, err)
 
 		AssertLogsContain(t, logsHook, "New assertion appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-		err = validator.onLeafCreated(ctx, tx, createdData.leaf2)
+		err = validator.onLeafCreated(ctx, createdData.leaf2)
 		require.ErrorContains(t, err, "Vertex already exists")
 	})
 }
 
 func Test_onChallengeStarted(t *testing.T) {
 	ctx := context.Background()
-	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	logsHook := test.NewGlobal()
 
 	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
@@ -108,10 +104,10 @@ func Test_onChallengeStarted(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = validator.onLeafCreated(ctx, tx, createdData.leaf1)
+	err = validator.onLeafCreated(ctx, createdData.leaf1)
 	require.NoError(t, err)
 
-	err = validator.onLeafCreated(ctx, tx, createdData.leaf2)
+	err = validator.onLeafCreated(ctx, createdData.leaf2)
 	require.NoError(t, err)
 
 	AssertLogsContain(t, logsHook, "New assertion appended")

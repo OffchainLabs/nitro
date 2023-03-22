@@ -35,8 +35,8 @@ func (m *MockChallengeVertex) Status(ctx context.Context, tx protocol.ActiveTx) 
 	return m.MockStatus, nil
 }
 
-func (m *MockChallengeVertex) HistoryCommitment(ctx context.Context, tx protocol.ActiveTx) (util.HistoryCommitment, error) {
-	return m.MockHistory, nil
+func (m *MockChallengeVertex) HistoryCommitment() util.HistoryCommitment {
+	return m.MockHistory
 }
 
 func (m *MockChallengeVertex) MiniStaker(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
@@ -293,8 +293,8 @@ func (m *MockChallenge) Id() protocol.ChallengeHash {
 	return m.MockID
 }
 
-func (m *MockChallenge) GetType(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeType, error) {
-	return m.MockType, nil
+func (m *MockChallenge) GetType() protocol.ChallengeType {
+	return m.MockType
 }
 
 func (m *MockChallenge) WinningClaim(ctx context.Context, tx protocol.ActiveTx) (util.Option[protocol.AssertionHash], error) {
@@ -330,8 +330,8 @@ func (m *MockChallenge) Completed(ctx context.Context, tx protocol.ActiveTx) (bo
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockChallenge) Challenger(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
-	return m.MockChallenger, nil
+func (m *MockChallenge) Challenger() common.Address {
+	return m.MockChallenger
 }
 
 // Mutating calls.

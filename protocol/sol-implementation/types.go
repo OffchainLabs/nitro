@@ -65,8 +65,10 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 // Challenge is a developer-friendly wrapper around
 // the protocol struct with the same name.
 type Challenge struct {
-	chain *AssertionChain
-	id    [32]byte
+	chain      *AssertionChain
+	id         [32]byte
+	challenger common.Address
+	typ        protocol.ChallengeType
 }
 
 // ChallengeType defines an enum of the same name
@@ -83,6 +85,8 @@ const (
 // ChallengeVertex is a developer-friendly wrapper around
 // the protocol struct with the same name.
 type ChallengeVertex struct {
-	chain *AssertionChain
-	id    [32]byte
+	chain         *AssertionChain
+	id            [32]byte
+	height        uint64
+	historyCommit common.Hash
 }

@@ -19,12 +19,8 @@ func (c *Challenge) Id() protocol.ChallengeHash {
 	return c.id
 }
 
-func (c *Challenge) Challenger(ctx context.Context, tx protocol.ActiveTx) (common.Address, error) {
-	inner, err := c.inner(ctx, tx)
-	if err != nil {
-		return common.Address{}, err
-	}
-	return inner.Challenger, nil
+func (c *Challenge) Challenger() common.Address {
+	return c.challenger
 }
 
 func (c *Challenge) RootAssertion(
@@ -66,11 +62,7 @@ func (c *Challenge) RootAssertion(
 // of S is A. If two validators open a subchallenge S' at vertex B in BigStepChallenge, the TopLevelClaimVertex
 // is vertex A.
 func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeVertex, error) {
-	chalTyp, err := c.GetType(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	if !chalTyp.IsSubChallenge() {
+	if !c.typ.IsSubChallenge() {
 		return nil, errors.New("not a subchallenge")
 	}
 	cInner, err := c.inner(ctx, tx)
@@ -108,7 +100,7 @@ func (c *Challenge) TopLevelClaimVertex(ctx context.Context, tx protocol.ActiveT
 
 	// If we are in a big step challenge, the claim vertex is the top-level vertex of the
 	// corresponding BlockChallenge, so we are done.
-	if chalTyp == protocol.BigStepChallenge {
+	if c.typ == protocol.BigStepChallenge {
 		return claimVertex, nil
 	}
 
@@ -192,12 +184,8 @@ func (c *Challenge) WinningClaim(ctx context.Context, tx protocol.ActiveTx) (uti
 	return util.Some[protocol.AssertionHash](cInner.WinningClaim), nil
 }
 
-func (c *Challenge) GetType(ctx context.Context, tx protocol.ActiveTx) (protocol.ChallengeType, error) {
-	cInner, err := c.inner(ctx, tx)
-	if err != nil {
-		return 0, err
-	}
-	return protocol.ChallengeType(cInner.ChallengeType), nil
+func (c *Challenge) GetType() protocol.ChallengeType {
+	return c.typ
 }
 
 func (c *Challenge) GetCreationTime(
@@ -339,17 +327,18 @@ func (c *Challenge) AddBlockChallengeLeaf(
 	if err != nil {
 		return nil, err
 	}
-	_, err = cManager.caller.GetVertex(
-		c.chain.callOpts,
+	fetched, err := cManager.GetVertex(
+		ctx,
+		tx,
 		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return &ChallengeVertex{
-		id:    vertexId,
-		chain: c.chain,
-	}, nil
+	if fetched.IsNone() {
+		return nil, ErrNotFound
+	}
+	return fetched.Unwrap(), nil
 }
 
 // AddSubChallengeLeaf adds the appropriate leaf to the challenge based on a vertex and history commitment.

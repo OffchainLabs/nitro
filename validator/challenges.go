@@ -16,7 +16,7 @@ import (
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
 func (v *Validator) onChallengeStarted(
-	ctx context.Context, tx protocol.ActiveTx, ev protocol.Challenge,
+	ctx context.Context, ev protocol.Challenge,
 ) error {
 	var challengedAssertion protocol.Assertion
 	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
@@ -53,8 +53,15 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker, err := challengeVertex.MiniStaker(ctx, tx)
-	if err != nil {
+	var staker common.Address
+	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+		miniStaker, err := challengeVertex.MiniStaker(ctx, tx)
+		if err != nil {
+			return err
+		}
+		staker = miniStaker
+		return nil
+	}); err != nil {
 		return err
 	}
 	if name, ok := v.knownValidatorNames[staker]; ok {
@@ -82,7 +89,7 @@ func (v *Validator) onChallengeStarted(
 	if err != nil {
 		return err
 	}
-	go tracker.spawn(ctx, tx)
+	go tracker.spawn(ctx)
 	return nil
 }
 
@@ -139,7 +146,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, tx protocol.ActiveTx
 	if err != nil {
 		return err
 	}
-	go tracker.spawn(ctx, tx)
+	go tracker.spawn(ctx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
