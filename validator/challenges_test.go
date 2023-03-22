@@ -27,9 +27,9 @@ import (
 
 var (
 	// TODO: These are brittle and could break if the event sigs change in Solidity.
-	vertexAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
-	mergeEventSig       = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
-	bisectEventSig      = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
+	leafAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
+	mergeEventSig     = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
+	bisectEventSig    = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
@@ -89,7 +89,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Bob bisects from 3 to 2, is presumptive.
 		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
-		cfg.expectedVerticesAdded = 6 // TODO: Rename to leaf
+		cfg.expectedLeavesAdded = 6 // TODO: Rename to leaf
 		cfg.expectedBisections = 12
 		cfg.expectedMerges = 6
 		hook := test.NewGlobal()
@@ -98,58 +98,25 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
-	t.Run("two validators opening leaves at same height, fork point is a power of two", func(t *testing.T) {
-		t.Skip("Flakey")
+	t.Run("two validators opening leaves at height 255", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
-			currentChainHeight:        8,
-			aliceHeight:               8,
-			bobHeight:                 8,
-			assertionDivergenceHeight: 5,
+			currentChainHeight:           255,
+			aliceHeight:                  255,
+			bobHeight:                    255,
+			assertionDivergenceHeight:    3,
+			numBigStepsAtAssertionHeight: 7,
+			bigStepDivergenceHeight:      3,
+			numSmallStepsAtBigStep:       7,
+			smallStepDivergenceHeight:    3,
 		}
-		cfg.expectedVerticesAdded = 2
-		cfg.expectedBisections = 5
-		cfg.expectedMerges = 1
+		cfg.expectedLeavesAdded = 6
+		cfg.expectedBisections = 22
+		cfg.expectedMerges = 6
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
-	})
-	t.Run("two validators opening leaves at heights 6 and 256", func(t *testing.T) {
-		t.Skip("Flakey")
-		cfg := &challengeProtocolTestConfig{
-			currentChainHeight:        256,
-			aliceHeight:               6,
-			bobHeight:                 256,
-			assertionDivergenceHeight: 4,
-		}
-		// With Alice starting at 256 and bisecting all the way down to 4
-		// will take 6 bisections. Then, Alice bisects from 4 to 3. Bob bisects twice to 4 and 2.
-		// We should see a total of 9 bisections and 2 merges.
-		cfg.expectedVerticesAdded = 2
-		cfg.expectedBisections = 9
-		cfg.expectedMerges = 2
-		hook := test.NewGlobal()
-		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-	})
-	t.Run("two validators opening leaves at heights 129 and 256", func(t *testing.T) {
-		t.Skip("Flakey")
-		cfg := &challengeProtocolTestConfig{
-			currentChainHeight:        256,
-			aliceHeight:               129,
-			bobHeight:                 256,
-			assertionDivergenceHeight: 4,
-		}
-		// Same as the test case above but bob has 4 more bisections to perform
-		// if Bob starts at 129.
-		cfg.expectedVerticesAdded = 2
-		cfg.expectedBisections = 14
-		cfg.expectedMerges = 2
-		hook := test.NewGlobal()
-		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 }
 
@@ -172,9 +139,9 @@ type challengeProtocolTestConfig struct {
 	smallStepDivergenceHeight uint64
 	currentChainHeight        uint64
 	// Events we want to assert are fired from the goimpl.
-	expectedBisections    uint64
-	expectedMerges        uint64
-	expectedVerticesAdded uint64
+	expectedBisections  uint64
+	expectedMerges      uint64
+	expectedLeavesAdded uint64
 }
 
 func prepareHonestStates(
@@ -350,7 +317,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	require.NoError(t, err)
 	managerAddr = manager.Address()
 
-	var totalVertexAdded uint64
+	var totalLeavesAdded uint64
 	var totalBisections uint64
 	var totalMerges uint64
 	var wg sync.WaitGroup
@@ -377,8 +344,8 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 				}
 				topic := vLog.Topics[0]
 				switch {
-				case bytes.Equal(topic[:], vertexAddedEventSig):
-					totalVertexAdded++
+				case bytes.Equal(topic[:], leafAddedEventSig):
+					totalLeavesAdded++
 				case bytes.Equal(topic[:], bisectEventSig):
 					totalBisections++
 				case bytes.Equal(topic[:], mergeEventSig):
@@ -464,7 +431,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	go bobTracker.spawn(ctx)
 
 	wg.Wait()
-	assert.Equal(t, cfg.expectedVerticesAdded, totalVertexAdded, "Did not get expected challenge leaf creations")
+	assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
 	assert.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
 }
