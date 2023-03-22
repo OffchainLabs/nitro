@@ -99,8 +99,7 @@ func (v *vertexTracker) bisect(
 		bisected, err := validatorChallengeVertex.Bisect(ctx, tx, historyCommit, proof)
 		if err != nil {
 			couldNotBisectErr := err
-			var validatorChallengeVertexHistoryCommitment util.HistoryCommitment
-			validatorChallengeVertexHistoryCommitment = validatorChallengeVertex.HistoryCommitment()
+			validatorChallengeVertexHistoryCommitment := validatorChallengeVertex.HistoryCommitment()
 			return errors.Wrapf(
 				couldNotBisectErr,
 				"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
