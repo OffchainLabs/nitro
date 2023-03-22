@@ -24,7 +24,6 @@ import (
 
 func Test_onLeafCreation(t *testing.T) {
 	ctx := context.Background()
-	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, s := setupValidator(t)

@@ -648,8 +648,7 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 		subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
 	}
 	bigStepManager := statemanager.New(subChalHashes)
-	firstChildHistoryCommitment, err := firstChild.HistoryCommitment(ctx)
-	require.NoError(t, err)
+	firstChildHistoryCommitment := firstChild.HistoryCommitment()
 	bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, firstChildHistoryCommitment.Height)
 	require.NoError(t, err)
 
@@ -693,10 +692,7 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 		subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
 	}
 	bigStepManager := statemanager.New(subChalHashes)
-	firstChildHistoryCommitment, err := firstChild.HistoryCommitment(ctx)
-	if err != nil {
-		return
-	}
+	firstChildHistoryCommitment := firstChild.HistoryCommitment()
 	bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, firstChildHistoryCommitment.Height)
 	require.NoError(t, err)
 

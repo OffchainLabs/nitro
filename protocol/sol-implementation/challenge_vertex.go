@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
@@ -57,15 +56,11 @@ func (v *ChallengeVertex) Status(ctx context.Context) (protocol.AssertionState, 
 	return protocol.AssertionState(inner.Status), nil
 }
 
-func (v *ChallengeVertex) HistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
-	inner, err := v.inner(ctx)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
+func (v *ChallengeVertex) HistoryCommitment() util.HistoryCommitment {
 	return util.HistoryCommitment{
-		Height: inner.Height.Uint64(),
-		Merkle: inner.HistoryRoot,
-	}, nil
+		Height: v.height,
+		Merkle: v.historyCommit,
+	}
 }
 
 func (v *ChallengeVertex) MiniStaker(ctx context.Context) (common.Address, error) {
@@ -168,8 +163,8 @@ func (v *ChallengeVertex) Merge(ctx context.Context, mergingToHistory util.Histo
 		return nil, err
 	}
 	return getVertexFromComponents(
+		ctx,
 		manager,
-		v.chain.callOpts,
 		inner.ChallengeId,
 		mergingToHistory,
 	)
@@ -220,13 +215,13 @@ func (v *ChallengeVertex) Bisect(ctx context.Context, history util.HistoryCommit
 }
 
 func getVertexFromComponents(
+	ctx context.Context,
 	manager *ChallengeManager,
-	opts *bind.CallOpts,
 	challengeId [32]byte,
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
 	vertexId, err := manager.caller.CalculateChallengeVertexId(
-		opts,
+		manager.assertionChain.callOpts,
 		challengeId,
 		history.Merkle,
 		big.NewInt(int64(history.Height)),
@@ -234,17 +229,17 @@ func getVertexFromComponents(
 	if err != nil {
 		return nil, err
 	}
-	_, err = manager.caller.GetVertex(
-		opts,
+	vOpt, err := manager.GetVertex(
+		ctx,
 		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return &ChallengeVertex{
-		id:    vertexId,
-		chain: manager.assertionChain,
-	}, nil
+	if vOpt.IsNone() {
+		return nil, ErrNotFound
+	}
+	return vOpt.Unwrap(), nil
 }
 
 func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {
@@ -287,17 +282,13 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (protocol.Chal
 	}
 	challenge := currentChallenge.Unwrap()
 	var subChallengeType protocol.ChallengeType
-	challengeType, err := challenge.GetType(ctx)
-	if err != nil {
-		return nil, err
-	}
-	switch challengeType {
+	switch challenge.GetType() {
 	case protocol.BlockChallenge:
 		subChallengeType = protocol.BigStepChallenge
 	case protocol.BigStepChallenge:
 		subChallengeType = protocol.SmallStepChallenge
 	default:
-		return nil, fmt.Errorf("cannot make subchallenge for challenge type %d", challengeType)
+		return nil, fmt.Errorf("cannot make subchallenge for challenge type %d", challenge.GetType())
 	}
 
 	if _, err = transact(ctx, v.chain.backend, v.chain.headerReader, func() (*types.Transaction, error) {
@@ -306,7 +297,10 @@ func (v *ChallengeVertex) CreateSubChallenge(ctx context.Context) (protocol.Chal
 			v.id,
 		)
 	}); err != nil {
-		return nil, err
+		if strings.Contains(err.Error(), "Challenge already exists") {
+			return nil, ErrAlreadyExists
+		}
+		return nil, errors.Wrap(err, "submitting subchallenge to chain failed")
 	}
 
 	challengeId, err := manager.CalculateChallengeHash(ctx, v.id, subChallengeType)

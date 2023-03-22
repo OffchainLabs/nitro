@@ -16,8 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 const defaultCreateLeafInterval = time.Second * 5
@@ -29,7 +27,6 @@ type Opt = func(val *Validator)
 // Validator defines a validator client instances in the assertion protocol, which will be
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
-	stopwaiter.StopWaiter
 	chain                                  protocol.Protocol
 	chalManagerAddr                        common.Address
 	rollupAddr                             common.Address
@@ -157,10 +154,7 @@ func New(
 
 func (v *Validator) Start(ctx context.Context) {
 	go v.handleChallengeEvents(ctx)
-	v.StopWaiter.Start(ctx, v)
-	v.CallIteratively(func(ctxInternal context.Context) time.Duration {
-		return v.handleAssertions(ctxInternal)
-	})
+	go v.pollForAssertions(ctx)
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)
 	}

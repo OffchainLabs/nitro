@@ -262,8 +262,8 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 	require.NoError(t, err)
 
 	assertionHeight, err := assertion.Height()
-		require.NoError(t, err)
-		evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
+	require.NoError(t, err)
+	evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 	require.NoError(t, err)
 	honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 	require.NoError(t, err)

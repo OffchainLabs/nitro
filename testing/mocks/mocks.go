@@ -35,8 +35,8 @@ func (m *MockChallengeVertex) Status(ctx context.Context) (protocol.AssertionSta
 	return m.MockStatus, nil
 }
 
-func (m *MockChallengeVertex) HistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
-	return m.MockHistory, nil
+func (m *MockChallengeVertex) HistoryCommitment() util.HistoryCommitment {
+	return m.MockHistory
 }
 
 func (m *MockChallengeVertex) MiniStaker(ctx context.Context) (common.Address, error) {
@@ -164,6 +164,28 @@ func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]
 	return args.Get(0).([]byte), args.Error(1)
 }
 
+func (m *MockStateManager) BigStepPrefixProof(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	lo,
+	hi uint64,
+) ([]byte, error) {
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, lo, hi)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockStateManager) SmallStepPrefixProof(
+	ctx context.Context,
+	fromAssertionHeight,
+	toAssertionHeight,
+	lo,
+	hi uint64,
+) ([]byte, error) {
+	args := m.Called(ctx, fromAssertionHeight, toAssertionHeight, lo, hi)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
 func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit util.StateCommitment) bool {
 	args := m.Called(ctx, commit)
 	return args.Bool(0)
@@ -209,15 +231,16 @@ func (m *MockStateManager) SmallStepCommitmentUpTo(
 
 type MockChallenge struct {
 	mock.Mock
-	MockID                protocol.ChallengeHash
-	MockType              protocol.ChallengeType
-	MockWinningAssertion  util.Option[protocol.AssertionHash]
-	MockAssertion         protocol.Assertion
-	MockRootVertex        protocol.ChallengeVertex
-	MockCreationTime      time.Time
-	MockParentStateCommit util.StateCommitment
-	MockWinnerVertex      util.Option[protocol.ChallengeVertex]
-	MockChallenger        common.Address
+	MockID                  protocol.ChallengeHash
+	MockType                protocol.ChallengeType
+	MockWinningAssertion    util.Option[protocol.AssertionHash]
+	MockAssertion           protocol.Assertion
+	MockRootVertex          protocol.ChallengeVertex
+	MockCreationTime        time.Time
+	MockParentStateCommit   util.StateCommitment
+	MockWinnerVertex        util.Option[protocol.ChallengeVertex]
+	MockChallenger          common.Address
+	MockTopLevelClaimVertex protocol.ChallengeVertex
 }
 
 // Getters.
@@ -225,8 +248,8 @@ func (m *MockChallenge) Id() protocol.ChallengeHash {
 	return m.MockID
 }
 
-func (m *MockChallenge) GetType(ctx context.Context) (protocol.ChallengeType, error) {
-	return m.MockType, nil
+func (m *MockChallenge) GetType() protocol.ChallengeType {
+	return m.MockType
 }
 
 func (m *MockChallenge) WinningClaim(ctx context.Context) (util.Option[protocol.AssertionHash], error) {
@@ -235,6 +258,10 @@ func (m *MockChallenge) WinningClaim(ctx context.Context) (util.Option[protocol.
 
 func (m *MockChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
 	return m.MockAssertion, nil
+}
+
+func (m *MockChallenge) TopLevelClaimVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
+	return m.MockTopLevelClaimVertex, nil
 }
 
 func (m *MockChallenge) RootVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
@@ -258,8 +285,8 @@ func (m *MockChallenge) Completed(ctx context.Context) (bool, error) {
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockChallenge) Challenger(ctx context.Context) (common.Address, error) {
-	return m.MockChallenger, nil
+func (m *MockChallenge) Challenger() common.Address {
+	return m.MockChallenger
 }
 
 // Mutating calls.

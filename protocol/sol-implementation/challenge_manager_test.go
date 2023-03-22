@@ -31,8 +31,7 @@ func TestGetChallengeByID(t *testing.T) {
 		require.Equal(t, false, fetched.IsNone())
 		fChal := fetched.Unwrap()
 
-		fChalType, err := fChal.GetType(ctx)
-		require.NoError(t, err)
+		fChalType := fChal.GetType()
 		fChalWinningClaim, err := fChal.WinningClaim(ctx)
 		require.NoError(t, err)
 		require.Equal(t, protocol.BlockChallenge, fChalType)

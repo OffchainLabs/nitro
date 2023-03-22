@@ -95,6 +95,17 @@ func (engine *Engine) Serialize() []byte {
 	return ret
 }
 
+// SerializeForHash prepares a machine serialization that helps with determining
+// intermediate hashes is comprised of keccak(serializeForHash(machine), stepNum).
+// We want validators to agree up to a certain height in subchallenges, and by encoding only
+// the start state root and num steps in the machine serialization we achieve that.
+func (engine *Engine) SerializeForHash() []byte {
+	ret := []byte{}
+	ret = append(ret, engine.startStateRoot.Bytes()...)
+	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)
+	return ret
+}
+
 func deserializeExecutionEngine(buf []byte) (*Engine, error) {
 	if len(buf) != 32+32+8 {
 		return nil, errors.New("deserialization error")
@@ -107,7 +118,7 @@ func deserializeExecutionEngine(buf []byte) (*Engine, error) {
 }
 
 func (engine *Engine) internalHash() common.Hash {
-	return crypto.Keccak256Hash(engine.Serialize())
+	return crypto.Keccak256Hash(engine.SerializeForHash())
 }
 
 // NumOpcodes in the engine at the block height.

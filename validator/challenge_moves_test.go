@@ -48,6 +48,9 @@ func Test_bisect(t *testing.T) {
 				validatorName:    validator.name,
 				validatorAddress: validator.address,
 			},
+			challenge: &mocks.MockChallenge{
+				MockType: protocol.BlockChallenge,
+			},
 		}
 		_, err = v.bisect(ctx, vertex)
 		require.ErrorContains(t, err, "determining bisection point failed")
@@ -90,7 +93,7 @@ func Test_bisect(t *testing.T) {
 		)
 
 		// Expect to bisect to 31.
-		commitment, err := bisectedTo.HistoryCommitment(ctx)
+		commitment := bisectedTo.HistoryCommitment()
 		require.NoError(t, err)
 		require.Equal(t, uint64(31), commitment.Height)
 	})
@@ -137,14 +140,14 @@ func Test_merge(t *testing.T) {
 
 		// Both validators should have the same history upon which one will try to merge into.
 		require.Equal(t, createdData.evilValidatorStateRoots[31], createdData.honestValidatorStateRoots[31], "Different state root at 64")
-		createdDataLeaf1Height, err := createdData.leaf1.Height()
-		require.NoError(t, err)
-		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, createdDataLeaf1Height)
-		require.NoError(t, err)
 
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom protocol.ChallengeVertex
-		var challengeId protocol.ChallengeHash
+		height, err := createdData.leaf1.Height()
+		require.NoError(t, err)
+
+		mergingFromHistory, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, height)
+		require.NoError(t, err)
 		genesisId, err := honestValidator.chain.GetAssertionId(ctx, protocol.AssertionSequenceNumber(0))
 		require.NoError(t, err)
 		manager, err := honestValidator.chain.CurrentChallengeManager(ctx)
@@ -152,14 +155,13 @@ func Test_merge(t *testing.T) {
 		chalId, err := manager.CalculateChallengeHash(ctx, common.Hash(genesisId), protocol.BlockChallenge)
 		require.NoError(t, err)
 
-		challengeId = chalId
-
 		vertexId, err := manager.CalculateChallengeVertexId(ctx, chalId, mergingFromHistory)
 		require.NoError(t, err)
 
 		mergingFromV, err := manager.GetVertex(ctx, vertexId)
 		require.NoError(t, err)
 		vertexToMergeFrom = mergingFromV.Unwrap()
+		require.NoError(t, err)
 
 		// Perform a merge move to the bisected vertex from an origin.
 		v := vertexTracker{
@@ -169,8 +171,15 @@ func Test_merge(t *testing.T) {
 				validatorName:    honestValidator.name,
 				validatorAddress: honestValidator.address,
 			},
+			vertex: vertexToMergeFrom,
+			challenge: &mocks.MockChallenge{
+				MockType: protocol.BlockChallenge,
+			},
 		}
-		mergingTo, err := v.merge(ctx, challengeId, bisectedTo, vertexToMergeFrom)
+		history, proof, err := v.determineBisectionHistoryWithProof(ctx, 0, height)
+		require.NoError(t, err)
+
+		mergingTo, err := v.merge(ctx, history, proof)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex")
 		require.Equal(t, bisectedTo.Id(), mergingTo.Id())
@@ -186,9 +195,9 @@ func runBisectionTest(
 	leaf1,
 	leaf2 protocol.Assertion,
 ) protocol.ChallengeVertex {
-	err := honestValidator.onLeafCreated(ctx,  leaf1)
+	err := honestValidator.onLeafCreated(ctx, leaf1)
 	require.NoError(t, err)
-	err = honestValidator.onLeafCreated(ctx,  leaf2)
+	err = honestValidator.onLeafCreated(ctx, leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
@@ -213,8 +222,8 @@ func runBisectionTest(
 	require.NoError(t, err)
 
 	assertionHeight, err := assertion.Height()
-		require.NoError(t, err)
-		honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
+	require.NoError(t, err)
+	honestCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 	require.NoError(t, err)
 	vToBisect, err := challenge.Unwrap().AddBlockChallengeLeaf(ctx, assertion, honestCommit)
 	require.NoError(t, err)
@@ -232,17 +241,20 @@ func runBisectionTest(
 			validatorName:    evilValidator.name,
 			validatorAddress: evilValidator.address,
 		},
+		challenge: &mocks.MockChallenge{
+			MockType: protocol.BlockChallenge,
+		},
 	}
 
-	bisectedVertex, err := v.bisect(ctx,  vertexToBisect)
+	bisectedVertex, err := v.bisect(ctx, vertexToBisect)
 	require.NoError(t, err)
 
-	bisectedVertexHistoryCommitment, err := bisectedVertex.HistoryCommitment(ctx)
+	bisectedVertexHistoryCommitment := bisectedVertex.HistoryCommitment()
 	require.NoError(t, err)
 	shouldBisectToCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, bisectedVertexHistoryCommitment.Height)
 	require.NoError(t, err)
 
-	commitment, err := bisectedVertex.HistoryCommitment(ctx)
+	commitment := bisectedVertex.HistoryCommitment()
 	require.NoError(t, err)
 	require.Equal(t, commitment.Hash(), shouldBisectToCommit.Hash())
 

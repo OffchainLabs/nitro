@@ -90,6 +90,24 @@ const (
 	SmallStepChallenge
 )
 
+func (ct ChallengeType) String() string {
+	switch ct {
+	case BlockChallenge:
+		return "block"
+	case BigStepChallenge:
+		return "big_step"
+	case SmallStepChallenge:
+		return "small_step"
+	default:
+		return "unknown"
+	}
+}
+
+// IsSubChallenge returns true if the challenge type is either big or small step.
+func (ct ChallengeType) IsSubChallenge() bool {
+	return ct == BigStepChallenge || ct == SmallStepChallenge
+}
+
 // AssertionState represents the enum with the same name
 // in the protocol smart contracts.
 type AssertionState uint8
@@ -107,7 +125,8 @@ const (
 type Challenge interface {
 	// Getters.
 	Id() ChallengeHash
-	GetType(ctx context.Context) (ChallengeType, error)
+	TopLevelClaimVertex(ctx context.Context) (ChallengeVertex, error)
+	GetType() ChallengeType
 	WinningClaim(ctx context.Context) (util.Option[AssertionHash], error)
 	RootAssertion(ctx context.Context) (Assertion, error)
 	RootVertex(ctx context.Context) (ChallengeVertex, error)
@@ -115,7 +134,7 @@ type Challenge interface {
 	ParentStateCommitment(ctx context.Context) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context) (bool, error)
-	Challenger(ctx context.Context) (common.Address, error)
+	Challenger() common.Address
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(
@@ -136,9 +155,9 @@ type Challenge interface {
 type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
+	HistoryCommitment() util.HistoryCommitment
 	SequenceNum() VertexSequenceNumber
 	Status(ctx context.Context) (AssertionState, error)
-	HistoryCommitment(ctx context.Context) (util.HistoryCommitment, error)
 	MiniStaker(ctx context.Context) (common.Address, error)
 	Prev(ctx context.Context) (util.Option[ChallengeVertex], error)
 	GetSubChallenge(ctx context.Context) (util.Option[Challenge], error)

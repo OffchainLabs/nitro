@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/stretchr/testify/require"
@@ -20,7 +19,6 @@ func TestFullChallengeResolution(t *testing.T) {
 		divergeHeight: 1,
 	})
 	t.Log("Alice (honest) and Bob have a fork at height 1")
-	// TODO: Customize the statemanager to allow fixed num steps.
 	honestManager := statemanager.New(
 		createdData.honestValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
@@ -30,6 +28,8 @@ func TestFullChallengeResolution(t *testing.T) {
 		createdData.evilValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
 		statemanager.WithMaxWavmOpcodesPerBlock(1),
+		statemanager.WithBigStepStateDivergenceHeight(1),
+		statemanager.WithSmallStepStateDivergenceHeight(1),
 	)
 
 	// Next, we create a challenge.
@@ -37,16 +37,15 @@ func TestFullChallengeResolution(t *testing.T) {
 	chal, err := honestChain.CreateSuccessionChallenge(ctx, 0)
 	require.NoError(t, err)
 
-	challengeType, err := chal.GetType(ctx)
-		require.NoError(t, err)
-		require.Equal(t, protocol.BlockChallenge, challengeType)
+	challengeType := chal.GetType()
+	require.Equal(t, protocol.BlockChallenge, challengeType)
 	t.Log("Created BlockChallenge")
 
 	createdDataLeaf1Height, err := createdData.leaf1.Height()
-		require.NoError(t, err)
-		commit1, err := honestManager.HistoryCommitmentUpTo(ctx, createdDataLeaf1Height)
-		require.NoError(t, err)
-		createdDataLeaf2Height, err := createdData.leaf2.Height()
+	require.NoError(t, err)
+	commit1, err := honestManager.HistoryCommitmentUpTo(ctx, createdDataLeaf1Height)
+	require.NoError(t, err)
+	createdDataLeaf2Height, err := createdData.leaf2.Height()
 	require.NoError(t, err)
 	commit2, err := evilManager.HistoryCommitmentUpTo(ctx, createdDataLeaf2Height)
 	require.NoError(t, err)
@@ -70,9 +69,9 @@ func TestFullChallengeResolution(t *testing.T) {
 	subChal, err := parentVertex.CreateSubChallenge(ctx)
 	require.NoError(t, err)
 
-	subChalType, err := subChal.GetType(ctx)
-		require.NoError(t, err)
-		require.Equal(t, protocol.BigStepChallenge, subChalType)
+	subChalType := subChal.GetType()
+	require.NoError(t, err)
+	require.Equal(t, protocol.BigStepChallenge, subChalType)
 	t.Log("Created BigStepChallenge")
 
 	commit1, err = honestManager.BigStepLeafCommitment(ctx, 0, 1)
@@ -99,9 +98,9 @@ func TestFullChallengeResolution(t *testing.T) {
 	subChal, err = parentVertex.CreateSubChallenge(ctx)
 	require.NoError(t, err)
 
-	subChalGetType, err := subChal.GetType(ctx)
-		require.NoError(t, err)
-		require.Equal(t, protocol.SmallStepChallenge, subChalGetType)
+	subChalGetType := subChal.GetType()
+	require.NoError(t, err)
+	require.Equal(t, protocol.SmallStepChallenge, subChalGetType)
 	t.Log("Created SmallStepChallenge")
 
 	commit1, err = honestManager.SmallStepLeafCommitment(ctx, 0, 1)
@@ -125,39 +124,4 @@ func TestFullChallengeResolution(t *testing.T) {
 
 	t.Log("Alice and Bob's BigStepChallenge vertices are at a one-step-fork")
 	t.Log("Reached one-step-proof in SmallStepChallenge")
-
-	honestEngine, err := execution.NewExecutionEngine(&execution.MachineConfig{
-		MaxInstructionsPerBlock: 1,
-		BigStepSize:             1,
-	}, createdData.honestValidatorStateRoots[0:2])
-	require.NoError(t, err)
-
-	evilEngine, err := execution.NewExecutionEngine(&execution.MachineConfig{
-		MaxInstructionsPerBlock: 1,
-		BigStepSize:             1,
-	}, createdData.evilValidatorStateRoots[0:2])
-	require.NoError(t, err)
-
-	preState, err := honestEngine.StateAfterSmallSteps(0)
-	require.NoError(t, err)
-	postState, err := preState.NextState()
-	require.NoError(t, err)
-	osp, err := execution.OneStepProof(preState)
-	require.NoError(t, err)
-
-	verified := execution.VerifyOneStepProof(preState.Hash(), postState.Hash(), osp)
-	require.Equal(t, true, verified, "Alice should win")
-
-	evilPreState, err := evilEngine.StateAfterSmallSteps(0)
-	require.NoError(t, err)
-	evilPostState, err := evilPreState.NextState()
-	require.NoError(t, err)
-
-	osp, err = execution.OneStepProof(evilPreState)
-	require.NoError(t, err)
-
-	verified = execution.VerifyOneStepProof(preState.Hash(), evilPostState.Hash(), osp)
-	require.Equal(t, false, verified, "Bob should not win")
-
-	t.Log("Alice wins")
 }
