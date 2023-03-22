@@ -2,14 +2,17 @@
 pragma solidity ^0.8.17;
 
 import "../challengeV2/libraries/MerkleTreeLib.sol";
+import "../challengeV2/libraries/UintUtilsLib.sol";
 
 contract MerkleTreeAccess {
     function mostSignificantBit(uint256 x) external pure returns (uint256) {
-        return UintUtils.mostSignificantBit(x);
+        return UintUtilsLib.mostSignificantBit(x);
     }
+
     function leastSignificantBit(uint256 x) external pure returns (uint256) {
-        return UintUtils.leastSignificantBit(x);
+        return UintUtilsLib.leastSignificantBit(x);
     }
+
     function root(bytes32[] memory me) external pure returns (bytes32) {
         return MerkleTreeLib.root(me);
     }
@@ -41,11 +44,11 @@ contract MerkleTreeAccess {
         return MerkleTreeLib.verifyPrefixProof(preRoot, preSize, postRoot, postSize, preExpansion, proof);
     }
 
-    function hasState(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
+    function verifyInclusionProof(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
         external
         pure
         returns (bool)
     {
-        return MerkleTreeLib.hasState(rootHash, leaf, index, proof);
+        return MerkleTreeLib.verifyInclusionProof(rootHash, leaf, index, proof);
     }
 }
