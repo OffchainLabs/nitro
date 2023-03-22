@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	ErrChallengeNotFound = errors.New("challenge not found")
-	ErrPsTimerNotYet     = errors.New("ps timer has not exceeded challenge period")
+	ErrPsTimerNotYet = errors.New("ps timer has not exceeded challenge period")
 )
 
 // ChallengeManager --
@@ -26,7 +25,7 @@ type ChallengeManager struct {
 	filterer       *challengeV2gen.ChallengeManagerImplFilterer
 }
 
-// ChallengeManager returns an instance of the current challenge manager
+// CurrentChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
 func (ac *AssertionChain) CurrentChallengeManager(
 	ctx context.Context, tx protocol.ActiveTx,
@@ -63,7 +62,7 @@ func (cm *ChallengeManager) ChallengePeriodSeconds(
 	return time.Second * time.Duration(res.Uint64()), nil
 }
 
-// CalculateChallengeId calculates the challenge hash for a given assertion and challenge type.
+// CalculateChallengeHash calculates the challenge hash for a given assertion and challenge type.
 func (cm *ChallengeManager) CalculateChallengeHash(
 	ctx context.Context,
 	tx protocol.ActiveTx,
@@ -92,7 +91,7 @@ func (cm *ChallengeManager) CalculateChallengeVertexId(
 	if err != nil {
 		return protocol.VertexHash{}, err
 	}
-	return protocol.VertexHash(vertexId), nil
+	return vertexId, nil
 }
 
 // GetVertex returns the challenge vertex for the given vertexId.

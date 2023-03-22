@@ -9,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/bridgegen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/ospgen"

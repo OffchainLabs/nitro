@@ -2,10 +2,11 @@ package solimpl
 
 import (
 	"context"
+	"testing"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 var _ = protocol.ChallengeManager(&ChallengeManager{})
@@ -26,7 +27,7 @@ func TestGetChallengeByID(t *testing.T) {
 	})
 
 	t.Run("challenge exists", func(t *testing.T) {
-		fetched, err := cm.GetChallenge(ctx, tx, protocol.ChallengeHash(challenge.id))
+		fetched, err := cm.GetChallenge(ctx, tx, challenge.id)
 		require.NoError(t, err)
 		require.Equal(t, false, fetched.IsNone())
 		fChal := fetched.Unwrap()

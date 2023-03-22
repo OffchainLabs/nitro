@@ -3,6 +3,8 @@ package validator
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
@@ -10,14 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"time"
 )
 
 var (
-	ErrConfirmed          = errors.New("vertex has been confirmed")
-	ErrSiblingConfirmed   = errors.New("vertex sibling has been confirmed")
-	ErrPrevNone           = errors.New("vertex parent is none")
-	ErrChallengeCompleted = errors.New("challenge has been completed")
+	ErrPrevNone = errors.New("vertex parent is none")
 )
 
 type vertexTrackerConfig struct {

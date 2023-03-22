@@ -15,7 +15,7 @@ func (me MerkleExpansion) Clone() MerkleExpansion {
 }
 
 func (me MerkleExpansion) Compact() ([]common.Hash, uint64) {
-	comp := []common.Hash{}
+	var comp []common.Hash
 	size := uint64(0)
 	for level, h := range me {
 		if h != (common.Hash{}) {
@@ -27,7 +27,7 @@ func (me MerkleExpansion) Compact() ([]common.Hash, uint64) {
 }
 
 func MerkleExpansionFromCompact(comp []common.Hash, size uint64) (MerkleExpansion, uint64) {
-	me := []common.Hash{}
+	var me []common.Hash
 	numRead := uint64(0)
 	i := uint64(1)
 	for i <= size {

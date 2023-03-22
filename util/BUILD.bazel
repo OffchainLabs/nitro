@@ -4,11 +4,9 @@ go_library(
     name = "util",
     srcs = [
         "commitments.go",
-        "count_up_timer.go",
         "fsm.go",
         "option_type.go",
         "simulated_backend_wrapper.go",
-        "thread_safe_slice.go",
         "time_reference.go",
         "util.go",
     ],
@@ -29,7 +27,6 @@ go_test(
     srcs = [
         "commitments_test.go",
         "fsm_test.go",
-        "thread_safe_slice_test.go",
         "time_reference_test.go",
         "util_test.go",
     ],

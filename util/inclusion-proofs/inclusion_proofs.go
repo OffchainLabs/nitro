@@ -1,10 +1,11 @@
 package inclusionproofs
 
 import (
+	"math"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
-	"math"
 )
 
 var (
