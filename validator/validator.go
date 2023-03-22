@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 const defaultCreateLeafInterval = time.Second * 5
@@ -27,6 +29,7 @@ type Opt = func(val *Validator)
 // Validator defines a validator client instances in the assertion protocol, which will be
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
+	stopwaiter.StopWaiter
 	chain                                  protocol.Protocol
 	chalManagerAddr                        common.Address
 	rollupAddr                             common.Address
@@ -48,6 +51,7 @@ type Validator struct {
 	disableLeafCreation                    bool
 	timeRef                                util.TimeReference
 	challengeVertexWakeInterval            time.Duration
+	newAssertionCheckInterval              time.Duration
 }
 
 // WithChaosMonkeyProbability adds a probability a validator will take
@@ -102,6 +106,14 @@ func WithChallengeVertexWakeInterval(d time.Duration) Opt {
 	}
 }
 
+// WithNewAssertionCheckInterval specifies how often handle assertions goroutine will
+// act on its responsibilites.
+func WithNewAssertionCheckInterval(d time.Duration) Opt {
+	return func(val *Validator) {
+		val.newAssertionCheckInterval = d
+	}
+}
+
 // WithDisableLeafCreation disables scheduled, background submission of assertions to the protocol in the validator.
 // Useful for testing.
 func WithDisableLeafCreation() Opt {
@@ -132,6 +144,7 @@ func New(
 		timeRef:                                util.NewRealTimeReference(),
 		rollupAddr:                             rollupAddr,
 		challengeVertexWakeInterval:            time.Millisecond * 100,
+		newAssertionCheckInterval:              time.Second,
 	}
 	for _, o := range opts {
 		o(v)
@@ -174,7 +187,9 @@ func New(
 }
 
 func (v *Validator) Start(ctx context.Context) {
-	go v.handleRollupEvents(ctx)
+	go v.handleChallengeEvents(ctx)
+	v.StopWaiter.Start(ctx, v)
+	v.CallIteratively(v.handleAssertions)
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)
 	}
