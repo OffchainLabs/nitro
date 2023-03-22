@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"strings"
 )
 
 var (
@@ -45,7 +47,7 @@ func newVertexTracker(
 	vertex protocol.ChallengeVertex,
 	fsmOpts ...util.FsmOpt[vertexTrackerAction, vertexTrackerState],
 ) (*vertexTracker, error) {
-	fsm, err := newVertexTrackerFsm(trackerStarted, fsmOpts...)
+	fsm, err := newVertexTrackerFsm(trackerStarted, util.WithTrackedTransitions[vertexTrackerAction, vertexTrackerState]())
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +66,7 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 		"merkle":        util.Trunc(commitment.Merkle[:]),
 		"validatorName": v.cfg.validatorName,
 		"challengeType": v.challenge.GetType(),
+		"address":       util.Trunc(v.cfg.validatorAddress.Bytes()),
 	}
 	log.WithFields(fields).Info("Tracking challenge vertex")
 
@@ -84,10 +87,70 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 				return
 			}
 			if err := v.act(ctx); err != nil {
-				log.Error(err)
+				log.WithFields(fields).Error(err)
 			}
 		case <-ctx.Done():
 			log.WithFields(fields).Debug("Challenge goroutine exiting")
+			var b strings.Builder
+			transitions, err := v.fsm.TrackedTransitions()
+			if err != nil {
+				panic(err)
+			}
+			for _, transition := range transitions {
+				if bisectEv, ok := transition.Event.(bisect); ok {
+					if bisectEv.bisectingToCommit == (common.Hash{}) {
+
+						fmt.Fprintf(
+							&b,
+							"pre-state %s --- first_bisection ---> post-state %s\n",
+							transition.From,
+							transition.To,
+						)
+					} else {
+						fmt.Fprintf(
+							&b,
+							"pre-state %s --- bisect(to=%d, to-commit=%s) ---> post-state %s\n",
+							transition.From,
+							bisectEv.bisectingTo,
+							util.Trunc(bisectEv.bisectingToCommit.Bytes()),
+							transition.To,
+						)
+					}
+
+				} else if mergeEv, ok := transition.Event.(merge); ok {
+
+					fmt.Fprintf(
+						&b,
+						"pre-state %s --- merge(to=%d, to-commit=%s) ---> post-state %s\n",
+						transition.From,
+						mergeEv.bisectingTo,
+						util.Trunc(mergeEv.bisectingToCommit.Bytes()),
+						transition.To,
+					)
+
+				} else {
+					fmt.Fprintf(
+						&b,
+						"pre-state %s --- %s event ---> post-state %s\n",
+						transition.From,
+						transition.Event,
+						transition.To,
+					)
+				}
+			}
+			dumpDir := fmt.Sprintf("/tmp/dumps/%s/%s", v.cfg.validatorAddress.Hex(), v.cfg.validatorName)
+			if err = os.MkdirAll(dumpDir, 0777); err != nil {
+				panic(err)
+			}
+			fpath := fmt.Sprintf("%s-%s-%d-%s.txt", dumpDir, v.challenge.GetType(), v.vertex.HistoryCommitment().Height, util.Trunc(v.vertex.HistoryCommitment().Merkle.Bytes()))
+
+			f, err := os.Create(fpath)
+			if err != nil {
+				panic(err)
+			}
+			if _, err = f.Write([]byte(b.String())); err != nil {
+				panic(err)
+			}
 			return
 		}
 	}
@@ -188,12 +251,22 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		}
 		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
-		bisectedTo, err := vt.bisect(ctx, vt.vertex)
+		bisectedTo, bisectToCommit, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
-				return vt.fsm.Do(merge{})
+				return vt.fsm.Do(merge{
+					bisectingTo:       bisectToCommit.Height,
+					bisectingToCommit: bisectToCommit.Merkle,
+				})
 			}
-			return errors.Wrap(err, "could not bisect")
+			log.WithError(err).WithFields(logrus.Fields{
+				"height":        vt.vertex.HistoryCommitment().Height,
+				"merkle":        util.Trunc(vt.vertex.HistoryCommitment().Merkle.Bytes()),
+				"validatorName": vt.cfg.validatorName,
+				"challengeType": vt.challenge.GetType(),
+				"address":       util.Trunc(vt.cfg.validatorAddress.Bytes()),
+			}).Error("could not bisect")
+			return vt.fsm.Do(backToStart{})
 		}
 		tracker, err := newVertexTracker(
 			vt.cfg,
@@ -201,7 +274,14 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 			bisectedTo,
 		)
 		if err != nil {
-			return errors.Wrap(err, "could not create new vertex tracker")
+			log.WithError(err).WithFields(logrus.Fields{
+				"height":        vt.vertex.HistoryCommitment().Height,
+				"merkle":        util.Trunc(vt.vertex.HistoryCommitment().Merkle.Bytes()),
+				"validatorName": vt.cfg.validatorName,
+				"challengeType": vt.challenge.GetType(),
+				"address":       util.Trunc(vt.cfg.validatorAddress.Bytes()),
+			}).Error("could not create new vertex tracker")
+			return vt.fsm.Do(backToStart{})
 		}
 		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
