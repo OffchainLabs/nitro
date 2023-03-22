@@ -44,7 +44,7 @@ contract MerkleTreeLibTest is Test {
 
     function expansionsFromLeaves(bytes32[] memory leaves, uint256 lowSize)
         public
-        view
+        pure
         returns (bytes32[] memory, bytes32[] memory, bytes32[] memory)
     {
         bytes32[] memory lowExpansion = new bytes32[](0);
