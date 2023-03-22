@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
-	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -213,7 +213,7 @@ func createTwoValidatorFork(
 		honestValidatorStateRoots = append(honestValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 
 		// Before the divergence height, the evil validator agrees.
-		if uint64(i) < divergenceHeight {
+		if i < divergenceHeight {
 			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 		} else {
 			junkRoot := make([]byte, 32)

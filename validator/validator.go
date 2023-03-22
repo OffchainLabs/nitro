@@ -47,19 +47,10 @@ type Validator struct {
 	assertions                             map[protocol.AssertionSequenceNumber]protocol.Assertion
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
-	chaosMonkeyProbability                 float64
 	disableLeafCreation                    bool
 	timeRef                                util.TimeReference
 	challengeVertexWakeInterval            time.Duration
 	newAssertionCheckInterval              time.Duration
-}
-
-// WithChaosMonkeyProbability adds a probability a validator will take
-// irrational or chaotic actions during challenges.
-func WithChaosMonkeyProbability(p float64) Opt {
-	return func(val *Validator) {
-		val.chaosMonkeyProbability = p
-	}
 }
 
 // WithName is a human-readable identifier for this validator client for logging purposes.
@@ -73,21 +64,6 @@ func WithName(name string) Opt {
 func WithAddress(addr common.Address) Opt {
 	return func(val *Validator) {
 		val.address = addr
-	}
-}
-
-// WithKnownValidators provides a map of known validator names by address for
-// cleaner and more understandable logging.
-func WithKnownValidators(vals map[common.Address]string) Opt {
-	return func(val *Validator) {
-		val.knownValidatorNames = vals
-	}
-}
-
-// WithCreateLeafEvery sets a parameter that tells the validator when to initiate leaf creation.
-func WithCreateLeafEvery(d time.Duration) Opt {
-	return func(val *Validator) {
-		val.createLeafInterval = d
 	}
 }
 
@@ -212,6 +188,7 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 	}
 }
 
+// SubmitLeafCreation submits a leaf creation to the protocol.
 // TODO: Include leaf creation validity conditions which are more complex than this.
 // For example, a validator must include messages from the inbox that were not included
 // by the last validator in the last leaf's creation.

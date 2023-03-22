@@ -2,14 +2,14 @@ package mocks
 
 import (
 	"context"
+	"math/big"
+	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
-	"math/big"
-	"time"
 )
 
 type MockChallengeVertex struct {
@@ -56,7 +56,7 @@ func (m *MockChallengeVertex) HasConfirmedSibling(ctx context.Context) (bool, er
 	return args.Get(0).(bool), args.Error(1)
 }
 
-// Presumptive status / timer readers.
+// EligibleForNewSuccessor for presumptive status / timer readers.
 func (m *MockChallengeVertex) EligibleForNewSuccessor(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)
@@ -87,7 +87,7 @@ func (m *MockChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (boo
 	return args.Get(0).(bool), args.Error(1)
 }
 
-// Mutating calls for challenge moves.
+// CreateSubChallenge is a mutating calls for challenge moves.
 func (m *MockChallengeVertex) CreateSubChallenge(ctx context.Context) (protocol.Challenge, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.Challenge), args.Error(1)
@@ -103,7 +103,7 @@ func (m *MockChallengeVertex) Merge(ctx context.Context, mergingToHistory util.H
 	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
 }
 
-// Mutating calls for confirmations.
+// ConfirmForPsTimer is a mutating calls for confirmations.
 func (m *MockChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)

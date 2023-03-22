@@ -69,17 +69,6 @@ type Challenge struct {
 	id    [32]byte
 }
 
-// ChallengeType defines an enum of the same name
-// from the goimpl.
-type ChallengeType uint
-
-const (
-	BlockChallenge ChallengeType = iota
-	BigStepChallenge
-	SmallStepChallenge
-	OneStepChallenge
-)
-
 // ChallengeVertex is a developer-friendly wrapper around
 // the protocol struct with the same name.
 type ChallengeVertex struct {

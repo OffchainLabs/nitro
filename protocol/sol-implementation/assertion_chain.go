@@ -25,17 +25,16 @@ import (
 )
 
 var (
-	ErrUnconfirmedParent   = errors.New("parent assertion is not confirmed")
-	ErrNoUnresolved        = errors.New("no assertion to resolve")
-	ErrNonPendingAssertion = errors.New("assertion is not pending")
-	ErrRejectedAssertion   = errors.New("assertion already rejected")
-	ErrInvalidChildren     = errors.New("invalid children")
-	ErrNotFound            = errors.New("item not found on-chain")
-	ErrAlreadyExists       = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist    = errors.New("assertion predecessor does not exist")
-	ErrTooLate             = errors.New("too late to create assertion sibling")
-	ErrTooSoon             = errors.New("too soon to confirm assertion")
-	ErrInvalidHeight       = errors.New("invalid assertion height")
+	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
+	ErrNoUnresolved      = errors.New("no assertion to resolve")
+	ErrRejectedAssertion = errors.New("assertion already rejected")
+	ErrInvalidChildren   = errors.New("invalid children")
+	ErrNotFound          = errors.New("item not found on-chain")
+	ErrAlreadyExists     = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
+	ErrTooLate           = errors.New("too late to create assertion sibling")
+	ErrTooSoon           = errors.New("too soon to confirm assertion")
+	ErrInvalidHeight     = errors.New("invalid assertion height")
 )
 
 // ChainBackend to interact with the underlying blockchain.
@@ -48,7 +47,7 @@ type ChainBackend interface {
 // ChainCommitter defines a type of chain backend that supports
 // committing changes via a direct method, such as a simulated backend
 // for testing purposes.
-type ChainCommiter interface {
+type ChainCommitter interface {
 	Commit() common.Hash
 }
 
@@ -146,10 +145,17 @@ func (ac *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Asserti
 
 // CreateAssertion makes an on-chain claim given a previous assertion id, execution state,
 // and a commitment to a post-state.
-func (ac *AssertionChain) CreateAssertion(ctx context.Context, height uint64, prevSeqNum protocol.AssertionSequenceNumber, prevAssertionState *protocol.ExecutionState, postState *protocol.ExecutionState, prevInboxMaxCount *big.Int) (protocol.Assertion, error) {
-	prev, err := ac.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(prevSeqNum))
+func (ac *AssertionChain) CreateAssertion(
+	ctx context.Context,
+	height uint64,
+	prevAssertionId protocol.AssertionSequenceNumber,
+	prevAssertionState *protocol.ExecutionState,
+	postState *protocol.ExecutionState,
+	prevInboxMaxCount *big.Int,
+) (protocol.Assertion, error) {
+	prev, err := ac.AssertionBySequenceNum(ctx, prevAssertionId)
 	if err != nil {
-		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevSeqNum)
+		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
 	}
 	prevHeight, err := prev.Height()
 	if err != nil {
@@ -260,14 +266,14 @@ func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot commo
 	}
 	if confirmed.BlockHash != blockHash {
 		return fmt.Errorf(
-			"Wanted assertion at block hash %#x confirmed, but block hash was %#x",
+			"wanted assertion at block hash %#x confirmed, but block hash was %#x",
 			blockHash,
 			confirmed.BlockHash,
 		)
 	}
 	if confirmed.SendRoot != sendRoot {
 		return fmt.Errorf(
-			"Wanted assertion at send root %#x confirmed, but send root was %#x",
+			"wanted assertion at send root %#x confirmed, but send root was %#x",
 			sendRoot,
 			confirmed.SendRoot,
 		)
@@ -355,7 +361,7 @@ func transact(ctx context.Context, backend ChainBackend, l1Reader *headerreader.
 	if err != nil {
 		return nil, err
 	}
-	if commiter, ok := backend.(ChainCommiter); ok {
+	if commiter, ok := backend.(ChainCommitter); ok {
 		commiter.Commit()
 	}
 	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
