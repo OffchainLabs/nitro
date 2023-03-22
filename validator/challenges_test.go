@@ -33,7 +33,6 @@ var (
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
-	t.Skip("investigating flakes")
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob, in which
@@ -316,7 +315,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(aliceAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*5),
+		WithChallengeVertexWakeInterval(time.Millisecond*10),
 	)
 	require.NoError(t, err)
 
@@ -340,11 +339,11 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithAddress(bobAddr),
 		WithDisableLeafCreation(),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*5),
+		WithChallengeVertexWakeInterval(time.Millisecond*10),
 	)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	// We fire off each validator's background routines.
@@ -399,7 +398,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		}
 	}()
 
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second)
 
 	// Submit leaf creation manually for each validator.
 	_, err = alice.SubmitLeafCreation(ctx)
