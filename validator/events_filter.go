@@ -57,64 +57,72 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 	}
 }
 
-func (v *Validator) handleAssertions(ctx context.Context) time.Duration {
-	var numberOfAssertions uint64
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		retrieved, err := v.chain.NumAssertions(ctx, tx)
-		if err != nil {
-			return err
-		}
-		numberOfAssertions = retrieved
-		return nil
-	}); err != nil {
-		log.Error(err)
-		return v.newAssertionCheckInterval
-	}
-	var latestConfirmedAssertion uint64
-	if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-		retrieved, err := v.chain.LatestConfirmed(ctx, tx)
-		if err != nil {
-			return err
-		}
-		latestConfirmedAssertion = uint64(retrieved.SeqNum())
-		return nil
-	}); err != nil {
-		log.Error(err)
-		return v.newAssertionCheckInterval
-	}
-
-	for i := latestConfirmedAssertion; i < numberOfAssertions; i++ {
-		v.assertionsLock.RLock()
-		_, ok := v.assertions[protocol.AssertionSequenceNumber(i)]
-		v.assertionsLock.RUnlock()
-		if ok {
-			continue
-		}
-		var assertion protocol.Assertion
-		if err := v.chain.Call(func(tx protocol.ActiveTx) error {
-			retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(i))
-			if err != nil {
-				return err
+func (v *Validator) pollForAssertions(ctx context.Context) {
+	ticker := time.NewTicker(v.newAssertionCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			var numberOfAssertions uint64
+			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+				retrieved, err := v.chain.NumAssertions(ctx, tx)
+				if err != nil {
+					return err
+				}
+				numberOfAssertions = retrieved
+				return nil
+			}); err != nil {
+				log.Error(err)
+				continue
 			}
-			assertion = retrieved
-			return nil
-		}); err != nil {
-			log.Error(err)
-			continue
-		}
-		v.assertions[assertion.SeqNum()] = assertion
-		selfStakedAssertion, err := v.rollup.AssertionHasStaker(&bind.CallOpts{}, i, v.address)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		// Ignore assertions from self.
-		if selfStakedAssertion {
-			continue
-		}
-		if err := v.onLeafCreated(ctx, assertion); err != nil {
-			log.Error(err)
+			var latestConfirmedAssertion uint64
+			if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+				retrieved, err := v.chain.LatestConfirmed(ctx, tx)
+				if err != nil {
+					return err
+				}
+				latestConfirmedAssertion = uint64(retrieved.SeqNum())
+				return nil
+			}); err != nil {
+				log.Error(err)
+				continue
+			}
+
+			for i := latestConfirmedAssertion; i < numberOfAssertions; i++ {
+				v.assertionsLock.RLock()
+				_, ok := v.assertions[protocol.AssertionSequenceNumber(i)]
+				v.assertionsLock.RUnlock()
+				if ok {
+					continue
+				}
+				var assertion protocol.Assertion
+				if err := v.chain.Call(func(tx protocol.ActiveTx) error {
+					retrieved, err := v.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(i))
+					if err != nil {
+						return err
+					}
+					assertion = retrieved
+					return nil
+				}); err != nil {
+					log.Error(err)
+					continue
+				}
+				v.assertions[assertion.SeqNum()] = assertion
+				selfStakedAssertion, err := v.rollup.AssertionHasStaker(&bind.CallOpts{}, i, v.address)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				// Ignore assertions from self.
+				if selfStakedAssertion {
+					continue
+				}
+				if err := v.onLeafCreated(ctx, assertion); err != nil {
+					log.Error(err)
+				}
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
-	return v.newAssertionCheckInterval
 }
