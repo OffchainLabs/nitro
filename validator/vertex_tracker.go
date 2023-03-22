@@ -22,7 +22,6 @@ type vertexTrackerConfig struct {
 	actEveryNSeconds      time.Duration
 	timeRef               util.TimeReference
 	challengePeriodLength time.Duration
-	challengeCreationTime time.Time
 	chain                 protocol.Protocol
 	stateManager          statemanager.Manager
 	validatorName         string
