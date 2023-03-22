@@ -19,18 +19,21 @@ func TestFullChallengeResolution(t *testing.T) {
 		divergeHeight: 1,
 	})
 	t.Log("Alice (honest) and Bob have a fork at height 1")
-	honestManager := statemanager.New(
+	honestManager, err := statemanager.New(
 		createdData.honestValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
 		statemanager.WithMaxWavmOpcodesPerBlock(1),
 	)
-	evilManager := statemanager.New(
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(
 		createdData.evilValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
 		statemanager.WithMaxWavmOpcodesPerBlock(1),
 		statemanager.WithBigStepStateDivergenceHeight(1),
 		statemanager.WithSmallStepStateDivergenceHeight(1),
 	)
+	require.NoError(t, err)
 
 	// Next, we create a challenge.
 	honestChain := createdData.assertionChains[1]

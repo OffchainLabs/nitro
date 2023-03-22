@@ -62,7 +62,9 @@ func Test_bisect(t *testing.T) {
 			numBlocks:     63,
 		})
 
-		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+		honestManager, err := statemanager.New(createdData.honestValidatorStateRoots)
+		require.NoError(t, err)
+
 		honestValidator, err := New(
 			ctx,
 			createdData.assertionChains[1],
@@ -72,7 +74,9 @@ func Test_bisect(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+		evilManager, err := statemanager.New(createdData.evilValidatorStateRoots)
+		require.NoError(t, err)
+
 		evilValidator, err := New(
 			ctx,
 			createdData.assertionChains[2],
@@ -108,7 +112,9 @@ func Test_merge(t *testing.T) {
 			numBlocks:     63,
 		})
 
-		honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+		honestManager, err := statemanager.New(createdData.honestValidatorStateRoots)
+		require.NoError(t, err)
+
 		honestValidator, err := New(
 			ctx,
 			createdData.assertionChains[1],
@@ -118,7 +124,9 @@ func Test_merge(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+		evilManager, err := statemanager.New(createdData.evilValidatorStateRoots)
+		require.NoError(t, err)
+
 		evilValidator, err := New(
 			ctx,
 			createdData.assertionChains[2],

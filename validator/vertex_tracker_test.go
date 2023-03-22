@@ -216,7 +216,9 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 		numBlocks:     63,
 	})
 
-	honestManager := statemanager.New(createdData.honestValidatorStateRoots)
+	honestManager, err := statemanager.New(createdData.honestValidatorStateRoots)
+	require.NoError(t, err)
+
 	honestValidator, err := New(
 		ctx,
 		createdData.assertionChains[1],
@@ -226,7 +228,9 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 	)
 	require.NoError(t, err)
 
-	evilManager := statemanager.New(createdData.evilValidatorStateRoots)
+	evilManager, err := statemanager.New(createdData.evilValidatorStateRoots)
+	require.NoError(t, err)
+
 	evilValidator, err := New(
 		ctx,
 		createdData.assertionChains[2],

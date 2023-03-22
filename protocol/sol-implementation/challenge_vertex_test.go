@@ -30,8 +30,12 @@ func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
 	// We add two leaves to the challenge.
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := evilHashesUpTo(10)
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
+
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -97,8 +101,12 @@ func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
 	// We add two leaves to the challenge.
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := evilHashesUpTo(10)
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
+
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -130,8 +138,11 @@ func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := evilHashesUpTo(10)
 
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -186,8 +197,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 
 		honestHashes := honestHashesUpTo(10)
 		evilHashes := evilHashesUpTo(10)
-		honestManager := statemanager.New(honestHashes)
-		evilManager := statemanager.New(evilHashes)
+		honestManager, err := statemanager.New(honestHashes)
+		require.NoError(t, err)
+
+		evilManager, err := statemanager.New(evilHashes)
+		require.NoError(t, err)
 		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 		require.NoError(t, err)
 		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -217,8 +231,11 @@ func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 
 		honestHashes := honestHashesUpTo(10)
 		evilHashes := evilHashesUpTo(10)
-		honestManager := statemanager.New(honestHashes)
-		evilManager := statemanager.New(evilHashes)
+		honestManager, err := statemanager.New(honestHashes)
+		require.NoError(t, err)
+
+		evilManager, err := statemanager.New(evilHashes)
+		require.NoError(t, err)
 		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 		require.NoError(t, err)
 		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -305,8 +322,11 @@ func TestChallengeVertex_Bisect(t *testing.T) {
 
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := evilHashesUpTo(10)
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -432,8 +452,11 @@ func TestChallengeVertex_Merge(t *testing.T) {
 
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := divergingHashesStartingAt(t, 5, honestHashes)
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -561,8 +584,11 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := divergingHashesStartingAt(t, 1, honestHashes)
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -610,8 +636,11 @@ func TestChallengeVertex_CreateSubChallenge(t *testing.T) {
 		a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
 		honestHashes := honestHashesUpTo(10)
 		evilHashes := divergingHashesStartingAt(t, 1, honestHashes)
-		honestManager := statemanager.New(honestHashes)
-		evilManager := statemanager.New(evilHashes)
+		honestManager, err := statemanager.New(honestHashes)
+		require.NoError(t, err)
+
+		evilManager, err := statemanager.New(evilHashes)
+		require.NoError(t, err)
 		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 		require.NoError(t, err)
 		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
@@ -647,7 +676,9 @@ func TestChallengeVertex_AddSubChallengeLeaf(t *testing.T) {
 	for i := range subChalHashes {
 		subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
 	}
-	bigStepManager := statemanager.New(subChalHashes)
+	bigStepManager, err := statemanager.New(subChalHashes)
+	require.NoError(t, err)
+
 	firstChildHistoryCommitment := firstChild.HistoryCommitment()
 	bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, firstChildHistoryCommitment.Height)
 	require.NoError(t, err)
@@ -691,7 +722,9 @@ func TestChallengeVertex_CanConfirmSubChallenge(t *testing.T) {
 	for i := range subChalHashes {
 		subChalHashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("foo-%d", i)))
 	}
-	bigStepManager := statemanager.New(subChalHashes)
+	bigStepManager, err := statemanager.New(subChalHashes)
+	require.NoError(t, err)
+
 	firstChildHistoryCommitment := firstChild.HistoryCommitment()
 	bigStepCommit, err := bigStepManager.HistoryCommitmentUpTo(ctx, firstChildHistoryCommitment.Height)
 	require.NoError(t, err)
@@ -734,8 +767,12 @@ func setupBigStepSubChallenge(t *testing.T) (
 
 	honestHashes := honestHashesUpTo(10)
 	evilHashes := divergingHashesStartingAt(t, 3, honestHashes)
-	honestManager := statemanager.New(honestHashes)
-	evilManager := statemanager.New(evilHashes)
+	honestManager, err := statemanager.New(honestHashes)
+	require.NoError(t, err)
+
+	evilManager, err := statemanager.New(evilHashes)
+	require.NoError(t, err)
+
 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
 	require.NoError(t, err)
 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)

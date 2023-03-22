@@ -29,7 +29,8 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager := statemanager.New(hashes)
+	manager, err := statemanager.New(hashes)
+	require.NoError(t, err)
 
 	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
 	require.NoError(t, err)
@@ -91,7 +92,8 @@ func FuzzVerifyPrefixProof_Go(f *testing.F) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager := statemanager.New(hashes)
+	manager, err := statemanager.New(hashes)
+	require.NoError(f, err)
 
 	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
 	require.NoError(f, err)
