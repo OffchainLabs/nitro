@@ -57,7 +57,7 @@ func newVertexTracker(
 	}, nil
 }
 
-func (v *vertexTracker) spawn(ctx context.Context) {
+func (v *vertexTracker) spawn(ctx context.Context, tx protocol.ActiveTx) {
 	commitment := v.vertex.HistoryCommitment()
 	fields := logrus.Fields{
 		"height":        commitment.Height,
@@ -84,13 +84,8 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 				log.WithFields(fields).Debug("Vertex tracker received notice of a confirmation, exiting")
 				return
 			}
-<<<<<<< HEAD
-			if err := v.act(ctx); err != nil {
-				log.WithFields(fields).Error(err)
-=======
 			if err := v.act(ctx, tx); err != nil {
 				log.Error(err)
->>>>>>> main
 			}
 		case <-ctx.Done():
 			log.WithFields(fields).Debug("Challenge goroutine exiting")
@@ -149,18 +144,13 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		if !ok {
 			return fmt.Errorf("bad source event: %s", event)
 		}
-<<<<<<< HEAD
-		log.WithFields(logrus.Fields{
-			"name":          vt.cfg.validatorName,
-			"challengeType": vt.challenge.GetType(),
-		}).Infof(
-=======
 		forkPointVertexHistoryCommitment, err := event.forkPointVertex.HistoryCommitment(ctx, tx)
 		if err != nil {
 			return err
 		}
-		log.WithField("name", vt.cfg.validatorName).Infof(
->>>>>>> main
+		log.WithFields(logrus.Fields{
+			"name": vt.cfg.validatorName,
+		}).Infof(
 			"Reached one-step-fork at %d and commitment %s",
 			forkPointVertexHistoryCommitment.Height,
 			util.Trunc(forkPointVertexHistoryCommitment.Merkle.Bytes()),
@@ -177,8 +167,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		})
 	case trackerAtOneStepProof:
 		log.WithFields(logrus.Fields{
-			"name":          vt.cfg.validatorName,
-			"challengeType": vt.challenge.GetType(),
+			"name": vt.cfg.validatorName,
 		}).Info("Checking one-step-proof against protocol")
 		return vt.fsm.Do(actOneStepProof{})
 	case trackerOpeningSubchallenge:
@@ -206,12 +195,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		}
 		return vt.fsm.Do(awaitSubchallengeResolution{})
 	case trackerBisecting:
-<<<<<<< HEAD
-		bisectedTo, err := vt.bisect(ctx, vt.vertex)
-=======
-		// TODO: Seems to allow for double bisections?
 		bisectedTo, err := vt.bisect(ctx, tx, vt.vertex)
->>>>>>> main
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
 				return vt.fsm.Do(merge{})
@@ -255,13 +239,7 @@ func (vt *vertexTracker) act(ctx context.Context, tx protocol.ActiveTx) error {
 		if err != nil {
 			return errors.Wrap(err, "could not create new vertex tracker")
 		}
-<<<<<<< HEAD
-		go tracker.spawn(ctx)
-=======
 		go tracker.spawn(ctx, tx)
-
-		// TODO: This seems wrong...what to do?
->>>>>>> main
 		return vt.fsm.Do(backToStart{})
 	case trackerConfirming:
 		// TODO: Implement.
