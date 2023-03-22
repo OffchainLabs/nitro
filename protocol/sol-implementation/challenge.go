@@ -408,17 +408,18 @@ func (c *Challenge) AddSubChallengeLeaf(
 	if err != nil {
 		return nil, err
 	}
-	_, err = cManager.caller.GetVertex(
-		c.chain.callOpts,
+	fetched, err := cManager.GetVertex(
+		ctx,
+		tx,
 		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return &ChallengeVertex{
-		id:    vertexId,
-		chain: c.chain,
-	}, nil
+	if fetched.IsNone() {
+		return nil, ErrNotFound
+	}
+	return fetched.Unwrap(), nil
 }
 
 func (c *Challenge) inner(ctx context.Context, tx protocol.ActiveTx) (challengeV2gen.Challenge, error) {

@@ -101,13 +101,15 @@ func (cm *ChallengeManager) GetVertex(
 	tx protocol.ActiveTx,
 	vertexId protocol.VertexHash,
 ) (util.Option[protocol.ChallengeVertex], error) {
-	_, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
+	innerV, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
 	}
 	return util.Some[protocol.ChallengeVertex](&ChallengeVertex{
-		chain: cm.assertionChain,
-		id:    vertexId,
+		chain:         cm.assertionChain,
+		id:            vertexId,
+		historyCommit: innerV.HistoryRoot,
+		height:        innerV.Height.Uint64(),
 	}), nil
 }
 
@@ -117,13 +119,15 @@ func (cm *ChallengeManager) GetChallenge(
 	tx protocol.ActiveTx,
 	challengeId protocol.ChallengeHash,
 ) (util.Option[protocol.Challenge], error) {
-	_, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
+	innerC, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
 	if err != nil {
 		return util.None[protocol.Challenge](), err
 	}
 	return util.Some[protocol.Challenge](&Challenge{
-		chain: cm.assertionChain,
-		id:    challengeId,
+		chain:      cm.assertionChain,
+		id:         challengeId,
+		typ:        protocol.ChallengeType(innerC.ChallengeType),
+		challenger: innerC.Challenger,
 	}), nil
 }
 

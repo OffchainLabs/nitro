@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
@@ -175,8 +174,9 @@ func (v *ChallengeVertex) Merge(
 		return nil, err
 	}
 	return getVertexFromComponents(
+		ctx,
+		tx,
 		manager,
-		v.chain.callOpts,
 		inner.ChallengeId,
 		mergingToHistory,
 	)
@@ -232,13 +232,14 @@ func (v *ChallengeVertex) Bisect(
 }
 
 func getVertexFromComponents(
+	ctx context.Context,
+	tx protocol.ActiveTx,
 	manager *ChallengeManager,
-	opts *bind.CallOpts,
 	challengeId [32]byte,
 	history util.HistoryCommitment,
 ) (protocol.ChallengeVertex, error) {
 	vertexId, err := manager.caller.CalculateChallengeVertexId(
-		opts,
+		manager.assertionChain.callOpts,
 		challengeId,
 		history.Merkle,
 		big.NewInt(int64(history.Height)),
@@ -246,17 +247,18 @@ func getVertexFromComponents(
 	if err != nil {
 		return nil, err
 	}
-	_, err = manager.caller.GetVertex(
-		opts,
+	vOpt, err := manager.GetVertex(
+		ctx,
+		tx,
 		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return &ChallengeVertex{
-		id:    vertexId,
-		chain: manager.assertionChain,
-	}, nil
+	if vOpt.IsNone() {
+		return nil, ErrNotFound
+	}
+	return vOpt.Unwrap(), nil
 }
 
 func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context, tx protocol.ActiveTx) error {

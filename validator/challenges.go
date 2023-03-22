@@ -96,7 +96,7 @@ func (v *Validator) onChallengeStarted(
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (v *Validator) challengeAssertion(ctx context.Context, tx protocol.ActiveTx, assertion protocol.Assertion) error {
+func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.Assertion) error {
 	var challenge protocol.Challenge
 	var err error
 	assertionPrevSeqNum, err := assertion.PrevSeqNum()
