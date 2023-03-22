@@ -82,10 +82,6 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         return context.outputId;
     }
 
-    function l2ToL1WithdrawalAmount() external pure override returns (uint256) {
-        return 0;
-    }
-
     /**
      * @notice Executes a messages in an Outbox entry.
      * @dev Reverts if dispute period hasn't expired, since the outbox entry

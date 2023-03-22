@@ -31,12 +31,13 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
 
     struct L2ToL1Context {
         uint128 l2Block;
-        uint128 l1Block;
         uint128 timestamp;
         bytes32 outputId;
         address sender;
+        uint96 l1Block;
         uint256 withdrawalAmount;
     }
+
     // Note, these variables are set and then wiped during a single transaction.
     // Therefore their values don't need to be maintained, and their slots will
     // be empty outside of transactions
@@ -45,7 +46,7 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
     // default context values to be used in storage instead of zero, to save on storage refunds
     // it is assumed that arb-os never assigns these values to a valid leaf to be redeemed
     uint128 private constant L2BLOCK_DEFAULT_CONTEXT = type(uint128).max;
-    uint128 private constant L1BLOCK_DEFAULT_CONTEXT = type(uint128).max;
+    uint96 private constant L1BLOCK_DEFAULT_CONTEXT = type(uint96).max;
     uint128 private constant TIMESTAMP_DEFAULT_CONTEXT = type(uint128).max;
     bytes32 private constant OUTPUTID_DEFAULT_CONTEXT = bytes32(type(uint256).max);
     address private constant SENDER_DEFAULT_CONTEXT = address(type(uint160).max);
@@ -94,7 +95,7 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
 
     /// @inheritdoc IOutbox
     function l2ToL1EthBlock() external view returns (uint256) {
-        uint128 l1Block = context.l1Block;
+        uint96 l1Block = context.l1Block;
         // we don't return the default context value to avoid a breaking change in the API
         if (l1Block == L1BLOCK_DEFAULT_CONTEXT) return uint256(0);
         return uint256(l1Block);
@@ -182,7 +183,7 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
         context = L2ToL1Context({
             sender: l2Sender,
             l2Block: uint128(l2Block),
-            l1Block: uint128(l1Block),
+            l1Block: uint96(l1Block),
             timestamp: uint128(l2Timestamp),
             outputId: bytes32(outputId),
             withdrawalAmount: _amountToSetInContext(value)

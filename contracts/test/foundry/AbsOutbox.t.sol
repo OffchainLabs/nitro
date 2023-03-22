@@ -24,6 +24,5 @@ abstract contract AbsOutboxTest is Test {
         assertEq(outbox.l2ToL1EthBlock(), 0, "Invalid l2ToL1EthBlock");
         assertEq(outbox.l2ToL1Timestamp(), 0, "Invalid l2ToL1Timestamp");
         assertEq(outbox.l2ToL1OutputId(), bytes32(0), "Invalid l2ToL1OutputId");
-        assertEq(outbox.l2ToL1WithdrawalAmount(), 0, "Invalid withdrawalAmount");
     }
 }

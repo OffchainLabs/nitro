@@ -31,6 +31,10 @@ contract ERC20OutboxTest is AbsOutboxTest {
         nativeToken.transfer(user, 1_000);
     }
 
+    function test_initialize_WithdrawalAmount() public {
+        assertEq(erc20Outbox.l2ToL1WithdrawalAmount(), 0, "Invalid withdrawalAmount");
+    }
+
     function test_executeTransaction() public {
         // fund bridge with some tokens
         vm.startPrank(user);

@@ -9,8 +9,7 @@ import "./AbsOutbox.sol";
 contract ERC20Outbox is AbsOutbox {
     uint256 private constant AMOUNT_DEFAULT_CONTEXT = type(uint256).max;
 
-    /// @inheritdoc IOutbox
-    function l2ToL1WithdrawalAmount() external view override returns (uint256) {
+    function l2ToL1WithdrawalAmount() external view returns (uint256) {
         uint256 amount = context.withdrawalAmount;
         if (amount == AMOUNT_DEFAULT_CONTEXT) return 0;
         return amount;
