@@ -68,7 +68,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         }
     }
 
-    function _baseFeeToReport() internal override returns (uint256) {
+    function _baseFeeToReport() internal pure override returns (uint256) {
         // ArbOs uses formula 'l1BaseFee * (1400 + 6 * calldataLengthInBytes)' to calculate retryable ticket's
         // submission fee. When custom ERC20 token is used to pay for fees, submission fee shall be 0. That's
         // why baseFee is reported as 0 here.

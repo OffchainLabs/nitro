@@ -48,7 +48,7 @@ contract Bridge is AbsBridge, IEthBridge {
         (success, returnData) = to.call{value: value}(data);
     }
 
-    function _baseFeeToReport() internal override returns (uint256) {
+    function _baseFeeToReport() internal view override returns (uint256) {
         return block.basefee;
     }
 }

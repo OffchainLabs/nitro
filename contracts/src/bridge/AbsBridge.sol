@@ -290,5 +290,5 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
 
     /// @dev get base fee which is emitted in `MessageDelivered` event and then picked up and
     /// used in ArbOs to calculate the submission fee for retryable ticket
-    function _baseFeeToReport() internal virtual returns (uint256);
+    function _baseFeeToReport() internal view virtual returns (uint256);
 }
