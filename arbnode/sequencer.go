@@ -234,6 +234,30 @@ type nonceFailure struct {
 	revived   bool
 }
 
+type nonceFailureCache struct {
+	*containers.LruCache[addressAndNonce, *nonceFailure]
+	getExpiry func() time.Duration
+}
+
+func (c nonceFailureCache) Contains(err NonceError) bool {
+	key := addressAndNonce{err.sender, err.txNonce}
+	return c.LruCache.Contains(key)
+}
+
+func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
+	key := addressAndNonce{err.sender, err.txNonce}
+	val := &nonceFailure{
+		queueItem: queueItem,
+		nonceErr:  err,
+		expiry:    time.Now().Add(c.getExpiry()),
+		revived:   false,
+	}
+	evicted := c.LruCache.Add(key, val)
+	if evicted {
+		nonceFailureCacheOverflowCounter.Inc(1)
+	}
+}
+
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
@@ -244,7 +268,7 @@ type Sequencer struct {
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
 	nonceCache      *nonceCache
-	nonceFailures   *containers.LruCache[addressAndNonce, *nonceFailure]
+	nonceFailures   *nonceFailureCache
 	onForwarderSet  chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
@@ -284,7 +308,10 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
 	}
-	s.nonceFailures = containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict)
+	s.nonceFailures = &nonceFailureCache{
+		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
+		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
+	}
 	txStreamer.EnableReorgSequencing()
 	return s, nil
 }
@@ -582,7 +609,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	config := s.config()
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int
 	pendingNonces := make(map[common.Address]uint64)
@@ -631,21 +657,16 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 			// or higher than the highest tx nonce we've seen.
 			err := MakeNonceError(sender, txNonce, stateNonce)
 			if errors.Is(err, core.ErrNonceTooHigh) {
+				var nonceError NonceError
+				if !errors.As(err, &nonceError) {
+					log.Warn("unreachable nonce error is not nonceError")
+					continue
+				}
 				// Retry this transaction if its predecessor appears
-				key := addressAndNonce{sender, txNonce}
-				exists := s.nonceFailures.Contains(key)
-				if exists {
+				if s.nonceFailures.Contains(nonceError) {
 					queueItem.returnResult(err)
 				} else {
-					evicted := s.nonceFailures.Add(key, &nonceFailure{
-						queueItem: queueItem,
-						nonceErr:  err,
-						expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
-						revived:   false,
-					})
-					if evicted {
-						nonceFailureCacheOverflowCounter.Inc(1)
-					}
+					s.nonceFailures.Add(nonceError, queueItem)
 				}
 				continue
 			} else if err != nil {
@@ -863,20 +884,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		var nonceError NonceError
 		if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
-			// Retry this transaction if we see its predecessor
-			key := addressAndNonce{
-				address: nonceError.sender,
-				nonce:   nonceError.txNonce,
-			}
-			value := &nonceFailure{
-				queueItem: queueItem,
-				nonceErr:  err,
-				expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
-				revived:   false,
-			}
-			if s.nonceFailures.Add(key, value) {
-				nonceFailureCacheOverflowCounter.Inc(1)
-			}
+			s.nonceFailures.Add(nonceError, queueItem)
 			continue
 		}
 		queueItem.returnResult(err)
