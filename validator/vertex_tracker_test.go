@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"io"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ func init() {
 
 func Test_act(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 	t.Run("logs one-step-fork and returns", func(t *testing.T) {
 		hook := test.NewGlobal()
 		tx := &mocks.MockActiveTx{ReadWriteTx: false}
@@ -81,10 +83,10 @@ func Test_act(t *testing.T) {
 			vertex,
 		)
 		require.NoError(t, err)
-		err = tkr.act(ctx)
+		err = tkr.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerAtOneStepFork), int(tkr.fsm.Current().State))
-		err = tkr.act(ctx)
+		err = tkr.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerOpeningSubchallenge), int(tkr.fsm.Current().State))
 		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
@@ -116,7 +118,7 @@ func Test_act(t *testing.T) {
 			vertex,
 		)
 		require.NoError(t, err)
-		err = tkr.act(ctx)
+		err = tkr.act(ctx, tx)
 		require.ErrorIs(t, err, ErrPrevNone)
 	})
 	t.Run("takes no action is presumptive", func(t *testing.T) {
@@ -172,42 +174,42 @@ func Test_act(t *testing.T) {
 			vertex,
 		)
 		require.NoError(t, err)
-		err = tkr.act(ctx)
+		err = tkr.act(ctx, tx)
 		require.NoError(t, err)
 	})
 	t.Run("bisects", func(t *testing.T) {
 		hook := test.NewGlobal()
-		tkr, _ := setupNonPSTracker(t, ctx)
-		err := tkr.act(ctx)
+		tkr, _ := setupNonPSTracker(t, ctx, tx)
+		err := tkr.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerBisecting), int(tkr.fsm.Current().State))
-		err = tkr.act(ctx)
+		err = tkr.act(ctx, tx)
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 	})
 	t.Run("merges", func(t *testing.T) {
 		hook := test.NewGlobal()
-		evilTracker, honestTracker := setupNonPSTracker(t, ctx)
-		err := evilTracker.act(ctx)
+		evilTracker, honestTracker := setupNonPSTracker(t, ctx, tx)
+		err := evilTracker.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerBisecting), int(evilTracker.fsm.Current().State))
-		err = evilTracker.act(ctx)
+		err = evilTracker.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, trackerStarted.String(), evilTracker.fsm.Current().State.String())
-		err = evilTracker.act(ctx)
+		err = evilTracker.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, trackerPresumptive.String(), evilTracker.fsm.Current().State.String())
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 
-		err = honestTracker.act(ctx)
+		err = honestTracker.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerBisecting), int(honestTracker.fsm.Current().State))
 
-		err = honestTracker.act(ctx)
+		err = honestTracker.act(ctx, tx)
 		require.NoError(t, err)
 
 		require.Equal(t, trackerMerging.String(), honestTracker.fsm.Current().State.String())
-		err = honestTracker.act(ctx)
+		err = honestTracker.act(ctx, tx)
 		require.NoError(t, err)
 		require.Equal(t, int(trackerStarted), int(honestTracker.fsm.Current().State))
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
@@ -215,7 +217,7 @@ func Test_act(t *testing.T) {
 	})
 }
 
-func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vertexTracker) {
+func setupNonPSTracker(t *testing.T, ctx context.Context, tx protocol.ActiveTx) (*vertexTracker, *vertexTracker) {
 	logsHook := test.NewGlobal()
 	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
 		divergeHeight: 32,
@@ -242,9 +244,9 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 	)
 	require.NoError(t, err)
 
-	err = honestValidator.onLeafCreated(ctx, createdData.leaf1)
+	err = honestValidator.onLeafCreated(ctx, tx, createdData.leaf1)
 	require.NoError(t, err)
-	err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
+	err = honestValidator.onLeafCreated(ctx, tx, createdData.leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
@@ -268,9 +270,11 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 		assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, tx, protocol.AssertionSequenceNumber(2))
 		require.NoError(t, err)
 
-		evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		assertionHeight, err := assertion.Height()
 		require.NoError(t, err)
-		honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+		evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
+		require.NoError(t, err)
+		honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 		require.NoError(t, err)
 		vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, tx, assertion, evilCommit)
 		require.NoError(t, err)
@@ -328,6 +332,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 
 func Test_vertexTracker_canConfirm(t *testing.T) {
 	ctx := context.Background()
+	tx := &solimpl.ActiveTx{ReadWriteTx: true}
 
 	t.Run("already confirmed", func(t *testing.T) {
 		vertex := &mocks.MockChallengeVertex{
@@ -339,7 +344,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 			vertex,
 		)
 		require.NoError(t, err)
-		confirmed, err := tracker.confirmed(ctx)
+		confirmed, err := tracker.confirmed(ctx, tx)
 		require.NoError(t, err)
 		require.False(t, confirmed)
 	})
@@ -356,7 +361,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 			vertex,
 		)
 		require.NoError(t, err)
-		confirmed, err := tracker.confirmed(ctx)
+		confirmed, err := tracker.confirmed(ctx, tx)
 		require.ErrorContains(t, err, "no prev vertex")
 		require.False(t, confirmed)
 	})
@@ -376,7 +381,7 @@ func Test_vertexTracker_canConfirm(t *testing.T) {
 			vertex,
 		)
 		require.NoError(t, err)
-		confirmed, err := tracker.confirmed(ctx)
+		confirmed, err := tracker.confirmed(ctx, tx)
 		require.NoError(t, err)
 		require.False(t, confirmed)
 	})
