@@ -143,7 +143,7 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	chalManager2, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
+	chalManagerFilterer, err := challengeV2gen.NewChallengeManagerImplFilterer(chalManagerAddr, backend)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func New(
 	v.rollupFilterer = rollupFilterer
 	v.assertions[0] = genesisAssertion
 	v.chalManagerAddr = chalManagerAddr
-	v.chalManager = chalManager2
+	v.chalManager = chalManagerFilterer
 	return v, nil
 }
 
@@ -265,9 +265,9 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 	if err != nil {
 		return 0, err
 	}
-	latestConfirmedFetched, err2 := v.chain.LatestConfirmed(ctx)
-	if err2 != nil {
-		return 0, err2
+	latestConfirmedFetched, err := v.chain.LatestConfirmed(ctx)
+	if err != nil {
+		return 0, err
 	}
 	latestConfirmed := latestConfirmedFetched.SeqNum()
 	v.assertionsLock.RLock()
@@ -298,17 +298,15 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
 func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf protocol.Assertion) {
-	var chalPeriod time.Duration
 	manager, err := v.chain.CurrentChallengeManager(ctx)
 	if err != nil {
 		panic(err) // TODO: handle error instead of panic.
 	}
-	challengePeriodLength, err2 := manager.ChallengePeriodSeconds(ctx)
-	if err2 != nil {
-		panic(err2) // TODO: handle error instead of panic.
+	challengePeriodLength, err := manager.ChallengePeriodSeconds(ctx)
+	if err != nil {
+		panic(err) // TODO: handle error instead of panic.
 	}
-	chalPeriod = challengePeriodLength
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(chalPeriod))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(challengePeriodLength))
 	defer cancel()
 
 	// TODO: Handle validator process dying here.
@@ -354,21 +352,17 @@ func (v *Validator) onLeafCreated(
 	v.assertionsLock.Unlock()
 
 	// Keep track of assertions by parent state root to more easily detect forks.
-	var prev protocol.Assertion
-	var assertionPrevSeqNum protocol.AssertionSequenceNumber
-	assertionPrevSeqNum, err = assertion.PrevSeqNum()
+	assertionPrevSeqNum, err := assertion.PrevSeqNum()
 	if err != nil {
 		return err
 	}
-	var prevAssertion protocol.Assertion
-	prevAssertion, err = v.chain.AssertionBySequenceNum(ctx, assertionPrevSeqNum)
+	prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, assertionPrevSeqNum)
 	if err != nil {
 		return err
 	}
-	prev = prevAssertion
 
 	v.assertionsLock.Lock()
-	key, err := prev.StateHash()
+	key, err := prevAssertion.StateHash()
 	if err != nil {
 		return err
 	}

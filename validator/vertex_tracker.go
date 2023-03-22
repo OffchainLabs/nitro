@@ -99,14 +99,11 @@ func (v *vertexTracker) spawn(ctx context.Context) {
 }
 
 func (vt *vertexTracker) trackerShouldComplete(ctx context.Context) (bool, error) {
-	var challengeCompleted bool
-	var siblingConfirmed bool
-	var err error
-	challengeCompleted, err = vt.challenge.Completed(ctx)
+	challengeCompleted, err := vt.challenge.Completed(ctx)
 	if err != nil {
 		return false, nil
 	}
-	siblingConfirmed, err = vt.vertex.HasConfirmedSibling(ctx)
+	siblingConfirmed, err := vt.vertex.HasConfirmedSibling(ctx)
 	if err != nil {
 		return false, nil
 	}

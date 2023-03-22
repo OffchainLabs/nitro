@@ -26,7 +26,6 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 		case err := <-chalSub.Err():
 			log.Fatal(err)
 		case chalCreated := <-challengeCreatedChan:
-			var challenge protocol.Challenge
 			manager, err := v.chain.CurrentChallengeManager(ctx)
 			if err != nil {
 				log.WithError(err).Error("Failed to get current challenge manager")
@@ -41,7 +40,7 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 				log.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
 				continue
 			}
-			challenge = retrieved.Unwrap()
+			challenge := retrieved.Unwrap()
 			// Ignore challenges from self.
 			challenger, err := challenge.Challenger(ctx)
 			if err != nil {

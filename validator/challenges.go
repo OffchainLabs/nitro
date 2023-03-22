@@ -6,7 +6,6 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -188,8 +187,6 @@ func (v *Validator) fetchProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.AssertionSequenceNumber,
 ) (protocol.Challenge, error) {
-	var err error
-	var challenge util.Option[protocol.Challenge]
 	assertionId, err := v.chain.GetAssertionId(ctx, parentAssertionSeqNum)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get assertion ID")
@@ -202,7 +199,7 @@ func (v *Validator) fetchProtocolChallenge(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not calculate challenge hash")
 	}
-	challenge, err = manager.GetChallenge(ctx, chalHash)
+	challenge, err := manager.GetChallenge(ctx, chalHash)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get challenge from protocol")
 	}
