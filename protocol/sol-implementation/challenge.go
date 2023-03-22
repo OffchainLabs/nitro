@@ -158,7 +158,11 @@ func (c *Challenge) Completed(ctx context.Context) (bool, error) {
 }
 
 // AddBlockChallengeLeaf vertex to a BlockChallenge using an assertion and a history commitment.
-func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protocol.Assertion, history util.HistoryCommitment) (protocol.ChallengeVertex, error) {
+func (c *Challenge) AddBlockChallengeLeaf(
+	ctx context.Context,
+	assertion protocol.Assertion,
+	history util.HistoryCommitment,
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
 	lastLeafProof := make([][32]byte, len(history.LastLeafProof))
@@ -237,7 +241,11 @@ func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protoco
 }
 
 // AddSubChallengeLeaf adds the appropriate leaf to the challenge based on a vertex and history commitment.
-func (c *Challenge) AddSubChallengeLeaf(ctx context.Context, vertex protocol.ChallengeVertex, history util.HistoryCommitment) (protocol.ChallengeVertex, error) {
+func (c *Challenge) AddSubChallengeLeaf(
+	ctx context.Context,
+	vertex protocol.ChallengeVertex,
+	history util.HistoryCommitment,
+) (protocol.ChallengeVertex, error) {
 	// Flatten the last leaf proof for submission to the chain.
 	flatLastLeafProof := make([]byte, 0, len(history.LastLeafProof)*32)
 	lastLeafProof := make([][32]byte, len(history.LastLeafProof))

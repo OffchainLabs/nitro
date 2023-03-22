@@ -3,11 +3,11 @@ package validator
 import (
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -157,10 +157,10 @@ func (v *Validator) addChallengeVertex(
 		return nil, err
 	}
 	assertionHeight, err := assertion.Height()
-		if err != nil {
-			return nil, err
-		}
-		historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
+	if err != nil {
+		return nil, err
+	}
+	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 	if err != nil {
 		return nil, err
 	}

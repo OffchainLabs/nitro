@@ -59,15 +59,23 @@ func (cm *ChallengeManager) ChallengePeriodSeconds(ctx context.Context) (time.Du
 }
 
 // CalculateChallengeHash calculates the challenge hash for a given assertion and challenge type.
-func (cm *ChallengeManager) CalculateChallengeHash(ctx context.Context, itemId common.Hash, challengeType protocol.ChallengeType) (protocol.ChallengeHash, error) {
-	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, itemId, uint8(challengeType))
+func (cm *ChallengeManager) CalculateChallengeHash(
+	ctx context.Context,
+	itemId common.Hash,
+	cType protocol.ChallengeType,
+) (protocol.ChallengeHash, error) {
+	c, err := cm.caller.CalculateChallengeId(cm.assertionChain.callOpts, itemId, uint8(cType))
 	if err != nil {
 		return protocol.ChallengeHash{}, err
 	}
 	return c, nil
 }
 
-func (cm *ChallengeManager) CalculateChallengeVertexId(ctx context.Context, challengeId protocol.ChallengeHash, history util.HistoryCommitment) (protocol.VertexHash, error) {
+func (cm *ChallengeManager) CalculateChallengeVertexId(
+	ctx context.Context,
+	challengeId protocol.ChallengeHash,
+	history util.HistoryCommitment,
+) (protocol.VertexHash, error) {
 	vertexId, err := cm.caller.CalculateChallengeVertexId(
 		cm.assertionChain.callOpts,
 		challengeId,
@@ -81,7 +89,10 @@ func (cm *ChallengeManager) CalculateChallengeVertexId(ctx context.Context, chal
 }
 
 // GetVertex returns the challenge vertex for the given vertexId.
-func (cm *ChallengeManager) GetVertex(ctx context.Context, vertexId protocol.VertexHash) (util.Option[protocol.ChallengeVertex], error) {
+func (cm *ChallengeManager) GetVertex(
+	ctx context.Context,
+	vertexId protocol.VertexHash,
+) (util.Option[protocol.ChallengeVertex], error) {
 	_, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
@@ -93,7 +104,10 @@ func (cm *ChallengeManager) GetVertex(ctx context.Context, vertexId protocol.Ver
 }
 
 // GetChallenge returns the challenge for the given challengeId.
-func (cm *ChallengeManager) GetChallenge(ctx context.Context, challengeId protocol.ChallengeHash) (util.Option[protocol.Challenge], error) {
+func (cm *ChallengeManager) GetChallenge(
+	ctx context.Context,
+	challengeId protocol.ChallengeHash,
+) (util.Option[protocol.Challenge], error) {
 	_, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
 	if err != nil {
 		return util.None[protocol.Challenge](), err

@@ -268,9 +268,6 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 // from our state manager and then performing a merge transaction in the chain. Then,
 // this method returns the vertex it merged to.
 func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
-	var prev protocol.ChallengeVertex
-	var mergingInto protocol.ChallengeVertex
-	var parentCommit util.StateCommitment
 	prevV, err := v.vertex.Prev(ctx)
 	if err != nil {
 		return nil, err
@@ -278,7 +275,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 	if prevV.IsNone() {
 		return nil, errors.New("no prev vertex found")
 	}
-	prev = prevV.Unwrap()
+	prev := prevV.Unwrap()
 	parentStateCommitment, err := v.challenge.ParentStateCommitment(ctx)
 	if err != nil {
 		return nil, err
@@ -317,8 +314,8 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 	if vertex.IsNone() {
 		return nil, errors.New("no vertex found to merge into")
 	}
-	mergingInto = vertex.Unwrap()
-	parentCommit = parentStateCommitment
+	mergingInto := vertex.Unwrap()
+	parentCommit := parentStateCommitment
 	mergingFrom := v.vertex
 	mergedTo, err := v.merge(ctx, protocol.ChallengeHash(parentCommit.Hash()), mergingInto, mergingFrom)
 	if err != nil {
