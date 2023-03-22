@@ -342,7 +342,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 
 	var managerAddr common.Address

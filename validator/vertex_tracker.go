@@ -332,13 +332,13 @@ func (v *vertexTracker) openSubchallenge(
 	if err != nil {
 		switch {
 		case errors.Is(err, solimpl.ErrAlreadyExists):
-			subChalHash, err := manager.CalculateChallengeHash(ctx, prevVertex.Id(), subChalToCreate)
-			if err != nil {
-				return nil, err
+			subChalHash, calcErr := manager.CalculateChallengeHash(ctx, prevVertex.Id(), subChalToCreate)
+			if calcErr != nil {
+				return nil, calcErr
 			}
-			fetchedSubChal, err := manager.GetChallenge(ctx, subChalHash)
-			if err != nil {
-				return nil, err
+			fetchedSubChal, fetcherErr := manager.GetChallenge(ctx, subChalHash)
+			if fetcherErr != nil {
+				return nil, fetcherErr
 			}
 			if fetchedSubChal.IsNone() {
 				return nil, fmt.Errorf("no subchallenge found on-chain for id %#x", subChalHash)
