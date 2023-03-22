@@ -186,10 +186,12 @@ func New(
 	return v, nil
 }
 
-func (v *Validator) Start(ctx context.Context) {
-	go v.handleChallengeEvents(ctx)
+func (v *Validator) Start(ctx context.Context, tx protocol.ActiveTx) {
+	go v.handleChallengeEvents(ctx, tx)
 	v.StopWaiter.Start(ctx, v)
-	v.CallIteratively(v.handleAssertions)
+	v.CallIteratively(func(ctxInternal context.Context) time.Duration {
+		return v.handleAssertions(ctxInternal, tx)
+	})
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)
 	}
