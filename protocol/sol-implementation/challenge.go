@@ -3,7 +3,6 @@ package solimpl
 import (
 	"context"
 	"math/big"
-	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
@@ -184,60 +183,6 @@ func (c *Challenge) WinningClaim(ctx context.Context) (util.Option[protocol.Asse
 
 func (c *Challenge) GetType() protocol.ChallengeType {
 	return c.typ
-}
-
-func (c *Challenge) GetCreationTime(ctx context.Context) (time.Time, error) {
-	return time.Time{}, errors.New("unimplemented")
-}
-
-func (c *Challenge) ParentStateCommitment(
-	ctx context.Context,
-) (util.StateCommitment, error) {
-	cManager, err := c.manager(ctx)
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	cInner, err := c.inner(ctx)
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	v, err := cManager.GetVertex(ctx, cInner.RootId)
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	if v.IsNone() {
-		return util.StateCommitment{}, ErrNoRootVertex
-	}
-	concreteV, ok := v.Unwrap().(*ChallengeVertex)
-	if !ok {
-		return util.StateCommitment{}, errors.New("vertex is not expected concrete type")
-	}
-	concreteVInner, err := concreteV.inner(ctx)
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	assertionSeqNum, err := c.chain.rollup.GetAssertionNum(
-		c.chain.callOpts, concreteVInner.ClaimId,
-	)
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	assertion, err := c.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(assertionSeqNum))
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	height, err := assertion.Height()
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	stateHash, err := assertion.StateHash()
-	if err != nil {
-		return util.StateCommitment{}, err
-	}
-	return util.StateCommitment{
-		Height:    height,
-		StateRoot: stateHash,
-	}, nil
 }
 
 func (c *Challenge) WinnerVertex(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {

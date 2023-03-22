@@ -130,8 +130,6 @@ type Challenge interface {
 	WinningClaim(ctx context.Context) (util.Option[AssertionHash], error)
 	RootAssertion(ctx context.Context) (Assertion, error)
 	RootVertex(ctx context.Context) (ChallengeVertex, error)
-	GetCreationTime(ctx context.Context) (time.Time, error)
-	ParentStateCommitment(ctx context.Context) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context) (bool, error)
 	Challenger() common.Address
@@ -156,7 +154,6 @@ type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
 	HistoryCommitment() util.HistoryCommitment
-	SequenceNum() VertexSequenceNumber
 	Status(ctx context.Context) (AssertionState, error)
 	MiniStaker(ctx context.Context) (common.Address, error)
 	Prev(ctx context.Context) (util.Option[ChallengeVertex], error)
@@ -164,11 +161,9 @@ type ChallengeVertex interface {
 	HasConfirmedSibling(ctx context.Context) (bool, error)
 
 	// Presumptive status / timer readers.
-	EligibleForNewSuccessor(ctx context.Context) (bool, error)
 	IsPresumptiveSuccessor(ctx context.Context) (bool, error)
 	PresumptiveSuccessor(ctx context.Context) (util.Option[ChallengeVertex], error)
 	PsTimer(ctx context.Context) (uint64, error)
-	ChessClockExpired(ctx context.Context, challengePeriodSeconds time.Duration) (bool, error)
 	ChildrenAreAtOneStepFork(ctx context.Context) (bool, error)
 
 	// Mutating calls for challenge moves.
@@ -178,6 +173,5 @@ type ChallengeVertex interface {
 
 	// Mutating calls for confirmations.
 	ConfirmForPsTimer(ctx context.Context) error
-	ConfirmForChallengeDeadline(ctx context.Context) error
 	ConfirmForSubChallengeWin(ctx context.Context) error
 }

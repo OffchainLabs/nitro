@@ -22,7 +22,6 @@ type vertexTrackerConfig struct {
 	actEveryNSeconds      time.Duration
 	timeRef               util.TimeReference
 	challengePeriodLength time.Duration
-	challengeCreationTime time.Time
 	chain                 protocol.Protocol
 	stateManager          statemanager.Manager
 	validatorName         string
@@ -484,14 +483,6 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 	}
 	if time.Duration(psTimer)*time.Second > v.cfg.challengePeriodLength {
 		if confirmErr := v.vertex.ConfirmForPsTimer(ctx); confirmErr != nil {
-			return false, err
-		}
-		return true, nil
-	}
-
-	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent.
-	if v.cfg.timeRef.Get().After(v.cfg.challengeCreationTime.Add(2 * v.cfg.challengePeriodLength)) {
-		if confirmErr := v.vertex.ConfirmForChallengeDeadline(ctx); confirmErr != nil {
 			return false, err
 		}
 		return true, nil

@@ -60,7 +60,8 @@ func Test_onLeafCreation(t *testing.T) {
 			numBlocks:     100,
 		})
 
-		manager := statemanager.New(createdData.honestValidatorStateRoots)
+		manager, err := statemanager.New(createdData.honestValidatorStateRoots)
+		require.NoError(t, err)
 
 		validator, err := New(
 			ctx,
@@ -93,7 +94,8 @@ func Test_onChallengeStarted(t *testing.T) {
 		divergeHeight: 10,
 		numBlocks:     100,
 	})
-	manager := statemanager.New(createdData.honestValidatorStateRoots)
+	manager, err := statemanager.New(createdData.honestValidatorStateRoots)
+	require.NoError(t, err)
 
 	validator, err := New(
 		ctx,

@@ -23,11 +23,12 @@ func TestPrefixProof(t *testing.T) {
 	for i := 0; i < len(hashes); i++ {
 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	manager := New(
+	manager, err := New(
 		hashes,
 		WithMaxWavmOpcodesPerBlock(56),
 		WithNumOpcodesPerBigStep(8),
 	)
+	require.NoError(t, err)
 
 	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
 	require.NoError(t, err)
@@ -296,7 +297,9 @@ func TestPrefixProofs(t *testing.T) {
 		{20, 511},
 	} {
 		leaves := hashesForUints(0, c.hi+1)
-		manager := New(leaves)
+		manager, err := New(leaves)
+		require.NoError(t, err)
+
 		packedProof, err := manager.PrefixProof(ctx, c.lo, c.hi)
 		require.NoError(t, err)
 
