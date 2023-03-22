@@ -106,7 +106,7 @@ contract ChallengeManagerE2ETest is Test {
         returns (bytes32[] memory, bytes32[] memory)
     {
         bytes32[] memory newStates = rand.hashes(numStates);
-        bytes32[] memory full = ArrayUtils.concat(currentStates, newStates);
+        bytes32[] memory full = ArrayUtilsLib.concat(currentStates, newStates);
         bytes32[] memory exp = ProofUtils.expansionFromLeaves(full, 0, full.length);
 
         return (full, exp);
@@ -149,7 +149,7 @@ contract ChallengeManagerE2ETest is Test {
         uint256 currentSize
     ) internal returns (bytes32) {
         bytes32[] memory preExp = ProofUtils.expansionFromLeaves(states, 0, bisectionSize);
-        bytes32[] memory newStates = ArrayUtils.slice(states, bisectionSize, currentSize);
+        bytes32[] memory newStates = ArrayUtilsLib.slice(states, bisectionSize, currentSize);
         return challengeManager.bisect(
             currentId,
             MerkleTreeLib.root(preExp),
@@ -355,7 +355,7 @@ contract ChallengeManagerE2ETest is Test {
                 addLeaf2Proof2: abi.encode(id.a2State.gs, id.a2State.inboxMsgCountMax, id.a2State.ms)
             })
         );
-        
+
         bytes32 bigStepChallengeId = id.challengeManager.createSubChallenge(
             id.challengeManager.getVertex(blockResult.winningVertices[0]).predecessorId
         );

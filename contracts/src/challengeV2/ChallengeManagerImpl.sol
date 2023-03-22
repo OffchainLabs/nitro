@@ -202,7 +202,7 @@ library ChallengeManagerLib {
         );
 
         require(
-            MerkleTreeLib.hasState(
+            MerkleTreeLib.verifyInclusionProof(
                 vertices[predecessorId].historyRoot,
                 oneStepData.beforeHash,
                 oneStepData.machineStep,
@@ -217,7 +217,7 @@ library ChallengeManagerLib {
         );
 
         require(
-            MerkleTreeLib.hasState(
+            MerkleTreeLib.verifyInclusionProof(
                 vertices[winnerVId].historyRoot, afterHash, oneStepData.machineStep + 1, afterHistoryInclusionProof
             ),
             "After state not in history"
