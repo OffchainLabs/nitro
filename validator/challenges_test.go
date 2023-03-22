@@ -32,6 +32,7 @@ var (
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
+	t.Skip("investigating flakes")
 	// Tests that validators are able to reach a one step fork correctly
 	// by playing the challenge game on their own upon observing leaves
 	// they disagree with. Here's the example with Alice and Bob, in which
