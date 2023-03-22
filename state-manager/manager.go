@@ -90,15 +90,15 @@ type Simulated struct {
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
-func New(stateRoots []common.Hash, opts ...Opt) *Simulated {
+func New(stateRoots []common.Hash, opts ...Opt) (*Simulated, error) {
 	if len(stateRoots) == 0 {
-		panic("must have state roots")
+		return nil, errors.New("no state roots provided")
 	}
 	s := &Simulated{stateRoots: stateRoots}
 	for _, o := range opts {
 		o(s)
 	}
-	return s
+	return s, nil
 }
 
 type Opt func(*Simulated)

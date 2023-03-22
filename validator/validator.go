@@ -170,12 +170,9 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			leaf, err := v.SubmitLeafCreation(ctx)
-			if err != nil {
+			if _, err := v.SubmitLeafCreation(ctx); err != nil {
 				log.WithError(err).Error("Could not submit leaf to protocol")
-				continue
 			}
-			go v.confirmLeafAfterChallengePeriod(ctx, leaf)
 		case <-ctx.Done():
 			return
 		}
@@ -287,37 +284,6 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 		}
 	}
 	return latestConfirmed, nil
-}
-
-// For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
-// This function is meant to be ran as a goroutine for each leaf created by the validator.
-func (v *Validator) confirmLeafAfterChallengePeriod(ctx context.Context, leaf protocol.Assertion) {
-	manager, err := v.chain.CurrentChallengeManager(ctx)
-	if err != nil {
-		panic(err) // TODO: handle error instead of panic.
-	}
-	challengePeriodLength, err := manager.ChallengePeriodSeconds(ctx)
-	if err != nil {
-		panic(err) // TODO: handle error instead of panic.
-	}
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(challengePeriodLength))
-	defer cancel()
-
-	// TODO: Handle validator process dying here.
-	<-ctx.Done()
-	leafHeight, err := leaf.Height()
-	if err != nil {
-		panic(err)
-	}
-	logFields := logrus.Fields{
-		"height":      leafHeight,
-		"sequenceNum": leaf.SeqNum(),
-	}
-	if err := v.chain.Confirm(ctx, common.Hash{}, common.Hash{}); err != nil {
-		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")
-		return
-	}
-	log.WithFields(logFields).Info("Confirmed leaf passed challenge period successfully on-chain")
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
