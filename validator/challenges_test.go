@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"encoding/binary"
+	"math"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -21,7 +23,6 @@ import (
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"math"
 )
 
 var (
@@ -327,7 +328,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
 	require.NoError(t, err)
-	bobAddr := accs[1].accountAddr
+	bobAddr := accs[2].accountAddr
 	bob, err := New(
 		ctx,
 		chains[2], // Chain 0 is reserved for admin controls.
@@ -342,7 +343,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	// We fire off each validator's background routines.
@@ -397,7 +398,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		}
 	}()
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Second * 2)
 
 	// Submit leaf creation manually for each validator.
 	_, err = alice.SubmitLeafCreation(ctx)
