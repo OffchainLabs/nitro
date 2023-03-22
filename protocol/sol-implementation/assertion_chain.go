@@ -38,29 +38,6 @@ var (
 	ErrInvalidHeight       = errors.New("invalid assertion height")
 )
 
-type activeTx struct {
-	readWriteTx bool
-	finalized   *big.Int
-	head        *big.Int
-	sender      common.Address
-}
-
-func (a *activeTx) FinalizedBlockNumber() *big.Int {
-	return a.finalized
-}
-
-func (a *activeTx) HeadBlockNumber() *big.Int {
-	return a.head
-}
-
-func (a *activeTx) ReadOnly() bool {
-	return !a.readWriteTx
-}
-
-func (a *activeTx) Sender() common.Address {
-	return a.sender
-}
-
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
 	bind.ContractBackend
@@ -152,7 +129,6 @@ func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum pro
 	return &Assertion{
 		id:    uint64(seqNum),
 		chain: ac,
-		inner: res,
 		StateCommitment: util.StateCommitment{
 			Height:    res.Height.Uint64(),
 			StateRoot: res.StateHash,
@@ -175,7 +151,10 @@ func (ac *AssertionChain) CreateAssertion(ctx context.Context, height uint64, pr
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevSeqNum)
 	}
-	prevHeight := prev.Height()
+	prevHeight, err := prev.Height()
+	if err != nil {
+		return nil, err
+	}
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}

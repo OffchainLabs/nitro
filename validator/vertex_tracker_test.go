@@ -261,9 +261,11 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 	assertion, err := evilValidator.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(2))
 	require.NoError(t, err)
 
-	evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+	assertionHeight, err := assertion.Height()
+		require.NoError(t, err)
+		evilCommit, err := evilValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 	require.NoError(t, err)
-	honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertion.Height())
+	honestCommit, err := honestValidator.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
 	require.NoError(t, err)
 	vToBisect, err := chal.Unwrap().AddBlockChallengeLeaf(ctx, assertion, evilCommit)
 	require.NoError(t, err)

@@ -35,7 +35,9 @@ func TestAssertionStateHash(t *testing.T) {
 		MachineStatus: protocol.MachineStatusFinished,
 	}
 	computed := protocol.ComputeStateHash(execState, big.NewInt(1))
-	require.Equal(t, computed, assertion.StateHash())
+	stateHash, err := assertion.StateHash()
+	require.NoError(t, err)
+	require.Equal(t, computed, stateHash)
 }
 
 func TestCreateAssertion(t *testing.T) {
@@ -70,7 +72,9 @@ func TestCreateAssertion(t *testing.T) {
 		created, err := chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 		require.NoError(t, err)
 		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
-		require.Equal(t, computed, created.StateHash(), "Unequal computed hash")
+		stateHash, err := created.StateHash()
+		require.NoError(t, err)
+		require.Equal(t, computed, stateHash, "Unequal computed hash")
 
 		_, err = chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 		require.ErrorContains(t, err, "ALREADY_STAKED")
@@ -113,7 +117,9 @@ func TestCreateAssertion(t *testing.T) {
 		forked, err := chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 		require.NoError(t, err)
 		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
-		require.Equal(t, computed, forked.StateHash(), "Unequal computed hash")
+		stateHash, err := forked.StateHash()
+		require.NoError(t, err)
+		require.Equal(t, computed, stateHash, "Unequal computed hash")
 	})
 }
 
@@ -124,7 +130,9 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	resp, err := chain.AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
-	require.Equal(t, true, resp.StateHash() != [32]byte{})
+	stateHash, err := resp.StateHash()
+	require.NoError(t, err)
+	require.Equal(t, true, stateHash != [32]byte{})
 
 	_, err = chain.AssertionBySequenceNum(ctx, 1)
 	require.ErrorIs(t, err, ErrNotFound)

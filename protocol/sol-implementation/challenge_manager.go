@@ -83,27 +83,25 @@ func (cm *ChallengeManager) CalculateChallengeVertexId(ctx context.Context, chal
 
 // GetVertex returns the challenge vertex for the given vertexId.
 func (cm *ChallengeManager) GetVertex(ctx context.Context, vertexId protocol.VertexHash) (util.Option[protocol.ChallengeVertex], error) {
-	vertex, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
+	_, err := cm.caller.GetVertex(cm.assertionChain.callOpts, vertexId)
 	if err != nil {
 		return util.None[protocol.ChallengeVertex](), err
 	}
 	return util.Some[protocol.ChallengeVertex](&ChallengeVertex{
-		manager: cm,
-		id:      vertexId,
-		inner:   vertex,
+		chain: cm.assertionChain,
+		id:    vertexId,
 	}), nil
 }
 
 // GetChallenge returns the challenge for the given challengeId.
 func (cm *ChallengeManager) GetChallenge(ctx context.Context, challengeId protocol.ChallengeHash) (util.Option[protocol.Challenge], error) {
-	challenge, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
+	_, err := cm.caller.GetChallenge(cm.assertionChain.callOpts, challengeId)
 	if err != nil {
 		return util.None[protocol.Challenge](), err
 	}
 	return util.Some[protocol.Challenge](&Challenge{
-		manager: cm,
-		id:      challengeId,
-		inner:   challenge,
+		chain: cm.assertionChain,
+		id:    challengeId,
 	}), nil
 }
 

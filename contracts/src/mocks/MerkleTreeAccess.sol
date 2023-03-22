@@ -8,9 +8,11 @@ contract MerkleTreeAccess {
     function mostSignificantBit(uint256 x) external pure returns (uint256) {
         return UintUtilsLib.mostSignificantBit(x);
     }
+
     function leastSignificantBit(uint256 x) external pure returns (uint256) {
         return UintUtilsLib.leastSignificantBit(x);
     }
+
     function root(bytes32[] memory me) external pure returns (bytes32) {
         return MerkleTreeLib.root(me);
     }

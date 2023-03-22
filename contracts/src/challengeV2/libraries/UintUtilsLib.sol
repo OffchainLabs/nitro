@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-// CHRIS: TODO: docs and tests
-
+/// @title  Uint utils library
+/// @notice Some additional bit inspection tools
 library UintUtilsLib {
-    // Find the index (from least sig) of the least significant bit
+    /// @notice The least significant bit in the bit representation of a uint
+    /// @dev    Zero indexed from the least sig bit. Eg 1010 => 1, 1100 => 2, 1001 => 0
+    ///         Finds lsb in linear (uint size) time
+    /// @param x Cannot be zero, since zero that has no signficant bits
     function leastSignificantBit(uint256 x) internal pure returns (uint256 msb) {
         require(x > 0, "Zero has no significant bits");
 
-        uint256 i = 0;
-        while ((x <<= 1) != 0) {
-            ++i;
-        }
-        return 256 - i - 1;
+        // isolate the least sig bit
+        uint256 isolated = ((x - 1) & x) ^ x;
+        
+        // since we removed all higher bits, least sig == most sig
+        return mostSignificantBit(isolated);
     }
 
-    // take from https://solidity-by-example.org/bitwise/
-    // Find the index (from least sig) of the most significant bit using binary search
+    /// @notice The most significant bit in the bit representation of a uint
+    /// @dev    Zero indexed from the least sig bit. Eg 1010 => 3, 110 => 2, 1 => 0
+    ///         Taken from https://solidity-by-example.org/bitwise/
+    ///         Finds msb in log (uint size) time
+    /// @param x Cannot be zero, since zero has no sigificant bits
     function mostSignificantBit(uint256 x) internal pure returns (uint256 msb) {
         require(x != 0, "Zero has no significant bits");
 

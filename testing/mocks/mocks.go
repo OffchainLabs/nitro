@@ -31,16 +31,16 @@ func (m *MockChallengeVertex) SequenceNum() protocol.VertexSequenceNumber {
 	return m.MockSeqNum
 }
 
-func (m *MockChallengeVertex) Status() protocol.AssertionState {
-	return m.MockStatus
+func (m *MockChallengeVertex) Status(ctx context.Context) (protocol.AssertionState, error) {
+	return m.MockStatus, nil
 }
 
-func (m *MockChallengeVertex) HistoryCommitment() util.HistoryCommitment {
-	return m.MockHistory
+func (m *MockChallengeVertex) HistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
+	return m.MockHistory, nil
 }
 
-func (m *MockChallengeVertex) MiniStaker() common.Address {
-	return m.MockMiniStaker
+func (m *MockChallengeVertex) MiniStaker(ctx context.Context) (common.Address, error) {
+	return m.MockMiniStaker, nil
 }
 
 func (m *MockChallengeVertex) Prev(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
@@ -127,8 +127,8 @@ type MockAssertion struct {
 	MockStateHash  common.Hash
 }
 
-func (m *MockAssertion) Height() uint64 {
-	return m.MockHeight
+func (m *MockAssertion) Height() (uint64, error) {
+	return m.MockHeight, nil
 
 }
 
@@ -136,12 +136,12 @@ func (m *MockAssertion) SeqNum() protocol.AssertionSequenceNumber {
 	return m.MockSeqNum
 }
 
-func (m *MockAssertion) PrevSeqNum() protocol.AssertionSequenceNumber {
-	return m.MockPrevSeqNum
+func (m *MockAssertion) PrevSeqNum() (protocol.AssertionSequenceNumber, error) {
+	return m.MockPrevSeqNum, nil
 }
 
-func (m *MockAssertion) StateHash() common.Hash {
-	return m.MockStateHash
+func (m *MockAssertion) StateHash() (common.Hash, error) {
+	return m.MockStateHash, nil
 }
 
 type MockStateManager struct {
@@ -225,12 +225,12 @@ func (m *MockChallenge) Id() protocol.ChallengeHash {
 	return m.MockID
 }
 
-func (m *MockChallenge) GetType() protocol.ChallengeType {
-	return m.MockType
+func (m *MockChallenge) GetType(ctx context.Context) (protocol.ChallengeType, error) {
+	return m.MockType, nil
 }
 
-func (m *MockChallenge) WinningClaim() util.Option[protocol.AssertionHash] {
-	return m.MockWinningAssertion
+func (m *MockChallenge) WinningClaim(ctx context.Context) (util.Option[protocol.AssertionHash], error) {
+	return m.MockWinningAssertion, nil
 }
 
 func (m *MockChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
@@ -258,8 +258,8 @@ func (m *MockChallenge) Completed(ctx context.Context) (bool, error) {
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockChallenge) Challenger() common.Address {
-	return m.MockChallenger
+func (m *MockChallenge) Challenger(ctx context.Context) (common.Address, error) {
+	return m.MockChallenger, nil
 }
 
 // Mutating calls.

@@ -74,10 +74,10 @@ type ChallengeManager interface {
 // chain state created by a validator that stakes on their claim.
 // Assertions can be challenged.
 type Assertion interface {
-	Height() uint64
+	Height() (uint64, error)
 	SeqNum() AssertionSequenceNumber
-	PrevSeqNum() AssertionSequenceNumber
-	StateHash() common.Hash
+	PrevSeqNum() (AssertionSequenceNumber, error)
+	StateHash() (common.Hash, error)
 }
 
 // ChallengeType represents the enum with the same name
@@ -107,15 +107,15 @@ const (
 type Challenge interface {
 	// Getters.
 	Id() ChallengeHash
-	GetType() ChallengeType
-	WinningClaim() util.Option[AssertionHash]
+	GetType(ctx context.Context) (ChallengeType, error)
+	WinningClaim(ctx context.Context) (util.Option[AssertionHash], error)
 	RootAssertion(ctx context.Context) (Assertion, error)
 	RootVertex(ctx context.Context) (ChallengeVertex, error)
 	GetCreationTime(ctx context.Context) (time.Time, error)
 	ParentStateCommitment(ctx context.Context) (util.StateCommitment, error)
 	WinnerVertex(ctx context.Context) (util.Option[ChallengeVertex], error)
 	Completed(ctx context.Context) (bool, error)
-	Challenger() common.Address
+	Challenger(ctx context.Context) (common.Address, error)
 
 	// Mutating calls.
 	AddBlockChallengeLeaf(
@@ -137,9 +137,9 @@ type ChallengeVertex interface {
 	// Getters.
 	Id() [32]byte
 	SequenceNum() VertexSequenceNumber
-	Status() AssertionState
-	HistoryCommitment() util.HistoryCommitment
-	MiniStaker() common.Address
+	Status(ctx context.Context) (AssertionState, error)
+	HistoryCommitment(ctx context.Context) (util.HistoryCommitment, error)
+	MiniStaker(ctx context.Context) (common.Address, error)
 	Prev(ctx context.Context) (util.Option[ChallengeVertex], error)
 	GetSubChallenge(ctx context.Context) (util.Option[Challenge], error)
 	HasConfirmedSibling(ctx context.Context) (bool, error)

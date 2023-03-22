@@ -36,13 +36,19 @@ func (v *vertexTracker) bisect(
 	var bisectedVertex protocol.ChallengeVertex
 	var isPresumptive bool
 
-	commitment := validatorChallengeVertex.HistoryCommitment()
+	commitment, err := validatorChallengeVertex.HistoryCommitment(ctx)
+		if err != nil {
+			return nil, err
+		}
 	toHeight := commitment.Height
 	prev, err := validatorChallengeVertex.Prev(ctx)
 	if err != nil {
 		return nil, err
 	}
-	prevCommitment := prev.Unwrap().HistoryCommitment()
+	prevCommitment, err := prev.Unwrap().HistoryCommitment(ctx)
+		if err != nil {
+			return nil, err
+		}
 	parentHeight := prevCommitment.Height
 
 	historyCommit, err := v.determineBisectionPointWithHistory(ctx, parentHeight, toHeight)
@@ -56,14 +62,20 @@ func (v *vertexTracker) bisect(
 	}
 	bisected, err := validatorChallengeVertex.Bisect(ctx, historyCommit, proof)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
+		couldNotBisectErr := err
+			var validatorChallengeVertexHistoryCommitment util.HistoryCommitment
+			validatorChallengeVertexHistoryCommitment, err = validatorChallengeVertex.HistoryCommitment(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return nil, errors.Wrapf(
+			couldNotBisectErr,
 			"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
 			v.cfg.validatorName,
 			bisectTo,
 			util.Trunc(historyCommit.Merkle.Bytes()),
-			validatorChallengeVertex.HistoryCommitment().Height,
-			util.Trunc(validatorChallengeVertex.HistoryCommitment().Merkle.Bytes()),
+			validatorChallengeVertexHistoryCommitment.Height,
+			util.Trunc(validatorChallengeVertexHistoryCommitment.Merkle.Bytes()),
 		)
 	}
 	bisectedVertex = bisected
@@ -72,12 +84,19 @@ func (v *vertexTracker) bisect(
 		return nil, err
 	}
 	isPresumptive = bisectedVertexIsPresumptiveSuccessor
-	bisectedVertexCommitment := bisectedVertex.HistoryCommitment()
+	bisectedVertexCommitment, err := bisectedVertex.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	validatorChallengeVertexHistoryCommitment, err := validatorChallengeVertex.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
 	log.WithFields(logrus.Fields{
 		"name":               v.cfg.validatorName,
 		"isPs":               isPresumptive,
-		"bisectedFrom":       validatorChallengeVertex.HistoryCommitment().Height,
-		"bisectedFromMerkle": util.Trunc(validatorChallengeVertex.HistoryCommitment().Merkle.Bytes()),
+		"bisectedFrom":       validatorChallengeVertexHistoryCommitment.Height,
+		"bisectedFromMerkle": util.Trunc(validatorChallengeVertexHistoryCommitment.Merkle.Bytes()),
 		"bisectedTo":         bisectedVertexCommitment.Height,
 		"bisectedToMerkle":   util.Trunc(bisectedVertexCommitment.Merkle[:]),
 	}).Info("Successfully bisected to vertex")
@@ -93,8 +112,14 @@ func (v *vertexTracker) merge(
 	mergingTo protocol.ChallengeVertex,
 	mergingFrom protocol.ChallengeVertex,
 ) (protocol.ChallengeVertex, error) {
-	currentCommit := mergingFrom.HistoryCommitment()
-	mergingToCommit := mergingTo.HistoryCommitment()
+	currentCommit, err := mergingFrom.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mergingToCommit, err := mergingTo.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
 	mergingToHeight := mergingToCommit.Height
 	if mergingToHeight >= currentCommit.Height {
 		return nil, fmt.Errorf(
@@ -123,10 +148,14 @@ func (v *vertexTracker) merge(
 			util.Trunc(mergingToCommit.Merkle.Bytes()),
 		)
 	}
+	mergingFromHistoryCommitment, err := mergingFrom.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
 	log.WithFields(logrus.Fields{
 		"name":             v.cfg.validatorName,
-		"mergedFrom":       mergingFrom.HistoryCommitment().Height,
-		"mergedFromMerkle": util.Trunc(mergingFrom.HistoryCommitment().Merkle.Bytes()),
+		"mergedFrom":       mergingFromHistoryCommitment.Height,
+		"mergedFromMerkle": util.Trunc(mergingFromHistoryCommitment.Merkle.Bytes()),
 		"mergedTo":         mergingToCommit.Height,
 		"mergedToMerkle":   util.Trunc(mergingToCommit.Merkle[:]),
 	}).Info("Successfully merged to vertex")

@@ -43,7 +43,11 @@ func (v *Validator) handleChallengeEvents(ctx context.Context) {
 			}
 			challenge = retrieved.Unwrap()
 			// Ignore challenges from self.
-			if isFromSelf(v.address, challenge.Challenger()) {
+			challenger, err := challenge.Challenger(ctx)
+			if err != nil {
+				log.Error(err)
+			}
+			if isFromSelf(v.address, challenger) {
 				continue
 			}
 			if err := v.onChallengeStarted(ctx, challenge); err != nil {

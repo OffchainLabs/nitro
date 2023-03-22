@@ -57,7 +57,10 @@ func newVertexTracker(
 }
 
 func (v *vertexTracker) spawn(ctx context.Context) {
-	commitment := v.vertex.HistoryCommitment()
+	commitment, err := v.vertex.HistoryCommitment(ctx)
+	if err != nil {
+		log.Error(err)
+	}
 	log.WithFields(logrus.Fields{
 		"height":        commitment.Height,
 		"merkle":        util.Trunc(commitment.Merkle[:]),
@@ -142,12 +145,20 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("bad source event: %s", event)
 		}
+		forkPointVertexHistoryCommitment, err := event.forkPointVertex.HistoryCommitment(ctx)
+		if err != nil {
+			return err
+		}
 		log.WithField("name", vt.cfg.validatorName).Infof(
 			"Reached one-step-fork at %d and commitment %s",
-			event.forkPointVertex.HistoryCommitment().Height,
-			util.Trunc(event.forkPointVertex.HistoryCommitment().Merkle.Bytes()),
+			forkPointVertexHistoryCommitment.Height,
+			util.Trunc(forkPointVertexHistoryCommitment.Merkle.Bytes()),
 		)
-		if vt.challenge.GetType() == protocol.SmallStepChallenge {
+		challengeType, err := vt.challenge.GetType(ctx)
+		if err != nil {
+			return err
+		}
+		if challengeType == protocol.SmallStepChallenge {
 			return vt.fsm.Do(actOneStepProof{})
 		}
 		return vt.fsm.Do(openSubchallenge{})
@@ -226,8 +237,14 @@ func (vt *vertexTracker) isPresumptive(ctx context.Context) (bool, error) {
 }
 
 func (vt *vertexTracker) checkOneStepFork(ctx context.Context, prevVertex protocol.ChallengeVertex) (bool, error) {
-	commitment := vt.vertex.HistoryCommitment()
-	prevCommitment := prevVertex.HistoryCommitment()
+	commitment, err := vt.vertex.HistoryCommitment(ctx)
+	if err != nil {
+		return false, err
+	}
+	prevCommitment, err := prevVertex.HistoryCommitment(ctx)
+	if err != nil {
+		return false, err
+	}
 	if commitment.Height != prevCommitment.Height+1 {
 		return false, nil
 	}
@@ -268,8 +285,14 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 	if err != nil {
 		return nil, err
 	}
-	prevCommitment := prev.HistoryCommitment()
-	commitment := v.vertex.HistoryCommitment()
+	prevCommitment, err := prev.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commitment, err := v.vertex.HistoryCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
 	parentHeight := prevCommitment.Height
 	toHeight := commitment.Height
 
@@ -312,7 +335,10 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.Cha
 // nolint:unused
 func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 	// Can't confirm if the vertex is not in correct state.
-	status := v.vertex.Status()
+	status, err := v.vertex.Status(ctx)
+	if err != nil {
+		return false, err
+	}
 	if status != protocol.AssertionPending {
 		return false, nil
 	}
@@ -325,7 +351,10 @@ func (v *vertexTracker) confirmed(ctx context.Context) (bool, error) {
 	if prev.IsNone() {
 		return false, errors.New("no prev vertex")
 	}
-	prevStatus := prev.Unwrap().Status()
+	prevStatus, err := prev.Unwrap().Status(ctx)
+	if err != nil {
+		return false, err
+	}
 	// TODO: Vertex status different from assertion status.
 	if prevStatus != protocol.AssertionConfirmed {
 		return false, nil

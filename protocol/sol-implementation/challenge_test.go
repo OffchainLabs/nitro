@@ -7,7 +7,6 @@ import (
 
 	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,30 +21,32 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 	height := uint64(3)
 	a1, _, challenge, chain1, _ := setupTopLevelFork(t, ctx, height, height)
 	t.Run("claim predecessor not linked to challenge", func(t *testing.T) {
-		_, err := challenge.AddBlockChallengeLeaf(ctx, &Assertion{
-			chain: chain1,
-			id:    20,
-			inner: rollupgen.AssertionNode{
-				Height: big.NewInt(1),
+		_, err := challenge.AddBlockChallengeLeaf(
+			ctx,
+			&Assertion{
+				chain: chain1,
+				id:    20,
 			},
-		}, util.HistoryCommitment{
-			Height: height,
-			Merkle: common.BytesToHash([]byte("bar")),
-		})
+			util.HistoryCommitment{
+				Height: height,
+				Merkle: common.BytesToHash([]byte("bar")),
+			},
+		)
 		require.ErrorContains(t, err, "INVALID_ASSERTION_NUM")
 	})
 	t.Run("invalid height", func(t *testing.T) {
 		// Pass in a junk assertion that has no predecessor.
-		_, err := challenge.AddBlockChallengeLeaf(ctx, &Assertion{
-			chain: chain1,
-			id:    1,
-			inner: rollupgen.AssertionNode{
-				Height: big.NewInt(0),
+		_, err := challenge.AddBlockChallengeLeaf(
+			ctx,
+			&Assertion{
+				chain: chain1,
+				id:    1,
 			},
-		}, util.HistoryCommitment{
-			Height: 0,
-			Merkle: common.BytesToHash([]byte("bar")),
-		})
+			util.HistoryCommitment{
+				Height: 0,
+				Merkle: common.BytesToHash([]byte("bar")),
+			},
+		)
 		require.ErrorContains(t, err, "Invalid leaf height")
 	})
 	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
@@ -72,7 +73,9 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 
 		v, err := challenge.RootVertex(ctx)
 		require.NoError(t, err)
-		want, err := challenge.manager.GetVertex(ctx, v.Id())
+		challengeManager, err := challenge.manager(ctx)
+		require.NoError(t, err)
+		want, err := challengeManager.GetVertex(ctx, v.Id())
 		require.NoError(t, err)
 		require.Equal(t, want.Unwrap(), v)
 	})

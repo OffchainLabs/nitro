@@ -17,12 +17,26 @@ func (c *Challenge) Id() protocol.ChallengeHash {
 	return c.id
 }
 
-func (c *Challenge) Challenger() common.Address {
-	return c.inner.Challenger
+func (c *Challenge) Challenger(ctx context.Context) (common.Address, error) {
+	inner, err := c.inner(ctx)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return inner.Challenger, nil
 }
 
-func (c *Challenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
-	rootVertex, err := c.manager.GetVertex(ctx, c.inner.RootId)
+func (c *Challenge) RootAssertion(
+	ctx context.Context,
+) (protocol.Assertion, error) {
+	cManager, err := c.manager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cInner, err := c.inner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rootVertex, err := cManager.GetVertex(ctx, cInner.RootId)
 	if err != nil {
 		return nil, err
 	}
@@ -30,11 +44,15 @@ func (c *Challenge) RootAssertion(ctx context.Context) (protocol.Assertion, erro
 		return nil, errors.New("root vertex not found")
 	}
 	root := rootVertex.Unwrap().(*ChallengeVertex)
-	assertionNum, err := c.manager.assertionChain.GetAssertionNum(ctx, root.inner.ClaimId)
+	rootInner, err := root.inner(ctx)
 	if err != nil {
 		return nil, err
 	}
-	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, assertionNum)
+	assertionNum, err := c.chain.GetAssertionNum(ctx, rootInner.ClaimId)
+	if err != nil {
+		return nil, err
+	}
+	assertion, err := c.chain.AssertionBySequenceNum(ctx, assertionNum)
 	if err != nil {
 		return nil, err
 	}
@@ -42,31 +60,57 @@ func (c *Challenge) RootAssertion(ctx context.Context) (protocol.Assertion, erro
 }
 
 func (c *Challenge) RootVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
-	rootId := c.inner.RootId
-	v, err := c.manager.GetVertex(ctx, rootId)
+	cInner, err := c.inner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cManager, err := c.manager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rootId := cInner.RootId
+	v, err := cManager.GetVertex(ctx, rootId)
 	if err != nil {
 		return nil, err
 	}
 	return v.Unwrap(), nil
 }
 
-func (c *Challenge) WinningClaim() util.Option[protocol.AssertionHash] {
-	if c.inner.WinningClaim == [32]byte{} {
-		return util.None[protocol.AssertionHash]()
+func (c *Challenge) WinningClaim(ctx context.Context) (util.Option[protocol.AssertionHash], error) {
+	cInner, err := c.inner(ctx)
+	if err != nil {
+		return util.None[protocol.AssertionHash](), err
 	}
-	return util.Some[protocol.AssertionHash](c.inner.WinningClaim)
+	if cInner.WinningClaim == [32]byte{} {
+		return util.None[protocol.AssertionHash](), nil
+	}
+	return util.Some[protocol.AssertionHash](cInner.WinningClaim), nil
 }
 
-func (c *Challenge) GetType() protocol.ChallengeType {
-	return protocol.ChallengeType(c.inner.ChallengeType)
+func (c *Challenge) GetType(ctx context.Context) (protocol.ChallengeType, error) {
+	cInner, err := c.inner(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return protocol.ChallengeType(cInner.ChallengeType), nil
 }
 
 func (c *Challenge) GetCreationTime(ctx context.Context) (time.Time, error) {
 	return time.Time{}, errors.New("unimplemented")
 }
 
-func (c *Challenge) ParentStateCommitment(ctx context.Context) (util.StateCommitment, error) {
-	v, err := c.manager.GetVertex(ctx, c.inner.RootId)
+func (c *Challenge) ParentStateCommitment(
+	ctx context.Context,
+) (util.StateCommitment, error) {
+	cManager, err := c.manager(ctx)
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	cInner, err := c.inner(ctx)
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	v, err := cManager.GetVertex(ctx, cInner.RootId)
 	if err != nil {
 		return util.StateCommitment{}, err
 	}
@@ -77,19 +121,31 @@ func (c *Challenge) ParentStateCommitment(ctx context.Context) (util.StateCommit
 	if !ok {
 		return util.StateCommitment{}, errors.New("vertex is not expected concrete type")
 	}
-	assertionSeqNum, err := c.manager.assertionChain.rollup.GetAssertionNum(
-		c.manager.assertionChain.callOpts, concreteV.inner.ClaimId,
+	concreteVInner, err := concreteV.inner(ctx)
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	assertionSeqNum, err := c.chain.rollup.GetAssertionNum(
+		c.chain.callOpts, concreteVInner.ClaimId,
 	)
 	if err != nil {
 		return util.StateCommitment{}, err
 	}
-	assertion, err := c.manager.assertionChain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(assertionSeqNum))
+	assertion, err := c.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(assertionSeqNum))
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	height, err := assertion.Height()
+	if err != nil {
+		return util.StateCommitment{}, err
+	}
+	stateHash, err := assertion.StateHash()
 	if err != nil {
 		return util.StateCommitment{}, err
 	}
 	return util.StateCommitment{
-		Height:    assertion.Height(),
-		StateRoot: assertion.StateHash(),
+		Height:    height,
+		StateRoot: stateHash,
 	}, nil
 }
 
@@ -118,8 +174,8 @@ func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protoco
 		copy(r[:], h[:])
 		firstLeafProof[i] = r
 	}
-	callOpts := c.manager.assertionChain.callOpts
-	assertionId, err := c.manager.assertionChain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
+	callOpts := c.chain.callOpts
+	assertionId, err := c.chain.rollup.GetAssertionId(callOpts, uint64(assertion.SeqNum()))
 	if err != nil {
 		return nil, err
 	}
@@ -135,15 +191,19 @@ func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protoco
 	}
 
 	// Check the current mini-stake amount and transact using that as the value.
-	miniStake, err := c.manager.miniStakeAmount()
+	cManager, err := c.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
-	opts := copyTxOpts(c.manager.assertionChain.txOpts)
+	miniStake, err := cManager.miniStakeAmount()
+	if err != nil {
+		return nil, err
+	}
+	opts := copyTxOpts(c.chain.txOpts)
 	opts.Value = miniStake
 
-	_, err = transact(ctx, c.manager.assertionChain.backend, c.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
-		return c.manager.writer.AddLeaf(
+	_, err = transact(ctx, c.chain.backend, c.chain.headerReader, func() (*types.Transaction, error) {
+		return cManager.writer.AddLeaf(
 			opts,
 			leafData,
 			flatLastLeafProof,
@@ -154,8 +214,8 @@ func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protoco
 		return nil, err
 	}
 
-	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
-		c.manager.assertionChain.callOpts,
+	vertexId, err := cManager.caller.CalculateChallengeVertexId(
+		c.chain.callOpts,
 		c.id,
 		history.Merkle,
 		big.NewInt(int64(history.Height)),
@@ -163,17 +223,16 @@ func (c *Challenge) AddBlockChallengeLeaf(ctx context.Context, assertion protoco
 	if err != nil {
 		return nil, err
 	}
-	vertex, err := c.manager.caller.GetVertex(
-		c.manager.assertionChain.callOpts,
+	_, err = cManager.caller.GetVertex(
+		c.chain.callOpts,
 		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeVertex{
-		id:      vertexId,
-		inner:   vertex,
-		manager: c.manager,
+		id:    vertexId,
+		chain: c.chain,
 	}, nil
 }
 
@@ -207,15 +266,19 @@ func (c *Challenge) AddSubChallengeLeaf(ctx context.Context, vertex protocol.Cha
 	}
 
 	// Check the current mini-stake amount and transact using that as the value.
-	miniStake, err := c.manager.miniStakeAmount()
+	cManager, err := c.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
-	opts := copyTxOpts(c.manager.assertionChain.txOpts)
+	miniStake, err := cManager.miniStakeAmount()
+	if err != nil {
+		return nil, err
+	}
+	opts := copyTxOpts(c.chain.txOpts)
 	opts.Value = miniStake
 
-	_, err = transact(ctx, c.manager.assertionChain.backend, c.manager.assertionChain.headerReader, func() (*types.Transaction, error) {
-		return c.manager.writer.AddLeaf(
+	_, err = transact(ctx, c.chain.backend, c.chain.headerReader, func() (*types.Transaction, error) {
+		return cManager.writer.AddLeaf(
 			opts,
 			leafData,
 			flatLastLeafProof,
@@ -226,8 +289,8 @@ func (c *Challenge) AddSubChallengeLeaf(ctx context.Context, vertex protocol.Cha
 		return nil, err
 	}
 
-	vertexId, err := c.manager.caller.CalculateChallengeVertexId(
-		c.manager.assertionChain.callOpts,
+	vertexId, err := cManager.caller.CalculateChallengeVertexId(
+		c.chain.callOpts,
 		c.id,
 		history.Merkle,
 		big.NewInt(int64(history.Height)),
@@ -235,16 +298,40 @@ func (c *Challenge) AddSubChallengeLeaf(ctx context.Context, vertex protocol.Cha
 	if err != nil {
 		return nil, err
 	}
-	bsVertex, err := c.manager.caller.GetVertex(
-		c.manager.assertionChain.callOpts,
+	_, err = cManager.caller.GetVertex(
+		c.chain.callOpts,
 		vertexId,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeVertex{
-		id:      vertexId,
-		inner:   bsVertex,
-		manager: c.manager,
+		id:    vertexId,
+		chain: c.chain,
 	}, nil
+}
+
+func (c *Challenge) inner(ctx context.Context) (challengeV2gen.Challenge, error) {
+	manager, err := c.manager(ctx)
+	if err != nil {
+		return challengeV2gen.Challenge{}, err
+	}
+
+	challengeInner, err := manager.caller.GetChallenge(c.chain.callOpts, c.id)
+	if err != nil {
+		return challengeV2gen.Challenge{}, err
+	}
+	return challengeInner, nil
+}
+
+func (c *Challenge) manager(ctx context.Context) (*ChallengeManager, error) {
+	manager, err := c.chain.CurrentChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	challengeManager, ok := manager.(*ChallengeManager)
+	if !ok {
+		return nil, errors.New("challengemanager is not expected concrete type")
+	}
+	return challengeManager, nil
 }
