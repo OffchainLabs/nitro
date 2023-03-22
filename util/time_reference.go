@@ -1,12 +1,9 @@
 package util
 
 import (
-	"errors"
 	"sync"
 	"time"
 )
-
-var ErrUnderflow = errors.New("arithmetic underflow")
 
 type TimeReference interface {
 	Get() time.Time

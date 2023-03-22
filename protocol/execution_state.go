@@ -1,3 +1,4 @@
+// Package protocol
 // From: Nitro validator/execution_state.go
 package protocol
 
@@ -5,12 +6,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengegen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/big"
 )
 
 type GoGlobalState struct {

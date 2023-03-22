@@ -229,7 +229,7 @@ func createTwoValidatorFork(
 		honestValidatorStateRoots = append(honestValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 
 		// Before the divergence height, the evil validator agrees.
-		if uint64(i) < divergenceHeight {
+		if i < divergenceHeight {
 			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 		} else {
 			junkRoot := make([]byte, 32)
