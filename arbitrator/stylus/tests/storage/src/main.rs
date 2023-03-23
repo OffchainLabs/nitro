@@ -8,7 +8,6 @@ use arbitrum::{debug, load_bytes32, store_bytes32, Bytes32};
 arbitrum::arbitrum_main!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    debug::println("storage");
     let read = input[0] == 0;
     let slot = Bytes32::from_slice(&input[1..33]).map_err(|_| vec![0x00])?;
 

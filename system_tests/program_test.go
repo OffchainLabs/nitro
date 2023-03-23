@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -188,7 +189,7 @@ func TestProgramCalls(t *testing.T) {
 	tree := nest(3)[20:]
 	colors.PrintGrey(common.Bytes2Hex(tree))
 
-	tx := l2info.PrepareTxTo("Owner", &callsAddr, l2info.TransferGas, big.NewInt(0), tree)
+	tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), tree)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	for key, value := range slots {
@@ -198,6 +199,39 @@ func TestProgramCalls(t *testing.T) {
 		if value != storedValue {
 			Fail(t, "wrong value", value, storedValue)
 		}
+	}
+
+	// Set a random, non-zero gas price
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	wasmGasPrice := testhelpers.RandomUint64(1, 2000)
+	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
+
+	colors.PrintBlue("Calling the ArbosTest precompile")
+
+	testPrecompile := func(gas uint64) uint64 {
+		burnArbGas, _ := util.CallParser(precompilesgen.ArbosTestABI, "burnArbGas")
+		encoded, err := burnArbGas(big.NewInt(int64(gas)))
+		Require(t, err)
+
+		// Call the burnArbGas() precompile from Rust
+		args := []byte{0x01}
+		args = append(args, arbmath.Uint32ToBytes(uint32(20+len(encoded)))...)
+		args = append(args, types.ArbosTestAddress.Bytes()...)
+		args = append(args, encoded...)
+
+		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), args)
+		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed
+	}
+
+	smallGas := testhelpers.RandomUint64(2000, 8000)
+	largeGas := smallGas + testhelpers.RandomUint64(2000, 8000)
+	small := testPrecompile(smallGas)
+	large := testPrecompile(largeGas)
+
+	if large-small != largeGas-smallGas {
+		ratio := float64(large-small) / float64(largeGas-smallGas)
+		Fail(t, "inconsistent burns", smallGas, largeGas, small, large, ratio)
 	}
 
 	// TODO: enable validation when prover side is PR'd

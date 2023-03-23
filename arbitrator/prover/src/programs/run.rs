@@ -68,7 +68,7 @@ impl Display for UserOutcome {
             OutOfGas => write!(f, "out of gas"),
             OutOfStack => write!(f, "out of stack"),
             Revert(data) => {
-                let text = String::from_utf8(data.clone()).unwrap_or(hex::encode(data));
+                let text = String::from_utf8(data.clone()).unwrap_or_else(|_| hex::encode(data));
                 write!(f, "revert {text}")
             }
         }

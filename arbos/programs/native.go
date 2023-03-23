@@ -93,33 +93,51 @@ func callUserWasm(
 		return cost, nil
 	}
 	callContract := func(contract common.Address, input []byte, gas uint64, value *big.Int) ([]byte, uint64, error) {
+		// This closure performs a contract call. The implementation should match that of the EVM.
+		//
+		// Note that while the Yellow Paper is authoritative, the following go-ethereum
+		// functions provide a corresponding implementation in the vm package.
+		//     - operations_acl.go makeCallVariantGasCallEIP2929()
+		//     - gas_table.go      gasCall()
+		//     - instructions.go   opCall()
+		//
+		// TODO: handle custom return calldata
+		//
+
+		// read-only calls are not payable (opCall)
 		if readOnly && value.Sign() != 0 {
 			return nil, 0, vm.ErrWriteProtection
 		}
-		if value.Sign() != 0 {
-			gas = arbmath.SaturatingUAdd(gas, params.CallStipend) // should we do this?
-		}
-
-		// TODO: comply with the yellow paper
-		//     63/64th's rule?
-		//     update scope'd contract gas?
-		//
-		// TODO: handle custom return data
-		//
-		// funcs to look at
-		//     operations_acl.go makeCallVariantGasCallEIP2929
-		//
 
 		evm := interpreter.Evm()
-		evm.StateDB.AddAddressToAccessList(contract)
+		startGas := gas
+
+		// computes makeCallVariantGasCallEIP2929 and gasCall
+		baseCost, err := vm.WasmCallCost(db, contract, value, startGas)
+		if err != nil {
+			return nil, 0, err
+		}
+		gas -= baseCost
+		gas = gas - gas/64
+
+		// Tracing: emit the call (value transfer is done later in evm.Call)
+		if tracingInfo != nil {
+			depth := evm.Depth()
+			tracingInfo.Tracer.CaptureState(0, vm.CALL, startGas-gas, startGas, scope, []byte{}, depth, nil)
+		}
+
+		// EVM rule: calls that pay get a stipend (opCall)
+		if value.Sign() != 0 {
+			gas = arbmath.SaturatingUAdd(gas, params.CallStipend)
+		}
 
 		ret, returnGas, err := evm.Call(scope.Contract, contract, input, gas, value)
 		if err != nil && errors.Is(err, vm.ErrExecutionReverted) {
 			ret = []byte{}
 		}
-		scope.Contract.Gas += returnGas
-		interpreter.SetReturnData(common.CopyBytes(ret))
-		return ret, scope.Contract.Gas, err
+
+		cost := arbmath.SaturatingUSub(startGas, returnGas)
+		return ret, cost, err
 	}
 
 	output := &C.RustVec{}
@@ -173,19 +191,19 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64, vec *C.RustVec) u8
 }
 
 //export callContractImpl
-func callContractImpl(api usize, contract bytes20, data *C.RustVec, gas *u64, value bytes32) u8 {
+func callContractImpl(api usize, contract bytes20, data *C.RustVec, evmGas *u64, value bytes32) u8 {
 	closure, err := getAPI(api)
 	if err != nil {
 		log.Error(err.Error())
 		return apiFailure
 	}
 
-	result, gasLeft, err := closure.callContract(contract.toAddress(), data.read(), uint64(*gas), value.toBig())
+	result, gasLeft, err := closure.callContract(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
 	data.setBytes(result)
 	if err != nil {
 		return apiFailure
 	}
-	*gas = u64(gasLeft)
+	*evmGas = u64(gasLeft)
 	return apiSuccess
 }
 

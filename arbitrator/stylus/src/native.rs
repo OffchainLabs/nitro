@@ -163,18 +163,18 @@ impl NativeInstance {
                 _ => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
             }
         });
-        let call_contract = Box::new(move |contract: Bytes20, input, gas, value| unsafe {
-            let mut gas_left = gas;
+        let call_contract = Box::new(move |contract: Bytes20, input, evm_gas, value| unsafe {
             let mut data = RustVec::new(input); // used for both input and output
+            let mut call_gas = evm_gas; // becomes the call's cost
 
             let status = call(
                 id,
                 contract,
                 &mut data as *mut _,
-                &mut gas_left as *mut _,
+                &mut call_gas as *mut _,
                 value,
             );
-            (data.into_vec(), 0, status)
+            (data.into_vec(), call_gas, status)
         });
 
         env.set_evm_api(get_bytes32, set_bytes32, call_contract)
@@ -263,7 +263,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "return_data" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
-            "call_contract" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32, _: u32|),
+            "call_contract" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
             "read_return_data" => stub!(|_: u32|),
         },
     };

@@ -56,20 +56,28 @@ pub(crate) fn call_contract(
     calldata: u32,
     calldata_len: u32,
     value: u32,
+    mut wasm_gas: u64,
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    let gas: u64 = env.gas_left().into();
+    wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
+
+    let pricing = env.meter().pricing;
+    let evm_gas = match pricing.wasm_gas_price {
+        0 => u64::MAX,
+        _ => pricing.wasm_to_evm(wasm_gas),
+    };
 
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
     let value = env.read_bytes32(value)?;
 
-    let (outs, cost, status) = env.evm()?.call_contract(contract, input, gas, value);
+    let (outs, evm_cost, status) = env.evm()?.call_contract(contract, input, evm_gas, value);
     env.write_u32(return_data_len, outs.len() as u32);
     env.evm()?.return_data = Some(outs);
 
-    env.buy_gas(cost)?;
+    let wasm_cost = pricing.evm_to_wasm(evm_cost).unwrap_or_default();
+    env.buy_gas(wasm_cost)?;
     Ok(status as u8)
 }
 
@@ -77,7 +85,7 @@ pub(crate) fn read_return_data(mut env: WasmEnvMut, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let data = env.return_data()?;
     env.pay_for_evm_copy(data.len())?;
-    env.write_slice(dest, &env.return_data()?)?;
+    env.write_slice(dest, env.return_data()?)?;
     Ok(())
 }
 

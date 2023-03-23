@@ -104,7 +104,7 @@ pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 /// State store: (key, value) → (cost, error)
 pub type StoreBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
 
-/// Contract call: (contract, calldata, gas, value) → (return_data, gas, status)
+/// Contract call: (contract, calldata, evm_gas, value) → (return_data, evm_cost, status)
 pub type CallContract =
     Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (Vec<u8>, u64, UserOutcomeKind) + Send>;
 
@@ -190,7 +190,7 @@ pub struct HostioInfo<'a> {
 }
 
 impl<'a> HostioInfo<'a> {
-    fn meter(&mut self) -> &mut MeterData {
+    pub fn meter(&mut self) -> &mut MeterData {
         self.meter.as_mut().unwrap()
     }
 
@@ -302,13 +302,13 @@ impl<'a> Deref for HostioInfo<'a> {
     type Target = WasmEnv;
 
     fn deref(&self) -> &Self::Target {
-        &self.env
+        self.env
     }
 }
 
 impl<'a> DerefMut for HostioInfo<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.env
+        self.env
     }
 }
 
@@ -412,10 +412,10 @@ impl EvmAPI {
         &mut self,
         contract: Bytes20,
         input: Vec<u8>,
-        gas: u64,
+        evm_gas: u64,
         value: Bytes32,
     ) -> (Vec<u8>, u64, UserOutcomeKind) {
-        (self.call_contract)(contract, input, gas, value)
+        (self.call_contract)(contract, input, evm_gas, value)
     }
 }
 

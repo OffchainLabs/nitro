@@ -28,20 +28,24 @@ extern "C" {
         calldata: *const u8,
         calldata_len: usize,
         value: *const u8,
+        gas: u64,
         return_data_len: *mut usize,
     ) -> u8;
 
     fn read_return_data(dest: *mut u8);
 }
 
-pub fn call(contract: Bytes20, calldata: &[u8], value: Bytes32) -> Result<Vec<u8>, Vec<u8>> {
+pub fn call(contract: Bytes20, calldata: &[u8], value: Option<Bytes32>, gas: Option<u64>) -> Result<Vec<u8>, Vec<u8>> {
     let mut outs_len = 0;
+    let value = value.unwrap_or_default();
+    let gas = gas.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
     let status = unsafe {
         call_contract(
             contract.ptr(),
             calldata.as_ptr(),
             calldata.len(),
             value.ptr(),
+            gas,
             &mut outs_len as *mut _,
         )
     };

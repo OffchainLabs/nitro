@@ -1,6 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::field_reassign_with_default)]
+
 use eyre::{bail, Result};
 use std::fmt::Debug;
 use wasmer_types::Bytes;

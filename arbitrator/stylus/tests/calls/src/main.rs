@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{contract, debug, Bytes20, Bytes32};
+use arbitrum::{contract, debug, Bytes20};
 use eyre::bail;
 
 arbitrum::arbitrum_main!(user_main);
@@ -18,7 +18,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         let length = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
         input = &input[4..];
 
-        debug::println(format!("Length {length} of {}", input.len()));
         do_call(&input[..length]).map_err(|_| vec![i])?;
         input = &input[length..];
     }
@@ -30,7 +29,7 @@ fn do_call(input: &[u8]) -> eyre::Result<Vec<u8>> {
     let data = &input[20..];
 
     debug::println(format!("Calling {addr} with {} bytes", data.len()));
-    match contract::call(addr, data, Bytes32::default()) {
+    match contract::call(addr, data, None, None) {
         Ok(data) => Ok(data),
         Err(_) => bail!("call failed"),
     }
