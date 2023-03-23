@@ -129,23 +129,25 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
 			return err
 		}
-		now := time.Now().Unix()
-		oldHeader := header
-		// find a block that's old enough
-		for now-int64(oldHeader.Time) < requiredStateAge && oldHeader.Number.Uint64() > 0 {
-			previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
-			if previousHeader == nil {
-				break
+		if requiredStateAge > 0 {
+			now := time.Now().Unix()
+			oldHeader := header
+			// find a block that's old enough
+			for now-int64(oldHeader.Time) < requiredStateAge && oldHeader.Number.Uint64() > 0 {
+				previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
+				if previousHeader == nil {
+					break
+				}
+				oldHeader = previousHeader
 			}
-			oldHeader = previousHeader
-		}
-		if oldHeader != header {
-			secondOldStatedb, err := bc.StateAt(oldHeader.Root)
-			if err != nil {
-				return errors.Wrap(err, "failed to get old state")
-			}
-			if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
-				return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")
+			if oldHeader != header {
+				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
+				if err != nil {
+					return errors.Wrap(err, "failed to get old state")
+				}
+				if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
+					return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")
+				}
 			}
 		}
 	}
