@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/pkg/errors"
 )
 
 type TxPreChecker struct {
@@ -123,8 +124,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if options != nil {
 		l1BlockNumber, err := arbos.Blockhashes().L1BlockNumber()
 		if err != nil {
-			// TODO
-			return err
+			return errors.Wrap(err, "failed to get l1 block number to precheck conditional tx options")
 		}
 		if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
 			return err
@@ -142,10 +142,10 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		if oldHeader != header {
 			secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to get old state")
 			}
 			if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
-				return err
+				return errors.Wrap(err, "conditions check failed for old state")
 			}
 		}
 	}
