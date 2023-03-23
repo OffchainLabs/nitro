@@ -3,6 +3,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -17,10 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func getStorageRootHash(t *testing.T, node *arbnode.Node, address common.Address) common.Hash {
@@ -61,7 +62,11 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
-		Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx)
+		if options == nil {
+			Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", options)
+		} else {
+			Fail(t, "SendConditionalTransactionRPC didn't fail as expected, idx:", idx, "options:", *options)
+		}
 	} else {
 		var rErr rpc.Error
 		if errors.As(err, &rErr) {
@@ -75,31 +80,120 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 	accountInfo.Nonce = nonce // revert nonce as the tx failed
 }
 
-func getSuccessOptions(address1, address2 common.Address, currentRootHash1, currentRootHash2 common.Hash, currentSlotValueMap1, currentSlotValueMap2 map[common.Hash]common.Hash, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := hexutil.Uint64(timestamp + 5)
+func getEmptyOptions(address common.Address) []*arbitrum_types.ConditionalOptions {
+	return []*arbitrum_types.ConditionalOptions{
+		{},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {SlotValue: map[common.Hash]common.Hash{}}}},
+	}
+}
+
+func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[common.Hash]common.Hash) []*arbitrum_types.ConditionalOptions {
+	return []*arbitrum_types.ConditionalOptions{
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {RootHash: &rootHash}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {RootHash: &rootHash}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {SlotValue: slotValueMap}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {SlotValue: slotValueMap}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {RootHash: &rootHash}}},
+		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address: {SlotValue: slotValueMap}}},
+	}
+}
+
+func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
+	future := hexutil.Uint64(timestamp + 30)
 	past := hexutil.Uint64(timestamp - 1)
 	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
 	currentBlockNumber := hexutil.Uint64(blockNumber)
-	return []*arbitrum_types.ConditionalOptions{
-		// empty options
+	return getBlockTimeLimits(t, currentBlockNumber, futureBlockNumber, past, future)
+}
+func getUnfulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
+	future := hexutil.Uint64(timestamp + 30)
+	past := hexutil.Uint64(timestamp - 1)
+	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
+	previousBlockNumber := hexutil.Uint64(blockNumber - 1)
+	// skip first empty options
+	return getBlockTimeLimits(t, futureBlockNumber, previousBlockNumber, future, past)[1:]
+}
+
+func getBlockTimeLimits(t *testing.T, blockMin, blockMax hexutil.Uint64, timeMin, timeMax hexutil.Uint64) []*arbitrum_types.ConditionalOptions {
+	basic := []*arbitrum_types.ConditionalOptions{
 		{},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: map[common.Hash]common.Hash{}}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {RootHash: &currentRootHash2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: currentSlotValueMap1}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: currentSlotValueMap1}, address2: {SlotValue: currentSlotValueMap2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {SlotValue: currentSlotValueMap1}, address2: {RootHash: &currentRootHash2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &future},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &future, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMin: &currentBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &currentBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{address1: {RootHash: &currentRootHash1}, address2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &currentBlockNumber, TimestampMax: &future, TimestampMin: &past},
+		{TimestampMin: &timeMin},
+		{TimestampMax: &timeMax},
+		{BlockNumberMin: &blockMin},
+		{BlockNumberMax: &blockMax},
 	}
+	power := []*arbitrum_types.ConditionalOptions{
+		{},
+	}
+	for _ = range basic {
+		power = optionsProduct(power, basic)
+	}
+	return dedupOptions(t, power)
+}
+
+func optionsDedupProduct(t *testing.T, optionsA, optionsB []*arbitrum_types.ConditionalOptions) []*arbitrum_types.ConditionalOptions {
+	return dedupOptions(t, optionsProduct(optionsA, optionsB))
+}
+
+// Product of options slices, where each element from optionsA is merged with element of optionsB
+// The merge involves:
+// * merging KnownAccounts maps, where in case of key collision the value is taken from optionsB element
+// * assigning new block and timestamp limits preferring values from optionsB element
+func optionsProduct(optionsA, optionsB []*arbitrum_types.ConditionalOptions) []*arbitrum_types.ConditionalOptions {
+	var optionsC []*arbitrum_types.ConditionalOptions
+	for _, a := range optionsA {
+		for _, b := range optionsB {
+			var c arbitrum_types.ConditionalOptions
+			c.KnownAccounts = make(map[common.Address]arbitrum_types.RootHashOrSlots)
+			for k, v := range a.KnownAccounts {
+				c.KnownAccounts[k] = v
+			}
+			for k, v := range b.KnownAccounts {
+				c.KnownAccounts[k] = v
+			}
+			limitTriples := []struct {
+				a *hexutil.Uint64
+				b *hexutil.Uint64
+				c **hexutil.Uint64
+			}{
+				{a.BlockNumberMin, b.BlockNumberMin, &c.BlockNumberMin},
+				{a.BlockNumberMax, b.BlockNumberMax, &c.BlockNumberMax},
+				{a.TimestampMin, b.TimestampMin, &c.TimestampMin},
+				{a.TimestampMax, b.TimestampMax, &c.TimestampMax},
+			}
+			for _, tripple := range limitTriples {
+				if tripple.b != nil {
+					value := hexutil.Uint64(*tripple.b)
+					*tripple.c = &value
+				} else if tripple.a != nil {
+					value := hexutil.Uint64(*tripple.a)
+					*tripple.c = &value
+				} else {
+					*tripple.c = nil
+				}
+			}
+			optionsC = append(optionsC, &c)
+		}
+	}
+	return optionsC
+}
+
+func dedupOptions(t *testing.T, options []*arbitrum_types.ConditionalOptions) []*arbitrum_types.ConditionalOptions {
+	var result []*arbitrum_types.ConditionalOptions
+	seenBefore := make(map[common.Hash]struct{})
+	for _, opt := range options {
+		data, err := json.Marshal(opt)
+		Require(t, err)
+		dataHash := crypto.Keccak256Hash(data)
+		_, seen := seenBefore[dataHash]
+		if !seen {
+			result = append(result, opt)
+			seenBefore[dataHash] = struct{}{}
+		}
+	}
+	return result
 }
 
 func TestSendRawTransactionConditionalBasic(t *testing.T) {
@@ -137,13 +231,21 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	l2info.GenerateAccount("User2")
 
 	testConditionalTxThatShouldSucceed(t, ctx, -1, l2info, rpcClient, nil)
+	for i, options := range getEmptyOptions(contractAddress1) {
+		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
+	}
 
 	block, err := l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber := block.NumberU64()
 	blockTime := block.Time()
-	successOptions := getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber, blockTime)
-	for i, options := range successOptions {
+
+	optionsA := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
+	optionsB := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
+	optionsAB := optionsProduct(optionsA, optionsB)
+	options1 := dedupOptions(t, append(append(optionsAB, optionsA...), optionsB...))
+	options1 = optionsDedupProduct(t, options1, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	for i, options := range options1 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
 	}
 
@@ -161,7 +263,6 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	if bytes.Equal(previousStorageRootHash1.Bytes(), currentRootHash1.Bytes()) {
 		Fail(t, "storage root hash didn't change as expected")
 	}
-	previousSlotValueMap1 := currentSlotValueMap1
 	currentSlotValueMap1 = getStorageSlotValue(t, node, contractAddress1)
 
 	previousStorageRootHash2 := currentRootHash2
@@ -169,52 +270,34 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	if bytes.Equal(previousStorageRootHash2.Bytes(), currentRootHash2.Bytes()) {
 		Fail(t, "storage root hash didn't change as expected")
 	}
-	previousSlotValueMap2 := currentSlotValueMap2
 	currentSlotValueMap2 = getStorageSlotValue(t, node, contractAddress2)
 
 	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
 	blockTime = block.Time()
-	successOptions = getSuccessOptions(contractAddress1, contractAddress2, currentRootHash1, currentRootHash2, currentSlotValueMap1, currentSlotValueMap2, blockNumber, blockTime)
-	for i, options := range successOptions {
+
+	optionsC := getOptions(contractAddress1, currentRootHash1, currentSlotValueMap1)
+	optionsD := getOptions(contractAddress2, currentRootHash2, currentSlotValueMap2)
+	optionsCD := optionsProduct(optionsC, optionsD)
+	options2 := dedupOptions(t, append(append(optionsCD, optionsC...), optionsD...))
+	options2 = optionsDedupProduct(t, options2, getFulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	for i, options := range options2 {
 		testConditionalTxThatShouldSucceed(t, ctx, i, l2info, rpcClient, options)
+	}
+	for i, options := range options1 {
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
 	block, err = l1client.BlockByNumber(ctx, nil)
 	Require(t, err)
 	blockNumber = block.NumberU64()
 	blockTime = block.Time()
-	future := hexutil.Uint64(blockTime + 30)
-	past := hexutil.Uint64(blockTime - 1)
-	futureBlockNumber := hexutil.Uint64(blockNumber + 1000)
-	currentBlockNumber := hexutil.Uint64(blockNumber)
-	if blockNumber == 0 {
-		Fail(t, "internal test error: unexpected blockNumber == 0")
+	options3 := optionsDedupProduct(t, options2, getUnfulfillableBlockTimeLimits(t, blockNumber, blockTime))
+	for i, options := range options3 {
+		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
-	previousBlockNumber := hexutil.Uint64(blockNumber - 1)
-	failOptions := []*arbitrum_types.ConditionalOptions{
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &previousStorageRootHash1}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: previousSlotValueMap1}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &previousStorageRootHash1}, contractAddress2: {RootHash: &previousStorageRootHash2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {RootHash: &previousStorageRootHash2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: previousSlotValueMap1}, contractAddress2: {SlotValue: previousSlotValueMap2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: currentSlotValueMap1}, contractAddress2: {SlotValue: previousSlotValueMap2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {SlotValue: map[common.Hash]common.Hash{}}, contractAddress2: {SlotValue: previousSlotValueMap2}}},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &previousStorageRootHash1}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &currentBlockNumber, TimestampMax: &future, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMin: &future},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &future, TimestampMin: &future},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, TimestampMax: &past, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &previousBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMin: &futureBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &futureBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &previousBlockNumber, BlockNumberMin: &previousBlockNumber},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &previousBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &future, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &futureBlockNumber, TimestampMax: &future, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &past, TimestampMin: &past},
-		{KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{contractAddress1: {RootHash: &currentRootHash1}, contractAddress2: {SlotValue: currentSlotValueMap2}}, BlockNumberMax: &futureBlockNumber, BlockNumberMin: &previousBlockNumber, TimestampMax: &future, TimestampMin: &future},
-	}
-	for i, options := range failOptions {
+	options4 := optionsDedupProduct(t, options2, options1)
+	for i, options := range options4 {
 		testConditionalTxThatShouldFail(t, ctx, i, l2info, rpcClient, options, -32003)
 	}
 }
@@ -323,7 +406,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
 	rpcClient, err := node.Stack.Attach()
-	testhelpers.RequireImpl(t, err)
+	Require(t, err)
 
 	l2info.GenerateAccount("User2")
 
