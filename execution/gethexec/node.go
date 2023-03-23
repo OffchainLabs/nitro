@@ -80,6 +80,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
+	L1Reader:               headerreader.DefaultConfig,
 	RPC:                    arbitrum.DefaultConfig,
 	Sequencer:              DefaultSequencerConfig,
 	ForwardingTargetImpl:   "",
@@ -100,7 +101,7 @@ func ConfigDefaultNonSequencerTest() *Config {
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-
+	config.L1Reader = headerreader.TestConfig
 	return &config
 }
 

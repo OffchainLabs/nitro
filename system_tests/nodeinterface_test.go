@@ -9,10 +9,13 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -217,5 +220,119 @@ func TestComponentEstimate(t *testing.T) {
 
 	if l2Estimate != l2Used {
 		Fail(t, l2Estimate, l2Used)
+	}
+}
+
+func callFindBatchContainig(t *testing.T, ctx context.Context, client *ethclient.Client, nodeAbi *abi.ABI, blockNum uint64) uint64 {
+	findBatch := nodeAbi.Methods["findBatchContainingBlock"]
+	callData := append([]byte{}, findBatch.ID...)
+	packed, err := findBatch.Inputs.Pack(blockNum)
+	Require(t, err)
+	callData = append(callData, packed...)
+	msg := ethereum.CallMsg{
+		To:   &types.NodeInterfaceAddress,
+		Data: callData,
+	}
+	returnData, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	outputs, err := findBatch.Outputs.Unpack(returnData)
+	Require(t, err)
+	if len(outputs) != 1 {
+		Fail(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
+	}
+	gotBatchNum, ok := outputs[0].(uint64)
+	if !ok {
+		Fail(t, "bad output from findBatchContainingBlock")
+	}
+	return gotBatchNum
+}
+
+func callGetL1Confirmations(t *testing.T, ctx context.Context, client *ethclient.Client, nodeAbi *abi.ABI, blockHash common.Hash) uint64 {
+	getConfirmations := nodeAbi.Methods["getL1Confirmations"]
+	callData := append([]byte{}, getConfirmations.ID...)
+	packed, err := getConfirmations.Inputs.Pack(blockHash)
+	Require(t, err)
+	callData = append(callData, packed...)
+	msg := ethereum.CallMsg{
+		To:   &types.NodeInterfaceAddress,
+		Data: callData,
+	}
+	returnData, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	outputs, err := getConfirmations.Outputs.Unpack(returnData)
+	Require(t, err)
+	if len(outputs) != 1 {
+		Fail(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
+	}
+	confirmations, ok := outputs[0].(uint64)
+	if !ok {
+		Fail(t, "bad output from findBatchContainingBlock")
+	}
+	return confirmations
+}
+
+func TestFindBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l1Info := NewL1TestInfo(t)
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	l1Info.GenerateGenesisAccount("deployer", initialBalance)
+	l1Info.GenerateGenesisAccount("asserter", initialBalance)
+	l1Info.GenerateGenesisAccount("challenger", initialBalance)
+	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
+
+	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
+	conf := arbnode.ConfigDefaultL1Test()
+	conf.BlockValidator.Enable = false
+	conf.BatchPoster.Enable = false
+
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	fatalErrChan := make(chan error, 10)
+	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
+
+	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
+
+	rollupAddresses.Bridge = bridgeAddr
+	rollupAddresses.SequencerInbox = seqInboxAddr
+	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
+	consensus, _ := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, nil, nil, fatalErrChan)
+	err := consensus.Start(ctx)
+	Require(t, err)
+
+	l2Client := ClientForStack(t, consensus.Stack)
+	nodeAbi, err := node_interfacegen.NodeInterfaceMetaData.GetAbi()
+	Require(t, err)
+	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
+
+	l2Info.GenerateAccount("Destination")
+	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+
+	for blockNum := uint64(0); blockNum < uint64(MsgPerBatch)*3; blockNum++ {
+		gotBatchNum := callFindBatchContainig(t, ctx, l2Client, nodeAbi, blockNum)
+		expBatchNum := uint64(0)
+		if blockNum > 0 {
+			expBatchNum = 1 + (blockNum-1)/uint64(MsgPerBatch)
+		}
+		if expBatchNum != gotBatchNum {
+			Fail(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
+		}
+		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum)
+		Require(t, err)
+		blockHeader, err := l2Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
+		Require(t, err)
+		blockHash := blockHeader.Hash()
+
+		minCurrentL1Block, err := l1Backend.BlockNumber(ctx)
+		Require(t, err)
+		gotConfirmations := callGetL1Confirmations(t, ctx, l2Client, nodeAbi, blockHash)
+		maxCurrentL1Block, err := l1Backend.BlockNumber(ctx)
+		Require(t, err)
+
+		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
+			Fail(t, "wrong number of confirmations. got ", gotConfirmations)
+		}
 	}
 }
