@@ -44,6 +44,7 @@ type AssertionChain interface {
 	CurrentChallengeManager(ctx context.Context) (ChallengeManager, error)
 	GetAssertionId(ctx context.Context, seqNum AssertionSequenceNumber) (AssertionHash, error)
 	GetAssertionNum(ctx context.Context, assertionHash AssertionHash) (AssertionSequenceNumber, error)
+	HasBlockChallenge(ctx context.Context, assertionSeqNum AssertionSequenceNumber) (Challenge, error)
 
 	// Mutating methods.
 	CreateAssertion(

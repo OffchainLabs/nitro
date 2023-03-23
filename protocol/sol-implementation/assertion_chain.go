@@ -207,6 +207,32 @@ func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash pro
 	}
 	return protocol.AssertionSequenceNumber(res), nil
 }
+func (ac *AssertionChain) HasBlockChallenge(ctx context.Context, assertionSeqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
+	assertionId, err := ac.rollup.GetAssertionId(ac.callOpts, uint64(assertionSeqNum))
+	if err != nil {
+		return nil, err
+	}
+	manager, err := ac.CurrentChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	challengeId, err := manager.CalculateChallengeHash(ctx, assertionId, protocol.BlockChallenge)
+	if err != nil {
+		return nil, err
+	}
+	chal, err := manager.GetChallenge(ctx, challengeId)
+	if err != nil {
+		return nil, err
+	}
+	if chal.IsNone() {
+		return nil, errors.Wrapf(
+			ErrNotFound,
+			"challenge with id %d",
+			challengeId,
+		)
+	}
+	return chal.Unwrap(), nil
+}
 
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
