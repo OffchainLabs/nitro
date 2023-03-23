@@ -127,7 +127,7 @@ func getBlockTimeLimits(t *testing.T, blockMin, blockMax hexutil.Uint64, timeMin
 	power := []*arbitrum_types.ConditionalOptions{
 		{},
 	}
-	for _ = range basic {
+	for range basic {
 		power = optionsProduct(power, basic)
 	}
 	return dedupOptions(t, power)
