@@ -21,15 +21,17 @@ import (
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc            *core.BlockChain
-	getStrictness func() uint
+	bc                  *core.BlockChain
+	getStrictness       func() uint
+	getRequiredStateAge func() int64
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, getStrictness func() uint) *TxPreChecker {
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, getStrictness func() uint, getRequiredStateAge func() int64) *TxPreChecker {
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
 		getStrictness:        getStrictness,
+		getRequiredStateAge:  getRequiredStateAge,
 	}
 }
 
@@ -78,7 +80,7 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
-func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, strictness uint) error {
+func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, strictness uint, requiredStateAge int64) error {
 	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
@@ -128,17 +130,17 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			return err
 		}
 		now := time.Now().Unix()
-		secondOldHeader := header
-		// find a block that's at least second old
-		for now-int64(secondOldHeader.Time) < 1 && secondOldHeader.Number.Uint64() > 0 {
-			previousHeader := bc.GetHeader(secondOldHeader.ParentHash, secondOldHeader.Number.Uint64()-1)
+		oldHeader := header
+		// find a block that's old enough
+		for now-int64(oldHeader.Time) < requiredStateAge && oldHeader.Number.Uint64() > 0 {
+			previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
 			if previousHeader == nil {
 				break
 			}
-			secondOldHeader = previousHeader
+			oldHeader = previousHeader
 		}
-		if secondOldHeader != header {
-			secondOldStatedb, err := bc.StateAt(secondOldHeader.Root)
+		if oldHeader != header {
+			secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 			if err != nil {
 				return err
 			}
@@ -168,7 +170,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc, c.bc.Config(), block.Header(), statedb, arbos, tx, options, c.getStrictness())
+	err = PreCheckTx(c.bc, c.bc.Config(), block.Header(), statedb, arbos, tx, options, c.getStrictness(), c.getRequiredStateAge())
 	if err != nil {
 		return err
 	}
