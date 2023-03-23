@@ -145,7 +145,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				return errors.Wrap(err, "failed to get old state")
 			}
 			if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
-				return errors.Wrap(err, "conditions check failed for old state")
+				return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")
 			}
 		}
 	}
