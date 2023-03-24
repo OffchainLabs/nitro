@@ -60,6 +60,7 @@
 package prefixproofs
 
 import (
+	"math"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -73,7 +74,10 @@ const (
 )
 
 var (
+	ErrRootForEmpty                      = errors.New("cannot calculat root for empty")
+	ErrExpansionTooLarge                 = errors.New("merkle expansion to large")
 	ErrLevelTooHigh                      = errors.New("level too high")
+	ErrTreeSize                          = errors.New("tree size incorrect")
 	ErrCannotAppendEmpty                 = errors.New("cannot append empty")
 	ErrCannotAppendAboveLeastSignificant = errors.New("cannot append above least significant")
 	ErrStartNotLessThanEnd               = errors.New("start not less than end")
@@ -102,15 +106,20 @@ func MostSignificantBit(x uint64) (uint64, error) {
 
 // The root of the subtree. A collision free commitment to the contents of the tree.
 // The root of a tree is defined as the cumulative hashing of the roots of
-// all its subtrees. Returns 0 for empty tree.
-func Root(me []common.Hash) common.Hash {
-	empty := true
+// all its subtrees. Returns error for empty tree.
+func Root(me []common.Hash) (common.Hash, error) {
+	if len(me) == 0 {
+		return common.Hash{}, ErrRootForEmpty
+	}
+	if uint64(len(me)) >= MAX_LEVEL {
+		return common.Hash{}, ErrLevelTooHigh
+	}
+
 	var accum common.Hash
 	for i := 0; i < len(me); i++ {
 		val := me[i]
-		if empty {
+		if accum == (common.Hash{}) {
 			if val != (common.Hash{}) {
-				empty = false
 				accum = val
 
 				// the tree is balanced if the only non zero entry in the merkle extension
@@ -122,13 +131,26 @@ func Root(me []common.Hash) common.Hash {
 				}
 			}
 		} else if (val != common.Hash{}) {
+			// accum represents the smaller sub trees, since it is earlier in the expansion we put
+			// the larger subtrees on the left
 			accum = crypto.Keccak256Hash(val.Bytes(), accum.Bytes())
 		} else {
 			// by definition we always complete trees by appending zeros to the right
 			accum = crypto.Keccak256Hash(accum.Bytes(), (common.Hash{}).Bytes())
 		}
 	}
-	return accum
+	return accum, nil
+}
+
+// Calculate the full tree size represented by a merkle expansion
+func TreeSize(me []common.Hash) uint64 {
+	sum := uint64(0)
+	for i := 0; i < len(me); i++ {
+		if me[i] != (common.Hash{}) {
+			sum += uint64(math.Pow(2, float64(i)))
+		}
+	}
+	return sum
 }
 
 // Append a complete subtree to an existing tree
@@ -148,17 +170,14 @@ func AppendCompleteSubTree(
 	if subtreeRoot == (common.Hash{}) {
 		return nil, ErrCannotAppendEmpty
 	}
-
-	empty := make([]common.Hash, level+1)
 	if len(me) == 0 {
-		for i := uint64(0); i <= level; i++ {
-			if i == level {
-				empty[i] = subtreeRoot
-				return empty, nil
-			} else {
-				empty[i] = common.Hash{}
-			}
-		}
+		return nil, ErrExpansionTooLarge
+	}
+
+	if len(me) == 0 {
+		empty := make([]common.Hash, level+1)
+		empty[level] = subtreeRoot
+		return empty, nil
 	}
 
 	if level >= uint64(len(me)) {
@@ -350,8 +369,15 @@ func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 	if cfg.PreSize == 0 {
 		return errors.Wrap(ErrCannotBeZero, "presize was 0")
 	}
-	if Root(cfg.PreExpansion) != cfg.PreRoot {
+	root, rootErr := Root(cfg.PreExpansion)
+	if rootErr != nil {
+		return errors.Wrap(rootErr, "pre expansion root error")
+	}
+	if root != cfg.PreRoot {
 		return errors.Wrap(ErrRootMismatch, "pre expansion root mismatch")
+	}
+	if cfg.PreSize != TreeSize(cfg.PreExpansion) {
+		return errors.Wrap(ErrTreeSize, "pre expansion tree size")
 	}
 	if cfg.PreSize >= cfg.PostSize {
 		return errors.Wrapf(
@@ -361,7 +387,9 @@ func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 			cfg.PostSize,
 		)
 	}
-	preExpansion := cfg.PreExpansion
+
+	exp := make([]common.Hash, len(cfg.PreExpansion))
+	copy(exp, cfg.PreExpansion)
 	size := cfg.PreSize
 	proofIndex := uint64(0)
 
@@ -373,8 +401,8 @@ func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 		if proofIndex >= uint64(len(cfg.PrefixProof)) {
 			return ErrIndexOutOfRange
 		}
-		preExpansion, err = AppendCompleteSubTree(
-			preExpansion, level, cfg.PrefixProof[proofIndex],
+		exp, err = AppendCompleteSubTree(
+			exp, level, cfg.PrefixProof[proofIndex],
 		)
 		if err != nil {
 			return err
@@ -391,7 +419,10 @@ func VerifyPrefixProof(cfg *VerifyPrefixProofConfig) error {
 		}
 		proofIndex++
 	}
-	gotRoot := Root(preExpansion)
+	gotRoot, gotRootErr := Root(exp)
+	if gotRootErr != nil {
+		return errors.Wrap(gotRootErr, "post root error")
+	}
 	if gotRoot != cfg.PostRoot {
 		return errors.Wrapf(
 			ErrRootMismatch,

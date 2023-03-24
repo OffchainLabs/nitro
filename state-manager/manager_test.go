@@ -90,7 +90,8 @@ func TestPrefixProof(t *testing.T) {
 		prefixProof[i] = proof[i]
 	}
 
-	computed := prefixproofs.Root(preExpansionHashes)
+	computed, err := prefixproofs.Root(preExpansionHashes)
+	require.NoError(t, err)
 	require.Equal(t, bigBisectCommit.Merkle, computed)
 
 	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
@@ -320,8 +321,11 @@ func TestPrefixProofs(t *testing.T) {
 		postExpansion, err := manager.HistoryCommitmentUpTo(ctx, c.hi)
 		require.NoError(t, err)
 
+		root, err := prefixproofs.Root(preExpansionHashes)
+		require.NoError(t, err)
+
 		cfg := &prefixproofs.VerifyPrefixProofConfig{
-			PreRoot:      prefixproofs.Root(preExpansionHashes),
+			PreRoot:      root,
 			PreSize:      c.lo + 1,
 			PostRoot:     postExpansion.Merkle,
 			PostSize:     c.hi + 1,
