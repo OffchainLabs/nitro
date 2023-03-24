@@ -4,7 +4,7 @@
 
 This repository implements V2 of the Arbitrum challenge protocol. V2 is an efficient, all-vs-all dispute protocol that enables anyone on Ethereum L1 to challenge incorrect Arbitrum state transitions in a permissionless manner. Given Arbitrum’s state transition is deterministic, this guarantees only one correct result at any given assertion. A **single, honest participant** will always win against malicious entities when challenging assertions posted to Ethereum. 
 
-The code in this repository will eventually be migrated to [github.com/offchainlabs/nitro](https://github.com/offchainlabs/nitro), which includes the necessary execution machines required for interacting iwth the protocol.
+The code in this repository will eventually be migrated to [github.com/offchainlabs/nitro](https://github.com/offchainlabs/nitro), which includes the necessary execution machines required for interacting with the protocol.
 
 A complete list of reference documentation for the repository can be found on Notion [here](https://www.notion.so/arbitrum/Challenge-Protocol-V2-Trail-of-Bits-Kickoff-cf3b54ba0b234b0195bfdd08c6cbcc88)
 
