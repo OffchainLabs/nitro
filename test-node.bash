@@ -33,7 +33,7 @@ run=true
 force_build=false
 validate=false
 detach=false
-blockscout=true
+blockscout=false
 tokenbridge=true
 consensusclient=false
 redundantsequencers=0
@@ -66,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --validate)
             validate=true
+            shift
+            ;;
+        --blockscout)
+            blockscout=true
             shift
             ;;
         --no-blockscout)
