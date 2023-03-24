@@ -70,11 +70,11 @@ import (
 
 const (
 	// MAX_LEVEL for our binary trees.
-	MAX_LEVEL = uint64(256)
+	MAX_LEVEL = uint64(64)
 )
 
 var (
-	ErrRootForEmpty                      = errors.New("cannot calculat root for empty")
+	ErrRootForEmpty                      = errors.New("cannot calculate root for empty")
 	ErrExpansionTooLarge                 = errors.New("merkle expansion to large")
 	ErrLevelTooHigh                      = errors.New("level too high")
 	ErrTreeSize                          = errors.New("tree size incorrect")
@@ -108,9 +108,6 @@ func MostSignificantBit(x uint64) (uint64, error) {
 // The root of a tree is defined as the cumulative hashing of the roots of
 // all its subtrees. Returns error for empty tree.
 func Root(me []common.Hash) (common.Hash, error) {
-	if len(me) == 0 {
-		return common.Hash{}, ErrRootForEmpty
-	}
 	if uint64(len(me)) >= MAX_LEVEL {
 		return common.Hash{}, ErrLevelTooHigh
 	}
@@ -170,7 +167,7 @@ func AppendCompleteSubTree(
 	if subtreeRoot == (common.Hash{}) {
 		return nil, ErrCannotAppendEmpty
 	}
-	if len(me) == 0 {
+	if uint64(len(me)) > MAX_LEVEL {
 		return nil, ErrExpansionTooLarge
 	}
 
