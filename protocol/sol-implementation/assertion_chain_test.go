@@ -138,6 +138,62 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestBlockChallenge(t *testing.T) {
+	ctx := context.Background()
+	chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
+	height := uint64(1)
+	prev := uint64(0)
+	minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+	require.NoError(t, err)
+
+	latestBlockHash := common.Hash{}
+	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+		latestBlockHash = backend.Commit()
+	}
+
+	prevState := &protocol.ExecutionState{
+		GlobalState:   protocol.GoGlobalState{},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	postState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash:  latestBlockHash,
+			SendRoot:   common.Hash{},
+			Batch:      1,
+			PosInBatch: 0,
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	prevInboxMaxCount := big.NewInt(1)
+	_, err = chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
+	require.NoError(t, err)
+
+	chain, err = NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		accs[2].txOpts,
+		&bind.CallOpts{},
+		accs[2].accountAddr,
+		backend,
+		headerReader,
+	)
+	require.NoError(t, err)
+
+	postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
+	_, err = chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
+	require.NoError(t, err)
+
+	_, err = chain.BlockChallenge(ctx, 0)
+	require.ErrorContains(t, err, "execution reverted: Challenge does not exist")
+
+	createdChallenge, err := chain.CreateSuccessionChallenge(ctx, 0)
+	require.NoError(t, err)
+
+	challenge, err := chain.BlockChallenge(ctx, 0)
+	require.NoError(t, err)
+	require.Equal(t, createdChallenge.Id(), challenge.Id())
+}
+
 func TestAssertion_Confirm(t *testing.T) {
 	ctx := context.Background()
 	t.Run("OK", func(t *testing.T) {

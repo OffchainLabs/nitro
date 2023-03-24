@@ -5,50 +5,44 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-// Subscribes to events fired by the rollup contracts in order to listen to
-// challenge start events from the protocol.
-// TODO: Brittle - should be based on querying the chain instead.
-func (v *Validator) handleChallengeEvents(ctx context.Context) {
-	challengeCreatedChan := make(chan *challengeV2gen.ChallengeManagerImplChallengeCreated, 1)
-	chalSub, err := v.chalManager.WatchChallengeCreated(&bind.WatchOpts{}, challengeCreatedChan)
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	defer chalSub.Unsubscribe()
-
+func (v *Validator) pollForChallenges(ctx context.Context) {
+	ticker := time.NewTicker(v.newChallengeCheckInterval)
+	defer ticker.Stop()
 	for {
 		select {
-		case err := <-chalSub.Err():
-			log.Fatal(err)
-		case chalCreated := <-challengeCreatedChan:
-			manager, err := v.chain.CurrentChallengeManager(ctx)
-			if err != nil {
-				log.WithError(err).Error("Failed to get current challenge manager")
-				continue
+		case <-ticker.C:
+			v.assertionsLock.RLock()
+			assertions := v.assertions
+			v.assertionsLock.RUnlock()
+			for assertionId := range assertions {
+				challenge, err := v.chain.BlockChallenge(ctx, assertionId)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+				v.challengesLock.RLock()
+				_, ok := v.challenges[challenge.Id()]
+				v.challengesLock.RUnlock()
+				if ok {
+					continue
+				}
+				v.challengesLock.Lock()
+				v.challenges[challenge.Id()] = challenge
+				v.challengesLock.Unlock()
+				// Ignore challenges from self.
+				challenger := challenge.Challenger()
+				if isFromSelf(v.address, challenger) {
+					continue
+				}
+				if err := v.onChallengeStarted(ctx, challenge); err != nil {
+					log.Error(err)
+				}
 			}
-			retrieved, err := manager.GetChallenge(ctx, chalCreated.ChallengeId)
-			if err != nil {
-				log.WithError(err).Error("Failed to get challenge")
-				continue
-			}
-			if retrieved.IsNone() {
-				log.Errorf("no challenge with id %#x", chalCreated.ChallengeId)
-				continue
-			}
-			challenge := retrieved.Unwrap()
-			// Ignore challenges from self.
-			challenger := challenge.Challenger()
-			if isFromSelf(v.address, challenger) {
-				continue
-			}
-			if err := v.onChallengeStarted(ctx, challenge); err != nil {
-				log.Error(err)
-			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -82,7 +76,9 @@ func (v *Validator) pollForAssertions(ctx context.Context) {
 					log.Error(err)
 					continue
 				}
+				v.assertionsLock.Lock()
 				v.assertions[assertion.SeqNum()] = assertion
+				v.assertionsLock.Unlock()
 				selfStakedAssertion, err := v.rollup.AssertionHasStaker(&bind.CallOpts{}, i, v.address)
 				if err != nil {
 					log.Error(err)

@@ -359,6 +359,11 @@ func (m *MockProtocol) GetAssertionNum(ctx context.Context, assertionHash protoc
 	return args.Get(0).(protocol.AssertionSequenceNumber), args.Error(1)
 }
 
+func (m *MockProtocol) BlockChallenge(ctx context.Context, assertionSeqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
+	args := m.Called(ctx, assertionSeqNum)
+	return args.Get(0).(protocol.Challenge), args.Error(1)
+}
+
 func (m *MockProtocol) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.Assertion), args.Error(1)

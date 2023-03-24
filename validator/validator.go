@@ -42,12 +42,15 @@ type Validator struct {
 	assertionsLock                         sync.RWMutex
 	sequenceNumbersByParentStateCommitment map[common.Hash][]protocol.AssertionSequenceNumber
 	assertions                             map[protocol.AssertionSequenceNumber]protocol.Assertion
+	challengesLock                         sync.RWMutex
+	challenges                             map[protocol.ChallengeHash]protocol.Challenge
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	disableLeafCreation                    bool
 	timeRef                                util.TimeReference
 	challengeVertexWakeInterval            time.Duration
 	newAssertionCheckInterval              time.Duration
+	newChallengeCheckInterval              time.Duration
 }
 
 // WithName is a human-readable identifier for this validator client for logging purposes.
@@ -72,7 +75,7 @@ func WithTimeReference(ref util.TimeReference) Opt {
 }
 
 // WithChallengeVertexWakeInterval specifies how often each challenge vertex goroutine will
-// act on its responsibilites.
+// act on its responsibilities.
 func WithChallengeVertexWakeInterval(d time.Duration) Opt {
 	return func(val *Validator) {
 		val.challengeVertexWakeInterval = d
@@ -80,10 +83,18 @@ func WithChallengeVertexWakeInterval(d time.Duration) Opt {
 }
 
 // WithNewAssertionCheckInterval specifies how often handle assertions goroutine will
-// act on its responsibilites.
+// act on its responsibilities.
 func WithNewAssertionCheckInterval(d time.Duration) Opt {
 	return func(val *Validator) {
 		val.newAssertionCheckInterval = d
+	}
+}
+
+// WithNewChallengeCheckInterval specifies how often handle challenge goroutine will
+// act on its responsibilities.
+func WithNewChallengeCheckInterval(d time.Duration) Opt {
+	return func(val *Validator) {
+		val.newChallengeCheckInterval = d
 	}
 }
 
@@ -118,6 +129,7 @@ func New(
 		rollupAddr:                             rollupAddr,
 		challengeVertexWakeInterval:            time.Millisecond * 100,
 		newAssertionCheckInterval:              time.Second,
+		newChallengeCheckInterval:              time.Second,
 	}
 	for _, o := range opts {
 		o(v)
@@ -153,7 +165,7 @@ func New(
 }
 
 func (v *Validator) Start(ctx context.Context) {
-	go v.handleChallengeEvents(ctx)
+	go v.pollForChallenges(ctx)
 	go v.pollForAssertions(ctx)
 	if !v.disableLeafCreation {
 		go v.prepareLeafCreationPeriodically(ctx)

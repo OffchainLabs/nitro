@@ -281,6 +281,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithTimeReference(ref),
 		WithChallengeVertexWakeInterval(time.Millisecond*10),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
+		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
 	require.NoError(t, err)
 
@@ -306,6 +307,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		WithTimeReference(ref),
 		WithChallengeVertexWakeInterval(time.Millisecond*10),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
+		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
 	require.NoError(t, err)
 
