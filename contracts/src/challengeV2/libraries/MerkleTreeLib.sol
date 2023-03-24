@@ -62,7 +62,8 @@ import "./UintUtilsLib.sol";
 ///         ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
 ///         --------------------------------------------------------------------------------------------
 library MerkleTreeLib {
-    uint256 public constant MAX_LEVEL = 256;
+    // the go code uses uint64, so we ensure we never go above that here
+    uint256 public constant MAX_LEVEL = 64;
 
     /// @notice The root of the subtree. A collision free commitment to the contents of the tree.
     /// @dev    The root of a tree is defined as the cumulative hashing of the
@@ -132,8 +133,6 @@ library MerkleTreeLib {
 
         bytes32 accumHash = subtreeRoot;
         uint256 meSize = treeSize(me);
-        // we'll throw an arithmetic error here upon overflow, so we ensure that
-        // that we're never creating a expansion with more than MAX_LEVEL entries
         uint256 postSize = meSize + 2 ** level;
 
         // if by appending the sub tree we increase the numbe of most sig bits of the size, that means
@@ -141,6 +140,9 @@ library MerkleTreeLib {
         bytes32[] memory next = UintUtilsLib.mostSignificantBit(postSize) > UintUtilsLib.mostSignificantBit(meSize)
             ? new bytes32[](me.length + 1)
             : new bytes32[](me.length );
+
+        // ensure we're never creating an expansion that's too big
+        require(next.length <= MAX_LEVEL, "Append creates oversize tree");
 
         // loop through all the levels in self and try to append the new subtree
         // since each node has two children by appending a subtree we may complete another one
