@@ -18,7 +18,7 @@ func (v *Validator) pollForChallenges(ctx context.Context) {
 			assertions := v.assertions
 			v.assertionsLock.RUnlock()
 			for assertionId := range assertions {
-				challenge, err := v.chain.HasBlockChallenge(ctx, assertionId)
+				challenge, err := v.chain.BlockChallenge(ctx, assertionId)
 				if err != nil {
 					log.Error(err)
 					continue

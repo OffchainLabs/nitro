@@ -207,7 +207,7 @@ func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash pro
 	}
 	return protocol.AssertionSequenceNumber(res), nil
 }
-func (ac *AssertionChain) HasBlockChallenge(ctx context.Context, assertionSeqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
+func (ac *AssertionChain) BlockChallenge(ctx context.Context, assertionSeqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
 	assertionId, err := ac.rollup.GetAssertionId(ac.callOpts, uint64(assertionSeqNum))
 	if err != nil {
 		return nil, err
