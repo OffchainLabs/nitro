@@ -3,7 +3,7 @@ module github.com/OffchainLabs/challenge-protocol-v2
 go 1.19
 
 require (
-	github.com/ethereum/go-ethereum v1.11.5
+	github.com/ethereum/go-ethereum v1.10.26
 	github.com/labstack/echo/v5 v5.0.0-20220717203827-74022662be4a
 	github.com/offchainlabs/nitro v0.0.0-20230323152619-5e9f4228e641
 	github.com/pkg/errors v0.9.1
