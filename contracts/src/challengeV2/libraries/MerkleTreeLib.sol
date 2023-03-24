@@ -5,7 +5,7 @@ import "../../libraries/MerkleLib.sol";
 import "./ArrayUtilsLib.sol";
 import "./UintUtilsLib.sol";
 
-/// @title   Binary merkle tree utilities
+/// @title  Binary merkle tree utilities
 /// @notice
 ///         Binary trees
 ///         --------------------------------------------------------------------------------------------
