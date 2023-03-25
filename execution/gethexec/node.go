@@ -336,15 +336,23 @@ func (n *ExecutionNode) PrepareForRecord(ctx context.Context, start, end arbutil
 }
 
 func (n *ExecutionNode) Pause() {
-	n.Sequencer.Pause()
+	if n.Sequencer != nil {
+		n.Sequencer.Pause()
+	}
 }
 
 func (n *ExecutionNode) Activate() {
-	n.Sequencer.Activate()
+	if n.Sequencer != nil {
+		n.Sequencer.Activate()
+	}
 }
 
 func (n *ExecutionNode) ForwardTo(url string) error {
-	return n.Sequencer.ForwardTo(url)
+	if n.Sequencer != nil {
+		return n.Sequencer.ForwardTo(url)
+	} else {
+		return errors.New("forwardTo not supported - sequencer not acrtive")
+	}
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {

@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -65,7 +66,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	createStartNode := func(nodeNum int) {
 		nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[nodeNum]
-		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, nil, false)
 		nodes[nodeNum] = node
 	}
 
@@ -149,7 +150,8 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	}
 
 	nodeForwardTarget := func(nodeNum int) int {
-		fwTarget := nodes[nodeNum].Execution.TxPublisher.(*execution.TxPreChecker).TransactionPublisher.(*execution.Sequencer).ForwardTarget()
+		execNode := getExecNode(t, nodes[nodeNum])
+		fwTarget := execNode.TxPublisher.(*gethexec.TxPreChecker).TransactionPublisher.(*gethexec.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}
@@ -283,7 +285,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[0]
-	l2Info, nodeA, clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, params.ArbitrumDevTestChainConfig(), nil)
+	l2Info, nodeA, clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, params.ArbitrumDevTestChainConfig(), nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -312,7 +314,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AllowedAddresses = []string{l2Info.GetAddress("User2").Hex()}
 	}
-	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig, nil)
+	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig, nil, nil)
 	defer nodeB.StopAndWait()
 
 	tx := l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(1e12), nil)
