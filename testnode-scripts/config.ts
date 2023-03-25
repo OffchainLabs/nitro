@@ -169,7 +169,7 @@ function writeConfigs(argv: any) {
         "node": {
             "archive": true,
             "forwarding-target": "null",
-            "validator": {
+            "staker": {
                 "dangerous": {
                     "without-block-validator": false
                 },
@@ -178,7 +178,6 @@ function writeConfigs(argv: any) {
                 "staker-interval": "10s",
                 "make-assertion-interval": "10s",
                 "strategy": "MakeNodes",
-                "target-machine-count": 4,
             },
             "sequencer": {
                 "enable": false
@@ -228,13 +227,13 @@ function writeConfigs(argv: any) {
 
     let validatorConfig = JSON.parse(baseConfJSON)
     validatorConfig.l1.wallet.account = namedAccount("validator").address
-    validatorConfig.node.validator.enable = true
-    validatorConfig.node.validator["use-smart-contract-wallet"] = true
+    validatorConfig.node.staker.enable = true
+    validatorConfig.node.staker["use-smart-contract-wallet"] = true
     let validconfJSON = JSON.stringify(validatorConfig)
     fs.writeFileSync(path.join(consts.configpath, "validator_config.json"), validconfJSON)
 
     let unsafeStakerConfig = JSON.parse(validconfJSON)
-    unsafeStakerConfig.node.validator.dangerous["without-block-validator"] = true
+    unsafeStakerConfig.node.staker.dangerous["without-block-validator"] = true
     fs.writeFileSync(path.join(consts.configpath, "unsafe_staker_config.json"), JSON.stringify(unsafeStakerConfig))
 
     let sequencerConfig = JSON.parse(baseConfJSON)
