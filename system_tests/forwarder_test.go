@@ -214,7 +214,8 @@ func TestRedisForwarder(t *testing.T) {
 			if err == nil {
 				break
 			}
-			time.Sleep(gethexec.DefaultTestForwarderConfig.UpdateInterval / 2)
+			// takes > MsgLag for node to know it's in sync and become primary
+			time.Sleep(arbnode.DefaultSyncMonitorConfig.MsgLag / 2)
 		}
 		testhelpers.RequireImpl(t, err)
 		_, err = EnsureTxSucceeded(ctx, clients[i], tx)
