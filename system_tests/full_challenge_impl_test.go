@@ -473,14 +473,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	Fail(t, "challenge timed out without winner")
 }
 
-func TestChallengeManagerMockAsserterIncorrect(t *testing.T) {
+func TestMockChallengeManagerAsserterIncorrect(t *testing.T) {
 	t.Parallel()
 	for i := int64(1); i <= MsgPerBatch*3; i++ {
 		RunChallengeTest(t, false, true, i)
 	}
 }
 
-func TestChallengeManagerMockAsserterCorrect(t *testing.T) {
+func TestMockChallengeManagerAsserterCorrect(t *testing.T) {
 	t.Parallel()
 	for i := int64(1); i <= MsgPerBatch*3; i++ {
 		RunChallengeTest(t, true, true, i)
