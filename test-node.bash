@@ -220,6 +220,10 @@ if $force_init; then
         docker rm $leftoverContainers
     fi
     docker volume prune -f --filter label=com.docker.compose.project=nitro
+    leftoverVolumes=`docker volume ls --filter label=com.docker.compose.project=nitro -q | xargs echo`
+    if [ `echo $leftoverVolumes | wc -w` -gt 0 ]; then
+        docker volume rm $leftoverVolumes
+    fi
 
     echo == Generating l1 keys
     docker-compose run testnode-scripts write-accounts
