@@ -13,12 +13,20 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+)
+
+var (
+	conditionalTxRejectedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/accepted", nil)
+	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/accepted", nil)
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -145,8 +153,10 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			return errors.Wrap(err, "failed to get l1 block number to precheck conditional tx options")
 		}
 		if err := options.PreCheck(l1BlockNumber, header.Time, statedb); err != nil {
+			conditionalTxRejectedByTxPreCheckerCurrentStateCounter.Inc(1)
 			return err
 		}
+		conditionalTxAcceptedByTxPreCheckerCurrentStateCounter.Inc(1)
 		if config.RequiredStateAge > 0 {
 			now := time.Now().Unix()
 			oldHeader := header
@@ -164,9 +174,11 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 					return errors.Wrap(err, "failed to get old state")
 				}
 				if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
+					conditionalTxRejectedByTxPreCheckerOldStateCounter.Inc(1)
 					return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")
 				}
 			}
+			conditionalTxAcceptedByTxPreCheckerOldStateCounter.Inc(1)
 		}
 	}
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {

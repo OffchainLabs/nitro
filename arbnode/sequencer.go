@@ -36,15 +36,17 @@ import (
 )
 
 var (
-	sequencerBacklogGauge            = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
-	nonceCacheHitCounter             = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
-	nonceCacheMissCounter            = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
-	nonceCacheRejectedCounter        = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
-	nonceCacheClearedCounter         = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
-	nonceFailureCacheSizeGauge       = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/size", nil)
-	nonceFailureCacheOverflowCounter = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
-	blockCreationTimer               = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
-	successfulBlocksCounter          = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
+	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
+	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
+	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
+	nonceCacheClearedCounter                = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
+	nonceFailureCacheSizeGauge              = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/size", nil)
+	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
+	blockCreationTimer                      = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
+	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
+	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/rejected", nil)
+	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/accepted", nil)
 )
 
 type SequencerConfig struct {
@@ -394,9 +396,11 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 	if options != nil && len(options.KnownAccounts) > 0 {
 		err := options.Check(l1BlockNumber, l2Timestamp, statedb)
 		if err != nil {
+			conditionalTxRejectedBySequencerCounter.Inc(1)
 			return err
 		}
 	}
+	conditionalTxAcceptedBySequencerCounter.Inc(1)
 	return nil
 }
 
