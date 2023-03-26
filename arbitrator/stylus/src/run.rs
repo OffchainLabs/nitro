@@ -75,11 +75,6 @@ impl RunProgram for NativeInstance {
         let status = match main.call(store, args.len() as u32) {
             Ok(status) => status,
             Err(outcome) => {
-                let escape = match outcome.downcast() {
-                    Ok(escape) => escape,
-                    Err(error) => return Ok(Failure(eyre!(error).wrap_err("hard user error"))),
-                };
-
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }
@@ -87,6 +82,10 @@ impl RunProgram for NativeInstance {
                     return Ok(OutOfGas);
                 }
 
+                let escape: Escape = match outcome.downcast() {
+                    Ok(escape) => escape,
+                    Err(error) => return Ok(Failure(eyre!(error).wrap_err("hard user error"))),
+                };
                 return Ok(match escape {
                     Escape::OutOfGas => OutOfGas,
                     Escape::Memory(error) => UserOutcome::revert(error.into()),

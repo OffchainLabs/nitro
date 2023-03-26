@@ -48,7 +48,7 @@ func TestCustomSolidityErrors(t *testing.T) {
 		Fail(t, "customRevert call should have errored")
 	}
 	observedMessage := customError.Error()
-	expectedMessage := "execution reverted: error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\, true)"
+	expectedMessage := "execution reverted: error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
 	if observedMessage != expectedMessage {
 		Fail(t, observedMessage)
 	}

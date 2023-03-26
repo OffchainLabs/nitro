@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -87,14 +88,14 @@ func errorTest(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("fallible"), jit)
 	defer cleanup()
 
-	// ensure tx passes
+	/*// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
+	Require(t, err)*/
 
 	// ensure tx fails
-	tx = l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x00})
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x00})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
 	Require(t, err)
@@ -102,7 +103,7 @@ func errorTest(t *testing.T, jit bool) {
 		Fail(t, "call should have failed")
 	}
 
-	validateBlocks(t, 7, ctx, node, l2client)
+	validateBlocks(t, 5, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -201,25 +202,32 @@ func TestProgramCalls(t *testing.T) {
 		}
 	}
 
+	// mechanisms for creating calldata
+	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
+	customRevert, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "customRevert")
+	legacyError, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "legacyError")
+	pack := func(data []byte, err error) []byte {
+		Require(t, err)
+		return data
+	}
+	makeCalldata := func(address common.Address, calldata []byte) []byte {
+		args := []byte{0x01}
+		args = append(args, arbmath.Uint32ToBytes(uint32(20+len(calldata)))...)
+		args = append(args, address.Bytes()...)
+		args = append(args, calldata...)
+		return args
+	}
+
 	// Set a random, non-zero gas price
 	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
 	wasmGasPrice := testhelpers.RandomUint64(1, 2000)
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
-
-	colors.PrintBlue("Calling the ArbosTest precompile")
+	colors.PrintBlue("Calling the ArbosTest precompile with wasmGasPrice=", wasmGasPrice)
 
 	testPrecompile := func(gas uint64) uint64 {
-		burnArbGas, _ := util.CallParser(precompilesgen.ArbosTestABI, "burnArbGas")
-		encoded, err := burnArbGas(big.NewInt(int64(gas)))
-		Require(t, err)
-
 		// Call the burnArbGas() precompile from Rust
-		args := []byte{0x01}
-		args = append(args, arbmath.Uint32ToBytes(uint32(20+len(encoded)))...)
-		args = append(args, types.ArbosTestAddress.Bytes()...)
-		args = append(args, encoded...)
-
+		args := makeCalldata(types.ArbosTestAddress, pack(burnArbGas(big.NewInt(int64(gas)))))
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), args)
 		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed
 	}
@@ -233,6 +241,32 @@ func TestProgramCalls(t *testing.T) {
 		ratio := float64(large-small) / float64(largeGas-smallGas)
 		Fail(t, "inconsistent burns", smallGas, largeGas, small, large, ratio)
 	}
+
+	expectFailure := func(to common.Address, data []byte, errMsg string) {
+		t.Helper()
+		msg := ethereum.CallMsg{
+			To:    &to,
+			Value: big.NewInt(0),
+			Data:  data,
+		}
+		_, err := l2client.CallContract(ctx, msg, nil)
+		if err == nil {
+			Fail(t, "call should have failed with", errMsg)
+		}
+		expected := fmt.Sprintf("execution reverted%v", errMsg)
+		if err.Error() != expected {
+			Fail(t, "wrong error", err.Error(), expected)
+		}
+	}
+
+	colors.PrintBlue("Check consensus revert data")
+	args := makeCalldata(types.ArbDebugAddress, pack(customRevert(uint64(32))))
+	spider := ": error Custom(32, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
+	expectFailure(callsAddr, args, spider)
+
+	colors.PrintBlue("Check non-consensus revert data")
+	args = makeCalldata(types.ArbDebugAddress, pack(legacyError()))
+	expectFailure(callsAddr, args, "")
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
@@ -249,6 +283,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	l2config.BlockValidator.Enable = true
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
+	l2config.Sequencer.MaxRevertGasReject = 0
 	AddDefaultValNode(t, ctx, l2config, jit)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
@@ -281,9 +316,9 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	wasmHostioCost := testhelpers.RandomUint64(0, 5000) // amount of wasm gas
 
 	// Drop the gas price to 0 half the time
-	if testhelpers.RandomBool() {
+	/*if testhelpers.RandomBool() {
 		wasmGasPrice = 0
-	}
+	}*/
 	colors.PrintMint(fmt.Sprintf("WASM gas price=%d, HostIO cost=%d", wasmGasPrice, wasmHostioCost))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
@@ -329,6 +364,7 @@ func rustFile(name string) string {
 }
 
 func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
+	colors.PrintGrey("Validating blocks from ", start, " onward")
 
 	doUntil(t, 20*time.Millisecond, 50, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()

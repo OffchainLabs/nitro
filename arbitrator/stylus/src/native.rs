@@ -250,8 +250,14 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
     let mut store = config.store();
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
+        (u8 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u8 { panic!("incomplete import") })
+        };
         (u32 <- $($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ -> u32 { panic!("incomplete import") })
+        };
+        (u64 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> u64 { panic!("incomplete import") })
         };
         ($($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
@@ -263,7 +269,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "return_data" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
-            "call_contract" => stub!(u32 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
+            "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
             "read_return_data" => stub!(|_: u32|),
         },
     };

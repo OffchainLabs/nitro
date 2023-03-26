@@ -74,3 +74,17 @@ impl Display for UserOutcome {
         }
     }
 }
+
+impl Display for UserOutcomeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let as_u8 = *self as u8;
+        use UserOutcomeKind::*;
+        match self {
+            Success => write!(f, "success ({as_u8})"),
+            Revert => write!(f, "revert ({as_u8})"),
+            Failure => write!(f, "failure ({as_u8})"),
+            OutOfGas => write!(f, "out of gas ({as_u8})"),
+            OutOfStack => write!(f, "out of stack ({as_u8})"),
+        }
+    }
+}

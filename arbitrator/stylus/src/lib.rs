@@ -146,7 +146,9 @@ pub unsafe extern "C" fn stylus_call(
             let report: ErrReport = $report.into();
             let report = report.wrap_err(eyre!($msg));
             output.write_err(report);
-            *evm_gas = 0; // burn all gas
+            if pricing.wasm_gas_price != 0 {
+                *evm_gas = pricing.wasm_to_evm(wasm_gas);
+            }
             return UserOutcomeKind::Failure;
         }};
     }
@@ -156,7 +158,7 @@ pub unsafe extern "C" fn stylus_call(
 
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => error!("failed to instantiate program", error),
+        Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
     instance.set_go_api(go_api);
     instance.set_gas(wasm_gas);

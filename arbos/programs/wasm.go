@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -46,6 +47,7 @@ func callUserWasm(
 	db vm.StateDB,
 	_ *vm.EVMInterpreter,
 	_ *util.TracingInfo,
+	_ core.Message,
 	calldata []byte,
 	gas *uint64,
 	params *goParams,
@@ -60,7 +62,7 @@ func callUserWasm(
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 	root := db.NoncanonicalProgramHash(program, params.version)
-	return machine.call(calldata, params, gas, &root)
+	return machine.call(db, calldata, params, gas, &root)
 }
 
 func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*rustMachine, error) {
@@ -71,10 +73,21 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*
 	return machine, nil
 }
 
-func (m *rustMachine) call(calldata []byte, params *goParams, gas *u64, root *hash) ([]byte, error) {
+func (m *rustMachine) call(db vm.StateDB, calldata []byte, params *goParams, gas *u64, root *hash) ([]byte, error) {
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas, root)
 	result := output.intoSlice()
-	return status.output(result)
+	data, err := status.output(result)
+	/*if db.Deterministic() {
+		//println("JIT: ", string(result))
+		println("JIT: ", status, "(", common.Bytes2Hex(data), "),", *gas)
+		if err != nil {
+			println("JIT: ", err.Error())
+		}
+	}*/
+	if db.Deterministic() {
+		println("Wasm Go:", status, *gas)
+	}
+	return data, err
 }
 
 func (vec *rustVec) intoSlice() []byte {

@@ -68,13 +68,13 @@ func init() {
 	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
 
 	acts := precompilesgen.ArbosActsABI
-	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = CallParser(acts, "startBlock")
-	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = CallParser(acts, "batchPostingReport")
-	PackArbRetryableTxRedeem, _ = CallParser(precompilesgen.ArbRetryableTxABI, "redeem")
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
+	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
+	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 
 // Create a mechanism for packing and unpacking calls
-func CallParser(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
+func NewCallParser(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
 	contract, err := abi.JSON(strings.NewReader(source))
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))

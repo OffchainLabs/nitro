@@ -67,7 +67,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
 
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => error!("failed to instantiate program", error),
+        Err(error) => panic!("failed to instantiate program {error:?}"),
     };
     instance.set_gas(wasm_gas);
     instance.set_stack(config.depth.max_depth);

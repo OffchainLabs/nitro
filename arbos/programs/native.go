@@ -11,22 +11,25 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
-Bytes32 getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost);
-uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error);
+Bytes32 getBytes32Impl(size_t api, Bytes32 key, uint64_t * cost);
+uint8_t setBytes32Impl(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error);
+uint8_t callContractWrap(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value);
 */
 import "C"
 import (
-	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -61,6 +64,7 @@ func callUserWasm(
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
+	msg core.Message,
 	calldata []byte,
 	gas *uint64,
 	stylusParams *goParams,
@@ -101,8 +105,6 @@ func callUserWasm(
 		//     - gas_table.go      gasCall()
 		//     - instructions.go   opCall()
 		//
-		// TODO: handle custom return calldata
-		//
 
 		// read-only calls are not payable (opCall)
 		if readOnly && value.Sign() != 0 {
@@ -132,13 +134,10 @@ func callUserWasm(
 		}
 
 		ret, returnGas, err := evm.Call(scope.Contract, contract, input, gas, value)
-		if err != nil && errors.Is(err, vm.ErrExecutionReverted) {
-			ret = []byte{}
-		}
-
 		cost := arbmath.SaturatingUSub(startGas, returnGas)
 		return ret, cost, err
 	}
+	before := *gas
 
 	output := &C.RustVec{}
 	status := userStatus(C.stylus_call(
@@ -150,6 +149,16 @@ func callUserWasm(
 		(*u64)(gas),
 	))
 	data, err := status.output(output.intoBytes())
+	/*if msg.RunMode() == types.MessageCommitMode && !db.Deterministic() {
+		colors.PrintRed("Native: ", status, " (", common.Bytes2Hex(data), "), ", *gas, interpreter.Evm().Context.BlockNumber)
+		if err != nil {
+			colors.PrintRed("Native: ", err.Error())
+		}
+	}*/
+	if msg.RunMode() == types.MessageCommitMode && db.Deterministic() {
+		colors.PrintRed("Stylus: ", status, *gas, before, interpreter.Evm().Context.BlockNumber)
+	}
+
 	if status == userFailure {
 		log.Debug("program failure", "err", string(data), "program", program)
 	}
@@ -198,12 +207,12 @@ func callContractImpl(api usize, contract bytes20, data *C.RustVec, evmGas *u64,
 		return apiFailure
 	}
 
-	result, gasLeft, err := closure.callContract(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
+	result, cost, err := closure.callContract(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
 	data.setBytes(result)
+	*evmGas = u64(cost) // evmGas becomes the call's cost
 	if err != nil {
 		return apiFailure
 	}
-	*evmGas = u64(gasLeft)
 	return apiSuccess
 }
 

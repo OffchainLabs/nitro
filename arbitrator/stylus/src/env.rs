@@ -11,7 +11,10 @@ use prover::{
     },
     utils::{Bytes20, Bytes32},
 };
-use std::ops::{Deref, DerefMut};
+use std::{
+    io,
+    ops::{Deref, DerefMut},
+};
 use thiserror::Error;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView,
@@ -450,6 +453,12 @@ impl Escape {
 impl From<MemoryAccessError> for Escape {
     fn from(err: MemoryAccessError) -> Self {
         Self::Memory(err)
+    }
+}
+
+impl From<io::Error> for Escape {
+    fn from(err: io::Error) -> Self {
+        Self::Internal(eyre!(err))
     }
 }
 

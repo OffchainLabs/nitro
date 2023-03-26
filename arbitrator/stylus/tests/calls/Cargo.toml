@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 arbitrum = { path = "../../../langs/rust/" }
-eyre = "0.6.5"
 hex = "0.4.3"
 
 [profile.release]
