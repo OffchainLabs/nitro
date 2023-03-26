@@ -7,11 +7,9 @@ pragma solidity ^0.8.4;
 import "./AbsBridge.sol";
 import "./IERC20Bridge.sol";
 import "../libraries/AddressAliasHelper.sol";
+import {InvalidTokenSet, CallTargetNotAllowed} from "../libraries/Error.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-/// @dev Provided zero address token
-error InvalidToken();
 
 /**
  * @title Staging ground for incoming and outgoing messages
@@ -26,7 +24,7 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
 
     /// @inheritdoc IERC20Bridge
     function initialize(IOwnable rollup_, address nativeToken_) external initializer onlyDelegated {
-        if (nativeToken_ == address(0)) revert InvalidToken();
+        if (nativeToken_ == address(0)) revert InvalidTokenSet(nativeToken_);
         nativeToken = nativeToken_;
         _activeOutbox = EMPTY_ACTIVEOUTBOX;
         rollup = rollup_;
@@ -55,18 +53,25 @@ contract ERC20Bridge is AbsBridge, IERC20Bridge {
         uint256 value,
         bytes memory data
     ) internal override returns (bool success, bytes memory returnData) {
-        // first release native token
-        // solhint-disable-next-line avoid-low-level-calls
-        (success, returnData) = nativeToken.call(
-            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
-        );
-
-        // if there's data do additional contract call (if token transfer was succesful)
-        if (data.length > 0) {
-            if (success) {
-                // solhint-disable-next-line avoid-low-level-calls
-                (success, returnData) = to.call(data);
-            }
+        if (to == nativeToken) {
+            revert CallTargetNotAllowed(nativeToken);
         }
+
+        // first release native token
+        IERC20(nativeToken).safeTransfer(to, value);
+        success = true;
+
+        // if there's data do additional contract call
+        if (data.length > 0) {
+            // solhint-disable-next-line avoid-low-level-calls
+            (success, returnData) = to.call(data);
+        }
+    }
+
+    function _baseFeeToReport() internal pure override returns (uint256) {
+        // ArbOs uses formula 'l1BaseFee * (1400 + 6 * calldataLengthInBytes)' to calculate retryable ticket's
+        // submission fee. When custom ERC20 token is used to pay for fees, submission fee shall be 0. That's
+        // why baseFee is reported as 0 here.
+        return 0;
     }
 }

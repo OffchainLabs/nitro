@@ -1,62 +1,47 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.4;
 
-import "forge-std/Test.sol";
-import "./util/TestUtil.sol";
-import "../../src/bridge/ERC20Bridge.sol";
+import "./AbsOutbox.t.sol";
+import "../../src/bridge/Bridge.sol";
 import "../../src/bridge/Outbox.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
-contract OutboxTest is Test {
-    Outbox public outbox;
-    ERC20Bridge public bridge;
-    IERC20 public nativeToken;
-
-    address public user = address(100);
-    address public rollup = address(1000);
-    address public seqInbox = address(1001);
+contract OutboxTest is AbsOutboxTest {
+    Outbox public ethOutbox;
+    Bridge public ethBridge;
 
     function setUp() public {
-        // deploy token, bridge and outbox
-        nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
-        bridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
-        outbox = Outbox(TestUtil.deployProxy(address(new Outbox())));
+        // deploy bridge and outbox
+        bridge = IBridge(TestUtil.deployProxy(address(new Bridge())));
+        ethBridge = Bridge(address(bridge));
+        outbox = IOutbox(TestUtil.deployProxy(address(new Outbox())));
+        ethOutbox = Outbox(address(outbox));
 
         // init bridge and outbox
-        bridge.initialize(IOwnable(rollup), address(nativeToken));
-        outbox.initialize(IBridge(bridge));
+        ethBridge.initialize(IOwnable(rollup));
+        ethOutbox.initialize(IBridge(bridge));
 
         vm.prank(rollup);
         bridge.setOutbox(address(outbox), true);
-
-        // fund user account
-        nativeToken.transfer(user, 1_000);
-    }
-
-    /* solhint-disable func-name-mixedcase */
-    function test_initialize() public {
-        assertEq(address(outbox.bridge()), address(bridge), "Invalid bridge ref");
-        assertEq(address(outbox.rollup()), rollup, "Invalid rollup ref");
     }
 
     function test_executeTransaction() public {
-        // fund bridge with some tokens
-        vm.startPrank(user);
-        nativeToken.approve(address(bridge), 100);
-        nativeToken.transfer(address(bridge), 100);
-        vm.stopPrank();
+        // fund bridge with some ether
+        vm.deal(address(bridge), 100 ether);
 
         // store root
         vm.prank(rollup);
         outbox.updateSendRoot(
-            0xcb920246c89b1654256473a041b5231711799d82dcae749351c758af797598e3,
-            0xcb920246c89b1654256473a041b5231711799d82dcae749351c758af797598e3
+            0xc86f4eaf8efb31147795fb05564f8777abc3220d4caeb0227c6c69c115931dda,
+            0xc86f4eaf8efb31147795fb05564f8777abc3220d4caeb0227c6c69c115931dda
         );
 
+        // create msg receiver on L1
+        L2ToL1Target target = new L2ToL1Target();
+        target.setOutbox(address(outbox));
+
         //// execute transaction
-        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
-        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+        uint256 bridgeBalanceBefore = address(bridge).balance;
+        uint256 targetBalanceBefore = address(target).balance;
 
         bytes32[] memory proof = new bytes32[](5);
         proof[0] = bytes32(0x1216ff070e3c87b032d79b298a3e98009ddd13bf8479b843e225857ca5f950e7);
@@ -65,31 +50,67 @@ contract OutboxTest is Test {
         proof[3] = bytes32(0xc7aac0aad5108a46ac9879f0b1870fd0cbc648406f733eb9d0b944a18c32f0f8);
         proof[4] = bytes32(0x477ce2b0bc8035ae3052b7339c7496531229bd642bb1871d81618cf93a4d2d1a);
 
-        uint256 withdrawalAmount = 15;
+        uint256 withdrawalAmount = 15 ether;
+        bytes memory data = abi.encodeWithSignature("receiveHook()");
         outbox.executeTransaction({
             proof: proof,
             index: 12,
             l2Sender: user,
-            to: user,
+            to: address(target),
             l2Block: 300,
             l1Block: 20,
             l2Timestamp: 1234,
             value: withdrawalAmount,
-            data: ""
+            data: data
         });
 
-        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        uint256 bridgeBalanceAfter = address(bridge).balance;
         assertEq(
-            bridgeTokenBalanceBefore - bridgeTokenBalanceAfter,
+            bridgeBalanceBefore - bridgeBalanceAfter,
             withdrawalAmount,
-            "Invalid bridge token balance"
+            "Invalid bridge balance"
         );
 
-        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        uint256 targetBalanceAfter = address(target).balance;
         assertEq(
-            userTokenBalanceAfter - userTokenBalanceBefore,
+            targetBalanceAfter - targetBalanceBefore,
             withdrawalAmount,
-            "Invalid user token balance"
+            "Invalid target balance"
         );
+
+        /// check context was properly set during execution
+        assertEq(uint256(target.l2Block()), 300, "Invalid l2Block");
+        assertEq(uint256(target.timestamp()), 1234, "Invalid timestamp");
+        assertEq(uint256(target.outputId()), 12, "Invalid outputId");
+        assertEq(target.sender(), user, "Invalid sender");
+        assertEq(uint256(target.l1Block()), 20, "Invalid l1Block");
+        assertEq(uint256(target.withdrawalAmount()), withdrawalAmount, "Invalid withdrawalAmount");
+    }
+}
+
+/**
+ * Contract for testing L2 to L1 msgs
+ */
+contract L2ToL1Target {
+    address public outbox;
+
+    uint128 public l2Block;
+    uint128 public timestamp;
+    bytes32 public outputId;
+    address public sender;
+    uint96 public l1Block;
+    uint256 public withdrawalAmount;
+
+    function receiveHook() external payable {
+        l2Block = uint128(IOutbox(outbox).l2ToL1Block());
+        timestamp = uint128(IOutbox(outbox).l2ToL1Timestamp());
+        outputId = IOutbox(outbox).l2ToL1OutputId();
+        sender = IOutbox(outbox).l2ToL1Sender();
+        l1Block = uint96(IOutbox(outbox).l2ToL1EthBlock());
+        withdrawalAmount = msg.value;
+    }
+
+    function setOutbox(address _outbox) external {
+        outbox = _outbox;
     }
 }

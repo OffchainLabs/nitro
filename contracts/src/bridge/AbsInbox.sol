@@ -6,19 +6,26 @@ pragma solidity ^0.8.4;
 
 import {
     DataTooLarge,
+    GasLimitTooLarge,
     InsufficientValue,
     InsufficientSubmissionCost,
+    L1Forked,
     NotAllowedOrigin,
-    RetryableData,
+    NotOrigin,
     NotRollupOrOwner,
-    GasLimitTooLarge
+    RetryableData
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "./IBridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import {L1MessageType_submitRetryableTx} from "../libraries/MessageTypes.sol";
+import {
+    L1MessageType_submitRetryableTx,
+    L2MessageType_unsignedContractTx,
+    L2MessageType_unsignedEOATx,
+    L2_MSG
+} from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -112,6 +119,92 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         sequencerInbox = _sequencerInbox;
         allowListEnabled = false;
         __Pausable_init();
+    }
+
+    /// @inheritdoc IInbox
+    function sendL2MessageFromOrigin(bytes calldata messageData)
+        external
+        whenNotPaused
+        onlyAllowed
+        returns (uint256)
+    {
+        if (_chainIdChanged()) revert L1Forked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        if (messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
+        uint256 msgNum = _deliverToBridge(L2_MSG, msg.sender, keccak256(messageData), 0);
+        emit InboxMessageDeliveredFromOrigin(msgNum);
+        return msgNum;
+    }
+
+    /// @inheritdoc IInbox
+    function sendL2Message(bytes calldata messageData)
+        external
+        whenNotPaused
+        onlyAllowed
+        returns (uint256)
+    {
+        if (_chainIdChanged()) revert L1Forked();
+        return _deliverMessage(L2_MSG, msg.sender, messageData, 0);
+    }
+
+    /// @inheritdoc IInbox
+    function sendUnsignedTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
+        return
+            _deliverMessage(
+                L2_MSG,
+                msg.sender,
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(to)),
+                    value,
+                    data
+                ),
+                0
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendContractTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
+        return
+            _deliverMessage(
+                L2_MSG,
+                msg.sender,
+                abi.encodePacked(
+                    L2MessageType_unsignedContractTx,
+                    gasLimit,
+                    maxFeePerGas,
+                    uint256(uint160(to)),
+                    value,
+                    data
+                ),
+                0
+            );
     }
 
     function _createRetryableTicket(

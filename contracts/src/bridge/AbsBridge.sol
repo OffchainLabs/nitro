@@ -211,7 +211,7 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
             sender,
             uint64(block.number),
             uint64(block.timestamp), // solhint-disable-line not-rely-on-time
-            block.basefee,
+            _baseFeeToReport(),
             messageDataHash
         );
 
@@ -287,4 +287,8 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
         uint256 value,
         bytes memory data
     ) internal virtual returns (bool success, bytes memory returnData);
+
+    /// @dev get base fee which is emitted in `MessageDelivered` event and then picked up and
+    /// used in ArbOs to calculate the submission fee for retryable ticket
+    function _baseFeeToReport() internal view virtual returns (uint256);
 }

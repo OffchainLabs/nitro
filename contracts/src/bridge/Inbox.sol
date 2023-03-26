@@ -42,34 +42,6 @@ contract Inbox is AbsInbox, IEthInbox {
     function postUpgradeInit(IBridge) external onlyDelegated onlyProxyOwner {}
 
     /// @inheritdoc IEthInbox
-    function sendL2MessageFromOrigin(bytes calldata messageData)
-        external
-        whenNotPaused
-        onlyAllowed
-        returns (uint256)
-    {
-        if (_chainIdChanged()) revert L1Forked();
-        // solhint-disable-next-line avoid-tx-origin
-        if (msg.sender != tx.origin) revert NotOrigin();
-        if (messageData.length > MAX_DATA_SIZE)
-            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = _deliverToBridge(L2_MSG, msg.sender, keccak256(messageData), 0);
-        emit InboxMessageDeliveredFromOrigin(msgNum);
-        return msgNum;
-    }
-
-    /// @inheritdoc IEthInbox
-    function sendL2Message(bytes calldata messageData)
-        external
-        whenNotPaused
-        onlyAllowed
-        returns (uint256)
-    {
-        if (_chainIdChanged()) revert L1Forked();
-        return _deliverMessage(L2_MSG, msg.sender, messageData, 0);
-    }
-
-    /// @inheritdoc IEthInbox
     function sendL1FundedUnsignedTransaction(
         uint256 gasLimit,
         uint256 maxFeePerGas,
@@ -122,64 +94,6 @@ contract Inbox is AbsInbox, IEthInbox {
                     data
                 ),
                 msg.value
-            );
-    }
-
-    /// @inheritdoc IEthInbox
-    function sendUnsignedTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        uint256 nonce,
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external whenNotPaused onlyAllowed returns (uint256) {
-        // arbos will discard unsigned tx with gas limit too large
-        if (gasLimit > type(uint64).max) {
-            revert GasLimitTooLarge();
-        }
-        return
-            _deliverMessage(
-                L2_MSG,
-                msg.sender,
-                abi.encodePacked(
-                    L2MessageType_unsignedEOATx,
-                    gasLimit,
-                    maxFeePerGas,
-                    nonce,
-                    uint256(uint160(to)),
-                    value,
-                    data
-                ),
-                0
-            );
-    }
-
-    /// @inheritdoc IEthInbox
-    function sendContractTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external whenNotPaused onlyAllowed returns (uint256) {
-        // arbos will discard unsigned tx with gas limit too large
-        if (gasLimit > type(uint64).max) {
-            revert GasLimitTooLarge();
-        }
-        return
-            _deliverMessage(
-                L2_MSG,
-                msg.sender,
-                abi.encodePacked(
-                    L2MessageType_unsignedContractTx,
-                    gasLimit,
-                    maxFeePerGas,
-                    uint256(uint160(to)),
-                    value,
-                    data
-                ),
-                0
             );
     }
 
