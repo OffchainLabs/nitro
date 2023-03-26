@@ -401,7 +401,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	defer cancel()
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	nodeConfig.TxPreCheckerStrictness = arbnode.TxPreCheckerStrictnessLikelyCompatible
+	nodeConfig.TxPreChecker.Strictness = arbnode.TxPreCheckerStrictnessLikelyCompatible
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
