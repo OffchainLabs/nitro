@@ -15,8 +15,6 @@ func (r *ValRun) WasmModuleRoot() common.Hash {
 	return r.root
 }
 
-func (r *ValRun) Close() {}
-
 func NewValRun(root common.Hash) *ValRun {
 	return &ValRun{
 		Promise: containers.NewPromise[validator.GoGlobalState](),

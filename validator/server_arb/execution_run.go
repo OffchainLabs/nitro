@@ -17,22 +17,16 @@ type executionRun struct {
 	cache *MachineCache
 }
 
-type machineStep struct {
-	containers.Promise[validator.MachineStepResult]
-	reqPosition uint64
-	cancel      func()
-}
-
-func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
+func consumeMachine(promise *containers.Promise[validator.MachineStepResult], reqPosition uint64, machine MachineInterface, err error) {
 	if err != nil {
-		s.ProduceError(err)
+		promise.ProduceError(err)
 		return
 	}
 	machineStep := machine.GetStepCount()
-	if s.reqPosition != machineStep {
+	if reqPosition != machineStep {
 		machineRunning := machine.IsRunning()
-		if (machineRunning && s.reqPosition != machineStep) || machineStep > s.reqPosition {
-			s.ProduceError(fmt.Errorf("machine is in wrong position want: %d, got: %d", s.reqPosition, machine.GetStepCount()))
+		if (machineRunning && reqPosition != machineStep) || machineStep > reqPosition {
+			promise.ProduceError(fmt.Errorf("machine is in wrong position want: %d, got: %d", reqPosition, machine.GetStepCount()))
 			return
 		}
 
@@ -43,10 +37,8 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		GlobalState: machine.GetGlobalState(),
 		Hash:        machine.Hash(),
 	}
-	s.Produce(result)
+	promise.Produce(result)
 }
-
-func (s *machineStep) Close() { s.cancel() }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
@@ -70,21 +62,21 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) {
 	e.cache = newCache
 }
 
-func (e *executionRun) GetStepAt(position uint64) validator.MachineStep {
-	mstep := &machineStep{
-		Promise:     containers.NewPromise[validator.MachineStepResult](),
-		reqPosition: position,
-	}
+func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[validator.MachineStepResult] {
+	promise := containers.NewPromise[validator.MachineStepResult]()
 	cancel := e.LaunchThreadWithCancel(func(ctx context.Context) {
+		var mach MachineInterface
+		var err error
 		if position == ^uint64(0) {
-			mstep.consumeMachine(e.cache.GetFinalMachine(ctx))
+			mach, err = e.cache.GetFinalMachine(ctx)
 		} else {
 			// todo cache last machine
-			mstep.consumeMachine(e.cache.GetMachineAt(ctx, position))
+			mach, err = e.cache.GetMachineAt(ctx, position)
 		}
+		consumeMachine(&promise, position, mach, err)
 	})
-	mstep.cancel = cancel
-	return mstep
+	promise.SetCancel(cancel)
+	return &promise
 }
 
 type asyncProof struct {
@@ -94,7 +86,7 @@ type asyncProof struct {
 
 func (p *asyncProof) Close() {}
 
-func (e *executionRun) GetProofAt(position uint64) validator.ProofPromise {
+func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
 	proof := &asyncProof{
 		Promise: containers.NewPromise[[]byte](),
 	}
@@ -110,6 +102,6 @@ func (e *executionRun) GetProofAt(position uint64) validator.ProofPromise {
 	return proof
 }
 
-func (e *executionRun) GetLastStep() validator.MachineStep {
+func (e *executionRun) GetLastStep() containers.PromiseInterface[validator.MachineStepResult] {
 	return e.GetStepAt(^uint64(0))
 }

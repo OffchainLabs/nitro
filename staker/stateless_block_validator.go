@@ -585,7 +585,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	}
 	defer func() {
 		for _, run := range runs {
-			run.Close()
+			run.Cancel()
 		}
 	}()
 	for _, run := range runs {

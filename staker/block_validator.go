@@ -735,7 +735,7 @@ func (v *BlockValidator) progressValidated() {
 			}
 		}
 		for _, run := range validationStatus.Runs {
-			run.Close()
+			run.Cancel()
 		}
 		validationStatus.replaceStatus(ValidationSent, Valid)
 		validatorValidValidationsCounter.Inc(1)

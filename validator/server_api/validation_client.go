@@ -154,10 +154,8 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 	r.CallIteratively(r.SendKeepAlive)
 }
 
-func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
-	step := &ExecutionClientStep{
-		Promise: containers.NewPromise[validator.MachineStepResult](),
-	}
+func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[validator.MachineStepResult] {
+	step := containers.NewPromise[validator.MachineStepResult]()
 	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
@@ -172,21 +170,12 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) validator.MachineStep {
 		}
 		step.Produce(*res)
 	})
-	step.cancel = cancel
-	return step
+	step.SetCancel(cancel)
+	return &step
 }
 
-type asyncProof struct {
-	containers.Promise[[]byte]
-	cancel func()
-}
-
-func (a *asyncProof) Close() { a.cancel() }
-
-func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
-	proof := &asyncProof{
-		Promise: containers.NewPromise[[]byte](),
-	}
+func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
+	proof := containers.NewPromise[[]byte]()
 	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
 		var resString string
 		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
@@ -201,11 +190,11 @@ func (r *ExecutionClientRun) GetProofAt(pos uint64) validator.ProofPromise {
 		}
 		proof.Produce(res)
 	})
-	proof.cancel = cancel
-	return proof
+	proof.SetCancel(cancel)
+	return &proof
 }
 
-func (r *ExecutionClientRun) GetLastStep() validator.MachineStep {
+func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[validator.MachineStepResult] {
 	return r.GetStepAt(^uint64(0))
 }
 
