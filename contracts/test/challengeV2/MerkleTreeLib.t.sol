@@ -327,7 +327,7 @@ contract MerkleTreeLibTest is Test {
 
         bytes32 rand2 = random.hash();
         // overflow
-        vm.expectRevert();
+        vm.expectRevert("Append creates oversize tree");
         MerkleTreeLib.appendCompleteSubTree(pre, pre.length - 1, rand2);
     }
 
