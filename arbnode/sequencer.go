@@ -382,7 +382,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1BlockNumber uint64, l1Timestamp uint64) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1BlockNumber uint64, l2Timestamp uint64) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -392,7 +392,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 		}
 	}
 	if options != nil && len(options.KnownAccounts) > 0 {
-		err := options.Check(l1BlockNumber, l1Timestamp, statedb)
+		err := options.Check(l1BlockNumber, l2Timestamp, statedb)
 		if err != nil {
 			return err
 		}

@@ -126,7 +126,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		if err != nil {
 			return errors.Wrap(err, "failed to get l1 block number to precheck conditional tx options")
 		}
-		if err := options.PreCheck(l1BlockNumber, statedb); err != nil {
+		if err := options.PreCheck(l1BlockNumber, header.Time, statedb); err != nil {
 			return err
 		}
 		if requiredStateAge > 0 {

@@ -242,7 +242,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info.l1BlockNumber, l1Info.l1Timestamp); err != nil {
+			if err = hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info.l1BlockNumber, time); err != nil {
 				return nil, nil, err
 			}
 
