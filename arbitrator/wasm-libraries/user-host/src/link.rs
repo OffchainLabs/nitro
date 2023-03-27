@@ -147,7 +147,6 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // the program computed a final result
     let gas_left = program_gas_left(module, internals);
-    println!("Wasm Ru: {} {} {}", status, pricing.wasm_to_evm(gas_left), wavm::caller_load64(evm_gas));
     finish!(status, heapify(outs), gas_left)
 }
 
