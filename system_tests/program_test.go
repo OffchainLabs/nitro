@@ -143,11 +143,6 @@ func TestProgramCalls(t *testing.T) {
 	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("calls"), true)
 	defer cleanup()
 
-	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-
-	colors.PrintGrey("calls.wasm   ", callsAddr)
-	colors.PrintGrey("storage.wasm ", storeAddr)
-
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -155,6 +150,16 @@ func TestProgramCalls(t *testing.T) {
 		Require(t, err)
 		return receipt
 	}
+
+	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	keccakAddr := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+
+	colors.PrintGrey("calls.wasm   ", callsAddr)
+	colors.PrintGrey("storage.wasm ", storeAddr)
+	colors.PrintGrey("keccak.wasm  ", keccakAddr)
+	colors.PrintGrey("mock.evm     ", mockAddr)
 
 	slots := make(map[common.Hash]common.Hash)
 
@@ -190,7 +195,7 @@ func TestProgramCalls(t *testing.T) {
 	tree := nest(3)[20:]
 	colors.PrintGrey(common.Bytes2Hex(tree))
 
-	tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), tree)
+	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), tree)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	for key, value := range slots {
@@ -206,6 +211,7 @@ func TestProgramCalls(t *testing.T) {
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 	customRevert, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "customRevert")
 	legacyError, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "legacyError")
+	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
@@ -257,16 +263,31 @@ func TestProgramCalls(t *testing.T) {
 		if err.Error() != expected {
 			Fail(t, "wrong error", err.Error(), expected)
 		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), data)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
+		Require(t, err)
+		if receipt.Status != types.ReceiptStatusFailed {
+			Fail(t, "unexpected success")
+		}
 	}
 
-	colors.PrintBlue("Check consensus revert data")
+	colors.PrintBlue("Checking consensus revert data (Rust => precompile)")
 	args := makeCalldata(types.ArbDebugAddress, pack(customRevert(uint64(32))))
 	spider := ": error Custom(32, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
 	expectFailure(callsAddr, args, spider)
 
-	colors.PrintBlue("Check non-consensus revert data")
+	colors.PrintBlue("Checking non-consensus revert data (Rust => precompile)")
 	args = makeCalldata(types.ArbDebugAddress, pack(legacyError()))
 	expectFailure(callsAddr, args, "")
+
+	colors.PrintBlue("Checking success (Rust => Solidity => Rust)")
+	rustArgs := append([]byte{0x01}, []byte(spider)...)
+	mockArgs := makeCalldata(mockAddr, pack(callKeccak(keccakAddr, rustArgs)))
+	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), mockArgs)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)

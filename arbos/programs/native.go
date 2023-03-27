@@ -117,6 +117,9 @@ func callUserWasm(
 		if err != nil {
 			return nil, 0, err
 		}
+		if gas < baseCost {
+			return nil, 0, vm.ErrOutOfGas
+		}
 		gas -= baseCost
 		gas = gas - gas/64
 

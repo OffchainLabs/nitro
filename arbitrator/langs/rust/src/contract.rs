@@ -32,9 +32,12 @@ extern "C" {
         return_data_len: *mut usize,
     ) -> u8;
 
+    /// Reverts if a call has never happened
     fn read_return_data(dest: *mut u8);
 }
 
+/// Calls the contract at the given address, with options for passing value or limiting the amount of gas provided.
+/// On failure, the output consists of the call's revert data.
 pub fn call(contract: Bytes20, calldata: &[u8], value: Option<Bytes32>, gas: Option<u64>) -> Result<Vec<u8>, Vec<u8>> {
     let mut outs_len = 0;
     let value = value.unwrap_or_default();

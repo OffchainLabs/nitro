@@ -60,6 +60,7 @@ pub(crate) fn call_contract(
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_copy(calldata_len as usize)?;
     wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
 
     let pricing = env.meter().pricing;
