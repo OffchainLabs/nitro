@@ -67,7 +67,7 @@ library MerkleTreeLib {
 
     /// @notice The root of the subtree. A collision free commitment to the contents of the tree.
     /// @dev    The root of a tree is defined as the cumulative hashing of the
-    ///         roots of all of it's subtrees. Returns 0 for empty tree.
+    ///         roots of all of it's subtrees. Throws error for empty tree
     /// @param me   The merkle expansion to calculate the root of
     function root(bytes32[] memory me) internal pure returns (bytes32) {
         require(me.length > 0, "Empty merkle expansion");

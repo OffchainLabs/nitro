@@ -38,7 +38,7 @@ func (s *SimulatedManagerBackend) GetMerkleRoot(ctx context.Context, start uint6
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return prefixproofs.Root(exp), nil
+	return prefixproofs.Root(exp)
 }
 
 // GetStateRoot gets the state root at a specified height from our local list of state roots.

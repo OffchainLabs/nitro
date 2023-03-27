@@ -75,7 +75,9 @@ func TestMerkleProofExpansionEquivalence(t *testing.T) {
 
 	exp, err := prefixproofs.ExpansionFromLeaves(leaves)
 	require.NoError(t, err)
-	require.Equal(t, root, prefixproofs.Root(exp))
+	r, err := prefixproofs.Root(exp)
+	require.NoError(t, err)
+	require.Equal(t, root, r)
 }
 
 func Test_isPowerOfTwo(t *testing.T) {

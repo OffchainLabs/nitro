@@ -62,5 +62,5 @@ func RootFetcherFromExpansion(leaves []common.Hash, upTo uint64) (common.Hash, e
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return Root(exp), nil
+	return Root(exp)
 }
