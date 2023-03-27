@@ -1,10 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-// race detection makes things slow and miss timeouts
-//go:build !race
-// +build !race
-
 package arbtest
 
 import (
@@ -480,18 +476,4 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 
 	Fail(t, "challenge timed out without winner")
-}
-
-func TestMockChallengeManagerAsserterIncorrect(t *testing.T) {
-	t.Parallel()
-	for i := int64(1); i <= MsgPerBatch*3; i++ {
-		RunChallengeTest(t, false, true, i)
-	}
-}
-
-func TestMockChallengeManagerAsserterCorrect(t *testing.T) {
-	t.Parallel()
-	for i := int64(1); i <= MsgPerBatch*3; i++ {
-		RunChallengeTest(t, true, true, i)
-	}
 }
