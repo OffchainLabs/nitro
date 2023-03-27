@@ -19,8 +19,8 @@ type SpecChallengeManager interface {
 	// Calculates the unique identifier for a challenge given an claim ID and a challenge type.
 	// An claim could be an assertion or a vertex that originated the challenge.
 	CalculateChallengeHash(ctx context.Context, claimId common.Hash, challengeType ChallengeType) (ChallengeHash, error)
-	// Calculates an edge id given its challenge id, start history, and end history.
-	CalculateEdgeId(
+	// Calculates an edge hash given its challenge id, start history, and end history.
+	CalculateEdgeHash(
 		ctx context.Context,
 		challengeId ChallengeHash,
 		startHistory util.HistoryCommitment,
