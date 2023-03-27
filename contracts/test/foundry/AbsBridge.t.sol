@@ -9,10 +9,7 @@ import "../../src/bridge/Bridge.sol";
 import "../../src/bridge/ERC20Inbox.sol";
 import "../../src/bridge/IEthBridge.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
-
-import "forge-std/console.sol";
+import "../../src/test-helpers/EthVault.sol";
 
 abstract contract AbsBridgeTest is Test {
     IBridge public bridge;
@@ -521,19 +518,4 @@ abstract contract AbsBridgeTest is Test {
         uint256 value,
         bytes data
     );
-}
-
-/**
- * Simple contract for testing bridge calls which include calldata
- */
-contract EthVault {
-    uint256 public version = 0;
-
-    function setVersion(uint256 _version) external payable {
-        version = _version;
-    }
-
-    function justRevert() external payable {
-        revert("bye");
-    }
 }

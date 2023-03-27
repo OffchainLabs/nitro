@@ -7,8 +7,6 @@ import "./AbsBridge.t.sol";
 import "../../src/bridge/IEthBridge.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
 
-import "forge-std/console.sol";
-
 contract BridgeTest is AbsBridgeTest {
     IEthBridge public ethBridge;
 
