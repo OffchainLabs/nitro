@@ -76,18 +76,7 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*
 func (m *rustMachine) call(db vm.StateDB, calldata []byte, params *goParams, gas *u64, root *hash) ([]byte, error) {
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), gas, root)
 	result := output.intoSlice()
-	data, err := status.output(result)
-	/*if db.Deterministic() {
-		//println("JIT: ", string(result))
-		println("JIT: ", status, "(", common.Bytes2Hex(data), "),", *gas)
-		if err != nil {
-			println("JIT: ", err.Error())
-		}
-	}*/
-	if db.Deterministic() {
-		println("Wasm Go:", status, *gas)
-	}
-	return data, err
+	return status.output(result)
 }
 
 func (vec *rustVec) intoSlice() []byte {

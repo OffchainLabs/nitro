@@ -3,7 +3,7 @@
 
 use crate::{
     machine::{Function, InboxIdentifier},
-    programs::{StylusGlobals, run::UserOutcomeKind},
+    programs::{run::UserOutcomeKind, StylusGlobals},
     value::{ArbValueType, FunctionType, IntegerValType},
     wavm::{IBinOpType, Instruction, Opcode},
 };

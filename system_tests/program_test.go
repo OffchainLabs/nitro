@@ -88,14 +88,14 @@ func errorTest(t *testing.T, jit bool) {
 	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("fallible"), jit)
 	defer cleanup()
 
-	/*// ensure tx passes
+	// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)*/
+	Require(t, err)
 
 	// ensure tx fails
-	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x00})
+	tx = l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x00})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
 	Require(t, err)
@@ -103,7 +103,7 @@ func errorTest(t *testing.T, jit bool) {
 		Fail(t, "call should have failed")
 	}
 
-	validateBlocks(t, 5, ctx, node, l2client)
+	validateBlocks(t, 7, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -316,9 +316,9 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	wasmHostioCost := testhelpers.RandomUint64(0, 5000) // amount of wasm gas
 
 	// Drop the gas price to 0 half the time
-	/*if testhelpers.RandomBool() {
+	if testhelpers.RandomBool() {
 		wasmGasPrice = 0
-	}*/
+	}
 	colors.PrintMint(fmt.Sprintf("WASM gas price=%d, HostIO cost=%d", wasmGasPrice, wasmHostioCost))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))

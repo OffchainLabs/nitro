@@ -141,21 +141,8 @@ pub unsafe extern "C" fn stylus_call(
     let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
     let output = &mut *output;
 
-    macro_rules! error {
-        ($msg:expr, $report:expr) => {{
-            let report: ErrReport = $report.into();
-            let report = report.wrap_err(eyre!($msg));
-            output.write_err(report);
-            if pricing.wasm_gas_price != 0 {
-                *evm_gas = pricing.wasm_to_evm(wasm_gas);
-            }
-            return UserOutcomeKind::Failure;
-        }};
-    }
-
     // Safety: module came from compile_user_wasm
     let instance = unsafe { NativeInstance::deserialize(module, config.clone()) };
-
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
@@ -163,9 +150,16 @@ pub unsafe extern "C" fn stylus_call(
     instance.set_go_api(go_api);
     instance.set_gas(wasm_gas);
 
-    let (status, outs) = match instance.run_main(&calldata, &config) {
-        Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
-        Ok(outcome) => outcome.into_data(),
+    let status = match instance.run_main(&calldata, &config) {
+        Err(err) | Ok(UserOutcome::Failure(err)) => {
+            output.write_err(err.wrap_err(eyre!("failed to execute program")));
+            UserOutcomeKind::Failure
+        }
+        Ok(outcome) => {
+            let (status, outs) = outcome.into_data();
+            output.write(outs);
+            status
+        }
     };
     if pricing.wasm_gas_price != 0 {
         let wasm_gas = match status {
@@ -174,7 +168,6 @@ pub unsafe extern "C" fn stylus_call(
         };
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
     }
-    output.write(outs);
     status
 }
 

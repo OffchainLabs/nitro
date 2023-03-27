@@ -22,14 +22,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -137,7 +135,6 @@ func callUserWasm(
 		cost := arbmath.SaturatingUSub(startGas, returnGas)
 		return ret, cost, err
 	}
-	before := *gas
 
 	output := &C.RustVec{}
 	status := userStatus(C.stylus_call(
@@ -149,15 +146,6 @@ func callUserWasm(
 		(*u64)(gas),
 	))
 	data, err := status.output(output.intoBytes())
-	/*if msg.RunMode() == types.MessageCommitMode && !db.Deterministic() {
-		colors.PrintRed("Native: ", status, " (", common.Bytes2Hex(data), "), ", *gas, interpreter.Evm().Context.BlockNumber)
-		if err != nil {
-			colors.PrintRed("Native: ", err.Error())
-		}
-	}*/
-	if msg.RunMode() == types.MessageCommitMode && db.Deterministic() {
-		colors.PrintRed("Stylus: ", status, *gas, before, interpreter.Evm().Context.BlockNumber)
-	}
 
 	if status == userFailure {
 		log.Debug("program failure", "err", string(data), "program", program)
