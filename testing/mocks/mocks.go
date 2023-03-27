@@ -385,6 +385,16 @@ func (m *MockProtocol) CreateSuccessionChallenge(ctx context.Context, seqNum pro
 	return args.Get(0).(protocol.Challenge), args.Error(1)
 }
 
+func (m *MockProtocol) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.SpecChallengeManager), args.Error(1)
+}
+
+func (m *MockProtocol) CreateSpecChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.SpecChallenge, error) {
+	args := m.Called(ctx, seqNum)
+	return args.Get(0).(protocol.SpecChallenge), args.Error(1)
+}
+
 func (m *MockProtocol) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
 	args := m.Called(ctx, blockHash, sendRoot)
 	return args.Error(0)
