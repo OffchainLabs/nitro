@@ -42,7 +42,6 @@ type Validator struct {
 	assertions                             map[protocol.AssertionSequenceNumber]protocol.Assertion
 	challengesLock                         sync.RWMutex
 	challenges                             map[protocol.ChallengeHash]protocol.Challenge
-	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	timeRef                                util.TimeReference
 	challengeVertexWakeInterval            time.Duration
