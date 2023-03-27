@@ -70,10 +70,6 @@ func (v *ChallengeVertex) GetSubChallenge(ctx context.Context) (util.Option[prot
 	return util.None[protocol.Challenge](), errors.New("unimplemented")
 }
 
-func (v *ChallengeVertex) PresumptiveSuccessor(ctx context.Context) (util.Option[protocol.ChallengeVertex], error) {
-	return util.None[protocol.ChallengeVertex](), errors.New("unimplemented")
-}
-
 func (v *ChallengeVertex) PsTimer(ctx context.Context) (uint64, error) {
 	return 0, errors.New("unimplemented")
 }
