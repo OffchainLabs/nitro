@@ -144,6 +144,10 @@ jobs:
         if: matrix.test-mode == 'race'
         run: gotestsum --format short-verbose -- ./... -race -parallel=8
 
+      - name: run redis tests
+        if: matrix.test-mode == 'defaults'
+        run: gotestsum --format short-verbose -- -p 1 -run TestRedis -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
         run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge
