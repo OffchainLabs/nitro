@@ -22,7 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth uint64, txCount uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func()) {
+func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func()) {
 	t.Helper()
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
@@ -110,7 +110,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, 0, 32)
+	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -133,7 +133,7 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	depthGasLimit := 256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei)
+	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
 	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32)
 	defer cancelNode()
 
@@ -157,7 +157,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	depthGasLimit := uint64(200)
+	depthGasLimit := int64(200)
 	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32)
 	defer cancelNode()
 
@@ -181,7 +181,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, 0, headerCacheLimit+5)
+	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, headerCacheLimit+5)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -214,7 +214,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, 0, 32)
+	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -238,7 +238,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, 0, blockCacheLimit+4)
+	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, blockCacheLimit+4)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
