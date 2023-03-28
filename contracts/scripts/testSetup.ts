@@ -82,6 +82,7 @@ export const getCustomNetworks = async (
     partnerChainID: l1NetworkInfo.chainId,
     retryableLifetimeSeconds: 7 * 24 * 60 * 60,
     nitroGenesisBlock: 0,
+    nitroGenesisL1Block: 0,
     depositTimeout: 900000,
   }
   return {

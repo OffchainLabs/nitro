@@ -9,7 +9,7 @@ import { getBaseFee } from '@arbitrum/sdk/dist/lib/utils/lib'
 import { JsonRpcProvider } from '@ethersproject/providers'
 import { expect } from 'chai'
 import dotenv from 'dotenv'
-import { ethers, Wallet } from 'ethers'
+import { ethers, Wallet } from '@arbitrum/sdk/node_modules/ethers'
 import {
   ArbSys__factory,
   ERC20,
@@ -371,6 +371,7 @@ describe('ArbERC20Rollup', () => {
 
     // wait until dispute period passes and withdrawal is ready for execution
     await sleep(5 * 1000)
+
     const messages = await l2Receipt.getL2ToL1Messages(userL1Wallet)
     const l2ToL1Msg = messages[0]
     const timeToWaitMs = 60 * 1000
