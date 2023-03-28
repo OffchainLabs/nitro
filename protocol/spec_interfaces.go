@@ -62,9 +62,8 @@ type SpecChallenge interface {
 	TopLevelClaimCommitment(ctx context.Context) (Height, common.Hash, error)
 	// The winner level-zero edge for a challenge.
 	WinningEdge(ctx context.Context) (util.Option[SpecEdge], error)
-	// Checks if two edges are at a one-step-fork.
-	AreAtOneStepFork(a, b SpecEdge) (bool, error)
-	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
+	// Checks the start commitment of an edge is the source of a one-step fork.
+	EdgeIsOneStepForkSource(edge SpecEdge) (bool, error)
 	// Adds a level-zero edge to a block challenge given an assertion and a history commitment.
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
@@ -99,19 +98,22 @@ type EdgeChildren struct {
 type SpecEdge interface {
 	Id() [32]byte
 	MiniStaker() (common.Address, error)
-	StartCommitment() (Height, common.Hash, error)
-	TargetCommitment() (Height, common.Hash, error)
+	StartCommitment() (Height, common.Hash)
+	TargetCommitment() (Height, common.Hash)
 	PresumptiveTimer(ctx context.Context) (uint64, error)
 	IsPresumptive(ctx context.Context) (bool, error)
 	Status(ctx context.Context) (EdgeStatus, error)
+	HasConfirmedRival(ctx context.Context) (bool, error)
 	// Gets the two direct children of an edge, if any.
 	DirectChildren(ctx context.Context) (util.Option[EdgeChildren], error)
+	GetSubChallenge(ctx context.Context) (util.Option[SpecChallenge], error)
 	// Challenge moves
 	Bisect(
 		ctx context.Context,
 		history util.HistoryCommitment,
 		proof []byte,
 	) (SpecEdge, SpecEdge, error)
+	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
 	// Confirms an edge for having a presumptive timer >= a challenge period.
 	ConfirmForTimer(ctx context.Context) error
 	// Confirms an edge for having a subchallenge winner of a one-step-proof.
