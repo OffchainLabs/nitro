@@ -89,10 +89,8 @@ const (
 // The two direct children of an edge.
 // nolint:unused
 type EdgeChildren struct {
-	// nolint:unused
-	a SpecEdge
-	// nolint:unused
-	b SpecEdge
+	Lower SpecEdge
+	Upper SpecEdge
 }
 
 type SpecEdge interface {

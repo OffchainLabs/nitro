@@ -9,6 +9,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type SpecEdge struct {
@@ -58,24 +59,71 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 }
 
 func (e *SpecEdge) DirectChildren(ctx context.Context) (util.Option[protocol.EdgeChildren], error) {
-	return util.None[protocol.EdgeChildren](), nil
-
+	edge, err := e.manager.caller.GetEdge(e.manager.callOpts, e.id)
+	if err != nil {
+		return util.None[protocol.EdgeChildren](), err
+	}
+	lower, err := e.manager.caller.GetEdge(e.manager.callOpts, edge.LowerChildId)
+	if err != nil {
+		return util.None[protocol.EdgeChildren](), err
+	}
+	upper, err := e.manager.caller.GetEdge(e.manager.callOpts, edge.UpperChildId)
+	if err != nil {
+		return util.None[protocol.EdgeChildren](), err
+	}
+	return util.Some(protocol.EdgeChildren{
+		Lower: protocol.SpecEdge(&SpecEdge{
+			id:               lower.ClaimEdgeId,
+			manager:          e.manager,
+			startHeight:      lower.StartHeight.Uint64(),
+			targetHeight:     lower.EndHeight.Uint64(),
+			startCommitment:  lower.StartHistoryRoot,
+			targetCommitment: lower.EndHistoryRoot,
+			miniStaker:       lower.Staker,
+		}),
+		Upper: protocol.SpecEdge(&SpecEdge{
+			id:               upper.ClaimEdgeId,
+			manager:          e.manager,
+			startHeight:      upper.StartHeight.Uint64(),
+			targetHeight:     upper.EndHeight.Uint64(),
+			startCommitment:  upper.StartHistoryRoot,
+			targetCommitment: upper.EndHistoryRoot,
+			miniStaker:       upper.Staker,
+		}),
+	}), nil
 }
+
 func (e *SpecEdge) Bisect(
 	ctx context.Context,
 	history util.HistoryCommitment,
 	proof []byte,
 ) (protocol.SpecEdge, protocol.SpecEdge, error) {
-
 	return nil, nil, nil
 }
+
 func (e *SpecEdge) CreateSubChallenge(ctx context.Context) (protocol.SpecChallenge, error) {
 	return nil, nil
 }
+
 func (e *SpecEdge) ConfirmForTimer(ctx context.Context) error {
+	receipt, err := transact(ctx, nil, nil, func() (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, nil /* ancestors */)
+	})
+	if err != nil {
+		return err
+	}
+	_ = receipt
 	return nil
 }
+
 func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context) error {
+	receipt, err := transact(ctx, nil, nil, func() (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByClaim(e.manager.txOpts, e.id, [32]byte{} /* claiming id */)
+	})
+	if err != nil {
+		return err
+	}
+	_ = receipt
 	return nil
 }
 
@@ -86,33 +134,42 @@ type SpecChallenge struct {
 func (c *SpecChallenge) Id() protocol.ChallengeHash {
 	return protocol.ChallengeHash{}
 }
+
 func (c *SpecChallenge) GetType() protocol.ChallengeType {
 	return 0
 }
+
 func (c *SpecChallenge) StartTime() (uint64, error) {
 	return 0, nil
 }
+
 func (c *SpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
 }
+
 func (c *SpecChallenge) Status(ctx context.Context) (protocol.ChallengeStatus, error) {
 	return 0, nil
 }
+
 func (c *SpecChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
 	return nil, nil
 }
+
 func (c *SpecChallenge) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
 }
+
 func (c *SpecChallenge) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
 	return util.None[protocol.SpecEdge](), nil
 }
+
 func (c *SpecChallenge) EdgeIsOneStepForkSource(
 	ctx context.Context,
 	edge protocol.SpecEdge,
 ) (bool, error) {
 	return false, nil
 }
+
 func (c *SpecChallenge) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
@@ -120,6 +177,7 @@ func (c *SpecChallenge) AddBlockChallengeLevelZeroEdge(
 ) (protocol.SpecEdge, error) {
 	return nil, nil
 }
+
 func (c *SpecChallenge) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
@@ -132,6 +190,7 @@ func (c *SpecChallenge) AddSubChallengeLevelZeroEdge(
 type SpecChallengeManager struct {
 	addr     common.Address
 	callOpts *bind.CallOpts
+	txOpts   *bind.TransactOpts
 	caller   *challengeV2gen.EdgeChallengeManagerCaller
 	writer   *challengeV2gen.EdgeChallengeManagerTransactor
 	filterer *challengeV2gen.EdgeChallengeManagerFilterer
