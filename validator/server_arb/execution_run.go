@@ -79,27 +79,18 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[va
 	return &promise
 }
 
-type asyncProof struct {
-	containers.Promise[[]byte]
-	cancel func()
-}
-
-func (p *asyncProof) Close() {}
-
 func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
-	proof := &asyncProof{
-		Promise: containers.NewPromise[[]byte](),
-	}
+	promise := containers.NewPromise[[]byte]()
 	cancel := e.LaunchThreadWithCancel(func(ctx context.Context) {
 		machine, err := e.cache.GetMachineAt(ctx, position)
 		if err != nil {
-			proof.ProduceError(err)
+			promise.ProduceError(err)
 			return
 		}
-		proof.Produce(machine.ProveNextStep())
+		promise.Produce(machine.ProveNextStep())
 	})
-	proof.cancel = cancel
-	return proof
+	promise.SetCancel(cancel)
+	return &promise
 }
 
 func (e *executionRun) GetLastStep() containers.PromiseInterface[validator.MachineStepResult] {
