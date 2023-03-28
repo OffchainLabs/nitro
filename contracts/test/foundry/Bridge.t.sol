@@ -58,6 +58,8 @@ contract BridgeTest is AbsBridgeTest {
 
         // expect event
         vm.expectEmit(true, true, true, true);
+        vm.fee(70);
+        uint256 baseFeeToReport = block.basefee;
         emit MessageDelivered(
             0,
             0,
@@ -65,7 +67,7 @@ contract BridgeTest is AbsBridgeTest {
             kind,
             AddressAliasHelper.applyL1ToL2Alias(user),
             messageDataHash,
-            block.basefee,
+            baseFeeToReport,
             uint64(block.timestamp)
         );
 

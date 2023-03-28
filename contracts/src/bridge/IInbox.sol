@@ -15,6 +15,37 @@ interface IInbox is IDelayedMessageProvider {
     function sequencerInbox() external view returns (ISequencerInbox);
 
     /**
+     * @notice Send a generic L2 message to the chain
+     * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input
+     * @param messageData Data of the message being sent
+     */
+    function sendL2MessageFromOrigin(bytes calldata messageData) external returns (uint256);
+
+    /**
+     * @notice Send a generic L2 message to the chain
+     * @dev This method can be used to send any type of message that doesn't require L1 validation
+     * @param messageData Data of the message being sent
+     */
+    function sendL2Message(bytes calldata messageData) external returns (uint256);
+
+    function sendUnsignedTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external returns (uint256);
+
+    function sendContractTransaction(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external returns (uint256);
+
+    /**
      * @notice Get the L1 fee for submitting a retryable
      * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
      * @dev This formula may change in the future, to future proof your code query this method instead of inlining!!

@@ -47,4 +47,8 @@ contract Bridge is AbsBridge, IEthBridge {
         // solhint-disable-next-line avoid-low-level-calls
         (success, returnData) = to.call{value: value}(data);
     }
+
+    function _baseFeeToReport() internal view override returns (uint256) {
+        return block.basefee;
+    }
 }

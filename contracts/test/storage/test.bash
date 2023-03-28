@@ -1,5 +1,5 @@
 #!/bin/bash
-for CONTRACTNAME in Bridge Inbox Outbox RollupCore RollupUserLogic RollupAdminLogic SequencerInbox ChallengeManager
+for CONTRACTNAME in Bridge ERC20Bridge Inbox ERC20Inbox Outbox ERC20Outbox RollupCore RollupUserLogic RollupAdminLogic SequencerInbox ChallengeManager
 do
     echo "Checking storage change of $CONTRACTNAME"
     [ -f "./test/storage/$CONTRACTNAME.dot" ] && mv "./test/storage/$CONTRACTNAME.dot" "./test/storage/$CONTRACTNAME-old.dot"

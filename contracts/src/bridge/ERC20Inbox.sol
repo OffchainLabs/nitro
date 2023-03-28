@@ -95,6 +95,7 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         override(AbsInbox, IInbox)
         returns (uint256)
     {
+        // retryable ticket's submission fee is not charged when ERC20 token is used to pay for fees
         return 0;
     }
 

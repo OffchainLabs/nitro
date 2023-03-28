@@ -48,7 +48,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
     function test_initialize_revert_ZeroAddressToken() public {
         IERC20Bridge noTokenBridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
-        vm.expectRevert(InvalidToken.selector);
+        vm.expectRevert(abi.encodeWithSelector(InvalidTokenSet.selector, address(0)));
         noTokenBridge.initialize(IOwnable(rollup), address(0));
     }
 
@@ -78,6 +78,8 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
         // expect event
         vm.expectEmit(true, true, true, true);
+        vm.fee(70);
+        uint256 baseFeeToReport = 0;
         emit MessageDelivered(
             0,
             0,
@@ -85,7 +87,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
             kind,
             AddressAliasHelper.applyL1ToL2Alias(user),
             messageDataHash,
-            block.basefee,
+            baseFeeToReport,
             uint64(block.timestamp)
         );
 
@@ -309,51 +311,15 @@ contract ERC20BridgeTest is AbsBridgeTest {
         // deploy some contract that will be call receiver
         EthVault vault = new EthVault();
 
-        // native token balances
-        uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
-        uint256 vaultNativeTokenBalanceBefore = nativeToken.balanceOf(address(vault));
-
         // call params
         uint256 withdrawalAmount = 100_000_000;
         uint256 newVaultVersion = 9;
         bytes memory data = abi.encodeWithSelector(EthVault.setVersion.selector, newVaultVersion);
 
-        // expect event
-        vm.expectEmit(true, true, true, true);
-        emit BridgeCallTriggered(outbox, address(vault), withdrawalAmount, data);
-
-        //// execute call - do call which reverts on native token transfer due to invalud amount
+        //// execute call - do call which reverts on native token transfer due to invalid amount
         vm.prank(outbox);
-        (bool success, bytes memory returnData) = bridge.executeCall({
-            to: address(vault),
-            value: withdrawalAmount,
-            data: data
-        });
-
-        //// checks
-        assertEq(success, false, "Execute shall be unsuccessful");
-        assertEq(vault.version(), 0, "Invalid vaultVersion - shuold be unchanged");
-
-        // get and assert revert reason
-        assembly {
-            returnData := add(returnData, 0x04)
-        }
-        string memory revertReason = abi.decode(returnData, (string));
-        assertEq(revertReason, "ERC20: transfer amount exceeds balance", "Invalid revert reason");
-
-        uint256 bridgeNativeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
-        assertEq(
-            bridgeNativeTokenBalanceBefore,
-            bridgeNativeTokenBalanceAfter,
-            "Invalid bridge native token balance after unsuccessful native token transfer"
-        );
-
-        uint256 vaultNativeTokenBalanceAfter = nativeToken.balanceOf(address(vault));
-        assertEq(
-            vaultNativeTokenBalanceAfter,
-            vaultNativeTokenBalanceBefore,
-            "Invalid vault native token balance after unsuccessful native token transfer"
-        );
+        vm.expectRevert("ERC20: transfer amount exceeds balance");
+        bridge.executeCall({to: address(vault), value: withdrawalAmount, data: data});
     }
 
     function test_executeCall_revert_NotOutbox() public {
@@ -369,6 +335,18 @@ contract ERC20BridgeTest is AbsBridgeTest {
         // executeCall shall revert when 'to' is not contract
         address to = address(234);
         vm.expectRevert(abi.encodeWithSelector(NotContract.selector, address(to)));
+        vm.prank(outbox);
+        bridge.executeCall({to: to, value: 10, data: "some data"});
+    }
+
+    function test_executeCall_revert_CallTargetNotAllowed() public {
+        // allow outbox
+        vm.prank(rollup);
+        bridge.setOutbox(outbox, true);
+
+        // executeCall shall revert when 'to' is not contract
+        address to = address(nativeToken);
+        vm.expectRevert(abi.encodeWithSelector(CallTargetNotAllowed.selector, to));
         vm.prank(outbox);
         bridge.executeCall({to: to, value: 10, data: "some data"});
     }
