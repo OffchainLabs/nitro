@@ -41,6 +41,7 @@ type AssertionChain interface {
 	NumAssertions(ctx context.Context) (uint64, error)
 	AssertionBySequenceNum(ctx context.Context, seqNum AssertionSequenceNumber) (Assertion, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
+	// TODO: Remove.
 	CurrentChallengeManager(ctx context.Context) (ChallengeManager, error)
 	GetAssertionId(ctx context.Context, seqNum AssertionSequenceNumber) (AssertionHash, error)
 	GetAssertionNum(ctx context.Context, assertionHash AssertionHash) (AssertionSequenceNumber, error)
@@ -55,9 +56,14 @@ type AssertionChain interface {
 		postState *ExecutionState,
 		prevInboxMaxCount *big.Int,
 	) (Assertion, error)
+	// TODO: Remove.
 	CreateSuccessionChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (Challenge, error)
 	Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error
 	Reject(ctx context.Context, staker common.Address) error
+
+	// Spec-based implementation methods.
+	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
+	CreateSpecChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (SpecChallenge, error)
 }
 
 // ChallengeManager allows for retrieving details of challenges such
@@ -163,7 +169,6 @@ type ChallengeVertex interface {
 
 	// Presumptive status / timer readers.
 	IsPresumptiveSuccessor(ctx context.Context) (bool, error)
-	PresumptiveSuccessor(ctx context.Context) (util.Option[ChallengeVertex], error)
 	PsTimer(ctx context.Context) (uint64, error)
 	ChildrenAreAtOneStepFork(ctx context.Context) (bool, error)
 
