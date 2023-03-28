@@ -61,6 +61,21 @@ type Challenge struct {
 	Challenger    common.Address
 }
 
+// ChallengeEdge is an auto generated low-level Go binding around an user-defined struct.
+type ChallengeEdge struct {
+	ChallengeId      [32]byte
+	StartHistoryRoot [32]byte
+	StartHeight      *big.Int
+	EndHistoryRoot   [32]byte
+	EndHeight        *big.Int
+	LowerChildId     [32]byte
+	UpperChildId     [32]byte
+	CreatedWhen      *big.Int
+	Status           uint8
+	ClaimEdgeId      [32]byte
+	Staker           common.Address
+}
+
 // ChallengeVertex is an auto generated low-level Go binding around an user-defined struct.
 type ChallengeVertex struct {
 	ChallengeId             [32]byte
@@ -75,6 +90,22 @@ type ChallengeVertex struct {
 	PsLastUpdatedTimestamp  *big.Int
 	FlushedPsTimeSec        *big.Int
 	LowestHeightSuccessorId [32]byte
+}
+
+// CreateEdgeArgs is an auto generated low-level Go binding around an user-defined struct.
+type CreateEdgeArgs struct {
+	EdgeChallengeType uint8
+	StartHistoryRoot  [32]byte
+	StartHeight       *big.Int
+	EndHistoryRoot    [32]byte
+	EndHeight         *big.Int
+	ClaimId           [32]byte
+}
+
+// EChallenge is an auto generated low-level Go binding around an user-defined struct.
+type EChallenge struct {
+	BaseId [32]byte
+	CType  uint8
 }
 
 // ExecutionContext is an auto generated low-level Go binding around an user-defined struct.
@@ -840,6 +871,179 @@ func (_AssertionChain *AssertionChainSession) UpdateChallengeManager(_challengeM
 // Solidity: function updateChallengeManager(address _challengeManager) returns()
 func (_AssertionChain *AssertionChainTransactorSession) UpdateChallengeManager(_challengeManager common.Address) (*types.Transaction, error) {
 	return _AssertionChain.Contract.UpdateChallengeManager(&_AssertionChain.TransactOpts, _challengeManager)
+}
+
+// ChallengeEdgeLibMetaData contains all meta data concerning the ChallengeEdgeLib contract.
+var ChallengeEdgeLibMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220cba95833b0ab692360af06f9f6fbaedbbbd8c86d74b3a4a96bc9d4488545e1eb64736f6c63430008110033",
+}
+
+// ChallengeEdgeLibABI is the input ABI used to generate the binding from.
+// Deprecated: Use ChallengeEdgeLibMetaData.ABI instead.
+var ChallengeEdgeLibABI = ChallengeEdgeLibMetaData.ABI
+
+// ChallengeEdgeLibBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use ChallengeEdgeLibMetaData.Bin instead.
+var ChallengeEdgeLibBin = ChallengeEdgeLibMetaData.Bin
+
+// DeployChallengeEdgeLib deploys a new Ethereum contract, binding an instance of ChallengeEdgeLib to it.
+func DeployChallengeEdgeLib(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *ChallengeEdgeLib, error) {
+	parsed, err := ChallengeEdgeLibMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(ChallengeEdgeLibBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &ChallengeEdgeLib{ChallengeEdgeLibCaller: ChallengeEdgeLibCaller{contract: contract}, ChallengeEdgeLibTransactor: ChallengeEdgeLibTransactor{contract: contract}, ChallengeEdgeLibFilterer: ChallengeEdgeLibFilterer{contract: contract}}, nil
+}
+
+// ChallengeEdgeLib is an auto generated Go binding around an Ethereum contract.
+type ChallengeEdgeLib struct {
+	ChallengeEdgeLibCaller     // Read-only binding to the contract
+	ChallengeEdgeLibTransactor // Write-only binding to the contract
+	ChallengeEdgeLibFilterer   // Log filterer for contract events
+}
+
+// ChallengeEdgeLibCaller is an auto generated read-only Go binding around an Ethereum contract.
+type ChallengeEdgeLibCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ChallengeEdgeLibTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type ChallengeEdgeLibTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ChallengeEdgeLibFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type ChallengeEdgeLibFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ChallengeEdgeLibSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type ChallengeEdgeLibSession struct {
+	Contract     *ChallengeEdgeLib // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// ChallengeEdgeLibCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type ChallengeEdgeLibCallerSession struct {
+	Contract *ChallengeEdgeLibCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts           // Call options to use throughout this session
+}
+
+// ChallengeEdgeLibTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type ChallengeEdgeLibTransactorSession struct {
+	Contract     *ChallengeEdgeLibTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts           // Transaction auth options to use throughout this session
+}
+
+// ChallengeEdgeLibRaw is an auto generated low-level Go binding around an Ethereum contract.
+type ChallengeEdgeLibRaw struct {
+	Contract *ChallengeEdgeLib // Generic contract binding to access the raw methods on
+}
+
+// ChallengeEdgeLibCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type ChallengeEdgeLibCallerRaw struct {
+	Contract *ChallengeEdgeLibCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// ChallengeEdgeLibTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type ChallengeEdgeLibTransactorRaw struct {
+	Contract *ChallengeEdgeLibTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewChallengeEdgeLib creates a new instance of ChallengeEdgeLib, bound to a specific deployed contract.
+func NewChallengeEdgeLib(address common.Address, backend bind.ContractBackend) (*ChallengeEdgeLib, error) {
+	contract, err := bindChallengeEdgeLib(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeEdgeLib{ChallengeEdgeLibCaller: ChallengeEdgeLibCaller{contract: contract}, ChallengeEdgeLibTransactor: ChallengeEdgeLibTransactor{contract: contract}, ChallengeEdgeLibFilterer: ChallengeEdgeLibFilterer{contract: contract}}, nil
+}
+
+// NewChallengeEdgeLibCaller creates a new read-only instance of ChallengeEdgeLib, bound to a specific deployed contract.
+func NewChallengeEdgeLibCaller(address common.Address, caller bind.ContractCaller) (*ChallengeEdgeLibCaller, error) {
+	contract, err := bindChallengeEdgeLib(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeEdgeLibCaller{contract: contract}, nil
+}
+
+// NewChallengeEdgeLibTransactor creates a new write-only instance of ChallengeEdgeLib, bound to a specific deployed contract.
+func NewChallengeEdgeLibTransactor(address common.Address, transactor bind.ContractTransactor) (*ChallengeEdgeLibTransactor, error) {
+	contract, err := bindChallengeEdgeLib(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeEdgeLibTransactor{contract: contract}, nil
+}
+
+// NewChallengeEdgeLibFilterer creates a new log filterer instance of ChallengeEdgeLib, bound to a specific deployed contract.
+func NewChallengeEdgeLibFilterer(address common.Address, filterer bind.ContractFilterer) (*ChallengeEdgeLibFilterer, error) {
+	contract, err := bindChallengeEdgeLib(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeEdgeLibFilterer{contract: contract}, nil
+}
+
+// bindChallengeEdgeLib binds a generic wrapper to an already deployed contract.
+func bindChallengeEdgeLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := abi.JSON(strings.NewReader(ChallengeEdgeLibABI))
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ChallengeEdgeLib *ChallengeEdgeLibRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ChallengeEdgeLib.Contract.ChallengeEdgeLibCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ChallengeEdgeLib *ChallengeEdgeLibRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ChallengeEdgeLib.Contract.ChallengeEdgeLibTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ChallengeEdgeLib *ChallengeEdgeLibRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ChallengeEdgeLib.Contract.ChallengeEdgeLibTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ChallengeEdgeLib *ChallengeEdgeLibCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ChallengeEdgeLib.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ChallengeEdgeLib *ChallengeEdgeLibTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ChallengeEdgeLib.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ChallengeEdgeLib *ChallengeEdgeLibTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ChallengeEdgeLib.Contract.contract.Transact(opts, method, params...)
 }
 
 // ChallengeManagerImplMetaData contains all meta data concerning the ChallengeManagerImpl contract.
@@ -2499,6 +2703,909 @@ func (_ChallengeManagerLib *ChallengeManagerLibTransactorRaw) Transact(opts *bin
 	return _ChallengeManagerLib.Contract.contract.Transact(opts, method, params...)
 }
 
+// EChallengeLibMetaData contains all meta data concerning the EChallengeLib contract.
+var EChallengeLibMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212208888ba53baf580aec46e36497d3e208a15d5d025158cfb92dda745c6b02b797764736f6c63430008110033",
+}
+
+// EChallengeLibABI is the input ABI used to generate the binding from.
+// Deprecated: Use EChallengeLibMetaData.ABI instead.
+var EChallengeLibABI = EChallengeLibMetaData.ABI
+
+// EChallengeLibBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use EChallengeLibMetaData.Bin instead.
+var EChallengeLibBin = EChallengeLibMetaData.Bin
+
+// DeployEChallengeLib deploys a new Ethereum contract, binding an instance of EChallengeLib to it.
+func DeployEChallengeLib(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *EChallengeLib, error) {
+	parsed, err := EChallengeLibMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(EChallengeLibBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &EChallengeLib{EChallengeLibCaller: EChallengeLibCaller{contract: contract}, EChallengeLibTransactor: EChallengeLibTransactor{contract: contract}, EChallengeLibFilterer: EChallengeLibFilterer{contract: contract}}, nil
+}
+
+// EChallengeLib is an auto generated Go binding around an Ethereum contract.
+type EChallengeLib struct {
+	EChallengeLibCaller     // Read-only binding to the contract
+	EChallengeLibTransactor // Write-only binding to the contract
+	EChallengeLibFilterer   // Log filterer for contract events
+}
+
+// EChallengeLibCaller is an auto generated read-only Go binding around an Ethereum contract.
+type EChallengeLibCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EChallengeLibTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type EChallengeLibTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EChallengeLibFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type EChallengeLibFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EChallengeLibSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type EChallengeLibSession struct {
+	Contract     *EChallengeLib    // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// EChallengeLibCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type EChallengeLibCallerSession struct {
+	Contract *EChallengeLibCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts        // Call options to use throughout this session
+}
+
+// EChallengeLibTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type EChallengeLibTransactorSession struct {
+	Contract     *EChallengeLibTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts        // Transaction auth options to use throughout this session
+}
+
+// EChallengeLibRaw is an auto generated low-level Go binding around an Ethereum contract.
+type EChallengeLibRaw struct {
+	Contract *EChallengeLib // Generic contract binding to access the raw methods on
+}
+
+// EChallengeLibCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type EChallengeLibCallerRaw struct {
+	Contract *EChallengeLibCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// EChallengeLibTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type EChallengeLibTransactorRaw struct {
+	Contract *EChallengeLibTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewEChallengeLib creates a new instance of EChallengeLib, bound to a specific deployed contract.
+func NewEChallengeLib(address common.Address, backend bind.ContractBackend) (*EChallengeLib, error) {
+	contract, err := bindEChallengeLib(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &EChallengeLib{EChallengeLibCaller: EChallengeLibCaller{contract: contract}, EChallengeLibTransactor: EChallengeLibTransactor{contract: contract}, EChallengeLibFilterer: EChallengeLibFilterer{contract: contract}}, nil
+}
+
+// NewEChallengeLibCaller creates a new read-only instance of EChallengeLib, bound to a specific deployed contract.
+func NewEChallengeLibCaller(address common.Address, caller bind.ContractCaller) (*EChallengeLibCaller, error) {
+	contract, err := bindEChallengeLib(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EChallengeLibCaller{contract: contract}, nil
+}
+
+// NewEChallengeLibTransactor creates a new write-only instance of EChallengeLib, bound to a specific deployed contract.
+func NewEChallengeLibTransactor(address common.Address, transactor bind.ContractTransactor) (*EChallengeLibTransactor, error) {
+	contract, err := bindEChallengeLib(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EChallengeLibTransactor{contract: contract}, nil
+}
+
+// NewEChallengeLibFilterer creates a new log filterer instance of EChallengeLib, bound to a specific deployed contract.
+func NewEChallengeLibFilterer(address common.Address, filterer bind.ContractFilterer) (*EChallengeLibFilterer, error) {
+	contract, err := bindEChallengeLib(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &EChallengeLibFilterer{contract: contract}, nil
+}
+
+// bindEChallengeLib binds a generic wrapper to an already deployed contract.
+func bindEChallengeLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := abi.JSON(strings.NewReader(EChallengeLibABI))
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_EChallengeLib *EChallengeLibRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _EChallengeLib.Contract.EChallengeLibCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_EChallengeLib *EChallengeLibRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _EChallengeLib.Contract.EChallengeLibTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_EChallengeLib *EChallengeLibRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _EChallengeLib.Contract.EChallengeLibTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_EChallengeLib *EChallengeLibCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _EChallengeLib.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_EChallengeLib *EChallengeLibTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _EChallengeLib.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_EChallengeLib *EChallengeLibTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _EChallengeLib.Contract.contract.Transact(opts, method, params...)
+}
+
+// EdgeChallengeManagerMetaData contains all meta data concerning the EdgeChallengeManager contract.
+var EdgeChallengeManagerMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[{\"internalType\":\"contractIAssertionChain\",\"name\":\"_assertionChain\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_challengePeriodSec\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"}],\"name\":\"baseRecord\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"middleHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"bytes\",\"name\":\"prefixProof\",\"type\":\"bytes\"}],\"name\":\"bisectEdge\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"baseId\",\"type\":\"bytes32\"},{\"internalType\":\"enumChallengeType\",\"name\":\"cType\",\"type\":\"uint8\"}],\"name\":\"calculateChallengeId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"pure\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"challengeId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"startHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"startHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"endHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"endHeight\",\"type\":\"uint256\"}],\"name\":\"calculateEdgeId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"pure\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"challengePeriodSec\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"}],\"name\":\"confirmEdgeByChildren\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"claimingEdgeId\",\"type\":\"bytes32\"}],\"name\":\"confirmEdgeByClaim\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32[]\",\"name\":\"ancestorEdges\",\"type\":\"bytes32[]\"}],\"name\":\"confirmEdgeByTimer\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"components\":[{\"internalType\":\"enumChallengeType\",\"name\":\"edgeChallengeType\",\"type\":\"uint8\"},{\"internalType\":\"bytes32\",\"name\":\"startHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"startHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"endHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"endHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"claimId\",\"type\":\"bytes32\"}],\"internalType\":\"structCreateEdgeArgs\",\"name\":\"args\",\"type\":\"tuple\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"createLayerZeroEdge\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"challengeId\",\"type\":\"bytes32\"}],\"name\":\"getChallenge\",\"outputs\":[{\"components\":[{\"internalType\":\"bytes32\",\"name\":\"baseId\",\"type\":\"bytes32\"},{\"internalType\":\"enumChallengeType\",\"name\":\"cType\",\"type\":\"uint8\"}],\"internalType\":\"structEChallenge\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"}],\"name\":\"getCurrentPsTimer\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"}],\"name\":\"getEdge\",\"outputs\":[{\"components\":[{\"internalType\":\"bytes32\",\"name\":\"challengeId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"startHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"startHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"endHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"endHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"lowerChildId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"upperChildId\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"createdWhen\",\"type\":\"uint256\"},{\"internalType\":\"enumEdgeStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"bytes32\",\"name\":\"claimEdgeId\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"staker\",\"type\":\"address\"}],\"internalType\":\"structChallengeEdge\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"}],\"name\":\"isAtOneStepFork\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"edgeId\",\"type\":\"bytes32\"}],\"name\":\"isPresumptive\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	Bin: "0x60806040523480156200001157600080fd5b506040516200301b3803806200301b83398101604081905262000034916200005d565b600355600480546001600160a01b0319166001600160a01b039290921691909117905562000099565b600080604083850312156200007157600080fd5b82516001600160a01b03811681146200008957600080fd5b6020939093015192949293505050565b612f7280620000a96000396000f3fe6080604052600436106100bd5760003560e01c806370f258451161006f57806370f25845146101ba5780638ac04349146101ea578063926ed6831461020a578063c399d5091461022a578063c40bb2b21461024a578063c8bc4e431461026a578063fda2892e1461029f57600080fd5b80630f73bfad146100c257806316a0ca0b146100e457806316ef55341461010a5780632eaa00431461012a578063412dd9ea1461014a578063458d2bf114610177578063654f0dc2146101a4575b600080fd5b3480156100ce57600080fd5b506100e26100dd36600461272f565b6102cc565b005b6100f76100f2366004612816565b6104b0565b6040519081526020015b60405180910390f35b34801561011657600080fd5b506100f76101253660046128e5565b61084c565b34801561013657600080fd5b506100e2610145366004612911565b610889565b34801561015657600080fd5b506100f7610165366004612911565b60009081526001602052604090205490565b34801561018357600080fd5b50610197610192366004612911565b610a89565b6040516101019190612940565b3480156101b057600080fd5b506100f760035481565b3480156101c657600080fd5b506101da6101d5366004612911565b610af3565b6040519015158152602001610101565b3480156101f657600080fd5b506100f7610205366004612911565b610aff565b34801561021657600080fd5b506100f761022536600461296b565b610b0b565b34801561023657600080fd5b506100e26102453660046129c9565b610b24565b34801561025657600080fd5b506101da610265366004612911565b610db1565b34801561027657600080fd5b5061028a610285366004612a6a565b610dbd565b60408051928352602083019190915201610101565b3480156102ab57600080fd5b506102bf6102ba366004612911565b611118565b6040516101019190612b25565b6000828152602081905260409020600701546103035760405162461bcd60e51b81526004016102fa90612bb2565b60405180910390fd5b6000818152602081905260409020600701546103615760405162461bcd60e51b815260206004820152601c60248201527f436c61696d696e67206564676520646f6573206e6f742065786973740000000060448201526064016102fa565b60008181526020819052604080822054848352912061037f9061122d565b146103c05760405162461bcd60e51b8152602060048201526011602482015270496e76616c696420636c61696d2069647360781b60448201526064016102fa565b600081815260208190526040902060090154821461041c5760405162461bcd60e51b8152602060048201526019602482015278436c61696d20646f6573206e6f74206d61746368206564676560381b60448201526064016102fa565b600160008281526020819052604090206008015460ff1660018111156104445761044461292a565b146104915760405162461bcd60e51b815260206004820152601b60248201527f436c61696d696e672065646765206e6f7420636f6e6669726d6564000000000060448201526064016102fa565b506000908152602081905260409020600801805460ff19166001179055565b60008080875160038111156104c7576104c761292a565b03610541576004805460a0890151604051632729597560e21b8152928301526001600160a01b031690639ca565d490602401602060405180830381865afa158015610516573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061053a9190612bdf565b905061071a565b6001875160038111156105565761055661292a565b0361061e5760006105758860a00151600061124b90919063ffffffff16565b5490506000808281526002602052604090206001015460ff16600381111561059f5761059f61292a565b146105f65760405162461bcd60e51b815260206004820152602160248201527f436c61696d206368616c6c656e67652074797065206973206e6f7420426c6f636044820152606b60f81b60648201526084016102fa565b6106166106118960a00151600061124b90919063ffffffff16565b61122d565b91505061071a565b6002875160038111156106335761063361292a565b036106d65760006106528860a00151600061124b90919063ffffffff16565b549050600160008281526002602052604090206001015460ff16600381111561067d5761067d61292a565b146105f65760405162461bcd60e51b815260206004820152602360248201527f436c61696d206368616c6c656e67652074797065206973206e6f74204269675360448201526207465760ec1b60648201526084016102fa565b60405162461bcd60e51b8152602060048201526019602482015278556e6578706563746564206368616c6c656e6765207479706560381b60448201526064016102fa565b60006040518060400160405280838152602001896000015160038111156107435761074361292a565b9052905060006107528261128c565b905060006040518061016001604052808381526020018b6020015181526020018b6040015181526020018b6060015181526020018b6080015181526020016000801b81526020016000801b8152602001428152602001600060018111156107bb576107bb61292a565b815260a08c015160208201523360409091015290506107db6000826112c3565b60008281526002602052604081205490036108355760008281526002602090815260409091208451815590840151600180830180548794939260ff199091169083600381111561082d5761082d61292a565b021790555050505b61083e816114a3565b9a9950505050505050505050565b60008060405180604001604052808581526020018460038111156108725761087261292a565b9052905061087f8161128c565b9150505b92915050565b6000818152602081905260409020600701546108b75760405162461bcd60e51b81526004016102fa90612bb2565b6000818152602081905260408082206005015480835291206007015461091f5760405162461bcd60e51b815260206004820152601a60248201527f4c6f776572206368696c6420646f6573206e6f7420657869737400000000000060448201526064016102fa565b600082815260208190526040808220600601548083529120600701546109875760405162461bcd60e51b815260206004820152601a60248201527f5570706572206368696c6420646f6573206e6f7420657869737400000000000060448201526064016102fa565b600160008381526020819052604090206008015460ff1660018111156109af576109af61292a565b146109f85760405162461bcd60e51b8152602060048201526019602482015278131bddd95c8818da1a5b19081b9bdd0818dbdb999a5c9b5959603a1b60448201526064016102fa565b600160008281526020819052604090206008015460ff166001811115610a2057610a2061292a565b14610a695760405162461bcd60e51b8152602060048201526019602482015278155c1c195c8818da1a5b19081b9bdd0818dbdb999a5c9b5959603a1b60448201526064016102fa565b50506000908152602081905260409020600801805460ff19166001179055565b60408051808201909152600080825260208201526000828152600260209081526040918290208251808401909352805483526001810154909183019060ff166003811115610ad957610ad961292a565b6003811115610aea57610aea61292a565b90525092915050565b600061088381836114c6565b6000610883818361155d565b6000610b1a86868686866116d5565b9695505050505050565b600082815260208190526040902060070154610b525760405162461bcd60e51b81526004016102fa90612bb2565b816000610b5f818361155d565b905060005b8351811015610d2b576000610b9c858381518110610b8457610b84612bf8565b6020026020010151600061124b90919063ffffffff16565b90508381600501541480610bb35750838160060154145b80610bee5750848281518110610bcb57610bcb612bf8565b602002602001015160008001600088815260200190815260200160002060090154145b610c455760405162461bcd60e51b815260206004820152602260248201527f43757272656e74206973206e6f742061206368696c64206f6620616e6365737460448201526137b960f11b60648201526084016102fa565b610d0b610d03826040518061016001604052908160008201548152602001600182015481526020016002820154815260200160038201548152602001600482015481526020016005820154815260200160068201548152602001600782015481526020016008820160009054906101000a900460ff166001811115610ccc57610ccc61292a565b6001811115610cdd57610cdd61292a565b815260098201546020820152600a909101546001600160a01b03166040909101526114a3565b60009061155d565b610d159084612c24565b9250508080610d2390612c37565b915050610b64565b506003548111610d905760405162461bcd60e51b815260206004820152602a60248201527f50732074696d6572206e6f742067726561746572207468616e206368616c6c656044820152691b99d9481c195c9a5bd960b21b60648201526084016102fa565b5050506000908152602081905260409020600801805460ff19166001179055565b6000610883818361171b565b600080610dca81866114c6565b15610e175760405162461bcd60e51b815260206004820152601e60248201527f43616e6e6f74206269736563742070726573756d70746976652065646765000060448201526064016102fa565b6000610e23818761124b565b60408051610160810182528254815260018084015460208301526002840154928201929092526003830154606082015260048301546080820152600583015460a0820152600683015460c0820152600783015460e0820152600883015490929161010084019160ff1690811115610e9c57610e9c61292a565b6001811115610ead57610ead61292a565b815260098201546020820152600a909101546001600160a01b031660409091015260a081015190915015610f1f5760405162461bcd60e51b815260206004820152601960248201527822b233b29030b63932b0b23c903430b99031b434b6323932b760391b60448201526064016102fa565b6000610f338260400151836080015161182d565b905060008086806020019051810190610f4c9190612cb6565b9092509050610f7c88610f60856001612c24565b60608701516080880151610f75906001612c24565b86866118eb565b60006040518061016001604052808660000151815260200186602001518152602001866040015181526020018a81526020018581526020016000801b81526020016000801b815260200142815260200160006001811115610fdf57610fdf61292a565b8152600060208083018290526040928301829052825161016081018452895181529081018d9052918201879052606080890151908301526080808901519083015260a0820181905260c082018190524260e083015261010082018190526101208201819052610140820152909150611061611059836114a3565b600090611b77565b611070576110706000836112c3565b61107c611059826114a3565b156110c95760405162461bcd60e51b815260206004820152601a60248201527f53746f726520636f6e7461696e73207570706572206368696c6400000000000060448201526064016102fa565b6110d46000826112c3565b6110f48b6110e1846114a3565b6110ea846114a3565b6000929190611b93565b6110fd826114a3565b611106826114a3565b97509750505050505050935093915050565b6040805161016081018252600080825260208201819052918101829052606081018290526080810182905260a0810182905260c0810182905260e081018290526101008101829052610120810182905261014081019190915261117c60008361124b565b60408051610160810182528254815260018084015460208301526002840154928201929092526003830154606082015260048301546080820152600583015460a0820152600683015460c0820152600783015460e0820152600883015490929161010084019160ff16908111156111f5576111f561292a565b60018111156112065761120661292a565b815260098201546020820152600a909101546001600160a01b031660409091015292915050565b60006108838260000154836001015484600201548560040154611cf8565b6000818152602083905260408120600701546112795760405162461bcd60e51b81526004016102fa90612bb2565b5060009081526020919091526040902090565b60208082015182516040516000936112a693929101612d19565b604051602081830303815290604052805190602001209050919050565b60006112ce826114a3565b600081815260208590526040902060070154909150156113265760405162461bcd60e51b81526020600482015260136024820152724564676520616c72656164792065786973747360681b60448201526064016102fa565b600081815260208481526040918290208451815590840151600180830191909155918401516002820155606084015160038201556080840151600482015560a0840151600582015560c0840151600682015560e08401516007820155610100840151600882018054869460ff199091169083818111156113a8576113a861292a565b0217905550610120820151816009015561014082015181600a0160006101000a8154816001600160a01b0302191690836001600160a01b0316021790555090505060006114078360000151846020015185604001518660800151611cf8565b600081815260018601602052604081205491925081900361145d5760405160200161143190612d3f565b60408051601f19818403018152918152815160209283012060008581526001890190935291205561149c565b60405160200161146c90612d3f565b60405160208183030381529060405280519060200120810361149c57600082815260018601602052604090208390555b5050505050565b6000610883826000015183602001518460400151856060015186608001516116d5565b6000818152602083905260408120600701546114f45760405162461bcd60e51b81526004016102fa90612bb2565b600082815260208490526040812061150b9061122d565b9050600081900361152e5760405162461bcd60e51b81526004016102fa90612d59565b60405160200161153d90612d3f565b60408051601f198184030181529190528051602090910120149392505050565b60008181526020839052604081206007015461158b5760405162461bcd60e51b81526004016102fa90612bb2565b60008281526020849052604081206115a29061122d565b60008181526001860160205260408120549192508190036115d55760405162461bcd60e51b81526004016102fa90612d59565b6040516020016115e490612d3f565b6040516020818303038152906040528051906020012081036116255760008481526020869052604090206007015461161c9042612d84565b92505050610883565b6000818152602086905260409020600701546116835760405162461bcd60e51b815260206004820152601f60248201527f42617365207265636f7264206564676520646f6573206e6f742065786973740060448201526064016102fa565b6000818152602086905260408082206007908101548784529190922090910154808211156116c0576116b58183612d84565b945050505050610883565b6000945050505050610883565b505092915050565b60408051602080820197909752808201959095526060850193909352608084019190915260a0808401919091528151808403909101815260c09092019052805191012090565b6000818152602083905260408120600701546117495760405162461bcd60e51b81526004016102fa90612bb2565b6000828152602084905260409020600281015460049091015461176c9190612d84565b6001146117b25760405162461bcd60e51b815260206004820152601460248201527345646765206973206e6f74206c656e677468203160601b60448201526064016102fa565b6117bc83836114c6565b156118245760405162461bcd60e51b815260206004820152603260248201527f456467652069732070726573756d70746976652c20736f2063616e6e6f74206260448201527165206174206f6e65207374657020666f726b60701b60648201526084016102fa565b50600192915050565b6000600261183b8484612d84565b10156118895760405162461bcd60e51b815260206004820181905260248201527f48656967687420646966666572656e74206e6f742074776f206f72206d6f726560448201526064016102fa565b6118938383612d84565b6002036118ac576118a5836001612c24565b9050610883565b60006118c3846118bd600186612d84565b18611d36565b9050600019811b6001816118d78287612d84565b166118e29190612d84565b95945050505050565b600085116119325760405162461bcd60e51b815260206004820152601460248201527305072652d73697a652063616e6e6f7420626520360641b60448201526064016102fa565b8561193c83611e3a565b146119895760405162461bcd60e51b815260206004820152601b60248201527f50726520657870616e73696f6e20726f6f74206d69736d61746368000000000060448201526064016102fa565b8461199383611fa3565b146119ea5760405162461bcd60e51b815260206004820152602160248201527f5072652073697a6520646f6573206e6f74206d6174636820657870616e73696f6044820152603760f91b60648201526084016102fa565b828510611a395760405162461bcd60e51b815260206004820181905260248201527f5072652073697a65206e6f74206c657373207468616e20706f73742073697a6560448201526064016102fa565b6000859050600080611a4e8560008751611ffe565b90505b85831015611ac1576000611a658488612121565b9050611a8b8282878681518110611a7e57611a7e612bf8565b60200260200101516121db565b91506001811b611a9b8186612c24565b945087851115611aad57611aad612d97565b83611ab781612c37565b9450505050611a51565b86611acb82611e3a565b14611b235760405162461bcd60e51b815260206004820152602260248201527f506f737420657870616e73696f6e20726f6f74206e6f7420657175616c20706f6044820152611cdd60f21b60648201526084016102fa565b83518214611b6c5760405162461bcd60e51b8152602060048201526016602482015275496e636f6d706c6574652070726f6f6620757361676560501b60448201526064016102fa565b505050505050505050565b60008181526020839052604081206007015415155b9392505050565b600083815260208590526040902060070154611bc15760405162461bcd60e51b81526004016102fa90612bb2565b600082815260208590526040902060070154611c165760405162461bcd60e51b8152602060048201526014602482015273131bddd95c88191bd95cc81b9bdd08195e1a5cdd60621b60448201526064016102fa565b600081815260208590526040902060070154611c6b5760405162461bcd60e51b8152602060048201526014602482015273155c1c195c88191bd95cc81b9bdd08195e1a5cdd60621b60448201526064016102fa565b600083815260208590526040902060050154158015611c995750600083815260208590526040902060060154155b611cda5760405162461bcd60e51b81526020600482015260126024820152712737b71032b6b83a3c9031b434b6323932b760711b60448201526064016102fa565b60009283526020939093526040909120600581019190915560060155565b604080516020808201969096528082019490945260608401929092526080808401919091528151808403909101815260a09092019052805191012090565b600081600003611d585760405162461bcd60e51b81526004016102fa90612dad565b600160801b8210611d7657608091821c91611d739082612c24565b90505b600160401b8210611d9457604091821c91611d919082612c24565b90505b6401000000008210611db357602091821c91611db09082612c24565b90505b620100008210611dd057601091821c91611dcd9082612c24565b90505b6101008210611dec57600891821c91611de99082612c24565b90505b60108210611e0757600491821c91611e049082612c24565b90505b60048210611e2257600291821c91611e1f9082612c24565b90505b60028210611e3557610883600182612c24565b919050565b600080825111611e855760405162461bcd60e51b815260206004820152601660248201527522b6b83a3c9036b2b935b6329032bc3830b739b4b7b760511b60448201526064016102fa565b604082511115611ea75760405162461bcd60e51b81526004016102fa90612de4565b6000805b8351811015611f9c576000848281518110611ec857611ec8612bf8565b60200260200101519050826000801b03611f34578015611f2f5780925060018551611ef39190612d84565b8214611f2f57604051611f16908490600090602001918252602082015260400190565b6040516020818303038152906040528051906020012092505b611f89565b8015611f53576040805160208101839052908101849052606001611f16565b604051611f70908490600090602001918252602082015260400190565b6040516020818303038152906040528051906020012092505b5080611f9481612c37565b915050611eab565b5092915050565b600080805b8351811015611f9c57838181518110611fc357611fc3612bf8565b60200260200101516000801b14611fec57611fdf816002612eff565b611fe99083612c24565b91505b80611ff681612c37565b915050611fa8565b606081831061201f5760405162461bcd60e51b81526004016102fa90612f0b565b835182111561206b5760405162461bcd60e51b815260206004820152601860248201527708adcc840dcdee840d8cae6e640e8d0c2dc40d8cadccee8d60431b60448201526064016102fa565b60006120778484612d84565b6001600160401b0381111561208e5761208e612751565b6040519080825280602002602001820160405280156120b7578160200160208202803683370190505b509050835b83811015612118578581815181106120d6576120d6612bf8565b60200260200101518286836120eb9190612d84565b815181106120fb576120fb612bf8565b60209081029190910101528061211081612c37565b9150506120bc565b50949350505050565b60008183106121425760405162461bcd60e51b81526004016102fa90612f0b565b600061214f838518611d36565b90506000600161215f8382612c24565b6001901b61216d9190612d84565b90508481168482168115612184576116b5826126f2565b8015612193576116b581611d36565b60405162461bcd60e51b815260206004820152601b60248201527f426f7468207920616e64207a2063616e6e6f74206265207a65726f000000000060448201526064016102fa565b60606040831061221e5760405162461bcd60e51b815260206004820152600e60248201526d098caeccad840e8dede40d0d2ced60931b60448201526064016102fa565b600082900361226f5760405162461bcd60e51b815260206004820152601b60248201527f43616e6e6f7420617070656e6420656d7074792073756274726565000000000060448201526064016102fa565b6040845111156122915760405162461bcd60e51b81526004016102fa90612de4565b835160000361230f5760006122a7846001612c24565b6001600160401b038111156122be576122be612751565b6040519080825280602002602001820160405280156122e7578160200160208202803683370190505b509050828185815181106122fd576122fd612bf8565b60209081029190910101529050611b8c565b8351831061237d5760405162461bcd60e51b815260206004820152603560248201527f4c6576656c2067726561746572207468616e2068696768657374206c6576656c6044820152741037b31031bab93932b73a1032bc3830b739b4b7b760591b60648201526084016102fa565b81600061238986611fa3565b90506000612398866002612eff565b6123a29083612c24565b905060006123af83611d36565b6123b883611d36565b116124055787516001600160401b038111156123d6576123d6612751565b6040519080825280602002602001820160405280156123ff578160200160208202803683370190505b50612454565b8751612412906001612c24565b6001600160401b0381111561242957612429612751565b604051908082528060200260200182016040528015612452578160200160208202803683370190505b505b90506040815111156124a85760405162461bcd60e51b815260206004820152601c60248201527f417070656e642063726561746573206f76657273697a6520747265650000000060448201526064016102fa565b60005b88518110156126495787811015612537578881815181106124ce576124ce612bf8565b60200260200101516000801b146125325760405162461bcd60e51b815260206004820152602260248201527f417070656e642061626f7665206c65617374207369676e69666963616e7420626044820152611a5d60f21b60648201526084016102fa565b612637565b600085900361257d5788818151811061255257612552612bf8565b602002602001015182828151811061256c5761256c612bf8565b602002602001018181525050612637565b88818151811061258f5761258f612bf8565b60200260200101516000801b036125c757848282815181106125b3576125b3612bf8565b602090810291909101015260009450612637565b6000801b8282815181106125dd576125dd612bf8565b6020026020010181815250508881815181106125fb576125fb612bf8565b60200260200101518560405160200161261e929190918252602082015260400190565b6040516020818303038152906040528051906020012094505b8061264181612c37565b9150506124ab565b50831561267d578381600183516126609190612d84565b8151811061267057612670612bf8565b6020026020010181815250505b806001825161268c9190612d84565b8151811061269c5761269c612bf8565b60200260200101516000801b036126e75760405162461bcd60e51b815260206004820152600f60248201526e4c61737420656e747279207a65726f60881b60448201526064016102fa565b979650505050505050565b60008082116127135760405162461bcd60e51b81526004016102fa90612dad565b60008280612722600182612d84565b16189050611b8c81611d36565b6000806040838503121561274257600080fd5b50508035926020909101359150565b634e487b7160e01b600052604160045260246000fd5b60405160c081016001600160401b038111828210171561278957612789612751565b60405290565b604051601f8201601f191681016001600160401b03811182821017156127b7576127b7612751565b604052919050565b803560048110611e3557600080fd5b60008083601f8401126127e057600080fd5b5081356001600160401b038111156127f757600080fd5b60208301915083602082850101111561280f57600080fd5b9250929050565b600080600080600085870361010081121561283057600080fd5b60c081121561283e57600080fd5b50612847612767565b612850876127bf565b81526020870135602082015260408701356040820152606087013560608201526080870135608082015260a087013560a08201528095505060c08601356001600160401b03808211156128a257600080fd5b6128ae89838a016127ce565b909650945060e08801359150808211156128c757600080fd5b506128d4888289016127ce565b969995985093965092949392505050565b600080604083850312156128f857600080fd5b82359150612908602084016127bf565b90509250929050565b60006020828403121561292357600080fd5b5035919050565b634e487b7160e01b600052602160045260246000fd5b81518152602082015160408201906004811061295e5761295e61292a565b8060208401525092915050565b600080600080600060a0868803121561298357600080fd5b505083359560208501359550604085013594606081013594506080013592509050565b60006001600160401b038211156129bf576129bf612751565b5060051b60200190565b600080604083850312156129dc57600080fd5b823591506020808401356001600160401b038111156129fa57600080fd5b8401601f81018613612a0b57600080fd5b8035612a1e612a19826129a6565b61278f565b81815260059190911b82018301908381019088831115612a3d57600080fd5b928401925b82841015612a5b57833582529284019290840190612a42565b80955050505050509250929050565b600080600060608486031215612a7f57600080fd5b83359250602080850135925060408501356001600160401b0380821115612aa557600080fd5b818701915087601f830112612ab957600080fd5b813581811115612acb57612acb612751565b612add601f8201601f1916850161278f565b91508082528884828501011115612af357600080fd5b80848401858401376000848284010152508093505050509250925092565b60028110612b2157612b2161292a565b9052565b600061016082019050825182526020830151602083015260408301516040830152606083015160608301526080830151608083015260a083015160a083015260c083015160c083015260e083015160e083015261010080840151612b8b82850182612b11565b50506101208381015190830152610140808401516001600160a01b038116828501526116cd565b602080825260139082015272115919d948191bd95cc81b9bdd08195e1a5cdd606a1b604082015260600190565b600060208284031215612bf157600080fd5b5051919050565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052601160045260246000fd5b8082018082111561088357610883612c0e565b600060018201612c4957612c49612c0e565b5060010190565b600082601f830112612c6157600080fd5b81516020612c71612a19836129a6565b82815260059290921b84018101918181019086841115612c9057600080fd5b8286015b84811015612cab5780518352918301918301612c94565b509695505050505050565b60008060408385031215612cc957600080fd5b82516001600160401b0380821115612ce057600080fd5b612cec86838701612c50565b93506020850151915080821115612d0257600080fd5b50612d0f85828601612c50565b9150509250929050565b600060048410612d2b57612d2b61292a565b5060f89290921b8252600182015260210190565b6d49532050524553554d505449564560901b8152600e0190565b602080825260119082015270115b5c1d1e4818985cd9481c9958dbdc99607a1b604082015260600190565b8181038181111561088357610883612c0e565b634e487b7160e01b600052600160045260246000fd5b6020808252601c908201527f5a65726f20686173206e6f207369676e69666963616e74206269747300000000604082015260600190565b6020808252601a908201527f4d65726b6c6520657870616e73696f6e20746f6f206c61726765000000000000604082015260600190565b600181815b80851115612e56578160001904821115612e3c57612e3c612c0e565b80851615612e4957918102915b93841c9390800290612e20565b509250929050565b600082612e6d57506001610883565b81612e7a57506000610883565b8160018114612e905760028114612e9a57612eb6565b6001915050610883565b60ff841115612eab57612eab612c0e565b50506001821b610883565b5060208310610133831016604e8410600b8410161715612ed9575081810a610883565b612ee38383612e1b565b8060001904821115612ef757612ef7612c0e565b029392505050565b6000611b8c8383612e5e565b60208082526017908201527614dd185c9d081b9bdd081b195cdcc81d1a185b88195b99604a1b60408201526060019056fea264697066735822122095bd992e2b39aac647b7b12cdfb9e5da98b9c23e4a437dc1549cfa1ca10bcffd64736f6c63430008110033",
+}
+
+// EdgeChallengeManagerABI is the input ABI used to generate the binding from.
+// Deprecated: Use EdgeChallengeManagerMetaData.ABI instead.
+var EdgeChallengeManagerABI = EdgeChallengeManagerMetaData.ABI
+
+// EdgeChallengeManagerBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use EdgeChallengeManagerMetaData.Bin instead.
+var EdgeChallengeManagerBin = EdgeChallengeManagerMetaData.Bin
+
+// DeployEdgeChallengeManager deploys a new Ethereum contract, binding an instance of EdgeChallengeManager to it.
+func DeployEdgeChallengeManager(auth *bind.TransactOpts, backend bind.ContractBackend, _assertionChain common.Address, _challengePeriodSec *big.Int) (common.Address, *types.Transaction, *EdgeChallengeManager, error) {
+	parsed, err := EdgeChallengeManagerMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(EdgeChallengeManagerBin), backend, _assertionChain, _challengePeriodSec)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &EdgeChallengeManager{EdgeChallengeManagerCaller: EdgeChallengeManagerCaller{contract: contract}, EdgeChallengeManagerTransactor: EdgeChallengeManagerTransactor{contract: contract}, EdgeChallengeManagerFilterer: EdgeChallengeManagerFilterer{contract: contract}}, nil
+}
+
+// EdgeChallengeManager is an auto generated Go binding around an Ethereum contract.
+type EdgeChallengeManager struct {
+	EdgeChallengeManagerCaller     // Read-only binding to the contract
+	EdgeChallengeManagerTransactor // Write-only binding to the contract
+	EdgeChallengeManagerFilterer   // Log filterer for contract events
+}
+
+// EdgeChallengeManagerCaller is an auto generated read-only Go binding around an Ethereum contract.
+type EdgeChallengeManagerCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EdgeChallengeManagerTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type EdgeChallengeManagerTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EdgeChallengeManagerFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type EdgeChallengeManagerFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EdgeChallengeManagerSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type EdgeChallengeManagerSession struct {
+	Contract     *EdgeChallengeManager // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts         // Call options to use throughout this session
+	TransactOpts bind.TransactOpts     // Transaction auth options to use throughout this session
+}
+
+// EdgeChallengeManagerCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type EdgeChallengeManagerCallerSession struct {
+	Contract *EdgeChallengeManagerCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts               // Call options to use throughout this session
+}
+
+// EdgeChallengeManagerTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type EdgeChallengeManagerTransactorSession struct {
+	Contract     *EdgeChallengeManagerTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts               // Transaction auth options to use throughout this session
+}
+
+// EdgeChallengeManagerRaw is an auto generated low-level Go binding around an Ethereum contract.
+type EdgeChallengeManagerRaw struct {
+	Contract *EdgeChallengeManager // Generic contract binding to access the raw methods on
+}
+
+// EdgeChallengeManagerCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type EdgeChallengeManagerCallerRaw struct {
+	Contract *EdgeChallengeManagerCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// EdgeChallengeManagerTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type EdgeChallengeManagerTransactorRaw struct {
+	Contract *EdgeChallengeManagerTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewEdgeChallengeManager creates a new instance of EdgeChallengeManager, bound to a specific deployed contract.
+func NewEdgeChallengeManager(address common.Address, backend bind.ContractBackend) (*EdgeChallengeManager, error) {
+	contract, err := bindEdgeChallengeManager(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeChallengeManager{EdgeChallengeManagerCaller: EdgeChallengeManagerCaller{contract: contract}, EdgeChallengeManagerTransactor: EdgeChallengeManagerTransactor{contract: contract}, EdgeChallengeManagerFilterer: EdgeChallengeManagerFilterer{contract: contract}}, nil
+}
+
+// NewEdgeChallengeManagerCaller creates a new read-only instance of EdgeChallengeManager, bound to a specific deployed contract.
+func NewEdgeChallengeManagerCaller(address common.Address, caller bind.ContractCaller) (*EdgeChallengeManagerCaller, error) {
+	contract, err := bindEdgeChallengeManager(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeChallengeManagerCaller{contract: contract}, nil
+}
+
+// NewEdgeChallengeManagerTransactor creates a new write-only instance of EdgeChallengeManager, bound to a specific deployed contract.
+func NewEdgeChallengeManagerTransactor(address common.Address, transactor bind.ContractTransactor) (*EdgeChallengeManagerTransactor, error) {
+	contract, err := bindEdgeChallengeManager(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeChallengeManagerTransactor{contract: contract}, nil
+}
+
+// NewEdgeChallengeManagerFilterer creates a new log filterer instance of EdgeChallengeManager, bound to a specific deployed contract.
+func NewEdgeChallengeManagerFilterer(address common.Address, filterer bind.ContractFilterer) (*EdgeChallengeManagerFilterer, error) {
+	contract, err := bindEdgeChallengeManager(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeChallengeManagerFilterer{contract: contract}, nil
+}
+
+// bindEdgeChallengeManager binds a generic wrapper to an already deployed contract.
+func bindEdgeChallengeManager(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := abi.JSON(strings.NewReader(EdgeChallengeManagerABI))
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_EdgeChallengeManager *EdgeChallengeManagerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _EdgeChallengeManager.Contract.EdgeChallengeManagerCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_EdgeChallengeManager *EdgeChallengeManagerRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.EdgeChallengeManagerTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_EdgeChallengeManager *EdgeChallengeManagerRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.EdgeChallengeManagerTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _EdgeChallengeManager.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.contract.Transact(opts, method, params...)
+}
+
+// BaseRecord is a free data retrieval call binding the contract method 0x412dd9ea.
+//
+// Solidity: function baseRecord(bytes32 edgeId) view returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) BaseRecord(opts *bind.CallOpts, edgeId [32]byte) ([32]byte, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "baseRecord", edgeId)
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
+}
+
+// BaseRecord is a free data retrieval call binding the contract method 0x412dd9ea.
+//
+// Solidity: function baseRecord(bytes32 edgeId) view returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) BaseRecord(edgeId [32]byte) ([32]byte, error) {
+	return _EdgeChallengeManager.Contract.BaseRecord(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// BaseRecord is a free data retrieval call binding the contract method 0x412dd9ea.
+//
+// Solidity: function baseRecord(bytes32 edgeId) view returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) BaseRecord(edgeId [32]byte) ([32]byte, error) {
+	return _EdgeChallengeManager.Contract.BaseRecord(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// CalculateChallengeId is a free data retrieval call binding the contract method 0x16ef5534.
+//
+// Solidity: function calculateChallengeId(bytes32 baseId, uint8 cType) pure returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) CalculateChallengeId(opts *bind.CallOpts, baseId [32]byte, cType uint8) ([32]byte, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "calculateChallengeId", baseId, cType)
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
+}
+
+// CalculateChallengeId is a free data retrieval call binding the contract method 0x16ef5534.
+//
+// Solidity: function calculateChallengeId(bytes32 baseId, uint8 cType) pure returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) CalculateChallengeId(baseId [32]byte, cType uint8) ([32]byte, error) {
+	return _EdgeChallengeManager.Contract.CalculateChallengeId(&_EdgeChallengeManager.CallOpts, baseId, cType)
+}
+
+// CalculateChallengeId is a free data retrieval call binding the contract method 0x16ef5534.
+//
+// Solidity: function calculateChallengeId(bytes32 baseId, uint8 cType) pure returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) CalculateChallengeId(baseId [32]byte, cType uint8) ([32]byte, error) {
+	return _EdgeChallengeManager.Contract.CalculateChallengeId(&_EdgeChallengeManager.CallOpts, baseId, cType)
+}
+
+// CalculateEdgeId is a free data retrieval call binding the contract method 0x926ed683.
+//
+// Solidity: function calculateEdgeId(bytes32 challengeId, bytes32 startHistoryRoot, uint256 startHeight, bytes32 endHistoryRoot, uint256 endHeight) pure returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) CalculateEdgeId(opts *bind.CallOpts, challengeId [32]byte, startHistoryRoot [32]byte, startHeight *big.Int, endHistoryRoot [32]byte, endHeight *big.Int) ([32]byte, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "calculateEdgeId", challengeId, startHistoryRoot, startHeight, endHistoryRoot, endHeight)
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
+}
+
+// CalculateEdgeId is a free data retrieval call binding the contract method 0x926ed683.
+//
+// Solidity: function calculateEdgeId(bytes32 challengeId, bytes32 startHistoryRoot, uint256 startHeight, bytes32 endHistoryRoot, uint256 endHeight) pure returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) CalculateEdgeId(challengeId [32]byte, startHistoryRoot [32]byte, startHeight *big.Int, endHistoryRoot [32]byte, endHeight *big.Int) ([32]byte, error) {
+	return _EdgeChallengeManager.Contract.CalculateEdgeId(&_EdgeChallengeManager.CallOpts, challengeId, startHistoryRoot, startHeight, endHistoryRoot, endHeight)
+}
+
+// CalculateEdgeId is a free data retrieval call binding the contract method 0x926ed683.
+//
+// Solidity: function calculateEdgeId(bytes32 challengeId, bytes32 startHistoryRoot, uint256 startHeight, bytes32 endHistoryRoot, uint256 endHeight) pure returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) CalculateEdgeId(challengeId [32]byte, startHistoryRoot [32]byte, startHeight *big.Int, endHistoryRoot [32]byte, endHeight *big.Int) ([32]byte, error) {
+	return _EdgeChallengeManager.Contract.CalculateEdgeId(&_EdgeChallengeManager.CallOpts, challengeId, startHistoryRoot, startHeight, endHistoryRoot, endHeight)
+}
+
+// ChallengePeriodSec is a free data retrieval call binding the contract method 0x654f0dc2.
+//
+// Solidity: function challengePeriodSec() view returns(uint256)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) ChallengePeriodSec(opts *bind.CallOpts) (*big.Int, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "challengePeriodSec")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// ChallengePeriodSec is a free data retrieval call binding the contract method 0x654f0dc2.
+//
+// Solidity: function challengePeriodSec() view returns(uint256)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) ChallengePeriodSec() (*big.Int, error) {
+	return _EdgeChallengeManager.Contract.ChallengePeriodSec(&_EdgeChallengeManager.CallOpts)
+}
+
+// ChallengePeriodSec is a free data retrieval call binding the contract method 0x654f0dc2.
+//
+// Solidity: function challengePeriodSec() view returns(uint256)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) ChallengePeriodSec() (*big.Int, error) {
+	return _EdgeChallengeManager.Contract.ChallengePeriodSec(&_EdgeChallengeManager.CallOpts)
+}
+
+// GetChallenge is a free data retrieval call binding the contract method 0x458d2bf1.
+//
+// Solidity: function getChallenge(bytes32 challengeId) view returns((bytes32,uint8))
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) GetChallenge(opts *bind.CallOpts, challengeId [32]byte) (EChallenge, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "getChallenge", challengeId)
+
+	if err != nil {
+		return *new(EChallenge), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(EChallenge)).(*EChallenge)
+
+	return out0, err
+
+}
+
+// GetChallenge is a free data retrieval call binding the contract method 0x458d2bf1.
+//
+// Solidity: function getChallenge(bytes32 challengeId) view returns((bytes32,uint8))
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) GetChallenge(challengeId [32]byte) (EChallenge, error) {
+	return _EdgeChallengeManager.Contract.GetChallenge(&_EdgeChallengeManager.CallOpts, challengeId)
+}
+
+// GetChallenge is a free data retrieval call binding the contract method 0x458d2bf1.
+//
+// Solidity: function getChallenge(bytes32 challengeId) view returns((bytes32,uint8))
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) GetChallenge(challengeId [32]byte) (EChallenge, error) {
+	return _EdgeChallengeManager.Contract.GetChallenge(&_EdgeChallengeManager.CallOpts, challengeId)
+}
+
+// GetCurrentPsTimer is a free data retrieval call binding the contract method 0x8ac04349.
+//
+// Solidity: function getCurrentPsTimer(bytes32 edgeId) view returns(uint256)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) GetCurrentPsTimer(opts *bind.CallOpts, edgeId [32]byte) (*big.Int, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "getCurrentPsTimer", edgeId)
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetCurrentPsTimer is a free data retrieval call binding the contract method 0x8ac04349.
+//
+// Solidity: function getCurrentPsTimer(bytes32 edgeId) view returns(uint256)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) GetCurrentPsTimer(edgeId [32]byte) (*big.Int, error) {
+	return _EdgeChallengeManager.Contract.GetCurrentPsTimer(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// GetCurrentPsTimer is a free data retrieval call binding the contract method 0x8ac04349.
+//
+// Solidity: function getCurrentPsTimer(bytes32 edgeId) view returns(uint256)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) GetCurrentPsTimer(edgeId [32]byte) (*big.Int, error) {
+	return _EdgeChallengeManager.Contract.GetCurrentPsTimer(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// GetEdge is a free data retrieval call binding the contract method 0xfda2892e.
+//
+// Solidity: function getEdge(bytes32 edgeId) view returns((bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes32,uint256,uint8,bytes32,address))
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) GetEdge(opts *bind.CallOpts, edgeId [32]byte) (ChallengeEdge, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "getEdge", edgeId)
+
+	if err != nil {
+		return *new(ChallengeEdge), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(ChallengeEdge)).(*ChallengeEdge)
+
+	return out0, err
+
+}
+
+// GetEdge is a free data retrieval call binding the contract method 0xfda2892e.
+//
+// Solidity: function getEdge(bytes32 edgeId) view returns((bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes32,uint256,uint8,bytes32,address))
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) GetEdge(edgeId [32]byte) (ChallengeEdge, error) {
+	return _EdgeChallengeManager.Contract.GetEdge(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// GetEdge is a free data retrieval call binding the contract method 0xfda2892e.
+//
+// Solidity: function getEdge(bytes32 edgeId) view returns((bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes32,uint256,uint8,bytes32,address))
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) GetEdge(edgeId [32]byte) (ChallengeEdge, error) {
+	return _EdgeChallengeManager.Contract.GetEdge(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// IsAtOneStepFork is a free data retrieval call binding the contract method 0xc40bb2b2.
+//
+// Solidity: function isAtOneStepFork(bytes32 edgeId) view returns(bool)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) IsAtOneStepFork(opts *bind.CallOpts, edgeId [32]byte) (bool, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "isAtOneStepFork", edgeId)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// IsAtOneStepFork is a free data retrieval call binding the contract method 0xc40bb2b2.
+//
+// Solidity: function isAtOneStepFork(bytes32 edgeId) view returns(bool)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) IsAtOneStepFork(edgeId [32]byte) (bool, error) {
+	return _EdgeChallengeManager.Contract.IsAtOneStepFork(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// IsAtOneStepFork is a free data retrieval call binding the contract method 0xc40bb2b2.
+//
+// Solidity: function isAtOneStepFork(bytes32 edgeId) view returns(bool)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) IsAtOneStepFork(edgeId [32]byte) (bool, error) {
+	return _EdgeChallengeManager.Contract.IsAtOneStepFork(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// IsPresumptive is a free data retrieval call binding the contract method 0x70f25845.
+//
+// Solidity: function isPresumptive(bytes32 edgeId) view returns(bool)
+func (_EdgeChallengeManager *EdgeChallengeManagerCaller) IsPresumptive(opts *bind.CallOpts, edgeId [32]byte) (bool, error) {
+	var out []interface{}
+	err := _EdgeChallengeManager.contract.Call(opts, &out, "isPresumptive", edgeId)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// IsPresumptive is a free data retrieval call binding the contract method 0x70f25845.
+//
+// Solidity: function isPresumptive(bytes32 edgeId) view returns(bool)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) IsPresumptive(edgeId [32]byte) (bool, error) {
+	return _EdgeChallengeManager.Contract.IsPresumptive(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// IsPresumptive is a free data retrieval call binding the contract method 0x70f25845.
+//
+// Solidity: function isPresumptive(bytes32 edgeId) view returns(bool)
+func (_EdgeChallengeManager *EdgeChallengeManagerCallerSession) IsPresumptive(edgeId [32]byte) (bool, error) {
+	return _EdgeChallengeManager.Contract.IsPresumptive(&_EdgeChallengeManager.CallOpts, edgeId)
+}
+
+// BisectEdge is a paid mutator transaction binding the contract method 0xc8bc4e43.
+//
+// Solidity: function bisectEdge(bytes32 edgeId, bytes32 middleHistoryRoot, bytes prefixProof) returns(bytes32, bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactor) BisectEdge(opts *bind.TransactOpts, edgeId [32]byte, middleHistoryRoot [32]byte, prefixProof []byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.contract.Transact(opts, "bisectEdge", edgeId, middleHistoryRoot, prefixProof)
+}
+
+// BisectEdge is a paid mutator transaction binding the contract method 0xc8bc4e43.
+//
+// Solidity: function bisectEdge(bytes32 edgeId, bytes32 middleHistoryRoot, bytes prefixProof) returns(bytes32, bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) BisectEdge(edgeId [32]byte, middleHistoryRoot [32]byte, prefixProof []byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.BisectEdge(&_EdgeChallengeManager.TransactOpts, edgeId, middleHistoryRoot, prefixProof)
+}
+
+// BisectEdge is a paid mutator transaction binding the contract method 0xc8bc4e43.
+//
+// Solidity: function bisectEdge(bytes32 edgeId, bytes32 middleHistoryRoot, bytes prefixProof) returns(bytes32, bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorSession) BisectEdge(edgeId [32]byte, middleHistoryRoot [32]byte, prefixProof []byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.BisectEdge(&_EdgeChallengeManager.TransactOpts, edgeId, middleHistoryRoot, prefixProof)
+}
+
+// ConfirmEdgeByChildren is a paid mutator transaction binding the contract method 0x2eaa0043.
+//
+// Solidity: function confirmEdgeByChildren(bytes32 edgeId) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactor) ConfirmEdgeByChildren(opts *bind.TransactOpts, edgeId [32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.contract.Transact(opts, "confirmEdgeByChildren", edgeId)
+}
+
+// ConfirmEdgeByChildren is a paid mutator transaction binding the contract method 0x2eaa0043.
+//
+// Solidity: function confirmEdgeByChildren(bytes32 edgeId) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) ConfirmEdgeByChildren(edgeId [32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.ConfirmEdgeByChildren(&_EdgeChallengeManager.TransactOpts, edgeId)
+}
+
+// ConfirmEdgeByChildren is a paid mutator transaction binding the contract method 0x2eaa0043.
+//
+// Solidity: function confirmEdgeByChildren(bytes32 edgeId) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorSession) ConfirmEdgeByChildren(edgeId [32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.ConfirmEdgeByChildren(&_EdgeChallengeManager.TransactOpts, edgeId)
+}
+
+// ConfirmEdgeByClaim is a paid mutator transaction binding the contract method 0x0f73bfad.
+//
+// Solidity: function confirmEdgeByClaim(bytes32 edgeId, bytes32 claimingEdgeId) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactor) ConfirmEdgeByClaim(opts *bind.TransactOpts, edgeId [32]byte, claimingEdgeId [32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.contract.Transact(opts, "confirmEdgeByClaim", edgeId, claimingEdgeId)
+}
+
+// ConfirmEdgeByClaim is a paid mutator transaction binding the contract method 0x0f73bfad.
+//
+// Solidity: function confirmEdgeByClaim(bytes32 edgeId, bytes32 claimingEdgeId) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) ConfirmEdgeByClaim(edgeId [32]byte, claimingEdgeId [32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.ConfirmEdgeByClaim(&_EdgeChallengeManager.TransactOpts, edgeId, claimingEdgeId)
+}
+
+// ConfirmEdgeByClaim is a paid mutator transaction binding the contract method 0x0f73bfad.
+//
+// Solidity: function confirmEdgeByClaim(bytes32 edgeId, bytes32 claimingEdgeId) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorSession) ConfirmEdgeByClaim(edgeId [32]byte, claimingEdgeId [32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.ConfirmEdgeByClaim(&_EdgeChallengeManager.TransactOpts, edgeId, claimingEdgeId)
+}
+
+// ConfirmEdgeByTimer is a paid mutator transaction binding the contract method 0xc399d509.
+//
+// Solidity: function confirmEdgeByTimer(bytes32 edgeId, bytes32[] ancestorEdges) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactor) ConfirmEdgeByTimer(opts *bind.TransactOpts, edgeId [32]byte, ancestorEdges [][32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.contract.Transact(opts, "confirmEdgeByTimer", edgeId, ancestorEdges)
+}
+
+// ConfirmEdgeByTimer is a paid mutator transaction binding the contract method 0xc399d509.
+//
+// Solidity: function confirmEdgeByTimer(bytes32 edgeId, bytes32[] ancestorEdges) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) ConfirmEdgeByTimer(edgeId [32]byte, ancestorEdges [][32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.ConfirmEdgeByTimer(&_EdgeChallengeManager.TransactOpts, edgeId, ancestorEdges)
+}
+
+// ConfirmEdgeByTimer is a paid mutator transaction binding the contract method 0xc399d509.
+//
+// Solidity: function confirmEdgeByTimer(bytes32 edgeId, bytes32[] ancestorEdges) returns()
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorSession) ConfirmEdgeByTimer(edgeId [32]byte, ancestorEdges [][32]byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.ConfirmEdgeByTimer(&_EdgeChallengeManager.TransactOpts, edgeId, ancestorEdges)
+}
+
+// CreateLayerZeroEdge is a paid mutator transaction binding the contract method 0x16a0ca0b.
+//
+// Solidity: function createLayerZeroEdge((uint8,bytes32,uint256,bytes32,uint256,bytes32) args, bytes , bytes ) payable returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactor) CreateLayerZeroEdge(opts *bind.TransactOpts, args CreateEdgeArgs, arg1 []byte, arg2 []byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.contract.Transact(opts, "createLayerZeroEdge", args, arg1, arg2)
+}
+
+// CreateLayerZeroEdge is a paid mutator transaction binding the contract method 0x16a0ca0b.
+//
+// Solidity: function createLayerZeroEdge((uint8,bytes32,uint256,bytes32,uint256,bytes32) args, bytes , bytes ) payable returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerSession) CreateLayerZeroEdge(args CreateEdgeArgs, arg1 []byte, arg2 []byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.CreateLayerZeroEdge(&_EdgeChallengeManager.TransactOpts, args, arg1, arg2)
+}
+
+// CreateLayerZeroEdge is a paid mutator transaction binding the contract method 0x16a0ca0b.
+//
+// Solidity: function createLayerZeroEdge((uint8,bytes32,uint256,bytes32,uint256,bytes32) args, bytes , bytes ) payable returns(bytes32)
+func (_EdgeChallengeManager *EdgeChallengeManagerTransactorSession) CreateLayerZeroEdge(args CreateEdgeArgs, arg1 []byte, arg2 []byte) (*types.Transaction, error) {
+	return _EdgeChallengeManager.Contract.CreateLayerZeroEdge(&_EdgeChallengeManager.TransactOpts, args, arg1, arg2)
+}
+
+// EdgeStoreLibMetaData contains all meta data concerning the EdgeStoreLib contract.
+var EdgeStoreLibMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220712f217ebe88a117d35225b5e0f02f283f93dce52c362116c21400c0fa4e6b8d64736f6c63430008110033",
+}
+
+// EdgeStoreLibABI is the input ABI used to generate the binding from.
+// Deprecated: Use EdgeStoreLibMetaData.ABI instead.
+var EdgeStoreLibABI = EdgeStoreLibMetaData.ABI
+
+// EdgeStoreLibBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use EdgeStoreLibMetaData.Bin instead.
+var EdgeStoreLibBin = EdgeStoreLibMetaData.Bin
+
+// DeployEdgeStoreLib deploys a new Ethereum contract, binding an instance of EdgeStoreLib to it.
+func DeployEdgeStoreLib(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *EdgeStoreLib, error) {
+	parsed, err := EdgeStoreLibMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(EdgeStoreLibBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &EdgeStoreLib{EdgeStoreLibCaller: EdgeStoreLibCaller{contract: contract}, EdgeStoreLibTransactor: EdgeStoreLibTransactor{contract: contract}, EdgeStoreLibFilterer: EdgeStoreLibFilterer{contract: contract}}, nil
+}
+
+// EdgeStoreLib is an auto generated Go binding around an Ethereum contract.
+type EdgeStoreLib struct {
+	EdgeStoreLibCaller     // Read-only binding to the contract
+	EdgeStoreLibTransactor // Write-only binding to the contract
+	EdgeStoreLibFilterer   // Log filterer for contract events
+}
+
+// EdgeStoreLibCaller is an auto generated read-only Go binding around an Ethereum contract.
+type EdgeStoreLibCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EdgeStoreLibTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type EdgeStoreLibTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EdgeStoreLibFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type EdgeStoreLibFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// EdgeStoreLibSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type EdgeStoreLibSession struct {
+	Contract     *EdgeStoreLib     // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// EdgeStoreLibCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type EdgeStoreLibCallerSession struct {
+	Contract *EdgeStoreLibCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts       // Call options to use throughout this session
+}
+
+// EdgeStoreLibTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type EdgeStoreLibTransactorSession struct {
+	Contract     *EdgeStoreLibTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts       // Transaction auth options to use throughout this session
+}
+
+// EdgeStoreLibRaw is an auto generated low-level Go binding around an Ethereum contract.
+type EdgeStoreLibRaw struct {
+	Contract *EdgeStoreLib // Generic contract binding to access the raw methods on
+}
+
+// EdgeStoreLibCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type EdgeStoreLibCallerRaw struct {
+	Contract *EdgeStoreLibCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// EdgeStoreLibTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type EdgeStoreLibTransactorRaw struct {
+	Contract *EdgeStoreLibTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewEdgeStoreLib creates a new instance of EdgeStoreLib, bound to a specific deployed contract.
+func NewEdgeStoreLib(address common.Address, backend bind.ContractBackend) (*EdgeStoreLib, error) {
+	contract, err := bindEdgeStoreLib(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeStoreLib{EdgeStoreLibCaller: EdgeStoreLibCaller{contract: contract}, EdgeStoreLibTransactor: EdgeStoreLibTransactor{contract: contract}, EdgeStoreLibFilterer: EdgeStoreLibFilterer{contract: contract}}, nil
+}
+
+// NewEdgeStoreLibCaller creates a new read-only instance of EdgeStoreLib, bound to a specific deployed contract.
+func NewEdgeStoreLibCaller(address common.Address, caller bind.ContractCaller) (*EdgeStoreLibCaller, error) {
+	contract, err := bindEdgeStoreLib(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeStoreLibCaller{contract: contract}, nil
+}
+
+// NewEdgeStoreLibTransactor creates a new write-only instance of EdgeStoreLib, bound to a specific deployed contract.
+func NewEdgeStoreLibTransactor(address common.Address, transactor bind.ContractTransactor) (*EdgeStoreLibTransactor, error) {
+	contract, err := bindEdgeStoreLib(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeStoreLibTransactor{contract: contract}, nil
+}
+
+// NewEdgeStoreLibFilterer creates a new log filterer instance of EdgeStoreLib, bound to a specific deployed contract.
+func NewEdgeStoreLibFilterer(address common.Address, filterer bind.ContractFilterer) (*EdgeStoreLibFilterer, error) {
+	contract, err := bindEdgeStoreLib(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &EdgeStoreLibFilterer{contract: contract}, nil
+}
+
+// bindEdgeStoreLib binds a generic wrapper to an already deployed contract.
+func bindEdgeStoreLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := abi.JSON(strings.NewReader(EdgeStoreLibABI))
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_EdgeStoreLib *EdgeStoreLibRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _EdgeStoreLib.Contract.EdgeStoreLibCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_EdgeStoreLib *EdgeStoreLibRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _EdgeStoreLib.Contract.EdgeStoreLibTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_EdgeStoreLib *EdgeStoreLibRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _EdgeStoreLib.Contract.EdgeStoreLibTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_EdgeStoreLib *EdgeStoreLibCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _EdgeStoreLib.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_EdgeStoreLib *EdgeStoreLibTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _EdgeStoreLib.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_EdgeStoreLib *EdgeStoreLibTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _EdgeStoreLib.Contract.contract.Transact(opts, method, params...)
+}
+
 // IAssertionChainMetaData contains all meta data concerning the IAssertionChain contract.
 var IAssertionChainMetaData = &bind.MetaData{
 	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"getFirstChildCreationTime\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"getHeight\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"getInboxMsgCountSeen\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"getPredecessorId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"getStateHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"getSuccessionChallenge\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"assertionId\",\"type\":\"bytes32\"}],\"name\":\"isFirstChild\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
@@ -4150,6 +5257,386 @@ func (_IChallengeManagerExternalView *IChallengeManagerExternalViewSession) Winn
 // Solidity: function winningClaim(bytes32 challengeId) view returns(bytes32)
 func (_IChallengeManagerExternalView *IChallengeManagerExternalViewCallerSession) WinningClaim(challengeId [32]byte) ([32]byte, error) {
 	return _IChallengeManagerExternalView.Contract.WinningClaim(&_IChallengeManagerExternalView.CallOpts, challengeId)
+}
+
+// IEdgeChallengeManagerMetaData contains all meta data concerning the IEdgeChallengeManager contract.
+var IEdgeChallengeManagerMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"prefixHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"bytes\",\"name\":\"prefixProof\",\"type\":\"bytes\"}],\"name\":\"bisectEdge\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"}],\"name\":\"confirmEdgeByChildren\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"claimId\",\"type\":\"bytes32\"}],\"name\":\"confirmEdgeByClaim\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32[]\",\"name\":\"ancestorIds\",\"type\":\"bytes32[]\"}],\"name\":\"confirmEdgeByTimer\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"components\":[{\"internalType\":\"enumChallengeType\",\"name\":\"edgeChallengeType\",\"type\":\"uint8\"},{\"internalType\":\"bytes32\",\"name\":\"startHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"startHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"endHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"endHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"claimId\",\"type\":\"bytes32\"}],\"internalType\":\"structCreateEdgeArgs\",\"name\":\"args\",\"type\":\"tuple\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"createLayerZeroEdge\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"challengeId\",\"type\":\"bytes32\"}],\"name\":\"getChallenge\",\"outputs\":[{\"components\":[{\"internalType\":\"bytes32\",\"name\":\"baseId\",\"type\":\"bytes32\"},{\"internalType\":\"enumChallengeType\",\"name\":\"cType\",\"type\":\"uint8\"}],\"internalType\":\"structEChallenge\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"}],\"name\":\"getCurrentPsTimer\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"}],\"name\":\"getEdge\",\"outputs\":[{\"components\":[{\"internalType\":\"bytes32\",\"name\":\"challengeId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"startHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"startHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"endHistoryRoot\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"endHeight\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"lowerChildId\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"upperChildId\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"createdWhen\",\"type\":\"uint256\"},{\"internalType\":\"enumEdgeStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"bytes32\",\"name\":\"claimEdgeId\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"staker\",\"type\":\"address\"}],\"internalType\":\"structChallengeEdge\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"eId\",\"type\":\"bytes32\"}],\"name\":\"isAtOneStepFork\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+}
+
+// IEdgeChallengeManagerABI is the input ABI used to generate the binding from.
+// Deprecated: Use IEdgeChallengeManagerMetaData.ABI instead.
+var IEdgeChallengeManagerABI = IEdgeChallengeManagerMetaData.ABI
+
+// IEdgeChallengeManager is an auto generated Go binding around an Ethereum contract.
+type IEdgeChallengeManager struct {
+	IEdgeChallengeManagerCaller     // Read-only binding to the contract
+	IEdgeChallengeManagerTransactor // Write-only binding to the contract
+	IEdgeChallengeManagerFilterer   // Log filterer for contract events
+}
+
+// IEdgeChallengeManagerCaller is an auto generated read-only Go binding around an Ethereum contract.
+type IEdgeChallengeManagerCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// IEdgeChallengeManagerTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type IEdgeChallengeManagerTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// IEdgeChallengeManagerFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type IEdgeChallengeManagerFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// IEdgeChallengeManagerSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type IEdgeChallengeManagerSession struct {
+	Contract     *IEdgeChallengeManager // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts          // Call options to use throughout this session
+	TransactOpts bind.TransactOpts      // Transaction auth options to use throughout this session
+}
+
+// IEdgeChallengeManagerCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type IEdgeChallengeManagerCallerSession struct {
+	Contract *IEdgeChallengeManagerCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts                // Call options to use throughout this session
+}
+
+// IEdgeChallengeManagerTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type IEdgeChallengeManagerTransactorSession struct {
+	Contract     *IEdgeChallengeManagerTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts                // Transaction auth options to use throughout this session
+}
+
+// IEdgeChallengeManagerRaw is an auto generated low-level Go binding around an Ethereum contract.
+type IEdgeChallengeManagerRaw struct {
+	Contract *IEdgeChallengeManager // Generic contract binding to access the raw methods on
+}
+
+// IEdgeChallengeManagerCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type IEdgeChallengeManagerCallerRaw struct {
+	Contract *IEdgeChallengeManagerCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// IEdgeChallengeManagerTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type IEdgeChallengeManagerTransactorRaw struct {
+	Contract *IEdgeChallengeManagerTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewIEdgeChallengeManager creates a new instance of IEdgeChallengeManager, bound to a specific deployed contract.
+func NewIEdgeChallengeManager(address common.Address, backend bind.ContractBackend) (*IEdgeChallengeManager, error) {
+	contract, err := bindIEdgeChallengeManager(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &IEdgeChallengeManager{IEdgeChallengeManagerCaller: IEdgeChallengeManagerCaller{contract: contract}, IEdgeChallengeManagerTransactor: IEdgeChallengeManagerTransactor{contract: contract}, IEdgeChallengeManagerFilterer: IEdgeChallengeManagerFilterer{contract: contract}}, nil
+}
+
+// NewIEdgeChallengeManagerCaller creates a new read-only instance of IEdgeChallengeManager, bound to a specific deployed contract.
+func NewIEdgeChallengeManagerCaller(address common.Address, caller bind.ContractCaller) (*IEdgeChallengeManagerCaller, error) {
+	contract, err := bindIEdgeChallengeManager(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &IEdgeChallengeManagerCaller{contract: contract}, nil
+}
+
+// NewIEdgeChallengeManagerTransactor creates a new write-only instance of IEdgeChallengeManager, bound to a specific deployed contract.
+func NewIEdgeChallengeManagerTransactor(address common.Address, transactor bind.ContractTransactor) (*IEdgeChallengeManagerTransactor, error) {
+	contract, err := bindIEdgeChallengeManager(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &IEdgeChallengeManagerTransactor{contract: contract}, nil
+}
+
+// NewIEdgeChallengeManagerFilterer creates a new log filterer instance of IEdgeChallengeManager, bound to a specific deployed contract.
+func NewIEdgeChallengeManagerFilterer(address common.Address, filterer bind.ContractFilterer) (*IEdgeChallengeManagerFilterer, error) {
+	contract, err := bindIEdgeChallengeManager(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &IEdgeChallengeManagerFilterer{contract: contract}, nil
+}
+
+// bindIEdgeChallengeManager binds a generic wrapper to an already deployed contract.
+func bindIEdgeChallengeManager(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := abi.JSON(strings.NewReader(IEdgeChallengeManagerABI))
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_IEdgeChallengeManager *IEdgeChallengeManagerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _IEdgeChallengeManager.Contract.IEdgeChallengeManagerCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_IEdgeChallengeManager *IEdgeChallengeManagerRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.IEdgeChallengeManagerTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_IEdgeChallengeManager *IEdgeChallengeManagerRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.IEdgeChallengeManagerTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _IEdgeChallengeManager.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.contract.Transact(opts, method, params...)
+}
+
+// GetChallenge is a free data retrieval call binding the contract method 0x458d2bf1.
+//
+// Solidity: function getChallenge(bytes32 challengeId) view returns((bytes32,uint8))
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCaller) GetChallenge(opts *bind.CallOpts, challengeId [32]byte) (EChallenge, error) {
+	var out []interface{}
+	err := _IEdgeChallengeManager.contract.Call(opts, &out, "getChallenge", challengeId)
+
+	if err != nil {
+		return *new(EChallenge), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(EChallenge)).(*EChallenge)
+
+	return out0, err
+
+}
+
+// GetChallenge is a free data retrieval call binding the contract method 0x458d2bf1.
+//
+// Solidity: function getChallenge(bytes32 challengeId) view returns((bytes32,uint8))
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) GetChallenge(challengeId [32]byte) (EChallenge, error) {
+	return _IEdgeChallengeManager.Contract.GetChallenge(&_IEdgeChallengeManager.CallOpts, challengeId)
+}
+
+// GetChallenge is a free data retrieval call binding the contract method 0x458d2bf1.
+//
+// Solidity: function getChallenge(bytes32 challengeId) view returns((bytes32,uint8))
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCallerSession) GetChallenge(challengeId [32]byte) (EChallenge, error) {
+	return _IEdgeChallengeManager.Contract.GetChallenge(&_IEdgeChallengeManager.CallOpts, challengeId)
+}
+
+// GetCurrentPsTimer is a free data retrieval call binding the contract method 0x8ac04349.
+//
+// Solidity: function getCurrentPsTimer(bytes32 eId) view returns(uint256)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCaller) GetCurrentPsTimer(opts *bind.CallOpts, eId [32]byte) (*big.Int, error) {
+	var out []interface{}
+	err := _IEdgeChallengeManager.contract.Call(opts, &out, "getCurrentPsTimer", eId)
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetCurrentPsTimer is a free data retrieval call binding the contract method 0x8ac04349.
+//
+// Solidity: function getCurrentPsTimer(bytes32 eId) view returns(uint256)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) GetCurrentPsTimer(eId [32]byte) (*big.Int, error) {
+	return _IEdgeChallengeManager.Contract.GetCurrentPsTimer(&_IEdgeChallengeManager.CallOpts, eId)
+}
+
+// GetCurrentPsTimer is a free data retrieval call binding the contract method 0x8ac04349.
+//
+// Solidity: function getCurrentPsTimer(bytes32 eId) view returns(uint256)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCallerSession) GetCurrentPsTimer(eId [32]byte) (*big.Int, error) {
+	return _IEdgeChallengeManager.Contract.GetCurrentPsTimer(&_IEdgeChallengeManager.CallOpts, eId)
+}
+
+// GetEdge is a free data retrieval call binding the contract method 0xfda2892e.
+//
+// Solidity: function getEdge(bytes32 eId) view returns((bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes32,uint256,uint8,bytes32,address))
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCaller) GetEdge(opts *bind.CallOpts, eId [32]byte) (ChallengeEdge, error) {
+	var out []interface{}
+	err := _IEdgeChallengeManager.contract.Call(opts, &out, "getEdge", eId)
+
+	if err != nil {
+		return *new(ChallengeEdge), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(ChallengeEdge)).(*ChallengeEdge)
+
+	return out0, err
+
+}
+
+// GetEdge is a free data retrieval call binding the contract method 0xfda2892e.
+//
+// Solidity: function getEdge(bytes32 eId) view returns((bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes32,uint256,uint8,bytes32,address))
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) GetEdge(eId [32]byte) (ChallengeEdge, error) {
+	return _IEdgeChallengeManager.Contract.GetEdge(&_IEdgeChallengeManager.CallOpts, eId)
+}
+
+// GetEdge is a free data retrieval call binding the contract method 0xfda2892e.
+//
+// Solidity: function getEdge(bytes32 eId) view returns((bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes32,uint256,uint8,bytes32,address))
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCallerSession) GetEdge(eId [32]byte) (ChallengeEdge, error) {
+	return _IEdgeChallengeManager.Contract.GetEdge(&_IEdgeChallengeManager.CallOpts, eId)
+}
+
+// IsAtOneStepFork is a free data retrieval call binding the contract method 0xc40bb2b2.
+//
+// Solidity: function isAtOneStepFork(bytes32 eId) view returns(bool)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCaller) IsAtOneStepFork(opts *bind.CallOpts, eId [32]byte) (bool, error) {
+	var out []interface{}
+	err := _IEdgeChallengeManager.contract.Call(opts, &out, "isAtOneStepFork", eId)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// IsAtOneStepFork is a free data retrieval call binding the contract method 0xc40bb2b2.
+//
+// Solidity: function isAtOneStepFork(bytes32 eId) view returns(bool)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) IsAtOneStepFork(eId [32]byte) (bool, error) {
+	return _IEdgeChallengeManager.Contract.IsAtOneStepFork(&_IEdgeChallengeManager.CallOpts, eId)
+}
+
+// IsAtOneStepFork is a free data retrieval call binding the contract method 0xc40bb2b2.
+//
+// Solidity: function isAtOneStepFork(bytes32 eId) view returns(bool)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerCallerSession) IsAtOneStepFork(eId [32]byte) (bool, error) {
+	return _IEdgeChallengeManager.Contract.IsAtOneStepFork(&_IEdgeChallengeManager.CallOpts, eId)
+}
+
+// BisectEdge is a paid mutator transaction binding the contract method 0xc8bc4e43.
+//
+// Solidity: function bisectEdge(bytes32 eId, bytes32 prefixHistoryRoot, bytes prefixProof) returns(bytes32, bytes32)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactor) BisectEdge(opts *bind.TransactOpts, eId [32]byte, prefixHistoryRoot [32]byte, prefixProof []byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.contract.Transact(opts, "bisectEdge", eId, prefixHistoryRoot, prefixProof)
+}
+
+// BisectEdge is a paid mutator transaction binding the contract method 0xc8bc4e43.
+//
+// Solidity: function bisectEdge(bytes32 eId, bytes32 prefixHistoryRoot, bytes prefixProof) returns(bytes32, bytes32)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) BisectEdge(eId [32]byte, prefixHistoryRoot [32]byte, prefixProof []byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.BisectEdge(&_IEdgeChallengeManager.TransactOpts, eId, prefixHistoryRoot, prefixProof)
+}
+
+// BisectEdge is a paid mutator transaction binding the contract method 0xc8bc4e43.
+//
+// Solidity: function bisectEdge(bytes32 eId, bytes32 prefixHistoryRoot, bytes prefixProof) returns(bytes32, bytes32)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorSession) BisectEdge(eId [32]byte, prefixHistoryRoot [32]byte, prefixProof []byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.BisectEdge(&_IEdgeChallengeManager.TransactOpts, eId, prefixHistoryRoot, prefixProof)
+}
+
+// ConfirmEdgeByChildren is a paid mutator transaction binding the contract method 0x2eaa0043.
+//
+// Solidity: function confirmEdgeByChildren(bytes32 eId) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactor) ConfirmEdgeByChildren(opts *bind.TransactOpts, eId [32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.contract.Transact(opts, "confirmEdgeByChildren", eId)
+}
+
+// ConfirmEdgeByChildren is a paid mutator transaction binding the contract method 0x2eaa0043.
+//
+// Solidity: function confirmEdgeByChildren(bytes32 eId) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) ConfirmEdgeByChildren(eId [32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.ConfirmEdgeByChildren(&_IEdgeChallengeManager.TransactOpts, eId)
+}
+
+// ConfirmEdgeByChildren is a paid mutator transaction binding the contract method 0x2eaa0043.
+//
+// Solidity: function confirmEdgeByChildren(bytes32 eId) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorSession) ConfirmEdgeByChildren(eId [32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.ConfirmEdgeByChildren(&_IEdgeChallengeManager.TransactOpts, eId)
+}
+
+// ConfirmEdgeByClaim is a paid mutator transaction binding the contract method 0x0f73bfad.
+//
+// Solidity: function confirmEdgeByClaim(bytes32 eId, bytes32 claimId) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactor) ConfirmEdgeByClaim(opts *bind.TransactOpts, eId [32]byte, claimId [32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.contract.Transact(opts, "confirmEdgeByClaim", eId, claimId)
+}
+
+// ConfirmEdgeByClaim is a paid mutator transaction binding the contract method 0x0f73bfad.
+//
+// Solidity: function confirmEdgeByClaim(bytes32 eId, bytes32 claimId) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) ConfirmEdgeByClaim(eId [32]byte, claimId [32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.ConfirmEdgeByClaim(&_IEdgeChallengeManager.TransactOpts, eId, claimId)
+}
+
+// ConfirmEdgeByClaim is a paid mutator transaction binding the contract method 0x0f73bfad.
+//
+// Solidity: function confirmEdgeByClaim(bytes32 eId, bytes32 claimId) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorSession) ConfirmEdgeByClaim(eId [32]byte, claimId [32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.ConfirmEdgeByClaim(&_IEdgeChallengeManager.TransactOpts, eId, claimId)
+}
+
+// ConfirmEdgeByTimer is a paid mutator transaction binding the contract method 0xc399d509.
+//
+// Solidity: function confirmEdgeByTimer(bytes32 eId, bytes32[] ancestorIds) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactor) ConfirmEdgeByTimer(opts *bind.TransactOpts, eId [32]byte, ancestorIds [][32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.contract.Transact(opts, "confirmEdgeByTimer", eId, ancestorIds)
+}
+
+// ConfirmEdgeByTimer is a paid mutator transaction binding the contract method 0xc399d509.
+//
+// Solidity: function confirmEdgeByTimer(bytes32 eId, bytes32[] ancestorIds) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) ConfirmEdgeByTimer(eId [32]byte, ancestorIds [][32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.ConfirmEdgeByTimer(&_IEdgeChallengeManager.TransactOpts, eId, ancestorIds)
+}
+
+// ConfirmEdgeByTimer is a paid mutator transaction binding the contract method 0xc399d509.
+//
+// Solidity: function confirmEdgeByTimer(bytes32 eId, bytes32[] ancestorIds) returns()
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorSession) ConfirmEdgeByTimer(eId [32]byte, ancestorIds [][32]byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.ConfirmEdgeByTimer(&_IEdgeChallengeManager.TransactOpts, eId, ancestorIds)
+}
+
+// CreateLayerZeroEdge is a paid mutator transaction binding the contract method 0x16a0ca0b.
+//
+// Solidity: function createLayerZeroEdge((uint8,bytes32,uint256,bytes32,uint256,bytes32) args, bytes , bytes ) payable returns(bytes32)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactor) CreateLayerZeroEdge(opts *bind.TransactOpts, args CreateEdgeArgs, arg1 []byte, arg2 []byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.contract.Transact(opts, "createLayerZeroEdge", args, arg1, arg2)
+}
+
+// CreateLayerZeroEdge is a paid mutator transaction binding the contract method 0x16a0ca0b.
+//
+// Solidity: function createLayerZeroEdge((uint8,bytes32,uint256,bytes32,uint256,bytes32) args, bytes , bytes ) payable returns(bytes32)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerSession) CreateLayerZeroEdge(args CreateEdgeArgs, arg1 []byte, arg2 []byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.CreateLayerZeroEdge(&_IEdgeChallengeManager.TransactOpts, args, arg1, arg2)
+}
+
+// CreateLayerZeroEdge is a paid mutator transaction binding the contract method 0x16a0ca0b.
+//
+// Solidity: function createLayerZeroEdge((uint8,bytes32,uint256,bytes32,uint256,bytes32) args, bytes , bytes ) payable returns(bytes32)
+func (_IEdgeChallengeManager *IEdgeChallengeManagerTransactorSession) CreateLayerZeroEdge(args CreateEdgeArgs, arg1 []byte, arg2 []byte) (*types.Transaction, error) {
+	return _IEdgeChallengeManager.Contract.CreateLayerZeroEdge(&_IEdgeChallengeManager.TransactOpts, args, arg1, arg2)
 }
 
 // IInboxMetaData contains all meta data concerning the IInbox contract.
