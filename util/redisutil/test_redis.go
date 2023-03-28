@@ -11,8 +11,9 @@ import (
 	"testing"
 )
 
+// CreateTestRedis Provides external redis url, this is only used when redistest tag is added.
 // t param is used to make sure this is only called in tests
-func GetTestRedisURL(t *testing.T) string {
+func CreateTestRedis(t *testing.T) string {
 	redisUrl := os.Getenv("TEST_REDIS")
 	if redisUrl == "" {
 		redisUrl = DefaultTestRedisURL

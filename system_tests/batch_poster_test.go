@@ -28,7 +28,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 
 	var redisUrl string
 	if useRedis {
-		redisUrl = redisutil.GetTestRedisURL(t)
+		redisUrl = redisutil.CreateTestRedis(t)
 	}
 	parallelBatchPosters := 1
 	if redisUrl != "" {

@@ -111,7 +111,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	nullSigner, err := signature.NewSignVerify(&coordConfig.Signing, nil, nil)
 	Require(t, err)
 
-	redisUrl := redisutil.GetTestRedisURL(t)
+	redisUrl := redisutil.CreateTestRedis(t)
 	coordConfig.RedisUrl = redisUrl
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)

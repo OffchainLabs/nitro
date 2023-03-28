@@ -13,8 +13,9 @@ import (
 	"testing"
 )
 
+// CreateTestRedis Creates a new miniredis and returns its url.
 // t param is used to make sure this is only called in tests
-func GetTestRedisURL(t *testing.T) string {
+func CreateTestRedis(t *testing.T) string {
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)
 
