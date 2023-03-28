@@ -104,10 +104,8 @@ type SpecEdge interface {
 	PresumptiveTimer(ctx context.Context) (uint64, error)
 	IsPresumptive(ctx context.Context) (bool, error)
 	Status(ctx context.Context) (EdgeStatus, error)
-	HasConfirmedRival(ctx context.Context) (bool, error)
 	// Gets the two direct children of an edge, if any.
 	DirectChildren(ctx context.Context) (util.Option[EdgeChildren], error)
-	GetSubChallenge(ctx context.Context) (util.Option[SpecChallenge], error)
 	// Challenge moves
 	Bisect(
 		ctx context.Context,
