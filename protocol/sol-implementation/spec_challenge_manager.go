@@ -2,37 +2,61 @@ package solimpl
 
 import (
 	"context"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/common"
 	"time"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 )
 
-type SpecEdge struct{}
+type SpecEdge struct {
+	id               [32]byte
+	manager          *SpecChallengeManager
+	startHeight      uint64
+	startCommitment  common.Hash
+	targetHeight     uint64
+	targetCommitment common.Hash
+	miniStaker       common.Address
+}
 
 func (e *SpecEdge) Id() [32]byte {
-	return [32]byte{}
+	return e.id
 }
-func (e *SpecEdge) MiniStaker() (common.Address, error) {
-	return common.Address{}, nil
-}
-func (e *SpecEdge) StartCommitment() (protocol.Height, common.Hash) {
-	return 0, common.Hash{}
-}
-func (e *SpecEdge) TargetCommitment() (protocol.Height, common.Hash) {
 
-	return 0, common.Hash{}
+func (e *SpecEdge) MiniStaker() (common.Address, error) {
+	return e.miniStaker, nil
 }
+
+func (e *SpecEdge) StartCommitment() (protocol.Height, common.Hash) {
+	return protocol.Height(e.startHeight), e.startCommitment
+}
+
+func (e *SpecEdge) TargetCommitment() (protocol.Height, common.Hash) {
+	return protocol.Height(e.targetHeight), e.targetCommitment
+}
+
 func (e *SpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
-	return 0, nil
+	timer, err := e.manager.caller.GetCurrentPsTimer(e.manager.callOpts, e.id)
+	if err != nil {
+		return 0, err
+	}
+	return timer.Uint64(), nil
 }
+
 func (e *SpecEdge) IsPresumptive(ctx context.Context) (bool, error) {
-	return false, nil
+	return e.manager.caller.IsPresumptive(e.manager.callOpts, e.id)
 }
+
 func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
-	return protocol.EdgePending, nil
+	edge, err := e.manager.caller.GetEdge(e.manager.callOpts, e.id)
+	if err != nil {
+		return 0, err
+	}
+	return protocol.EdgeStatus(edge.Status), nil
 }
+
 func (e *SpecEdge) DirectChildren(ctx context.Context) (util.Option[protocol.EdgeChildren], error) {
 	return util.None[protocol.EdgeChildren](), nil
 
@@ -55,7 +79,9 @@ func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context) error {
 	return nil
 }
 
-type SpecChallenge struct{}
+type SpecChallenge struct {
+	manager *SpecChallengeManager
+}
 
 func (c *SpecChallenge) Id() protocol.ChallengeHash {
 	return protocol.ChallengeHash{}
@@ -104,26 +130,25 @@ func (c *SpecChallenge) AddSubChallengeLevelZeroEdge(
 
 // ChallengeManager --
 type SpecChallengeManager struct {
-	addr           common.Address
-	assertionChain *AssertionChain
-	caller         *mocksgen.SpecChallengeManagerCaller
-	writer         *mocksgen.SpecChallengeManagerTransactor
-	filterer       *mocksgen.SpecChallengeManagerFilterer
+	addr     common.Address
+	callOpts *bind.CallOpts
+	caller   *challengeV2gen.EdgeChallengeManagerCaller
+	writer   *challengeV2gen.EdgeChallengeManagerTransactor
+	filterer *challengeV2gen.EdgeChallengeManagerFilterer
 }
 
 // CurrentChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
 func NewSpecCM(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	managerBinding, err := mocksgen.NewSpecChallengeManager(common.Address{}, nil)
+	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(common.Address{}, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &SpecChallengeManager{
-		addr:           common.Address{},
-		assertionChain: &AssertionChain{},
-		caller:         &managerBinding.SpecChallengeManagerCaller,
-		writer:         &managerBinding.SpecChallengeManagerTransactor,
-		filterer:       &managerBinding.SpecChallengeManagerFilterer,
+		addr:     common.Address{},
+		caller:   &managerBinding.EdgeChallengeManagerCaller,
+		writer:   &managerBinding.EdgeChallengeManagerTransactor,
+		filterer: &managerBinding.EdgeChallengeManagerFilterer,
 	}, nil
 }
 
@@ -163,7 +188,19 @@ func (cm *SpecChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeHash,
 ) (util.Option[protocol.SpecEdge], error) {
-	return util.None[protocol.SpecEdge](), nil
+	edge, err := cm.caller.GetEdge(cm.callOpts, edgeId)
+	if err != nil {
+		return util.None[protocol.SpecEdge](), err
+	}
+	return util.Some(&SpecEdge{
+		id:               edge.ClaimEdgeId,
+		manager:          cm,
+		startHeight:      edge.StartHeight.Uint64(),
+		targetHeight:     edge.EndHeight.Uint64(),
+		startCommitment:  edge.StartHistoryRoot,
+		targetCommitment: edge.EndHistoryRoot,
+		miniStaker:       edge.Staker,
+	}), nil
 }
 
 // Gets a challenge by its hash.
