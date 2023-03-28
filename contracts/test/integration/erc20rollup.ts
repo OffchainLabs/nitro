@@ -3,6 +3,7 @@ import {
   L1ToL2MessageStatus,
   L1TransactionReceipt,
   L2Network,
+  L2TransactionReceipt,
 } from '@arbitrum/sdk'
 import { getBaseFee } from '@arbitrum/sdk/dist/lib/utils/lib'
 import { JsonRpcProvider } from '@ethersproject/providers'
@@ -10,6 +11,7 @@ import { expect } from 'chai'
 import dotenv from 'dotenv'
 import { ethers, Wallet } from 'ethers'
 import {
+  ArbSys__factory,
   ERC20,
   ERC20Bridge__factory,
   ERC20Inbox,
@@ -87,7 +89,7 @@ describe('ArbERC20Rollup', () => {
     )
   })
 
-  it('should deposit native token to L2', async function () {
+  it('can deposit native token to L2', async function () {
     // snapshot state before deposit
     const userL1TokenBalance = await token.balanceOf(userL1Wallet.address)
     const userL2Balance = await l2Provider.getBalance(userL2Wallet.address)
@@ -95,8 +97,8 @@ describe('ArbERC20Rollup', () => {
       _l2Network.ethBridge.bridge
     )
 
-    /// deposit 25 tokens
-    const amountToDeposit = ethers.utils.parseEther('25')
+    /// deposit 60 tokens
+    const amountToDeposit = ethers.utils.parseEther('60')
     await (
       await token
         .connect(userL1Wallet)
@@ -130,10 +132,9 @@ describe('ArbERC20Rollup', () => {
     )
   })
 
-  it('should issue retryable ticket (no calldata)', async function () {
+  it('can issue retryable ticket (no calldata)', async function () {
     // snapshot state before issuing retryable
     const userL1TokenBalance = await token.balanceOf(userL1Wallet.address)
-    const userL1Balance = await l1Provider.getBalance(userL1Wallet.address)
     const userL2Balance = await l2Provider.getBalance(userL2Wallet.address)
     const aliasL2Balance = await l2Provider.getBalance(
       applyAlias(userL2Wallet.address)
@@ -231,7 +232,7 @@ describe('ArbERC20Rollup', () => {
     )
   })
 
-  it('should issue retryable ticket', async function () {
+  it('can issue retryable ticket', async function () {
     // deploy contract on L2 which will be retryable's target
     const ethVaultContract = await new EthVault__factory(
       userL2Wallet.connect(l2Provider)
@@ -346,6 +347,53 @@ describe('ArbERC20Rollup', () => {
     )
     expect(bridgeL1TokenAfter.sub(bridgeL1TokenBalance)).to.be.eq(
       tokenTotalFeeAmount
+    )
+  })
+
+  it('can withdraw funds from L2 to L1', async function () {
+    // snapshot state before issuing retryable
+    const userL1TokenBalance = await token.balanceOf(userL1Wallet.address)
+    const userL2Balance = await l2Provider.getBalance(userL2Wallet.address)
+    const bridgeL1TokenBalance = await token.balanceOf(
+      _l2Network.ethBridge.bridge
+    )
+
+    /// send L2 to L1 TX
+    const arbSys = ArbSys__factory.connect(
+      '0x0000000000000000000000000000000000000064',
+      l2Provider
+    )
+    const withdrawAmount = ethers.utils.parseEther('3')
+    const withdrawTx = await arbSys
+      .connect(userL2Wallet)
+      .sendTxToL1(userL1Wallet.address, '0x', {
+        value: withdrawAmount,
+      })
+    const withdrawReceipt = await withdrawTx.wait()
+    const l2Receipt = new L2TransactionReceipt(withdrawReceipt)
+
+    // wait until dispute period passes and withdrawal is ready for execution
+    sleep(15 * 1000)
+    const messages = await l2Receipt.getL2ToL1Messages(userL1Wallet)
+    const l2ToL1Msg = messages[0]
+    const timeToWaitMs = 60 * 1000
+    await l2ToL1Msg.waitUntilReadyToExecute(l2Provider, timeToWaitMs)
+
+    // execute
+    await (await l2ToL1Msg.execute(l2Provider)).wait()
+
+    // check balances after withdrawal is processed
+    const userL1TokenAfter = await token.balanceOf(userL2Wallet.address)
+    expect(userL1TokenAfter.sub(userL1TokenBalance)).to.be.eq(withdrawAmount)
+
+    const userL2BalanceAfter = await l2Provider.getBalance(userL2Wallet.address)
+    expect(userL2BalanceAfter).to.be.lte(userL2Balance.sub(withdrawAmount))
+
+    const bridgeL1TokenAfter = await token.balanceOf(
+      _l2Network.ethBridge.bridge
+    )
+    expect(bridgeL1TokenBalance.sub(bridgeL1TokenAfter)).to.be.eq(
+      withdrawAmount
     )
   })
 })
