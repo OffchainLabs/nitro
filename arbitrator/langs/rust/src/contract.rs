@@ -32,7 +32,7 @@ extern "C" {
         return_data_len: *mut usize,
     ) -> u8;
 
-    /// Reverts if a call has never happened
+    /// A noop when there's never been a call
     fn read_return_data(dest: *mut u8);
 }
 
