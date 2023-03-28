@@ -16,11 +16,20 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+)
+
+var (
+	validatorPendingValidationsGauge   = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
+	validatorValidValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
+	validatorFailedValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
+	validatorLastBlockInLastBatchGauge = metrics.NewRegisteredGauge("arb/validator/last_block_in_last_batch", nil)
+	validatorLastBlockValidatedGauge   = metrics.NewRegisteredGauge("arb/validator/last_block_validated", nil)
 )
 
 type BlockValidator struct {
@@ -259,6 +268,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
 		atomic.StoreUint64(&v.lastBlockValidated, v.genesisBlockNum)
+		validatorLastBlockValidatedGauge.Update(int64(v.genesisBlockNum))
 		genesisBlock := v.blockchain.GetBlockByNumber(v.genesisBlockNum)
 		if genesisBlock == nil {
 			return fmt.Errorf("blockchain missing genesis block number %v", v.genesisBlockNum)
@@ -296,6 +306,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 	}
 
 	atomic.StoreUint64(&v.lastBlockValidated, info.BlockNumber)
+	validatorLastBlockValidatedGauge.Update(int64(info.BlockNumber))
 	v.lastBlockValidatedHash = info.BlockHash
 	v.nextBlockToValidate = v.lastBlockValidated + 1
 	v.globalPosNextSend = info.AfterPosition
@@ -368,6 +379,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if v.lastBlockValidatedUnknown {
 		if block.Hash() == v.lastBlockValidatedHash {
 			v.lastBlockValidated = blockNum
+			validatorLastBlockValidatedGauge.Update(int64(blockNum))
 			v.nextBlockToValidate = blockNum + 1
 			v.lastBlockValidatedUnknown = false
 			log.Info("Block building caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
@@ -500,6 +512,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				}
 			}
 			v.lastBlockValidated = uint64(arbutil.MessageCountToBlockNumber(firstMsgInBatch+arbutil.MessageIndex(v.globalPosNextSend.PosInBatch), v.genesisBlockNum))
+			validatorLastBlockValidatedGauge.Update(int64(v.lastBlockValidated))
 			v.nextBlockToValidate = v.lastBlockValidated + 1
 			v.lastBlockValidatedUnknown = false
 			log.Info("Inbox caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
@@ -534,6 +547,14 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("sequencer message bad format", "blockNr", v.nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
+		msgCountInBatch, err := v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber)
+		if err != nil {
+			log.Error("failed to get batch message count", "err", err, "batch", v.globalPosNextSend.BatchNumber)
+			return
+		}
+		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
+		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
+		validatorPendingValidationsGauge.Inc(1)
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
@@ -708,6 +729,8 @@ func (v *BlockValidator) progressValidated() {
 			if err != nil {
 				v.possiblyFatal(err)
 				validationStatus.setStatus(Failed)
+				validatorFailedValidationsCounter.Inc(1)
+				validatorPendingValidationsGauge.Dec(1)
 				return
 			}
 		}
@@ -715,6 +738,8 @@ func (v *BlockValidator) progressValidated() {
 			run.Close()
 		}
 		validationStatus.replaceStatus(ValidationSent, Valid)
+		validatorValidValidationsCounter.Inc(1)
+		validatorPendingValidationsGauge.Dec(1)
 		v.triggerSendValidations()
 		earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
 		seqMsgNr := validationEntry.StartPosition.BatchNumber
@@ -727,6 +752,7 @@ func (v *BlockValidator) progressValidated() {
 
 		v.lastBlockValidatedMutex.Lock()
 		atomic.StoreUint64(&v.lastBlockValidated, checkingBlock)
+		validatorLastBlockValidatedGauge.Update(int64(checkingBlock))
 		v.lastBlockValidatedHash = validationEntry.BlockHash
 		v.lastBlockValidatedMutex.Unlock()
 		v.recentlyValid(validationEntry.BlockHeader)
@@ -763,6 +789,7 @@ func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error 
 		v.lastBlockValidatedUnknown = true
 	} else {
 		v.lastBlockValidated = block.NumberU64()
+		validatorLastBlockValidatedGauge.Update(int64(v.lastBlockValidated))
 		v.nextBlockToValidate = v.lastBlockValidated + 1
 	}
 	v.lastBlockValidatedHash = globalState.BlockHash
@@ -913,6 +940,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 			v.lastBlockValidatedMutex.Lock()
 		}
 		atomic.StoreUint64(&v.lastBlockValidated, blockNum)
+		validatorLastBlockValidatedGauge.Update(int64(blockNum))
 		v.lastBlockValidatedHash = blockHash
 		if !hasLastValidatedMutex {
 			v.lastBlockValidatedMutex.Unlock()
