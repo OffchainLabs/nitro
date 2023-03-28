@@ -167,17 +167,6 @@ library EdgeStoreLib {
     }
 }
 
-interface IEdgeChallengeManager {
-    function createLayerZeroEdge() external;
-    function bisectEdge() external;
-    function confirmEdgeByChildren() external;
-    function confirmEdgeByTimer() external;
-    function confirmEdgeByClaim() external;
-    // base id is parts of an edge shared by rivals (challengeid, start commitment, start height, end height)
-    // function baseId(bytes32 edgeId) external;
-    // function psTime(bytes32 edgeId) external;
-}
-
 struct CreateEdgeArgs {
     ChallengeType edgeChallengeType;
     bytes32 startHistoryRoot;
