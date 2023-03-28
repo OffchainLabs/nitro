@@ -62,8 +62,8 @@ type SpecChallenge interface {
 	TopLevelClaimCommitment(ctx context.Context) (Height, common.Hash, error)
 	// The winner level-zero edge for a challenge.
 	WinningEdge(ctx context.Context) (util.Option[SpecEdge], error)
-	// Checks if two edges are at a one-step-fork.
-	AreAtOneStepFork(a, b SpecEdge) (bool, error)
+	// Checks the start commitment of an edge is the source of a one-step fork.
+	EdgeIsOneStepForkSource(edge SpecEdge) (bool, error)
 	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
 	// Adds a level-zero edge to a block challenge given an assertion and a history commitment.
 	AddBlockChallengeLevelZeroEdge(
