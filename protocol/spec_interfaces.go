@@ -64,7 +64,6 @@ type SpecChallenge interface {
 	WinningEdge(ctx context.Context) (util.Option[SpecEdge], error)
 	// Checks the start commitment of an edge is the source of a one-step fork.
 	EdgeIsOneStepForkSource(edge SpecEdge) (bool, error)
-	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
 	// Adds a level-zero edge to a block challenge given an assertion and a history commitment.
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
@@ -114,6 +113,7 @@ type SpecEdge interface {
 		history util.HistoryCommitment,
 		proof []byte,
 	) (SpecEdge, SpecEdge, error)
+	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
 	// Confirms an edge for having a presumptive timer >= a challenge period.
 	ConfirmForTimer(ctx context.Context) error
 	// Confirms an edge for having a subchallenge winner of a one-step-proof.

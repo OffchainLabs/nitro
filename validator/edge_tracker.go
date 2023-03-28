@@ -82,7 +82,7 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		return et.fsm.Do(edgeAwaitSubchallengeResolution{})
 	// Edge should bisect.
 	case edgeBisecting:
-		bisectedTo, err := et.bisect(ctx)
+		firstChild, secondChild, err := et.bisect(ctx)
 		if err != nil {
 			if errors.Is(err, solimpl.ErrAlreadyExists) {
 				return et.fsm.Do(edgeBackToStart{})
@@ -96,10 +96,10 @@ func (et *edgeTracker) act(ctx context.Context) error {
 			// }).Error("could not bisect")
 			return et.fsm.Do(edgeBackToStart{})
 		}
-		tracker, err := newEdgeTracker(
+		firstTracker, err := newEdgeTracker(
 			et.cfg,
 			et.challenge,
-			bisectedTo,
+			firstChild,
 		)
 		if err != nil {
 			// log.WithError(err).WithFields(logrus.Fields{
@@ -111,7 +111,23 @@ func (et *edgeTracker) act(ctx context.Context) error {
 			// }).Error("could not create new vertex tracker")
 			return et.fsm.Do(edgeBackToStart{})
 		}
-		go tracker.spawn(ctx)
+		go firstTracker.spawn(ctx)
+		secondTracker, err := newEdgeTracker(
+			et.cfg,
+			et.challenge,
+			secondChild,
+		)
+		if err != nil {
+			// log.WithError(err).WithFields(logrus.Fields{
+			// 	"height":        vt.vertex.HistoryCommitment().Height,
+			// 	"merkle":        util.Trunc(vt.vertex.HistoryCommitment().Merkle.Bytes()),
+			// 	"validatorName": vt.cfg.validatorName,
+			// 	"challengeType": vt.challenge.GetType(),
+			// 	"address":       util.Trunc(vt.cfg.validatorAddress.Bytes()),
+			// }).Error("could not create new vertex tracker")
+			return et.fsm.Do(edgeBackToStart{})
+		}
+		go secondTracker.spawn(ctx)
 		return et.fsm.Do(edgeBackToStart{})
 	// Edge is presumptive, should do nothing until it loses ps status.
 	case edgePresumptive:
@@ -133,18 +149,198 @@ func (et *edgeTracker) act(ctx context.Context) error {
 	}
 }
 
-func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, error) {
-	return nil, nil
+// Determines the bisection point from parentHeight to toHeight and returns a history
+// commitment with a prefix proof for the action based on the challenge type.
+func (et *edgeTracker) determineBisectionHistoryWithProof(
+	ctx context.Context,
+) (util.HistoryCommitment, []byte, error) {
+	startHeight, _ := et.edge.StartCommitment()
+	endHeight, _ := et.edge.TargetCommitment()
+	bisectTo, err := util.BisectionPoint(uint64(startHeight), uint64(endHeight))
+	if err != nil {
+		return util.HistoryCommitment{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", startHeight, endHeight)
+	}
+
+	if et.challenge.GetType() == protocol.BlockChallenge {
+		historyCommit, commitErr := et.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
+		if commitErr != nil {
+			return util.HistoryCommitment{}, nil, commitErr
+		}
+		proof, proofErr := et.cfg.stateManager.PrefixProof(ctx, bisectTo, uint64(endHeight))
+		if proofErr != nil {
+			return util.HistoryCommitment{}, nil, proofErr
+		}
+		return historyCommit, proof, nil
+	}
+	topLevelHeight, _, err := et.challenge.TopLevelClaimCommitment(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, nil, err
+	}
+
+	fromAssertionHeight := uint64(topLevelHeight)
+	toAssertionHeight := fromAssertionHeight + 1
+
+	var historyCommit util.HistoryCommitment
+	var commitErr error
+	var proof []byte
+	var proofErr error
+	switch et.challenge.GetType() {
+	case protocol.BigStepChallenge:
+		historyCommit, commitErr = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
+		proof, proofErr = et.cfg.stateManager.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
+	case protocol.SmallStepChallenge:
+		historyCommit, commitErr = et.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
+		proof, proofErr = et.cfg.stateManager.SmallStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
+	default:
+		return util.HistoryCommitment{}, nil, fmt.Errorf("unsupported challenge type: %s", et.challenge.GetType())
+	}
+	if commitErr != nil {
+		return util.HistoryCommitment{}, nil, commitErr
+	}
+	if proofErr != nil {
+		return util.HistoryCommitment{}, nil, proofErr
+	}
+	return historyCommit, proof, nil
+}
+
+func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.SpecEdge, error) {
+	historyCommit, proof, err := et.determineBisectionHistoryWithProof(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	bisectTo := historyCommit.Height
+	firstChild, secondChild, err := et.edge.Bisect(ctx, historyCommit, proof)
+	if err != nil {
+		return nil, nil, errors.Wrapf(
+			err,
+			"%s could not bisect to height=%d,commit=%s from height=%d,commit=%s",
+			et.cfg.validatorName,
+			bisectTo,
+			util.Trunc(historyCommit.Merkle.Bytes()),
+			// TODO: Change.
+			5,
+			"hi",
+			// validatorChallengeVertexHistoryCommitment.Height,
+			// util.Trunc(validatorChallengeVertexHistoryCommitment.Merkle.Bytes()),
+		)
+	}
+	isPs, err := firstChild.IsPresumptive(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	log.WithFields(logrus.Fields{
+		"name":          et.cfg.validatorName,
+		"challengeType": et.challenge.GetType(),
+		"isPs":          isPs,
+		// "bisectedFrom":       validatorChallengeVertexHistoryCommitment.Height,
+		// "bisectedFromMerkle": util.Trunc(validatorChallengeVertexHistoryCommitment.Merkle.Bytes()),
+		// "bisectedTo":         bisectedVertexCommitment.Height,
+		// "bisectedToMerkle":   util.Trunc(bisectedVertexCommitment.Merkle[:]),
+	}).Info("Successfully bisected edge")
+	return firstChild, secondChild, nil
 }
 
 func (et *edgeTracker) openSubchallenge(ctx context.Context) (protocol.SpecChallenge, error) {
-	return nil, nil
+	if et.challenge.GetType() == protocol.SmallStepChallenge {
+		return nil, errors.New("cannot create subchallenge on small step challenge")
+	}
+	manager, err := et.cfg.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var subChalToCreate protocol.ChallengeType
+	switch et.challenge.GetType() {
+	case protocol.BlockChallenge:
+		subChalToCreate = protocol.BigStepChallenge
+	case protocol.BigStepChallenge:
+		subChalToCreate = protocol.SmallStepChallenge
+	default:
+		return nil, errors.New("unsupported challenge type to create")
+	}
+	subChal, err := et.edge.CreateSubChallenge(ctx)
+	if err != nil {
+		switch {
+		case errors.Is(err, solimpl.ErrAlreadyExists):
+			subChalHash, calcErr := manager.CalculateChallengeHash(ctx, et.edge.Id(), subChalToCreate)
+			if calcErr != nil {
+				return nil, calcErr
+			}
+			fetchedSubChal, fetcherErr := manager.GetChallenge(ctx, subChalHash)
+			if fetcherErr != nil {
+				return nil, fetcherErr
+			}
+			if fetchedSubChal.IsNone() {
+				return nil, fmt.Errorf("no subchallenge found on-chain for id %#x", subChalHash)
+			}
+			subChal = fetchedSubChal.Unwrap()
+		default:
+			return nil, errors.Wrap(err, "subchallenge creation failed")
+		}
+	}
+	startHeight, startCommit := et.edge.StartCommitment()
+	log.WithFields(logrus.Fields{
+		"name":        et.cfg.validatorName,
+		"startHeight": startHeight,
+		"startCommit": util.Trunc(startCommit.Bytes()),
+	}).Infof("Opened %s subchallenge", subChal.GetType())
+	return subChal, nil
 }
 
 func (et *edgeTracker) openSubchallengeLeaf(
 	ctx context.Context,
 	subchallenge protocol.SpecChallenge,
 ) error {
+	topLevelHeight, _, err := subchallenge.TopLevelClaimCommitment(ctx)
+	if err != nil {
+		return err
+	}
+
+	fromAssertionHeight := topLevelHeight
+	toAssertionHeight := fromAssertionHeight + 1
+
+	startHeight, _ := et.edge.StartCommitment()
+	endHeight, _ := et.edge.TargetCommitment()
+
+	fields := logrus.Fields{
+		"name":                et.cfg.validatorName,
+		"edgeStartHeight":     startHeight,
+		"edgeEndHeight":       endHeight,
+		"fromAssertionHeight": fromAssertionHeight,
+		"toAssertionHeight":   toAssertionHeight,
+	}
+
+	var history util.HistoryCommitment
+	switch subchallenge.GetType() {
+	case protocol.BigStepChallenge:
+		log.WithFields(fields).Info("Big step leaf commit")
+		history, err = et.cfg.stateManager.BigStepLeafCommitment(ctx, uint64(fromAssertionHeight), uint64(toAssertionHeight))
+	case protocol.SmallStepChallenge:
+		log.WithFields(fields).Info("Small step leaf commit")
+		history, err = et.cfg.stateManager.SmallStepLeafCommitment(ctx, uint64(fromAssertionHeight), uint64(toAssertionHeight))
+	default:
+		return errors.New("unsupported subchallenge type for creating leaf commitment")
+	}
+	if err != nil {
+		return err
+	}
+	addedLeaf, err := subchallenge.AddSubChallengeLevelZeroEdge(ctx, et.edge, history)
+	if err != nil {
+		return err
+	}
+	fields["leafFirstState"] = util.Trunc(history.FirstLeaf.Bytes())
+	fields["leafHeight"] = history.Height
+	fields["leafCommitment"] = util.Trunc(history.Merkle.Bytes())
+	fields["subChallengeType"] = subchallenge.GetType()
+	log.WithFields(fields).Info("Added subchallenge leaf, now tracking its vertex")
+	tracker, err := newEdgeTracker(
+		et.cfg,
+		subchallenge,
+		addedLeaf,
+	)
+	if err != nil {
+		return err
+	}
+	go tracker.spawn(ctx)
 	return nil
 }
 

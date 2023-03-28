@@ -429,13 +429,9 @@ func (m *MockSpecChallenge) WinningEdge(ctx context.Context) (util.Option[protoc
 	args := m.Called(ctx)
 	return args.Get(0).(util.Option[protocol.SpecEdge]), args.Error(1)
 }
-func (m *MockSpecChallenge) AreAtOneStepFork(a, b protocol.SpecEdge) (bool, error) {
-	args := m.Called(a, b)
+func (m *MockSpecChallenge) EdgeIsOneStepForkSource(edge protocol.SpecEdge) (bool, error) {
+	args := m.Called(edge)
 	return args.Get(0).(bool), args.Error(1)
-}
-func (m *MockSpecChallenge) CreateSubChallenge(ctx context.Context) (protocol.SpecChallenge, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(protocol.SpecChallenge), args.Error(1)
 }
 func (m *MockSpecChallenge) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
@@ -498,6 +494,10 @@ func (m *MockSpecEdge) DirectChildren(ctx context.Context) (util.Option[protocol
 func (m *MockSpecEdge) GetSubChallenge(ctx context.Context) (util.Option[protocol.SpecChallenge], error) {
 	args := m.Called(ctx)
 	return args.Get(0).(util.Option[protocol.SpecChallenge]), args.Error(1)
+}
+func (m *MockSpecEdge) CreateSubChallenge(ctx context.Context) (protocol.SpecChallenge, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.SpecChallenge), args.Error(1)
 }
 
 // Challenge moves
