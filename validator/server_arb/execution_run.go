@@ -6,6 +6,7 @@ package server_arb
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -15,6 +16,7 @@ import (
 type executionRun struct {
 	stopwaiter.StopWaiter
 	cache *MachineCache
+	close sync.Once
 }
 
 func consumeMachine(promise *containers.Promise[validator.MachineStepResult], reqPosition uint64, machine MachineInterface, err error) {
@@ -54,12 +56,16 @@ func NewExecutionRun(
 }
 
 func (e *executionRun) Close() {
-	e.StopOnly()
+	go e.close.Do(func() {
+		e.StopAndWait()
+		if e.cache != nil {
+			e.cache.Destroy(e.GetParentContext())
+		}
+	})
 }
 
 func (e *executionRun) PrepareRange(start uint64, end uint64) {
-	newCache := e.cache.SpawnCacheWithLimits(e.GetContext(), start, end)
-	e.cache = newCache
+	e.cache.SetRange(e.GetContext(), start, end)
 }
 
 func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[validator.MachineStepResult] {
