@@ -28,9 +28,6 @@ dotenv.config()
 export const config = {
   arbUrl: process.env['ARB_URL'] as string,
   ethUrl: process.env['ETH_URL'] as string,
-
-  arbKey: process.env['ARB_KEY'] as string,
-  ethKey: process.env['ETH_KEY'] as string,
 }
 
 let l1Provider: JsonRpcProvider
@@ -373,7 +370,7 @@ describe('ArbERC20Rollup', () => {
     const l2Receipt = new L2TransactionReceipt(withdrawReceipt)
 
     // wait until dispute period passes and withdrawal is ready for execution
-    sleep(15 * 1000)
+    await sleep(5 * 1000)
     const messages = await l2Receipt.getL2ToL1Messages(userL1Wallet)
     const l2ToL1Msg = messages[0]
     const timeToWaitMs = 60 * 1000

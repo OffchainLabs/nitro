@@ -10,9 +10,6 @@ dotenv.config()
 export const config = {
   arbUrl: process.env['ARB_URL'] as string,
   ethUrl: process.env['ETH_URL'] as string,
-
-  arbKey: process.env['ARB_KEY'] as string,
-  ethKey: process.env['ETH_KEY'] as string,
 }
 
 export const getCustomNetworks = async (
