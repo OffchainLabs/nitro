@@ -43,7 +43,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 var apiClosures sync.Map
@@ -77,7 +76,6 @@ func newAPI(
 		callContract:  callContract,
 		getReturnData: getReturnData,
 	})
-	colors.PrintRed("Registered new API ", id)
 	return C.GoApi{
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
@@ -88,7 +86,6 @@ func newAPI(
 }
 
 func getAPI(api usize) *apiClosure {
-	colors.PrintRed("Getting API ", api)
 	any, ok := apiClosures.Load(int64(api))
 	if !ok {
 		log.Crit("failed to load stylus Go API", "id", api)
