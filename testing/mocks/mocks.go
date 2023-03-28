@@ -467,13 +467,13 @@ func (m *MockSpecEdge) MiniStaker() (common.Address, error) {
 	args := m.Called()
 	return args.Get(0).(common.Address), args.Error(1)
 }
-func (m *MockSpecEdge) StartCommitment() (protocol.Height, common.Hash, error) {
+func (m *MockSpecEdge) StartCommitment() (protocol.Height, common.Hash) {
 	args := m.Called()
-	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash), args.Error(1)
+	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash)
 }
-func (m *MockSpecEdge) TargetCommitment() (protocol.Height, common.Hash, error) {
+func (m *MockSpecEdge) TargetCommitment() (protocol.Height, common.Hash) {
 	args := m.Called()
-	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash), args.Error(1)
+	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash)
 }
 func (m *MockSpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)

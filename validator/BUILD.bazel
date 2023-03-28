@@ -5,6 +5,9 @@ go_library(
     srcs = [
         "challenge_moves.go",
         "challenges.go",
+        "edge_tracker.go",
+        "edge_tracker_states.go",
+        "edge_tracker_transition_table.go",
         "events_filter.go",
         "validator.go",
         "vertex_tracker.go",

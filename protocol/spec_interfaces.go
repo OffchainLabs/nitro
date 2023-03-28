@@ -99,8 +99,8 @@ type EdgeChildren struct {
 type SpecEdge interface {
 	Id() [32]byte
 	MiniStaker() (common.Address, error)
-	StartCommitment() (Height, common.Hash, error)
-	TargetCommitment() (Height, common.Hash, error)
+	StartCommitment() (Height, common.Hash)
+	TargetCommitment() (Height, common.Hash)
 	PresumptiveTimer(ctx context.Context) (uint64, error)
 	IsPresumptive(ctx context.Context) (bool, error)
 	Status(ctx context.Context) (EdgeStatus, error)
