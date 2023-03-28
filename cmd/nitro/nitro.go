@@ -817,7 +817,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 func applyArbitrumOneParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "arb1",
-		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"node.forwarding-target":             "https://arb1-sequencer.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
 		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
