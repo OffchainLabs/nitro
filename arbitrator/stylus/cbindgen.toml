@@ -5,3 +5,6 @@ include_guard = "arbitrator_bindings"
 parse_deps = true
 include = ["prover"]
 extra_bindings = ["prover"]
+
+[enum]
+prefix_with_name = true

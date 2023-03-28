@@ -11,9 +11,14 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
-Bytes32 getBytes32Impl(size_t api, Bytes32 key, uint64_t * cost);
-uint8_t setBytes32Impl(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error);
-uint8_t callContractWrap(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value);
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef size_t usize;
+
+Bytes32     getBytes32Wrap(usize api, Bytes32 key, u64 * cost);
+GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
+GoApiStatus callContractWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len);
+void        getReturnDataWrap(usize api, RustVec * data);
 */
 import "C"
 import (
@@ -36,6 +41,7 @@ type u64 = C.uint64_t
 type usize = C.size_t
 type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
+type rustVec = C.RustVec
 
 func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) error {
 	debugMode := 0
@@ -43,7 +49,7 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 		debugMode = 1
 	}
 
-	output := &C.RustVec{}
+	output := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u32(version),
@@ -94,7 +100,7 @@ func callUserWasm(
 		db.SetState(program, key, value)
 		return cost, nil
 	}
-	callContract := func(contract common.Address, input []byte, gas uint64, value *big.Int) ([]byte, uint64, error) {
+	callContract := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
 		// This closure performs a contract call. The implementation should match that of the EVM.
 		//
 		// Note that while the Yellow Paper is authoritative, the following go-ethereum
@@ -106,7 +112,7 @@ func callUserWasm(
 
 		// read-only calls are not payable (opCall)
 		if readOnly && value.Sign() != 0 {
-			return nil, 0, vm.ErrWriteProtection
+			return 0, 0, vm.ErrWriteProtection
 		}
 
 		evm := interpreter.Evm()
@@ -115,10 +121,10 @@ func callUserWasm(
 		// computes makeCallVariantGasCallEIP2929 and gasCall
 		baseCost, err := vm.WasmCallCost(db, contract, value, startGas)
 		if err != nil {
-			return nil, 0, err
+			return 0, 0, err
 		}
 		if gas < baseCost {
-			return nil, 0, vm.ErrOutOfGas
+			return 0, 0, vm.ErrOutOfGas
 		}
 		gas -= baseCost
 		gas = gas - gas/64
@@ -135,16 +141,24 @@ func callUserWasm(
 		}
 
 		ret, returnGas, err := evm.Call(scope.Contract, contract, input, gas, value)
+		interpreter.SetReturnData(ret)
 		cost := arbmath.SaturatingUSub(startGas, returnGas)
-		return ret, cost, err
+		return uint32(len(ret)), cost, err
+	}
+	getReturnData := func() []byte {
+		data := interpreter.GetReturnData()
+		if data == nil {
+			return []byte{}
+		}
+		return data
 	}
 
-	output := &C.RustVec{}
+	output := &rustVec{}
 	status := userStatus(C.stylus_call(
 		goSlice(module),
 		goSlice(calldata),
 		stylusParams.encode(),
-		newAPI(getBytes32, setBytes32, callContract),
+		newAPI(getBytes32, setBytes32, callContract, getReturnData),
 		output,
 		(*u64)(gas),
 	))
@@ -156,34 +170,24 @@ func callUserWasm(
 	return data, err
 }
 
-const (
-	apiSuccess u8 = iota
-	apiFailure
-)
+const apiSuccess C.GoApiStatus = C.GoApiStatus_Success
+const apiFailure C.GoApiStatus = C.GoApiStatus_Failure
 
 //export getBytes32Impl
 func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
-	closure, err := getAPI(api)
-	if err != nil {
-		log.Error(err.Error())
-		return bytes32{}
-	}
+	closure := getAPI(api)
 	value, gas := closure.getBytes32(key.toHash())
 	*cost = u64(gas)
 	return hashToBytes32(value)
 }
 
 //export setBytes32Impl
-func setBytes32Impl(api usize, key, value bytes32, cost *u64, vec *C.RustVec) u8 {
-	closure, err := getAPI(api)
-	if err != nil {
-		vec.setString(err.Error())
-		log.Error(err.Error())
-		return apiFailure
-	}
+func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) C.GoApiStatus {
+	closure := getAPI(api)
+
 	gas, err := closure.setBytes32(key.toHash(), value.toHash())
 	if err != nil {
-		vec.setString(err.Error())
+		errVec.setString(err.Error())
 		return apiFailure
 	}
 	*cost = u64(gas)
@@ -191,20 +195,23 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64, vec *C.RustVec) u8
 }
 
 //export callContractImpl
-func callContractImpl(api usize, contract bytes20, data *C.RustVec, evmGas *u64, value bytes32) u8 {
-	closure, err := getAPI(api)
-	if err != nil {
-		log.Error(err.Error())
-		return apiFailure
-	}
+func callContractImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, value bytes32, len *u32) C.GoApiStatus {
+	closure := getAPI(api)
 
-	result, cost, err := closure.callContract(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
-	data.setBytes(result)
+	ret_len, cost, err := closure.callContract(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
 	*evmGas = u64(cost) // evmGas becomes the call's cost
+	*len = u32(ret_len)
 	if err != nil {
 		return apiFailure
 	}
 	return apiSuccess
+}
+
+//export getReturnDataImpl
+func getReturnDataImpl(api usize, output *rustVec) {
+	closure := getAPI(api)
+	return_data := closure.getReturnData()
+	output.setBytes(return_data)
 }
 
 func (value bytes20) toAddress() common.Address {
@@ -235,21 +242,21 @@ func hashToBytes32(hash common.Hash) bytes32 {
 	return value
 }
 
-func (vec *C.RustVec) read() []byte {
+func (vec *rustVec) read() []byte {
 	return arbutil.PointerToSlice((*byte)(vec.ptr), int(vec.len))
 }
 
-func (vec *C.RustVec) intoBytes() []byte {
+func (vec *rustVec) intoBytes() []byte {
 	slice := vec.read()
 	C.stylus_free(*vec)
 	return slice
 }
 
-func (vec *C.RustVec) setString(data string) {
+func (vec *rustVec) setString(data string) {
 	vec.setBytes([]byte(data))
 }
 
-func (vec *C.RustVec) setBytes(data []byte) {
+func (vec *rustVec) setBytes(data []byte) {
 	C.stylus_vec_set_bytes(vec, goSlice(data))
 }
 

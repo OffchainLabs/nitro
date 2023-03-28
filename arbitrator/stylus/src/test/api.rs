@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{LoadBytes32, StoreBytes32},
+    env::{GetBytes32, SetBytes32},
     native::{self, NativeInstance},
     run::RunProgram,
 };
@@ -18,6 +18,7 @@ use std::{collections::HashMap, sync::Arc};
 #[derive(Clone)]
 pub(crate) struct TestEvmContracts {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
+    return_data: Arc<Mutex<Vec<u8>>>,
     config: StylusConfig,
 }
 
@@ -25,6 +26,7 @@ impl TestEvmContracts {
     pub fn new(config: &StylusConfig) -> Self {
         Self {
             contracts: Arc::new(Mutex::new(HashMap::new())),
+            return_data: Arc::new(Mutex::new(vec![])),
             config: config.clone(),
         }
     }
@@ -50,7 +52,7 @@ impl TestEvmStorage {
         self.0.lock().entry(program).or_default().insert(key, value);
     }
 
-    pub fn getter(&self, program: Bytes20) -> LoadBytes32 {
+    pub fn getter(&self, program: Bytes20) -> GetBytes32 {
         let storage = self.clone();
         Box::new(move |key| {
             let value = storage.get_bytes32(program, key).unwrap().to_owned();
@@ -58,7 +60,7 @@ impl TestEvmStorage {
         })
     }
 
-    pub fn setter(&self, program: Bytes20) -> StoreBytes32 {
+    pub fn setter(&self, program: Bytes20) -> SetBytes32 {
         let mut storage = self.clone();
         Box::new(move |key, value| {
             drop(storage.set_bytes32(program, key, value));
@@ -77,11 +79,14 @@ impl NativeInstance {
         let get_bytes32 = storage.getter(address);
         let set_bytes32 = storage.setter(address);
         let moved_storage = storage.clone();
+        let moved_contracts = contracts.clone();
 
         let call = Box::new(
             move |address: Bytes20, input: Vec<u8>, gas, _value| unsafe {
                 // this call function is for testing purposes only and deviates from onchain behavior
+                let contracts = moved_contracts.clone();
                 let config = contracts.config.clone();
+                *contracts.return_data.lock() = vec![];
 
                 let mut instance = match contracts.contracts.lock().get(&address) {
                     Some(module) => NativeInstance::deserialize(module, config.clone()).unwrap(),
@@ -94,11 +99,17 @@ impl NativeInstance {
                 let outcome = instance.run_main(&input, &config).unwrap();
                 let gas_left: u64 = instance.gas_left().into();
                 let (status, outs) = outcome.into_data();
-                (outs, gas - gas_left, status)
+                let outs_len = outs.len() as u32;
+
+                *contracts.return_data.lock() = outs;
+                (outs_len, gas - gas_left, status)
             },
         );
+        let get_return_data =
+            Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
 
-        self.env_mut().set_evm_api(get_bytes32, set_bytes32, call);
+        self.env_mut()
+            .set_evm_api(get_bytes32, set_bytes32, call, get_return_data);
         storage
     }
 }

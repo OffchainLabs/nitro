@@ -89,7 +89,7 @@ impl RunProgram for NativeInstance {
                 return Ok(match escape {
                     Escape::OutOfGas => OutOfGas,
                     Escape::Memory(error) => UserOutcome::revert(error.into()),
-                    Escape::Internal(error) | Escape::Logical(error) => UserOutcome::revert(error),
+                    Escape::Internal(error) => UserOutcome::revert(error),
                 });
             }
         };

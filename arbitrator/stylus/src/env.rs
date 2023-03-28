@@ -102,20 +102,24 @@ pub struct MeterData {
 }
 
 /// State load: key → (value, cost)
-pub type LoadBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
+pub type GetBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 
 /// State store: (key, value) → (cost, error)
-pub type StoreBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
+pub type SetBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
 
-/// Contract call: (contract, calldata, evm_gas, value) → (return_data, evm_cost, status)
+/// Contract call: (contract, calldata, evm_gas, value) → (return_data_len, evm_cost, status)
 pub type CallContract =
-    Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (Vec<u8>, u64, UserOutcomeKind) + Send>;
+    Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (u32, u64, UserOutcomeKind) + Send>;
+
+/// Last call's return data: () → (return_data)
+pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
 
 pub struct EvmAPI {
-    load_bytes32: LoadBytes32,
-    store_bytes32: StoreBytes32,
+    get_bytes32: GetBytes32,
+    set_bytes32: SetBytes32,
     call_contract: CallContract,
-    pub return_data: Option<Vec<u8>>,
+    get_return_data: GetReturnData,
+    return_data_len: u32,
 }
 
 impl WasmEnv {
@@ -128,35 +132,38 @@ impl WasmEnv {
 
     pub fn set_evm_api(
         &mut self,
-        load_bytes32: LoadBytes32,
-        store_bytes32: StoreBytes32,
+        get_bytes32: GetBytes32,
+        set_bytes32: SetBytes32,
         call_contract: CallContract,
+        get_return_data: GetReturnData,
     ) {
         self.evm = Some(EvmAPI {
-            load_bytes32,
-            store_bytes32,
+            get_bytes32,
+            set_bytes32,
             call_contract,
-            return_data: None,
+            get_return_data,
+            return_data_len: 0,
         })
     }
 
-    pub fn evm(&mut self) -> eyre::Result<&mut EvmAPI> {
-        self.evm.as_mut().ok_or_else(|| eyre!("no evm api"))
+    pub fn evm(&mut self) -> &mut EvmAPI {
+        self.evm.as_mut().expect("no evm api")
     }
 
-    pub fn evm_ref(&self) -> eyre::Result<&EvmAPI> {
-        self.evm.as_ref().ok_or_else(|| eyre!("no evm api"))
+    pub fn evm_ref(&self) -> &EvmAPI {
+        self.evm.as_ref().expect("no evm api")
     }
 
     pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
         MemoryViewContainer::create(env)
     }
 
-    pub fn return_data(&self) -> Result<&Vec<u8>, Escape> {
-        let Some(data) = self.evm_ref()?.return_data.as_ref() else {
-            return Escape::logical("no return data")
-        };
-        Ok(data)
+    pub fn return_data_len(&self) -> u32 {
+        self.evm_ref().return_data_len
+    }
+
+    pub fn set_return_data_len(&mut self, len: u32) {
+        self.evm().return_data_len = len;
     }
 
     pub fn data<'a, 'b: 'a>(env: &'a mut WasmEnvMut<'b>) -> (&'a mut Self, MemoryViewContainer) {
@@ -404,11 +411,11 @@ impl<'a> MeteredMachine for MeterState<'a> {
 
 impl EvmAPI {
     pub fn load_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
-        (self.load_bytes32)(key)
+        (self.get_bytes32)(key)
     }
 
     pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> eyre::Result<u64> {
-        (self.store_bytes32)(key, value)
+        (self.set_bytes32)(key, value)
     }
 
     pub fn call_contract(
@@ -417,8 +424,12 @@ impl EvmAPI {
         input: Vec<u8>,
         evm_gas: u64,
         value: Bytes32,
-    ) -> (Vec<u8>, u64, UserOutcomeKind) {
+    ) -> (u32, u64, UserOutcomeKind) {
         (self.call_contract)(contract, input, evm_gas, value)
+    }
+
+    pub fn load_return_data(&mut self) -> Vec<u8> {
+        (self.get_return_data)()
     }
 }
 
@@ -430,8 +441,6 @@ pub enum Escape {
     Memory(MemoryAccessError),
     #[error("internal error: `{0}`")]
     Internal(ErrReport),
-    #[error("logical error: `{0}`")]
-    Logical(ErrReport),
     #[error("out of gas")]
     OutOfGas,
 }
@@ -439,10 +448,6 @@ pub enum Escape {
 impl Escape {
     pub fn internal<T>(error: &'static str) -> Result<T, Escape> {
         Err(Self::Internal(eyre!(error)))
-    }
-
-    pub fn logical<T>(error: &'static str) -> Result<T, Escape> {
-        Err(Self::Logical(eyre!(error)))
     }
 
     pub fn out_of_gas<T>() -> Result<T, Escape> {

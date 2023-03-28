@@ -11,30 +11,39 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
-Bytes32 getBytes32Impl(size_t api, Bytes32 key, uint64_t * cost);
-Bytes32 getBytes32Wrap(size_t api, Bytes32 key, uint64_t * cost) {
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef size_t usize;
+
+Bytes32 getBytes32Impl(usize api, Bytes32 key, u64 * cost);
+Bytes32 getBytes32Wrap(usize api, Bytes32 key, u64 * cost) {
     return getBytes32Impl(api, key, cost);
 }
 
-uint8_t setBytes32Impl(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error);
-uint8_t setBytes32Wrap(size_t api, Bytes32 key, Bytes32 value, uint64_t * cost, RustVec * error) {
+GoApiStatus setBytes32Impl(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
+GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error) {
     return setBytes32Impl(api, key, value, cost, error);
 }
 
-uint8_t callContractImpl(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value);
-uint8_t callContractWrap(size_t api, Bytes20 contract, RustVec * data, uint64_t * gas, Bytes32 value) {
-    return callContractImpl(api, contract, data, gas, value);
+GoApiStatus callContractImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len);
+GoApiStatus callContractWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len) {
+    return callContractImpl(api, contract, calldata, gas, value, len);
+}
+
+void getReturnDataImpl(usize api, RustVec * data);
+void getReturnDataWrap(usize api, RustVec * data) {
+    return getReturnDataImpl(api, data);
 }
 */
 import "C"
 import (
-	"errors"
-	"fmt"
 	"math/big"
 	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 var apiClosures sync.Map
@@ -43,38 +52,50 @@ var apiIds int64 // atomic
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
 type callContractType func(
-	contract common.Address, input []byte, gas uint64, value *big.Int) (output []byte, gas_left uint64, err error,
+	contract common.Address, input []byte, gas uint64, value *big.Int) (
+	retdata_len uint32, gas_left uint64, err error,
 )
+type getReturnDataType func() []byte
 
 type apiClosure struct {
-	getBytes32   getBytes32Type
-	setBytes32   setBytes32Type
-	callContract callContractType
+	getBytes32    getBytes32Type
+	setBytes32    setBytes32Type
+	callContract  callContractType
+	getReturnData getReturnDataType
 }
 
-func newAPI(getBytes32 getBytes32Type, setBytes32 setBytes32Type, callContract callContractType) C.GoAPI {
+func newAPI(
+	getBytes32 getBytes32Type,
+	setBytes32 setBytes32Type,
+	callContract callContractType,
+	getReturnData getReturnDataType,
+) C.GoApi {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
-		getBytes32:   getBytes32,
-		setBytes32:   setBytes32,
-		callContract: callContract,
+		getBytes32:    getBytes32,
+		setBytes32:    setBytes32,
+		callContract:  callContract,
+		getReturnData: getReturnData,
 	})
-	return C.GoAPI{
-		get_bytes32:   (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:   (*[0]byte)(C.setBytes32Wrap),
-		call_contract: (*[0]byte)(C.callContractWrap),
-		id:            u64(id),
+	colors.PrintRed("Registered new API ", id)
+	return C.GoApi{
+		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
+		call_contract:   (*[0]byte)(C.callContractWrap),
+		get_return_data: (*[0]byte)(C.getReturnDataWrap),
+		id:              u64(id),
 	}
 }
 
-func getAPI(api usize) (*apiClosure, error) {
+func getAPI(api usize) *apiClosure {
+	colors.PrintRed("Getting API ", api)
 	any, ok := apiClosures.Load(int64(api))
 	if !ok {
-		return nil, fmt.Errorf("failed to load stylus Go API %v", api)
+		log.Crit("failed to load stylus Go API", "id", api)
 	}
 	closures, ok := any.(apiClosure)
 	if !ok {
-		return nil, errors.New("wrong type for stylus Go API")
+		log.Crit("wrong type for stylus Go API", "id", api)
 	}
-	return &closures, nil
+	return &closures
 }

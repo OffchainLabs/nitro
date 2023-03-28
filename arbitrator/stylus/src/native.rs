@@ -3,7 +3,7 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    host, GoAPI, RustVec,
+    host, GoApi, GoApiStatus, RustVec,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
@@ -20,6 +20,7 @@ use prover::{
 use std::{
     collections::BTreeMap,
     fmt::Debug,
+    mem,
     ops::{Deref, DerefMut},
 };
 use wasmer::{
@@ -140,44 +141,60 @@ impl NativeInstance {
         global.set(store, value.into()).map_err(ErrReport::msg)
     }
 
-    pub fn set_go_api(&mut self, api: GoAPI) {
+    pub fn set_go_api(&mut self, api: GoApi) {
         let env = self.env.as_mut(&mut self.store);
+        use GoApiStatus::*;
+
+        macro_rules! ptr {
+            ($expr:expr) => {
+                &mut $expr as *mut _
+            };
+        }
 
         let get = api.get_bytes32;
         let set = api.set_bytes32;
         let call = api.call_contract;
+        let get_return_data = api.get_return_data;
         let id = api.id;
 
         let get_bytes32 = Box::new(move |key| unsafe {
             let mut cost = 0;
-            let value = get(id, key, &mut cost as *mut _);
+            let value = get(id, key, ptr!(cost));
             (value, cost)
         });
         let set_bytes32 = Box::new(move |key, value| unsafe {
             let mut error = RustVec::new(vec![]);
             let mut cost = 0;
-            let status = set(id, key, value, &mut cost as *mut _, &mut error as *mut _);
+            let api_status = set(id, key, value, ptr!(cost), ptr!(error));
             let error = error.into_vec(); // done here to always drop
-            match status {
-                0 => Ok(cost),
-                _ => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
+            match api_status {
+                Success => Ok(cost),
+                Failure => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
             }
         });
         let call_contract = Box::new(move |contract: Bytes20, input, evm_gas, value| unsafe {
-            let mut data = RustVec::new(input); // used for both input and output
+            let mut calldata = RustVec::new(input);
             let mut call_gas = evm_gas; // becomes the call's cost
+            let mut return_data_len: u32 = 0;
 
-            let status = call(
+            let api_status = call(
                 id,
                 contract,
-                &mut data as *mut _,
-                &mut call_gas as *mut _,
+                ptr!(calldata),
+                ptr!(call_gas),
                 value,
+                ptr!(return_data_len),
             );
-            (data.into_vec(), call_gas, status)
+            mem::drop(calldata.into_vec()); // only used for input
+            (return_data_len, call_gas, api_status.into())
+        });
+        let get_return_data = Box::new(move || unsafe {
+            let mut data = RustVec::new(vec![]);
+            get_return_data(id, ptr!(data));
+            data.into_vec()
         });
 
-        env.set_evm_api(get_bytes32, set_bytes32, call_contract)
+        env.set_evm_api(get_bytes32, set_bytes32, call_contract, get_return_data)
     }
 }
 

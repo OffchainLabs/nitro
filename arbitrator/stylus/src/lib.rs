@@ -116,12 +116,41 @@ pub unsafe extern "C" fn stylus_compile(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum GoApiStatus {
+    Success,
+    Failure,
+}
+
+impl From<GoApiStatus> for UserOutcomeKind {
+    fn from(value: GoApiStatus) -> Self {
+        match value {
+            GoApiStatus::Success => UserOutcomeKind::Success,
+            GoApiStatus::Failure => UserOutcomeKind::Revert,
+        }
+    }
+}
+
 #[repr(C)]
-pub struct GoAPI {
-    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
-    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64, *mut RustVec) -> u8,
-    pub call_contract:
-        unsafe extern "C" fn(usize, Bytes20, *mut RustVec, *mut u64, Bytes32) -> UserOutcomeKind,
+pub struct GoApi {
+    pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
+    pub set_bytes32: unsafe extern "C" fn(
+        id: usize,
+        key: Bytes32,
+        value: Bytes32,
+        evm_cost: *mut u64,
+        error: *mut RustVec,
+    ) -> GoApiStatus,
+    pub call_contract: unsafe extern "C" fn(
+        id: usize,
+        contract: Bytes20,
+        calldata: *mut RustVec,
+        gas: *mut u64,
+        value: Bytes32,
+        return_data_len: *mut u32,
+    ) -> GoApiStatus,
+    pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
     pub id: usize,
 }
 
@@ -130,7 +159,7 @@ pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
     params: GoParams,
-    go_api: GoAPI,
+    go_api: GoApi,
     output: *mut RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {

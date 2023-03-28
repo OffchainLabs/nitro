@@ -30,7 +30,7 @@ pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> 
 
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
-    let (value, cost) = data.evm()?.load_bytes32(key);
+    let (value, cost) = data.evm().load_bytes32(key);
     memory.write_slice(dest, &value.0)?;
 
     let mut meter = WasmEnv::meter(&mut env);
@@ -44,7 +44,7 @@ pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -
     let (data, memory) = WasmEnv::data(&mut env);
     let key = memory.read_bytes32(key)?;
     let value = memory.read_bytes32(value)?;
-    let cost = data.evm()?.store_bytes32(key, value)?;
+    let cost = data.evm().store_bytes32(key, value)?;
 
     let mut meter = WasmEnv::meter(&mut env);
     meter.buy_evm_gas(cost)
@@ -73,9 +73,9 @@ pub(crate) fn call_contract(
     let input = env.read_slice(calldata, calldata_len)?;
     let value = env.read_bytes32(value)?;
 
-    let (outs, evm_cost, status) = env.evm()?.call_contract(contract, input, evm_gas, value);
-    env.write_u32(return_data_len, outs.len() as u32);
-    env.evm()?.return_data = Some(outs);
+    let (outs_len, evm_cost, status) = env.evm().call_contract(contract, input, evm_gas, value);
+    env.set_return_data_len(outs_len);
+    env.write_u32(return_data_len, outs_len);
 
     let wasm_cost = pricing.evm_to_wasm(evm_cost).unwrap_or_default();
     env.buy_gas(wasm_cost)?;
@@ -84,9 +84,12 @@ pub(crate) fn call_contract(
 
 pub(crate) fn read_return_data(mut env: WasmEnvMut, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
-    let data = env.return_data()?;
-    env.pay_for_evm_copy(data.len())?;
-    env.write_slice(dest, env.return_data()?)?;
+    let len = env.return_data_len();
+    env.pay_for_evm_copy(len as usize)?;
+
+    let data = env.evm().load_return_data();
+    env.write_slice(dest, &data)?;
+    assert_eq!(data.len(), len as usize);
     Ok(())
 }
 
