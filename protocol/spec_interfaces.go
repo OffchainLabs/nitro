@@ -63,7 +63,7 @@ type SpecChallenge interface {
 	// The winner level-zero edge for a challenge.
 	WinningEdge(ctx context.Context) (util.Option[SpecEdge], error)
 	// Checks the start commitment of an edge is the source of a one-step fork.
-	EdgeIsOneStepForkSource(edge SpecEdge) (bool, error)
+	EdgeIsOneStepForkSource(ctx context.Context, edge SpecEdge) (bool, error)
 	// Adds a level-zero edge to a block challenge given an assertion and a history commitment.
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
@@ -103,7 +103,6 @@ type SpecEdge interface {
 	PresumptiveTimer(ctx context.Context) (uint64, error)
 	IsPresumptive(ctx context.Context) (bool, error)
 	Status(ctx context.Context) (EdgeStatus, error)
-	HasConfirmedRival(ctx context.Context) (bool, error)
 	// Gets the two direct children of an edge, if any.
 	DirectChildren(ctx context.Context) (util.Option[EdgeChildren], error)
 	// Challenge moves
