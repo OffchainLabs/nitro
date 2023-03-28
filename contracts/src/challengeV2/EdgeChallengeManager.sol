@@ -176,7 +176,46 @@ struct CreateEdgeArgs {
     bytes32 claimId;
 }
 
-contract EdgeChallengeManager {
+interface IEdgeChallengeManager {
+    // // Checks if a challenge by ID exists.
+    // function challengeExists(bytes32 challengeId) external view returns (bool);
+    // Fetches a challenge object by ID.
+    function getChallenge(bytes32 challengeId) external view returns (EChallenge memory);
+    // // Gets the winning claim ID for a challenge. TODO: Needs more thinking.
+    // function winningClaim(bytes32 challengeId) external view returns (bytes32);
+    // // Checks if an edge by ID exists.
+    // function edgeExists(bytes32 eId) external view returns (bool);
+    // Gets an edge by ID.
+    function getEdge(bytes32 eId) external view returns (ChallengeEdge memory);
+    // Gets the current ps timer by edge ID. TODO: Needs more thinking.
+    // Flushed ps time vs total current ps time needs differentiation
+    function getCurrentPsTimer(bytes32 eId) external view returns (uint256);
+    // // We define a base ID as hash(challengeType  ++ hash(startCommit ++ startHeight)) as a way
+    // // of checking if an edge has rivals. Edges can share the same base ID.
+    // function calculateBaseIdForEdge(bytes32 edgeId) external returns (bytes32);
+    // Checks if an edge's base ID corresponds to multiple rivals and checks if a one step fork exists.
+    function isAtOneStepFork(bytes32 eId) external view returns (bool);
+    // Creates a layer zero edge in a challenge.
+    function createLayerZeroEdge(CreateEdgeArgs memory args,
+        bytes calldata,
+        bytes calldata )
+        external
+        payable
+        returns (bytes32);
+    // // Creates a subchallenge on an edge. Emits the challenge ID in an event.
+    // function createSubChallenge(bytes32 eId) external returns (bytes32);
+    // Bisects an edge. Emits both children's edge IDs in an event.
+    function bisectEdge(bytes32 eId, bytes32 prefixHistoryRoot, bytes memory prefixProof) external returns (bytes32, bytes32);
+    // Checks if both children of an edge are already confirmed in order to confirm the edge.
+    function confirmEdgeByChildren(bytes32 eId) external;
+    // Confirms an edge by edge ID and an array of ancestor edges based on timers.
+    function confirmEdgeByTimer(bytes32 eId, bytes32[] memory ancestorIds) external;
+    // If we have created a subchallenge, confirmed a layer 0 edge already, we can use a claim id to confirm edge ids.
+    // All edges have two children, unless they only have a link to a claim id.
+    function confirmEdgeByClaim(bytes32 eId, bytes32 claimId) external;
+}
+
+contract EdgeChallengeManager is IEdgeChallengeManager { 
     using EdgeStoreLib for EdgeStore;
     using ChallengeEdgeLib for ChallengeEdge;
     using EChallengeLib for EChallenge;
