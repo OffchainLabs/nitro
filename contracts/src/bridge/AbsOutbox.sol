@@ -45,7 +45,7 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
 
     // Note, these variables are set and then wiped during a single transaction.
     // Therefore their values don't need to be maintained, and their slots will
-    // be empty outside of transactions
+    // hold default values (which are interpreted as empty values) outside of transactions
     L2ToL1Context internal context;
 
     // default context values to be used in storage instead of zero, to save on storage refunds
@@ -283,7 +283,13 @@ abstract contract AbsOutbox is DelegateCallAware, IOutbox {
         return MerkleLib.calculateRoot(proof, path, keccak256(abi.encodePacked(item)));
     }
 
+    /// @notice default value to be used for 'amount' field in L2ToL1Context outside of transaction execution.
+    /// @return default 'amount' in case of ERC20-based rollup is type(uint256).max, or 0 in case of ETH-based rollup
     function _defaultContextAmount() internal pure virtual returns (uint256);
 
+    /// @notice value to be set for 'amount' field in L2ToL1Context during L2 to L1 transaction execution.
+    ///         In case of ERC20-based rollup this is the amount of native token being withdrawn. In case of standard ETH-based
+    ///         rollup this amount shall always be 0, because amount of ETH being withdrawn can be read from msg.value.
+    /// @return amount of native token being withdrawn in case of ERC20-based rollup, or 0 in case of ETH-based rollup
     function _amountToSetInContext(uint256 value) internal pure virtual returns (uint256);
 }

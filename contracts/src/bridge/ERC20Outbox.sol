@@ -15,10 +15,12 @@ contract ERC20Outbox is AbsOutbox {
         return amount;
     }
 
+    /// @inheritdoc AbsOutbox
     function _defaultContextAmount() internal pure override returns (uint256) {
         return AMOUNT_DEFAULT_CONTEXT;
     }
 
+    /// @inheritdoc AbsOutbox
     function _amountToSetInContext(uint256 value) internal pure override returns (uint256) {
         return value;
     }
