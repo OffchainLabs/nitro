@@ -109,7 +109,6 @@ type SpecEdge interface {
 		history util.HistoryCommitment,
 		proof []byte,
 	) (SpecEdge, SpecEdge, error)
-	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
 	// Confirms an edge for having a presumptive timer >= a challenge period.
 	ConfirmForTimer(ctx context.Context) error
 	// Confirms an edge for having a subchallenge winner of a one-step-proof.

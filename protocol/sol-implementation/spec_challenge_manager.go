@@ -10,6 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/pkg/errors"
+	"math/big"
 )
 
 type SpecEdge struct {
@@ -101,30 +104,20 @@ func (e *SpecEdge) Bisect(
 	return nil, nil, nil
 }
 
-func (e *SpecEdge) CreateSubChallenge(ctx context.Context) (protocol.SpecChallenge, error) {
-	return nil, nil
-}
-
 func (e *SpecEdge) ConfirmForTimer(ctx context.Context) error {
-	receipt, err := transact(ctx, nil, nil, func() (*types.Transaction, error) {
+	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+		// TODO: Needs ancestor ids specified, perhaps by caller?
 		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, nil /* ancestors */)
 	})
-	if err != nil {
-		return err
-	}
-	_ = receipt
-	return nil
+	return err
 }
 
-func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context) error {
-	receipt, err := transact(ctx, nil, nil, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByClaim(e.manager.txOpts, e.id, [32]byte{} /* claiming id */)
+func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context, claimId [32]byte) error {
+	// TODO: Add in fields.
+	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByClaim(e.manager.txOpts, e.id, claimId)
 	})
-	if err != nil {
-		return err
-	}
-	_ = receipt
-	return nil
+	return err
 }
 
 type SpecChallenge struct {
@@ -157,6 +150,7 @@ func (c *SpecChallenge) StartTime() (uint64, error) {
 	return challengeEdge.CreatedWhen.Uint64(), nil
 }
 
+// TODO: This is wrong. We can't get this from the base id by itself.
 func (c *SpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
 	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
 	if err != nil {
@@ -170,17 +164,10 @@ func (c *SpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
 	return protocol.Height(challengeEdge.StartHeight.Uint64()), challengeEdge.ClaimEdgeId, nil
 }
 
+// TODO: Needs implementation. Challenge.BaseId is not enough to determine the challenge status.
+// Perhaps the challenge struct needs a status field itself.
 func (c *SpecChallenge) Status(ctx context.Context) (protocol.ChallengeStatus, error) {
-	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
-	if err != nil {
-		return protocol.ChallengePending, err
-	}
-	challengeEdge, err := c.manager.caller.GetEdge(c.manager.callOpts, challenge.BaseId)
-	if err != nil {
-		return protocol.ChallengePending, err
-	}
-
-	return protocol.ChallengeStatus(challengeEdge.Status), nil
+	return 0, errors.New("unimplemented")
 }
 
 func (c *SpecChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
@@ -199,7 +186,7 @@ func (c *SpecChallenge) EdgeIsOneStepForkSource(
 	ctx context.Context,
 	edge protocol.SpecEdge,
 ) (bool, error) {
-	return false, nil
+	return c.manager.caller.IsAtOneStepFork(c.manager.callOpts, edge.Id())
 }
 
 func (c *SpecChallenge) AddBlockChallengeLevelZeroEdge(
@@ -221,6 +208,8 @@ func (c *SpecChallenge) AddSubChallengeLevelZeroEdge(
 // ChallengeManager --
 type SpecChallengeManager struct {
 	addr     common.Address
+	backend  ChainBackend
+	reader   *headerreader.HeaderReader
 	callOpts *bind.CallOpts
 	txOpts   *bind.TransactOpts
 	caller   *challengeV2gen.EdgeChallengeManagerCaller
@@ -258,10 +247,10 @@ func (cm *SpecChallengeManager) ChallengePeriodSeconds(
 // An claim could be an assertion or a vertex that originated the challenge.
 func (cm *SpecChallengeManager) CalculateChallengeHash(
 	ctx context.Context,
-	claimId common.Hash,
+	baseId common.Hash,
 	challengeType protocol.ChallengeType,
 ) (protocol.ChallengeHash, error) {
-	return protocol.ChallengeHash{}, nil
+	return cm.caller.CalculateChallengeId(cm.callOpts, baseId, uint8(challengeType))
 }
 
 // Calculates an edge hash given its challenge id, start history, and end history.
@@ -271,7 +260,14 @@ func (cm *SpecChallengeManager) CalculateEdgeHash(
 	startHistory util.HistoryCommitment,
 	endHistory util.HistoryCommitment,
 ) (protocol.EdgeHash, error) {
-	return protocol.EdgeHash{}, nil
+	return cm.caller.CalculateEdgeId(
+		cm.callOpts,
+		challengeId,
+		startHistory.Merkle,
+		big.NewInt(int64(startHistory.Height)),
+		endHistory.Merkle,
+		big.NewInt(int64(endHistory.Height)),
+	)
 }
 
 // Gets an edge by its hash.
