@@ -244,8 +244,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 			gasRefunderBalance, err = s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
 			if err != nil {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
+			} else {
+				validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
 			}
-			validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
 		}
 		err = s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
