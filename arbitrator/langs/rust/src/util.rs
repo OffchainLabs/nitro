@@ -1,6 +1,14 @@
-use std::{array::TryFromSliceError, borrow::Borrow, fmt::{self, Debug, Display, Formatter}, ops::{Deref, DerefMut}};
+// Copyright 2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-#[derive(Default)]
+use std::{
+    array::TryFromSliceError,
+    borrow::Borrow,
+    fmt::{self, Debug, Display, Formatter},
+    ops::{Deref, DerefMut},
+};
+
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Bytes20(pub [u8; 20]);
 
@@ -82,7 +90,7 @@ impl Debug for Bytes20 {
     }
 }
 
-#[derive(Default)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
@@ -163,4 +171,3 @@ impl Debug for Bytes32 {
         write!(f, "{}", hex::encode(self))
     }
 }
-

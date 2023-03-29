@@ -3,7 +3,10 @@
 
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::{programs::prelude::*, utils::Bytes32};
+use prover::{
+    programs::prelude::*,
+    utils::{Bytes20, Bytes32},
+};
 use run::RunProgram;
 use std::mem;
 
@@ -113,10 +116,41 @@ pub unsafe extern "C" fn stylus_compile(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum GoApiStatus {
+    Success,
+    Failure,
+}
+
+impl From<GoApiStatus> for UserOutcomeKind {
+    fn from(value: GoApiStatus) -> Self {
+        match value {
+            GoApiStatus::Success => UserOutcomeKind::Success,
+            GoApiStatus::Failure => UserOutcomeKind::Revert,
+        }
+    }
+}
+
 #[repr(C)]
-pub struct GoAPI {
-    pub get_bytes32: unsafe extern "C" fn(usize, Bytes32, *mut u64) -> Bytes32,
-    pub set_bytes32: unsafe extern "C" fn(usize, Bytes32, Bytes32, *mut u64, *mut RustVec) -> u8,
+pub struct GoApi {
+    pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
+    pub set_bytes32: unsafe extern "C" fn(
+        id: usize,
+        key: Bytes32,
+        value: Bytes32,
+        evm_cost: *mut u64,
+        error: *mut RustVec,
+    ) -> GoApiStatus,
+    pub call_contract: unsafe extern "C" fn(
+        id: usize,
+        contract: Bytes20,
+        calldata: *mut RustVec,
+        gas: *mut u64,
+        value: Bytes32,
+        return_data_len: *mut u32,
+    ) -> GoApiStatus,
+    pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
     pub id: usize,
 }
 
@@ -125,7 +159,7 @@ pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
     params: GoParams,
-    go_api: GoAPI,
+    go_api: GoApi,
     output: *mut RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
@@ -136,29 +170,25 @@ pub unsafe extern "C" fn stylus_call(
     let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
     let output = &mut *output;
 
-    macro_rules! error {
-        ($msg:expr, $report:expr) => {{
-            let report: ErrReport = $report.into();
-            let report = report.wrap_err(eyre!($msg));
-            output.write_err(report);
-            *evm_gas = 0; // burn all gas
-            return UserOutcomeKind::Failure;
-        }};
-    }
-
     // Safety: module came from compile_user_wasm
     let instance = unsafe { NativeInstance::deserialize(module, config.clone()) };
-
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => error!("failed to instantiate program", error),
+        Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
     instance.set_go_api(go_api);
     instance.set_gas(wasm_gas);
 
-    let (status, outs) = match instance.run_main(&calldata, &config) {
-        Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
-        Ok(outcome) => outcome.into_data(),
+    let status = match instance.run_main(&calldata, &config) {
+        Err(err) | Ok(UserOutcome::Failure(err)) => {
+            output.write_err(err.wrap_err(eyre!("failed to execute program")));
+            UserOutcomeKind::Failure
+        }
+        Ok(outcome) => {
+            let (status, outs) = outcome.into_data();
+            output.write(outs);
+            status
+        }
     };
     if pricing.wasm_gas_price != 0 {
         let wasm_gas = match status {
@@ -167,7 +197,6 @@ pub unsafe extern "C" fn stylus_call(
         };
         *evm_gas = pricing.wasm_to_evm(wasm_gas);
     }
-    output.write(outs);
     status
 }
 

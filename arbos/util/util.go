@@ -63,37 +63,37 @@ func init() {
 		}
 	}
 
-	// Create a mechanism for packing and unpacking calls
-	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
-		contract, err := abi.JSON(strings.NewReader(source))
-		if err != nil {
-			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
-		}
-		method, ok := contract.Methods[name]
-		if !ok {
-			panic(fmt.Sprintf("method %v does not exist", name))
-		}
-		pack := func(args ...interface{}) ([]byte, error) {
-			return contract.Pack(name, args...)
-		}
-		unpack := func(data []byte) (map[string]interface{}, error) {
-			if len(data) < 4 {
-				return nil, errors.New("data not long enough")
-			}
-			args := make(map[string]interface{})
-			return args, method.Inputs.UnpackIntoMap(args, data[4:])
-		}
-		return pack, unpack
-	}
-
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
 	ParseL2ToL1TxLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Tx")
 	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
 
 	acts := precompilesgen.ArbosActsABI
-	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
-	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = callParser(acts, "batchPostingReport")
-	PackArbRetryableTxRedeem, _ = callParser(precompilesgen.ArbRetryableTxABI, "redeem")
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
+	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
+	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
+}
+
+// Create a mechanism for packing and unpacking calls
+func NewCallParser(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
+	contract, err := abi.JSON(strings.NewReader(source))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+	}
+	method, ok := contract.Methods[name]
+	if !ok {
+		panic(fmt.Sprintf("method %v does not exist", name))
+	}
+	pack := func(args ...interface{}) ([]byte, error) {
+		return contract.Pack(name, args...)
+	}
+	unpack := func(data []byte) (map[string]interface{}, error) {
+		if len(data) < 4 {
+			return nil, errors.New("data not long enough")
+		}
+		args := make(map[string]interface{})
+		return args, method.Inputs.UnpackIntoMap(args, data[4:])
+	}
+	return pack, unpack
 }
 
 func AddressToHash(address common.Address) common.Hash {

@@ -2,15 +2,43 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{LoadBytes32, StoreBytes32},
-    native::NativeInstance,
+    env::{GetBytes32, SetBytes32},
+    native::{self, NativeInstance},
+    run::RunProgram,
 };
+use arbutil::Color;
+use eyre::Result;
 use parking_lot::Mutex;
-use prover::utils::{Bytes20, Bytes32};
+use prover::{
+    programs::prelude::*,
+    utils::{Bytes20, Bytes32},
+};
 use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone, Default)]
-pub(crate) struct TestEvmContracts(Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>);
+#[derive(Clone)]
+pub(crate) struct TestEvmContracts {
+    contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
+    return_data: Arc<Mutex<Vec<u8>>>,
+    config: StylusConfig,
+}
+
+impl TestEvmContracts {
+    pub fn new(config: &StylusConfig) -> Self {
+        Self {
+            contracts: Arc::new(Mutex::new(HashMap::new())),
+            return_data: Arc::new(Mutex::new(vec![])),
+            config: config.clone(),
+        }
+    }
+
+    pub fn insert(&mut self, address: Bytes20, name: &str) -> Result<()> {
+        let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
+        let wasm = std::fs::read(file)?;
+        let module = native::module(&wasm, self.config.clone())?;
+        self.contracts.lock().insert(address, module);
+        Ok(())
+    }
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct TestEvmStorage(Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>);
@@ -24,7 +52,7 @@ impl TestEvmStorage {
         self.0.lock().entry(program).or_default().insert(key, value);
     }
 
-    pub fn getter(&self, program: Bytes20) -> LoadBytes32 {
+    pub fn getter(&self, program: Bytes20) -> GetBytes32 {
         let storage = self.clone();
         Box::new(move |key| {
             let value = storage.get_bytes32(program, key).unwrap().to_owned();
@@ -32,7 +60,7 @@ impl TestEvmStorage {
         })
     }
 
-    pub fn setter(&self, program: Bytes20) -> StoreBytes32 {
+    pub fn setter(&self, program: Bytes20) -> SetBytes32 {
         let mut storage = self.clone();
         Box::new(move |key, value| {
             drop(storage.set_bytes32(program, key, value));
@@ -46,13 +74,42 @@ impl NativeInstance {
         &mut self,
         address: Bytes20,
         storage: TestEvmStorage,
-        _contracts: TestEvmContracts,
+        contracts: TestEvmContracts,
     ) -> TestEvmStorage {
         let get_bytes32 = storage.getter(address);
         let set_bytes32 = storage.setter(address);
+        let moved_storage = storage.clone();
+        let moved_contracts = contracts.clone();
 
-        let call = Box::new(move |_address, _input, _gas, _value| unimplemented!("contract call"));
-        self.env_mut().set_evm_api(get_bytes32, set_bytes32, call);
+        let call = Box::new(
+            move |address: Bytes20, input: Vec<u8>, gas, _value| unsafe {
+                // this call function is for testing purposes only and deviates from onchain behavior
+                let contracts = moved_contracts.clone();
+                let config = contracts.config.clone();
+                *contracts.return_data.lock() = vec![];
+
+                let mut instance = match contracts.contracts.lock().get(&address) {
+                    Some(module) => NativeInstance::deserialize(module, config.clone()).unwrap(),
+                    None => panic!("No contract at address {}", address.red()),
+                };
+
+                instance.set_test_evm_api(address, moved_storage.clone(), contracts.clone());
+                instance.set_gas(gas);
+
+                let outcome = instance.run_main(&input, &config).unwrap();
+                let gas_left: u64 = instance.gas_left().into();
+                let (status, outs) = outcome.into_data();
+                let outs_len = outs.len() as u32;
+
+                *contracts.return_data.lock() = outs;
+                (outs_len, gas - gas_left, status)
+            },
+        );
+        let get_return_data =
+            Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
+
+        self.env_mut()
+            .set_evm_api(get_bytes32, set_bytes32, call, get_return_data);
         storage
     }
 }

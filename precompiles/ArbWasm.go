@@ -5,6 +5,10 @@ package precompiles
 
 type ArbWasm struct {
 	Address addr // 0x71
+
+	ProgramNotCompiledError func() error
+	ProgramOutOfDateError   func(version uint32) error
+	ProgramUpToDateError    func() error
 }
 
 // Compile a wasm program with the latest instrumentation

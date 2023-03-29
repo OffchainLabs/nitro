@@ -3,7 +3,7 @@
 
 use crate::{
     machine::{Function, InboxIdentifier},
-    programs::StylusGlobals,
+    programs::{run::UserOutcomeKind, StylusGlobals},
     value::{ArbValueType, FunctionType, IntegerValType},
     wavm::{IBinOpType, Instruction, Opcode},
 };
@@ -202,7 +202,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
                 // λ(module, main, args_len) -> status
                 opcode!(PushErrorGuard);
                 opcode!(ArbitraryJumpIf, code.len() + 3);
-                opcode!(I32Const, 1);
+                opcode!(I32Const, UserOutcomeKind::Failure as u32);
                 opcode!(Return);
 
                 // jumps here in the happy case

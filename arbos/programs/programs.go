@@ -4,13 +4,14 @@
 package programs
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -36,6 +37,10 @@ const (
 	wasmMaxDepthOffset
 	wasmHostioCostOffset
 )
+
+var ProgramNotCompiledError func() error
+var ProgramOutOfDateError func(version uint32) error
+var ProgramUpToDateError func() error
 
 func Initialize(sto *storage.Storage) {
 	wasmGasPrice := sto.OpenStorageBackedBips(wasmGasPriceOffset)
@@ -97,7 +102,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 		return 0, err
 	}
 	if latest >= version {
-		return 0, errors.New("program is current")
+		return 0, ProgramUpToDateError()
 	}
 
 	wasm, err := getWasm(statedb, program)
@@ -115,6 +120,7 @@ func (p Programs) CallProgram(
 	statedb vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
+	msg core.Message,
 	calldata []byte,
 	gas *uint64,
 ) ([]byte, error) {
@@ -127,16 +133,16 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	if programVersion == 0 {
-		return nil, errors.New("program not compiled")
+		return nil, ProgramNotCompiledError()
 	}
 	if programVersion != stylusVersion {
-		return nil, errors.New("program out of date, please recompile")
+		return nil, ProgramOutOfDateError(programVersion)
 	}
 	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, gas, params)
+	return callUserWasm(scope, statedb, interpreter, tracingInfo, msg, calldata, gas, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -199,14 +205,15 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userSuccess:
 		return data, nil
 	case userRevert:
-		return data, errors.New("program reverted")
+		return data, vm.ErrExecutionReverted
 	case userFailure:
-		return nil, errors.New("program failure")
+		return nil, vm.ErrExecutionReverted
 	case userOutOfGas:
 		return nil, vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, vm.ErrDepth
 	default:
-		return nil, errors.New("unknown status kind")
+		log.Error("program errored with unknown status", "status", status, "data", common.Bytes2Hex(data))
+		return nil, vm.ErrExecutionReverted
 	}
 }

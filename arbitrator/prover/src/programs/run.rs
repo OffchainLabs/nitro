@@ -68,9 +68,23 @@ impl Display for UserOutcome {
             OutOfGas => write!(f, "out of gas"),
             OutOfStack => write!(f, "out of stack"),
             Revert(data) => {
-                let text = String::from_utf8(data.clone()).unwrap_or(hex::encode(data));
+                let text = String::from_utf8(data.clone()).unwrap_or_else(|_| hex::encode(data));
                 write!(f, "revert {text}")
             }
+        }
+    }
+}
+
+impl Display for UserOutcomeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let as_u8 = *self as u8;
+        use UserOutcomeKind::*;
+        match self {
+            Success => write!(f, "success ({as_u8})"),
+            Revert => write!(f, "revert ({as_u8})"),
+            Failure => write!(f, "failure ({as_u8})"),
+            OutOfGas => write!(f, "out of gas ({as_u8})"),
+            OutOfStack => write!(f, "out of stack ({as_u8})"),
         }
     }
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -46,6 +47,7 @@ func callUserWasm(
 	db vm.StateDB,
 	_ *vm.EVMInterpreter,
 	_ *util.TracingInfo,
+	_ core.Message,
 	calldata []byte,
 	gas *uint64,
 	params *goParams,

@@ -6,7 +6,7 @@ use crate::Machine;
 use arbutil::operator::OperatorInfo;
 use eyre::Result;
 use parking_lot::Mutex;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
@@ -187,6 +187,15 @@ impl Into<u64> for MachineMeter {
         match self {
             Self::Ready(gas) => gas,
             Self::Exhausted => 0,
+        }
+    }
+}
+
+impl Display for MachineMeter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ready(gas) => write!(f, "{gas} gas"),
+            Self::Exhausted => write!(f, "exhausted"),
         }
     }
 }

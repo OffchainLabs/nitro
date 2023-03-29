@@ -39,7 +39,7 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32)
 }
 
 func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
-	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\", true)
+	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\", true)
 }
 
 // Caller becomes a chain owner

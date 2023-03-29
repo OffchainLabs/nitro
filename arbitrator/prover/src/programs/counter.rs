@@ -36,6 +36,12 @@ impl Counter {
     }
 }
 
+impl Default for Counter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<M> Middleware<M> for Counter
 where
     M: ModuleMod,
@@ -115,7 +121,7 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
             for (op, count) in increments {
                 let opslen = operators.len();
                 let offset = *operators.entry(op).or_insert(opslen);
-                let global = *counters.get(offset).ok_or(eyre!("no global"))?;
+                let global = *counters.get(offset).ok_or_else(|| eyre!("no global"))?;
                 out.extend(update(global.as_u32(), count));
             }
 

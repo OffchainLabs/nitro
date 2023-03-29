@@ -52,6 +52,12 @@ func PrintYellow(args ...interface{}) {
 	println(Clear)
 }
 
+func PrintPink(args ...interface{}) {
+	print(Pink)
+	fmt.Print(args...)
+	println(Clear)
+}
+
 func Uncolor(text string) string {
 	uncolor := regexp.MustCompile("\x1b\\[([0-9]+;)*[0-9]+m")
 	unwhite := regexp.MustCompile(`\s+`)

@@ -50,31 +50,28 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     // skip the root since we don't use these
     sp.skip_u64();
 
-    macro_rules! error {
-        ($msg:expr, $report:expr) => {{
-            let outs = format!("{:?}", $report.wrap_err(eyre!($msg))).into_bytes();
-            sp.write_u8(UserOutcomeKind::Failure as u8).skip_space();
-            sp.write_ptr(heapify(outs));
-            if pricing.wasm_gas_price != 0 {
-                sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
-            }
-            return;
-        }};
-    }
-
     // Safety: module came from compile_user_wasm
     let instance = unsafe { NativeInstance::deserialize(&module, config.clone()) };
-
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => error!("failed to instantiate program", error),
+        Err(error) => panic!("failed to instantiate program {error:?}"),
     };
     instance.set_gas(wasm_gas);
     instance.set_stack(config.depth.max_depth);
 
-    let (status, outs) = match instance.run_main(&calldata, &config) {
-        Err(err) | Ok(UserOutcome::Failure(err)) => error!("failed to execute program", err),
-        Ok(outcome) => outcome.into_data(),
+    let status = match instance.run_main(&calldata, &config) {
+        Err(err) | Ok(UserOutcome::Failure(err)) => {
+            let outs = format!("{:?}", err.wrap_err(eyre!("failed to execute program")));
+            sp.write_u8(UserOutcomeKind::Failure as u8).skip_space();
+            sp.write_ptr(heapify(outs.into_bytes()));
+            UserOutcomeKind::Failure
+        }
+        Ok(outcome) => {
+            let (status, outs) = outcome.into_data();
+            sp.write_u8(status as u8).skip_space();
+            sp.write_ptr(heapify(outs));
+            status
+        }
     };
     if pricing.wasm_gas_price != 0 {
         let wasm_gas = match status {
@@ -83,8 +80,6 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
         };
         sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
     }
-    sp.write_u8(status as u8).skip_space();
-    sp.write_ptr(heapify(outs));
 }
 
 /// Reads the length of a rust `Vec`

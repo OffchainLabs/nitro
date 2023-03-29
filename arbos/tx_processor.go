@@ -113,6 +113,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		p.evm.StateDB,
 		interpreter,
 		tracingInfo,
+		p.msg,
 		input,
 		&contract.Gas,
 	)
