@@ -214,6 +214,14 @@ interface IEdgeChallengeManager {
     // If we have created a subchallenge, confirmed a layer 0 edge already, we can use a claim id to confirm edge ids.
     // All edges have two children, unless they only have a link to a claim id.
     function confirmEdgeByClaim(bytes32 eId, bytes32 claimId) external;
+    // when we reach a one step fork in a small step challenge we can confirm
+    // the edge by executing a one step proof to show the edge is valid
+    function confirmEdgeByOneStepProof(
+        bytes32 edgeId,
+        OneStepData calldata oneStepData,
+        bytes32[] calldata beforeHistoryInclusionProof,
+        bytes32[] calldata afterHistoryInclusionProof
+    ) external;
 }
 
 contract EdgeChallengeManager is IEdgeChallengeManager {
