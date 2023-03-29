@@ -139,14 +139,16 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var l1Reader *headerreader.HeaderReader
-	if l1client != nil {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
-	}
 
 	fwTarget := config.ForwardingTarget()
 	if config.Sequencer.Enable {
 		if fwTarget != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
+		}
+		if l1client != nil {
+			l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+		} else {
+			log.Warn("sequencer enabled without l1 client")
 		}
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 		sequencer, err = NewSequencer(execEngine, l1Reader, seqConfigFetcher)
