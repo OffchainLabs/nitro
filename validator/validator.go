@@ -7,14 +7,12 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -44,9 +42,7 @@ type Validator struct {
 	assertions                             map[protocol.AssertionSequenceNumber]protocol.Assertion
 	challengesLock                         sync.RWMutex
 	challenges                             map[protocol.ChallengeHash]protocol.Challenge
-	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
-	disableLeafCreation                    bool
 	timeRef                                util.TimeReference
 	challengeVertexWakeInterval            time.Duration
 	newAssertionCheckInterval              time.Duration
@@ -95,14 +91,6 @@ func WithNewAssertionCheckInterval(d time.Duration) Opt {
 func WithNewChallengeCheckInterval(d time.Duration) Opt {
 	return func(val *Validator) {
 		val.newChallengeCheckInterval = d
-	}
-}
-
-// WithDisableLeafCreation disables scheduled, background submission of assertions to the protocol in the validator.
-// Useful for testing.
-func WithDisableLeafCreation() Opt {
-	return func(val *Validator) {
-		val.disableLeafCreation = true
 	}
 }
 
@@ -167,97 +155,10 @@ func New(
 func (v *Validator) Start(ctx context.Context) {
 	go v.pollForChallenges(ctx)
 	go v.pollForAssertions(ctx)
-	if !v.disableLeafCreation {
-		go v.prepareLeafCreationPeriodically(ctx)
-	}
 	log.WithField(
 		"address",
 		v.address.Hex(),
 	).Info("Started validator client")
-}
-
-func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
-	ticker := time.NewTicker(v.createLeafInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if _, err := v.SubmitLeafCreation(ctx); err != nil {
-				log.WithError(err).Error("Could not submit leaf to protocol")
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// SubmitLeafCreation submits a leaf creation to the protocol.
-// TODO: Include leaf creation validity conditions which are more complex than this.
-// For example, a validator must include messages from the inbox that were not included
-// by the last validator in the last leaf's creation.
-func (v *Validator) SubmitLeafCreation(ctx context.Context) (protocol.Assertion, error) {
-	// Ensure that we only build on a valid parent from this validator's perspective.
-	// the validator should also have ready access to historical commitments to make sure it can select
-	// the valid parent based on its commitment state root.
-	parentAssertionSeq, err := v.findLatestValidAssertion(ctx)
-	if err != nil {
-		return nil, err
-	}
-	parentAssertion, err := v.chain.AssertionBySequenceNum(ctx, parentAssertionSeq)
-	if err != nil {
-		return nil, err
-	}
-	parentAssertionHeight, err := parentAssertion.Height()
-	if err != nil {
-		return nil, err
-	}
-	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx, parentAssertionHeight)
-	if err != nil {
-		return nil, err
-	}
-	leaf, err := v.chain.CreateAssertion(ctx, assertionToCreate.Height, parentAssertionSeq, assertionToCreate.PreState, assertionToCreate.PostState, assertionToCreate.InboxMaxCount)
-	switch {
-	case errors.Is(err, solimpl.ErrAlreadyExists):
-		return nil, errors.Wrap(err, "assertion already exists, unable to create new leaf")
-	case err != nil:
-		return nil, err
-	}
-	parentAssertionStateHash, err := parentAssertion.StateHash()
-	if err != nil {
-		return nil, err
-	}
-	leafStateHash, err := leaf.StateHash()
-	if err != nil {
-		return nil, err
-	}
-	leafHeight, err := leaf.Height()
-	if err != nil {
-		return nil, err
-	}
-	logFields := logrus.Fields{
-		"name":               v.name,
-		"parentHeight":       fmt.Sprintf("%+v", parentAssertionHeight),
-		"parentStateHash":    fmt.Sprintf("%#x", parentAssertionStateHash),
-		"assertionHeight":    leafHeight,
-		"assertionStateHash": fmt.Sprintf("%#x", leafStateHash),
-	}
-	log.WithFields(logFields).Info("Submitted assertion")
-
-	// Keep track of the created assertion locally.
-	// TODO: Get the event from the chain instead, by using logs from the receipt.
-	v.assertionsLock.Lock()
-	// TODO: Store a more minimal struct, with only what we need.
-	v.assertions[leaf.SeqNum()] = leaf
-	v.sequenceNumbersByParentStateCommitment[parentAssertionStateHash] = append(
-		v.sequenceNumbersByParentStateCommitment[parentAssertionStateHash],
-		leaf.SeqNum(),
-	)
-	v.assertionsLock.Unlock()
-
-	v.leavesLock.Lock()
-	v.createdAssertions[leafStateHash] = leaf
-	v.leavesLock.Unlock()
-	return leaf, nil
 }
 
 // Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
