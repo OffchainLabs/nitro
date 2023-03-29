@@ -29,7 +29,7 @@ func TestStaticForwarder(t *testing.T) {
 	ipcPath := filepath.Join(t.TempDir(), "test.ipc")
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
-	stackConfig := getTestStackConfig(t)
+	stackConfig := getTestStackConfig(t, "")
 	ipcConfig.Apply(stackConfig)
 	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.BatchPoster.Enable = false
@@ -84,7 +84,7 @@ func createFallbackSequencer(
 	t *testing.T, ctx context.Context, ipcPath string, redisUrl string,
 ) (l2info info, currentNode *arbnode.Node, l2client *ethclient.Client,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
-	stackConfig := getTestStackConfig(t)
+	stackConfig := getTestStackConfig(t, "")
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
 	ipcConfig.Apply(stackConfig)
@@ -105,7 +105,7 @@ func createForwardingNode(
 	redisUrl string,
 	fallbackPath string,
 ) (*ethclient.Client, *arbnode.Node) {
-	stackConfig := getTestStackConfig(t)
+	stackConfig := getTestStackConfig(t, "")
 	if ipcPath != "" {
 		ipcConfig := genericconf.IPCConfigDefault
 		ipcConfig.Path = ipcPath
@@ -130,7 +130,7 @@ func createSequencer(
 	ipcPath string,
 	redisUrl string,
 ) (*ethclient.Client, *arbnode.Node) {
-	stackConfig := getTestStackConfig(t)
+	stackConfig := getTestStackConfig(t, "")
 	ipcConfig := genericconf.IPCConfigDefault
 	ipcConfig.Path = ipcPath
 	ipcConfig.Apply(stackConfig)

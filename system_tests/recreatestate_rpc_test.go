@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -22,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func()) {
+func prepareNode(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, dataDir string, skipBlocks uint32, skipGas uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func(), stackDataDir string) {
 	t.Helper()
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
@@ -30,8 +31,10 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 	nodeConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	cacheConfig := &core.CacheConfig{
 		// Arbitrum Config Options
-		TriesInMemory: 128,
-		TrieRetention: 30 * time.Minute,
+		TriesInMemory:                      128,
+		TrieRetention:                      30 * time.Minute,
+		MaxNumberOfBlocksToSkipStateSaving: skipBlocks,
+		MaxAmountOfGasToSkipStateSaving:    skipGas,
 
 		// disable caching of states in BlockChain.stateCache
 		TrieCleanLimit: 0,
@@ -43,11 +46,21 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		SnapshotLimit: 256,
 		SnapshotWait:  true,
 	}
-	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, nil, cacheConfig)
+	stackConfig := getTestStackConfig(t, dataDir)
+	stackDataDir = stackConfig.DataDir
+	l2info, node, l2client, _, _, _, _, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nodeConfig, nil, stackConfig, cacheConfig)
 	cancel = func() {
 		defer requireClose(t, l1stack)
 		defer node.StopAndWait()
 	}
+	bc = node.Backend.ArbInterface().BlockChain()
+	db = node.Backend.ChainDb()
+	return
+}
+
+func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateDepth int64, txCount uint64, skipBlocks uint32, skipGas uint64) (node *arbnode.Node, bc *core.BlockChain, db ethdb.Database, l2client *ethclient.Client, l2info info, cancel func(), stackDataDir string) {
+	t.Helper()
+	node, bc, db, l2client, l2info, cancel, stackDataDir = prepareNode(t, ctx, maxRecreateStateDepth, "", skipBlocks, skipGas)
 	l2info.GenerateAccount("User2")
 	var txs []*types.Transaction
 	for i := uint64(0); i < txCount; i++ {
@@ -60,9 +73,6 @@ func prepareNodeWithHistory(t *testing.T, ctx context.Context, maxRecreateStateD
 		_, err := EnsureTxSucceeded(ctx, l2client, tx)
 		testhelpers.RequireImpl(t, err)
 	}
-	bc = node.Backend.ArbInterface().BlockChain()
-	db = node.Backend.ChainDb()
-
 	return
 }
 
@@ -110,7 +120,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32)
+	_, bc, db, l2client, _, cancelNode, _ := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32, 0, 0)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -134,7 +144,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32)
+	_, bc, db, l2client, _, cancelNode, _ := prepareNodeWithHistory(t, ctx, depthGasLimit, 32, 0, 0)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -158,7 +168,7 @@ func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	depthGasLimit := int64(200)
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, depthGasLimit, 32)
+	_, bc, db, l2client, _, cancelNode, _ := prepareNodeWithHistory(t, ctx, depthGasLimit, 32, 0, 0)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -181,7 +191,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, headerCacheLimit+5)
+	_, bc, db, l2client, _, cancelNode, _ := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, headerCacheLimit+5, 0, 0)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -214,7 +224,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32)
+	_, bc, db, l2client, _, cancelNode, _ := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 32, 0, 0)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -238,7 +248,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, bc, db, l2client, _, cancelNode := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, blockCacheLimit+4)
+	_, bc, db, l2client, _, cancelNode, _ := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, blockCacheLimit+4, 0, 0)
 	defer cancelNode()
 
 	lastBlock, err := l2client.BlockNumber(ctx)
@@ -263,5 +273,49 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "block not found while recreating") {
 		testhelpers.FailImpl(t, "Failed with unexpected error: \"", err, "\", at block:", lastBlock, "lastBlock:", lastBlock)
+	}
+}
+
+func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
+	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, bc, _, l2client, _, cancelNode, stackDataDir := prepareNodeWithHistory(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, 101, 5, 0)
+	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
+	lastBlock, err := l2client.BlockNumber(ctx)
+	testhelpers.RequireImpl(t, err)
+	if lastBlock < genesis+100 {
+		testhelpers.FailImpl(t, "Internal test error - not enough blocks produced during preparation, want:", genesis+100, "have:", lastBlock)
+	}
+	expectedBalance, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
+	testhelpers.RequireImpl(t, err)
+	cancelNode()
+	_, bc, _, l2client, _, cancelNode, _ = prepareNode(t, ctx, arbitrum.InfiniteMaxRecreateStateDepth, stackDataDir, 0, 0)
+	defer cancelNode()
+	for i := genesis + 1; i <= genesis+100; i++ {
+		block := bc.GetBlockByNumber(i)
+		if block == nil {
+			Fail(t, "header not found for block number:", i)
+		}
+		_, err := bc.StateAt(block.Root())
+		if (i-genesis-1)%5 == 0 {
+			Require(t, err, "state not found, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash(), "err:", err)
+			t.Log("have state for block:", i)
+		} else {
+			if err == nil {
+				Fail(t, "state shouldn't be available, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
+			}
+			expectedErr := &trie.MissingNodeError{}
+			if !errors.As(err, &expectedErr) {
+				Fail(t, "getting state failed with unexpected error, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
+			}
+			t.Log("no state for block:", i)
+		}
+	}
+
+	balance, err := l2client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
+	testhelpers.RequireImpl(t, err)
+	if balance.Cmp(expectedBalance) != 0 {
+		testhelpers.FailImpl(t, "unexpected balance result for last block, want: ", expectedBalance, " have: ", balance)
 	}
 }

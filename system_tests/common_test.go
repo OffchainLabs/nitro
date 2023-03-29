@@ -194,7 +194,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
 
-func getTestStackConfig(t *testing.T) *node.Config {
+func getTestStackConfig(t *testing.T, dataDir string) *node.Config {
 	stackConfig := node.DefaultConfig
 	stackConfig.HTTPPort = 0
 	stackConfig.WSPort = 0
@@ -203,7 +203,11 @@ func getTestStackConfig(t *testing.T) *node.Config {
 	stackConfig.P2P.NoDial = true
 	stackConfig.P2P.NoDiscovery = true
 	stackConfig.P2P.NAT = nil
-	stackConfig.DataDir = t.TempDir()
+	if dataDir != "" {
+		stackConfig.DataDir = dataDir
+	} else {
+		stackConfig.DataDir = t.TempDir()
+	}
 	return &stackConfig
 }
 
@@ -277,7 +281,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 		l1info = NewL1TestInfo(t)
 	}
 	if stackConfig == nil {
-		stackConfig = getTestStackConfig(t)
+		stackConfig = getTestStackConfig(t, "")
 	}
 	l1info.GenerateAccount("Faucet")
 
@@ -587,7 +591,7 @@ func Create2ndNodeWithConfig(
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
-		stackConfig = getTestStackConfig(t)
+		stackConfig = getTestStackConfig(t, "")
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
