@@ -24,12 +24,13 @@ import (
 )
 
 var (
-	stakerBalanceGauge              = metrics.NewRegisteredGauge("arb/staker/balance", nil)
+	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
 	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
 	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
 	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
+	validatorGasRefunderBalance     = metrics.NewRegisteredGaugeFloat64("arb/validator/gasrefunder/balanceether", nil)
 )
 
 type StakerStrategy uint8
@@ -45,11 +46,6 @@ const (
 	ResolveNodesStrategy
 	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeNodesStrategy
-)
-
-var (
-	validatorWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/validator/wallet/balanceether", nil)
-	validatorGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/validator/gasrefunder/balanceether", nil)
 )
 
 type L1PostingStrategy struct {
@@ -250,15 +246,6 @@ func (s *Staker) Start(ctxIn context.Context) {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
 			}
 			validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
-		}
-		walletAddressOrZero := s.wallet.AddressOrZero()
-		if walletAddressOrZero != (common.Address{}) {
-			var walletBalance *big.Int
-			walletBalance, err = s.client.BalanceAt(ctx, walletAddressOrZero, nil)
-			if err != nil {
-				log.Warn("error fetching validator wallet balance", "err", err)
-			}
-			validatorWalletBalance.Update(float64(walletBalance.Int64()) / params.Ether)
 		}
 		err = s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
@@ -792,5 +779,5 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
-	stakerBalanceGauge.Update(balance.Int64())
+	stakerBalanceGauge.Update(float64(balance.Int64()) / params.Ether)
 }
