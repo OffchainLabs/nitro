@@ -48,7 +48,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(t)
+	nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
@@ -270,7 +270,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(t)
+	nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	nodeConfig.BatchPoster.Enable = false
 
 	nodeNames := []string{"stdio://A", "stdio://B"}

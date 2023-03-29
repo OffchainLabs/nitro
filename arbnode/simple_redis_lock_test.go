@@ -41,7 +41,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 	defer cancel()
 
 	redisKey := test_redisKey_prefix + redisKeySuffix
-	redisUrl := redisutil.CreateTestRedis(t)
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
 	Require(t, redisClient.Del(ctx, redisKey).Err())
