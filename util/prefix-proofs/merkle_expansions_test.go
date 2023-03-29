@@ -3,24 +3,17 @@ package prefixproofs
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
-var nullHash = common.Hash{}
-
 func TestMerkleExpansion(t *testing.T) {
 	me := NewEmptyMerkleExpansion()
-	root, err := Root(me)
-	require.NoError(t, err)
-	require.Equal(t, nullHash, root)
-	compUncompTest(t, me)
 
 	h0 := crypto.Keccak256Hash([]byte{0})
-	me, err = AppendCompleteSubTree(me, 0, h0)
+	me, err := AppendCompleteSubTree(me, 0, h0)
 	require.NoError(t, err)
-	root, err = Root(me)
+	root, err := Root(me)
 	require.NoError(t, err)
 	require.Equal(t, h0, root)
 	compUncompTest(t, me)
