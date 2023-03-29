@@ -77,7 +77,7 @@ func TestMerkleProof(t *testing.T) {
 		_, err = CalculateRootFromProof(make([]common.Hash, 257), 0, common.Hash{})
 		require.Equal(t, ErrProofTooLong, err)
 
-		// ... but proof with more exactly 256 elements should be OK.
+		// ... but proof with exactly 256 elements should be OK.
 		_, err = CalculateRootFromProof(make([]common.Hash, 256), 0, common.Hash{})
 		require.NotEqual(t, ErrProofTooLong, err)
 	})
