@@ -631,8 +631,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		var err error
 		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
-			var gasRefunderBalance *big.Int
-			gasRefunderBalance, err = b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
+			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
 			if err != nil {
 				log.Warn("error fetching batch poster gas refunder balance", "err", err)
 			} else {
@@ -640,8 +639,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			}
 		}
 		if b.dataPoster.From() != (common.Address{}) {
-			var walletBalance *big.Int
-			walletBalance, err = b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.From(), nil)
+			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.From(), nil)
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {

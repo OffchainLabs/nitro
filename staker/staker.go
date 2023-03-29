@@ -240,8 +240,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}()
 		var err error
 		if common.HexToAddress(s.config.GasRefunderAddress) != (common.Address{}) {
-			var gasRefunderBalance *big.Int
-			gasRefunderBalance, err = s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
+			gasRefunderBalance, err := s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
 			if err != nil {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
 			} else {
