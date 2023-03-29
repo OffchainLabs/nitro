@@ -178,6 +178,11 @@ struct CreateEdgeArgs {
 }
 
 interface IEdgeChallengeManager {
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) external;
     // // Checks if a challenge by ID exists.
     // function challengeExists(bytes32 challengeId) external view returns (bool);
     // Fetches a challenge object by ID.
@@ -237,8 +242,18 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     IOneStepProofEntry oneStepProofEntry;
 
     constructor(IAssertionChain _assertionChain, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
-        challengePeriodSec = _challengePeriodSec;
+        // HN: TODO: remove constructor?
+        initialize(_assertionChain, _challengePeriodSec, _oneStepProofEntry);
+    }
+
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) public {
+        require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
+        challengePeriodSec = _challengePeriodSec;
         oneStepProofEntry = _oneStepProofEntry;
     }
 
