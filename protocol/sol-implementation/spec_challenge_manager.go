@@ -128,27 +128,59 @@ func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context) error {
 }
 
 type SpecChallenge struct {
+	id      protocol.ChallengeHash
 	manager *SpecChallengeManager
 }
 
 func (c *SpecChallenge) Id() protocol.ChallengeHash {
-	return protocol.ChallengeHash{}
+	return c.id
 }
 
-func (c *SpecChallenge) GetType() protocol.ChallengeType {
-	return 0
+func (c *SpecChallenge) GetType() (protocol.ChallengeType, error) {
+	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
+	if err != nil {
+		return 0, err
+	}
+
+	return protocol.ChallengeType(challenge.CType), nil
 }
 
 func (c *SpecChallenge) StartTime() (uint64, error) {
-	return 0, nil
+	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
+	if err != nil {
+		return 0, err
+	}
+	challengeEdge, err := c.manager.caller.GetEdge(c.manager.callOpts, challenge.BaseId)
+	if err != nil {
+		return 0, err
+	}
+	return challengeEdge.CreatedWhen.Uint64(), nil
 }
 
 func (c *SpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
-	return 0, common.Hash{}, nil
+	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
+	if err != nil {
+		return 0, common.Hash{}, err
+	}
+	challengeEdge, err := c.manager.caller.GetEdge(c.manager.callOpts, challenge.BaseId)
+	if err != nil {
+		return 0, common.Hash{}, err
+	}
+	// TODO: This is probably wrong
+	return protocol.Height(challengeEdge.StartHeight.Uint64()), challengeEdge.ClaimEdgeId, nil
 }
 
 func (c *SpecChallenge) Status(ctx context.Context) (protocol.ChallengeStatus, error) {
-	return 0, nil
+	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
+	if err != nil {
+		return protocol.ChallengePending, err
+	}
+	challengeEdge, err := c.manager.caller.GetEdge(c.manager.callOpts, challenge.BaseId)
+	if err != nil {
+		return protocol.ChallengePending, err
+	}
+
+	return protocol.ChallengeStatus(challengeEdge.Status), nil
 }
 
 func (c *SpecChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
