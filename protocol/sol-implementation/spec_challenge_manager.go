@@ -133,7 +133,7 @@ func (c *SpecEdge) GetType() (protocol.ChallengeType, error) {
 	return 0, nil
 }
 
-func (c *SpecChallengeManager) StartTime() (uint64, error) {
+func (cm *SpecChallengeManager) StartTime() (uint64, error) {
 	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
 	if err != nil {
 		return 0, err
@@ -146,7 +146,7 @@ func (c *SpecChallengeManager) StartTime() (uint64, error) {
 }
 
 // TODO: This is wrong. We can't get this from the base id by itself.
-func (c *SpecChallengeManager) RootCommitment() (protocol.Height, common.Hash, error) {
+func (cm *SpecChallengeManager) RootCommitment() (protocol.Height, common.Hash, error) {
 	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
 	if err != nil {
 		return 0, common.Hash{}, err
@@ -159,26 +159,26 @@ func (c *SpecChallengeManager) RootCommitment() (protocol.Height, common.Hash, e
 	return protocol.Height(challengeEdge.StartHeight.Uint64()), challengeEdge.ClaimEdgeId, nil
 }
 
-func (c *SpecChallengeManager) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
+func (cm *SpecChallengeManager) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
 	return nil, nil
 }
 
-func (c *SpecChallengeManager) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
+func (cm *SpecChallengeManager) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
 }
 
-func (c *SpecChallengeManager) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
+func (cm *SpecChallengeManager) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
 	return util.None[protocol.SpecEdge](), nil
 }
 
-func (c *SpecChallengeManager) EdgeIsOneStepForkSource(
+func (cm *SpecChallengeManager) EdgeIsOneStepForkSource(
 	ctx context.Context,
 	edge protocol.SpecEdge,
 ) (bool, error) {
 	return c.manager.caller.IsAtOneStepFork(c.manager.callOpts, edge.Id())
 }
 
-func (c *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
+func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
 	history util.HistoryCommitment,
@@ -186,7 +186,7 @@ func (c *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	return nil, nil
 }
 
-func (c *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
+func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
 	history util.HistoryCommitment,
