@@ -32,8 +32,6 @@ type ExecutionClient interface {
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
-	NextDelayedMessageNumber() (uint64, error)
-	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
 }
 
@@ -54,6 +52,8 @@ type ExecutionSequencer interface {
 	Pause()
 	Activate()
 	ForwardTo(url string) error
+	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
+	NextDelayedMessageNumber() (uint64, error)
 	SetTransactionStreamer(streamer TransactionStreamer)
 }
 

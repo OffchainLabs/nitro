@@ -26,7 +26,7 @@ type DelayedSequencer struct {
 	l1Reader                 *headerreader.HeaderReader
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
-	exec                     execution.ExecutionClient
+	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock uint64
 	mutex                    sync.Mutex
@@ -63,7 +63,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	UseMergeFinality:    true,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionClient, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
