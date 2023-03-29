@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "execution_state.go",
         "interfaces.go",
+        "spec_interfaces.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol",
     visibility = ["//visibility:public"],

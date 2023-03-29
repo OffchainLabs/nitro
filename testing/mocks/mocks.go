@@ -12,6 +12,17 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+var (
+	_ = protocol.SpecChallenge(&MockSpecChallenge{})
+	_ = protocol.SpecChallengeManager(&MockSpecChallengeManager{})
+	_ = protocol.SpecEdge(&MockSpecEdge{})
+	_ = protocol.AssertionChain(&MockProtocol{})
+	_ = protocol.Challenge(&MockChallenge{})
+	_ = protocol.ChallengeManager(&MockChallengeManager{})
+	_ = protocol.ChallengeVertex(&MockChallengeVertex{})
+	_ = statemanager.Manager(&MockStateManager{})
+)
+
 type MockChallengeVertex struct {
 	mock.Mock
 	MockId         [32]byte
@@ -334,6 +345,183 @@ func (m *MockChallengeManager) Address() common.Address {
 	return m.MockAddr
 }
 
+// MockSpecChallengeManager
+type MockSpecChallengeManager struct {
+	mock.Mock
+	MockAddr common.Address
+}
+
+func (m *MockSpecChallengeManager) ChallengePeriodSeconds(ctx context.Context) (time.Duration, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(time.Duration), args.Error(1)
+}
+
+func (m *MockSpecChallengeManager) CalculateChallengeHash(ctx context.Context, claimId common.Hash, challengeType protocol.ChallengeType) (protocol.ChallengeHash, error) {
+	args := m.Called(ctx, claimId, challengeType)
+	return args.Get(0).(protocol.ChallengeHash), args.Error(1)
+}
+
+func (m *MockSpecChallengeManager) CalculateEdgeHash(
+	ctx context.Context,
+	challengeId protocol.ChallengeHash,
+	startHistory util.HistoryCommitment,
+	endHistory util.HistoryCommitment,
+) (protocol.EdgeHash, error) {
+	args := m.Called(ctx, challengeId, startHistory, endHistory)
+	return args.Get(0).(protocol.EdgeHash), args.Error(1)
+}
+
+func (m *MockSpecChallengeManager) GetEdge(
+	ctx context.Context,
+	edgeId protocol.EdgeHash,
+) (util.Option[protocol.SpecEdge], error) {
+	args := m.Called(ctx, edgeId)
+	return args.Get(0).(util.Option[protocol.SpecEdge]), args.Error(1)
+}
+
+func (m *MockSpecChallengeManager) GetChallenge(
+	ctx context.Context,
+	challengeId protocol.ChallengeHash,
+) (util.Option[protocol.SpecChallenge], error) {
+	args := m.Called(ctx, challengeId)
+	return args.Get(0).(util.Option[protocol.SpecChallenge]), args.Error(1)
+}
+
+func (m *MockSpecChallengeManager) Address() common.Address {
+	return m.MockAddr
+}
+
+// MockSpecChallenge
+type MockSpecChallenge struct {
+	mock.Mock
+}
+
+func (m *MockSpecChallenge) Id() protocol.ChallengeHash {
+	args := m.Called()
+	return args.Get(0).(protocol.ChallengeHash)
+}
+func (m *MockSpecChallenge) GetType() protocol.ChallengeType {
+	args := m.Called()
+	return args.Get(0).(protocol.ChallengeType)
+
+}
+func (m *MockSpecChallenge) StartTime() (uint64, error) {
+	args := m.Called()
+	return args.Get(0).(uint64), args.Error(1)
+}
+func (m *MockSpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
+	args := m.Called()
+	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash), args.Error(2)
+}
+func (m *MockSpecChallenge) Status(ctx context.Context) (protocol.ChallengeStatus, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.ChallengeStatus), args.Error(1)
+}
+func (m *MockSpecChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.Assertion), args.Error(1)
+}
+func (m *MockSpecChallenge) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash), args.Error(2)
+}
+func (m *MockSpecChallenge) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
+	args := m.Called(ctx)
+	return args.Get(0).(util.Option[protocol.SpecEdge]), args.Error(1)
+}
+func (m *MockSpecChallenge) EdgeIsOneStepForkSource(edge protocol.SpecEdge) (bool, error) {
+	args := m.Called(edge)
+	return args.Get(0).(bool), args.Error(1)
+}
+func (m *MockSpecChallenge) AddBlockChallengeLevelZeroEdge(
+	ctx context.Context,
+	assertion protocol.Assertion,
+	history util.HistoryCommitment,
+) (protocol.SpecEdge, error) {
+	args := m.Called(ctx, assertion, history)
+	return args.Get(0).(protocol.SpecEdge), args.Error(1)
+}
+func (m *MockSpecChallenge) AddSubChallengeLevelZeroEdge(
+	ctx context.Context,
+	challengedEdge protocol.SpecEdge,
+	history util.HistoryCommitment,
+) (protocol.SpecEdge, error) {
+	args := m.Called(ctx, challengedEdge, history)
+	return args.Get(0).(protocol.SpecEdge), args.Error(1)
+}
+
+// MockSpecEdge
+type MockSpecEdge struct {
+	mock.Mock
+}
+
+func (m *MockSpecEdge) Id() [32]byte {
+	args := m.Called()
+	return args.Get(0).([32]byte)
+}
+func (m *MockSpecEdge) MiniStaker() (common.Address, error) {
+	args := m.Called()
+	return args.Get(0).(common.Address), args.Error(1)
+}
+func (m *MockSpecEdge) StartCommitment() (protocol.Height, common.Hash) {
+	args := m.Called()
+	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash)
+}
+func (m *MockSpecEdge) TargetCommitment() (protocol.Height, common.Hash) {
+	args := m.Called()
+	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash)
+}
+func (m *MockSpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(uint64), args.Error(1)
+}
+func (m *MockSpecEdge) IsPresumptive(ctx context.Context) (bool, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(bool), args.Error(1)
+}
+func (m *MockSpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.EdgeStatus), args.Error(1)
+}
+func (m *MockSpecEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(bool), args.Error(1)
+}
+func (m *MockSpecEdge) DirectChildren(ctx context.Context) (util.Option[protocol.EdgeChildren], error) {
+	args := m.Called(ctx)
+	return args.Get(0).(util.Option[protocol.EdgeChildren]), args.Error(1)
+}
+func (m *MockSpecEdge) GetSubChallenge(ctx context.Context) (util.Option[protocol.SpecChallenge], error) {
+	args := m.Called(ctx)
+	return args.Get(0).(util.Option[protocol.SpecChallenge]), args.Error(1)
+}
+func (m *MockSpecEdge) CreateSubChallenge(ctx context.Context) (protocol.SpecChallenge, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.SpecChallenge), args.Error(1)
+}
+
+// Challenge moves
+func (m *MockSpecEdge) Bisect(
+	ctx context.Context,
+	history util.HistoryCommitment,
+	proof []byte,
+) (protocol.SpecEdge, protocol.SpecEdge, error) {
+	args := m.Called(ctx, history, proof)
+	return args.Get(0).(protocol.SpecEdge), args.Get(1).(protocol.SpecEdge), args.Error(2)
+}
+
+// Confirms an edge for having a presumptive timer >= a challenge period.
+func (m *MockSpecEdge) ConfirmForTimer(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// Confirms an edge for having a subchallenge winner of a one-step-proof.
+func (m *MockSpecEdge) ConfirmForSubChallengeWin(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 type MockProtocol struct {
 	mock.Mock
 }
@@ -383,6 +571,16 @@ func (m *MockProtocol) CreateAssertion(ctx context.Context, height uint64, prevS
 func (m *MockProtocol) CreateSuccessionChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
 	args := m.Called(ctx, seqNum)
 	return args.Get(0).(protocol.Challenge), args.Error(1)
+}
+
+func (m *MockProtocol) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.SpecChallengeManager), args.Error(1)
+}
+
+func (m *MockProtocol) CreateSpecChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.SpecChallenge, error) {
+	args := m.Called(ctx, seqNum)
+	return args.Get(0).(protocol.SpecChallenge), args.Error(1)
 }
 
 func (m *MockProtocol) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {

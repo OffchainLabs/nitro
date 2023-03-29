@@ -110,7 +110,7 @@ contract EdgeChallengeManagerTest is Test {
 
         bytes32 edgeId = ei.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeChallengeType: ChallengeType.Block,
+                edgeType: EdgeType.Block,
                 startHistoryRoot: genesisRoot,
                 startHeight: 0,
                 endHistoryRoot: MerkleTreeLib.root(exp),
@@ -136,7 +136,7 @@ contract EdgeChallengeManagerTest is Test {
 
         bytes32 edge1Id = ei.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeChallengeType: ChallengeType.Block,
+                edgeType: EdgeType.Block,
                 startHistoryRoot: genesisRoot,
                 startHeight: 0,
                 endHistoryRoot: MerkleTreeLib.root(exp1),
@@ -154,7 +154,7 @@ contract EdgeChallengeManagerTest is Test {
             (, bytes32[] memory exp2) = appendRandomStates(genesisStates(), height1);
             bytes32 edge2Id = ei.challengeManager.createLayerZeroEdge(
                 CreateEdgeArgs({
-                    edgeChallengeType: ChallengeType.Block,
+                    edgeType: EdgeType.Block,
                     startHistoryRoot: genesisRoot,
                     startHeight: 0,
                     endHistoryRoot: MerkleTreeLib.root(exp2),
@@ -299,15 +299,13 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[5] memory edges1,) = createEdgesAndBisectToFork(
-            CreateEdgesBisectArgs(
-                ei.challengeManager, ChallengeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false
-            )
+            CreateEdgesBisectArgs(ei.challengeManager, EdgeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false)
         );
 
         (, bytes32[] memory bigStepExp) = appendRandomStatesBetween(genesisStates(), states1[1], height1);
         bytes32 edge1BigStepId = ei.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeChallengeType: ChallengeType.BigStep,
+                edgeType: EdgeType.BigStep,
                 startHistoryRoot: genesisRoot,
                 startHeight: 0,
                 endHistoryRoot: MerkleTreeLib.root(bigStepExp),
@@ -341,7 +339,7 @@ contract EdgeChallengeManagerTest is Test {
 
     struct CreateEdgesBisectArgs {
         EdgeChallengeManager challengeManager;
-        ChallengeType cType;
+        EdgeType eType;
         bytes32 claim1Id;
         bytes32 claim2Id;
         bytes32 endState1;
@@ -357,7 +355,7 @@ contract EdgeChallengeManagerTest is Test {
             appendRandomStatesBetween(genesisStates(), args.endState1, height1);
         bytes32 edge1Id = args.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeChallengeType: args.cType,
+                edgeType: args.eType,
                 startHistoryRoot: genesisRoot,
                 startHeight: 0,
                 endHistoryRoot: MerkleTreeLib.root(exp1),
@@ -376,7 +374,7 @@ contract EdgeChallengeManagerTest is Test {
             appendRandomStatesBetween(genesisStates(), args.endState2, height1);
         bytes32 edge2Id = args.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
-                edgeChallengeType: args.cType,
+                edgeType: args.eType,
                 startHistoryRoot: genesisRoot,
                 startHeight: 0,
                 endHistoryRoot: MerkleTreeLib.root(exp2),
@@ -405,9 +403,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[5] memory blockEdges1,
             BisectionChildren[5] memory blockEdges2
         ) = createEdgesAndBisectToFork(
-            CreateEdgesBisectArgs(
-                ei.challengeManager, ChallengeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false
-            )
+            CreateEdgesBisectArgs(ei.challengeManager, EdgeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false)
         );
 
         (
@@ -418,7 +414,7 @@ contract EdgeChallengeManagerTest is Test {
         ) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
-                ChallengeType.BigStep,
+                EdgeType.BigStep,
                 blockEdges1[0].lowerChildId,
                 blockEdges2[0].lowerChildId,
                 blockStates1[1],
@@ -430,7 +426,7 @@ contract EdgeChallengeManagerTest is Test {
         (,, BisectionChildren[5] memory smallStepEdges1,) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
-                ChallengeType.SmallStep,
+                EdgeType.SmallStep,
                 bigStepEdges1[0].lowerChildId,
                 bigStepEdges2[0].lowerChildId,
                 bigStepStates1[1],
@@ -500,9 +496,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[5] memory blockEdges1,
             BisectionChildren[5] memory blockEdges2
         ) = createEdgesAndBisectToFork(
-            CreateEdgesBisectArgs(
-                ei.challengeManager, ChallengeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false
-            )
+            CreateEdgesBisectArgs(ei.challengeManager, EdgeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false)
         );
 
         (
@@ -513,7 +507,7 @@ contract EdgeChallengeManagerTest is Test {
         ) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
-                ChallengeType.BigStep,
+                EdgeType.BigStep,
                 blockEdges1[0].lowerChildId,
                 blockEdges2[0].lowerChildId,
                 blockStates1[1],
@@ -525,7 +519,7 @@ contract EdgeChallengeManagerTest is Test {
         (bytes32[] memory smallStepStates1,, BisectionChildren[5] memory smallStepEdges1,) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
-                ChallengeType.SmallStep,
+                EdgeType.SmallStep,
                 bigStepEdges1[0].lowerChildId,
                 bigStepEdges2[0].lowerChildId,
                 bigStepStates1[1],
