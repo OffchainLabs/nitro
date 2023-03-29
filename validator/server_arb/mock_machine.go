@@ -1,12 +1,13 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package validator
+package server_arb
 
 import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type IncorrectMachine struct {
@@ -15,7 +16,7 @@ type IncorrectMachine struct {
 	stepCount     uint64
 }
 
-var badGlobalState = GoGlobalState{Batch: 0xbadbadbadbad, PosInBatch: 0xbadbadbadbad}
+var badGlobalState = validator.GoGlobalState{Batch: 0xbadbadbadbad, PosInBatch: 0xbadbadbadbad}
 
 var _ MachineInterface = (*IncorrectMachine)(nil)
 
@@ -34,7 +35,7 @@ func (m *IncorrectMachine) CloneMachineInterface() MachineInterface {
 	}
 }
 
-func (m *IncorrectMachine) GetGlobalState() GoGlobalState {
+func (m *IncorrectMachine) GetGlobalState() validator.GoGlobalState {
 	if m.GetStepCount() >= m.incorrectStep {
 		return badGlobalState
 	}
@@ -95,4 +96,12 @@ func (m *IncorrectMachine) Hash() common.Hash {
 
 func (m *IncorrectMachine) ProveNextStep() []byte {
 	return m.inner.ProveNextStep()
+}
+
+func (m *IncorrectMachine) Freeze() {
+	m.inner.Freeze()
+}
+
+func (m *IncorrectMachine) Destroy() {
+	m.inner.Destroy()
 }

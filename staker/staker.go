@@ -23,6 +23,15 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+var (
+	stakerBalanceGauge              = metrics.NewRegisteredGauge("arb/staker/balance", nil)
+	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
+	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
+	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
+	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
+)
+
 type StakerStrategy uint8
 
 const (
@@ -65,7 +74,6 @@ type L1ValidatorConfig struct {
 	MakeAssertionInterval    time.Duration     `koanf:"make-assertion-interval"`
 	L1PostingStrategy        L1PostingStrategy `koanf:"posting-strategy"`
 	DisableChallenge         bool              `koanf:"disable-challenge"`
-	TargetMachineCount       int               `koanf:"target-machine-count"`
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
 	UseSmartContractWallet   bool              `koanf:"use-smart-contract-wallet"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
@@ -82,7 +90,6 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	MakeAssertionInterval:    time.Hour,
 	L1PostingStrategy:        L1PostingStrategy{},
 	DisableChallenge:         false,
-	TargetMachineCount:       4,
 	ConfirmationBlocks:       12,
 	UseSmartContractWallet:   false,
 	OnlyCreateWalletContract: false,
@@ -99,7 +106,6 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
-	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
@@ -180,6 +186,7 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
+	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -198,12 +205,16 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
+	walletAddressOrZero := s.wallet.AddressOrZero()
+	if walletAddressOrZero != (common.Address{}) {
+		s.updateStakerBalanceMetric(ctx)
+	}
 	if s.blockValidator != nil && s.config.StartFromStaked {
-		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
+		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
 		}
@@ -263,12 +274,15 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		if err == nil {
 			backoff = time.Second
+			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
+			stakerActionSuccessCounter.Inc(1)
 			if arbTx != nil && !s.wallet.CanBatchTxs() {
 				// Try to create another tx
 				return 0
 			}
 			return s.config.StakerInterval
 		}
+		stakerActionFailureCounter.Inc(1)
 		backoff *= 2
 		if backoff > time.Minute {
 			backoff = time.Minute
@@ -356,7 +370,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 	if !s.shouldAct(ctx) {
-		// The fact that we're delaying acting is alreay logged in `shouldAct`
+		// The fact that we're delaying acting is already logged in `shouldAct`
 		return nil, nil
 	}
 	callOpts := s.getCallOpts(ctx)
@@ -369,6 +383,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error getting own staker (%v) info: %w", walletAddressOrZero, err)
 		}
+		if rawInfo != nil {
+			stakerAmountStakedGauge.Update(rawInfo.AmountStaked.Int64())
+		} else {
+			stakerAmountStakedGauge.Update(0)
+		}
+		s.updateStakerBalanceMetric(ctx)
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
@@ -378,6 +398,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
 	}
@@ -556,7 +577,6 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxTracker,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
-			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,
 		)
 		if err != nil {
@@ -759,4 +779,18 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 
 func (s *Staker) Strategy() StakerStrategy {
 	return s.strategy
+}
+
+func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
+	txSenderAddress := s.wallet.TxSenderAddress()
+	if txSenderAddress == nil {
+		stakerBalanceGauge.Update(0)
+		return
+	}
+	balance, err := s.client.BalanceAt(ctx, *txSenderAddress, nil)
+	if err != nil {
+		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
+		return
+	}
+	stakerBalanceGauge.Update(balance.Int64())
 }

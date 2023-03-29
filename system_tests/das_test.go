@@ -167,7 +167,7 @@ func TestDASRekey(t *testing.T) {
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 
-	l2stackA, err := arbnode.CreateDefaultStackForTest(nodeDir)
+	l2stackA, err := createDefaultStackForTest(nodeDir)
 	Require(t, err)
 
 	l2chainDb, err := l2stackA.OpenDatabase("chaindb", 0, 0, "", false)
