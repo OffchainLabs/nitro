@@ -111,6 +111,9 @@ func Root(me []common.Hash) (common.Hash, error) {
 	if uint64(len(me)) >= MAX_LEVEL {
 		return common.Hash{}, ErrLevelTooHigh
 	}
+	if uint64(len(me)) == 0 {
+		return common.Hash{}, ErrRootForEmpty
+	}
 
 	var accum common.Hash
 	for i := 0; i < len(me); i++ {
