@@ -43,6 +43,7 @@ func (p *Promise[R]) Await(ctx context.Context) (R, error) {
 		return p.result, p.err
 	case <-ctx.Done():
 		var empty R
+		p.Cancel()
 		return empty, ctx.Err()
 	}
 }
@@ -66,6 +67,8 @@ func (p *Promise[R]) Cancel() {
 }
 
 // not thread safe, must be set before anyone calls cancel
+// cancel might be called multiple times while no value or error produced
+// cancel will be called by Await if it's context is done
 func (p *Promise[R]) SetCancel(cancel func()) {
 	p.cancel = cancel
 }
