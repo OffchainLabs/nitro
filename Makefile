@@ -129,7 +129,7 @@ test-go-challenge: test-go-deps
 	@printf $(done)
 
 test-go-redis: test-go-deps
-	go test -p 1 -run TestRedis -tags redistest ./system_tests/... ./arbnode/...
+	go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
 
 test-gen-proofs: \
