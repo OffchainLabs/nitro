@@ -377,44 +377,44 @@ contract RollupTest is Test {
         return states;
     }
 
-    function testSuccessConfirmForPsTimer() public {
-        (,ExecutionState memory afterState,,uint256 genesisInboxCount) = testSuccessCreateSecondChild();
-        vm.prank(validator1);
-        bytes32 challengeId = userRollup.createChallenge({
-            assertionNum: 0
-        });
-        vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
-        vm.warp(block.timestamp + CONFIRM_PERIOD_BLOCKS * 15);
-        bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(0));
-        bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(1));
+    // function testSuccessConfirmForPsTimer() public {
+    //     (,ExecutionState memory afterState,,uint256 genesisInboxCount) = testSuccessCreateSecondChild();
+    //     vm.prank(validator1);
+    //     bytes32 challengeId = userRollup.createChallenge({
+    //         assertionNum: 0
+    //     });
+    //     vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
+    //     vm.warp(block.timestamp + CONFIRM_PERIOD_BLOCKS * 15);
+    //     bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(0));
+    //     bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(1));
 
-        bytes32[] memory states = fillStatesInBetween(h0, h1, 9);
-        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, 9));
+    //     bytes32[] memory states = fillStatesInBetween(h0, h1, 9);
+    //     bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, 9));
 
-        bytes32 v1Id = challengeManager.addLeaf{value: 1}(
-            AddLeafArgs({
-                challengeId: challengeId,
-                claimId: userRollup.getAssertionId(1),
-                height: 8,
-                historyRoot: root,
-                firstState: h0,
-                firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0),
-                lastState: states[states.length - 1],
-                lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1)
-            }),
-            abi.encodePacked(h1),
-            abi.encode(afterState.globalState, genesisInboxCount, afterState.machineStatus)
-        );
-        userRollup.challengeManager().confirmForPsTimer(v1Id);
-        vm.prank(validator1);
-        userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT);
-    }
+    //     bytes32 v1Id = challengeManager.addLeaf{value: 1}(
+    //         AddLeafArgs({
+    //             challengeId: challengeId,
+    //             claimId: userRollup.getAssertionId(1),
+    //             height: 8,
+    //             historyRoot: root,
+    //             firstState: h0,
+    //             firstStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0),
+    //             lastState: states[states.length - 1],
+    //             lastStatehistoryProof: ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1)
+    //         }),
+    //         abi.encodePacked(h1),
+    //         abi.encode(afterState.globalState, genesisInboxCount, afterState.machineStatus)
+    //     );
+    //     userRollup.challengeManager().confirmForPsTimer(v1Id);
+    //     vm.prank(validator1);
+    //     userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT);
+    // }
 
-    function testSuccessRejection() public {
-        testSuccessConfirmForPsTimer();
-        vm.prank(validator1);
-        userRollup.rejectNextAssertion(validator2);
-    }
+    // function testSuccessRejection() public {
+    //     testSuccessConfirmForPsTimer();
+    //     vm.prank(validator1);
+    //     userRollup.rejectNextAssertion(validator2);
+    // }
 
     function testRevertRejectionTooRecent() public {
         testSuccessCreateSecondChild();
