@@ -11,13 +11,14 @@ enum EdgeStatus {
     Confirmed // This vertex has been confirmed, once confirmed it cannot be unconfirmed
 }
 
-struct EChallenge {
-    bytes32 baseId;
-    ChallengeType cType;
+enum EdgeType {
+    Block,
+    BigStep,
+    SmallStep
 }
 
 struct ChallengeEdge {
-    bytes32 challengeId;
+    bytes32 originId;
     bytes32 startHistoryRoot;
     uint256 startHeight;
     bytes32 endHistoryRoot;
@@ -25,40 +26,47 @@ struct ChallengeEdge {
     bytes32 lowerChildId; // start -> middle
     bytes32 upperChildId; // middle -> end
     uint256 createdWhen;
-    EdgeStatus status;
     bytes32 claimEdgeId; // only on layer zero edge. Claim must have same start point and challenge id as this edge
     address staker; // only on layer zero edge
+    EdgeStatus status;
+    EdgeType eType;
 }
 
 library ChallengeEdgeLib {
-    function baseIdComponent(bytes32 challengeId, bytes32 startHistoryRoot, uint256 startHeight, uint256 endHeight)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encodePacked(challengeId, startHistoryRoot, startHeight, endHeight));
+    function mutualIdComponent(
+        EdgeType eType,
+        bytes32 originId,
+        uint256 startHeight,
+        bytes32 startHistoryRoot,
+        uint256 endHeight
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(eType, originId, startHeight, startHistoryRoot, endHeight));
     }
-    // CHRIS: TODO: merge these two functions - provide one with accepts the specific args, then call internally
 
-    function baseId(ChallengeEdge storage ce) internal view returns (bytes32) {
-        return baseIdComponent(ce.challengeId, ce.startHistoryRoot, ce.startHeight, ce.endHeight);
+    function mutualId(ChallengeEdge storage ce) internal view returns (bytes32) {
+        return mutualIdComponent(ce.eType, ce.originId, ce.startHeight, ce.startHistoryRoot, ce.endHeight);
     }
 
     function idComponent(
-        bytes32 challengeId,
-        bytes32 startHistoryRoot,
+        EdgeType eType,
+        bytes32 originId,
         uint256 startHeight,
-        bytes32 endHistoryRoot,
-        uint256 endHeight
+        bytes32 startHistoryRoot,
+        uint256 endHeight,
+        bytes32 endHistoryRoot
     ) internal pure returns (bytes32) {
-        // CHRIS: TODO: consider if we need to include the claim id here? that shouldnt be necessary if we have the correct checks in createZeroLayerEdge
-        return keccak256(abi.encodePacked(challengeId, startHistoryRoot, startHeight, endHistoryRoot, endHeight));
+        return keccak256(
+            abi.encodePacked(
+                mutualIdComponent(eType, originId, startHeight, startHistoryRoot, endHeight), endHistoryRoot
+            )
+        );
     }
 
     function id(ChallengeEdge memory edge) internal pure returns (bytes32) {
         // CHRIS: TODO: consider if we need to include the claim id here? that shouldnt be necessary if we have the correct checks in createZeroLayerEdge
-        return
-            idComponent(edge.challengeId, edge.startHistoryRoot, edge.startHeight, edge.endHistoryRoot, edge.endHeight);
+        return idComponent(
+            edge.eType, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight, edge.endHistoryRoot
+        );
     }
 
     function exists(ChallengeEdge storage edge) internal view returns (bool) {
@@ -66,24 +74,32 @@ library ChallengeEdgeLib {
     }
 }
 
-library EChallengeLib {
-    function id(EChallenge memory c) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(c.cType, c.baseId));
-    }
-}
-
 struct EdgeStore {
     mapping(bytes32 => ChallengeEdge) edges;
-    // CHRIS: TODO: explain better what we're doing with the base records
-    mapping(bytes32 => bytes32) baseRecords;
+    // CHRIS: TODO: explain better what we're doing with the firt rivals
+    mapping(bytes32 => bytes32) firstRivals;
 }
 
 library EdgeStoreLib {
-    bytes32 constant IS_PRESUMPTIVE = keccak256(abi.encodePacked("IS PRESUMPTIVE"));
+    bytes32 constant NO_RIVAL = keccak256(abi.encodePacked("NO_RIVAL"));
 
     using ChallengeEdgeLib for ChallengeEdge;
 
     function add(EdgeStore storage s, ChallengeEdge memory ce) internal {
+        // add an edge to the store, if another edge exists with this challenge id then this
+        // edge must be rival
+        // could we instead identify the challenge by it's own base?
+        // if we did that then we have a deterministic challenge id
+        // we can check somewhere else that the rules are correct
+
+        // could include the parent baseid in each edge
+        // that way we dont need a challenge id - this base == parent base, not for upper child tho, yes since their parents
+        // are rivals
+        // so if we include the parent base id, what do we get? that would work, but what would be the point?
+
+        // edges are rivals, but they share, a share is a part of something too
+        // common also means plain
+
         // CHRIS: TODO: check that the children are empty?
 
         bytes32 eId = ce.id();
@@ -91,13 +107,16 @@ library EdgeStoreLib {
         require(!s.edges[eId].exists(), "Edge already exists");
         s.edges[eId] = ce;
 
-        bytes32 baseId =
-            ChallengeEdgeLib.baseIdComponent(ce.challengeId, ce.startHistoryRoot, ce.startHeight, ce.endHeight);
-        bytes32 baseRecord = s.baseRecords[baseId];
-        if (baseRecord == 0) {
-            s.baseRecords[baseId] = IS_PRESUMPTIVE;
-        } else if (baseRecord == IS_PRESUMPTIVE) {
-            s.baseRecords[baseId] = eId;
+        bytes32 mutualId =
+            ChallengeEdgeLib.mutualIdComponent(ce.eType, ce.originId, ce.startHeight, ce.startHistoryRoot, ce.endHeight);
+        bytes32 firstRival = s.firstRivals[mutualId];
+
+        if (firstRival == 0) {
+            s.firstRivals[mutualId] = NO_RIVAL;
+        } else if (firstRival == NO_RIVAL) {
+            s.firstRivals[mutualId] = eId;
+        } else {
+            // CHRIS: TODO: comment as to why we do nothing
         }
     }
 
@@ -125,11 +144,12 @@ library EdgeStoreLib {
     function isPresumptive(EdgeStore storage s, bytes32 edgeId) internal view returns (bool) {
         require(s.edges[edgeId].exists(), "Edge does not exist");
 
-        bytes32 baseRecord = s.edges[edgeId].baseId();
+        bytes32 mutualId = s.edges[edgeId].mutualId();
+        bytes32 firstRival = s.firstRivals[mutualId];
         // CHRIS: TODO: this should be an assert? could do invariant testing for this?
-        require(baseRecord != 0, "Empty base record");
+        require(firstRival != 0, "Empty first rival");
 
-        return baseRecord == IS_PRESUMPTIVE;
+        return firstRival == NO_RIVAL;
     }
 
     function isAtOneStepFork(EdgeStore storage s, bytes32 edgeId) internal view returns (bool) {
@@ -145,22 +165,21 @@ library EdgeStoreLib {
     function psTimer(EdgeStore storage s, bytes32 edgeId) internal view returns (uint256) {
         require(s.edges[edgeId].exists(), "Edge does not exist");
 
-        bytes32 baseId = s.edges[edgeId].baseId();
-        bytes32 baseRecord = s.baseRecords[baseId];
+        bytes32 mutualId = s.edges[edgeId].mutualId();
+        bytes32 firstRival = s.firstRivals[mutualId];
         // CHRIS: TODO: this should be an assert? could do invariant testing for this?
-        require(baseRecord != 0, "Empty base record");
+        require(firstRival != 0, "Empty rival record");
 
-        if (baseRecord == IS_PRESUMPTIVE) {
+        if (firstRival == NO_RIVAL) {
             return block.timestamp - s.edges[edgeId].createdWhen;
         } else {
             // get the created when of the first rival
-            require(s.edges[baseRecord].exists(), "Base record edge does not exist");
+            require(s.edges[firstRival].exists(), "Rival edge does not exist");
 
-            // CHRIS: TODO: rename base record to first rival?
-            uint256 baseRecordCreatedWhen = s.edges[baseRecord].createdWhen;
+            uint256 firstRivalCreatedWhen = s.edges[firstRival].createdWhen;
             uint256 edgeCreatedWhen = s.edges[edgeId].createdWhen;
-            if (baseRecordCreatedWhen > edgeCreatedWhen) {
-                return baseRecordCreatedWhen - edgeCreatedWhen;
+            if (firstRivalCreatedWhen > edgeCreatedWhen) {
+                return firstRivalCreatedWhen - edgeCreatedWhen;
             } else {
                 return 0;
             }
@@ -169,7 +188,7 @@ library EdgeStoreLib {
 }
 
 struct CreateEdgeArgs {
-    ChallengeType edgeChallengeType;
+    EdgeType edgeType;
     bytes32 startHistoryRoot;
     uint256 startHeight;
     bytes32 endHistoryRoot;
@@ -178,10 +197,6 @@ struct CreateEdgeArgs {
 }
 
 interface IEdgeChallengeManager {
-    // // Checks if a challenge by ID exists.
-    // function challengeExists(bytes32 challengeId) external view returns (bool);
-    // Fetches a challenge object by ID.
-    function getChallenge(bytes32 challengeId) external view returns (EChallenge memory);
     // // Gets the winning claim ID for a challenge. TODO: Needs more thinking.
     // function winningClaim(bytes32 challengeId) external view returns (bytes32);
     // // Checks if an edge by ID exists.
@@ -191,10 +206,24 @@ interface IEdgeChallengeManager {
     // Gets the current ps timer by edge ID. TODO: Needs more thinking.
     // Flushed ps time vs total current ps time needs differentiation
     function getCurrentPsTimer(bytes32 eId) external view returns (uint256);
-    // // We define a base ID as hash(challengeType  ++ hash(startCommit ++ startHeight)) as a way
-    // // of checking if an edge has rivals. Edges can share the same base ID.
-    // function calculateBaseIdForEdge(bytes32 edgeId) external returns (bytes32);
-    // Checks if an edge's base ID corresponds to multiple rivals and checks if a one step fork exists.
+    // We define a mutual ID as hash(EdgeType  ++ originId ++ hash(startCommit ++ startHeight)) as a way
+    // of checking if an edge has rivals. Rivals edges share the same mutual ID.
+    function calculateMutualId(
+        EdgeType edgeType,
+        bytes32 originId,
+        uint256 startHeight,
+        bytes32 startHistoryRoot,
+        uint256 endHeight
+    ) external returns (bytes32);
+    function calculateEdgeId(
+        EdgeType edgeType,
+        bytes32 originId,
+        uint256 startHeight,
+        bytes32 startHistoryRoot,
+        uint256 endHeight,
+        bytes32 endHistoryRoot
+    ) external returns (bytes32);
+    // Checks if an edge's mutual ID corresponds to multiple rivals and checks if a one step fork exists.
     function isAtOneStepFork(bytes32 eId) external view returns (bool);
     // Creates a layer zero edge in a challenge.
     function createLayerZeroEdge(CreateEdgeArgs memory args, bytes calldata, bytes calldata)
@@ -227,10 +256,8 @@ interface IEdgeChallengeManager {
 contract EdgeChallengeManager is IEdgeChallengeManager {
     using EdgeStoreLib for EdgeStore;
     using ChallengeEdgeLib for ChallengeEdge;
-    using EChallengeLib for EChallenge;
 
     EdgeStore internal store;
-    mapping(bytes32 => EChallenge) challenges;
 
     uint256 public challengePeriodSec;
     IAssertionChain internal assertionChain;
@@ -247,43 +274,23 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         bytes calldata, // CHRIS: TODO: not yet implemented
         bytes calldata // CHRIS: TODO: not yet implemented
     ) external payable returns (bytes32) {
-        bytes32 challengeBaseId;
-        if (args.edgeChallengeType == ChallengeType.Block) {
+        bytes32 originId;
+        if (args.edgeType == EdgeType.Block) {
             // CHRIS: TODO: check that the assertion chain is in a fork
 
             // challenge id is the assertion which is the root of challenge
-            challengeBaseId = assertionChain.getPredecessorId(args.claimId);
-        } else if (args.edgeChallengeType == ChallengeType.BigStep) {
-            // challenge id is the base id of claim edge
-            // all the claims in this sub challenge will agree on this base id
-            bytes32 claimChallengeId = store.get(args.claimId).challengeId;
-            require(challenges[claimChallengeId].cType == ChallengeType.Block, "Claim challenge type is not Block");
+            originId = assertionChain.getPredecessorId(args.claimId);
+        } else if (args.edgeType == EdgeType.BigStep) {
+            require(store.get(args.claimId).eType == EdgeType.Block, "Claim challenge type is not Block");
 
-            challengeBaseId = store.get(args.claimId).baseId();
+            originId = store.get(args.claimId).mutualId();
+        } else if (args.edgeType == EdgeType.SmallStep) {
+            require(store.get(args.claimId).eType == EdgeType.BigStep, "Claim challenge type is not BigStep");
 
-            require(store.edges[args.claimId].exists(), "Claim id does not exist");
-            require(
-                challenges[store.edges[args.claimId].challengeId].cType == ChallengeType.Block,
-                "Invalid claim challenge type"
-            );
-        } else if (args.edgeChallengeType == ChallengeType.SmallStep) {
-            bytes32 claimChallengeId = store.get(args.claimId).challengeId;
-            require(challenges[claimChallengeId].cType == ChallengeType.BigStep, "Claim challenge type is not BigStep");
-
-            challengeBaseId = store.get(args.claimId).baseId();
-
-            require(store.edges[args.claimId].exists(), "Claim id does not exist");
-            require(
-                challenges[store.edges[args.claimId].challengeId].cType == ChallengeType.BigStep,
-                "Invalid claim challenge type"
-            );
+            originId = store.get(args.claimId).mutualId();
         } else {
             revert("Unexpected challenge type");
         }
-
-        EChallenge memory challenge = EChallenge({baseId: challengeBaseId, cType: args.edgeChallengeType});
-        bytes32 challengeId = challenge.id();
-        // challenge id is the id of the vertex we're based off + the type of challenge
 
         // CHRIS: TODO: sub challenge specific checks, also start and end consistency checks, and claim consistency checks
         // CHRIS: TODO: check the ministake was provided
@@ -291,22 +298,21 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         // CHRIS: TODO: we had inclusion proofs before?
 
         ChallengeEdge memory ce = ChallengeEdge({
-            challengeId: challengeId,
+            originId: originId,
             startHistoryRoot: args.startHistoryRoot,
             startHeight: args.startHeight,
             endHistoryRoot: args.endHistoryRoot,
             endHeight: args.endHeight,
             createdWhen: block.timestamp,
-            status: EdgeStatus.Pending,
             claimEdgeId: args.claimId,
             staker: msg.sender,
             lowerChildId: 0,
-            upperChildId: 0
+            upperChildId: 0,
+            status: EdgeStatus.Pending,
+            eType: args.edgeType
         });
 
         store.add(ce);
-
-        if (challenges[challengeId].baseId == 0) challenges[challengeId] = challenge;
 
         return ce.id();
     }
@@ -346,7 +352,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
         // CHRIS: TODO: use the same naming as in the paper for lower and upper
         ChallengeEdge memory lowerChild = ChallengeEdge({
-            challengeId: ce.challengeId,
+            originId: ce.originId,
             startHistoryRoot: ce.startHistoryRoot,
             startHeight: ce.startHeight,
             endHistoryRoot: middleHistoryRoot,
@@ -356,11 +362,12 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
             claimEdgeId: 0,
             staker: address(0),
             lowerChildId: 0,
-            upperChildId: 0
+            upperChildId: 0,
+            eType: ce.eType
         });
 
         ChallengeEdge memory upperChild = ChallengeEdge({
-            challengeId: ce.challengeId,
+            originId: ce.originId,
             startHistoryRoot: middleHistoryRoot,
             startHeight: middleHeight,
             endHistoryRoot: ce.endHistoryRoot,
@@ -370,7 +377,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
             claimEdgeId: 0,
             staker: address(0),
             lowerChildId: 0,
-            upperChildId: 0
+            upperChildId: 0,
+            eType: ce.eType
         });
 
         // it's possible that the store already has the lower child if it was created by a rival
@@ -408,6 +416,18 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         store.edges[edgeId].status = EdgeStatus.Confirmed;
     }
 
+    function nextEdgeType(EdgeType eType) internal returns (EdgeType) {
+        if (eType == EdgeType.Block) {
+            return EdgeType.BigStep;
+        } else if (eType == EdgeType.BigStep) {
+            return EdgeType.SmallStep;
+        } else if (eType == EdgeType.SmallStep) {
+            revert("No next type after SmallStep");
+        } else {
+            revert("Unexpected edge type");
+        }
+    }
+
     function confirmEdgeByClaim(bytes32 edgeId, bytes32 claimingEdgeId) public {
         require(store.edges[edgeId].exists(), "Edge does not exist");
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
@@ -415,11 +435,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
         // CHRIS: TODO: this may not be necessary if we have the correct checks in add zero layer edge
         // CHRIS: TODO: infact it wont be an exact equality like this - we're probably going to wrap this up together
-        ChallengeType cType = challenges[store.edges[claimingEdgeId].challengeId].cType;
+        require(store.edges[edgeId].mutualId() == store.edges[claimingEdgeId].originId, "Origin id-mutual id mismatch");
+        // CHRIS: TODO: this also may be unnecessary
         require(
-            EChallengeLib.id(EChallenge({baseId: store.edges[edgeId].baseId(), cType: cType}))
-                == store.edges[claimingEdgeId].challengeId,
-            "Challenge id-base id mismatch"
+            nextEdgeType(store.edges[edgeId].eType) == store.edges[claimingEdgeId].eType,
+            "Edge type does not match claiming edge type"
         );
 
         require(edgeId == store.edges[claimingEdgeId].claimEdgeId, "Claim does not match edge");
@@ -466,9 +486,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         require(store.edges[edgeId].exists(), "Edge does not exist");
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
 
-        require(
-            challenges[store.edges[edgeId].challengeId].cType == ChallengeType.SmallStep, "Edge is not a small step"
-        );
+        require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
         require(store.isAtOneStepFork(edgeId), "Edge is not at one step fork");
 
         require(
@@ -512,30 +530,32 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     }
 
     function calculateEdgeId(
-        bytes32 challengeId,
-        bytes32 startHistoryRoot,
+        EdgeType edgeType,
+        bytes32 originId,
         uint256 startHeight,
-        bytes32 endHistoryRoot,
-        uint256 endHeight
+        bytes32 startHistoryRoot,
+        uint256 endHeight,
+        bytes32 endHistoryRoot
     ) public pure returns (bytes32) {
-        return ChallengeEdgeLib.idComponent(challengeId, startHistoryRoot, startHeight, endHistoryRoot, endHeight);
+        return
+            ChallengeEdgeLib.idComponent(edgeType, originId, startHeight, startHistoryRoot, endHeight, endHistoryRoot);
     }
 
-    function calculateChallengeId(bytes32 baseId, ChallengeType cType) public pure returns (bytes32) {
-        EChallenge memory eChallenge = EChallenge({baseId: baseId, cType: cType});
-
-        return EChallengeLib.id(eChallenge);
+    function calculateMutualId(
+        EdgeType edgeType,
+        bytes32 originId,
+        uint256 startHeight,
+        bytes32 startHistoryRoot,
+        uint256 endHeight
+    ) public pure returns (bytes32) {
+        return ChallengeEdgeLib.mutualIdComponent(edgeType, originId, startHeight, startHistoryRoot, endHeight);
     }
 
     function getEdge(bytes32 edgeId) public view returns (ChallengeEdge memory) {
         return store.get(edgeId);
     }
 
-    function getChallenge(bytes32 challengeId) public view returns (EChallenge memory) {
-        return challenges[challengeId];
-    }
-
-    function baseRecord(bytes32 edgeId) public view returns (bytes32) {
-        return store.baseRecords[edgeId];
+    function firstRival(bytes32 edgeId) public view returns (bytes32) {
+        return store.firstRivals[edgeId];
     }
 }
