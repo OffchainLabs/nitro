@@ -104,6 +104,7 @@ func (e *SpecEdge) Bisect(
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, history.Merkle, proof)
 	})
+	// TODO: Add real return values from event in the receipt.
 	return nil, nil, err
 }
 
@@ -122,28 +123,17 @@ func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context, claimId [32]by
 	})
 	return err
 }
+func (c *SpecEdge) GetType() (protocol.ChallengeType, error) {
+	// challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
+	// if err != nil {
+	// 	return 0, err
+	// }
 
-type SpecChallenge struct {
-	id      protocol.ChallengeHash
-	baseId  [32]byte
-	typ     protocol.ChallengeType
-	manager *SpecChallengeManager
+	// return protocol.ChallengeType(challenge.CType), nil
+	return 0, nil
 }
 
-func (c *SpecChallenge) Id() protocol.ChallengeHash {
-	return c.id
-}
-
-func (c *SpecChallenge) GetType() (protocol.ChallengeType, error) {
-	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
-	if err != nil {
-		return 0, err
-	}
-
-	return protocol.ChallengeType(challenge.CType), nil
-}
-
-func (c *SpecChallenge) StartTime() (uint64, error) {
+func (c *SpecChallengeManager) StartTime() (uint64, error) {
 	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
 	if err != nil {
 		return 0, err
@@ -156,7 +146,7 @@ func (c *SpecChallenge) StartTime() (uint64, error) {
 }
 
 // TODO: This is wrong. We can't get this from the base id by itself.
-func (c *SpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
+func (c *SpecChallengeManager) RootCommitment() (protocol.Height, common.Hash, error) {
 	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
 	if err != nil {
 		return 0, common.Hash{}, err
@@ -169,32 +159,26 @@ func (c *SpecChallenge) RootCommitment() (protocol.Height, common.Hash, error) {
 	return protocol.Height(challengeEdge.StartHeight.Uint64()), challengeEdge.ClaimEdgeId, nil
 }
 
-// TODO: Needs implementation. Challenge.BaseId is not enough to determine the challenge status.
-// Perhaps the challenge struct needs a status field itself.
-func (c *SpecChallenge) Status(ctx context.Context) (protocol.ChallengeStatus, error) {
-	return 0, errors.New("unimplemented")
-}
-
-func (c *SpecChallenge) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
+func (c *SpecChallengeManager) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
 	return nil, nil
 }
 
-func (c *SpecChallenge) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
+func (c *SpecChallengeManager) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
 }
 
-func (c *SpecChallenge) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
+func (c *SpecChallengeManager) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
 	return util.None[protocol.SpecEdge](), nil
 }
 
-func (c *SpecChallenge) EdgeIsOneStepForkSource(
+func (c *SpecChallengeManager) EdgeIsOneStepForkSource(
 	ctx context.Context,
 	edge protocol.SpecEdge,
 ) (bool, error) {
 	return c.manager.caller.IsAtOneStepFork(c.manager.callOpts, edge.Id())
 }
 
-func (c *SpecChallenge) AddBlockChallengeLevelZeroEdge(
+func (c *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
 	history util.HistoryCommitment,
@@ -202,7 +186,7 @@ func (c *SpecChallenge) AddBlockChallengeLevelZeroEdge(
 	return nil, nil
 }
 
-func (c *SpecChallenge) AddSubChallengeLevelZeroEdge(
+func (c *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
 	history util.HistoryCommitment,
@@ -246,16 +230,6 @@ func (cm *SpecChallengeManager) ChallengePeriodSeconds(
 	ctx context.Context,
 ) (time.Duration, error) {
 	return time.Second, nil
-}
-
-// Calculates the unique identifier for a challenge given an claim ID and a challenge type.
-// An claim could be an assertion or a vertex that originated the challenge.
-func (cm *SpecChallengeManager) CalculateChallengeHash(
-	ctx context.Context,
-	baseId common.Hash,
-	challengeType protocol.ChallengeType,
-) (protocol.ChallengeHash, error) {
-	return cm.caller.CalculateChallengeId(cm.callOpts, baseId, uint8(challengeType))
 }
 
 // Calculates an edge hash given its challenge id, start history, and end history.

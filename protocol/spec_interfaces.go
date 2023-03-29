@@ -16,9 +16,6 @@ type SpecChallengeManager interface {
 	Address() common.Address
 	// Duration of the challenge period.
 	ChallengePeriodSeconds(ctx context.Context) (time.Duration, error)
-	// Calculates the unique identifier for a challenge given an claim ID and a challenge type.
-	// An claim could be an assertion or a vertex that originated the challenge.
-	CalculateChallengeHash(ctx context.Context, claimId common.Hash, challengeType ChallengeType) (ChallengeHash, error)
 	// Calculates an edge hash given its challenge id, start history, and end history.
 	CalculateEdgeHash(
 		ctx context.Context,
@@ -28,33 +25,6 @@ type SpecChallengeManager interface {
 	) (EdgeHash, error)
 	// Gets an edge by its hash.
 	GetEdge(ctx context.Context, edgeId EdgeHash) (util.Option[SpecEdge], error)
-	// Gets a challenge by its hash.
-	GetChallenge(ctx context.Context, challengeId ChallengeHash) (util.Option[SpecChallenge], error)
-}
-
-// Height if defined as the height of a history commitment in the specification.
-// Heights are 0-indexed.
-type Height uint64
-
-// ChallengeStatus represents the enum with the same name
-// in the protocol smart contracts.
-type ChallengeStatus uint8
-
-const (
-	ChallengePending ChallengeStatus = iota
-	ChallengeConfirmed
-)
-
-// SpecChallenge implements the research specification.
-type SpecChallenge interface {
-	// The unique identifier of a challenge.
-	Id() ChallengeHash
-	// The type of challenge.
-	GetType() ChallengeType
-	// The start timestamp of the challenge.
-	StartTime() (uint64, error)
-	RootCommitment() (Height, common.Hash, error)
-	Status(ctx context.Context) (ChallengeStatus, error)
 	// The root assertion the challenge is made upon.
 	RootAssertion(ctx context.Context) (Assertion, error)
 	// The history commitment for the top-level edge a challenge is made upon.
@@ -77,6 +47,10 @@ type SpecChallenge interface {
 		history util.HistoryCommitment,
 	) (SpecEdge, error)
 }
+
+// Height if defined as the height of a history commitment in the specification.
+// Heights are 0-indexed.
+type Height uint64
 
 // EdgeStatus of an edge in the protocol.
 type EdgeStatus uint8
