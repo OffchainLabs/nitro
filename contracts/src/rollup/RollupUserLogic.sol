@@ -149,13 +149,9 @@ abstract contract AbsRollupUserLogic is
         
         if(prevAssertion.secondChildBlock > 0) {
             // check if assertion is the challenge winner
-            bytes32 successionChallenge = prevAssertion.successionChallenge;
-            if (successionChallenge != bytes32(0)) {
-                bytes32 winner = challengeManager.winningClaim(successionChallenge);
-                require(getAssertionNum(winner) == assertionNum, "IN_CHAL");
-            } else {
-                revert("NO_CHAL");
-            }
+            // TODO: HN: winningClaim is not implemented yet
+            bytes32 winner; // challengeManager.winningClaim(prevAssertion.assertionHash);
+            require(getAssertionNum(winner) == assertionNum, "IN_CHAL");
         }
 
         confirmAssertion(assertionNum, blockHash, sendRoot);
@@ -284,19 +280,7 @@ abstract contract AbsRollupUserLogic is
     function createChallenge(
         uint64 assertionNum
     ) external onlyValidator whenNotPaused returns(bytes32) {
-        // HN: TODO: prevent rejected assertion to create challenge
-        require(
-            getAssertionStorage(assertionNum).successionChallenge == bytes32(0),
-            "ALREADY_CHALLENGED"
-        );
-        require(
-            getAssertionStorage(assertionNum).secondChildBlock > 0, "NO_SECOND_CHILD"
-        );
-        // HN: TODO: validation
-        bytes32 challengeId = challengeManager.createChallenge(getAssertionId(assertionNum));
-        require(challengeId != bytes32(0), "CHALLENGE_FAILED_TO_CREATE");
-        getAssertionStorage(assertionNum).successionChallenge = challengeId;
-        return challengeId;
+        revert("DEPRECATED");
     }
 
     /**

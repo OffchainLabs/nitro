@@ -14,7 +14,7 @@ import "../bridge/IOutbox.sol";
 import "../bridge/IInbox.sol";
 import "./IRollupEventInbox.sol";
 import "./IRollupLogic.sol";
-import "../challengeV2/ChallengeManagerImpl.sol";
+import "../challengeV2/EdgeChallengeManager.sol";
 
 struct ExecutionState {
     GlobalState globalState;
@@ -48,7 +48,7 @@ struct ContractDependencies {
     IInbox inbox;
     IOutbox outbox;
     IRollupEventInbox rollupEventInbox;
-    IChallengeManager challengeManager;
+    IEdgeChallengeManager challengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
     // misc contracts that are useful when interacting with the rollup

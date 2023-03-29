@@ -32,7 +32,6 @@ struct AssertionNode {
     bytes32 assertionHash;
     // HN: TODO: Add new fields below
     uint64 secondChildBlock;
-    bytes32 successionChallenge;
     // HN: TODO: Adding these for simplier getter, but these should be proved from the hashes
     uint256 height; // in stateHash
     uint256 inboxMsgCountSeen; // in stateHash
