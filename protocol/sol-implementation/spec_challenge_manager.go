@@ -101,7 +101,10 @@ func (e *SpecEdge) Bisect(
 	history util.HistoryCommitment,
 	proof []byte,
 ) (protocol.SpecEdge, protocol.SpecEdge, error) {
-	return nil, nil, nil
+	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, history.Merkle, proof)
+	})
+	return nil, nil, err
 }
 
 func (e *SpecEdge) ConfirmForTimer(ctx context.Context) error {
@@ -122,6 +125,8 @@ func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context, claimId [32]by
 
 type SpecChallenge struct {
 	id      protocol.ChallengeHash
+	baseId  [32]byte
+	typ     protocol.ChallengeType
 	manager *SpecChallengeManager
 }
 
@@ -288,11 +293,4 @@ func (cm *SpecChallengeManager) GetEdge(
 		targetCommitment: edge.EndHistoryRoot,
 		miniStaker:       edge.Staker,
 	}), nil
-}
-
-// Gets a challenge by its hash.
-func (cm *SpecChallengeManager) GetChallenge(
-	ctx context.Context, challengeId protocol.ChallengeHash,
-) (util.Option[protocol.SpecChallenge], error) {
-	return util.None[protocol.SpecChallenge](), nil
 }
