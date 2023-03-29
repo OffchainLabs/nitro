@@ -15,7 +15,7 @@ import "../src/osp/OneStepProverMemory.sol";
 import "../src/osp/OneStepProverMath.sol";
 import "../src/osp/OneStepProverHostIo.sol";
 import "../src/osp/OneStepProofEntry.sol";
-import "../src/challengeV2/ChallengeManagerImpl.sol";
+import "../src/challengeV2/EdgeChallengeManager.sol";
 import "./challengeV2/Utils.sol";
 
 contract RollupTest is Test {
@@ -36,7 +36,7 @@ contract RollupTest is Test {
     RollupProxy rollup;
     RollupUserLogic userRollup;
     RollupAdminLogic adminRollup;
-    ChallengeManagerImpl challengeManager;
+    EdgeChallengeManager challengeManager;
     Random rand = new Random();
 
     address[] validators;
@@ -61,9 +61,8 @@ contract RollupTest is Test {
             oneStepProverMath,
             oneStepProverHostIo
         );
-        ChallengeManagerImpl challengeManagerImpl = new ChallengeManagerImpl({
+        EdgeChallengeManager edgeChallengeManager = new EdgeChallengeManager({
             _assertionChain: IAssertionChain(address(0)),
-            _miniStakeValue: 0,
             _challengePeriodSec: 0,
             _oneStepProofEntry: IOneStepProofEntry(address(0))
         });
@@ -75,7 +74,7 @@ contract RollupTest is Test {
         rollupCreator.setTemplates(
             bridgeCreator,
             oneStepProofEntry,
-            challengeManagerImpl,
+            edgeChallengeManager,
             rollupAdminLogicImpl,
             rollupUserLogicImpl,
             address(0),
@@ -123,7 +122,7 @@ contract RollupTest is Test {
 
         userRollup = RollupUserLogic(address(expectedRollupAddr));
         adminRollup = RollupAdminLogic(address(expectedRollupAddr));
-        challengeManager = ChallengeManagerImpl(address(userRollup.challengeManager()));
+        challengeManager = EdgeChallengeManager(address(userRollup.challengeManager()));
 
         vm.startPrank(owner);
         validators.push(validator1);
@@ -343,26 +342,27 @@ contract RollupTest is Test {
         testSuccessCreateSecondChild();
         vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.prank(validator1);
-        vm.expectRevert("NO_CHAL");
+        vm.expectRevert("IN_CHAL"); // If there is a sibling, then the assertion is in challenge
         userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT);
     }
 
-    function testRevertCreateChallengeSingleChild() public {
-        testSuccessCreateAssertions();
-        vm.prank(validator1);
-        vm.expectRevert("NO_SECOND_CHILD");
-        userRollup.createChallenge({
-            assertionNum: 0
-        });
-    }
+    // TODO: HN: Need to replace these with createLayerZeroEdge
+    // function testRevertCreateChallengeSingleChild() public {
+    //     testSuccessCreateAssertions();
+    //     vm.prank(validator1);
+    //     vm.expectRevert("NO_SECOND_CHILD");
+    //     userRollup.createChallenge({
+    //         assertionNum: 0
+    //     });
+    // }
 
-    function testSuccessCreateChallenge() public {
-        testSuccessCreateSecondChild();
-        vm.prank(validator1);
-        userRollup.createChallenge({
-            assertionNum: 0
-        });
-    }
+    // function testSuccessCreateChallenge() public {
+    //     testSuccessCreateSecondChild();
+    //     vm.prank(validator1);
+    //     userRollup.createChallenge({
+    //         assertionNum: 0
+    //     });
+    // }
 
     function fillStatesInBetween(bytes32 start, bytes32 end, uint256 totalCount) internal returns(bytes32[] memory) {
         bytes32[] memory innerStates = rand.hashes(totalCount - 2);
