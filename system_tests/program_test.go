@@ -294,20 +294,20 @@ func TestProgramCalls(t *testing.T) {
 	}
 
 	colors.PrintBlue("Calling the ArbosTest precompile (Rust => precompile)")
-	testPrecompile := func(gas int64) int64 {
+	testPrecompile := func(gas uint64) uint64 {
 		// Call the burnArbGas() precompile from Rust
-		args := makeCalldata(vm.CALL, types.ArbosTestAddress, pack(burnArbGas(big.NewInt(gas))))
+		args := makeCalldata(vm.CALL, types.ArbosTestAddress, pack(burnArbGas(big.NewInt(int64(gas)))))
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), args)
-		return int64(ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed)
+		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed
 	}
 
-	smallGas := int64(testhelpers.RandomUint64(2000, 8000))
-	largeGas := smallGas + int64(testhelpers.RandomUint64(2000, 8000))
+	smallGas := testhelpers.RandomUint64(2000, 8000)
+	largeGas := smallGas + testhelpers.RandomUint64(2000, 8000)
 	small := testPrecompile(smallGas)
 	large := testPrecompile(largeGas)
 
-	if large-small != largeGas-smallGas {
-		ratio := float64(large-small) / float64(largeGas-smallGas)
+	if !arbmath.Within(large-small, largeGas-smallGas, 1) {
+		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
 		Fail(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
 

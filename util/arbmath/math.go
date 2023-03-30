@@ -74,6 +74,13 @@ func AbsValue[T Ordered](value T) T {
 	return value
 }
 
+// Checks if two ints are sufficiently close to one another
+func Within[T Unsigned](a, b, bound T) bool {
+	min := MinInt(a, b)
+	max := MaxInt(a, b)
+	return max-min <= bound
+}
+
 // UintToBig casts an int to a huge
 func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
