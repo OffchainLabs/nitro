@@ -63,7 +63,7 @@ type AssertionChain interface {
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
-	CreateSpecChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (SpecChallenge, error)
+	CreateSpecChallenge(ctx context.Context, seqNum AssertionSequenceNumber) error
 }
 
 // ChallengeManager allows for retrieving details of challenges such
