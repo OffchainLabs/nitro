@@ -1,9 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build redistest
-// +build redistest
-
 package arbnode
 
 import (
@@ -114,7 +111,9 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	nullSigner, err := signature.NewSignVerify(&coordConfig.Signing, nil, nil)
 	Require(t, err)
 
-	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
+	coordConfig.RedisUrl = redisUrl
+	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
 	if redisClient == nil {
 		t.Fatal("redisClient is nil")
