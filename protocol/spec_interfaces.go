@@ -108,9 +108,8 @@ type SpecEdge interface {
 	Id() EdgeId
 	// The type of challenge the edge is a part of.
 	GetType() EdgeType
-	// The ministaker of an edge. Only valid for level zero
-	// edges and will error otherwise.
-	MiniStaker() (common.Address, error)
+	// The ministaker of an edge. Only existing for level zero edges.
+	MiniStaker() util.Option[common.Address]
 	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.

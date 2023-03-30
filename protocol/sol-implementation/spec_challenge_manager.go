@@ -11,33 +11,37 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/pkg/errors"
 	"math/big"
 )
 
 type SpecEdge struct {
 	id               [32]byte
+	typ              protocol.EdgeType
 	manager          *SpecChallengeManager
 	startHeight      uint64
 	startCommitment  common.Hash
 	targetHeight     uint64
 	targetCommitment common.Hash
-	miniStaker       common.Address
+	miniStaker       util.Option[common.Address]
 }
 
-func (e *SpecEdge) Id() [32]byte {
+func (e *SpecEdge) Id() protocol.EdgeId {
 	return e.id
 }
 
-func (e *SpecEdge) MiniStaker() (common.Address, error) {
-	return e.miniStaker, nil
+func (e *SpecEdge) GetType() protocol.EdgeType {
+	return e.typ
+}
+
+func (e *SpecEdge) MiniStaker() util.Option[common.Address] {
+	return e.miniStaker
 }
 
 func (e *SpecEdge) StartCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.startHeight), e.startCommitment
 }
 
-func (e *SpecEdge) TargetCommitment() (protocol.Height, common.Hash) {
+func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.targetHeight), e.targetCommitment
 }
 
@@ -61,137 +65,40 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 	return protocol.EdgeStatus(edge.Status), nil
 }
 
-func (e *SpecEdge) DirectChildren(ctx context.Context) (util.Option[protocol.EdgeChildren], error) {
-	edge, err := e.manager.caller.GetEdge(e.manager.callOpts, e.id)
-	if err != nil {
-		return util.None[protocol.EdgeChildren](), err
-	}
-	lower, err := e.manager.caller.GetEdge(e.manager.callOpts, edge.LowerChildId)
-	if err != nil {
-		return util.None[protocol.EdgeChildren](), err
-	}
-	upper, err := e.manager.caller.GetEdge(e.manager.callOpts, edge.UpperChildId)
-	if err != nil {
-		return util.None[protocol.EdgeChildren](), err
-	}
-	return util.Some(protocol.EdgeChildren{
-		Lower: protocol.SpecEdge(&SpecEdge{
-			id:               lower.ClaimEdgeId,
-			manager:          e.manager,
-			startHeight:      lower.StartHeight.Uint64(),
-			targetHeight:     lower.EndHeight.Uint64(),
-			startCommitment:  lower.StartHistoryRoot,
-			targetCommitment: lower.EndHistoryRoot,
-			miniStaker:       lower.Staker,
-		}),
-		Upper: protocol.SpecEdge(&SpecEdge{
-			id:               upper.ClaimEdgeId,
-			manager:          e.manager,
-			startHeight:      upper.StartHeight.Uint64(),
-			targetHeight:     upper.EndHeight.Uint64(),
-			startCommitment:  upper.StartHistoryRoot,
-			targetCommitment: upper.EndHistoryRoot,
-			miniStaker:       upper.Staker,
-		}),
-	}), nil
+func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
+	return e.manager.caller.IsAtOneStepFork(e.manager.callOpts, e.id)
 }
 
 func (e *SpecEdge) Bisect(
 	ctx context.Context,
-	history util.HistoryCommitment,
-	proof []byte,
+	prefixHistoryRoot common.Hash,
+	prefixProof []byte,
 ) (protocol.SpecEdge, protocol.SpecEdge, error) {
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
-		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, history.Merkle, proof)
+		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, prefixHistoryRoot, prefixProof)
 	})
 	// TODO: Add real return values from event in the receipt.
 	return nil, nil, err
 }
 
-func (e *SpecEdge) ConfirmForTimer(ctx context.Context) error {
+func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		// TODO: Needs ancestor ids specified, perhaps by caller?
-		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, nil /* ancestors */)
+		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, nil) // TODO: Fix
 	})
 	return err
 }
 
-func (e *SpecEdge) ConfirmForSubChallengeWin(ctx context.Context, claimId [32]byte) error {
+func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
 	// TODO: Add in fields.
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByClaim(e.manager.txOpts, e.id, claimId)
 	})
 	return err
 }
-func (c *SpecEdge) GetType() (protocol.ChallengeType, error) {
-	// challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
-	// if err != nil {
-	// 	return 0, err
-	// }
 
-	// return protocol.ChallengeType(challenge.CType), nil
-	return 0, nil
-}
-
-func (cm *SpecChallengeManager) StartTime() (uint64, error) {
-	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
-	if err != nil {
-		return 0, err
-	}
-	challengeEdge, err := c.manager.caller.GetEdge(c.manager.callOpts, challenge.BaseId)
-	if err != nil {
-		return 0, err
-	}
-	return challengeEdge.CreatedWhen.Uint64(), nil
-}
-
-// TODO: This is wrong. We can't get this from the base id by itself.
-func (cm *SpecChallengeManager) RootCommitment() (protocol.Height, common.Hash, error) {
-	challenge, err := c.manager.caller.GetChallenge(c.manager.callOpts, c.id)
-	if err != nil {
-		return 0, common.Hash{}, err
-	}
-	challengeEdge, err := c.manager.caller.GetEdge(c.manager.callOpts, challenge.BaseId)
-	if err != nil {
-		return 0, common.Hash{}, err
-	}
-	// TODO: This is probably wrong
-	return protocol.Height(challengeEdge.StartHeight.Uint64()), challengeEdge.ClaimEdgeId, nil
-}
-
-func (cm *SpecChallengeManager) RootAssertion(ctx context.Context) (protocol.Assertion, error) {
-	return nil, nil
-}
-
-func (cm *SpecChallengeManager) TopLevelClaimCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
+func (cm *SpecChallengeManager) OriginCommitment() (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
-}
-
-func (cm *SpecChallengeManager) WinningEdge(ctx context.Context) (util.Option[protocol.SpecEdge], error) {
-	return util.None[protocol.SpecEdge](), nil
-}
-
-func (cm *SpecChallengeManager) EdgeIsOneStepForkSource(
-	ctx context.Context,
-	edge protocol.SpecEdge,
-) (bool, error) {
-	return c.manager.caller.IsAtOneStepFork(c.manager.callOpts, edge.Id())
-}
-
-func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
-	ctx context.Context,
-	assertion protocol.Assertion,
-	history util.HistoryCommitment,
-) (protocol.SpecEdge, error) {
-	return nil, nil
-}
-
-func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
-	ctx context.Context,
-	challengedEdge protocol.SpecEdge,
-	history util.HistoryCommitment,
-) (protocol.SpecEdge, error) {
-	return nil, nil
 }
 
 // ChallengeManager --
@@ -232,27 +139,10 @@ func (cm *SpecChallengeManager) ChallengePeriodSeconds(
 	return time.Second, nil
 }
 
-// Calculates an edge hash given its challenge id, start history, and end history.
-func (cm *SpecChallengeManager) CalculateEdgeHash(
-	ctx context.Context,
-	challengeId protocol.ChallengeHash,
-	startHistory util.HistoryCommitment,
-	endHistory util.HistoryCommitment,
-) (protocol.EdgeHash, error) {
-	return cm.caller.CalculateEdgeId(
-		cm.callOpts,
-		challengeId,
-		startHistory.Merkle,
-		big.NewInt(int64(startHistory.Height)),
-		endHistory.Merkle,
-		big.NewInt(int64(endHistory.Height)),
-	)
-}
-
 // Gets an edge by its hash.
 func (cm *SpecChallengeManager) GetEdge(
 	ctx context.Context,
-	edgeId protocol.EdgeHash,
+	edgeId protocol.EdgeId,
 ) (util.Option[protocol.SpecEdge], error) {
 	edge, err := cm.caller.GetEdge(cm.callOpts, edgeId)
 	if err != nil {
@@ -265,6 +155,68 @@ func (cm *SpecChallengeManager) GetEdge(
 		targetHeight:     edge.EndHeight.Uint64(),
 		startCommitment:  edge.StartHistoryRoot,
 		targetCommitment: edge.EndHistoryRoot,
-		miniStaker:       edge.Staker,
+		miniStaker:       util.Some(edge.Staker), // TODO: Check.
 	}), nil
+}
+
+// Calculates an edge hash given its challenge id, start history, and end history.
+func (cm *SpecChallengeManager) CalculateMutualId(
+	ctx context.Context,
+	edgeType protocol.EdgeType,
+	originId protocol.OriginId,
+	startHeight protocol.Height,
+	startHistoryRoot common.Hash,
+	endHeight protocol.Height,
+) (protocol.MutualId, error) {
+	return cm.caller.CalculateEdgeId(
+		cm.callOpts,
+		edgeType,
+		originId,
+		startHeight,
+		startHistoryRoot,
+		endHeight,
+	)
+}
+
+// Calculates an edge hash given its challenge id, start history, and end history.
+func (cm *SpecChallengeManager) CalculateEdgeId(
+	ctx context.Context,
+	edgeType protocol.EdgeType,
+	originId protocol.OriginId,
+	startHeight protocol.Height,
+	startHistoryRoot common.Hash,
+	endHeight protocol.Height,
+	endHistoryRoot common.Hash,
+) (protocol.EdgeId, error) {
+	return cm.caller.CalculateEdgeId(
+		cm.callOpts,
+		uint8(edgeType),
+		originId,
+		big.NewInt(int64(startHeight)),
+		startHistoryRoot,
+		big.NewInt(int64(endHeight)),
+		endHistoryRoot,
+	)
+}
+
+func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
+	ctx context.Context,
+	assertion protocol.Assertion,
+	startHeight protocol.Height,
+	startHistoryRoot common.Hash,
+	endHeight protocol.Height,
+	endHistoryRoot common.Hash,
+) (protocol.SpecEdge, error) {
+	return nil, nil
+}
+
+func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
+	ctx context.Context,
+	challengedEdge protocol.SpecEdge,
+	startHeight protocol.Height,
+	startHistoryRoot common.Hash,
+	endHeight protocol.Height,
+	endHistoryRoot common.Hash,
+) (protocol.SpecEdge, error) {
+	return nil, nil
 }
