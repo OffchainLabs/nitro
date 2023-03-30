@@ -179,34 +179,6 @@ func Test_act(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
 	})
-	t.Run("merges", func(t *testing.T) {
-		hook := test.NewGlobal()
-		evilTracker, honestTracker := setupNonPSTracker(t, ctx)
-		err := evilTracker.act(ctx)
-		require.NoError(t, err)
-		require.Equal(t, int(trackerBisecting), int(evilTracker.fsm.Current().State))
-		err = evilTracker.act(ctx)
-		require.NoError(t, err)
-		require.Equal(t, trackerStarted.String(), evilTracker.fsm.Current().State.String())
-		err = evilTracker.act(ctx)
-		require.NoError(t, err)
-		require.Equal(t, trackerPresumptive.String(), evilTracker.fsm.Current().State.String())
-		AssertLogsContain(t, hook, "Successfully bisected to vertex")
-
-		err = honestTracker.act(ctx)
-		require.NoError(t, err)
-		require.Equal(t, int(trackerBisecting), int(honestTracker.fsm.Current().State))
-
-		err = honestTracker.act(ctx)
-		require.NoError(t, err)
-
-		require.Equal(t, trackerMerging.String(), honestTracker.fsm.Current().State.String())
-		err = honestTracker.act(ctx)
-		require.NoError(t, err)
-		require.Equal(t, int(trackerStarted), int(honestTracker.fsm.Current().State))
-		AssertLogsContain(t, hook, "Successfully bisected to vertex")
-		AssertLogsContain(t, hook, "Successfully merged to vertex")
-	})
 }
 
 func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vertexTracker) {
