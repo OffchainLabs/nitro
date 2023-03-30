@@ -108,8 +108,14 @@ pub type GetBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 pub type SetBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
 
 /// Contract call: (contract, calldata, evm_gas, value) → (return_data_len, evm_cost, status)
-pub type CallContract =
+pub type ContractCall =
     Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (u32, u64, UserOutcomeKind) + Send>;
+
+/// Delegate call: (contract, calldata, evm_gas) → (return_data_len, evm_cost, status)
+pub type DelegateCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
+
+/// Static call: (contract, calldata, evm_gas) → (return_data_len, evm_cost, status)
+pub type StaticCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
 
 /// Last call's return data: () → (return_data)
 pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
@@ -117,7 +123,9 @@ pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
 pub struct EvmAPI {
     get_bytes32: GetBytes32,
     set_bytes32: SetBytes32,
-    call_contract: CallContract,
+    contract_call: ContractCall,
+    delegate_call: DelegateCall,
+    static_call: StaticCall,
     get_return_data: GetReturnData,
     return_data_len: u32,
 }
@@ -134,13 +142,17 @@ impl WasmEnv {
         &mut self,
         get_bytes32: GetBytes32,
         set_bytes32: SetBytes32,
-        call_contract: CallContract,
+        contract_call: ContractCall,
+        delegate_call: DelegateCall,
+        static_call: StaticCall,
         get_return_data: GetReturnData,
     ) {
         self.evm = Some(EvmAPI {
             get_bytes32,
             set_bytes32,
-            call_contract,
+            contract_call,
+            delegate_call,
+            static_call,
             get_return_data,
             return_data_len: 0,
         })
@@ -216,17 +228,13 @@ impl<'a> HostioInfo<'a> {
     }
 
     pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        if let Ok(wasm_gas) = self.meter().pricing.evm_to_wasm(evm) {
-            self.buy_gas(wasm_gas)?;
-        }
-        Ok(())
+        let wasm_gas = self.meter().pricing.evm_to_wasm(evm);
+        self.buy_gas(wasm_gas)
     }
 
     /// Checks if the user has enough evm gas, but doesn't burn any
     pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let Ok(wasm_gas) = self.meter().pricing.evm_to_wasm(evm) else {
-            return Ok(())
-        };
+        let wasm_gas = self.meter().pricing.evm_to_wasm(evm);
         let MachineMeter::Ready(gas_left) = self.gas_left() else {
             return Escape::out_of_gas();
         };
@@ -358,17 +366,13 @@ impl<'a> MeterState<'a> {
     }
 
     pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        if let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) {
-            self.buy_gas(wasm_gas)?;
-        }
-        Ok(())
+        let wasm_gas = self.pricing.evm_to_wasm(evm);
+        self.buy_gas(wasm_gas)
     }
 
     /// Checks if the user has enough evm gas, but doesn't burn any
     pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) else {
-            return Ok(())
-        };
+        let wasm_gas = self.pricing.evm_to_wasm(evm);
         let MachineMeter::Ready(gas_left) = self.gas_left() else {
             return Escape::out_of_gas();
         };
@@ -418,14 +422,32 @@ impl EvmAPI {
         (self.set_bytes32)(key, value)
     }
 
-    pub fn call_contract(
+    pub fn contract_call(
         &mut self,
         contract: Bytes20,
         input: Vec<u8>,
         evm_gas: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
-        (self.call_contract)(contract, input, evm_gas, value)
+        (self.contract_call)(contract, input, evm_gas, value)
+    }
+
+    pub fn delegate_call(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        evm_gas: u64,
+    ) -> (u32, u64, UserOutcomeKind) {
+        (self.delegate_call)(contract, input, evm_gas)
+    }
+
+    pub fn static_call(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        evm_gas: u64,
+    ) -> (u32, u64, UserOutcomeKind) {
+        (self.static_call)(contract, input, evm_gas)
     }
 
     pub fn load_return_data(&mut self) -> Vec<u8> {

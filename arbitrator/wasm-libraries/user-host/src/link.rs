@@ -98,8 +98,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let pricing = config.pricing;
     let evm_gas = sp.read_go_ptr();
     let wasm_gas = pricing
-        .evm_to_wasm(wavm::caller_load64(evm_gas))
-        .unwrap_or(u64::MAX);
+        .evm_to_wasm(wavm::caller_load64(evm_gas));
 
     // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();
@@ -128,9 +127,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
         ($status:expr, $outs:expr, $gas_left:expr) => {{
             sp.write_u8($status as u8).skip_space();
             sp.write_ptr($outs);
-            if pricing.wasm_gas_price != 0 {
-                wavm::caller_store64(evm_gas, pricing.wasm_to_evm($gas_left));
-            }
+            wavm::caller_store64(evm_gas, pricing.wasm_to_evm($gas_left));
             unlink_module();
             return;
         }};

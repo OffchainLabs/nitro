@@ -3,7 +3,6 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use eyre::{bail, Result};
 use std::fmt::Debug;
 use wasmer_types::Bytes;
 use wasmparser::Operator;
@@ -44,7 +43,7 @@ pub struct DepthParams {
     pub max_frame_size: u32, // requires recompilation
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct PricingParams {
     /// The price of wasm gas, measured in bips of an evm gas
     pub wasm_gas_price: u64,
@@ -63,6 +62,15 @@ impl Default for StylusConfig {
             depth: DepthParams::default(),
             pricing: PricingParams::default(),
             debug: StylusDebugParams::default(),
+        }
+    }
+}
+
+impl Default for PricingParams {
+    fn default() -> Self {
+        Self {
+            wasm_gas_price: 1,
+            hostio_cost: 0,
         }
     }
 }
@@ -113,11 +121,8 @@ impl PricingParams {
         }
     }
 
-    pub fn evm_to_wasm(&self, evm_gas: u64) -> Result<u64> {
-        if self.wasm_gas_price == 0 {
-            bail!("gas price is zero");
-        }
-        Ok(evm_gas.saturating_mul(100_00) / self.wasm_gas_price)
+    pub fn evm_to_wasm(&self, evm_gas: u64) -> u64 {
+        evm_gas.saturating_mul(100_00) / self.wasm_gas_price
     }
 
     pub fn wasm_to_evm(&self, wasm_gas: u64) -> u64 {

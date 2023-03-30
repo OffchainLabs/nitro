@@ -482,7 +482,8 @@ fn test_calls() -> Result<()> {
     // in call.rs
     //     the first bytes determines the number of calls to make
     //     each call starts with a length specifying how many input bytes it constitutes
-    //     the first 20 bytes select the address you want to call, with the rest being calldata
+    //     the first byte determines the kind of call to be made (normal, delegate, or static)
+    //     the next 20 bytes select the address you want to call, with the rest being calldata
     //
     // in storage.rs
     //     an input starting with 0x00 will induce a storage read
@@ -505,7 +506,9 @@ fn test_calls() -> Result<()> {
         let mut args = vec![];
 
         if level == 0 {
-            args.extend(store); // call storage.wasm
+            // call storage.wasm
+            args.push(0x00);
+            args.extend(store);
 
             let key = random_bytes32();
             let value = random_bytes32();
@@ -519,6 +522,7 @@ fn test_calls() -> Result<()> {
         }
 
         // do the two following calls
+        args.push(0x00);
         args.extend(calls);
         args.push(2);
 
@@ -532,14 +536,14 @@ fn test_calls() -> Result<()> {
 
     // drop the first address to start the call tree
     let tree = nest(3, calls_addr, store_addr, &mut slots);
-    let args = tree[20..].to_vec();
+    let args = tree[21..].to_vec();
     println!("ARGS {}", hex::encode(&args));
 
-    let filename = "tests/calls/target/wasm32-unknown-unknown/release/calls.wasm";
+    let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";
     let config = uniform_cost_config();
 
     let (mut native, mut contracts, storage) = new_native_with_evm(&filename, &config)?;
-    contracts.insert(calls_addr, "calls")?;
+    contracts.insert(calls_addr, "multicall")?;
     contracts.insert(store_addr, "storage")?;
 
     run_native(&mut native, &args)?;

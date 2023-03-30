@@ -142,12 +142,26 @@ pub struct GoApi {
         evm_cost: *mut u64,
         error: *mut RustVec,
     ) -> GoApiStatus,
-    pub call_contract: unsafe extern "C" fn(
+    pub contract_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
         gas: *mut u64,
         value: Bytes32,
+        return_data_len: *mut u32,
+    ) -> GoApiStatus,
+    pub delegate_call: unsafe extern "C" fn(
+        id: usize,
+        contract: Bytes20,
+        calldata: *mut RustVec,
+        gas: *mut u64,
+        return_data_len: *mut u32,
+    ) -> GoApiStatus,
+    pub static_call: unsafe extern "C" fn(
+        id: usize,
+        contract: Bytes20,
+        calldata: *mut RustVec,
+        gas: *mut u64,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
@@ -167,7 +181,7 @@ pub unsafe extern "C" fn stylus_call(
     let calldata = calldata.slice().to_vec();
     let config = params.config();
     let pricing = config.pricing;
-    let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
+    let wasm_gas = pricing.evm_to_wasm(*evm_gas);
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
@@ -190,18 +204,16 @@ pub unsafe extern "C" fn stylus_call(
             status
         }
     };
-    if pricing.wasm_gas_price != 0 {
-        let wasm_gas = match status {
-            UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
-            _ => instance.gas_left().into(),
-        };
-        *evm_gas = pricing.wasm_to_evm(wasm_gas);
-    }
+    let wasm_gas = match status {
+        UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+        _ => instance.gas_left().into(),
+    };
+    *evm_gas = pricing.wasm_to_evm(wasm_gas);
     status
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn stylus_free(vec: RustVec) {
+pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
     mem::drop(vec.into_vec())
 }
 
