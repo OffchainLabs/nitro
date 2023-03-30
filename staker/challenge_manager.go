@@ -427,7 +427,7 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		return fmt.Errorf("error parsing ExecutionChallengeBegun event of challenge %v: %w", m.challengeIndex, err)
 	}
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
-	return m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
+	return m.createExecutionBackend(ctx, blockNum, tooFar)
 }
 
 func (m *ChallengeManager) IssueOneStepProof(
@@ -453,9 +453,9 @@ func (m *ChallengeManager) IssueOneStepProof(
 	)
 }
 
-func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum uint64, tooFar bool) error {
+func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum int64, tooFar bool) error {
 	// Get the next message and block header, and record the full block creation
-	if m.initialMachineBlockNr == int64(blockNum) && m.executionChallengeBackend != nil {
+	if m.initialMachineBlockNr == blockNum && m.executionChallengeBackend != nil {
 		return nil
 	}
 	m.executionChallengeBackend = nil
@@ -483,7 +483,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 		return err
 	}
 	m.executionChallengeBackend = backend
-	m.initialMachineBlockNr = int64(blockNum)
+	m.initialMachineBlockNr = blockNum
 	return nil
 }
 
@@ -493,8 +493,11 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, fmt.Errorf("error loading execution challenge: %w", err)
 	}
 	myTurn, err := m.IsMyTurn(ctx)
-	if !myTurn || (err != nil) {
+	if err != nil {
 		return nil, fmt.Errorf("error checking if it's our turn: %w", err)
+	}
+	if !myTurn {
+		return nil, nil
 	}
 	state, err := m.GetChallengeState(ctx)
 	if err != nil {
@@ -536,7 +539,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	if err != nil {
 		return nil, fmt.Errorf("error getting info from block challenge backend: %w", err)
 	}
-	err = m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
+	err = m.createExecutionBackend(ctx, blockNum, tooFar)
 	if err != nil {
 		return nil, fmt.Errorf("error creating execution backend: %w", err)
 	}

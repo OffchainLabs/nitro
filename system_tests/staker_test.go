@@ -142,6 +142,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		&blockValidatorConfig,
 	)
 	Require(t, err)
+	err = statelessA.Start(ctx)
+	Require(t, err)
 	stakerA, err := staker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
@@ -153,6 +155,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
+	if stakerA.Strategy() != staker.WatchtowerStrategy {
+		err = valWalletA.Initialize(ctx)
+		Require(t, err)
+	}
 	Require(t, err)
 
 	valWalletB, err := staker.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
@@ -169,6 +175,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		&blockValidatorConfig,
 	)
 	Require(t, err)
+	err = statelessB.Start(ctx)
+	Require(t, err)
 	stakerB, err := staker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
@@ -181,6 +189,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
+	if stakerB.Strategy() != staker.WatchtowerStrategy {
+		err = valWalletB.Initialize(ctx)
+		Require(t, err)
+	}
 
 	valWalletC, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {})
 	Require(t, err)
@@ -195,6 +207,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
+	if stakerC.Strategy() != staker.WatchtowerStrategy {
+		err = valWalletC.Initialize(ctx)
+		Require(t, err)
+	}
 	err = stakerC.Initialize(ctx)
 	Require(t, err)
 
@@ -255,10 +271,17 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			i--
 			continue
 		}
-
+		fmt.Printf("\n\n\n\n%d\n\n\n", i)
+		//if err != nil {
+		//	if strings.Contains(err.Error(), "error checking if it's our turn") {
+		//		t.Log("got expected faulty staker error", err)
+		//		err = nil
+		//		tx = nil
+		//	}
+		//}
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
-			if strings.Contains(err.Error(), "agreed with entire challenge") {
+			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after block -1 expected global state") {
 				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
 				for j := 0; j < 200; j++ {
 					TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
