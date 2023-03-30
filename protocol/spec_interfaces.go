@@ -7,8 +7,41 @@ import (
 	"time"
 )
 
-// EdgeHash is a unique identifier for an edge in the protocol.
-type EdgeHash common.Hash
+// EdgeType corresponds to the three different challenge
+// levels in the protocol: block challenges, big step challenges,
+// and small step challenges.
+type EdgeType uint8
+
+const (
+	BlockChallengeEdge EdgeType = iota
+	BigStepChallengeEdge
+	SmallStepChallengeEdge
+)
+
+// OriginId is the id of the item that originated a challenge an edge
+// is a part of. In a block challenge, the origin id is the id of the assertion
+// being challenged. In a big step challenge, it is the id of the edge at the block challenge
+// level that was the source of the one step fork leading to the big step challenge.
+// In a small step challenge, it is the id of the edge at the big step level that was
+// the source of the one step fork leading to the small step challenge.
+type OriginId common.Hash
+
+// MutualId is a unique identifier for an edge's start commitment and edge type.
+// Rival edges share a mutual id. For example, an edge going A --> B, and another
+// going from A --> C would share A, and we define the mutual id as the unique identifier
+// for A.
+type MutualId common.Hash
+
+// EdgeId is a unique identifier for an edge. Edge IDs encompass the edge type
+// along with the start and end height + commitment for an edge.
+type EdgeId common.Hash
+
+// ClaimId is the unique identifier of the commitment of a level zero edge corresponds to.
+// For example, if assertion A has two children, B and C, and a block challenge is initiated
+// on A, the level zero edges will have claim ids corresponding to assertions B and C when opened.
+// The same occurs in the subchallenge layers, where claim ids are the edges at the higher challenge
+// level corresponding to the level zero edges in the respective subchallenge.
+type ClaimId common.Hash
 
 // SpecChallengeManager implements the research specification.
 type SpecChallengeManager interface {
@@ -16,67 +49,50 @@ type SpecChallengeManager interface {
 	Address() common.Address
 	// Duration of the challenge period.
 	ChallengePeriodSeconds(ctx context.Context) (time.Duration, error)
-	// Calculates the unique identifier for a challenge given an claim ID and a challenge type.
-	// An claim could be an assertion or a vertex that originated the challenge.
-	CalculateChallengeHash(ctx context.Context, claimId common.Hash, challengeType ChallengeType) (ChallengeHash, error)
-	// Calculates an edge hash given its challenge id, start history, and end history.
-	CalculateEdgeHash(
+	// Gets an edge by its id.
+	GetEdge(ctx context.Context, edgeId EdgeId) (util.Option[SpecEdge], error)
+	// Calculates a mutual id for an edge.
+	CalculateMutualId(
 		ctx context.Context,
-		challengeId ChallengeHash,
-		startHistory util.HistoryCommitment,
-		endHistory util.HistoryCommitment,
-	) (EdgeHash, error)
-	// Gets an edge by its hash.
-	GetEdge(ctx context.Context, edgeId EdgeHash) (util.Option[SpecEdge], error)
-	// Gets a challenge by its hash.
-	GetChallenge(ctx context.Context, challengeId ChallengeHash) (util.Option[SpecChallenge], error)
+		edgeType EdgeType,
+		originId OriginId,
+		startHeight Height,
+		startHistoryRoot common.Hash,
+		endHeight Height,
+	) (MutualId, error)
+	// Calculates an edge id for an edge.
+	CalculateEdgeId(
+		ctx context.Context,
+		edgeType EdgeType,
+		originId OriginId,
+		startHeight Height,
+		startHistoryRoot common.Hash,
+		endHeight Height,
+		endHistoryRoot common.Hash,
+	) (EdgeId, error)
+	// Adds a level-zero edge to a block challenge given an assertion and a history commitments.
+	AddBlockChallengeLevelZeroEdge(
+		ctx context.Context,
+		assertion Assertion,
+		startHeight Height,
+		startHistoryRoot common.Hash,
+		endHeight Height,
+		endHistoryRoot common.Hash,
+	) (SpecEdge, error)
+	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
+	AddSubChallengeLevelZeroEdge(
+		ctx context.Context,
+		challengedEdge SpecEdge,
+		startHeight Height,
+		startHistoryRoot common.Hash,
+		endHeight Height,
+		endHistoryRoot common.Hash,
+	) (SpecEdge, error)
 }
 
 // Height if defined as the height of a history commitment in the specification.
 // Heights are 0-indexed.
 type Height uint64
-
-// ChallengeStatus represents the enum with the same name
-// in the protocol smart contracts.
-type ChallengeStatus uint8
-
-const (
-	ChallengePending ChallengeStatus = iota
-	ChallengeConfirmed
-)
-
-// SpecChallenge implements the research specification.
-type SpecChallenge interface {
-	// The unique identifier of a challenge.
-	Id() ChallengeHash
-	// The type of challenge.
-	GetType() ChallengeType
-	// The start timestamp of the challenge.
-	StartTime() (uint64, error)
-	RootCommitment() (Height, common.Hash, error)
-	Status(ctx context.Context) (ChallengeStatus, error)
-	// The root assertion the challenge is made upon.
-	RootAssertion(ctx context.Context) (Assertion, error)
-	// The history commitment for the top-level edge a challenge is made upon.
-	// This is used at subchallenge creation boundaries.
-	TopLevelClaimCommitment(ctx context.Context) (Height, common.Hash, error)
-	// The winner level-zero edge for a challenge.
-	WinningEdge(ctx context.Context) (util.Option[SpecEdge], error)
-	// Checks the start commitment of an edge is the source of a one-step fork.
-	EdgeIsOneStepForkSource(edge SpecEdge) (bool, error)
-	// Adds a level-zero edge to a block challenge given an assertion and a history commitment.
-	AddBlockChallengeLevelZeroEdge(
-		ctx context.Context,
-		assertion Assertion,
-		history util.HistoryCommitment,
-	) (SpecEdge, error)
-	// Adds a level-zero edge to sub block challenge given a source edge and a history commitment.
-	AddSubChallengeLevelZeroEdge(
-		ctx context.Context,
-		challengedEdge SpecEdge,
-		history util.HistoryCommitment,
-	) (SpecEdge, error)
-}
 
 // EdgeStatus of an edge in the protocol.
 type EdgeStatus uint8
@@ -86,36 +102,39 @@ const (
 	EdgeConfirmed
 )
 
-// The two direct children of an edge.
-// nolint:unused
-type EdgeChildren struct {
-	// nolint:unused
-	a SpecEdge
-	// nolint:unused
-	b SpecEdge
-}
-
+// SpecEdge according to the protocol specification.
 type SpecEdge interface {
-	Id() [32]byte
+	// The unique identifier for an edge.
+	Id() EdgeId
+	// The type of challenge the edge is a part of.
+	GetType() EdgeType
+	// The ministaker of an edge. Only valid for level zero
+	// edges and will error otherwise.
 	MiniStaker() (common.Address, error)
+	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
-	TargetCommitment() (Height, common.Hash)
+	// The end height and history commitment for an edge.
+	EndCommitment() (Height, common.Hash)
+	// The presumptive timer in seconds for an edge.
 	PresumptiveTimer(ctx context.Context) (uint64, error)
+	// Whether or not an edge is presumptive.
 	IsPresumptive(ctx context.Context) (bool, error)
+	// The status of an edge.
 	Status(ctx context.Context) (EdgeStatus, error)
-	HasConfirmedRival(ctx context.Context) (bool, error)
-	// Gets the two direct children of an edge, if any.
-	DirectChildren(ctx context.Context) (util.Option[EdgeChildren], error)
-	GetSubChallenge(ctx context.Context) (util.Option[SpecChallenge], error)
-	// Challenge moves
+	// Checks the start commitment of an edge is the source of a one-step fork.
+	IsOneStepForkSource(ctx context.Context) (bool, error)
+	// Bisection capabilities for an edge. Returns the two child
+	// edges that are created as a result.
 	Bisect(
 		ctx context.Context,
-		history util.HistoryCommitment,
-		proof []byte,
+		prefixHistoryRoot common.Hash,
+		prefixProof []byte,
 	) (SpecEdge, SpecEdge, error)
-	CreateSubChallenge(ctx context.Context) (SpecChallenge, error)
-	// Confirms an edge for having a presumptive timer >= a challenge period.
-	ConfirmForTimer(ctx context.Context) error
-	// Confirms an edge for having a subchallenge winner of a one-step-proof.
-	ConfirmForSubChallengeWin(ctx context.Context) error
+	// Confirms an edge for having a presumptive timer >= one challenge period.
+	ConfirmByTimer(ctx context.Context, ancestorIds []EdgeId) error
+	// Confirms an edge with the specified claim id.
+	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
+	// The history commitment for the top-level edge the current edge's challenge is made upon.
+	// This is used at subchallenge creation boundaries.
+	OriginCommitment(ctx context.Context) (Height, common.Hash, error)
 }

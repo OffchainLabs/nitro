@@ -56,6 +56,31 @@ func TestMerkleProof(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, root, computedRoot)
 	})
+	t.Run("Invalid inputs", func(t *testing.T) {
+		// Empty tree should fail to generate a proof.
+		_, err := GenerateMerkleProof(0, [][]common.Hash{})
+		require.Equal(t, ErrInvalidTree, err)
+
+		// Index greater than the number of leaves should fail to generate a proof.
+		_, err = GenerateMerkleProof(uint64(len(tree[0])), tree)
+		require.Equal(t, ErrInvalidLeaves, err)
+
+		// Empty tree should fail to generate a root.
+		_, err = MerkleRoot([][]common.Hash{})
+		require.Equal(t, ErrInvalidTree, err)
+
+		// Tree with empty first element should fail to generate a root.
+		_, err = MerkleRoot([][]common.Hash{{}})
+		require.Equal(t, ErrInvalidTree, err)
+
+		// Proof with more than 256 elements should fail to calculate a root...
+		_, err = CalculateRootFromProof(make([]common.Hash, 257), 0, common.Hash{})
+		require.Equal(t, ErrProofTooLong, err)
+
+		// ... but proof with exactly 256 elements should be OK.
+		_, err = CalculateRootFromProof(make([]common.Hash, 256), 0, common.Hash{})
+		require.NotEqual(t, ErrProofTooLong, err)
+	})
 }
 
 func TestMerkleProofExpansionEquivalence(t *testing.T) {
