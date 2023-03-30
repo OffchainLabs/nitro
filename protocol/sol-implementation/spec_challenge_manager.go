@@ -15,14 +15,10 @@ import (
 )
 
 type SpecEdge struct {
-	id               [32]byte
-	typ              protocol.EdgeType
-	manager          *SpecChallengeManager
-	startHeight      uint64
-	startCommitment  common.Hash
-	targetHeight     uint64
-	targetCommitment common.Hash
-	miniStaker       util.Option[common.Address]
+	id         [32]byte
+	manager    *SpecChallengeManager
+	miniStaker util.Option[common.Address]
+	inner      challengeV2gen.ChallengeEdge
 }
 
 func (e *SpecEdge) Id() protocol.EdgeId {
@@ -30,7 +26,7 @@ func (e *SpecEdge) Id() protocol.EdgeId {
 }
 
 func (e *SpecEdge) GetType() protocol.EdgeType {
-	return e.typ
+	return protocol.EdgeType(e.inner.EType)
 }
 
 func (e *SpecEdge) MiniStaker() util.Option[common.Address] {
@@ -38,11 +34,11 @@ func (e *SpecEdge) MiniStaker() util.Option[common.Address] {
 }
 
 func (e *SpecEdge) StartCommitment() (protocol.Height, common.Hash) {
-	return protocol.Height(e.startHeight), e.startCommitment
+	return protocol.Height(e.inner.StartHeight.Uint64()), e.inner.StartHistoryRoot
 }
 
 func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
-	return protocol.Height(e.targetHeight), e.targetCommitment
+	return protocol.Height(e.inner.EndHeight.Uint64()), e.inner.EndHistoryRoot
 }
 
 func (e *SpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
@@ -148,14 +144,15 @@ func (cm *SpecChallengeManager) GetEdge(
 	if err != nil {
 		return util.None[protocol.SpecEdge](), err
 	}
+	miniStaker := util.None[common.Address]()
+	if edge.Staker != (common.Address{}) {
+		miniStaker = util.Some(edge.Staker)
+	}
 	return util.Some(protocol.SpecEdge(&SpecEdge{
-		id:               edgeId,
-		manager:          cm,
-		startHeight:      edge.StartHeight.Uint64(),
-		targetHeight:     edge.EndHeight.Uint64(),
-		startCommitment:  edge.StartHistoryRoot,
-		targetCommitment: edge.EndHistoryRoot,
-		miniStaker:       util.Some(edge.Staker), // TODO: Check.
+		id:         edgeId,
+		manager:    cm,
+		inner:      edge,
+		miniStaker: miniStaker,
 	})), nil
 }
 
