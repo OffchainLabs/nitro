@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/pkg/errors"
 	"math/big"
 )
 
@@ -78,9 +79,12 @@ func (e *SpecEdge) Bisect(
 }
 
 func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
+	ancestors := make([][32]byte, len(ancestorIds))
+	for i, r := range ancestorIds {
+		ancestors[i] = r
+	}
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
-		// TODO: Needs ancestor ids specified, perhaps by caller?
-		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, nil) // TODO: Fix
+		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, ancestors)
 	})
 	return err
 }
@@ -95,6 +99,10 @@ func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 
 func (e *SpecEdge) OriginCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
+}
+
+func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
+	return errors.New("unimplemented")
 }
 
 // ChallengeManager --
@@ -199,10 +207,8 @@ func (cm *SpecChallengeManager) CalculateEdgeId(
 func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-	endHistoryRoot common.Hash,
+	startCommit util.HistoryCommitment,
+	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
 	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
 		stHash, err := assertion.StateHash()
@@ -213,14 +219,15 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			cm.txOpts,
 			challengeV2gen.CreateEdgeArgs{
 				EdgeType:         uint8(protocol.BlockChallenge),
-				StartHistoryRoot: startHistoryRoot,
-				StartHeight:      big.NewInt(int64(startHeight)),
-				EndHistoryRoot:   endHistoryRoot,
-				EndHeight:        big.NewInt(int64(endHeight)),
+				StartHistoryRoot: startCommit.Merkle,
+				StartHeight:      big.NewInt(int64(startCommit.Height)),
+				EndHistoryRoot:   endCommit.Merkle,
+				EndHeight:        big.NewInt(int64(endCommit.Height)),
 				ClaimId:          stHash,
 			},
-			nil,
-			nil, // TODO: Inclusion args.
+			// TODO: Add inclusion proofs.
+			make([]byte, 0),
+			make([]byte, 0),
 		)
 	})
 	// TODO: Add in
@@ -230,10 +237,8 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-	endHistoryRoot common.Hash,
+	startCommit util.HistoryCommitment,
+	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
 	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
 		// TODO: Get the edge type.
@@ -241,14 +246,15 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 			cm.txOpts,
 			challengeV2gen.CreateEdgeArgs{
 				EdgeType:         uint8(protocol.BlockChallenge),
-				StartHistoryRoot: startHistoryRoot,
-				StartHeight:      big.NewInt(int64(startHeight)),
-				EndHistoryRoot:   endHistoryRoot,
-				EndHeight:        big.NewInt(int64(endHeight)),
+				StartHistoryRoot: startCommit.Merkle,
+				StartHeight:      big.NewInt(int64(startCommit.Height)),
+				EndHistoryRoot:   endCommit.Merkle,
+				EndHeight:        big.NewInt(int64(endCommit.Height)),
 				ClaimId:          challengedEdge.Id(),
 			},
-			nil,
-			nil, // TODO: Inclusion args.
+			// TODO: Add inclusion proofs.
+			make([]byte, 0),
+			make([]byte, 0),
 		)
 	})
 	// TODO: Add in
