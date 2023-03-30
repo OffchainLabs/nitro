@@ -133,7 +133,6 @@ type SpecEdge interface {
 	ConfirmByTimer(ctx context.Context, ancestorIds []EdgeId) error
 	// Confirms an edge with the specified claim id.
 	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
-	// TODO: Implement.
 	ConfirmByOneStepProof(ctx context.Context) error
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.

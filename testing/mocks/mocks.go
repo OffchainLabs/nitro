@@ -469,6 +469,10 @@ func (m *MockSpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.Clai
 	args := m.Called(ctx, claimId)
 	return args.Error(0)
 }
+func (m *MockSpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
 func (m *MockSpecEdge) OriginCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash), args.Error(2)
