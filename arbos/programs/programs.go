@@ -122,7 +122,6 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	msg core.Message,
 	calldata []byte,
-	gas *uint64,
 ) ([]byte, error) {
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
@@ -142,7 +141,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(scope, statedb, interpreter, tracingInfo, msg, calldata, gas, params)
+	return callUserWasm(scope, statedb, interpreter, tracingInfo, msg, calldata, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {

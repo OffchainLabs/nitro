@@ -49,7 +49,6 @@ func callUserWasm(
 	_ *util.TracingInfo,
 	_ core.Message,
 	calldata []byte,
-	gas *uint64,
 	params *goParams,
 ) ([]byte, error) {
 	program := scope.Contract.Address()
@@ -62,7 +61,7 @@ func callUserWasm(
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 	root := db.NoncanonicalProgramHash(program, params.version)
-	return machine.call(calldata, params, gas, &root)
+	return machine.call(calldata, params, &scope.Contract.Gas, &root)
 }
 
 func compileMachine(db vm.StateDB, program addr, wasm []byte, version uint32) (*rustMachine, error) {

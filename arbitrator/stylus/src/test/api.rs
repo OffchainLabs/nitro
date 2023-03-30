@@ -81,7 +81,7 @@ impl NativeInstance {
         let moved_storage = storage.clone();
         let moved_contracts = contracts.clone();
 
-        let call = Box::new(
+        let contract_call = Box::new(
             move |address: Bytes20, input: Vec<u8>, gas, _value| unsafe {
                 // this call function is for testing purposes only and deviates from onchain behavior
                 let contracts = moved_contracts.clone();
@@ -105,11 +105,21 @@ impl NativeInstance {
                 (outs_len, gas - gas_left, status)
             },
         );
+        let delegate_call =
+            Box::new(move |_contract, _input, _evm_gas| todo!("delegate call not yet supported"));
+        let static_call =
+            Box::new(move |_contract, _input, _evm_gas| todo!("static call not yet supported"));
         let get_return_data =
             Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
 
-        self.env_mut()
-            .set_evm_api(get_bytes32, set_bytes32, call, get_return_data);
+        self.env_mut().set_evm_api(
+            get_bytes32,
+            set_bytes32,
+            contract_call,
+            delegate_call,
+            static_call,
+            get_return_data,
+        );
         storage
     }
 }

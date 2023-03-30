@@ -66,6 +66,14 @@ func MaxInt[T Ordered](value, floor T) T {
 	return value
 }
 
+// AbsValue the absolute value of a number
+func AbsValue[T Ordered](value T) T {
+	if value < 0 {
+		return -value // never happens for unsigned types
+	}
+	return value
+}
+
 // UintToBig casts an int to a huge
 func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)

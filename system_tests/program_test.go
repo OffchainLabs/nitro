@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -140,7 +141,7 @@ func TestProgramStorage(t *testing.T) {
 }
 
 func TestProgramCalls(t *testing.T) {
-	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("calls"), true)
+	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), true)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -156,56 +157,68 @@ func TestProgramCalls(t *testing.T) {
 	mockAddr, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
-	colors.PrintGrey("calls.wasm   ", callsAddr)
-	colors.PrintGrey("storage.wasm ", storeAddr)
-	colors.PrintGrey("keccak.wasm  ", keccakAddr)
-	colors.PrintGrey("mock.evm     ", mockAddr)
+	colors.PrintGrey("multicall.wasm ", callsAddr)
+	colors.PrintGrey("storage.wasm   ", storeAddr)
+	colors.PrintGrey("keccak.wasm    ", keccakAddr)
+	colors.PrintGrey("mock.evm       ", mockAddr)
 
-	slots := make(map[common.Hash]common.Hash)
+	checkTree := func(opcode vm.OpCode, dest common.Address) {
+		colors.PrintBlue("Checking storage after call tree with ", opcode)
+		slots := make(map[common.Hash]common.Hash)
 
-	var nest func(level uint) []uint8
-	nest = func(level uint) []uint8 {
-		args := []uint8{}
+		kinds := make(map[vm.OpCode]byte)
+		kinds[vm.CALL] = 0x00
+		kinds[vm.DELEGATECALL] = 0x02
+		kinds[vm.STATICCALL] = 0x03
 
-		if level == 0 {
-			args = append(args, storeAddr[:]...)
+		var nest func(level uint) []uint8
+		nest = func(level uint) []uint8 {
+			args := []uint8{}
 
-			key := testhelpers.RandomHash()
-			value := testhelpers.RandomHash()
-			slots[key] = value
+			if level == 0 {
+				// call storage.wasm
+				args = append(args, kinds[opcode])
+				args = append(args, storeAddr[:]...)
 
-			// insert value @ key
-			args = append(args, 0x01)
-			args = append(args, key[:]...)
-			args = append(args, value[:]...)
+				key := testhelpers.RandomHash()
+				value := testhelpers.RandomHash()
+				slots[key] = value
+
+				// insert value @ key
+				args = append(args, 0x01)
+				args = append(args, key[:]...)
+				args = append(args, value[:]...)
+				return args
+			}
+
+			// do the two following calls
+			args = append(args, 0x00)
+			args = append(args, callsAddr[:]...)
+			args = append(args, 2)
+
+			for i := 0; i < 2; i++ {
+				inner := nest(level - 1)
+				args = append(args, arbmath.Uint32ToBytes(uint32(len(inner)))...)
+				args = append(args, inner...)
+			}
 			return args
 		}
+		tree := nest(3)[21:]
+		tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), tree)
+		ensure(tx, l2client.SendTransaction(ctx, tx))
 
-		// do the two following calls
-		args = append(args, callsAddr[:]...)
-		args = append(args, 2)
-
-		for i := 0; i < 2; i++ {
-			inner := nest(level - 1)
-			args = append(args, arbmath.Uint32ToBytes(uint32(len(inner)))...)
-			args = append(args, inner...)
-		}
-		return args
-	}
-	tree := nest(3)[20:]
-	colors.PrintGrey(common.Bytes2Hex(tree))
-
-	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), tree)
-	ensure(tx, l2client.SendTransaction(ctx, tx))
-
-	for key, value := range slots {
-		storedBytes, err := l2client.StorageAt(ctx, storeAddr, key, nil)
-		Require(t, err)
-		storedValue := common.BytesToHash(storedBytes)
-		if value != storedValue {
-			Fail(t, "wrong value", value, storedValue)
+		for key, value := range slots {
+			storedBytes, err := l2client.StorageAt(ctx, dest, key, nil)
+			Require(t, err)
+			storedValue := common.BytesToHash(storedBytes)
+			if value != storedValue {
+				Fail(t, "wrong value", value, storedValue)
+			}
 		}
 	}
+
+	checkTree(vm.CALL, storeAddr)
+	checkTree(vm.DELEGATECALL, callsAddr)
 
 	// mechanisms for creating calldata
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
@@ -218,7 +231,8 @@ func TestProgramCalls(t *testing.T) {
 	}
 	makeCalldata := func(address common.Address, calldata []byte) []byte {
 		args := []byte{0x01}
-		args = append(args, arbmath.Uint32ToBytes(uint32(20+len(calldata)))...)
+		args = append(args, arbmath.Uint32ToBytes(uint32(21+len(calldata)))...)
+		args = append(args, 0x00)
 		args = append(args, address.Bytes()...)
 		args = append(args, calldata...)
 		return args
@@ -231,21 +245,21 @@ func TestProgramCalls(t *testing.T) {
 	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
 	colors.PrintBlue("Calling the ArbosTest precompile with wasmGasPrice=", wasmGasPrice)
 
-	testPrecompile := func(gas uint64) uint64 {
+	testPrecompile := func(gas int64) int64 {
 		// Call the burnArbGas() precompile from Rust
-		args := makeCalldata(types.ArbosTestAddress, pack(burnArbGas(big.NewInt(int64(gas)))))
+		args := makeCalldata(types.ArbosTestAddress, pack(burnArbGas(big.NewInt(gas))))
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), args)
-		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed
+		return int64(ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed)
 	}
 
-	smallGas := testhelpers.RandomUint64(2000, 8000)
-	largeGas := smallGas + testhelpers.RandomUint64(2000, 8000)
+	smallGas := int64(testhelpers.RandomUint64(2000, 8000))
+	largeGas := smallGas + int64(testhelpers.RandomUint64(2000, 8000))
 	small := testPrecompile(smallGas)
 	large := testPrecompile(largeGas)
 
 	if large-small != largeGas-smallGas {
 		ratio := float64(large-small) / float64(largeGas-smallGas)
-		Fail(t, "inconsistent burns", smallGas, largeGas, small, large, ratio)
+		Fail(t, "inconsistent burns", large, small, largeGas, smallGas, ratio, wasmGasPrice)
 	}
 
 	expectFailure := func(to common.Address, data []byte, errMsg string) {

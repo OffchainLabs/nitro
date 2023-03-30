@@ -142,12 +142,26 @@ pub struct GoApi {
         evm_cost: *mut u64,
         error: *mut RustVec,
     ) -> GoApiStatus,
-    pub call_contract: unsafe extern "C" fn(
+    pub contract_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
         gas: *mut u64,
         value: Bytes32,
+        return_data_len: *mut u32,
+    ) -> GoApiStatus,
+    pub delegate_call: unsafe extern "C" fn(
+        id: usize,
+        contract: Bytes20,
+        calldata: *mut RustVec,
+        gas: *mut u64,
+        return_data_len: *mut u32,
+    ) -> GoApiStatus,
+    pub static_call: unsafe extern "C" fn(
+        id: usize,
+        contract: Bytes20,
+        calldata: *mut RustVec,
+        gas: *mut u64,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
@@ -201,7 +215,7 @@ pub unsafe extern "C" fn stylus_call(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn stylus_free(vec: RustVec) {
+pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
     mem::drop(vec.into_vec())
 }
 

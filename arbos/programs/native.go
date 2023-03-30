@@ -17,7 +17,9 @@ typedef size_t usize;
 
 Bytes32     getBytes32Wrap(usize api, Bytes32 key, u64 * cost);
 GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
-GoApiStatus callContractWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len);
+GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas, Bytes32 value, u32 * len);
+GoApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
+GoApiStatus staticCallWrap  (usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
 void        getReturnDataWrap(usize api, RustVec * data);
 */
 import "C"
@@ -70,24 +72,29 @@ func callUserWasm(
 	tracingInfo *util.TracingInfo,
 	msg core.Message,
 	calldata []byte,
-	gas *uint64,
 	stylusParams *goParams,
 ) ([]byte, error) {
-	program := scope.Contract.Address()
+	contract := scope.Contract
+	readOnly := interpreter.ReadOnly()
+	evm := interpreter.Evm()
 
+	actingAddress := contract.Address() // not necessarily WASM
+	program := actingAddress
+	if contract.CodeAddr != nil {
+		program = *contract.CodeAddr
+	}
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(program, stylusParams.version)
 	}
-
 	module := db.GetCompiledWasmCode(program, stylusParams.version)
-	readOnly := interpreter.ReadOnly()
 
+	// closures so Rust can call back into Go
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		if tracingInfo != nil {
 			tracingInfo.RecordStorageGet(key)
 		}
-		cost := vm.WasmStateLoadCost(db, program, key)
-		return db.GetState(program, key), cost
+		cost := vm.WasmStateLoadCost(db, actingAddress, key)
+		return db.GetState(actingAddress, key), cost
 	}
 	setBytes32 := func(key, value common.Hash) (uint64, error) {
 		if tracingInfo != nil {
@@ -96,18 +103,21 @@ func callUserWasm(
 		if readOnly {
 			return 0, vm.ErrWriteProtection
 		}
-		cost := vm.WasmStateStoreCost(db, program, key, value)
-		db.SetState(program, key, value)
+		cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
+		db.SetState(actingAddress, key, value)
 		return cost, nil
 	}
-	callContract := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
-		// This closure performs a contract call. The implementation should match that of the EVM.
+	doCall := func(
+		contract common.Address, opcode vm.OpCode, input []byte, gas uint64, value *big.Int,
+	) (uint32, uint64, error) {
+		// This closure can perform each kind of contract call based on the opcode passed in.
+		// The implementation for each should match that of the EVM.
 		//
 		// Note that while the Yellow Paper is authoritative, the following go-ethereum
-		// functions provide a corresponding implementation in the vm package.
+		// functions provide corresponding implementations in the vm package.
 		//     - operations_acl.go makeCallVariantGasCallEIP2929()
-		//     - gas_table.go      gasCall()
-		//     - instructions.go   opCall()
+		//     - gas_table.go      gasCall() gasDelegateCall() gasStaticCall()
+		//     - instructions.go   opCall()  opDelegateCall()  opStaticCall()
 		//
 
 		// read-only calls are not payable (opCall)
@@ -115,10 +125,9 @@ func callUserWasm(
 			return 0, 0, vm.ErrWriteProtection
 		}
 
-		evm := interpreter.Evm()
 		startGas := gas
 
-		// computes makeCallVariantGasCallEIP2929 and gasCall
+		// computes makeCallVariantGasCallEIP2929 and gasCall/gasDelegateCall/gasStaticCall
 		baseCost, err := vm.WasmCallCost(db, contract, value, startGas)
 		if err != nil {
 			return 0, 0, err
@@ -132,7 +141,7 @@ func callUserWasm(
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
 			depth := evm.Depth()
-			tracingInfo.Tracer.CaptureState(0, vm.CALL, startGas-gas, startGas, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.CaptureState(0, opcode, startGas-gas, startGas, scope, []byte{}, depth, nil)
 		}
 
 		// EVM rule: calls that pay get a stipend (opCall)
@@ -140,10 +149,32 @@ func callUserWasm(
 			gas = arbmath.SaturatingUAdd(gas, params.CallStipend)
 		}
 
-		ret, returnGas, err := evm.Call(scope.Contract, contract, input, gas, value)
+		var ret []byte
+		var returnGas uint64
+
+		switch opcode {
+		case vm.CALL:
+			ret, returnGas, err = evm.Call(scope.Contract, contract, input, gas, value)
+		case vm.DELEGATECALL:
+			ret, returnGas, err = evm.DelegateCall(scope.Contract, contract, input, gas)
+		case vm.STATICCALL:
+			ret, returnGas, err = evm.StaticCall(scope.Contract, contract, input, gas)
+		default:
+			log.Crit("unsupported call type", "opcode", opcode)
+		}
+
 		interpreter.SetReturnData(ret)
 		cost := arbmath.SaturatingUSub(startGas, returnGas)
 		return uint32(len(ret)), cost, err
+	}
+	contractCall := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
+		return doCall(contract, vm.CALL, input, gas, value)
+	}
+	delegateCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
+		return doCall(contract, vm.DELEGATECALL, input, gas, common.Big0)
+	}
+	staticCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
+		return doCall(contract, vm.STATICCALL, input, gas, common.Big0)
 	}
 	getReturnData := func() []byte {
 		data := interpreter.GetReturnData()
@@ -158,17 +189,20 @@ func callUserWasm(
 		goSlice(module),
 		goSlice(calldata),
 		stylusParams.encode(),
-		newAPI(getBytes32, setBytes32, callContract, getReturnData),
+		newAPI(getBytes32, setBytes32, contractCall, delegateCall, staticCall, getReturnData),
 		output,
-		(*u64)(gas),
+		(*u64)(&contract.Gas),
 	))
 	data, err := status.output(output.intoBytes())
 
 	if status == userFailure {
-		log.Debug("program failure", "err", string(data), "program", program)
+		log.Debug("program failure", "err", string(data), "program", actingAddress)
 	}
+
 	return data, err
 }
+
+type apiStatus = C.GoApiStatus
 
 const apiSuccess C.GoApiStatus = C.GoApiStatus_Success
 const apiFailure C.GoApiStatus = C.GoApiStatus_Failure
@@ -182,7 +216,7 @@ func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
 }
 
 //export setBytes32Impl
-func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) C.GoApiStatus {
+func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) apiStatus {
 	closure := getAPI(api)
 
 	gas, err := closure.setBytes32(key.toHash(), value.toHash())
@@ -194,11 +228,40 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) C
 	return apiSuccess
 }
 
-//export callContractImpl
-func callContractImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, value bytes32, len *u32) C.GoApiStatus {
+//export contractCallImpl
+func contractCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, value bytes32, len *u32) apiStatus {
 	closure := getAPI(api)
+	defer data.drop()
 
-	ret_len, cost, err := closure.callContract(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
+	ret_len, cost, err := closure.contractCall(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
+	*evmGas = u64(cost) // evmGas becomes the call's cost
+	*len = u32(ret_len)
+	if err != nil {
+		return apiFailure
+	}
+	return apiSuccess
+}
+
+//export delegateCallImpl
+func delegateCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len *u32) apiStatus {
+	closure := getAPI(api)
+	defer data.drop()
+
+	ret_len, cost, err := closure.delegateCall(contract.toAddress(), data.read(), uint64(*evmGas))
+	*evmGas = u64(cost) // evmGas becomes the call's cost
+	*len = u32(ret_len)
+	if err != nil {
+		return apiFailure
+	}
+	return apiSuccess
+}
+
+//export staticCallImpl
+func staticCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len *u32) apiStatus {
+	closure := getAPI(api)
+	defer data.drop()
+
+	ret_len, cost, err := closure.staticCall(contract.toAddress(), data.read(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
 	if err != nil {
@@ -248,8 +311,12 @@ func (vec *rustVec) read() []byte {
 
 func (vec *rustVec) intoBytes() []byte {
 	slice := vec.read()
-	C.stylus_free(*vec)
+	C.stylus_drop_vec(*vec)
 	return slice
+}
+
+func (vec *rustVec) drop() {
+	C.stylus_drop_vec(*vec)
 }
 
 func (vec *rustVec) setString(data string) {

@@ -9,7 +9,7 @@ arbitrum::arbitrum_main!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let read = input[0] == 0;
-    let slot = Bytes32::from_slice(&input[1..33]).map_err(|_| vec![0x00])?;
+    let slot = Bytes32::from_slice(&input[1..33]).unwrap();
 
     Ok(if read {
         debug::println(format!("read  {slot}"));
@@ -18,7 +18,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
         data.0.into()
     } else {
         debug::println(format!("write {slot}"));
-        let data = Bytes32::from_slice(&input[33..]).map_err(|_| vec![0x01])?;
+        let data = Bytes32::from_slice(&input[33..]).unwrap();
         store_bytes32(slot, data);
         debug::println(format!("value {data}"));
         vec![]

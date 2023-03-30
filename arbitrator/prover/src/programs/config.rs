@@ -121,6 +121,9 @@ impl PricingParams {
     }
 
     pub fn wasm_to_evm(&self, wasm_gas: u64) -> u64 {
+        if self.wasm_gas_price == 0 {
+            return u64::MAX;
+        }
         wasm_gas.saturating_mul(self.wasm_gas_price) / 100_00
     }
 }

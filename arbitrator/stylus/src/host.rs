@@ -63,22 +63,61 @@ pub(crate) fn call_contract(
     env.pay_for_evm_copy(calldata_len as usize)?;
     wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
 
-    let pricing = env.meter().pricing;
-    let evm_gas = match pricing.wasm_gas_price {
-        0 => u64::MAX,
-        _ => pricing.wasm_to_evm(wasm_gas),
-    };
-
+    let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
     let value = env.read_bytes32(value)?;
 
-    let (outs_len, evm_cost, status) = env.evm().call_contract(contract, input, evm_gas, value);
+    let (outs_len, evm_cost, status) = env.evm().contract_call(contract, input, evm_gas, value);
     env.set_return_data_len(outs_len);
     env.write_u32(return_data_len, outs_len);
+    env.buy_evm_gas(evm_cost)?;
+    Ok(status as u8)
+}
 
-    let wasm_cost = pricing.evm_to_wasm(evm_cost).unwrap_or_default();
-    env.buy_gas(wasm_cost)?;
+pub(crate) fn delegate_call_contract(
+    mut env: WasmEnvMut,
+    contract: u32,
+    calldata: u32,
+    calldata_len: u32,
+    mut wasm_gas: u64,
+    return_data_len: u32,
+) -> Result<u8, Escape> {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_copy(calldata_len as usize)?;
+    wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
+
+    let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
+    let contract = env.read_bytes20(contract)?;
+    let input = env.read_slice(calldata, calldata_len)?;
+
+    let (outs_len, evm_cost, status) = env.evm().delegate_call(contract, input, evm_gas);
+    env.set_return_data_len(outs_len);
+    env.write_u32(return_data_len, outs_len);
+    env.buy_evm_gas(evm_cost)?;
+    Ok(status as u8)
+}
+
+pub(crate) fn static_call_contract(
+    mut env: WasmEnvMut,
+    contract: u32,
+    calldata: u32,
+    calldata_len: u32,
+    mut wasm_gas: u64,
+    return_data_len: u32,
+) -> Result<u8, Escape> {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_copy(calldata_len as usize)?;
+    wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
+
+    let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
+    let contract = env.read_bytes20(contract)?;
+    let input = env.read_slice(calldata, calldata_len)?;
+
+    let (outs_len, evm_cost, status) = env.evm().static_call(contract, input, evm_gas);
+    env.set_return_data_len(outs_len);
+    env.write_u32(return_data_len, outs_len);
+    env.buy_evm_gas(evm_cost)?;
     Ok(status as u8)
 }
 

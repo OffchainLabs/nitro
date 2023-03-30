@@ -25,9 +25,19 @@ GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, Ru
     return setBytes32Impl(api, key, value, cost, error);
 }
 
-GoApiStatus callContractImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len);
-GoApiStatus callContractWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len) {
-    return callContractImpl(api, contract, calldata, gas, value, len);
+GoApiStatus contractCallImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len);
+GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, Bytes32 value, u32 * len) {
+    return contractCallImpl(api, contract, calldata, gas, value, len);
+}
+
+GoApiStatus delegateCallImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len);
+GoApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len) {
+    return delegateCallImpl(api, contract, calldata, gas, len);
+}
+
+GoApiStatus staticCallImpl(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len);
+GoApiStatus staticCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 * gas, u32 * len) {
+    return staticCallImpl(api, contract, calldata, gas, len);
 }
 
 void getReturnDataImpl(usize api, RustVec * data);
@@ -50,8 +60,16 @@ var apiIds int64 // atomic
 
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
-type callContractType func(
-	contract common.Address, input []byte, gas uint64, value *big.Int) (
+type contractCallType func(
+	contract common.Address, calldata []byte, gas uint64, value *big.Int) (
+	retdata_len uint32, gas_left uint64, err error,
+)
+type delegateCallType func(
+	contract common.Address, calldata []byte, gas uint64) (
+	retdata_len uint32, gas_left uint64, err error,
+)
+type staticCallType func(
+	contract common.Address, calldata []byte, gas uint64) (
 	retdata_len uint32, gas_left uint64, err error,
 )
 type getReturnDataType func() []byte
@@ -59,27 +77,35 @@ type getReturnDataType func() []byte
 type apiClosure struct {
 	getBytes32    getBytes32Type
 	setBytes32    setBytes32Type
-	callContract  callContractType
+	contractCall  contractCallType
+	delegateCall  delegateCallType
+	staticCall    staticCallType
 	getReturnData getReturnDataType
 }
 
 func newAPI(
 	getBytes32 getBytes32Type,
 	setBytes32 setBytes32Type,
-	callContract callContractType,
+	contractCall contractCallType,
+	delegateCall delegateCallType,
+	staticCall staticCallType,
 	getReturnData getReturnDataType,
 ) C.GoApi {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
 		getBytes32:    getBytes32,
 		setBytes32:    setBytes32,
-		callContract:  callContract,
+		contractCall:  contractCall,
+		delegateCall:  delegateCall,
+		staticCall:    staticCall,
 		getReturnData: getReturnData,
 	})
 	return C.GoApi{
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
-		call_contract:   (*[0]byte)(C.callContractWrap),
+		contract_call:   (*[0]byte)(C.contractCallWrap),
+		delegate_call:   (*[0]byte)(C.delegateCallWrap),
+		static_call:     (*[0]byte)(C.staticCallWrap),
 		get_return_data: (*[0]byte)(C.getReturnDataWrap),
 		id:              u64(id),
 	}

@@ -7,20 +7,16 @@ use crate::{
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
-use prover::{
-    programs::{
-        counter::{Counter, CountingMachine, OP_OFFSETS},
-        depth::STYLUS_STACK_LEFT,
-        meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
-        prelude::*,
-        start::STYLUS_START,
-    },
-    utils::Bytes20,
+use prover::programs::{
+    counter::{Counter, CountingMachine, OP_OFFSETS},
+    depth::STYLUS_STACK_LEFT,
+    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
+    prelude::*,
+    start::STYLUS_START,
 };
 use std::{
     collections::BTreeMap,
     fmt::Debug,
-    mem,
     ops::{Deref, DerefMut},
 };
 use wasmer::{
@@ -80,22 +76,25 @@ impl NativeInstance {
     fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
         let debug_funcs = env.config.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
+        macro_rules! func {
+            ($func:expr) => {
+                Function::new_typed_with_env(&mut store, &func_env, $func)
+            };
+        }
         let mut imports = imports! {
             "forward" => {
-                "read_args" => Function::new_typed_with_env(&mut store, &func_env, host::read_args),
-                "return_data" => Function::new_typed_with_env(&mut store, &func_env, host::return_data),
-                "account_load_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_load_bytes32),
-                "account_store_bytes32" => Function::new_typed_with_env(&mut store, &func_env, host::account_store_bytes32),
-                "call_contract" => Function::new_typed_with_env(&mut store, &func_env, host::call_contract),
-                "read_return_data" => Function::new_typed_with_env(&mut store, &func_env, host::read_return_data),
+                "read_args" => func!(host::read_args),
+                "return_data" => func!(host::return_data),
+                "account_load_bytes32" => func!(host::account_load_bytes32),
+                "account_store_bytes32" => func!(host::account_store_bytes32),
+                "call_contract" => func!(host::call_contract),
+                "delegate_call_contract" => func!(host::delegate_call_contract),
+                "static_call_contract" => func!(host::static_call_contract),
+                "read_return_data" => func!(host::read_return_data),
             },
         };
         if debug_funcs {
-            imports.define(
-                "forward",
-                "debug_println",
-                Function::new_typed_with_env(&mut store, &func_env, host::debug_println),
-            );
+            imports.define("forward", "debug_println", func!(host::debug_println));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
@@ -153,7 +152,9 @@ impl NativeInstance {
 
         let get = api.get_bytes32;
         let set = api.set_bytes32;
-        let call = api.call_contract;
+        let contract_call = api.contract_call;
+        let delegate_call = api.delegate_call;
+        let static_call = api.static_call;
         let get_return_data = api.get_return_data;
         let id = api.id;
 
@@ -172,20 +173,41 @@ impl NativeInstance {
                 Failure => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
             }
         });
-        let call_contract = Box::new(move |contract: Bytes20, input, evm_gas, value| unsafe {
-            let mut calldata = RustVec::new(input);
+        let contract_call = Box::new(move |contract, calldata, evm_gas, value| unsafe {
             let mut call_gas = evm_gas; // becomes the call's cost
-            let mut return_data_len: u32 = 0;
-
-            let api_status = call(
+            let mut return_data_len = 0;
+            let api_status = contract_call(
                 id,
                 contract,
-                ptr!(calldata),
+                ptr!(RustVec::new(calldata)),
                 ptr!(call_gas),
                 value,
                 ptr!(return_data_len),
             );
-            mem::drop(calldata.into_vec()); // only used for input
+            (return_data_len, call_gas, api_status.into())
+        });
+        let delegate_call = Box::new(move |contract, calldata, evm_gas| unsafe {
+            let mut call_gas = evm_gas; // becomes the call's cost
+            let mut return_data_len = 0;
+            let api_status = delegate_call(
+                id,
+                contract,
+                ptr!(RustVec::new(calldata)),
+                ptr!(call_gas),
+                ptr!(return_data_len),
+            );
+            (return_data_len, call_gas, api_status.into())
+        });
+        let static_call = Box::new(move |contract, calldata, evm_gas| unsafe {
+            let mut call_gas = evm_gas; // becomes the call's cost
+            let mut return_data_len = 0;
+            let api_status = static_call(
+                id,
+                contract,
+                ptr!(RustVec::new(calldata)),
+                ptr!(call_gas),
+                ptr!(return_data_len),
+            );
             (return_data_len, call_gas, api_status.into())
         });
         let get_return_data = Box::new(move || unsafe {
@@ -194,7 +216,14 @@ impl NativeInstance {
             data.into_vec()
         });
 
-        env.set_evm_api(get_bytes32, set_bytes32, call_contract, get_return_data)
+        env.set_evm_api(
+            get_bytes32,
+            set_bytes32,
+            contract_call,
+            delegate_call,
+            static_call,
+            get_return_data,
+        )
     }
 }
 
@@ -287,6 +316,8 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
+            "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
+            "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "read_return_data" => stub!(|_: u32|),
         },
     };
