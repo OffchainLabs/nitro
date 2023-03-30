@@ -408,6 +408,9 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		m.executionChallengeBackend = nil
 		return nil
 	}
+	if m.executionChallengeBackend != nil {
+		return nil
+	}
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
 		Addresses: []common.Address{m.challengeManagerAddr},
