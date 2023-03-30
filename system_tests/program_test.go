@@ -378,11 +378,6 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	// We choose a range on both sides of this value.
 	wasmGasPrice := testhelpers.RandomUint64(0, 20000)  // evm to wasm gas
 	wasmHostioCost := testhelpers.RandomUint64(0, 5000) // amount of wasm gas
-
-	// Drop the gas price to 0 half the time
-	if testhelpers.RandomBool() {
-		wasmGasPrice = 0
-	}
 	colors.PrintMint(fmt.Sprintf("WASM gas price=%d, HostIO cost=%d", wasmGasPrice, wasmHostioCost))
 
 	ensure(arbDebug.BecomeChainOwner(&auth))

@@ -4,6 +4,7 @@
 package programs
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -47,7 +48,7 @@ func Initialize(sto *storage.Storage) {
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
 	wasmHostioCost := sto.OpenStorageBackedUint32(wasmHostioCostOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
-	_ = wasmGasPrice.Set(0)
+	_ = wasmGasPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
 	_ = wasmHostioCost.Set(0)
 	_ = version.Set(1)
@@ -73,6 +74,9 @@ func (p Programs) WasmGasPrice() (arbmath.UBips, error) {
 }
 
 func (p Programs) SetWasmGasPrice(price arbmath.UBips) error {
+	if price == 0 {
+		return errors.New("wasm gas price must be nonzero")
+	}
 	return p.wasmGasPrice.Set(price)
 }
 

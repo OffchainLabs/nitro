@@ -43,9 +43,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     // buy wasm gas. If free, provide a virtually limitless amount
     let pricing = config.pricing;
     let evm_gas = sp.read_go_ptr();
-    let wasm_gas = pricing
-        .evm_to_wasm(sp.read_u64_raw(evm_gas))
-        .unwrap_or(u64::MAX);
+    let wasm_gas = pricing.evm_to_wasm(sp.read_u64_raw(evm_gas));
 
     // skip the root since we don't use these
     sp.skip_u64();
@@ -73,13 +71,11 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
             status
         }
     };
-    if pricing.wasm_gas_price != 0 {
-        let wasm_gas = match status {
-            UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
-            _ => instance.gas_left().into(),
-        };
-        sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
-    }
+    let wasm_gas = match status {
+        UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+        _ => instance.gas_left().into(),
+    };
+    sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
 }
 
 /// Reads the length of a rust `Vec`

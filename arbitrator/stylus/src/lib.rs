@@ -181,7 +181,7 @@ pub unsafe extern "C" fn stylus_call(
     let calldata = calldata.slice().to_vec();
     let config = params.config();
     let pricing = config.pricing;
-    let wasm_gas = pricing.evm_to_wasm(*evm_gas).unwrap_or(u64::MAX);
+    let wasm_gas = pricing.evm_to_wasm(*evm_gas);
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
@@ -204,13 +204,11 @@ pub unsafe extern "C" fn stylus_call(
             status
         }
     };
-    if pricing.wasm_gas_price != 0 {
-        let wasm_gas = match status {
-            UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
-            _ => instance.gas_left().into(),
-        };
-        *evm_gas = pricing.wasm_to_evm(wasm_gas);
-    }
+    let wasm_gas = match status {
+        UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
+        _ => instance.gas_left().into(),
+    };
+    *evm_gas = pricing.wasm_to_evm(wasm_gas);
     status
 }
 

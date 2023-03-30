@@ -228,17 +228,13 @@ impl<'a> HostioInfo<'a> {
     }
 
     pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        if let Ok(wasm_gas) = self.meter().pricing.evm_to_wasm(evm) {
-            self.buy_gas(wasm_gas)?;
-        }
-        Ok(())
+        let wasm_gas = self.meter().pricing.evm_to_wasm(evm);
+        self.buy_gas(wasm_gas)
     }
 
     /// Checks if the user has enough evm gas, but doesn't burn any
     pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let Ok(wasm_gas) = self.meter().pricing.evm_to_wasm(evm) else {
-            return Ok(())
-        };
+        let wasm_gas = self.meter().pricing.evm_to_wasm(evm);
         let MachineMeter::Ready(gas_left) = self.gas_left() else {
             return Escape::out_of_gas();
         };
@@ -370,17 +366,13 @@ impl<'a> MeterState<'a> {
     }
 
     pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        if let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) {
-            self.buy_gas(wasm_gas)?;
-        }
-        Ok(())
+        let wasm_gas = self.pricing.evm_to_wasm(evm);
+        self.buy_gas(wasm_gas)
     }
 
     /// Checks if the user has enough evm gas, but doesn't burn any
     pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let Ok(wasm_gas) = self.pricing.evm_to_wasm(evm) else {
-            return Ok(())
-        };
+        let wasm_gas = self.pricing.evm_to_wasm(evm);
         let MachineMeter::Ready(gas_left) = self.gas_left() else {
             return Escape::out_of_gas();
         };
