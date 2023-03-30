@@ -101,7 +101,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if tx.Nonce() < stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), true)
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), true, true) // TODO is this correct to enable EIP 3860 unconditionally?
 	if err != nil {
 		return err
 	}
