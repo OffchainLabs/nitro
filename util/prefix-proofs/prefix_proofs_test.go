@@ -23,6 +23,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRoot(t *testing.T) {
+	t.Run("tree too large", func(t *testing.T) {
+		tree := make([]common.Hash, 64)
+		_, err := prefixproofs.Root(tree)
+		require.Equal(t, prefixproofs.ErrLevelTooHigh, err)
+	})
+	t.Run("empty tree", func(t *testing.T) {
+		tree := make([]common.Hash, 0)
+		_, err := prefixproofs.Root(tree)
+		require.Equal(t, prefixproofs.ErrRootForEmpty, err)
+	})
+	t.Run("single element returns itself", func(t *testing.T) {
+		tree := make([]common.Hash, 1)
+		tree[0] = common.HexToHash("0x1234")
+		root, err := prefixproofs.Root(tree)
+		require.NoError(t, err)
+		require.Equal(t, tree[0], root)
+	})
+}
+
 func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	ctx := context.Background()
 	hashes := make([]common.Hash, 10)
