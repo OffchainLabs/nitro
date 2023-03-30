@@ -222,7 +222,7 @@ func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uin
 }
 
 func (c *nonceCache) Finalize(block *types.Block) {
-	// Note: we don't use c.Matches here because the header will have changed
+	// Note: we don't use c.matches here because the header will have changed
 	if c.block == block.ParentHash() {
 		c.block = block.Hash()
 		c.dirty = nil
@@ -232,7 +232,7 @@ func (c *nonceCache) Finalize(block *types.Block) {
 }
 
 func (c *nonceCache) Caching() bool {
-	return c.cache != nil
+	return c.cache != nil && c.cache.Size() > 0
 }
 
 func (c *nonceCache) Resize(newSize int) {
@@ -251,6 +251,30 @@ type nonceFailure struct {
 	revived   bool
 }
 
+type nonceFailureCache struct {
+	*containers.LruCache[addressAndNonce, *nonceFailure]
+	getExpiry func() time.Duration
+}
+
+func (c nonceFailureCache) Contains(err NonceError) bool {
+	key := addressAndNonce{err.sender, err.txNonce}
+	return c.LruCache.Contains(key)
+}
+
+func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
+	key := addressAndNonce{err.sender, err.txNonce}
+	val := &nonceFailure{
+		queueItem: queueItem,
+		nonceErr:  err,
+		expiry:    time.Now().Add(c.getExpiry()),
+		revived:   false,
+	}
+	evicted := c.LruCache.Add(key, val)
+	if evicted {
+		nonceFailureCacheOverflowCounter.Inc(1)
+	}
+}
+
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
@@ -261,7 +285,7 @@ type Sequencer struct {
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
 	nonceCache      *nonceCache
-	nonceFailures   *containers.LruCache[addressAndNonce, *nonceFailure]
+	nonceFailures   *nonceFailureCache
 	onForwarderSet  chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
@@ -301,7 +325,10 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
 	}
-	s.nonceFailures = containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict)
+	s.nonceFailures = &nonceFailureCache{
+		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
+		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
+	}
 	execEngine.EnableReorgSequencing()
 	return s, nil
 }
@@ -596,7 +623,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	config := s.config()
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int
 	pendingNonces := make(map[common.Address]uint64)
@@ -617,13 +643,13 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 			queueItem.returnResult(err)
 			continue
 		}
-		stateNonce, pending := pendingNonces[sender]
+		stateNonce := s.nonceCache.Get(latestHeader, latestState, sender)
+		pendingNonce, pending := pendingNonces[sender]
 		if !pending {
-			stateNonce = s.nonceCache.Get(latestHeader, latestState, sender)
+			pendingNonce = stateNonce
 		}
 		txNonce := tx.Nonce()
-		err = MakeNonceError(sender, txNonce, stateNonce)
-		if err == nil {
+		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
 			nextKey := addressAndNonce{sender, txNonce + 1}
 			revivingFailure, exists := s.nonceFailures.Get(nextKey)
@@ -639,29 +665,35 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 					nextQueueItem = &revivingFailure.queueItem
 				}
 			}
-		} else {
+		} else if txNonce < stateNonce || txNonce > pendingNonce {
+			// It's impossible for this tx to succeed so far,
+			// because its nonce is lower than the state nonce
+			// or higher than the highest tx nonce we've seen.
+			err := MakeNonceError(sender, txNonce, stateNonce)
 			if errors.Is(err, core.ErrNonceTooHigh) {
+				var nonceError NonceError
+				if !errors.As(err, &nonceError) {
+					log.Warn("unreachable nonce error is not nonceError")
+					continue
+				}
 				// Retry this transaction if its predecessor appears
-				key := addressAndNonce{sender, txNonce}
-				exists := s.nonceFailures.Contains(key)
-				if exists {
+				if s.nonceFailures.Contains(nonceError) {
 					queueItem.returnResult(err)
 				} else {
-					evicted := s.nonceFailures.Add(key, &nonceFailure{
-						queueItem: queueItem,
-						nonceErr:  err,
-						expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
-						revived:   false,
-					})
-					if evicted {
-						nonceFailureCacheOverflowCounter.Inc(1)
-					}
+					s.nonceFailures.Add(nonceError, queueItem)
 				}
-			} else {
+				continue
+			} else if err != nil {
+				nonceCacheRejectedCounter.Inc(1)
 				queueItem.returnResult(err)
+				continue
+			} else {
+				log.Warn("unreachable nonce err == nil condition hit in precheckNonces")
 			}
-			continue
 		}
+		// If neither if condition was hit, then txNonce >= stateNonce && txNonce < pendingNonce
+		// This tx might still go through if previous txs fail.
+		// We'll include it in the output queue in case that happens.
 		outputQueueItems = append(outputQueueItems, queueItem)
 	}
 	nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
@@ -866,20 +898,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		var nonceError NonceError
 		if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
-			// Retry this transaction if we see its predecessor
-			key := addressAndNonce{
-				address: nonceError.sender,
-				nonce:   nonceError.txNonce,
-			}
-			value := &nonceFailure{
-				queueItem: queueItem,
-				nonceErr:  err,
-				expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
-				revived:   false,
-			}
-			if s.nonceFailures.Add(key, value) {
-				nonceFailureCacheOverflowCounter.Inc(1)
-			}
+			s.nonceFailures.Add(nonceError, queueItem)
 			continue
 		}
 		queueItem.returnResult(err)

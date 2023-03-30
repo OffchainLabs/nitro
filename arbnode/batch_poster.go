@@ -20,6 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -32,6 +34,11 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
+	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
 )
 
 type batchPosterPosition struct {
@@ -622,6 +629,23 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
+		var err error
+		if common.HexToAddress(b.config().GasRefunderAddress) != (common.Address{}) {
+			gasRefunderBalance, err := b.l1Reader.Client().BalanceAt(ctx, common.HexToAddress(b.config().GasRefunderAddress), nil)
+			if err != nil {
+				log.Warn("error fetching batch poster gas refunder balance", "err", err)
+			} else {
+				batchPosterGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
+			}
+		}
+		if b.dataPoster.From() != (common.Address{}) {
+			walletBalance, err := b.l1Reader.Client().BalanceAt(ctx, b.dataPoster.From(), nil)
+			if err != nil {
+				log.Warn("error fetching batch poster wallet balance", "err", err)
+			} else {
+				batchPosterWalletBalance.Update(float64(walletBalance.Int64()) / params.Ether)
+			}
+		}
 		if !b.redisLock.AttemptLock(ctx) {
 			b.building = nil
 			return b.config().BatchPollDelay

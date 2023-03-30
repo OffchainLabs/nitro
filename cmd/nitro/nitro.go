@@ -16,6 +16,7 @@ import (
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -251,6 +252,10 @@ func mainImpl() int {
 		_, err := rand.Read(secret[:])
 		if err != nil {
 			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+		}
+		err = os.MkdirAll(filepath.Dir(fileName), 0755)
+		if err != nil {
+			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
 		}
 		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
 		if errors.Is(err, fs.ErrExist) {
@@ -809,7 +814,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 func applyArbitrumOneParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "arb1",
-		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"node.forwarding-target":             "https://arb1-sequencer.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
 		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",

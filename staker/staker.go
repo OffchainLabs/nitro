@@ -15,10 +15,22 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
+	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
+	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
+	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
+	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
+	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
+	validatorGasRefunderBalance     = metrics.NewRegisteredGaugeFloat64("arb/validator/gasrefunder/balanceether", nil)
 )
 
 type StakerStrategy uint8
@@ -170,6 +182,7 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
+	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -188,12 +201,16 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
+	walletAddressOrZero := s.wallet.AddressOrZero()
+	if walletAddressOrZero != (common.Address{}) {
+		s.updateStakerBalanceMetric(ctx)
+	}
 	if s.blockValidator != nil && s.config.StartFromStaked {
-		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
+		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
 		}
@@ -221,7 +238,16 @@ func (s *Staker) Start(ctxIn context.Context) {
 				returningWait = time.Minute
 			}
 		}()
-		err := s.updateBlockValidatorModuleRoot(ctx)
+		var err error
+		if common.HexToAddress(s.config.GasRefunderAddress) != (common.Address{}) {
+			gasRefunderBalance, err := s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
+			if err != nil {
+				log.Warn("error fetching validator gas refunder balance", "err", err)
+			} else {
+				validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
+			}
+		}
+		err = s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
@@ -235,12 +261,15 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		if err == nil {
 			backoff = time.Second
+			stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
+			stakerActionSuccessCounter.Inc(1)
 			if arbTx != nil && !s.wallet.CanBatchTxs() {
 				// Try to create another tx
 				return 0
 			}
 			return s.config.StakerInterval
 		}
+		stakerActionFailureCounter.Inc(1)
 		backoff *= 2
 		if backoff > time.Minute {
 			backoff = time.Minute
@@ -328,7 +357,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 	if !s.shouldAct(ctx) {
-		// The fact that we're delaying acting is alreay logged in `shouldAct`
+		// The fact that we're delaying acting is already logged in `shouldAct`
 		return nil, nil
 	}
 	callOpts := s.getCallOpts(ctx)
@@ -341,6 +370,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error getting own staker (%v) info: %w", walletAddressOrZero, err)
 		}
+		if rawInfo != nil {
+			stakerAmountStakedGauge.Update(rawInfo.AmountStaked.Int64())
+		} else {
+			stakerAmountStakedGauge.Update(0)
+		}
+		s.updateStakerBalanceMetric(ctx)
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
@@ -350,6 +385,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
 	}
@@ -730,4 +766,18 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 
 func (s *Staker) Strategy() StakerStrategy {
 	return s.strategy
+}
+
+func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
+	txSenderAddress := s.wallet.TxSenderAddress()
+	if txSenderAddress == nil {
+		stakerBalanceGauge.Update(0)
+		return
+	}
+	balance, err := s.client.BalanceAt(ctx, *txSenderAddress, nil)
+	if err != nil {
+		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
+		return
+	}
+	stakerBalanceGauge.Update(float64(balance.Int64()) / params.Ether)
 }
