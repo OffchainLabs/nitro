@@ -385,6 +385,9 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 			make([]byte, 0),
 		)
 	})
+	if err != nil {
+		return nil, err
+	}
 	challenged, ok := challengedEdge.(*SpecEdge)
 	if !ok {
 		return nil, errors.New("not a *SpecEdge")
