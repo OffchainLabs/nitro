@@ -48,7 +48,7 @@ func FuzzPrecompiles(f *testing.F) {
 			GetHash:     nil,
 			Coinbase:    common.Address{},
 			BlockNumber: new(big.Int),
-			Time:        new(big.Int),
+			Time:        0,
 			Difficulty:  new(big.Int),
 			GasLimit:    fuzzGas,
 			BaseFee:     common.Big1,
