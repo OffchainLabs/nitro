@@ -280,13 +280,12 @@ func NewStatelessBlockValidator(
 	if err != nil {
 		return nil, err
 	}
-	var jwt []byte
+	var jwt *common.Hash
 	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
+		jwt, err = signature.LoadSigningKey(config.JWTSecret)
 		if err != nil {
 			return nil, err
 		}
-		jwt = jwtHash.Bytes()
 	}
 	valClient := server_api.NewValidationClient(config.URL, jwt)
 	execClient := server_api.NewExecutionClient(config.URL, jwt)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -23,10 +24,10 @@ type ValidationClient struct {
 	client    *rpc.Client
 	url       string
 	name      string
-	jwtSecret []byte
+	jwtSecret *common.Hash
 }
 
-func NewValidationClient(url string, jwtSecret []byte) *ValidationClient {
+func NewValidationClient(url string, jwtSecret *common.Hash) *ValidationClient {
 	return &ValidationClient{
 		url:       url,
 		jwtSecret: jwtSecret,
@@ -49,10 +50,10 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	ctx := c.GetContext()
 	var client *rpc.Client
 	var err error
-	if len(c.jwtSecret) == 0 {
+	if c.jwtSecret == nil {
 		client, err = rpc.DialWebsocket(ctx, c.url, "")
 	} else {
-		client, err = rpc.DialWebsocketJWT(ctx, c.url, "", c.jwtSecret)
+		client, err = rpc.DialOptions(ctx, c.url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*c.jwtSecret))))
 	}
 	if err != nil {
 		return err
@@ -98,7 +99,7 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
+func NewExecutionClient(url string, jwtSecret *common.Hash) *ExecutionClient {
 	return &ExecutionClient{
 		ValidationClient: *NewValidationClient(url, jwtSecret),
 	}
