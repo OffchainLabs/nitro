@@ -71,6 +71,8 @@ type AssertionChain struct {
 	txOpts       *bind.TransactOpts
 	stakerAddr   common.Address
 	headerReader *headerreader.HeaderReader
+	// TODO: Should be fetchable from the assertion chain contract itself.
+	edgeChallengeManagerAddr common.Address
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -83,13 +85,15 @@ func NewAssertionChain(
 	stakerAddr common.Address,
 	backend ChainBackend,
 	headerReader *headerreader.HeaderReader,
+	edgeChallengeManagerAddr common.Address,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
-		backend:      backend,
-		callOpts:     callOpts,
-		txOpts:       txOpts,
-		stakerAddr:   stakerAddr,
-		headerReader: headerReader,
+		backend:                  backend,
+		callOpts:                 callOpts,
+		txOpts:                   txOpts,
+		stakerAddr:               stakerAddr,
+		headerReader:             headerReader,
+		edgeChallengeManagerAddr: edgeChallengeManagerAddr,
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,

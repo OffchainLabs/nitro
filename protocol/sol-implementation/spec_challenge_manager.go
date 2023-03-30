@@ -130,13 +130,24 @@ type SpecChallengeManager struct {
 
 // CurrentChallengeManager returns an instance of the current challenge manager
 // used by the assertion chain.
-func NewSpecCM(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(common.Address{}, nil)
+func NewSpecCM(
+	ctx context.Context,
+	addr common.Address,
+	backend ChainBackend,
+	reader *headerreader.HeaderReader,
+	callOpts *bind.CallOpts,
+	txOpts *bind.TransactOpts,
+) (protocol.SpecChallengeManager, error) {
+	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(addr, backend)
 	if err != nil {
 		return nil, err
 	}
 	return &SpecChallengeManager{
 		addr:     common.Address{},
+		backend:  backend,
+		reader:   reader,
+		callOpts: callOpts,
+		txOpts:   txOpts,
 		caller:   &managerBinding.EdgeChallengeManagerCaller,
 		writer:   &managerBinding.EdgeChallengeManagerTransactor,
 		filterer: &managerBinding.EdgeChallengeManagerFilterer,
