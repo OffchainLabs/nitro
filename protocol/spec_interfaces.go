@@ -74,19 +74,15 @@ type SpecChallengeManager interface {
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
 		assertion Assertion,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-		endHistoryRoot common.Hash,
+		startCommit util.HistoryCommitment,
+		endCommit util.HistoryCommitment,
 	) (SpecEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
 	AddSubChallengeLevelZeroEdge(
 		ctx context.Context,
 		challengedEdge SpecEdge,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-		endHistoryRoot common.Hash,
+		startCommit util.HistoryCommitment,
+		endCommit util.HistoryCommitment,
 	) (SpecEdge, error)
 }
 

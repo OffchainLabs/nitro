@@ -395,24 +395,20 @@ func (m *MockSpecChallengeManager) CalculateEdgeId(
 func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-	endHistoryRoot common.Hash,
+	startCommit util.HistoryCommitment,
+	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
-	args := m.Called(ctx, assertion, startHeight, startHistoryRoot, endHeight, endHistoryRoot)
+	args := m.Called(ctx, assertion, startCommit, endCommit)
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 
 func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-	endHistoryRoot common.Hash,
+	startCommit util.HistoryCommitment,
+	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
-	args := m.Called(ctx, challengedEdge, startHeight, startHistoryRoot, endHeight, endHistoryRoot)
+	args := m.Called(ctx, challengedEdge, startCommit, endCommit)
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 
