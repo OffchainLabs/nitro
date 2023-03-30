@@ -69,7 +69,7 @@ type SpecChallengeManager interface {
 		startHistoryRoot common.Hash,
 		endHeight Height,
 		endHistoryRoot common.Hash,
-	) (MutualId, error)
+	) (EdgeId, error)
 	// Adds a level-zero edge to a block challenge given an assertion and a history commitments.
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
