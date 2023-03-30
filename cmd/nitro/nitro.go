@@ -16,6 +16,7 @@ import (
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -250,6 +251,10 @@ func mainImpl() int {
 		_, err := rand.Read(secret[:])
 		if err != nil {
 			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+		}
+		err = os.MkdirAll(filepath.Dir(fileName), 0755)
+		if err != nil {
+			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
 		}
 		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
 		if errors.Is(err, fs.ErrExist) {
