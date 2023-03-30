@@ -160,7 +160,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 	case protocol.BigStepChallengeEdge:
 		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
 		if err != nil {
-			return 0, err
+			return 0, errors.Wrapf(err, "block challenge one step fork source does not exist %#x", e.inner.ClaimEdgeId)
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
@@ -170,7 +170,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 	case protocol.SmallStepChallengeEdge:
 		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
 		if err != nil {
-			return 0, err
+			return 0, errors.Wrap(err, "big step challenge one step fork source does not exist")
 		}
 		if bigStepChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
@@ -181,7 +181,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		}
 		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, bigStepEdge.inner.ClaimEdgeId)
 		if err != nil {
-			return 0, err
+			return 0, errors.Wrap(err, "block challenge one step fork source does not exist")
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
