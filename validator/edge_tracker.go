@@ -146,7 +146,7 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 		}
 		return historyCommit, proof, nil
 	}
-	topLevelHeight, _, err := et.edge.OriginCommitment(ctx)
+	topLevelHeight, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {
 		return util.HistoryCommitment{}, nil, err
 	}
@@ -213,12 +213,12 @@ func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.
 }
 
 func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
-	originHeight, _, err := et.edge.OriginCommitment(ctx)
+	assertionHeight, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {
 		return err
 	}
 
-	fromAssertionHeight := originHeight
+	fromAssertionHeight := assertionHeight
 	toAssertionHeight := fromAssertionHeight + 1
 
 	startHeight, startCommit := et.edge.StartCommitment()

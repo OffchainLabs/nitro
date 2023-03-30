@@ -124,10 +124,6 @@ func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 	return err
 }
 
-func (e *SpecEdge) OriginCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
-	return 0, common.Hash{}, nil
-}
-
 func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByOneStepProof(
