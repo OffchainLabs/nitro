@@ -31,20 +31,9 @@ func newEdgeTrackerFsm(
 			},
 			To: edgePresumptive,
 		},
-		{
-			// Loses an edge's presumptive status, which it can never regain.
-			Typ: edgeLosePresumptive{},
-			From: []edgeTrackerState{
-				edgePresumptive,
-				edgePresumptiveLost,
-			},
-			To: edgePresumptiveLost,
-		},
 		// One-step-proof states.
 		{
 			// The tracker will take some action if it has reached a one-step-fork.
-			// TODO: Should go back to start? But then cannot go to ps again though? Maybe need
-			// an intermediate state here?
 			Typ:  edgeHandleOneStepFork{},
 			From: []edgeTrackerState{edgeStarted},
 			To:   edgeAtOneStepFork,
@@ -57,15 +46,9 @@ func newEdgeTrackerFsm(
 			To:   edgeAtOneStepProof,
 		},
 		{
-			// The tracker will open a subchallenge on a vertex that is at a one-step-fork.
-			Typ:  edgeOpenSubchallenge{},
-			From: []edgeTrackerState{edgeAtOneStepFork, edgeOpeningSubchallenge},
-			To:   edgeOpeningSubchallenge,
-		},
-		{
 			// The tracker will add a subchallenge leaf to its vertex's subchallenge.
 			Typ:  edgeOpenSubchallengeLeaf{},
-			From: []edgeTrackerState{edgeOpeningSubchallenge, edgeAddingSubchallengeLeaf},
+			From: []edgeTrackerState{edgeAtOneStepFork, edgeAddingSubchallengeLeaf},
 			To:   edgeAddingSubchallengeLeaf,
 		},
 		{

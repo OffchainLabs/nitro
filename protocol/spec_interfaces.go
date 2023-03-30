@@ -18,11 +18,24 @@ const (
 	SmallStepChallengeEdge
 )
 
+func (et EdgeType) String() string {
+	switch et {
+	case BlockChallengeEdge:
+		return "block_challenge_edge"
+	case BigStepChallengeEdge:
+		return "big_step_challenge_edge"
+	case SmallStepChallengeEdge:
+		return "small_step_challenge_edge"
+	default:
+		return "unknown"
+	}
+}
+
 // OriginId is the id of the item that originated a challenge an edge
 // is a part of. In a block challenge, the origin id is the id of the assertion
-// being challenged. In a big step challenge, it is the id of the edge at the block challenge
+// being challenged. In a big step challenge, it is the mutual id of the edge at the block challenge
 // level that was the source of the one step fork leading to the big step challenge.
-// In a small step challenge, it is the id of the edge at the big step level that was
+// In a small step challenge, it is the mutual id of the edge at the big step level that was
 // the source of the one step fork leading to the small step challenge.
 type OriginId common.Hash
 
