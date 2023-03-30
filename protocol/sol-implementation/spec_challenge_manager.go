@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -74,8 +75,34 @@ func (e *SpecEdge) Bisect(
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		return e.manager.writer.BisectEdge(e.manager.txOpts, e.id, prefixHistoryRoot, prefixProof)
 	})
-	// TODO: Add real return values from event in the receipt.
-	return nil, nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+	someEdge, err := e.manager.GetEdge(ctx, e.id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if someEdge.IsNone() {
+		return nil, nil, errors.New("could not refresh edge after bisecting, got empty result")
+	}
+	edge, ok := someEdge.Unwrap().(*SpecEdge)
+	if !ok {
+		return nil, nil, errors.New("not a *SpecEdge")
+	}
+	// Refresh the edge.
+	e = edge
+	someLowerChild, err := e.manager.GetEdge(ctx, e.inner.LowerChildId)
+	if err != nil {
+		return nil, nil, err
+	}
+	someUpperChild, err := e.manager.GetEdge(ctx, e.inner.UpperChildId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if someLowerChild.IsNone() || someUpperChild.IsNone() {
+		return nil, nil, errors.New("expected edge to have children post-bisection, but has none")
+	}
+	return someLowerChild.Unwrap(), someUpperChild.Unwrap(), nil
 }
 
 func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
@@ -114,6 +141,48 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 		)
 	})
 	return err
+}
+
+// TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.
+// For example, if two validators open a subchallenge S at vertex A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
+// of S is A. If two validators open a subchallenge S' at vertex B in BigStepChallenge, the TopLevelClaimVertex
+// is the height of A.
+func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
+	switch e.GetType() {
+	case protocol.BigStepChallengeEdge:
+		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
+		if err != nil {
+			return 0, err
+		}
+		if blockChallengeOneStepForkSource.IsNone() {
+			return 0, errors.New("source edge is none")
+		}
+		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
+		return startHeight, nil
+	case protocol.SmallStepChallengeEdge:
+		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
+		if err != nil {
+			return 0, err
+		}
+		if bigStepChallengeOneStepForkSource.IsNone() {
+			return 0, errors.New("source edge is none")
+		}
+		bigStepEdge, ok := bigStepChallengeOneStepForkSource.Unwrap().(*SpecEdge)
+		if !ok {
+			return 0, errors.New("not *SpecEdge")
+		}
+		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, bigStepEdge.inner.ClaimEdgeId)
+		if err != nil {
+			return 0, err
+		}
+		if blockChallengeOneStepForkSource.IsNone() {
+			return 0, errors.New("source edge is none")
+		}
+		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
+		return startHeight, nil
+	default:
+		return 0, errors.New("not a subchallenge")
+	}
 }
 
 // ChallengeManager --
@@ -235,15 +304,15 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	startCommit util.HistoryCommitment,
 	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
-	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
-		assertionId, err := cm.assertionChain.GetAssertionId(ctx, assertion.SeqNum())
-		if err != nil {
-			return nil, errors.Wrapf(
-				err,
-				"could not get id for assertion with sequence num %d",
-				assertion.SeqNum(),
-			)
-		}
+	assertionId, err := cm.assertionChain.GetAssertionId(ctx, assertion.SeqNum())
+	if err != nil {
+		return nil, errors.Wrapf(
+			err,
+			"could not get id for assertion with sequence num %d",
+			assertion.SeqNum(),
+		)
+	}
+	_, err = transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
 			cm.txOpts,
 			challengeV2gen.CreateEdgeArgs{
@@ -259,8 +328,30 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			make([]byte, 0),
 		)
 	})
-	// TODO: Add in
-	return nil, err
+	if err != nil {
+		return nil, err
+	}
+
+	edgeId, err := cm.CalculateEdgeId(
+		ctx,
+		protocol.BlockChallengeEdge,
+		protocol.OriginId(assertionId),
+		protocol.Height(startCommit.Height),
+		startCommit.Merkle,
+		protocol.Height(endCommit.Height),
+		endCommit.Merkle,
+	)
+	if err != nil {
+		return nil, err
+	}
+	someLevelZeroEdge, err := cm.GetEdge(ctx, edgeId)
+	if err != nil {
+		return nil, err
+	}
+	if someLevelZeroEdge.IsNone() {
+		return nil, errors.New("got empty, newly created level zero edge")
+	}
+	return someLevelZeroEdge.Unwrap(), nil
 }
 
 func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
@@ -276,7 +367,7 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	case protocol.BigStepChallengeEdge:
 		subChalTyp = protocol.SmallStepChallengeEdge
 	default:
-		return nil, errors.New("cannot open level zero edge beneath small step challenge")
+		return nil, fmt.Errorf("cannot open level zero edge beneath small step challenge: %s", challengedEdge.GetType())
 	}
 	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
@@ -294,6 +385,39 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 			make([]byte, 0),
 		)
 	})
-	// TODO: Add in
-	return nil, err
+	challenged, ok := challengedEdge.(*SpecEdge)
+	if !ok {
+		return nil, errors.New("not a *SpecEdge")
+	}
+	mutualId, err := cm.CalculateMutualId(
+		ctx,
+		challengedEdge.GetType(),
+		challenged.inner.OriginId,
+		protocol.Height(challenged.inner.StartHeight.Uint64()),
+		challenged.inner.StartHistoryRoot,
+		protocol.Height(challenged.inner.EndHeight.Uint64()),
+	)
+	if err != nil {
+		return nil, err
+	}
+	edgeId, err := cm.CalculateEdgeId(
+		ctx,
+		subChalTyp,
+		protocol.OriginId(mutualId),
+		protocol.Height(startCommit.Height),
+		startCommit.Merkle,
+		protocol.Height(endCommit.Height),
+		endCommit.Merkle,
+	)
+	if err != nil {
+		return nil, err
+	}
+	someLevelZeroEdge, err := cm.GetEdge(ctx, edgeId)
+	if err != nil {
+		return nil, err
+	}
+	if someLevelZeroEdge.IsNone() {
+		return nil, errors.New("got empty, newly created level zero edge")
+	}
+	return someLevelZeroEdge.Unwrap(), nil
 }

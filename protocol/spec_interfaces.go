@@ -18,6 +18,10 @@ const (
 	SmallStepChallengeEdge
 )
 
+func (et EdgeType) IsSubChallenge() bool {
+	return et == BigStepChallengeEdge || et == SmallStepChallengeEdge
+}
+
 func (et EdgeType) String() string {
 	switch et {
 	case BlockChallengeEdge:
@@ -146,4 +150,5 @@ type SpecEdge interface {
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
 	OriginCommitment(ctx context.Context) (Height, common.Hash, error)
+	TopLevelClaimHeight(ctx context.Context) (Height, error)
 }

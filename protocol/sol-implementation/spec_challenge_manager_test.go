@@ -53,38 +53,20 @@ func TestEdgeChallengeManager(t *testing.T) {
 	genesis, err := createdData.chains[0].AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
-	assertionId, err := createdData.chains[0].GetAssertionId(ctx, 0)
-	require.NoError(t, err)
-
 	// Honest assertion being added.
 	startCommit := util.HistoryCommitment{
 		Height: 0,
 		Merkle: common.Hash{},
 	}
 	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
-		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
 			ctx,
 			genesis,
 			startCommit,
 			endCommit,
 		)
 		require.NoError(t, err)
-
-		edgeId, err := challengeManager.CalculateEdgeId(
-			ctx,
-			protocol.BlockChallengeEdge,
-			protocol.OriginId(assertionId),
-			protocol.Height(startCommit.Height),
-			startCommit.Merkle,
-			protocol.Height(endCommit.Height),
-			endCommit.Merkle,
-		)
-		require.NoError(t, err)
-
-		someEdge, err := challengeManager.GetEdge(ctx, edgeId)
-		require.NoError(t, err)
-		require.Equal(t, false, someEdge.IsNone())
-		return someEdge.Unwrap()
+		return leaf
 	}
 
 	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
@@ -131,36 +113,10 @@ func TestEdgeChallengeManager(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Bob bisects")
-	_, _, err = evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
+	oneStepForkSourceEdge, _, err := evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
 	require.NoError(t, err)
 
-	// Get the lower-level edge of either vertex we just bisected.
-	oneStepForkSourceEdgeId, err := challengeManager.CalculateEdgeId(
-		ctx,
-		protocol.BlockChallengeEdge,
-		protocol.OriginId(assertionId),
-		protocol.Height(startCommit.Height),
-		startCommit.Merkle,
-		protocol.Height(honestBisectCommit.Height),
-		honestBisectCommit.Merkle,
-	)
-	require.NoError(t, err)
-
-	mutualId, err := challengeManager.CalculateMutualId(
-		ctx,
-		protocol.BlockChallengeEdge,
-		protocol.OriginId(assertionId),
-		protocol.Height(startCommit.Height),
-		startCommit.Merkle,
-		protocol.Height(honestBisectCommit.Height),
-	)
-	require.NoError(t, err)
-
-	oneStepForkSourceEdge, err := challengeManager.GetEdge(ctx, oneStepForkSourceEdgeId)
-	require.NoError(t, err)
-	require.Equal(t, false, oneStepForkSourceEdge.IsNone())
-
-	isAtOneStepFork, err := oneStepForkSourceEdge.Unwrap().IsOneStepForkSource(ctx)
+	isAtOneStepFork, err := oneStepForkSourceEdge.IsOneStepForkSource(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, isAtOneStepFork)
 
@@ -168,29 +124,14 @@ func TestEdgeChallengeManager(t *testing.T) {
 
 	// Now opening big step level zero leaves
 	bigStepAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
-		_, err = challengeManager.AddSubChallengeLevelZeroEdge(
+		leaf, err := challengeManager.AddSubChallengeLevelZeroEdge(
 			ctx,
-			oneStepForkSourceEdge.Unwrap(),
+			oneStepForkSourceEdge,
 			startCommit,
 			endCommit,
 		)
 		require.NoError(t, err)
-
-		edgeId, err := challengeManager.CalculateEdgeId(
-			ctx,
-			protocol.BigStepChallengeEdge,
-			protocol.OriginId(mutualId),
-			protocol.Height(startCommit.Height),
-			startCommit.Merkle,
-			protocol.Height(endCommit.Height),
-			endCommit.Merkle,
-		)
-		require.NoError(t, err)
-
-		someEdge, err := challengeManager.GetEdge(ctx, edgeId)
-		require.NoError(t, err)
-		require.Equal(t, false, someEdge.IsNone())
-		return someEdge.Unwrap()
+		return leaf
 	}
 
 	honestBigStepCommit, err := honestStateManager.BigStepCommitmentUpTo(
@@ -225,64 +166,26 @@ func TestEdgeChallengeManager(t *testing.T) {
 
 	t.Log("Neither is presumptive")
 
-	// Get the lower-level edge of either vertex we just bisected.
-	oneStepForkSourceEdgeId, err = challengeManager.CalculateEdgeId(
-		ctx,
-		protocol.BigStepChallengeEdge,
-		protocol.OriginId(mutualId),
-		protocol.Height(startCommit.Height),
-		startCommit.Merkle,
-		protocol.Height(honestBigStepCommit.Height),
-		honestBigStepCommit.Merkle,
-	)
-	require.NoError(t, err)
-
-	mutualId, err = challengeManager.CalculateMutualId(
-		ctx,
-		protocol.BigStepChallengeEdge,
-		protocol.OriginId(mutualId),
-		protocol.Height(startCommit.Height),
-		startCommit.Merkle,
-		protocol.Height(honestBigStepCommit.Height),
-	)
-	require.NoError(t, err)
-
-	oneStepForkSourceEdge, err = challengeManager.GetEdge(ctx, oneStepForkSourceEdgeId)
-	require.NoError(t, err)
-	require.Equal(t, false, oneStepForkSourceEdge.IsNone())
-	require.Equal(t, protocol.BigStepChallengeEdge, oneStepForkSourceEdge.Unwrap().GetType())
-
-	isAtOneStepFork, err = oneStepForkSourceEdge.Unwrap().IsOneStepForkSource(ctx)
+	isAtOneStepFork, err = honestEdge.IsOneStepForkSource(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, isAtOneStepFork)
 
 	t.Log("Reached one step fork at big step challenge level")
 
+	claimHeight, err := evilEdge.TopLevelClaimHeight(ctx)
+	require.NoError(t, err)
+	t.Logf("Got top level claim height %d", claimHeight)
+
 	// Now opening small step level zero leaves
 	smallStepAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
-		_, err = challengeManager.AddSubChallengeLevelZeroEdge(
+		leaf, err := challengeManager.AddSubChallengeLevelZeroEdge(
 			ctx,
-			oneStepForkSourceEdge.Unwrap(),
+			honestEdge,
 			startCommit,
 			endCommit,
 		)
 		require.NoError(t, err)
-
-		edgeId, err := challengeManager.CalculateEdgeId(
-			ctx,
-			protocol.SmallStepChallengeEdge,
-			protocol.OriginId(mutualId),
-			protocol.Height(startCommit.Height),
-			startCommit.Merkle,
-			protocol.Height(endCommit.Height),
-			endCommit.Merkle,
-		)
-		require.NoError(t, err)
-
-		someEdge, err := challengeManager.GetEdge(ctx, edgeId)
-		require.NoError(t, err)
-		require.Equal(t, false, someEdge.IsNone())
-		return someEdge.Unwrap()
+		return leaf
 	}
 
 	honestSmallStepCommit, err := honestStateManager.SmallStepCommitmentUpTo(
@@ -291,9 +194,9 @@ func TestEdgeChallengeManager(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Alice creates level zero small step challenge edge")
-	honestEdge = smallStepAdder(honestSmallStepCommit)
-	require.Equal(t, protocol.SmallStepChallengeEdge, honestEdge.GetType())
-	isPs, err = honestEdge.IsPresumptive(ctx)
+	smallStepHonest := smallStepAdder(honestSmallStepCommit)
+	require.Equal(t, protocol.SmallStepChallengeEdge, smallStepHonest.GetType())
+	isPs, err = smallStepHonest.IsPresumptive(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, isPs)
 
@@ -305,36 +208,26 @@ func TestEdgeChallengeManager(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Log("Bob creates level zero small step challenge edge")
-	evilEdge = smallStepAdder(evilSmallStepCommit)
-	require.Equal(t, protocol.SmallStepChallengeEdge, evilEdge.GetType())
+	smallStepEvil := smallStepAdder(evilSmallStepCommit)
+	require.Equal(t, protocol.SmallStepChallengeEdge, smallStepEvil.GetType())
 
-	isPs, err = honestEdge.IsPresumptive(ctx)
+	isPs, err = smallStepHonest.IsPresumptive(ctx)
 	require.NoError(t, err)
 	require.Equal(t, false, isPs)
-	isPs, err = evilEdge.IsPresumptive(ctx)
+	isPs, err = smallStepEvil.IsPresumptive(ctx)
 	require.NoError(t, err)
 	require.Equal(t, false, isPs)
 
 	t.Log("Neither is presumptive")
 
+	claimHeight, err = smallStepEvil.TopLevelClaimHeight(ctx)
+	require.NoError(t, err)
+	t.Logf("Got top level claim height %d", claimHeight)
+
 	// Get the lower-level edge of either vertex we just bisected.
-	oneStepForkSourceEdgeId, err = challengeManager.CalculateEdgeId(
-		ctx,
-		protocol.SmallStepChallengeEdge,
-		protocol.OriginId(mutualId),
-		protocol.Height(startCommit.Height),
-		startCommit.Merkle,
-		protocol.Height(honestSmallStepCommit.Height),
-		honestSmallStepCommit.Merkle,
-	)
-	require.NoError(t, err)
+	require.Equal(t, protocol.SmallStepChallengeEdge, smallStepHonest.GetType())
 
-	oneStepForkSourceEdge, err = challengeManager.GetEdge(ctx, oneStepForkSourceEdgeId)
-	require.NoError(t, err)
-	require.Equal(t, false, oneStepForkSourceEdge.IsNone())
-	require.Equal(t, protocol.SmallStepChallengeEdge, oneStepForkSourceEdge.Unwrap().GetType())
-
-	isAtOneStepFork, err = oneStepForkSourceEdge.Unwrap().IsOneStepForkSource(ctx)
+	isAtOneStepFork, err = smallStepHonest.IsOneStepForkSource(ctx)
 	require.NoError(t, err)
 	require.Equal(t, true, isAtOneStepFork)
 
