@@ -271,14 +271,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			i--
 			continue
 		}
-		fmt.Printf("\n\n\n\n%d\n\n\n", i)
-		//if err != nil {
-		//	if strings.Contains(err.Error(), "error checking if it's our turn") {
-		//		t.Log("got expected faulty staker error", err)
-		//		err = nil
-		//		tx = nil
-		//	}
-		//}
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
 			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after block -1 expected global state") {
