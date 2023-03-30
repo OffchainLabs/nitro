@@ -243,7 +243,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	honestStates, honestInboxCounts := prepareHonestStates(
 		t,
 		ctx,
-		chains[1],
+		chains[0],
 		backend,
 		honestHashes,
 		cfg.currentChainHeight,
@@ -270,14 +270,14 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	aliceAddr := accs[1].accountAddr
 	alice, err := New(
 		ctx,
-		chains[1], // Chain 0 is reserved for admin controls.
+		chains[0],
 		backend,
 		honestManager,
 		addrs.Rollup,
 		WithName("alice"),
 		WithAddress(aliceAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*500),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
 		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
@@ -292,17 +292,17 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
 	require.NoError(t, err)
-	bobAddr := accs[2].accountAddr
+	bobAddr := accs[1].accountAddr
 	bob, err := New(
 		ctx,
-		chains[2], // Chain 0 is reserved for admin controls.
+		chains[1], // Chain 0 is reserved for admin controls.
 		backend,
 		maliciousManager,
 		addrs.Rollup,
 		WithName("bob"),
 		WithAddress(bobAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*500),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
 		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)

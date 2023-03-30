@@ -57,6 +57,7 @@ func newEdgeTrackerFsm(
 			From: []edgeTrackerState{
 				edgeAtOneStepFork,
 				edgeAddingSubchallengeLeaf,
+				edgeBisecting,
 				edgeAwaitingSubchallenge,
 			},
 			To: edgeAwaitingSubchallenge,

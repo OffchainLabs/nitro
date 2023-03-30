@@ -2,9 +2,12 @@ package solimpl
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"fmt"
+	"math/big"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -13,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
-	"math/big"
 )
 
 type SpecEdge struct {
@@ -64,7 +66,17 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 }
 
 func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
-	return e.manager.caller.IsAtOneStepFork(e.manager.callOpts, e.id)
+	ok, err := e.manager.caller.IsAtOneStepFork(e.manager.callOpts, e.id)
+	if err != nil {
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "not length 1"):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+	return ok, nil
 }
 
 func (e *SpecEdge) Bisect(

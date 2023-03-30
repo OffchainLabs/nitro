@@ -29,6 +29,13 @@ func (et *edgeTracker) act(ctx context.Context) error {
 	switch current.State {
 	// Start state.
 	case edgeStarted:
+		isPresumptive, err := et.edge.IsPresumptive(ctx)
+		if err != nil {
+			return errors.Wrap(err, "could not check presumptive")
+		}
+		if isPresumptive {
+			return et.fsm.Do(edgeMarkPresumptive{})
+		}
 		// TODO: Add a conditional to check if we can confirm.
 		atOneStepFork, err := et.edge.IsOneStepForkSource(ctx)
 		if err != nil {
@@ -36,13 +43,6 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		}
 		if atOneStepFork {
 			return et.fsm.Do(edgeHandleOneStepFork{})
-		}
-		isPresumptive, err := et.edge.IsPresumptive(ctx)
-		if err != nil {
-			return errors.Wrap(err, "could not check presumptive")
-		}
-		if isPresumptive {
-			return et.fsm.Do(edgeMarkPresumptive{})
 		}
 		return et.fsm.Do(edgeBisect{})
 	// Edge is the source of a one-step-fork.
