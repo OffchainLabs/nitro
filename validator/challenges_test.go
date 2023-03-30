@@ -3,13 +3,12 @@ package validator
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"math"
 	"math/big"
 	"sync"
 	"testing"
 	"time"
-
-	"encoding/binary"
-	"math"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
@@ -277,7 +276,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		addrs.Rollup,
 		WithName("alice"),
 		WithAddress(aliceAddr),
-		WithDisableLeafCreation(),
 		WithTimeReference(ref),
 		WithChallengeVertexWakeInterval(time.Millisecond*10),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
@@ -303,7 +301,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		addrs.Rollup,
 		WithName("bob"),
 		WithAddress(bobAddr),
-		WithDisableLeafCreation(),
 		WithTimeReference(ref),
 		WithChallengeVertexWakeInterval(time.Millisecond*10),
 		WithNewAssertionCheckInterval(time.Millisecond*50),

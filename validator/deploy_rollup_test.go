@@ -70,6 +70,7 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 			accs[i].accountAddr,
 			backend,
 			headerReader,
+			common.Address{},
 		)
 		require.NoError(t, err)
 		chains[i] = chain

@@ -59,11 +59,10 @@ type AssertionChain interface {
 	// TODO: Remove.
 	CreateSuccessionChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (Challenge, error)
 	Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error
-	Reject(ctx context.Context, staker common.Address) error
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
-	CreateSpecChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (SpecChallenge, error)
+	CreateSpecChallenge(ctx context.Context, seqNum AssertionSequenceNumber) error
 }
 
 // ChallengeManager allows for retrieving details of challenges such

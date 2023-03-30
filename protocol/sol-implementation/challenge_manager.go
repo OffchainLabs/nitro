@@ -46,11 +46,19 @@ func (ac *AssertionChain) CurrentChallengeManager(ctx context.Context) (protocol
 }
 
 func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	return nil, errors.New("unimplemented")
+	return NewSpecCM(
+		ctx,
+		ac.edgeChallengeManagerAddr,
+		ac,
+		ac.backend,
+		ac.headerReader,
+		ac.callOpts,
+		ac.txOpts,
+	)
 }
 
-func (ac *AssertionChain) CreateSpecChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.SpecChallenge, error) {
-	return nil, errors.New("unimplemented")
+func (ac *AssertionChain) CreateSpecChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) error {
+	return errors.New("unimplemented")
 }
 
 func (cm *ChallengeManager) Address() common.Address {
