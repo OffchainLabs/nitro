@@ -5,7 +5,6 @@ import (
 )
 
 var (
-	_ = protocol.SpecChallenge(&SpecChallenge{})
 	_ = protocol.SpecEdge(&SpecEdge{})
 	_ = protocol.SpecChallengeManager(&SpecChallengeManager{})
 )

@@ -97,7 +97,7 @@ func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 	return err
 }
 
-func (cm *SpecChallengeManager) OriginCommitment() (protocol.Height, common.Hash, error) {
+func (e *SpecEdge) OriginCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
 	return 0, common.Hash{}, nil
 }
 
@@ -148,7 +148,7 @@ func (cm *SpecChallengeManager) GetEdge(
 	if err != nil {
 		return util.None[protocol.SpecEdge](), err
 	}
-	return util.Some(&SpecEdge{
+	return util.Some(protocol.SpecEdge(&SpecEdge{
 		id:               edge.ClaimEdgeId,
 		manager:          cm,
 		startHeight:      edge.StartHeight.Uint64(),
@@ -156,7 +156,7 @@ func (cm *SpecChallengeManager) GetEdge(
 		startCommitment:  edge.StartHistoryRoot,
 		targetCommitment: edge.EndHistoryRoot,
 		miniStaker:       util.Some(edge.Staker), // TODO: Check.
-	}), nil
+	})), nil
 }
 
 // Calculates an edge hash given its challenge id, start history, and end history.
@@ -168,13 +168,13 @@ func (cm *SpecChallengeManager) CalculateMutualId(
 	startHistoryRoot common.Hash,
 	endHeight protocol.Height,
 ) (protocol.MutualId, error) {
-	return cm.caller.CalculateEdgeId(
+	return cm.caller.CalculateMutualId(
 		cm.callOpts,
-		edgeType,
+		uint8(edgeType),
 		originId,
-		startHeight,
+		big.NewInt(int64(startHeight)),
 		startHistoryRoot,
-		endHeight,
+		big.NewInt(int64(endHeight)),
 	)
 }
 
