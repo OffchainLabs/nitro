@@ -112,21 +112,9 @@ jobs:
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
         run: ./build-brotli.sh -l
 
-      - name: Setup emsdk
+      - name: Build cbrotli-wasm in docker
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        uses: mymindstorm/setup-emsdk@v11
-        with:
-          # Make sure to set a version number!
-          version: 3.1.6
-          # This is the name of the cache folder.
-          # The cache folder will be placed in the build directory,
-          #  so make sure it doesn't conflict with anything!
-          actions-cache-folder: 'emsdk-cache'
-          no-cache: true
-
-      - name: Build cbrotli-wasm
-        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
-        run: ./build-brotli.sh -w
+        run: ./build-brotli.sh -w -d
 
       - name: Build
         run: make build test-go-deps -j
@@ -158,7 +146,7 @@ jobs:
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- -p 1 -run TestRedis -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'

@@ -152,7 +152,7 @@ func CreateBatchPosterDAS(
 
 	// Check config requirements
 	if !config.AggregatorConfig.Enable || !config.RestfulClientAggregatorConfig.Enable {
-		return nil, nil, nil, errors.New("--node.data-availabilty.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
+		return nil, nil, nil, errors.New("--node.data-availability.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
 	}
 
 	if config.IpfsStorageServiceConfig.Enable {

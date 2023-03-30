@@ -6,6 +6,7 @@ package wsbroadcastserver
 import (
 	"net"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -17,17 +18,19 @@ var (
 )
 
 type ConnectionLimiterConfig struct {
-	Enable             bool `koanf:"enable" reload:"hot"`
-	PerIpLimit         int  `koanf:"per-ip-limit" reload:"hot"`
-	PerIpv6Cidr48Limit int  `koanf:"per-ipv6-cidr-48-limit" reload:"hot"`
-	PerIpv6Cidr64Limit int  `koanf:"per-ipv6-cidr-64-limit" reload:"hot"`
+	Enable                  bool          `koanf:"enable" reload:"hot"`
+	PerIpLimit              int           `koanf:"per-ip-limit" reload:"hot"`
+	PerIpv6Cidr48Limit      int           `koanf:"per-ipv6-cidr-48-limit" reload:"hot"`
+	PerIpv6Cidr64Limit      int           `koanf:"per-ipv6-cidr-64-limit" reload:"hot"`
+	ReconnectCooldownPeriod time.Duration `koanf:"reconnect-cooldown-period" reload:"hot"`
 }
 
 var DefaultConnectionLimiterConfig = ConnectionLimiterConfig{
-	Enable:             false,
-	PerIpLimit:         5,
-	PerIpv6Cidr48Limit: 20,
-	PerIpv6Cidr64Limit: 10,
+	Enable:                  false,
+	PerIpLimit:              5,
+	PerIpv6Cidr48Limit:      20,
+	PerIpv6Cidr64Limit:      10,
+	ReconnectCooldownPeriod: 0,
 }
 
 func ConnectionLimiterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -35,6 +38,7 @@ func ConnectionLimiterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".per-ip-limit", DefaultConnectionLimiterConfig.PerIpLimit, "limit clients, as identified by IPv4/v6 address, to this many connections to this relay")
 	f.Int(prefix+".per-ipv6-cidr-48-limit", DefaultConnectionLimiterConfig.PerIpv6Cidr48Limit, "limit ipv6 clients, as identified by IPv6 address masked with /48, to this many connections to this relay")
 	f.Int(prefix+".per-ipv6-cidr-64-limit", DefaultConnectionLimiterConfig.PerIpv6Cidr64Limit, "limit ipv6 clients, as identified by IPv6 address masked with /64, to this many connections to this relay")
+	f.Duration(prefix+".reconnect-cooldown-period", DefaultConnectionLimiterConfig.ReconnectCooldownPeriod, "time to wait after a relay client disconnects before the disconnect is registered with respect to the limit for this client")
 }
 
 type ConnectionLimiterConfigFetcher func() *ConnectionLimiterConfig
@@ -148,9 +152,17 @@ func (l *ConnectionLimiter) Register(ip net.IP) bool {
 }
 
 func (l *ConnectionLimiter) Release(ip net.IP) {
-	l.Lock()
-	defer l.Unlock()
-
-	l.updateUsage(ip, false)
-
+	p := l.config().ReconnectCooldownPeriod
+	if p > 0 {
+		go func() {
+			time.Sleep(p)
+			l.Lock()
+			defer l.Unlock()
+			l.updateUsage(ip, false)
+		}()
+	} else {
+		l.Lock()
+		defer l.Unlock()
+		l.updateUsage(ip, false)
+	}
 }
