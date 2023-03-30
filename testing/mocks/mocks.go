@@ -437,6 +437,10 @@ func (m *MockSpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 	args := m.Called()
 	return args.Get(0).(protocol.Height), args.Get(1).(common.Hash)
 }
+func (m *MockSpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.Height), args.Error(1)
+}
 func (m *MockSpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
