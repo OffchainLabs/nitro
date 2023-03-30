@@ -293,13 +293,7 @@ func TestProgramCalls(t *testing.T) {
 		return data
 	}
 
-	// Set a random, non-zero gas price
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
-	Require(t, err)
-	wasmGasPrice := testhelpers.RandomUint64(1, 2000)
-	ensure(arbOwner.SetWasmGasPrice(&auth, wasmGasPrice))
-	colors.PrintBlue("Calling the ArbosTest precompile with wasmGasPrice=", wasmGasPrice)
-
+	colors.PrintBlue("Calling the ArbosTest precompile (Rust => precompile)")
 	testPrecompile := func(gas int64) int64 {
 		// Call the burnArbGas() precompile from Rust
 		args := makeCalldata(vm.CALL, types.ArbosTestAddress, pack(burnArbGas(big.NewInt(gas))))
@@ -314,7 +308,7 @@ func TestProgramCalls(t *testing.T) {
 
 	if large-small != largeGas-smallGas {
 		ratio := float64(large-small) / float64(largeGas-smallGas)
-		Fail(t, "inconsistent burns", large, small, largeGas, smallGas, ratio, wasmGasPrice)
+		Fail(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
 
 	colors.PrintBlue("Checking consensus revert data (Rust => precompile)")
