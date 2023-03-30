@@ -118,14 +118,15 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 
 // ChallengeManager --
 type SpecChallengeManager struct {
-	addr     common.Address
-	backend  ChainBackend
-	reader   *headerreader.HeaderReader
-	callOpts *bind.CallOpts
-	txOpts   *bind.TransactOpts
-	caller   *challengeV2gen.EdgeChallengeManagerCaller
-	writer   *challengeV2gen.EdgeChallengeManagerTransactor
-	filterer *challengeV2gen.EdgeChallengeManagerFilterer
+	addr           common.Address
+	backend        ChainBackend
+	assertionChain *AssertionChain
+	reader         *headerreader.HeaderReader
+	callOpts       *bind.CallOpts
+	txOpts         *bind.TransactOpts
+	caller         *challengeV2gen.EdgeChallengeManagerCaller
+	writer         *challengeV2gen.EdgeChallengeManagerTransactor
+	filterer       *challengeV2gen.EdgeChallengeManagerFilterer
 }
 
 // CurrentChallengeManager returns an instance of the current challenge manager
@@ -133,6 +134,7 @@ type SpecChallengeManager struct {
 func NewSpecCM(
 	ctx context.Context,
 	addr common.Address,
+	assertionChain *AssertionChain,
 	backend ChainBackend,
 	reader *headerreader.HeaderReader,
 	callOpts *bind.CallOpts,
@@ -143,14 +145,15 @@ func NewSpecCM(
 		return nil, err
 	}
 	return &SpecChallengeManager{
-		addr:     common.Address{},
-		backend:  backend,
-		reader:   reader,
-		callOpts: callOpts,
-		txOpts:   txOpts,
-		caller:   &managerBinding.EdgeChallengeManagerCaller,
-		writer:   &managerBinding.EdgeChallengeManagerTransactor,
-		filterer: &managerBinding.EdgeChallengeManagerFilterer,
+		addr:           common.Address{},
+		assertionChain: assertionChain,
+		backend:        backend,
+		reader:         reader,
+		callOpts:       callOpts,
+		txOpts:         txOpts,
+		caller:         &managerBinding.EdgeChallengeManagerCaller,
+		writer:         &managerBinding.EdgeChallengeManagerTransactor,
+		filterer:       &managerBinding.EdgeChallengeManagerFilterer,
 	}, nil
 }
 
@@ -233,9 +236,13 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
 	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
-		stHash, err := assertion.StateHash()
+		assertionId, err := cm.assertionChain.GetAssertionId(ctx, assertion.SeqNum())
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(
+				err,
+				"could not get id for assertion with sequence num %d",
+				assertion.SeqNum(),
+			)
 		}
 		return cm.writer.CreateLayerZeroEdge(
 			cm.txOpts,
@@ -245,7 +252,7 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 				StartHeight:      big.NewInt(int64(startCommit.Height)),
 				EndHistoryRoot:   endCommit.Merkle,
 				EndHeight:        big.NewInt(int64(endCommit.Height)),
-				ClaimId:          stHash,
+				ClaimId:          assertionId,
 			},
 			// TODO: Add inclusion proofs.
 			make([]byte, 0),

@@ -21,18 +21,60 @@ var (
 
 func TestEdgeChallengeManager(t *testing.T) {
 	ctx := context.Background()
-	height1 := protocol.Height(3)
-	height2 := protocol.Height(3)
-	a1, a2, chain1, _ := setupEdgeBasedFork(
-		t, ctx, height1, height2,
+	height := protocol.Height(3)
+	_, _, chain, _ := setupEdgeBasedFork(
+		t, ctx, height, height,
 	)
-	_ = a1
-	_ = a2
-	manager, err := chain1.SpecChallengeManager(ctx)
+	manager, err := chain.SpecChallengeManager(ctx)
 	require.NoError(t, err)
-	edge, err := manager.GetEdge(ctx, [32]byte{})
+
+	genesis, err := chain.AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
-	t.Logf("%+v", edge)
+
+	assertionId, err := chain.GetAssertionId(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	startCommit := util.HistoryCommitment{
+		Height: 0,
+		Merkle: common.Hash{},
+	}
+	endCommit := util.HistoryCommitment{
+		Height: uint64(height),
+		Merkle: common.BytesToHash([]byte("foo")),
+	}
+	_, err = manager.AddBlockChallengeLevelZeroEdge(
+		ctx,
+		genesis,
+		startCommit,
+		endCommit,
+	)
+	require.NoError(t, err)
+
+	edgeId, err := manager.CalculateEdgeId(
+		ctx,
+		protocol.BlockChallengeEdge,
+		protocol.OriginId(assertionId),
+		protocol.Height(startCommit.Height),
+		startCommit.Merkle,
+		protocol.Height(endCommit.Height),
+		endCommit.Merkle,
+	)
+	require.NoError(t, err)
+
+	someEdge, err := manager.GetEdge(ctx, edgeId)
+	require.NoError(t, err)
+	require.Equal(t, false, someEdge.IsNone())
+	edge := someEdge.Unwrap()
+
+	require.Equal(t, protocol.BlockChallengeEdge, edge.GetType())
+	require.Equal(t, edgeId, edge.Id())
+
+	isPs, err := edge.IsPresumptive(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, isPs)
+	t.Log("Created level zero edge on block challenge")
+	t.Log("Edge is presumptive")
 }
 
 func setupEdgeBasedFork(

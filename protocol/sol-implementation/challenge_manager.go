@@ -49,6 +49,7 @@ func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Sp
 	return NewSpecCM(
 		ctx,
 		ac.edgeChallengeManagerAddr,
+		ac,
 		ac.backend,
 		ac.headerReader,
 		ac.callOpts,
