@@ -54,19 +54,19 @@ func TestPromise(t *testing.T) {
 	tempPromise = NewPromise[int]()
 	tempPromise.SetCancel(cancelFunc)
 
-	errErrorProduncer := errors.New("err produced")
+	errErrorProduced := errors.New("err produced")
 	wg.Add(1)
 	go func() {
 		res, err = tempPromise.Await(ctx)
 		wg.Done()
 	}()
-	tempPromise.ProduceError(errErrorProduncer)
+	tempPromise.ProduceError(errErrorProduced)
 	wg.Wait()
-	if res != 0 || !errors.Is(err, errErrorProduncer) {
+	if res != 0 || !errors.Is(err, errErrorProduced) {
 		t.Fatal("unexpected Promise.Await after setError")
 	}
 	res, err = tempPromise.Current()
-	if res != 0 || !errors.Is(err, errErrorProduncer) {
+	if res != 0 || !errors.Is(err, errErrorProduced) {
 		t.Fatal("unexpected Promise.Current 2nd time")
 	}
 
