@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
@@ -16,9 +15,12 @@ import (
 // MachineCache manages a list of machines at various step counts.
 // Aims to speed the retrieval of a machine at a given step count.
 type MachineCache struct {
-	containers.Promise[struct{}]
+	buildingLock chan struct{}
+	err          error
+
 	zeroStepMachine     MachineInterface
 	finalMachine        MachineInterface
+	finalMachineStep    uint64
 	machines            []MachineInterface
 	firstMachineStep    uint64
 	machineStepInterval uint64
@@ -40,14 +42,14 @@ var DefaultMachineCacheConfig = MachineCacheConfig{
 
 func MachineCacheConfigConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".initial-steps", DefaultMachineCacheConfig.InitialSteps, "initial steps between machines")
-	f.Int(prefix+".cached-challenge-machines", DefaultMachineCacheConfig.CachedChallengeMachines, "how many machines to store in cache while working on a challenge")
+	f.Int(prefix+".cached-challenge-machines", DefaultMachineCacheConfig.CachedChallengeMachines, "how many machines to store in cache while working on a challenge (should be even)")
 }
 
 // `initialMachine` won't be mutated by this function.
 func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Context) (MachineInterface, error), config *MachineCacheConfig) *MachineCache {
 	cache := &MachineCache{
-		Promise: containers.NewPromise[struct{}](),
-		config:  config,
+		buildingLock: make(chan struct{}, 1), // locked on init
+		config:       config,
 	}
 	go func() {
 		zeroStepMachine, err := initialMachineGetter(ctx)
@@ -56,128 +58,199 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 			err = errors.New("initialMachine not at step count 0")
 		}
 		if err != nil {
-			cache.ProduceError(err)
+			cache.unlockBuild(err)
 			return
 		}
 		zeroStepMachine.Freeze()
 		cache.zeroStepMachine = zeroStepMachine
-		cache.machines = []MachineInterface{zeroStepMachine}
-		cache.firstMachineStep = 0
+		cache.machines = []MachineInterface{}
 		cache.machineStepInterval = config.InitialSteps
-		err = cache.populateInitialCache(ctx, ^uint64(0))
-		if err != nil {
-			cache.ProduceError(err)
-			return
+		cache.finalMachineStep = ^uint64(0)
+		for {
+			err = cache.populateCache(ctx)
+			if err != nil {
+				cache.unlockBuild(err)
+				return
+			}
+			if !cache.machines[len(cache.machines)-1].IsRunning() {
+				break
+			}
+			compressedMachines := []MachineInterface{}
+			for i, mach := range cache.machines {
+				if i%2 == 1 {
+					compressedMachines = append(compressedMachines, mach)
+				} else {
+					mach.Destroy()
+				}
+			}
+			cache.machines = compressedMachines
+			cache.firstMachineStep += cache.machineStepInterval
+			cache.machineStepInterval *= 2
 		}
-		cache.finalMachine = cache.machines[len(cache.machines)-1]
-		cache.finalMachine.Freeze()
-		cache.Produce(struct{}{})
+		lastMachine := cache.machines[len(cache.machines)-1]
+		cache.machines = cache.machines[:len(cache.machines)-1]
+		cache.finalMachine = lastMachine
+		cache.finalMachineStep = lastMachine.GetStepCount()
+		cache.unlockBuild(nil)
 	}()
 	return cache
 }
 
-func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, end uint64) *MachineCache {
-	newInterval := (start - end) / uint64(c.config.CachedChallengeMachines)
-	if start == c.firstMachineStep && newInterval == c.machineStepInterval {
-		return c
+func (c *MachineCache) Destroy(ctx context.Context) {
+	err := c.lockBuild(ctx)
+	if err != nil {
+		return
 	}
-	newCache := &MachineCache{
-		Promise: containers.NewPromise[struct{}](),
-		config:  c.config,
+	c.unlockBuild(errors.New("machine cache destroyed"))
+}
+
+func (c *MachineCache) destroyWithLock() {
+	if c.zeroStepMachine != nil {
+		c.zeroStepMachine.Destroy()
+		c.zeroStepMachine = nil
+	}
+	if c.finalMachine != nil {
+		c.finalMachine.Destroy()
+		c.finalMachine = nil
+	}
+	for _, mach := range c.machines {
+		mach.Destroy()
+	}
+}
+
+func (c *MachineCache) lockBuild(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.buildingLock:
+	}
+	err := c.err
+	if err != nil {
+		c.buildingLock <- struct{}{}
+	}
+	return err
+}
+
+func (c *MachineCache) unlockBuild(err error) {
+	c.err = err
+	if err != nil {
+		c.destroyWithLock()
+	}
+	c.buildingLock <- struct{}{}
+}
+
+func (c *MachineCache) SetRange(ctx context.Context, start uint64, end uint64) {
+	err := c.lockBuild(ctx)
+	if err != nil {
+		return
+	}
+	newInterval := (end - start) / uint64(c.config.CachedChallengeMachines)
+	if newInterval == 0 {
+		newInterval = 2
+	}
+	if start == 0 {
+		start = newInterval / 2
+	}
+	if end >= c.finalMachineStep {
+		end = c.finalMachineStep - newInterval/2
+	}
+	newInterval = (end - start) / uint64(c.config.CachedChallengeMachines)
+	if newInterval == 0 {
+		newInterval = 1
+	}
+	if start == c.firstMachineStep && newInterval == c.machineStepInterval {
+		c.unlockBuild(nil)
+		return
 	}
 	go func() {
-		_, err := c.Await(ctx)
-		if err != nil {
-			newCache.ProduceError(err)
-			return
-		}
-		newCache.zeroStepMachine = c.zeroStepMachine
-		newCache.finalMachine = c.finalMachine
-		closest, err := c.getClosestMachine(start)
-		if err != nil {
-			newCache.ProduceError(err)
-			return
-		}
+		closestIndex, closest := c.getClosestMachine(start)
 		closestStep := closest.GetStepCount()
-		var initial MachineInterface
 		if closestStep > start {
-			newCache.ProduceError(fmt.Errorf("initial machine step too large %d > %d", closestStep, start))
+			err = fmt.Errorf("initial machine step too large %d > %d", closestStep, start)
+			c.unlockBuild(err)
 			return
 		}
+		for i, mach := range c.machines {
+			if i != closestIndex {
+				mach.Destroy()
+			}
+		}
+		var initial MachineInterface
 		if closestStep < start {
 			initial = closest.CloneMachineInterface()
-			err := initial.Step(ctx, start-closestStep)
+			err = initial.Step(ctx, start-closestStep)
 			if err != nil {
-				newCache.ProduceError(err)
+				c.unlockBuild(err)
 				return
+			}
+			if closest != c.zeroStepMachine && closest != c.finalMachine {
+				closest.Destroy()
 			}
 			initial.Freeze()
 		} else {
 			initial = closest
 		}
-		newCache.machines = []MachineInterface{initial}
-		newCache.firstMachineStep = start
-		newCache.machineStepInterval = newInterval
-		err = newCache.populateInitialCache(ctx, newInterval*uint64(c.config.CachedChallengeMachines))
-		if err != nil {
-			newCache.ProduceError(err)
-		} else {
-			newCache.Produce(struct{}{})
-		}
+		c.machines = []MachineInterface{initial}
+		c.firstMachineStep = start
+		c.machineStepInterval = newInterval
+		err = c.populateCache(ctx)
+		c.unlockBuild(err)
 	}()
-	return newCache
 }
 
-func (c *MachineCache) populateInitialCache(ctx context.Context, target_step uint64) error {
+func (c *MachineCache) populateCache(ctx context.Context) error {
+	var nextMachine MachineInterface
+	if len(c.machines) == 0 {
+		nextMachine = c.zeroStepMachine
+		c.firstMachineStep = c.machineStepInterval
+	} else {
+		nextMachine = c.machines[len(c.machines)-1]
+	}
 	for {
-		nextMachine := c.machines[len(c.machines)-1].CloneMachineInterface()
 		if !nextMachine.IsRunning() {
 			break
 		}
-		if nextMachine.GetStepCount() >= target_step {
+		if nextMachine.GetStepCount() >= c.finalMachineStep {
 			break
 		}
+		if len(c.machines) >= c.config.CachedChallengeMachines {
+			break
+		}
+		nextMachine = nextMachine.CloneMachineInterface()
 		err := nextMachine.Step(ctx, c.machineStepInterval)
 		if err != nil {
 			return err
 		}
 		nextMachine.Freeze()
-		if len(c.machines) >= c.config.CachedChallengeMachines {
-			// Double the step interval between machines, which halves the number of machines.
-			var pruned []MachineInterface
-			for i, mach := range c.machines {
-				// If i%2 == 1, this machine is no longer on the step interval.
-				if i%2 == 0 {
-					pruned = append(pruned, mach)
-				} else {
-					mach.Destroy()
-				}
-			}
-			c.machines = pruned
-			c.machineStepInterval *= 2
-		}
 		c.machines = append(c.machines, nextMachine)
 	}
 	return nil
 }
 
 // Warning: don't mutate the result of this!
-func (c *MachineCache) getClosestMachine(stepCount uint64) (MachineInterface, error) {
+func (c *MachineCache) getClosestMachine(stepCount uint64) (int, MachineInterface) {
 	if stepCount < c.firstMachineStep {
-		return c.zeroStepMachine, nil
+		return -1, c.zeroStepMachine
+	}
+	if stepCount >= c.finalMachineStep {
+		return len(c.machines), c.finalMachine
 	}
 	stepsFromStart := stepCount - c.firstMachineStep
+	var index int
 	if c.machineStepInterval == 0 || stepsFromStart > c.machineStepInterval*uint64(len(c.machines)-1) {
-		return c.machines[len(c.machines)-1], nil
+		index = len(c.machines) - 1
 	} else {
-		return c.machines[stepsFromStart/c.machineStepInterval], nil
+		index = int(stepsFromStart / c.machineStepInterval)
 	}
+	return index, c.machines[index]
 }
 
 func (c *MachineCache) getLastMachine() MachineInterface {
 	c.lastMachineLock.Lock()
 	defer c.lastMachineLock.Unlock()
-	return c.lastMachine
+	last := c.lastMachine
+	c.lastMachine = nil
+	return last
 }
 
 func (c *MachineCache) setLastMachine(machine MachineInterface) {
@@ -185,27 +258,26 @@ func (c *MachineCache) setLastMachine(machine MachineInterface) {
 	prevLast := c.lastMachine
 	c.lastMachine = machine
 	c.lastMachineLock.Unlock()
-	if prevLast != nil && prevLast != machine {
+	if prevLast != nil {
 		prevLast.Destroy()
 	}
 }
 
 // GetMachineAt a given step count, optionally using a passed in machine if that's the best option.
 func (c *MachineCache) GetMachineAt(ctx context.Context, stepCount uint64) (MachineInterface, error) {
-	_, err := c.Await(ctx)
+	err := c.lockBuild(ctx)
 	if err != nil {
 		return nil, err
 	}
-	closestMachine, err := c.getClosestMachine(stepCount)
-	if err != nil {
-		return nil, err
-	}
+	_, closestMachine := c.getClosestMachine(stepCount)
 	lastMachine := c.getLastMachine()
 	if lastMachine != nil && lastMachine.GetStepCount() >= closestMachine.GetStepCount() && lastMachine.GetStepCount() <= stepCount {
 		closestMachine = lastMachine
 	} else {
 		closestMachine = closestMachine.CloneMachineInterface()
 	}
+	c.unlockBuild(nil)
+
 	err = closestMachine.Step(ctx, stepCount-closestMachine.GetStepCount())
 	if err != nil {
 		return nil, err
@@ -218,9 +290,10 @@ func (c *MachineCache) GetMachineAt(ctx context.Context, stepCount uint64) (Mach
 }
 
 func (c *MachineCache) GetFinalMachine(ctx context.Context) (MachineInterface, error) {
-	_, err := c.Await(ctx)
+	err := c.lockBuild(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer c.unlockBuild(nil)
 	return c.finalMachine, nil
 }

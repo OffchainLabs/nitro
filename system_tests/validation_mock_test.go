@@ -93,10 +93,8 @@ type mockExecRun struct {
 	endState   validator.GoGlobalState
 }
 
-func (r *mockExecRun) GetStepAt(position uint64) validator.MachineStep {
-	res := &mockMachineStep{
-		Promise: containers.NewPromise[validator.MachineStepResult](),
-	}
+func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[validator.MachineStepResult] {
+	res := containers.NewPromise[validator.MachineStepResult]()
 	status := validator.MachineStatusRunning
 	resState := r.startState
 	if position >= mockExecLastPos {
@@ -110,37 +108,23 @@ func (r *mockExecRun) GetStepAt(position uint64) validator.MachineStep {
 		Status:      status,
 		GlobalState: resState,
 	})
-	return res
+	return &res
 }
 
-func (r *mockExecRun) GetLastStep() validator.MachineStep {
+func (r *mockExecRun) GetLastStep() containers.PromiseInterface[validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
 
 var mockProof []byte = []byte("friendly jab at competitors")
 
-func (r *mockExecRun) GetProofAt(uint64) validator.ProofPromise {
-	res := &mockMachineProof{
-		Promise: containers.NewPromise[[]byte](),
-	}
+func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
+	res := containers.NewPromise[[]byte]()
 	res.Produce(mockProof)
-	return res
+	return &res
 }
 
 func (r *mockExecRun) PrepareRange(uint64, uint64) {}
 func (r *mockExecRun) Close()                      {}
-
-type mockMachineProof struct {
-	containers.Promise[[]byte]
-}
-
-func (p *mockMachineProof) Close() {}
-
-type mockMachineStep struct {
-	containers.Promise[validator.MachineStepResult]
-}
-
-func (s *mockMachineStep) Close() {}
 
 func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
 	stackConf := node.DefaultConfig
