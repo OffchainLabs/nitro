@@ -16,11 +16,20 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+)
+
+var (
+	validatorPendingValidationsGauge  = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
+	validatorValidValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
+	validatorFailedValidationsCounter = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
+	validatorMsgCountCurrentBatch     = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
+	validatorMsgCountValidatedGauge   = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 )
 
 type BlockValidator struct {
@@ -342,6 +351,7 @@ func (v *BlockValidator) checkValidatedGSCaughUp(ctx context.Context) (bool, err
 	atomicStorePos(&v.createdA, count)
 	atomicStorePos(&v.recordSentA, count)
 	atomicStorePos(&v.validatedA, count)
+	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
 	return true, nil
 }
@@ -458,6 +468,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		}
 		v.nextCreateBatch = batch
 		v.nextCreateBatchMsgCount = count
+		validatorMsgCountCurrentBatch.Update(int64(count))
 		v.nextCreateBatchReread = false
 	}
 	endGS := validator.GoGlobalState{
@@ -645,9 +656,11 @@ validatiosLoop:
 					}
 				}
 				if err != nil {
+					validatorFailedValidationsCounter.Inc(1)
 					v.possiblyFatal(err)
 					return &pos, nil // if not fatal - retry
 				}
+				validatorValidValidationsCounter.Inc(1)
 			}
 			v.lastValidGS = validationStatus.Entry.End
 			go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
@@ -658,6 +671,7 @@ validatiosLoop:
 			atomicStorePos(&v.validatedA, pos+1)
 			nonBlockingTriger(v.createNodesChan)
 			nonBlockingTriger(v.sendRecordChan)
+			validatorMsgCountValidatedGauge.Update(int64(pos + 1))
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTriger(v.testingProgressMadeChan)
 			}
@@ -681,6 +695,8 @@ validatiosLoop:
 					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
 					return
 				}
+				validatorPendingValidationsGauge.Inc(1)
+				defer validatorPendingValidationsGauge.Dec(1)
 				var runs []validator.ValidationRun
 				for _, moduleRoot := range wasmRoots {
 					for _, spawner := range v.validationSpawners {
@@ -813,6 +829,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	}
 	if v.validatedA > countUint64 {
 		v.validatedA = countUint64
+		validatorMsgCountValidatedGauge.Update(int64(countUint64))
 		v.lastValidGS = v.nextCreateStartGS
 		err := v.writeLastValidatedToDb(v.lastValidGS, []common.Hash{}) // we don't know which wasm roots were validated
 		if err != nil {

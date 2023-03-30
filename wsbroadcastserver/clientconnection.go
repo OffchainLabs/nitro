@@ -4,24 +4,18 @@
 package wsbroadcastserver
 
 import (
-	"compress/flate"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/pkg/errors"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
-	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -45,6 +39,8 @@ type ClientConnection struct {
 
 	compression bool
 	flateReader *wsflate.Reader
+
+	delay time.Duration
 }
 
 func NewClientConnection(
@@ -54,6 +50,7 @@ func NewClientConnection(
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP net.IP,
 	compression bool,
+	delay time.Duration,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
@@ -67,6 +64,7 @@ func NewClientConnection(
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
+		delay:           delay,
 	}
 }
 
@@ -81,6 +79,30 @@ func (cc *ClientConnection) Compression() bool {
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
+		if cc.delay != 0 {
+			var delayQueue [][]byte
+			t := time.NewTimer(cc.delay)
+			done := false
+			for !done {
+				select {
+				case <-ctx.Done():
+					return
+				case data := <-cc.out:
+					delayQueue = append(delayQueue, data)
+				case <-t.C:
+					for _, data := range delayQueue {
+						err := cc.writeRaw(data)
+						if err != nil {
+							logWarn(err, "error writing data to client")
+							cc.clientManager.Remove(cc)
+							return
+						}
+					}
+					done = true
+				}
+			}
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -142,38 +164,18 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 func (cc *ClientConnection) Write(x interface{}) error {
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
-	state := ws.StateServerSide
-	if cc.compression {
-		state |= ws.StateExtended
-	}
-	wsWriter := wsutil.NewWriter(cc.conn, state, ws.OpText)
-	var writer io.Writer
-	var flateWriter *wsflate.Writer
-	if cc.compression {
-		var msg wsflate.MessageState
-		msg.SetCompressed(true)
-		wsWriter.SetExtensions(&msg)
-		flateWriter = wsflate.NewWriter(wsWriter, func(w io.Writer) wsflate.Compressor {
-			f, err := flate.NewWriterDict(w, DeflateCompressionLevel, GetStaticCompressorDictionary())
-			if err != nil {
-				log.Error("Failed to create flate writer", "err", err)
-			}
-			return f
-		})
-		writer = flateWriter
-	} else {
-		writer = wsWriter
-	}
-	encoder := json.NewEncoder(writer)
-	if err := encoder.Encode(x); err != nil {
+
+	notCompressed, compressed, err := serializeMessage(cc.clientManager, x, !cc.compression, cc.compression)
+	if err != nil {
 		return err
 	}
-	if flateWriter != nil {
-		if err := flateWriter.Close(); err != nil {
-			return errors.Wrap(err, "unable to flush message")
-		}
+
+	if cc.compression {
+		cc.out <- compressed.Bytes()
+	} else {
+		cc.out <- notCompressed.Bytes()
 	}
-	return wsWriter.Flush()
+	return nil
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {

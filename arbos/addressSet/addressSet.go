@@ -109,7 +109,7 @@ func (aset *AddressSet) Add(addr common.Address) error {
 	return err
 }
 
-func (aset *AddressSet) Remove(addr common.Address) error {
+func (aset *AddressSet) Remove(addr common.Address, arbosVersion uint64) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	slot, err := aset.byAddress.GetUint64(addrAsHash)
 	if slot == 0 || err != nil {
@@ -131,6 +131,12 @@ func (aset *AddressSet) Remove(addr common.Address) error {
 		err = aset.backingStorage.SetByUint64(slot, atSize)
 		if err != nil {
 			return err
+		}
+		if arbosVersion >= 11 {
+			err = aset.byAddress.Set(atSize, util.UintToHash(slot))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	err = aset.backingStorage.ClearByUint64(size)
