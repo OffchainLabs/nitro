@@ -1,9 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build redistest
-// +build redistest
-
 package arbtest
 
 import (
@@ -51,7 +48,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.GetTestRedisURL(t)
+	nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
@@ -130,9 +127,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 				if attempts > 10 {
 					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.SeqCoordinator.DebugPrint())
 				}
-				select {
-				case <-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
-				}
+				<-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3)
 			}
 		}
 	}
@@ -275,7 +270,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.GetTestRedisURL(t)
+	nodeConfig.SeqCoordinator.RedisUrl = redisutil.CreateTestRedis(ctx, t)
 	nodeConfig.BatchPoster.Enable = false
 
 	nodeNames := []string{"stdio://A", "stdio://B"}

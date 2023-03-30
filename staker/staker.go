@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
@@ -23,12 +24,13 @@ import (
 )
 
 var (
-	stakerBalanceGauge              = metrics.NewRegisteredGauge("arb/staker/balance", nil)
+	stakerBalanceGauge              = metrics.NewRegisteredGaugeFloat64("arb/staker/balance", nil)
 	stakerAmountStakedGauge         = metrics.NewRegisteredGauge("arb/staker/amount_staked", nil)
 	stakerLatestStakedNodeGauge     = metrics.NewRegisteredGauge("arb/staker/staked_node", nil)
 	stakerLastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/staker/action/last_success", nil)
 	stakerActionSuccessCounter      = metrics.NewRegisteredCounter("arb/staker/action/success", nil)
 	stakerActionFailureCounter      = metrics.NewRegisteredCounter("arb/staker/action/failure", nil)
+	validatorGasRefunderBalance     = metrics.NewRegisteredGaugeFloat64("arb/validator/gasrefunder/balanceether", nil)
 )
 
 type StakerStrategy uint8
@@ -236,7 +238,16 @@ func (s *Staker) Start(ctxIn context.Context) {
 				returningWait = time.Minute
 			}
 		}()
-		err := s.updateBlockValidatorModuleRoot(ctx)
+		var err error
+		if common.HexToAddress(s.config.GasRefunderAddress) != (common.Address{}) {
+			gasRefunderBalance, err := s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
+			if err != nil {
+				log.Warn("error fetching validator gas refunder balance", "err", err)
+			} else {
+				validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
+			}
+		}
+		err = s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
@@ -766,5 +777,5 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
-	stakerBalanceGauge.Update(balance.Int64())
+	stakerBalanceGauge.Update(float64(balance.Int64()) / params.Ether)
 }

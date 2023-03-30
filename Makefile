@@ -66,6 +66,11 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
+rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.toml)
+
+prover_src = arbitrator/prover/src
+rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files)
+
 jit_dir = arbitrator/jit
 jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
 
@@ -124,7 +129,7 @@ test-go-challenge: test-go-deps
 	@printf $(done)
 
 test-go-redis: test-go-deps
-	go test -p 1 -run TestRedis -tags redistest ./system_tests/... ./arbnode/...
+	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
 
 test-gen-proofs: \
@@ -182,12 +187,12 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
 	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
 
-$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_lib): $(DEP_PREDICATE) $(rust_prover_files)
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
 	install arbitrator/target/release/libprover.a $@
