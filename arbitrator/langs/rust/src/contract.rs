@@ -94,7 +94,6 @@ pub fn delegate_call(
 ) -> Result<Vec<u8>, Vec<u8>> {
     let mut outs_len = 0;
     let gas = gas.unwrap_or(u64::MAX); // will be clamped by 63/64 rule
-    super::debug::println(format!("about to delegate call"));
     let status = unsafe {
         delegate_call_contract(
             contract.ptr(),
@@ -104,14 +103,12 @@ pub fn delegate_call(
             &mut outs_len as *mut _,
         )
     };
-    super::debug::println(format!("after delegate call"));
     let outs = unsafe {
         let mut outs = Vec::with_capacity(outs_len);
         read_return_data(outs.as_mut_ptr());
         outs.set_len(outs_len);
         outs
     };
-    super::debug::println(format!("after delegate call {}", status));
     match status {
         0 => Ok(outs),
         _ => Err(outs),
