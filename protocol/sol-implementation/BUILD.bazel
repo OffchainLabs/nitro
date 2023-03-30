@@ -7,6 +7,7 @@ go_library(
         "challenge.go",
         "challenge_manager.go",
         "challenge_vertex.go",
+        "spec_challenge_manager.go",
         "types.go",
     ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation",
@@ -33,6 +34,7 @@ go_test(
         "challenge_test.go",
         "challenge_vertex_test.go",
         "rollup_core_test.go",
+        "spec_challenge_manager_test.go",
     ],
     embed = [":sol-implementation"],
     deps = [
