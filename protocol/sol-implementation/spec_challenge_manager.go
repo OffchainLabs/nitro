@@ -149,7 +149,7 @@ func (cm *SpecChallengeManager) GetEdge(
 		return util.None[protocol.SpecEdge](), err
 	}
 	return util.Some(protocol.SpecEdge(&SpecEdge{
-		id:               edge.ClaimEdgeId,
+		id:               edgeId,
 		manager:          cm,
 		startHeight:      edge.StartHeight.Uint64(),
 		targetHeight:     edge.EndHeight.Uint64(),
@@ -207,7 +207,27 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	endHeight protocol.Height,
 	endHistoryRoot common.Hash,
 ) (protocol.SpecEdge, error) {
-	return nil, nil
+	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
+		stHash, err := assertion.StateHash()
+		if err != nil {
+			return nil, err
+		}
+		return cm.writer.CreateLayerZeroEdge(
+			cm.txOpts,
+			challengeV2gen.CreateEdgeArgs{
+				EdgeType:         uint8(protocol.BlockChallenge),
+				StartHistoryRoot: startHistoryRoot,
+				StartHeight:      big.NewInt(int64(startHeight)),
+				EndHistoryRoot:   endHistoryRoot,
+				EndHeight:        big.NewInt(int64(endHeight)),
+				ClaimId:          stHash,
+			},
+			nil,
+			nil, // TODO: Inclusion args.
+		)
+	})
+	// TODO: Add in
+	return nil, err
 }
 
 func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
@@ -218,5 +238,22 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	endHeight protocol.Height,
 	endHistoryRoot common.Hash,
 ) (protocol.SpecEdge, error) {
-	return nil, nil
+	_, err := transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
+		// TODO: Get the edge type.
+		return cm.writer.CreateLayerZeroEdge(
+			cm.txOpts,
+			challengeV2gen.CreateEdgeArgs{
+				EdgeType:         uint8(protocol.BlockChallenge),
+				StartHistoryRoot: startHistoryRoot,
+				StartHeight:      big.NewInt(int64(startHeight)),
+				EndHistoryRoot:   endHistoryRoot,
+				EndHeight:        big.NewInt(int64(endHeight)),
+				ClaimId:          challengedEdge.Id(),
+			},
+			nil,
+			nil, // TODO: Inclusion args.
+		)
+	})
+	// TODO: Add in
+	return nil, err
 }
