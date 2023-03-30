@@ -25,7 +25,11 @@ func TestPromise(t *testing.T) {
 		t.Fatal("unexpected Promise.Current when ready")
 	}
 
+	cancelCalled := int64(0)
+	cancelFunc := func() { atomic.AddInt64(&cancelCalled, 1) }
+
 	tempPromise = NewPromise[int]()
+	tempPromise.SetCancel(cancelFunc)
 	res, err = tempPromise.Current()
 	if res != 0 || !errors.Is(err, ErrNotReady) {
 		t.Fatal("unexpected Promise.Current when not ready")
@@ -47,9 +51,36 @@ func TestPromise(t *testing.T) {
 		t.Fatal("unexpected Promise.Current 2nd time")
 	}
 
-	cancelCalled := int64(0)
 	tempPromise = NewPromise[int]()
-	tempPromise.SetCancel(func() { atomic.AddInt64(&cancelCalled, 1) })
+	tempPromise.SetCancel(cancelFunc)
+
+	errErrorProduncer := errors.New("err produced")
+	wg.Add(1)
+	go func() {
+		res, err = tempPromise.Await(ctx)
+		wg.Done()
+	}()
+	tempPromise.ProduceError(errErrorProduncer)
+	wg.Wait()
+	if res != 0 || !errors.Is(err, errErrorProduncer) {
+		t.Fatal("unexpected Promise.Await after setError")
+	}
+	res, err = tempPromise.Current()
+	if res != 0 || !errors.Is(err, errErrorProduncer) {
+		t.Fatal("unexpected Promise.Current 2nd time")
+	}
+
+	if atomic.LoadInt64(&cancelCalled) != 0 {
+		t.Fatal("cancel called by await/current when it shouldn't be")
+	}
+
+	tempPromise.Cancel()
+	if atomic.LoadInt64(&cancelCalled) != 0 {
+		t.Fatal("cancel called after error produced")
+	}
+
+	tempPromise = NewPromise[int]()
+	tempPromise.SetCancel(cancelFunc)
 	shortCtx, shortCancel := context.WithTimeout(ctx, time.Millisecond*100)
 	defer shortCancel()
 	res, err = tempPromise.Await(shortCtx)
