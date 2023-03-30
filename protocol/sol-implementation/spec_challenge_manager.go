@@ -189,7 +189,8 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
 		return startHeight, nil
 	default:
-		return 0, errors.New("not a subchallenge")
+		startHeight, _ := e.StartCommitment()
+		return startHeight, nil
 	}
 }
 

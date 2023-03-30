@@ -277,7 +277,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		WithName("alice"),
 		WithAddress(aliceAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*500),
+		WithChallengeVertexWakeInterval(time.Millisecond*100),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
 		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
@@ -302,7 +302,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		WithName("bob"),
 		WithAddress(bobAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*500),
+		WithChallengeVertexWakeInterval(time.Millisecond*100),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
 		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)

@@ -146,23 +146,31 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 		}
 		return historyCommit, proof, nil
 	}
-	topLevelHeight, err := et.edge.TopLevelClaimHeight(ctx)
-	if err != nil {
-		return util.HistoryCommitment{}, nil, err
-	}
-
-	fromAssertionHeight := uint64(topLevelHeight)
-	toAssertionHeight := fromAssertionHeight + 1
-
 	var historyCommit util.HistoryCommitment
 	var commitErr error
 	var proof []byte
 	var proofErr error
 	switch et.edge.GetType() {
 	case protocol.BigStepChallengeEdge:
+		topLevelHeight, err := et.edge.TopLevelClaimHeight(ctx)
+		if err != nil {
+			return util.HistoryCommitment{}, nil, err
+		}
+
+		fromAssertionHeight := uint64(topLevelHeight)
+		toAssertionHeight := fromAssertionHeight + 1
+
 		historyCommit, commitErr = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
 		proof, proofErr = et.cfg.stateManager.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
 	case protocol.SmallStepChallengeEdge:
+		topLevelHeight, err := et.edge.TopLevelClaimHeight(ctx)
+		if err != nil {
+			return util.HistoryCommitment{}, nil, err
+		}
+
+		fromAssertionHeight := uint64(topLevelHeight)
+		toAssertionHeight := fromAssertionHeight + 1
+
 		historyCommit, commitErr = et.cfg.stateManager.SmallStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
 		proof, proofErr = et.cfg.stateManager.SmallStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
 	default:
@@ -215,7 +223,7 @@ func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.
 func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 	assertionHeight, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "could not get top level claim height")
 	}
 
 	fromAssertionHeight := assertionHeight
@@ -234,10 +242,10 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 
 	var history util.HistoryCommitment
 	switch et.edge.GetType() {
-	case protocol.BigStepChallengeEdge:
+	case protocol.BlockChallengeEdge:
 		log.WithFields(fields).Info("Big step leaf commit")
 		history, err = et.cfg.stateManager.BigStepLeafCommitment(ctx, uint64(fromAssertionHeight), uint64(toAssertionHeight))
-	case protocol.SmallStepChallengeEdge:
+	case protocol.BigStepChallengeEdge:
 		log.WithFields(fields).Info("Small step leaf commit")
 		history, err = et.cfg.stateManager.SmallStepLeafCommitment(ctx, uint64(fromAssertionHeight), uint64(toAssertionHeight))
 	default:
