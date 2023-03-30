@@ -50,6 +50,7 @@ type rollupAddresses struct {
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
 	DeployedAt             uint64         `json:"deployed-at"`
+	EdgeChallengeManager   common.Address `json:"edge-challenge-manager"`
 }
 
 func deployFullRollupStack(
@@ -61,7 +62,7 @@ func deployFullRollupStack(
 	config rollupgen.Config,
 ) *rollupAddresses {
 	t.Helper()
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator := deployRollupCreator(t, ctx, backend, deployAuth)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr := deployRollupCreator(t, ctx, backend, deployAuth)
 
 	nonce, err := backend.PendingNonceAt(ctx, rollupCreatorAddress)
 	require.NoError(t, err)
@@ -117,6 +118,7 @@ func deployFullRollupStack(
 		RollupUserLogic:        rollupUserAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
+		EdgeChallengeManager:   edgeChallengeManagerAddr,
 	}
 }
 
@@ -173,7 +175,7 @@ func deployChallengeFactory(
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend *backends.SimulatedBackend,
-) (common.Address, common.Address) {
+) (common.Address, common.Address, common.Address) {
 	t.Helper()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, backend)
 	backend.Commit()
@@ -221,7 +223,18 @@ func deployChallengeFactory(
 	err = andTxSucceeded(ctx, tx, challengeManagerAddr, backend, err)
 	require.NoError(t, err)
 
-	return ospEntryAddr, challengeManagerAddr
+	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
+		auth,
+		backend,
+		assertionChainAddr,
+		big.NewInt(1), // TODO: Challenge period length.
+		ospEntryAddr,
+	)
+	backend.Commit()
+	err = andTxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
+	require.NoError(t, err)
+
+	return ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr
 }
 
 func deployRollupCreator(
@@ -229,10 +242,10 @@ func deployRollupCreator(
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	auth *bind.TransactOpts,
-) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address) {
+) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, common.Address) {
 	t.Helper()
 	bridgeCreator := deployBridgeCreator(t, ctx, auth, backend)
-	ospEntryAddr, challengeManagerAddr := deployChallengeFactory(t, ctx, auth, backend)
+	ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr := deployChallengeFactory(t, ctx, auth, backend)
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, backend)
 	backend.Commit()
@@ -275,7 +288,7 @@ func deployRollupCreator(
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt.Status)
-	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator
+	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr
 }
 
 func generateRollupConfig(

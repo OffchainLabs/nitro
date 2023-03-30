@@ -88,6 +88,7 @@ func TestCreateAssertion(t *testing.T) {
 			accs[2].accountAddr,
 			backend,
 			headerReader,
+			common.Address{},
 		)
 		require.NoError(t, err)
 		height := uint64(1)
@@ -176,6 +177,7 @@ func TestBlockChallenge(t *testing.T) {
 		accs[2].accountAddr,
 		backend,
 		headerReader,
+		common.Address{},
 	)
 	require.NoError(t, err)
 
@@ -374,6 +376,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			accs[2].accountAddr,
 			backend,
 			headerReader,
+			common.Address{},
 		)
 		require.NoError(t, err)
 
@@ -419,6 +422,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 		accs[1].accountAddr,
 		backend,
 		headerReader,
+		common.Address{},
 	)
 	require.NoError(t, err)
 	return chain, accs, addresses, backend, headerReader

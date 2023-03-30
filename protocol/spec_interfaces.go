@@ -74,19 +74,15 @@ type SpecChallengeManager interface {
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
 		assertion Assertion,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-		endHistoryRoot common.Hash,
+		startCommit util.HistoryCommitment,
+		endCommit util.HistoryCommitment,
 	) (SpecEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
 	AddSubChallengeLevelZeroEdge(
 		ctx context.Context,
 		challengedEdge SpecEdge,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-		endHistoryRoot common.Hash,
+		startCommit util.HistoryCommitment,
+		endCommit util.HistoryCommitment,
 	) (SpecEdge, error)
 }
 
@@ -108,9 +104,8 @@ type SpecEdge interface {
 	Id() EdgeId
 	// The type of challenge the edge is a part of.
 	GetType() EdgeType
-	// The ministaker of an edge. Only valid for level zero
-	// edges and will error otherwise.
-	MiniStaker() (common.Address, error)
+	// The ministaker of an edge. Only existing for level zero edges.
+	MiniStaker() util.Option[common.Address]
 	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.
@@ -134,6 +129,7 @@ type SpecEdge interface {
 	ConfirmByTimer(ctx context.Context, ancestorIds []EdgeId) error
 	// Confirms an edge with the specified claim id.
 	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
+	ConfirmByOneStepProof(ctx context.Context) error
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
 	OriginCommitment(ctx context.Context) (Height, common.Hash, error)

@@ -395,24 +395,20 @@ func (m *MockSpecChallengeManager) CalculateEdgeId(
 func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-	endHistoryRoot common.Hash,
+	startCommit util.HistoryCommitment,
+	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
-	args := m.Called(ctx, assertion, startHeight, startHistoryRoot, endHeight, endHistoryRoot)
+	args := m.Called(ctx, assertion, startCommit, endCommit)
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 
 func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-	endHistoryRoot common.Hash,
+	startCommit util.HistoryCommitment,
+	endCommit util.HistoryCommitment,
 ) (protocol.SpecEdge, error) {
-	args := m.Called(ctx, challengedEdge, startHeight, startHistoryRoot, endHeight, endHistoryRoot)
+	args := m.Called(ctx, challengedEdge, startCommit, endCommit)
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 
@@ -429,9 +425,9 @@ func (m *MockSpecEdge) GetType() protocol.EdgeType {
 	args := m.Called()
 	return args.Get(0).(protocol.EdgeType)
 }
-func (m *MockSpecEdge) MiniStaker() (common.Address, error) {
+func (m *MockSpecEdge) MiniStaker() util.Option[common.Address] {
 	args := m.Called()
-	return args.Get(0).(common.Address), args.Error(1)
+	return args.Get(0).(util.Option[common.Address])
 }
 func (m *MockSpecEdge) StartCommitment() (protocol.Height, common.Hash) {
 	args := m.Called()
@@ -467,6 +463,10 @@ func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protoco
 }
 func (m *MockSpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
 	args := m.Called(ctx, claimId)
+	return args.Error(0)
+}
+func (m *MockSpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
+	args := m.Called(ctx)
 	return args.Error(0)
 }
 func (m *MockSpecEdge) OriginCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
@@ -541,10 +541,5 @@ func (m *MockProtocol) CreateSpecChallenge(ctx context.Context, seqNum protocol.
 
 func (m *MockProtocol) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
 	args := m.Called(ctx, blockHash, sendRoot)
-	return args.Error(0)
-}
-
-func (m *MockProtocol) Reject(ctx context.Context, staker common.Address) error {
-	args := m.Called(ctx, staker)
 	return args.Error(0)
 }
