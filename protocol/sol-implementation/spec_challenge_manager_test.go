@@ -2,8 +2,6 @@ package solimpl_test
 
 import (
 	"context"
-	"crypto/rand"
-	"math/big"
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -20,22 +18,109 @@ var (
 	_ = protocol.SpecChallengeManager(&solimpl.SpecChallengeManager{})
 )
 
-func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
+func TestEdgeChallengeManager_ConfirmByChildren(t *testing.T) {
 	ctx := context.Background()
 	height := protocol.Height(3)
 
-	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{numBlocks: uint64(height) + 1})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
 
 	honestStateManager, err := statemanager.New(
-		createdData.honestValidatorStateRoots,
+		createdData.HonestValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
 		statemanager.WithMaxWavmOpcodesPerBlock(1),
 	)
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.chains[0].SpecChallengeManager(ctx)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+		statemanager.WithBigStepStateDivergenceHeight(1),
+		statemanager.WithSmallStepStateDivergenceHeight(1),
+	)
 	require.NoError(t, err)
-	genesis, err := createdData.chains[0].AssertionBySequenceNum(ctx, 0)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	honestEdge := leafAdder(honestEndCommit)
+	s0, err := honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s0)
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+	require.NoError(t, err)
+	honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+	require.NoError(t, err)
+	honestChildren1, honestChildren2, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+	require.NoError(t, err)
+
+	s1, err := honestChildren1.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s1)
+	s2, err := honestChildren2.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s2)
+
+	require.NoError(t, honestChildren1.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+	require.NoError(t, honestChildren2.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+	s1, err = honestChildren1.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, s1)
+	s2, err = honestChildren2.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, s2)
+
+	require.NoError(t, honestEdge.ConfirmByChildren(ctx))
+	s0, err = honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, s0)
+}
+
+func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
 	// Honest assertion being added.
