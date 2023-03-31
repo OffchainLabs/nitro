@@ -258,12 +258,12 @@ func LaunchPromiseThread[T any](
 	promise := containers.NewPromise[T](cancel)
 	go func() {
 		val, err := foo(innerCtx)
-		s.wg.Done()
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
 			promise.Produce(val)
 		}
+		s.wg.Done()
 		cancel()
 	}()
 	return &promise
