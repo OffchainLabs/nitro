@@ -17,7 +17,7 @@ import "../challenge/IOldChallengeManager.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-import "../challengeV2/EdgeChallengeManager.sol";
+import "../challengeV2/ChallengeManagerImpl.sol";
 import "../challengeV2/DataEntities.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
@@ -79,7 +79,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
 
     bool public validatorWhitelistDisabled;
 
-    IEdgeChallengeManager public challengeManager;
+    IChallengeManager public challengeManager;
 
     /**
      * @notice Get a storage reference to the Assertion for the given assertion index
@@ -688,7 +688,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     }
 
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
-        revert("DEPRECATED");
+        return getAssertionStorage(getAssertionNum(assertionId)).successionChallenge;
     }
 
     // HN: TODO: use block or timestamp?

@@ -24,7 +24,7 @@ contract RollupCreator is Ownable {
 
     BridgeCreator public bridgeCreator;
     IOneStepProofEntry public osp;
-    IEdgeChallengeManager public challengeManagerTemplate;
+    IChallengeManager public challengeManagerTemplate;
     IRollupAdmin public rollupAdminLogic;
     IRollupUser public rollupUserLogic;
 
@@ -36,7 +36,7 @@ contract RollupCreator is Ownable {
     function setTemplates(
         BridgeCreator _bridgeCreator,
         IOneStepProofEntry _osp,
-        IEdgeChallengeManager _challengeManagerLogic,
+        IChallengeManager _challengeManagerLogic,
         IRollupAdmin _rollupAdminLogic,
         IRollupUser _rollupUserLogic,
         address _validatorUtils,
@@ -88,7 +88,7 @@ contract RollupCreator is Ownable {
 
         frame.admin.transferOwnership(config.owner);
 
-        IEdgeChallengeManager challengeManager = IEdgeChallengeManager(
+        IChallengeManager challengeManager = IChallengeManager(
             address(
                 new TransparentUpgradeableProxy(
                     address(challengeManagerTemplate),
@@ -100,7 +100,8 @@ contract RollupCreator is Ownable {
         
         challengeManager.initialize({
             _assertionChain: IAssertionChain(expectedRollupAddr),
-            _challengePeriodSec: config.challengePeriodSeconds,
+            _miniStakeValue: config.miniStakeValue,
+            _challengePeriod: config.challengePeriodSeconds,
             _oneStepProofEntry: osp
         });
         // oldChallengeManager.initialize(
