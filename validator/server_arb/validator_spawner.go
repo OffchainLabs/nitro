@@ -345,7 +345,7 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 	}
 	currentExecConfig := v.config().Execution
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](&v.StopWaiterSafe, func(ctx context.Context) (validator.ExecutionRun, error) {
-		return NewExecutionRun(ctx, getMachine, &currentExecConfig)
+		return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
 	})
 }
 

@@ -49,7 +49,7 @@ type BlockValidator struct {
 
 	// only used by record loop or holding reorg-write
 	prepared           arbutil.MessageIndex
-	nextRecordPrepared *containers.Promise[arbutil.MessageIndex]
+	nextRecordPrepared containers.PromiseInterface[arbutil.MessageIndex]
 
 	// can only be accessed from from validation thread or if holding reorg-write
 	lastValidGS        validator.GoGlobalState
@@ -535,17 +535,15 @@ func (v *BlockValidator) sendNextRecordPrepare() error {
 	if v.prepared >= nextPrepared {
 		return nil
 	}
-	nextPromise := containers.NewPromise[arbutil.MessageIndex]()
-	v.LaunchThread(func(ctx context.Context) {
+	nextPromise := stopwaiter.LaunchPromiseThread[arbutil.MessageIndex](&v.StopWaiterSafe, func(ctx context.Context) (arbutil.MessageIndex, error) {
 		err := v.recorder.PrepareForRecord(ctx, v.prepared, nextPrepared-1)
 		if err != nil {
-			nextPromise.ProduceError(err)
-		} else {
-			nextPromise.Produce(nextPrepared)
-			nonBlockingTriger(v.sendRecordChan)
+			return 0, err
 		}
+		nonBlockingTriger(v.sendRecordChan)
+		return nextPrepared, nil
 	})
-	v.nextRecordPrepared = &nextPromise
+	v.nextRecordPrepared = nextPromise
 	return nil
 }
 
