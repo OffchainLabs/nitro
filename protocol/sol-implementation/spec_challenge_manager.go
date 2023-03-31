@@ -2,10 +2,10 @@ package solimpl
 
 import (
 	"context"
-	"math/big"
+	"fmt"
+	"strings"
 	"time"
 
-	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
+	"math/big"
 )
 
 type SpecEdge struct {
@@ -64,7 +65,17 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 }
 
 func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
-	return e.manager.caller.IsAtOneStepFork(e.manager.callOpts, e.id)
+	ok, err := e.manager.caller.IsAtOneStepFork(e.manager.callOpts, e.id)
+	if err != nil {
+		errS := err.Error()
+		switch {
+		case strings.Contains(errS, "not length 1"):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+	return ok, nil
 }
 
 func (e *SpecEdge) Bisect(
@@ -124,10 +135,6 @@ func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId)
 	return err
 }
 
-func (e *SpecEdge) OriginCommitment(ctx context.Context) (protocol.Height, common.Hash, error) {
-	return 0, common.Hash{}, nil
-}
-
 func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByOneStepProof(
@@ -150,9 +157,13 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
 	switch e.GetType() {
 	case protocol.BigStepChallengeEdge:
-		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
+		rivalId, err := e.manager.caller.FirstRival(e.manager.callOpts, e.inner.OriginId)
 		if err != nil {
 			return 0, err
+		}
+		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
+		if err != nil {
+			return 0, errors.Wrapf(err, "block challenge one step fork source does not exist %#x", e.inner.ClaimEdgeId)
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
@@ -160,9 +171,13 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
 		return startHeight, nil
 	case protocol.SmallStepChallengeEdge:
-		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
+		rivalId, err := e.manager.caller.FirstRival(e.manager.callOpts, e.inner.OriginId)
 		if err != nil {
 			return 0, err
+		}
+		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
+		if err != nil {
+			return 0, errors.Wrap(err, "big step challenge one step fork source does not exist")
 		}
 		if bigStepChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
@@ -171,9 +186,13 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		if !ok {
 			return 0, errors.New("not *SpecEdge")
 		}
-		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, bigStepEdge.inner.ClaimEdgeId)
+		rivalId, err = e.manager.caller.FirstRival(e.manager.callOpts, bigStepEdge.inner.OriginId)
 		if err != nil {
 			return 0, err
+		}
+		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
+		if err != nil {
+			return 0, errors.Wrap(err, "block challenge one step fork source does not exist")
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
@@ -181,7 +200,8 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
 		return startHeight, nil
 	default:
-		return 0, errors.New("not a subchallenge")
+		startHeight, _ := e.StartCommitment()
+		return startHeight, nil
 	}
 }
 
@@ -198,9 +218,9 @@ type SpecChallengeManager struct {
 	filterer       *challengeV2gen.EdgeChallengeManagerFilterer
 }
 
-// CurrentChallengeManager returns an instance of the current challenge manager
+// NewSpecChallengeManager returns an instance of the spec challenge manager
 // used by the assertion chain.
-func NewSpecCM(
+func NewSpecChallengeManager(
 	ctx context.Context,
 	addr common.Address,
 	assertionChain *AssertionChain,
@@ -214,7 +234,7 @@ func NewSpecCM(
 		return nil, err
 	}
 	return &SpecChallengeManager{
-		addr:           common.Address{},
+		addr:           addr,
 		assertionChain: assertionChain,
 		backend:        backend,
 		reader:         reader,
