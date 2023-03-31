@@ -404,7 +404,7 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := v.execSpawner.LatestWasmModuleRoot()
+			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
 			if err != nil {
 				return err
 			}

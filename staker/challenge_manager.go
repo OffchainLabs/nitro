@@ -469,7 +469,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, initialCo
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input)
+	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
 	}

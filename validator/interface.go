@@ -22,9 +22,9 @@ type ValidationRun interface {
 
 type ExecutionSpawner interface {
 	ValidationSpawner
-	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) (ExecutionRun, error)
-	LatestWasmModuleRoot() (common.Hash, error)
-	WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) error
+	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
+	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
+	WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}]
 }
 
 type ExecutionRun interface {
