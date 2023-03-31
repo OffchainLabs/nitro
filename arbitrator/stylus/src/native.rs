@@ -91,6 +91,7 @@ impl NativeInstance {
                 "delegate_call_contract" => func!(host::delegate_call_contract),
                 "static_call_contract" => func!(host::static_call_contract),
                 "read_return_data" => func!(host::read_return_data),
+                "emit_log" => func!(host::emit_log),
             },
         };
         if debug_funcs {
@@ -149,28 +150,34 @@ impl NativeInstance {
                 &mut $expr as *mut _
             };
         }
+        macro_rules! error {
+            ($data:expr) => {
+                ErrReport::msg(String::from_utf8_lossy(&$data).to_string())
+            };
+        }
 
-        let get = api.get_bytes32;
-        let set = api.set_bytes32;
+        let get_bytes32 = api.get_bytes32;
+        let set_bytes32 = api.set_bytes32;
         let contract_call = api.contract_call;
         let delegate_call = api.delegate_call;
         let static_call = api.static_call;
         let get_return_data = api.get_return_data;
+        let emit_log = api.emit_log;
         let id = api.id;
 
         let get_bytes32 = Box::new(move |key| unsafe {
             let mut cost = 0;
-            let value = get(id, key, ptr!(cost));
+            let value = get_bytes32(id, key, ptr!(cost));
             (value, cost)
         });
         let set_bytes32 = Box::new(move |key, value| unsafe {
             let mut error = RustVec::new(vec![]);
             let mut cost = 0;
-            let api_status = set(id, key, value, ptr!(cost), ptr!(error));
+            let api_status = set_bytes32(id, key, value, ptr!(cost), ptr!(error));
             let error = error.into_vec(); // done here to always drop
             match api_status {
                 Success => Ok(cost),
-                Failure => Err(ErrReport::msg(String::from_utf8_lossy(&error).to_string())),
+                Failure => Err(error!(error)),
             }
         });
         let contract_call = Box::new(move |contract, calldata, evm_gas, value| unsafe {
@@ -215,6 +222,15 @@ impl NativeInstance {
             get_return_data(id, ptr!(data));
             data.into_vec()
         });
+        let emit_log = Box::new(move |data, topics| unsafe {
+            let mut data = RustVec::new(data);
+            let api_status = emit_log(id, ptr!(data), topics);
+            let error = data.into_vec(); // done here to always drop
+            match api_status {
+                Success => Ok(()),
+                Failure => Err(error!(error)),
+            }
+        });
 
         env.set_evm_api(
             get_bytes32,
@@ -223,6 +239,7 @@ impl NativeInstance {
             delegate_call,
             static_call,
             get_return_data,
+            emit_log,
         )
     }
 }
@@ -319,6 +336,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "read_return_data" => stub!(|_: u32|),
+            "emit_log" => stub!(|_: u32, _: u32, _: u32|),
         },
     };
     if config.debug.debug_funcs {

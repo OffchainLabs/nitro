@@ -5,6 +5,7 @@ pub use util::{Bytes20, Bytes32};
 
 pub mod contract;
 pub mod debug;
+pub mod evm;
 mod util;
 
 #[link(wasm_import_module = "forward")]

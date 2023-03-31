@@ -165,6 +165,7 @@ pub struct GoApi {
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
+    pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: usize) -> GoApiStatus,
     pub id: usize,
 }
 
