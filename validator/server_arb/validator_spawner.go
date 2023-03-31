@@ -70,7 +70,7 @@ func (r *valRun) Close() {}
 
 func NewvalRun(root common.Hash) *valRun {
 	return &valRun{
-		Promise: containers.NewPromise[validator.GoGlobalState](),
+		Promise: containers.NewPromise[validator.GoGlobalState](nil),
 		root:    root,
 	}
 }
@@ -99,9 +99,9 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 }
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	promise := containers.NewPromise[common.Hash]()
-	promise.Produce(s.locator.LatestWasmModuleRoot())
-	return &promise
+	return stopwaiter.LaunchPromiseThread[common.Hash](&s.StopWaiterSafe, func(ctx context.Context) (common.Hash, error) {
+		return s.locator.LatestWasmModuleRoot(), nil
+	})
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -323,17 +323,10 @@ func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.Va
 }
 
 func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	promise := containers.NewPromise[struct{}]()
-	cancel := v.LaunchThreadWithCancel(func(ctx context.Context) {
+	return stopwaiter.LaunchPromiseThread[struct{}](&v.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
 		err := v.writeToFile(ctx, input, expOut, moduleRoot)
-		if err != nil {
-			promise.ProduceError(err)
-			return
-		}
-		promise.Produce(struct{}{})
+		return struct{}{}, err
 	})
-	promise.SetCancel(cancel)
-	return &promise
 }
 
 func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
@@ -351,14 +344,9 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 		return machine, nil
 	}
 	currentExecConfig := v.config().Execution
-	promise := containers.NewPromise[validator.ExecutionRun]()
-	execRun, err := NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
-	if err != nil {
-		promise.ProduceError(err)
-	} else {
-		promise.Produce(execRun)
-	}
-	return &promise
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](&v.StopWaiterSafe, func(ctx context.Context) (validator.ExecutionRun, error) {
+		return NewExecutionRun(ctx, getMachine, &currentExecConfig)
+	})
 }
 
 func (v *ArbitratorSpawner) Stop() {

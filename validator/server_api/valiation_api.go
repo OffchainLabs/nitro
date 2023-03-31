@@ -140,7 +140,7 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	if err != nil {
 		return nil, err
 	}
-	return MachineStepResultToJson(&res), nil
+	return MachineStepResultToJson(res), nil
 }
 
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 const stopDelayWarningTimeout = 30 * time.Second
@@ -166,27 +167,20 @@ func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
 }
 
 // If stop was already called, thread might silently not be launched
-func (s *StopWaiterSafe) LaunchThreadWithCancel(foo func(context.Context)) (func(), error) {
+func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
 	ctx, err := s.GetContext()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if s.Stopped() {
-		return func() {}, nil
+		return nil
 	}
-	innerCtx, cancel := context.WithCancel(ctx)
 	s.wg.Add(1)
 	go func() {
-		foo(innerCtx)
+		foo(ctx)
 		s.wg.Done()
-		cancel()
 	}()
-	return cancel, nil
-}
-
-func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
-	_, err := s.LaunchThreadWithCancel(foo)
-	return err
+	return nil
 }
 
 // This calls go foo() directly, with the benefit of being easily searchable.
@@ -247,6 +241,37 @@ func CallIterativelyWith[T any](
 	})
 }
 
+func LaunchPromiseThread[T any](
+	s *StopWaiterSafe,
+	foo func(context.Context) (T, error),
+) containers.PromiseInterface[T] {
+	ctx, err := s.GetContext()
+	if err != nil {
+		promise := containers.NewPromise[T](nil)
+		promise.ProduceError(err)
+		return &promise
+	}
+	if s.Stopped() {
+		promise := containers.NewPromise[T](nil)
+		promise.ProduceError(errors.New("stopped"))
+		return &promise
+	}
+	innerCtx, cancel := context.WithCancel(ctx)
+	s.wg.Add(1)
+	promise := containers.NewPromise[T](cancel)
+	go func() {
+		val, err := foo(innerCtx)
+		s.wg.Done()
+		if err != nil {
+			promise.ProduceError(err)
+		} else {
+			promise.Produce(val)
+		}
+		cancel()
+	}()
+	return &promise
+}
+
 func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback func() time.Duration) (<-chan T, error) {
 	outChan := make(chan T)
 	err := s.LaunchThread(func(ctx context.Context) {
@@ -295,14 +320,6 @@ func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
 	if err := s.StopWaiterSafe.LaunchThread(foo); err != nil {
 		panic(err)
 	}
-}
-
-func (s *StopWaiter) LaunchThreadWithCancel(foo func(context.Context)) func() {
-	cancel, err := s.StopWaiterSafe.LaunchThreadWithCancel(foo)
-	if err != nil {
-		panic(err)
-	}
-	return cancel
 }
 
 func (s *StopWaiter) CallIteratively(foo func(context.Context) time.Duration) {

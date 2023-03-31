@@ -13,7 +13,7 @@ func TestPromise(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tempPromise := NewPromise[int]()
+	tempPromise := NewPromise[int](nil)
 
 	tempPromise.Produce(1)
 	res, err := tempPromise.Await(ctx)
@@ -28,8 +28,7 @@ func TestPromise(t *testing.T) {
 	cancelCalled := int64(0)
 	cancelFunc := func() { atomic.AddInt64(&cancelCalled, 1) }
 
-	tempPromise = NewPromise[int]()
-	tempPromise.SetCancel(cancelFunc)
+	tempPromise = NewPromise[int](cancelFunc)
 	res, err = tempPromise.Current()
 	if res != 0 || !errors.Is(err, ErrNotReady) {
 		t.Fatal("unexpected Promise.Current when not ready")
@@ -51,8 +50,7 @@ func TestPromise(t *testing.T) {
 		t.Fatal("unexpected Promise.Current 2nd time")
 	}
 
-	tempPromise = NewPromise[int]()
-	tempPromise.SetCancel(cancelFunc)
+	tempPromise = NewPromise[int](cancelFunc)
 
 	errErrorProduced := errors.New("err produced")
 	wg.Add(1)
@@ -79,8 +77,7 @@ func TestPromise(t *testing.T) {
 		t.Fatal("cancel called after error produced")
 	}
 
-	tempPromise = NewPromise[int]()
-	tempPromise.SetCancel(cancelFunc)
+	tempPromise = NewPromise[int](cancelFunc)
 	shortCtx, shortCancel := context.WithTimeout(ctx, time.Millisecond*100)
 	defer shortCancel()
 	res, err = tempPromise.Await(shortCtx)
