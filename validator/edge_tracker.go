@@ -287,13 +287,12 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 }
 
 type edgeTrackerConfig struct {
-	actEveryNSeconds      time.Duration
-	timeRef               util.TimeReference
-	challengePeriodLength time.Duration
-	chain                 protocol.Protocol
-	stateManager          statemanager.Manager
-	validatorName         string
-	validatorAddress      common.Address
+	actEveryNSeconds time.Duration
+	timeRef          util.TimeReference
+	chain            protocol.Protocol
+	stateManager     statemanager.Manager
+	validatorName    string
+	validatorAddress common.Address
 }
 
 type edgeTracker struct {

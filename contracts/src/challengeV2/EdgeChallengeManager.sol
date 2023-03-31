@@ -257,6 +257,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     using EdgeStoreLib for EdgeStore;
     using ChallengeEdgeLib for ChallengeEdge;
 
+    event Bisected(bytes32 bisectedEdgeId);
+    event LevelZeroEdgeAdded(bytes32 edgeId);
+
     EdgeStore internal store;
 
     uint256 public challengePeriodSec;
@@ -314,6 +317,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
         store.add(ce);
 
+        emit LevelZeroEdgeAdded(ce.id());
+
         return ce.id();
     }
 
@@ -359,7 +364,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
             endHeight: middleHeight,
             createdWhen: block.timestamp,
             status: EdgeStatus.Pending,
-            claimEdgeId: ce.claimEdgeId,
+            claimEdgeId: 0,
             staker: address(0),
             lowerChildId: 0,
             upperChildId: 0,
@@ -374,7 +379,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
             endHeight: ce.endHeight,
             createdWhen: block.timestamp,
             status: EdgeStatus.Pending,
-            claimEdgeId: ce.claimEdgeId,
+            claimEdgeId: 0,
             staker: address(0),
             lowerChildId: 0,
             upperChildId: 0,
@@ -394,6 +399,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         store.add(upperChild);
 
         store.setChildren(edgeId, lowerChild.id(), upperChild.id());
+
+        emit Bisected(edgeId);
 
         // CHRIS: TODO: buffer the id
         return (lowerChild.id(), upperChild.id());

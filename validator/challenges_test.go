@@ -8,25 +8,29 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sync"
 )
 
 var (
 	// TODO: These are brittle and could break if the event sigs change in Solidity.
-	leafAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
-	mergeEventSig     = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
-	bisectEventSig    = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
+	bisectEventSig    = hexutil.MustDecode("0xaab36db1c086a1a8a2a953ec2a3f131e133f7be8e6e1970f8fd79a2ab341c001")
+	leafAddedEventSig = hexutil.MustDecode("0x102ba5fcc71c9f7d7075d3f9cc9cb52fe4feb2cb843bef52f5f9fe9825b539e5")
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
@@ -87,16 +91,14 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
 		cfg.expectedLeavesAdded = 6
-		cfg.expectedBisections = 12
-		cfg.expectedMerges = 6
+		cfg.expectedBisections = 10
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 	t.Run("two validators opening leaves at height 255", func(t *testing.T) {
-		t.Skip()
 		cfg := &challengeProtocolTestConfig{
 			currentChainHeight:           255,
 			aliceHeight:                  255,
@@ -108,12 +110,11 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			smallStepDivergenceHeight:    3,
 		}
 		cfg.expectedLeavesAdded = 6
-		cfg.expectedBisections = 22
-		cfg.expectedMerges = 6
+		cfg.expectedBisections = 20
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 }
@@ -138,7 +139,6 @@ type challengeProtocolTestConfig struct {
 	currentChainHeight        uint64
 	// Events we want to assert are fired from the goimpl.
 	expectedBisections  uint64
-	expectedMerges      uint64
 	expectedLeavesAdded uint64
 }
 
@@ -313,46 +313,43 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 
 	challengeManager, err := chains[1].SpecChallengeManager(ctx)
 	require.NoError(t, err)
-	//managerAddr := manager.Address()
+	managerAddr := challengeManager.Address()
 
-	// var totalLeavesAdded uint64
-	// var totalBisections uint64
-	// var totalMerges uint64
-	//var wg sync.WaitGroup
+	var totalLeavesAdded uint64
+	var totalBisections uint64
+	var wg sync.WaitGroup
 
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	logs := make(chan types.Log, 100)
-	// 	query := ethereum.FilterQuery{
-	// 		Addresses: []common.Address{managerAddr},
-	// 	}
-	// 	sub, err := backend.SubscribeFilterLogs(ctx, query, logs)
-	// 	require.NoError(t, err)
-	// 	defer sub.Unsubscribe()
-	// 	for {
-	// 		select {
-	// 		case err := <-sub.Err():
-	// 			log.Fatal(err)
-	// 		case <-ctx.Done():
-	// 			return
-	// 		case vLog := <-logs:
-	// 			if len(vLog.Topics) == 0 {
-	// 				continue
-	// 			}
-	// 			topic := vLog.Topics[0]
-	// 			switch {
-	// 			case bytes.Equal(topic[:], leafAddedEventSig):
-	// 				totalLeavesAdded++
-	// 			case bytes.Equal(topic[:], bisectEventSig):
-	// 				totalBisections++
-	// 			case bytes.Equal(topic[:], mergeEventSig):
-	// 				totalMerges++
-	// 			default:
-	// 			}
-	// 		}
-	// 	}
-	// }()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logs := make(chan types.Log, 100)
+		query := ethereum.FilterQuery{
+			Addresses: []common.Address{managerAddr},
+		}
+		sub, err := backend.SubscribeFilterLogs(ctx, query, logs)
+		require.NoError(t, err)
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case err := <-sub.Err():
+				log.Fatal(err)
+			case <-ctx.Done():
+				return
+			case vLog := <-logs:
+				if len(vLog.Topics) == 0 {
+					continue
+				}
+				topic := vLog.Topics[0]
+				switch {
+				case bytes.Equal(topic[:], leafAddedEventSig):
+					totalLeavesAdded++
+				case bytes.Equal(topic[:], bisectEventSig):
+					totalBisections++
+				default:
+				}
+			}
+		}
+	}()
 
 	// Submit leaf creation manually for each validator.
 	latestHonest, err := honestManager.LatestAssertionCreationData(ctx, 0)
@@ -447,11 +444,9 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	go aliceTracker.spawn(ctx)
 	go bobTracker.spawn(ctx)
 
-	time.Sleep(5 * time.Second)
-	//wg.Wait()
-	// assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
-	// assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
-	// assert.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
+	wg.Wait()
+	assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
+	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
 }
 
 func setupChainsWithEdgeChallengeManager(t *testing.T) (

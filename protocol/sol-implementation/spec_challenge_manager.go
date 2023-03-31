@@ -152,13 +152,17 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 }
 
 // TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.
-// For example, if two validators open a subchallenge S at vertex A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
-// of S is A. If two validators open a subchallenge S' at vertex B in BigStepChallenge, the TopLevelClaimVertex
-// is the height of A.
+// For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S
+// is the start height of A. If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
+// is the start height of A.
 func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
 	switch e.GetType() {
 	case protocol.BigStepChallengeEdge:
-		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
+		rivalId, err := e.manager.caller.FirstRival(e.manager.callOpts, e.inner.OriginId)
+		if err != nil {
+			return 0, err
+		}
+		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
 			return 0, errors.Wrapf(err, "block challenge one step fork source does not exist %#x", e.inner.ClaimEdgeId)
 		}
@@ -168,7 +172,11 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
 		return startHeight, nil
 	case protocol.SmallStepChallengeEdge:
-		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, e.inner.ClaimEdgeId)
+		rivalId, err := e.manager.caller.FirstRival(e.manager.callOpts, e.inner.OriginId)
+		if err != nil {
+			return 0, err
+		}
+		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
 			return 0, errors.Wrap(err, "big step challenge one step fork source does not exist")
 		}
@@ -179,7 +187,11 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		if !ok {
 			return 0, errors.New("not *SpecEdge")
 		}
-		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, bigStepEdge.inner.ClaimEdgeId)
+		rivalId, err = e.manager.caller.FirstRival(e.manager.callOpts, bigStepEdge.inner.OriginId)
+		if err != nil {
+			return 0, err
+		}
+		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
 			return 0, errors.Wrap(err, "block challenge one step fork source does not exist")
 		}
@@ -207,9 +219,9 @@ type SpecChallengeManager struct {
 	filterer       *challengeV2gen.EdgeChallengeManagerFilterer
 }
 
-// CurrentChallengeManager returns an instance of the current challenge manager
+// NewSpecChallengeManager returns an instance of the spec challenge manager
 // used by the assertion chain.
-func NewSpecCM(
+func NewSpecChallengeManager(
 	ctx context.Context,
 	addr common.Address,
 	assertionChain *AssertionChain,
@@ -223,7 +235,7 @@ func NewSpecCM(
 		return nil, err
 	}
 	return &SpecChallengeManager{
-		addr:           common.Address{},
+		addr:           addr,
 		assertionChain: assertionChain,
 		backend:        backend,
 		reader:         reader,
