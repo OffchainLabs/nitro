@@ -91,13 +91,13 @@ func errorTest(t *testing.T, jit bool) {
 	defer cleanup()
 
 	// ensure tx passes
-	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x01})
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	// ensure tx fails
-	tx = l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), []byte{0x00})
+	tx = l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x00})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
 	Require(t, err)
@@ -127,7 +127,7 @@ func TestProgramStorage(t *testing.T) {
 	storeArgs = append(storeArgs, key.Bytes()...)
 	storeArgs = append(storeArgs, value.Bytes()...)
 
-	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, big.NewInt(0), storeArgs)
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, storeArgs)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	storedBytes, err := l2client.StorageAt(ctx, programAddress, key, nil)
@@ -170,7 +170,7 @@ func TestProgramCalls(t *testing.T) {
 		}
 
 		// execute onchain for proving's sake
-		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), data)
+		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, data)
 		Require(t, l2client.SendTransaction(ctx, tx))
 		receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
 		Require(t, err)
@@ -191,26 +191,37 @@ func TestProgramCalls(t *testing.T) {
 
 	kinds := make(map[vm.OpCode]byte)
 	kinds[vm.CALL] = 0x00
-	kinds[vm.DELEGATECALL] = 0x02
-	kinds[vm.STATICCALL] = 0x03
+	kinds[vm.DELEGATECALL] = 0x01
+	kinds[vm.STATICCALL] = 0x02
 
-	makeCalldata := func(opcode vm.OpCode, address common.Address, calldata []byte) []byte {
+	makeCalldata := func(opcode vm.OpCode, address common.Address, value *big.Int, calldata []byte) []byte {
 		args := []byte{0x01}
-		args = append(args, arbmath.Uint32ToBytes(uint32(21+len(calldata)))...)
+		length := 21 + len(calldata)
+		if opcode == vm.CALL {
+			length += 32
+		}
+		args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
 		args = append(args, kinds[opcode])
+		if opcode == vm.CALL {
+			if value == nil {
+				value = common.Big0
+			}
+			args = append(args, common.BigToHash(value).Bytes()...)
+		}
 		args = append(args, address.Bytes()...)
 		args = append(args, calldata...)
 		return args
 	}
 	appendCall := func(calls []byte, opcode vm.OpCode, address common.Address, inner []byte) []byte {
 		calls[0] += 1 // add another call
-		calls = append(calls, makeCalldata(opcode, address, inner)[1:]...)
+		calls = append(calls, makeCalldata(opcode, address, nil, inner)[1:]...)
 		return calls
 	}
 
 	checkTree := func(opcode vm.OpCode, dest common.Address) map[common.Hash]common.Hash {
 		colors.PrintBlue("Checking storage after call tree with ", opcode)
 		slots := make(map[common.Hash]common.Hash)
+		zeroHashBytes := common.BigToHash(common.Big0).Bytes()
 
 		var nest func(level uint) []uint8
 		nest = func(level uint) []uint8 {
@@ -219,6 +230,9 @@ func TestProgramCalls(t *testing.T) {
 			if level == 0 {
 				// call storage.wasm
 				args = append(args, kinds[opcode])
+				if opcode == vm.CALL {
+					args = append(args, zeroHashBytes...)
+				}
 				args = append(args, storeAddr[:]...)
 
 				key := testhelpers.RandomHash()
@@ -234,6 +248,7 @@ func TestProgramCalls(t *testing.T) {
 
 			// do the two following calls
 			args = append(args, 0x00)
+			args = append(args, zeroHashBytes...)
 			args = append(args, callsAddr[:]...)
 			args = append(args, 2)
 
@@ -244,8 +259,8 @@ func TestProgramCalls(t *testing.T) {
 			}
 			return args
 		}
-		tree := nest(3)[21:]
-		tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), tree)
+		tree := nest(3)[53:]
+		tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, tree)
 		ensure(tx, l2client.SendTransaction(ctx, tx))
 
 		for key, value := range slots {
@@ -275,13 +290,13 @@ func TestProgramCalls(t *testing.T) {
 	if !bytes.Equal(expected, values) {
 		Fail(t, "wrong results static call", common.Bytes2Hex(expected), common.Bytes2Hex(values))
 	}
-	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), calldata)
+	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, calldata)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	colors.PrintBlue("Checking static call write protection")
 	writeKey := append([]byte{0x1}, testhelpers.RandomHash().Bytes()...)
 	writeKey = append(writeKey, testhelpers.RandomHash().Bytes()...)
-	expectFailure(callsAddr, makeCalldata(vm.STATICCALL, storeAddr, writeKey), "")
+	expectFailure(callsAddr, makeCalldata(vm.STATICCALL, storeAddr, nil, writeKey), "")
 
 	// mechanisms for creating calldata
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
@@ -296,8 +311,8 @@ func TestProgramCalls(t *testing.T) {
 	colors.PrintBlue("Calling the ArbosTest precompile (Rust => precompile)")
 	testPrecompile := func(gas uint64) uint64 {
 		// Call the burnArbGas() precompile from Rust
-		args := makeCalldata(vm.CALL, types.ArbosTestAddress, pack(burnArbGas(big.NewInt(int64(gas)))))
-		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), args)
+		args := makeCalldata(vm.CALL, types.ArbosTestAddress, nil, pack(burnArbGas(big.NewInt(int64(gas)))))
+		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, args)
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 		return receipt.GasUsed - receipt.GasUsedForL1
 	}
@@ -313,19 +328,30 @@ func TestProgramCalls(t *testing.T) {
 	}
 
 	colors.PrintBlue("Checking consensus revert data (Rust => precompile)")
-	args := makeCalldata(vm.CALL, types.ArbDebugAddress, pack(customRevert(uint64(32))))
+	args := makeCalldata(vm.CALL, types.ArbDebugAddress, nil, pack(customRevert(uint64(32))))
 	spider := ": error Custom(32, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
 	expectFailure(callsAddr, args, spider)
 
 	colors.PrintBlue("Checking non-consensus revert data (Rust => precompile)")
-	args = makeCalldata(vm.CALL, types.ArbDebugAddress, pack(legacyError()))
+	args = makeCalldata(vm.CALL, types.ArbDebugAddress, nil, pack(legacyError()))
 	expectFailure(callsAddr, args, "")
 
 	colors.PrintBlue("Checking success (Rust => Solidity => Rust)")
 	rustArgs := append([]byte{0x01}, []byte(spider)...)
-	mockArgs := makeCalldata(vm.CALL, mockAddr, pack(callKeccak(keccakAddr, rustArgs)))
-	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), mockArgs)
+	mockArgs := makeCalldata(vm.CALL, mockAddr, nil, pack(callKeccak(keccakAddr, rustArgs)))
+	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, mockArgs)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	colors.PrintBlue("Checking call with value (Rust => EOA)")
+	eoa := testhelpers.RandomAddress()
+	value := big.NewInt(1 + rand.Int63n(1e12))
+	args = makeCalldata(vm.CALL, eoa, value, []byte{})
+	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, value, args)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+	balance := GetBalance(t, ctx, l2client, eoa)
+	if !arbmath.BigEquals(balance, value) {
+		Fail(t, balance, value)
+	}
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
