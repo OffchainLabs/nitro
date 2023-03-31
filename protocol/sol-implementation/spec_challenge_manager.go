@@ -2,11 +2,9 @@ package solimpl
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
-
-	"fmt"
-	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
@@ -16,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
+	"math/big"
 )
 
 type SpecEdge struct {
@@ -152,9 +151,9 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 }
 
 // TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.
-// For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S
-// is the start height of A. If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
-// is the start height of A.
+// For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
+// If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
+// is the height of A.
 func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
 	switch e.GetType() {
 	case protocol.BigStepChallengeEdge:
@@ -255,7 +254,11 @@ func (cm *SpecChallengeManager) Address() common.Address {
 func (cm *SpecChallengeManager) ChallengePeriodSeconds(
 	ctx context.Context,
 ) (time.Duration, error) {
-	return time.Second, nil
+	res, err := cm.caller.ChallengePeriodSec(cm.callOpts)
+	if err != nil {
+		return time.Second, err
+	}
+	return time.Second * time.Duration(res.Uint64()), nil
 }
 
 // Gets an edge by its hash.

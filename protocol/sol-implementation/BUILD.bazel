@@ -30,7 +30,6 @@ go_test(
     name = "sol-implementation_test",
     srcs = [
         "assertion_chain_test.go",
-        "challenge_manager_test.go",
         "challenge_test.go",
         "challenge_vertex_test.go",
         "rollup_core_test.go",
