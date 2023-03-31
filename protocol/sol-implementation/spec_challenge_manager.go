@@ -144,8 +144,8 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 }
 
 // TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.
-// For example, if two validators open a subchallenge S at vertex A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
-// of S is A. If two validators open a subchallenge S' at vertex B in BigStepChallenge, the TopLevelClaimVertex
+// For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
+// If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
 // is the height of A.
 func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
 	switch e.GetType() {
