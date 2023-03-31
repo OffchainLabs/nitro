@@ -114,8 +114,9 @@ abstract contract AbsRollupUserLogic is
      * @notice Confirm the next unresolved assertion
      * @param blockHash The block hash at the end of the assertion
      * @param sendRoot The send root at the end of the assertion
+     * @param winningEdge The winning edge if a challenge is started
      */
-    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot)
+    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot, bytes32 winningEdge)
         external
         onlyValidator
         whenNotPaused
@@ -149,9 +150,9 @@ abstract contract AbsRollupUserLogic is
         
         if(prevAssertion.secondChildBlock > 0) {
             // check if assertion is the challenge winner
-            // TODO: HN: winningClaim is not implemented yet
-            bytes32 winner; // challengeManager.winningClaim(prevAssertion.assertionHash);
-            require(getAssertionNum(winner) == assertionNum, "IN_CHAL");
+            ChallengeEdge memory _winningEdge = challengeManager.getEdge(winningEdge);
+            require(getAssertionNum(_winningEdge.claimEdgeId) == assertionNum, "NOT_WINNER");
+            require(_winningEdge.status == EdgeStatus.Confirmed, "EDGE_NOT_CONFIRMED");
         }
 
         confirmAssertion(assertionNum, blockHash, sendRoot);
