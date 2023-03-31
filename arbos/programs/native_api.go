@@ -45,8 +45,8 @@ void getReturnDataWrap(usize api, RustVec * data) {
     return getReturnDataImpl(api, data);
 }
 
-void emitLogImpl(usize api, RustVec * data, usize topics);
-void emitLogWrap(usize api, RustVec * data, usize topics) {
+GoApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
+GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
 */

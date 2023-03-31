@@ -21,7 +21,7 @@ GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * 
 GoApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
 GoApiStatus staticCallWrap  (usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
 void        getReturnDataWrap(usize api, RustVec * data);
-void        emitLogWrap(usize api, RustVec * data, usize topics);
+GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics);
 */
 import "C"
 import (
