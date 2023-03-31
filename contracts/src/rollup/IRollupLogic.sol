@@ -23,7 +23,7 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function rejectNextAssertion(address stakerAddress) external;
 
-    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot, bytes32 winningEdge) external;
+    function confirmNextAssertion(bytes32 blockHash, bytes32 sendRoot) external;
 
     function stakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) external;
 
