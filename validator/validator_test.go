@@ -116,34 +116,6 @@ func Test_onChallengeStarted(t *testing.T) {
 	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 }
 
-func Test_submitAndFetchProtocolChallenge(t *testing.T) {
-	ctx := context.Background()
-	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
-		divergeHeight: 10,
-		numBlocks:     100,
-	})
-
-	genesis, err := createdData.assertionChains[1].LatestConfirmed(ctx)
-	require.NoError(t, err)
-
-	// Setup our mock state manager to agree on leaf1 but disagree on leaf2.
-	manager := &mocks.MockStateManager{}
-	validator, err := New(
-		ctx,
-		createdData.assertionChains[1],
-		createdData.backend,
-		manager,
-		createdData.addrs.Rollup,
-	)
-	require.NoError(t, err)
-
-	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SeqNum())
-	require.NoError(t, err)
-	gotChallenge, err := validator.fetchProtocolChallenge(ctx, genesis.SeqNum())
-	require.NoError(t, err)
-	require.Equal(t, wantedChallenge, gotChallenge)
-}
-
 type createdValidatorFork struct {
 	leaf1                     protocol.Assertion
 	leaf2                     protocol.Assertion

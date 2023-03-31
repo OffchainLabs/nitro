@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "setup_lib",
+    srcs = ["rollup_stack.go"],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/setup",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//protocol",
+        "//protocol/sol-implementation",
+        "//solgen/go/bridgegen",
+        "//solgen/go/challengeV2gen",
+        "//solgen/go/ospgen",
+        "//solgen/go/rollupgen",
+        "//util",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core",
+        "@com_github_ethereum_go_ethereum//core/types",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_offchainlabs_nitro//util/headerreader",
+        "@com_github_pkg_errors//:errors",
+    ],
+)
+
+go_binary(
+    name = "setup",
+    embed = [":setup_lib"],
+    visibility = ["//visibility:public"],
+)
