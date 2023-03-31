@@ -2,12 +2,14 @@ package solimpl
 
 import (
 	"context"
+	"math/big"
 	"testing"
 
 	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -82,4 +84,60 @@ func TestChallenge_BlockChallenge_AddLeaf(t *testing.T) {
 		_, err := challenge.AddBlockChallengeLeaf(ctx, a1, history)
 		require.ErrorContains(t, err, "already exists")
 	})
+}
+
+func setupTopLevelFork(
+	t *testing.T,
+	ctx context.Context,
+	height1,
+	height2 uint64,
+) (*Assertion, *Assertion, *Challenge, *AssertionChain, *AssertionChain) {
+	t.Helper()
+	chain1, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
+	prev := uint64(0)
+
+	minAssertionPeriod, err := chain1.userLogic.MinimumAssertionPeriod(chain1.callOpts)
+	require.NoError(t, err)
+
+	latestBlockHash := common.Hash{}
+	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+		latestBlockHash = backend.Commit()
+	}
+
+	prevState := &protocol.ExecutionState{
+		GlobalState:   protocol.GoGlobalState{},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	postState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash:  latestBlockHash,
+			SendRoot:   common.Hash{},
+			Batch:      1,
+			PosInBatch: 0,
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	prevInboxMaxCount := big.NewInt(1)
+	a1, err := chain1.CreateAssertion(ctx, height1, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
+	require.NoError(t, err)
+
+	chain2, err := NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		accs[2].txOpts,
+		&bind.CallOpts{},
+		accs[2].accountAddr,
+		backend,
+		headerReader,
+		common.Address{},
+	)
+	require.NoError(t, err)
+
+	postState.GlobalState.BlockHash = common.BytesToHash([]byte("evil"))
+	a2, err := chain2.CreateAssertion(ctx, height2, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
+	require.NoError(t, err)
+
+	challenge, err := chain2.CreateSuccessionChallenge(ctx, 0)
+	require.NoError(t, err)
+	return a1.(*Assertion), a2.(*Assertion), challenge.(*Challenge), chain1, chain2
 }
