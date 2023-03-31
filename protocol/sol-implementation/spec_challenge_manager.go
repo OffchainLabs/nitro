@@ -2,6 +2,7 @@ package solimpl
 
 import (
 	"context"
+	"math/big"
 	"time"
 
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
-	"math/big"
 )
 
 type SpecEdge struct {
@@ -234,7 +234,11 @@ func (cm *SpecChallengeManager) Address() common.Address {
 func (cm *SpecChallengeManager) ChallengePeriodSeconds(
 	ctx context.Context,
 ) (time.Duration, error) {
-	return time.Second, nil
+	res, err := cm.caller.ChallengePeriodSec(cm.callOpts)
+	if err != nil {
+		return time.Second, err
+	}
+	return time.Second * time.Duration(res.Uint64()), nil
 }
 
 // Gets an edge by its hash.
