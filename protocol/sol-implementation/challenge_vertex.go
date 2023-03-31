@@ -3,7 +3,6 @@ package solimpl
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
@@ -162,34 +161,6 @@ func (v *ChallengeVertex) Bisect(ctx context.Context, history util.HistoryCommit
 		return nil, ErrNotFound
 	}
 	return bisectedTo.Unwrap(), nil
-}
-
-func getVertexFromComponents(
-	ctx context.Context,
-	manager *ChallengeManager,
-	challengeId [32]byte,
-	history util.HistoryCommitment,
-) (protocol.ChallengeVertex, error) {
-	vertexId, err := manager.caller.CalculateChallengeVertexId(
-		manager.assertionChain.callOpts,
-		challengeId,
-		history.Merkle,
-		big.NewInt(int64(history.Height)),
-	)
-	if err != nil {
-		return nil, err
-	}
-	vOpt, err := manager.GetVertex(
-		ctx,
-		vertexId,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if vOpt.IsNone() {
-		return nil, ErrNotFound
-	}
-	return vOpt.Unwrap(), nil
 }
 
 func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {

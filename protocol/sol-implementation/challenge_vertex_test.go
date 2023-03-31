@@ -698,11 +698,6 @@ func setupBigStepSubChallenge(t *testing.T) (
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), v2Height1Inner.Height.Uint64())
 
-	preCommit, err = honestManager.HistoryCommitmentUpTo(ctx, 1)
-	require.NoError(t, err)
-	prefixProof, err = honestManager.PrefixProof(ctx, 1, 3)
-	require.NoError(t, err)
-
 	preCommit, err = evilManager.HistoryCommitmentUpTo(ctx, 2)
 	require.NoError(t, err)
 	prefixProof, err = evilManager.PrefixProof(ctx, 2, 3)
