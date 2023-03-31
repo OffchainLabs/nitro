@@ -298,7 +298,8 @@ func TestProgramCalls(t *testing.T) {
 		// Call the burnArbGas() precompile from Rust
 		args := makeCalldata(vm.CALL, types.ArbosTestAddress, pack(burnArbGas(big.NewInt(int64(gas)))))
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, big.NewInt(0), args)
-		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsed
+		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+		return receipt.GasUsed - receipt.GasUsedForL1
 	}
 
 	smallGas := testhelpers.RandomUint64(2000, 8000)

@@ -38,7 +38,7 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	if !member {
 		return errors.New("tried to remove non-owner")
 	}
-	return c.State.ChainOwners().Remove(addr)
+	return c.State.ChainOwners().Remove(addr, c.State.ArbOSVersion())
 }
 
 // IsChainOwner checks if the account is a chain owner
