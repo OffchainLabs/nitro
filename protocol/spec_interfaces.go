@@ -149,6 +149,5 @@ type SpecEdge interface {
 	ConfirmByOneStepProof(ctx context.Context) error
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
-	OriginCommitment(ctx context.Context) (Height, common.Hash, error)
 	TopLevelClaimHeight(ctx context.Context) (Height, error)
 }
