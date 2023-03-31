@@ -1,4 +1,4 @@
-package solimpl_test
+package solimpl
 
 import (
 	"context"
@@ -7,25 +7,24 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	"github.com/offchainlabs/nitro/util/headerreader"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	_ = protocol.AssertionChain(&solimpl.AssertionChain{})
-	_ = protocol.Assertion(&solimpl.Assertion{})
+	_ = protocol.AssertionChain(&AssertionChain{})
+	_ = protocol.Assertion(&Assertion{})
 )
 
 func TestAssertionStateHash(t *testing.T) {
 	ctx := context.Background()
-	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
-	require.NoError(t, err)
-	chain := setupCfg.Chains[0]
-
+	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 	assertion, err := chain.LatestConfirmed(ctx)
 	require.NoError(t, err)
 
@@ -43,13 +42,7 @@ func TestAssertionStateHash(t *testing.T) {
 
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
-	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
-	require.NoError(t, err)
-	chain := setupCfg.Chains[0]
-	accs := setupCfg.Accounts
-	addresses := setupCfg.Addrs
-	backend := setupCfg.Backend
-	headerReader := setupCfg.L1Reader
+	chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
@@ -87,12 +80,12 @@ func TestCreateAssertion(t *testing.T) {
 		require.ErrorContains(t, err, "ALREADY_STAKED")
 	})
 	t.Run("can create fork", func(t *testing.T) {
-		chain, err := solimpl.NewAssertionChain(
+		chain, err := NewAssertionChain(
 			ctx,
 			addresses.Rollup,
-			accs[2].TxOpts,
+			accs[2].txOpts,
 			&bind.CallOpts{},
-			accs[2].AccountAddr,
+			accs[2].accountAddr,
 			backend,
 			headerReader,
 			common.Address{},
@@ -100,8 +93,10 @@ func TestCreateAssertion(t *testing.T) {
 		require.NoError(t, err)
 		height := uint64(1)
 		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
 
-		for i := uint64(0); i < 100; i++ {
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
 			backend.Commit()
 		}
 
@@ -119,7 +114,7 @@ func TestCreateAssertion(t *testing.T) {
 			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
-		chain.TxOpts.From = accs[2].AccountAddr
+		chain.txOpts.From = accs[2].accountAddr
 		forked, err := chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 		require.NoError(t, err)
 		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
@@ -131,9 +126,7 @@ func TestCreateAssertion(t *testing.T) {
 
 func TestAssertionBySequenceNum(t *testing.T) {
 	ctx := context.Background()
-	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
-	require.NoError(t, err)
-	chain := setupCfg.Chains[0]
+	chain, _, _, _, _ := setupAssertionChainWithChallengeManager(t)
 
 	resp, err := chain.AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
@@ -143,23 +136,19 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	require.Equal(t, true, stateHash != [32]byte{})
 
 	_, err = chain.AssertionBySequenceNum(ctx, 1)
-	require.ErrorIs(t, err, solimpl.ErrNotFound)
+	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestBlockChallenge(t *testing.T) {
 	ctx := context.Background()
-	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
-	require.NoError(t, err)
-	chain := setupCfg.Chains[0]
-	accs := setupCfg.Accounts
-	addresses := setupCfg.Addrs
-	backend := setupCfg.Backend
-	headerReader := setupCfg.L1Reader
+	chain, accs, addresses, backend, headerReader := setupAssertionChainWithChallengeManager(t)
 	height := uint64(1)
 	prev := uint64(0)
+	minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+	require.NoError(t, err)
 
 	latestBlockHash := common.Hash{}
-	for i := uint64(0); i < 100; i++ {
+	for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
 		latestBlockHash = backend.Commit()
 	}
 
@@ -180,12 +169,12 @@ func TestBlockChallenge(t *testing.T) {
 	_, err = chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
 	require.NoError(t, err)
 
-	chain, err = solimpl.NewAssertionChain(
+	chain, err = NewAssertionChain(
 		ctx,
 		addresses.Rollup,
-		accs[2].TxOpts,
+		accs[2].txOpts,
 		&bind.CallOpts{},
-		accs[2].AccountAddr,
+		accs[2].accountAddr,
 		backend,
 		headerReader,
 		common.Address{},
@@ -247,6 +236,51 @@ func TestAssertion_Confirm(t *testing.T) {
 		}
 		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
 		require.ErrorIs(t, ErrNoUnresolved, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+	})
+}
+
+func TestAssertion_Reject(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Can reject assertion", func(t *testing.T) {
+		t.Skip("TODO: Can't reject assertion. Blocked by one step proof")
+	})
+
+	t.Run("Already confirmed assertion", func(t *testing.T) {
+		chain, _, _, backend, _ := setupAssertionChainWithChallengeManager(t)
+
+		height := uint64(1)
+		prev := uint64(0)
+		minAssertionPeriod, err := chain.userLogic.MinimumAssertionPeriod(chain.callOpts)
+		require.NoError(t, err)
+
+		assertionBlockHash := common.Hash{}
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			assertionBlockHash = backend.Commit()
+		}
+
+		prevState := &protocol.ExecutionState{
+			GlobalState:   protocol.GoGlobalState{},
+			MachineStatus: protocol.MachineStatusFinished,
+		}
+		postState := &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
+				BlockHash:  assertionBlockHash,
+				SendRoot:   common.Hash{},
+				Batch:      1,
+				PosInBatch: 0,
+			},
+			MachineStatus: protocol.MachineStatusFinished,
+		}
+		prevInboxMaxCount := big.NewInt(1)
+		_, err = chain.CreateAssertion(ctx, height, protocol.AssertionSequenceNumber(prev), prevState, postState, prevInboxMaxCount)
+		require.NoError(t, err)
+
+		for i := uint64(0); i < minAssertionPeriod.Uint64(); i++ {
+			backend.Commit()
+		}
+		require.NoError(t, chain.Confirm(ctx, assertionBlockHash, common.Hash{}))
+		require.ErrorIs(t, ErrNoUnresolved, chain.Reject(ctx, chain.stakerAddr))
 	})
 }
 
@@ -356,6 +390,42 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 		_, err = chain.CreateSuccessionChallenge(ctx, 0)
 		require.ErrorIs(t, err, ErrAlreadyExists)
 	})
+}
+
+func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend, *headerreader.HeaderReader) {
+	t.Helper()
+	ctx := context.Background()
+	accs, backend := setupAccounts(t, 3)
+	prod := false
+	wasmModuleRoot := common.Hash{}
+	rollupOwner := accs[0].accountAddr
+	chainId := big.NewInt(1337)
+	loserStakeEscrow := common.Address{}
+	challengePeriodSeconds := big.NewInt(100)
+	miniStake := big.NewInt(1)
+	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
+	addresses := deployFullRollupStack(
+		t,
+		ctx,
+		backend,
+		accs[0].txOpts,
+		common.Address{}, // Sequencer addr.
+		cfg,
+	)
+	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
+	headerReader.Start(ctx)
+	chain, err := NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		accs[1].txOpts,
+		&bind.CallOpts{},
+		accs[1].accountAddr,
+		backend,
+		headerReader,
+		common.Address{},
+	)
+	require.NoError(t, err)
+	return chain, accs, addresses, backend, headerReader
 }
 
 func TestCopyTxOpts(t *testing.T) {
