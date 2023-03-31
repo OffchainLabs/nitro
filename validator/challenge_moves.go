@@ -117,34 +117,3 @@ func (v *vertexTracker) bisect(
 	}).Info("Successfully bisected to vertex")
 	return bisected, nil
 }
-
-// Performs a merge move during a BlockChallenge in the assertion protocol given
-// a challenge vertex and the sequence number we should be merging into. To do this, we
-// also need to fetch vertex we are merging to by reading it from the goimpl.
-func (v *vertexTracker) merge(
-	ctx context.Context,
-	mergingToCommit util.HistoryCommitment,
-	proof []byte,
-) (protocol.ChallengeVertex, error) {
-	mergedTo, err := v.vertex.Merge(ctx, mergingToCommit, proof)
-	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"%s could not merge vertex at height=%d,commit=%s to height%d,commit=%s",
-			v.cfg.validatorName,
-			v.vertex.HistoryCommitment().Height,
-			util.Trunc(v.vertex.HistoryCommitment().Merkle.Bytes()),
-			mergingToCommit.Height,
-			util.Trunc(mergingToCommit.Merkle.Bytes()),
-		)
-	}
-	log.WithFields(logrus.Fields{
-		"name":             v.cfg.validatorName,
-		"mergedFrom":       v.vertex.HistoryCommitment().Height,
-		"challengeType":    v.challenge.GetType(),
-		"mergedFromMerkle": util.Trunc(v.vertex.HistoryCommitment().Merkle.Bytes()),
-		"mergedTo":         mergingToCommit.Height,
-		"mergedToMerkle":   util.Trunc(mergingToCommit.Merkle[:]),
-	}).Info("Successfully merged to vertex")
-	return mergedTo, nil
-}

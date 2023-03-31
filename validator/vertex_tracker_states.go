@@ -30,8 +30,6 @@ const (
 	trackerAwaitingSubchallengeResolution
 	// The tracker is attempting a bisection move.
 	trackerBisecting
-	// The tracker is attempting a merge move.
-	trackerMerging
 	// The tracker is confirming a vertex after it has won a one-step-proof.
 	// TODO: There are other ways the vertex can be confirmed, and perhaps should
 	// be tracked in a separate goroutine then the vertex tracker.
@@ -57,8 +55,6 @@ func (v vertexTrackerState) String() string {
 		return "awaiting_subchallenge_resolution"
 	case trackerBisecting:
 		return "bisecting"
-	case trackerMerging:
-		return "merging"
 	case trackerConfirming:
 		return "confirming"
 	default:
@@ -107,9 +103,6 @@ type awaitSubchallengeResolution struct{}
 // Tracker will attempt to bisect its vertex.
 type bisect struct{}
 
-// Tracker will attempt to merge its vertex.
-type merge struct{}
-
 // Tracker will attempt to confirm a challenge winner.
 type confirmWinner struct{}
 
@@ -137,9 +130,6 @@ func (_ awaitSubchallengeResolution) String() string {
 func (_ bisect) String() string {
 	return "bisect"
 }
-func (_ merge) String() string {
-	return "merge"
-}
 func (_ confirmWinner) String() string {
 	return "confirm_winner"
 }
@@ -166,9 +156,6 @@ func (_ awaitSubchallengeResolution) isVertexTrackerAction() bool {
 	return true
 }
 func (_ bisect) isVertexTrackerAction() bool {
-	return true
-}
-func (_ merge) isVertexTrackerAction() bool {
 	return true
 }
 func (_ confirmWinner) isVertexTrackerAction() bool {

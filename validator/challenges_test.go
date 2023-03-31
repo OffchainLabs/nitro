@@ -27,7 +27,6 @@ import (
 var (
 	// TODO: These are brittle and could break if the event sigs change in Solidity.
 	leafAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
-	mergeEventSig     = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
 	bisectEventSig    = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
 )
 
@@ -65,6 +64,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//                      [3]-[7]-bob
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
+		t.Skip("TODO: replace this test with edge base design")
 		cfg := &challengeProtocolTestConfig{
 			currentChainHeight: 7,
 			// The latest assertion height each validator has seen.
@@ -90,7 +90,6 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
 		cfg.expectedLeavesAdded = 6
 		cfg.expectedBisections = 12
-		cfg.expectedMerges = 6
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
@@ -98,6 +97,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 	t.Run("two validators opening leaves at height 255", func(t *testing.T) {
+		t.Skip("TODO: replace this test with edge base design")
 		cfg := &challengeProtocolTestConfig{
 			currentChainHeight:           255,
 			aliceHeight:                  255,
@@ -110,7 +110,6 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		}
 		cfg.expectedLeavesAdded = 6
 		cfg.expectedBisections = 22
-		cfg.expectedMerges = 6
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
@@ -139,7 +138,6 @@ type challengeProtocolTestConfig struct {
 	currentChainHeight        uint64
 	// Events we want to assert are fired from the goimpl.
 	expectedBisections  uint64
-	expectedMerges      uint64
 	expectedLeavesAdded uint64
 }
 
@@ -318,7 +316,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 
 	var totalLeavesAdded uint64
 	var totalBisections uint64
-	var totalMerges uint64
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -347,8 +344,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 					totalLeavesAdded++
 				case bytes.Equal(topic[:], bisectEventSig):
 					totalBisections++
-				case bytes.Equal(topic[:], mergeEventSig):
-					totalMerges++
 				default:
 				}
 			}
@@ -432,7 +427,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	wg.Wait()
 	assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
-	assert.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
 }
 
 func evilHashesForUints(lo, hi uint64) []common.Hash {

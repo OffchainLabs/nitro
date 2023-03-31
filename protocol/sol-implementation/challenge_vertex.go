@@ -2,11 +2,11 @@ package solimpl
 
 import (
 	"context"
-	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
-	"math/big"
+	"fmt"
 	"strings"
 
-	"fmt"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -119,36 +119,6 @@ func (v *ChallengeVertex) ChildrenAreAtOneStepFork(ctx context.Context) (bool, e
 	return atFork, nil
 }
 
-// Merge a challenge vertex to another by providing its history
-// commitment and a prefix proof.
-func (v *ChallengeVertex) Merge(ctx context.Context, mergingToHistory util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
-	manager, err := v.manager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_, err = transact(ctx, v.chain.backend, v.chain.headerReader, func() (*types.Transaction, error) {
-		return manager.writer.Merge(
-			v.chain.txOpts,
-			v.id,
-			mergingToHistory.Merkle,
-			proof,
-		)
-	})
-	if err != nil {
-		return nil, err
-	}
-	inner, err := v.inner(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return getVertexFromComponents(
-		ctx,
-		manager,
-		inner.ChallengeId,
-		mergingToHistory,
-	)
-}
-
 // Bisect a challenge vertex by providing a history commitment.
 func (v *ChallengeVertex) Bisect(ctx context.Context, history util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
 	manager, err := v.manager(ctx)
@@ -191,34 +161,6 @@ func (v *ChallengeVertex) Bisect(ctx context.Context, history util.HistoryCommit
 		return nil, ErrNotFound
 	}
 	return bisectedTo.Unwrap(), nil
-}
-
-func getVertexFromComponents(
-	ctx context.Context,
-	manager *ChallengeManager,
-	challengeId [32]byte,
-	history util.HistoryCommitment,
-) (protocol.ChallengeVertex, error) {
-	vertexId, err := manager.caller.CalculateChallengeVertexId(
-		manager.assertionChain.callOpts,
-		challengeId,
-		history.Merkle,
-		big.NewInt(int64(history.Height)),
-	)
-	if err != nil {
-		return nil, err
-	}
-	vOpt, err := manager.GetVertex(
-		ctx,
-		vertexId,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if vOpt.IsNone() {
-		return nil, ErrNotFound
-	}
-	return vOpt.Unwrap(), nil
 }
 
 func (v *ChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {
