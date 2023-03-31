@@ -2,9 +2,10 @@ package solimpl
 
 import (
 	"context"
+	"crypto/rand"
+	"math/big"
 	"testing"
 
-	"crypto/rand"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -14,13 +15,68 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
 var (
 	_ = protocol.SpecEdge(&SpecEdge{})
 	_ = protocol.SpecChallengeManager(&SpecChallengeManager{})
 )
+
+func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{numBlocks: uint64(height) + 1})
+
+	honestStateManager, err := statemanager.New(
+		createdData.honestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+	isPs, err := honestEdge.IsPresumptive(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, isPs)
+
+	t.Run("confirmed by timer", func(t *testing.T) {
+		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{protocol.EdgeId(common.Hash{1})}), "execution reverted: Edge does not exist")
+	})
+	t.Run("confirmed by timer", func(t *testing.T) {
+		require.NoError(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+		status, err := honestEdge.Status(ctx)
+		require.NoError(t, err)
+		require.Equal(t, protocol.EdgeConfirmed, status)
+	})
+
+	t.Run("can't confirm again", func(t *testing.T) {
+		status, err := honestEdge.Status(ctx)
+		require.NoError(t, err)
+		require.Equal(t, protocol.EdgeConfirmed, status)
+		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}), "execution reverted: Edge not pending")
+	})
+}
 
 func TestEdgeChallengeManager(t *testing.T) {
 	ctx := context.Background()
