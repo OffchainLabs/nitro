@@ -46,7 +46,7 @@ func newEdgeTrackerFsm(
 			To:   edgeAtOneStepProof,
 		},
 		{
-			// The tracker will add a subchallenge leaf to its vertex's subchallenge.
+			// The tracker will add a subchallenge leaf to its edge's subchallenge.
 			Typ:  edgeOpenSubchallengeLeaf{},
 			From: []edgeTrackerState{edgeAtOneStepFork, edgeAddingSubchallengeLeaf},
 			To:   edgeAddingSubchallengeLeaf,
