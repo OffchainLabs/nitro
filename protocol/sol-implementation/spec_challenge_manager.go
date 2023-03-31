@@ -2,10 +2,10 @@ package solimpl
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"time"
 
-	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
