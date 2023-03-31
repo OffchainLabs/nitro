@@ -508,6 +508,7 @@ fn test_calls() -> Result<()> {
         if level == 0 {
             // call storage.wasm
             args.push(0x00);
+            args.extend(Bytes32::default());
             args.extend(store);
 
             let key = random_bytes32();
@@ -523,6 +524,7 @@ fn test_calls() -> Result<()> {
 
         // do the two following calls
         args.push(0x00);
+        args.extend(Bytes32::default());
         args.extend(calls);
         args.push(2);
 
@@ -536,7 +538,7 @@ fn test_calls() -> Result<()> {
 
     // drop the first address to start the call tree
     let tree = nest(3, calls_addr, store_addr, &mut slots);
-    let args = tree[21..].to_vec();
+    let args = tree[53..].to_vec();
     println!("ARGS {}", hex::encode(&args));
 
     let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";

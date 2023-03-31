@@ -90,7 +90,7 @@ impl Debug for Bytes20 {
     }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
