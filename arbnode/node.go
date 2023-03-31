@@ -530,6 +530,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.Forwarder = execution.DefaultTestForwarderConfig
+	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
 }
@@ -543,6 +544,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
+	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
 }

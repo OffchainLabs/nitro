@@ -71,9 +71,15 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
+	MaxBroadcastQueueSize:   1024,
+	MaxReorgResequenceDepth: 1024,
+	ExecuteMessageLoopDelay: time.Millisecond * 100,
+}
+
+var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcastQueueSize:   10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
-	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	ExecuteMessageLoopDelay: time.Millisecond,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
