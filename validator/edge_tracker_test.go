@@ -135,6 +135,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 		DivergeHeight: 0,
 		NumBlocks:     3,
 	})
+	require.NoError(t, err)
 
 	honestManager, err := statemanager.New(createdData.HonestValidatorStateRoots)
 	require.NoError(t, err)
@@ -160,6 +161,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 		createdData.Addrs.Rollup,
 		WithName("bob"),
 	)
+	require.NoError(t, err)
 
 	honestValidator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
 	honestValidator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
@@ -185,6 +187,8 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 		},
 		honestEdge,
 	)
+	require.NoError(t, err)
+
 	tracker2, err := newEdgeTracker(
 		&edgeTrackerConfig{
 			timeRef:          util.NewArtificialTimeReference(),
