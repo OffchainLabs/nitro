@@ -76,10 +76,10 @@ func Test_onLeafCreation(t *testing.T) {
 		require.NoError(t, err)
 
 		AssertLogsContain(t, logsHook, "New assertion appended")
-		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+		AssertLogsContain(t, logsHook, "Successfully created level zero edge")
 
 		err = validator.onLeafCreated(ctx, createdData.Leaf2)
-		require.ErrorContains(t, err, "Vertex already exists")
+		require.ErrorContains(t, err, "Edge already exists")
 	})
 }
 

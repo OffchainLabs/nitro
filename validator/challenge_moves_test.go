@@ -121,7 +121,7 @@ func runBisectionTest(
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
-	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+	AssertLogsContain(t, logsHook, "Successfully created level zero edge")
 
 	var vertexToBisect protocol.ChallengeVertex
 	var chalId protocol.ChallengeHash

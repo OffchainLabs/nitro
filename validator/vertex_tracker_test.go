@@ -219,7 +219,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vert
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")
-	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+	AssertLogsContain(t, logsHook, "Successfully created level zero edge")
 
 	var honestLeafVertex protocol.ChallengeVertex
 	var leafVertexToBisect protocol.ChallengeVertex
