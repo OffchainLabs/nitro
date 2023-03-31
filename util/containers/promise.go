@@ -66,13 +66,6 @@ func (p *Promise[R]) Cancel() {
 	p.cancel()
 }
 
-// not thread safe, must be set before anyone calls cancel
-// cancel might be called multiple times while no value or error produced
-// cancel will be called by Await if it's context is done
-func (p *Promise[R]) SetCancel(cancel func()) {
-	p.cancel = cancel
-}
-
 func (p *Promise[R]) ProduceErrorSafe(err error) error {
 	if !atomic.CompareAndSwapUint32(&p.produced, 0, 1) {
 		return errors.New("cannot produce two values")
@@ -105,8 +98,11 @@ func (p *Promise[R]) Produce(value R) {
 	}
 }
 
-func NewPromise[R any]() Promise[R] {
+// cancel might be called multiple times while no value or error produced
+// cancel will be called by Await if it's context is done
+func NewPromise[R any](cancel func()) Promise[R] {
 	return Promise[R]{
 		chanReady: make(chan struct{}),
+		cancel:    cancel,
 	}
 }

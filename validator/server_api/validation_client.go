@@ -105,23 +105,19 @@ func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
 }
 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	promise := containers.NewPromise[validator.ExecutionRun]()
-	cancel := c.LaunchThreadWithCancel(func(ctx context.Context) {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](&c.StopWaiterSafe, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
 		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
 		if err != nil {
-			promise.ProduceError(err)
-			return
+			return nil, err
 		}
 		run := &ExecutionClientRun{
 			client: c,
 			id:     res,
 		}
 		run.Start(c.GetContext()) // note: not this temporary thread's context!
-		promise.Produce(run)
+		return run, nil
 	})
-	promise.SetCancel(cancel)
-	return &promise
 }
 
 type ExecutionClientRun struct {
@@ -131,34 +127,22 @@ type ExecutionClientRun struct {
 }
 
 func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	promise := containers.NewPromise[common.Hash]()
-	cancel := c.LaunchThreadWithCancel(func(ctx context.Context) {
+	return stopwaiter.LaunchPromiseThread[common.Hash](&c.StopWaiterSafe, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
 		err := c.client.CallContext(c.GetContext(), &res, Namespace+"_latestWasmModuleRoot")
 		if err != nil {
-			promise.ProduceError(err)
-			return
+			return common.Hash{}, err
 		}
-		promise.Produce(res)
+		return res, nil
 	})
-	promise.SetCancel(cancel)
-	return &promise
 }
 
 func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	jsonInput := ValidationInputToJson(input)
-	promise := containers.NewPromise[struct{}]()
-	cancel := c.LaunchThreadWithCancel(func(ctx context.Context) {
+	return stopwaiter.LaunchPromiseThread[struct{}](&c.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
-		if err != nil {
-			promise.ProduceError(err)
-			return
-		}
-		promise.Produce(struct{}{})
+		return struct{}{}, err
 	})
-	promise.SetCancel(cancel)
-	return &promise
-
 }
 
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
@@ -174,47 +158,33 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 	r.CallIteratively(r.SendKeepAlive)
 }
 
-func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[validator.MachineStepResult] {
-	step := containers.NewPromise[validator.MachineStepResult]()
-	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
+func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
+	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](&r.StopWaiterSafe, func(ctx context.Context) (*validator.MachineStepResult, error) {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
-			step.ProduceError(err)
-			return
+			return nil, err
 		}
 		res, err := MachineStepResultFromJson(&resJson)
 		if err != nil {
-			step.ProduceError(err)
-			return
+			return nil, err
 		}
-		step.Produce(*res)
+		return res, err
 	})
-	step.SetCancel(cancel)
-	return &step
 }
 
 func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
-	proof := containers.NewPromise[[]byte]()
-	cancel := r.LaunchThreadWithCancel(func(ctx context.Context) {
+	return stopwaiter.LaunchPromiseThread[[]byte](&r.StopWaiterSafe, func(ctx context.Context) ([]byte, error) {
 		var resString string
 		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
 		if err != nil {
-			proof.ProduceError(err)
-			return
+			return nil, err
 		}
-		res, err := base64.StdEncoding.DecodeString(resString)
-		if err != nil {
-			proof.ProduceError(err)
-			return
-		}
-		proof.Produce(res)
+		return base64.StdEncoding.DecodeString(resString)
 	})
-	proof.SetCancel(cancel)
-	return &proof
 }
 
-func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[validator.MachineStepResult] {
+func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(^uint64(0))
 }
 
