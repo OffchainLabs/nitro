@@ -1,4 +1,4 @@
-package main
+package setup
 
 import (
 	"context"
@@ -25,27 +25,27 @@ import (
 )
 
 type CreatedValidatorFork struct {
-	leaf1                     protocol.Assertion
-	leaf2                     protocol.Assertion
-	chains                    []*solimpl.AssertionChain
-	accounts                  []*TestAccount
-	backend                   *backends.SimulatedBackend
-	honestValidatorStateRoots []common.Hash
-	evilValidatorStateRoots   []common.Hash
-	addrs                     *RollupAddresses
+	Leaf1                     protocol.Assertion
+	Leaf2                     protocol.Assertion
+	Chains                    []*solimpl.AssertionChain
+	Accounts                  []*TestAccount
+	Backend                   *backends.SimulatedBackend
+	HonestValidatorStateRoots []common.Hash
+	EvilValidatorStateRoots   []common.Hash
+	Addrs                     *RollupAddresses
 }
 
 type CreateForkConfig struct {
-	numBlocks     uint64
-	divergeHeight uint64
+	NumBlocks     uint64
+	DivergeHeight uint64
 }
 
 func CreateTwoValidatorFork(
 	ctx context.Context,
 	cfg *CreateForkConfig,
 ) (*CreatedValidatorFork, error) {
-	divergenceHeight := cfg.divergeHeight
-	numBlocks := cfg.numBlocks
+	divergenceHeight := cfg.DivergeHeight
+	numBlocks := cfg.NumBlocks
 
 	setup, err := SetupChainsWithEdgeChallengeManager()
 	if err != nil {
@@ -169,14 +169,14 @@ func CreateTwoValidatorFork(
 	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertionStateHash)
 
 	return &CreatedValidatorFork{
-		leaf1:                     assertion,
-		leaf2:                     forkedAssertion,
-		chains:                    setup.Chains,
-		accounts:                  setup.Accounts,
-		backend:                   setup.Backend,
-		addrs:                     setup.Addrs,
-		honestValidatorStateRoots: honestValidatorStateRoots,
-		evilValidatorStateRoots:   evilValidatorStateRoots,
+		Leaf1:                     assertion,
+		Leaf2:                     forkedAssertion,
+		Chains:                    setup.Chains,
+		Accounts:                  setup.Accounts,
+		Backend:                   setup.Backend,
+		Addrs:                     setup.Addrs,
+		HonestValidatorStateRoots: honestValidatorStateRoots,
+		EvilValidatorStateRoots:   evilValidatorStateRoots,
 	}, nil
 }
 
