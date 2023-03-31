@@ -106,9 +106,9 @@ func CreateTwoValidatorFork(
 			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 		} else {
 			junkRoot := make([]byte, 32)
-			_, err := rand.Read(junkRoot)
-			if err != nil {
-				return nil, err
+			_, err2 := rand.Read(junkRoot)
+			if err2 != nil {
+				return nil, err2
 			}
 			blockHash := crypto.Keccak256Hash(junkRoot)
 			state.GlobalState.BlockHash = blockHash
@@ -563,7 +563,7 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
-	tx, err = rollupCreator.SetTemplates(
+	_, err = rollupCreator.SetTemplates(
 		auth,
 		bridgeCreator,
 		ospEntryAddr,
