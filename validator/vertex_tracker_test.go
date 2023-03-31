@@ -9,6 +9,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus"
@@ -183,38 +184,38 @@ func Test_act(t *testing.T) {
 
 func setupNonPSTracker(t *testing.T, ctx context.Context) (*vertexTracker, *vertexTracker) {
 	logsHook := test.NewGlobal()
-	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
-		divergeHeight: 32,
-		numBlocks:     63,
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		DivergeHeight: 32,
+		NumBlocks:     63,
 	})
 
-	honestManager, err := statemanager.New(createdData.honestValidatorStateRoots)
+	honestManager, err := statemanager.New(createdData.HonestValidatorStateRoots)
 	require.NoError(t, err)
 
 	honestValidator, err := New(
 		ctx,
-		createdData.assertionChains[1],
-		createdData.backend,
+		createdData.Chains[0],
+		createdData.Backend,
 		honestManager,
-		createdData.addrs.Rollup,
+		createdData.Addrs.Rollup,
 	)
 	require.NoError(t, err)
 
-	evilManager, err := statemanager.New(createdData.evilValidatorStateRoots)
+	evilManager, err := statemanager.New(createdData.EvilValidatorStateRoots)
 	require.NoError(t, err)
 
 	evilValidator, err := New(
 		ctx,
-		createdData.assertionChains[2],
-		createdData.backend,
+		createdData.Chains[1],
+		createdData.Backend,
 		evilManager,
-		createdData.addrs.Rollup,
+		createdData.Addrs.Rollup,
 	)
 	require.NoError(t, err)
 
-	err = honestValidator.onLeafCreated(ctx, createdData.leaf1)
+	err = honestValidator.onLeafCreated(ctx, createdData.Leaf1)
 	require.NoError(t, err)
-	err = honestValidator.onLeafCreated(ctx, createdData.leaf2)
+	err = honestValidator.onLeafCreated(ctx, createdData.Leaf2)
 	require.NoError(t, err)
 	AssertLogsContain(t, logsHook, "New assertion appended")
 	AssertLogsContain(t, logsHook, "New assertion appended")

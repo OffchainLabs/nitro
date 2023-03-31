@@ -7,6 +7,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus/hooks/test"
@@ -16,16 +17,18 @@ import (
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	t.Run("bad bisection points", func(t *testing.T) {
-		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
-			divergeHeight: 10,
-			numBlocks:     100,
+		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+			DivergeHeight: 10,
+			NumBlocks:     100,
 		})
+		require.NoError(t, err)
+
 		validator, err := New(
 			ctx,
-			createdData.assertionChains[1],
-			createdData.backend,
+			createdData.Chains[1],
+			createdData.Backend,
 			&mocks.MockStateManager{},
-			createdData.addrs.Rollup,
+			createdData.Addrs.Rollup,
 		)
 		require.NoError(t, err)
 
@@ -57,32 +60,32 @@ func Test_bisect(t *testing.T) {
 	})
 	t.Run("bisects", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
-			divergeHeight: 8,
-			numBlocks:     63,
+		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+			DivergeHeight: 8,
+			NumBlocks:     63,
 		})
 
-		honestManager, err := statemanager.New(createdData.honestValidatorStateRoots)
+		honestManager, err := statemanager.New(createdData.HonestValidatorStateRoots)
 		require.NoError(t, err)
 
 		honestValidator, err := New(
 			ctx,
-			createdData.assertionChains[1],
-			createdData.backend,
+			createdData.Chains[0],
+			createdData.Backend,
 			honestManager,
-			createdData.addrs.Rollup,
+			createdData.Addrs.Rollup,
 		)
 		require.NoError(t, err)
 
-		evilManager, err := statemanager.New(createdData.evilValidatorStateRoots)
+		evilManager, err := statemanager.New(createdData.EvilValidatorStateRoots)
 		require.NoError(t, err)
 
 		evilValidator, err := New(
 			ctx,
-			createdData.assertionChains[2],
-			createdData.backend,
+			createdData.Chains[1],
+			createdData.Backend,
 			evilManager,
-			createdData.addrs.Rollup,
+			createdData.Addrs.Rollup,
 		)
 		require.NoError(t, err)
 
@@ -92,8 +95,8 @@ func Test_bisect(t *testing.T) {
 			ctx,
 			honestValidator,
 			evilValidator,
-			createdData.leaf1,
-			createdData.leaf2,
+			createdData.Leaf1,
+			createdData.Leaf2,
 		)
 
 		// Expect to bisect to 31.

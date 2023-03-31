@@ -9,22 +9,21 @@ import (
 	"time"
 
 	"bytes"
+	"sync"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sync"
 )
 
 var (
@@ -229,7 +228,12 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	t.Helper()
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
-	chains, accs, addrs, backend, _ := setupChainsWithEdgeChallengeManager(t)
+	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
+	require.NoError(t, err)
+	chains := setupCfg.Chains
+	accs := setupCfg.Accounts
+	addrs := setupCfg.Addrs
+	backend := setupCfg.Backend
 	prevInboxMaxCount := big.NewInt(1)
 
 	// Advance the chain by 100 blocks as there needs to be a minimum period of time
@@ -269,7 +273,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		statemanager.WithNumOpcodesPerBigStep(7),
 	)
 	require.NoError(t, err)
-	aliceAddr := accs[1].accountAddr
+	aliceAddr := accs[1].AccountAddr
 	alice, err := New(
 		ctx,
 		chains[0],
@@ -294,7 +298,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
 	require.NoError(t, err)
-	bobAddr := accs[1].accountAddr
+	bobAddr := accs[1].AccountAddr
 	bob, err := New(
 		ctx,
 		chains[1], // Chain 0 is reserved for admin controls.
@@ -449,66 +453,6 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	wg.Wait()
 	assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
-}
-
-func setupChainsWithEdgeChallengeManager(t *testing.T) (
-	[]*solimpl.AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend, *headerreader.HeaderReader,
-) {
-	t.Helper()
-	ctx := context.Background()
-	accs, backend := setupAccounts(t, 3)
-	prod := false
-	wasmModuleRoot := common.Hash{}
-	rollupOwner := accs[0].accountAddr
-	chainId := big.NewInt(1337)
-	loserStakeEscrow := common.Address{}
-	challengePeriodSeconds := big.NewInt(100)
-	miniStake := big.NewInt(1)
-	cfg := generateRollupConfig(
-		prod,
-		wasmModuleRoot,
-		rollupOwner,
-		chainId,
-		loserStakeEscrow,
-		challengePeriodSeconds,
-		miniStake,
-	)
-	addresses := deployFullRollupStack(
-		t,
-		ctx,
-		backend,
-		accs[0].txOpts,
-		common.Address{}, // Sequencer addr.
-		cfg,
-	)
-	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
-	headerReader.Start(ctx)
-	chains := make([]*solimpl.AssertionChain, 2)
-	chain1, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[1].txOpts,
-		&bind.CallOpts{},
-		accs[1].accountAddr,
-		backend,
-		headerReader,
-		addresses.EdgeChallengeManager,
-	)
-	require.NoError(t, err)
-	chains[0] = chain1
-	chain2, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[2].txOpts,
-		&bind.CallOpts{},
-		accs[2].accountAddr,
-		backend,
-		headerReader,
-		addresses.EdgeChallengeManager,
-	)
-	require.NoError(t, err)
-	chains[1] = chain2
-	return chains, accs, addresses, backend, headerReader
 }
 
 func evilHashesForUints(lo, hi uint64) []common.Hash {
