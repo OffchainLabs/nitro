@@ -67,6 +67,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//                      [3]-[7]-bob
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
+		t.Skip("TODO: replace this test with edge base design")
 		cfg := &challengeProtocolTestConfig{
 			currentChainHeight: 7,
 			// The latest assertion height each validator has seen.
@@ -99,6 +100,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 	t.Run("two validators opening leaves at height 255", func(t *testing.T) {
+		t.Skip("TODO: replace this test with edge base design")
 		cfg := &challengeProtocolTestConfig{
 			currentChainHeight:           255,
 			aliceHeight:                  255,

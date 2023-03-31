@@ -108,11 +108,6 @@ func (m *MockChallengeVertex) Bisect(ctx context.Context, history util.HistoryCo
 	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
 }
 
-func (m *MockChallengeVertex) Merge(ctx context.Context, mergingToHistory util.HistoryCommitment, proof []byte) (protocol.ChallengeVertex, error) {
-	args := m.Called(ctx, mergingToHistory, proof)
-	return args.Get(0).(protocol.ChallengeVertex), args.Error(1)
-}
-
 // ConfirmForPsTimer is a mutating calls for confirmations.
 func (m *MockChallengeVertex) ConfirmForPsTimer(ctx context.Context) error {
 	args := m.Called(ctx)

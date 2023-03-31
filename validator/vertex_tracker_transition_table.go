@@ -21,7 +21,6 @@ func newVertexTrackerFsm(
 				trackerAtOneStepFork,
 				trackerPresumptive,
 				trackerBisecting,
-				trackerMerging,
 			},
 			To: trackerStarted,
 		},
@@ -33,7 +32,6 @@ func newVertexTrackerFsm(
 				trackerStarted,
 				trackerPresumptive,
 				trackerBisecting,
-				trackerMerging,
 			},
 			To: trackerPresumptive,
 		},
@@ -81,15 +79,6 @@ func newVertexTrackerFsm(
 				trackerBisecting, // A vertex can bisect multiple times consecutively.
 			},
 			To: trackerBisecting,
-		},
-		{
-			Typ: merge{},
-			From: []vertexTrackerState{
-				trackerStarted,
-				trackerBisecting, // If a bisection attempt already exists, the tracker will try to merge.
-				trackerMerging,
-			},
-			To: trackerMerging,
 		},
 		// Finishing.
 		{

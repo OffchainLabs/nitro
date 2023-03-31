@@ -179,9 +179,6 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 	case trackerBisecting:
 		bisectedTo, err := vt.bisect(ctx, vt.vertex)
 		if err != nil {
-			if errors.Is(err, solimpl.ErrAlreadyExists) {
-				return vt.fsm.Do(merge{})
-			}
 			log.WithError(err).WithFields(logrus.Fields{
 				"height":        vt.vertex.HistoryCommitment().Height,
 				"merkle":        util.Trunc(vt.vertex.HistoryCommitment().Merkle.Bytes()),
@@ -205,21 +202,6 @@ func (vt *vertexTracker) act(ctx context.Context) error {
 				"address":       util.Trunc(vt.cfg.validatorAddress.Bytes()),
 			}).Error("could not create new vertex tracker")
 			return vt.fsm.Do(backToStart{})
-		}
-		go tracker.spawn(ctx)
-		return vt.fsm.Do(backToStart{})
-	case trackerMerging:
-		mergedTo, err := vt.mergeToExistingVertex(ctx)
-		if err != nil {
-			return errors.Wrap(err, "could not merge")
-		}
-		tracker, err := newVertexTracker(
-			vt.cfg,
-			vt.challenge,
-			mergedTo,
-		)
-		if err != nil {
-			return errors.Wrap(err, "could not create new vertex tracker")
 		}
 		go tracker.spawn(ctx)
 		return vt.fsm.Do(backToStart{})
@@ -273,33 +255,6 @@ func (vt *vertexTracker) prevVertex(ctx context.Context) (protocol.ChallengeVert
 		return nil, errors.Wrapf(ErrPrevNone, "vertex with id: %#x", vt.vertex.Id())
 	}
 	return prevV.Unwrap(), nil
-}
-
-// Merges to a vertex that already exists in the protocol by fetching its history commit
-// from our state manager and then performing a merge transaction in the chain. Then,
-// this method returns the vertex it merged to.
-func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (protocol.ChallengeVertex, error) {
-	prev, err := v.vertex.Prev(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if prev.IsNone() {
-		return nil, errors.New("no prev vertex found")
-	}
-	prevCommitment := prev.Unwrap().HistoryCommitment()
-	commitment := v.vertex.HistoryCommitment()
-	parentHeight := prevCommitment.Height
-	toHeight := commitment.Height
-
-	mergeHistory, prefixProof, err := v.determineBisectionHistoryWithProof(
-		ctx,
-		parentHeight,
-		toHeight,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return v.merge(ctx, mergeHistory, prefixProof)
 }
 
 // Opens a subchallenge on a parent vertex. This function determines the type of subchallenge
