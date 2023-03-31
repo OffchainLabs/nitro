@@ -104,18 +104,24 @@ func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
 	}
 }
 
-func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
-	var res uint64
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
-	if err != nil {
-		return nil, err
-	}
-	run := &ExecutionClientRun{
-		client: c,
-		id:     res,
-	}
-	run.Start(c.GetContext())
-	return run, nil
+func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	promise := containers.NewPromise[validator.ExecutionRun]()
+	cancel := c.LaunchThreadWithCancel(func(ctx context.Context) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
+		if err != nil {
+			promise.ProduceError(err)
+			return
+		}
+		run := &ExecutionClientRun{
+			client: c,
+			id:     res,
+		}
+		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		promise.Produce(run)
+	})
+	promise.SetCancel(cancel)
+	return &promise
 }
 
 type ExecutionClientRun struct {
@@ -124,21 +130,35 @@ type ExecutionClientRun struct {
 	id     uint64
 }
 
-func (c *ExecutionClient) LatestWasmModuleRoot() (common.Hash, error) {
-	var res common.Hash
-	err := c.client.CallContext(c.GetContext(), &res, Namespace+"_latestWasmModuleRoot")
-	return res, err
+func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
+	promise := containers.NewPromise[common.Hash]()
+	cancel := c.LaunchThreadWithCancel(func(ctx context.Context) {
+		var res common.Hash
+		err := c.client.CallContext(c.GetContext(), &res, Namespace+"_latestWasmModuleRoot")
+		if err != nil {
+			promise.ProduceError(err)
+			return
+		}
+		promise.Produce(res)
+	})
+	promise.SetCancel(cancel)
+	return &promise
 }
 
-func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	jsonInput := ValidationInputToJson(input)
-	err := c.client.CallContext(c.GetContext(), nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
-	return err
-}
+	promise := containers.NewPromise[struct{}]()
+	cancel := c.LaunchThreadWithCancel(func(ctx context.Context) {
+		err := c.client.CallContext(ctx, nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
+		if err != nil {
+			promise.ProduceError(err)
+			return
+		}
+		promise.Produce(struct{}{})
+	})
+	promise.SetCancel(cancel)
+	return &promise
 
-type ExecutionClientStep struct {
-	containers.Promise[validator.MachineStepResult]
-	cancel context.CancelFunc
 }
 
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
@@ -215,8 +235,4 @@ func (r *ExecutionClientRun) Close() {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
 	})
-}
-
-func (f *ExecutionClientStep) Close() {
-	f.cancel()
 }
