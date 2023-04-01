@@ -116,6 +116,13 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	return err
 }
 
+func (e *SpecEdge) ConfirmByChildren(ctx context.Context) error {
+	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByChildren(e.manager.txOpts, e.id)
+	})
+	return err
+}
+
 func (e *SpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
 	// TODO: Add in fields.
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
