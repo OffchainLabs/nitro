@@ -160,6 +160,14 @@ impl From<usize> for Bytes32 {
     }
 }
 
+impl From<Bytes20> for Bytes32 {
+    fn from(value: Bytes20) -> Self {
+        let mut data = [0; 32];
+        data[12..].copy_from_slice(&value.0);
+        Self(data)
+    }
+}
+
 impl Display for Bytes32 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(self))

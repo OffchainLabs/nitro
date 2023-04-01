@@ -144,3 +144,46 @@ pub fn static_call(
         _ => Err(outs),
     }
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    fn create1(code: *const u8, code_len: usize, endowment: *const u8, contract: *mut u8);
+
+    fn create2(
+        code: *const u8,
+        code_len: usize,
+        endowment: *const u8,
+        salt: *const u8,
+        contract: *mut u8,
+    );
+
+    /// Returns 0 when there's never been a call
+    fn return_data_size() -> u32;
+}
+
+pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Bytes20 {
+    let mut contract = [0; 20];
+    unsafe {
+        if let Some(salt) = salt {
+            create2(
+                code.as_ptr(),
+                code.len(),
+                endowment.ptr(),
+                salt.ptr(),
+                contract.as_mut_ptr(),
+            );
+        } else {
+            create1(
+                code.as_ptr(),
+                code.len(),
+                endowment.ptr(),
+                contract.as_mut_ptr(),
+            );
+        }
+    }
+    Bytes20(contract)
+}
+
+pub fn return_data_len() -> u32 {
+    unsafe { return_data_size() }
+}

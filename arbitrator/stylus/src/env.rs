@@ -130,8 +130,6 @@ pub type Create1 = Box<dyn Fn(Vec<u8>, Bytes32, u64) -> (eyre::Result<Bytes20>, 
 pub type Create2 =
     Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
 
-// Result<(Bytes20, u64), (u32, u64, ErrReport)>
-
 pub struct EvmAPI {
     get_bytes32: GetBytes32,
     set_bytes32: SetBytes32,
