@@ -586,11 +586,13 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
 			if err != nil && validationCtx.Err() == nil {
+				validationStatus.replaceStatus(Prepared, RecordFailed)
 				log.Error("error preparing validation", "err", err)
 				return
 			}
 			input, err := validationStatus.Entry.ToInput()
 			if err != nil && validationCtx.Err() == nil {
+				validationStatus.replaceStatus(Prepared, RecordFailed)
 				log.Error("error preparing validation", "err", err)
 				return
 			}
