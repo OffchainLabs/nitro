@@ -117,8 +117,11 @@ pub type DelegateCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutc
 /// Static call: (contract, calldata, evm_gas) → (return_data_len, evm_cost, status)
 pub type StaticCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
 
-/// Last call's return data: () → (return_data)
+/// Last call's return data: () → return_data
 pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
+
+/// Emits a log event: (data, topics) -> error
+pub type EmitLog = Box<dyn Fn(Vec<u8>, usize) -> eyre::Result<()> + Send>;
 
 pub struct EvmAPI {
     get_bytes32: GetBytes32,
@@ -128,6 +131,7 @@ pub struct EvmAPI {
     static_call: StaticCall,
     get_return_data: GetReturnData,
     return_data_len: u32,
+    emit_log: EmitLog,
 }
 
 impl WasmEnv {
@@ -146,6 +150,7 @@ impl WasmEnv {
         delegate_call: DelegateCall,
         static_call: StaticCall,
         get_return_data: GetReturnData,
+        emit_log: EmitLog,
     ) {
         self.evm = Some(EvmAPI {
             get_bytes32,
@@ -154,6 +159,7 @@ impl WasmEnv {
             delegate_call,
             static_call,
             get_return_data,
+            emit_log,
             return_data_len: 0,
         })
     }
@@ -453,6 +459,10 @@ impl EvmAPI {
     pub fn load_return_data(&mut self) -> Vec<u8> {
         (self.get_return_data)()
     }
+
+    pub fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> eyre::Result<()> {
+        (self.emit_log)(data, topics)
+    }
 }
 
 pub type MaybeEscape = Result<(), Escape>;
@@ -463,6 +473,8 @@ pub enum Escape {
     Memory(MemoryAccessError),
     #[error("internal error: `{0}`")]
     Internal(ErrReport),
+    #[error("Logic error: `{0}`")]
+    Logical(ErrReport),
     #[error("out of gas")]
     OutOfGas,
 }
@@ -470,6 +482,10 @@ pub enum Escape {
 impl Escape {
     pub fn internal<T>(error: &'static str) -> Result<T, Escape> {
         Err(Self::Internal(eyre!(error)))
+    }
+
+    pub fn logical<T>(error: &'static str) -> Result<T, Escape> {
+        Err(Self::Logical(eyre!(error)))
     }
 
     pub fn out_of_gas<T>() -> Result<T, Escape> {

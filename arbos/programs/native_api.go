@@ -44,6 +44,11 @@ void getReturnDataImpl(usize api, RustVec * data);
 void getReturnDataWrap(usize api, RustVec * data) {
     return getReturnDataImpl(api, data);
 }
+
+GoApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
+GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
+    return emitLogImpl(api, data, topics);
+}
 */
 import "C"
 import (
@@ -73,6 +78,7 @@ type staticCallType func(
 	retdata_len uint32, gas_left uint64, err error,
 )
 type getReturnDataType func() []byte
+type emitLogType func(data []byte, topics int) error
 
 type apiClosure struct {
 	getBytes32    getBytes32Type
@@ -81,6 +87,7 @@ type apiClosure struct {
 	delegateCall  delegateCallType
 	staticCall    staticCallType
 	getReturnData getReturnDataType
+	emitLog       emitLogType
 }
 
 func newAPI(
@@ -90,6 +97,7 @@ func newAPI(
 	delegateCall delegateCallType,
 	staticCall staticCallType,
 	getReturnData getReturnDataType,
+	emitLog emitLogType,
 ) C.GoApi {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
@@ -99,6 +107,7 @@ func newAPI(
 		delegateCall:  delegateCall,
 		staticCall:    staticCall,
 		getReturnData: getReturnData,
+		emitLog:       emitLog,
 	})
 	return C.GoApi{
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
@@ -107,6 +116,7 @@ func newAPI(
 		delegate_call:   (*[0]byte)(C.delegateCallWrap),
 		static_call:     (*[0]byte)(C.staticCallWrap),
 		get_return_data: (*[0]byte)(C.getReturnDataWrap),
+		emit_log:        (*[0]byte)(C.emitLogWrap),
 		id:              u64(id),
 	}
 }

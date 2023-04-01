@@ -36,6 +36,10 @@ func RandomizeSlice(slice []byte) []byte {
 	return slice
 }
 
+func RandomSlice(size uint64) []byte {
+	return RandomizeSlice(make([]byte, size))
+}
+
 func RandomHash() common.Hash {
 	var hash common.Hash
 	RandomizeSlice(hash[:])

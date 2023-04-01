@@ -8,6 +8,10 @@ use prover::programs::prelude::*;
 // params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
 const SSTORE_SENTRY_EVM_GAS: u64 = 2300;
 
+// params.LogGas and params.LogDataGas
+const LOG_TOPIC_GAS: u64 = 375;
+const LOG_DATA_GAS: u64 = 8;
+
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
 
@@ -129,6 +133,21 @@ pub(crate) fn read_return_data(mut env: WasmEnvMut, dest: u32) -> MaybeEscape {
     let data = env.evm().load_return_data();
     env.write_slice(dest, &data)?;
     assert_eq!(data.len(), len as usize);
+    Ok(())
+}
+
+pub(crate) fn emit_log(mut env: WasmEnvMut, data: u32, len: u32, topics: u32) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    let topics: u64 = topics.into();
+    let length: u64 = len.into();
+    if length < topics * 32 || topics > 4 {
+        return Escape::logical("bad topic data");
+    }
+    env.buy_evm_gas((1 + topics) * LOG_TOPIC_GAS)?;
+    env.buy_evm_gas((length - topics * 32) * LOG_DATA_GAS)?;
+
+    let data = env.read_slice(data, len)?;
+    env.evm().emit_log(data, topics as usize)?;
     Ok(())
 }
 

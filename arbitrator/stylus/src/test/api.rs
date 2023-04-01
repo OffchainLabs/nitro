@@ -112,6 +112,8 @@ impl NativeInstance {
         let get_return_data =
             Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
 
+        let emit_log = Box::new(move |_data, _topics| Ok(()));
+
         self.env_mut().set_evm_api(
             get_bytes32,
             set_bytes32,
@@ -119,6 +121,7 @@ impl NativeInstance {
             delegate_call,
             static_call,
             get_return_data,
+            emit_log,
         );
         storage
     }

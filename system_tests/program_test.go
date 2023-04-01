@@ -357,6 +357,71 @@ func TestProgramCalls(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
+func TestProgramLogs(t *testing.T) {
+	ctx, _, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), true)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	encode := func(topics []common.Hash, data []byte) []byte {
+		args := []byte{byte(len(topics))}
+		for _, topic := range topics {
+			args = append(args, topic[:]...)
+		}
+		args = append(args, data...)
+		return args
+	}
+	randBytes := func(min, max uint64) []byte {
+		return testhelpers.RandomSlice(testhelpers.RandomUint64(min, max))
+	}
+
+	for i := 0; i <= 4; i++ {
+		colors.PrintGrey("Emitting ", i, " topics")
+		topics := make([]common.Hash, i)
+		for j := 0; j < i; j++ {
+			topics[j] = testhelpers.RandomHash()
+		}
+		data := randBytes(0, 48)
+		args := encode(topics, data)
+		tx := l2info.PrepareTxTo("Owner", &logAddr, 1e9, nil, args)
+		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+
+		if len(receipt.Logs) != 1 {
+			Fail(t, "wrong number of logs", len(receipt.Logs))
+		}
+		log := receipt.Logs[0]
+		if !bytes.Equal(log.Data, data) {
+			Fail(t, "data mismatch", log.Data, data)
+		}
+		if len(log.Topics) != len(topics) {
+			Fail(t, "topics mismatch", len(log.Topics), len(topics))
+		}
+		for j := 0; j < i; j++ {
+			if log.Topics[j] != topics[j] {
+				Fail(t, "topic mismatch", log.Topics, topics)
+			}
+		}
+	}
+
+	tooMany := encode([]common.Hash{{}, {}, {}, {}, {}}, []byte{})
+	tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, tooMany)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		Fail(t, "call should have failed")
+	}
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {

@@ -21,6 +21,7 @@ GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * 
 GoApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
 GoApiStatus staticCallWrap  (usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
 void        getReturnDataWrap(usize api, RustVec * data);
+GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics);
 */
 import "C"
 import (
@@ -29,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -183,13 +185,31 @@ func callUserWasm(
 		}
 		return data
 	}
+	emitLog := func(data []byte, topics int) error {
+		if readOnly {
+			return vm.ErrWriteProtection
+		}
+		hashes := make([]common.Hash, topics)
+		for i := 0; i < topics; i++ {
+			hashes[i] = common.BytesToHash(data[:(i+1)*32])
+		}
+		event := &types.Log{
+			Address:     actingAddress,
+			Topics:      hashes,
+			Data:        data[32*topics:],
+			BlockNumber: evm.Context.BlockNumber.Uint64(),
+			// Geth will set other fields
+		}
+		db.AddLog(event)
+		return nil
+	}
 
 	output := &rustVec{}
 	status := userStatus(C.stylus_call(
 		goSlice(module),
 		goSlice(calldata),
 		stylusParams.encode(),
-		newAPI(getBytes32, setBytes32, contractCall, delegateCall, staticCall, getReturnData),
+		newAPI(getBytes32, setBytes32, contractCall, delegateCall, staticCall, getReturnData, emitLog),
 		output,
 		(*u64)(&contract.Gas),
 	))
@@ -275,6 +295,17 @@ func getReturnDataImpl(api usize, output *rustVec) {
 	closure := getAPI(api)
 	return_data := closure.getReturnData()
 	output.setBytes(return_data)
+}
+
+//export emitLogImpl
+func emitLogImpl(api usize, data *rustVec, topics usize) apiStatus {
+	closure := getAPI(api)
+	err := closure.emitLog(data.read(), int(topics))
+	if err != nil {
+		data.setString(err.Error())
+		return apiFailure
+	}
+	return apiSuccess
 }
 
 func (value bytes20) toAddress() common.Address {
