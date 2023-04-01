@@ -125,6 +125,50 @@ pub(crate) fn static_call_contract(
     Ok(status as u8)
 }
 
+pub(crate) fn create1(
+    mut env: WasmEnvMut,
+    code: u32,
+    code_len: u32,
+    endowment: u32,
+    contract: u32,
+) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_copy(code_len as usize)?;
+
+    let code = env.read_slice(code, code_len)?;
+    let endowment = env.read_bytes32(endowment)?;
+    let evm_gas = env.evm_gas_left();
+
+    let (result, ret_len, evm_cost) = env.evm().create1(code, endowment, evm_gas);
+    env.set_return_data_len(ret_len);
+    env.buy_evm_gas(evm_cost)?;
+    env.write_bytes20(contract, result?)?;
+    Ok(())
+}
+
+pub(crate) fn create2(
+    mut env: WasmEnvMut,
+    code: u32,
+    code_len: u32,
+    endowment: u32,
+    salt: u32,
+    contract: u32,
+) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.pay_for_evm_copy(code_len as usize)?;
+
+    let code = env.read_slice(code, code_len)?;
+    let endowment = env.read_bytes32(endowment)?;
+    let salt = env.read_bytes32(salt)?;
+    let evm_gas = env.evm_gas_left();
+
+    let (result, ret_len, evm_cost) = env.evm().create2(code, endowment, salt, evm_gas);
+    env.set_return_data_len(ret_len);
+    env.buy_evm_gas(evm_cost)?;
+    env.write_bytes20(contract, result?)?;
+    Ok(())
+}
+
 pub(crate) fn read_return_data(mut env: WasmEnvMut, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let len = env.return_data_len();
@@ -134,6 +178,12 @@ pub(crate) fn read_return_data(mut env: WasmEnvMut, dest: u32) -> MaybeEscape {
     env.write_slice(dest, &data)?;
     assert_eq!(data.len(), len as usize);
     Ok(())
+}
+
+pub(crate) fn return_data_size(mut env: WasmEnvMut) -> Result<u32, Escape> {
+    let env = WasmEnv::start(&mut env)?;
+    let len = env.return_data_len();
+    Ok(len)
 }
 
 pub(crate) fn emit_log(mut env: WasmEnvMut, data: u32, len: u32, topics: u32) -> MaybeEscape {

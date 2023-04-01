@@ -20,11 +20,14 @@ GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, Ru
 GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas, Bytes32 value, u32 * len);
 GoApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
 GoApiStatus staticCallWrap  (usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
+GoApiStatus create1Wrap(usize api, RustVec * code, Bytes32 endowment,               u64 * gas, u32 * len);
+GoApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len);
 void        getReturnDataWrap(usize api, RustVec * data);
-void        emitLogWrap(usize api, RustVec * data, usize topics);
+GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics);
 */
 import "C"
 import (
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -138,7 +142,10 @@ func callUserWasm(
 			return 0, 0, vm.ErrOutOfGas
 		}
 		gas -= baseCost
-		gas = gas - gas/64
+
+		// apply the 63/64ths rule
+		one64th := gas / 64
+		gas -= one64th
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
@@ -166,7 +173,7 @@ func callUserWasm(
 		}
 
 		interpreter.SetReturnData(ret)
-		cost := arbmath.SaturatingUSub(startGas, returnGas)
+		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
 		return uint32(len(ret)), cost, err
 	}
 	contractCall := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
@@ -177,6 +184,43 @@ func callUserWasm(
 	}
 	staticCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
 		return doCall(contract, vm.STATICCALL, input, gas, common.Big0)
+	}
+	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
+		zeroAddr := common.Address{}
+		startGas := gas
+
+		if readOnly {
+			return zeroAddr, 0, 0, vm.ErrWriteProtection
+		}
+		one64th := gas / 64
+		gas -= one64th
+
+		var res []byte
+		var addr common.Address // zero on failure
+		var returnGas uint64
+		var suberr error
+
+		if salt == nil {
+			res, addr, returnGas, suberr = evm.Create(contract, code, gas, endowment)
+		} else {
+			salt256, _ := uint256.FromBig(salt)
+			res, addr, returnGas, suberr = evm.Create2(contract, code, gas, endowment, salt256)
+		}
+		if suberr != nil {
+			addr = zeroAddr
+		}
+		if !errors.Is(vm.ErrExecutionReverted, suberr) {
+			res = nil // returnData is only provided in the revert case (opCreate)
+		}
+		interpreter.SetReturnData(res)
+		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		return addr, uint32(len(res)), cost, nil
+	}
+	create1 := func(code []byte, endowment *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
+		return create(code, endowment, nil, gas)
+	}
+	create2 := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
+		return create(code, endowment, salt, gas)
 	}
 	getReturnData := func() []byte {
 		data := interpreter.GetReturnData()
@@ -209,7 +253,11 @@ func callUserWasm(
 		goSlice(module),
 		goSlice(calldata),
 		stylusParams.encode(),
-		newAPI(getBytes32, setBytes32, contractCall, delegateCall, staticCall, getReturnData, emitLog),
+		newAPI(
+			getBytes32, setBytes32,
+			contractCall, delegateCall, staticCall, create1, create2, getReturnData,
+			emitLog,
+		),
 		output,
 		(*u64)(&contract.Gas),
 	))
@@ -287,6 +335,34 @@ func staticCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len
 	if err != nil {
 		return apiFailure
 	}
+	return apiSuccess
+}
+
+//export create1Impl
+func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *u32) apiStatus {
+	closure := getAPI(api)
+	addr, ret_len, cost, err := closure.create1(code.read(), endowment.toBig(), uint64(*evmGas))
+	*evmGas = u64(cost) // evmGas becomes the call's cost
+	*len = u32(ret_len)
+	if err != nil {
+		code.setString(err.Error())
+		return apiFailure
+	}
+	code.setBytes(addr.Bytes())
+	return apiSuccess
+}
+
+//export create2Impl
+func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
+	closure := getAPI(api)
+	addr, ret_len, cost, err := closure.create2(code.read(), endowment.toBig(), salt.toBig(), uint64(*evmGas))
+	*evmGas = u64(cost) // evmGas becomes the call's cost
+	*len = u32(ret_len)
+	if err != nil {
+		code.setString(err.Error())
+		return apiFailure
+	}
+	code.setBytes(addr.Bytes())
 	return apiSuccess
 }
 

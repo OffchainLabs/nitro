@@ -40,13 +40,23 @@ GoApiStatus staticCallWrap(usize api, Bytes20 contract, RustVec * calldata, u64 
     return staticCallImpl(api, contract, calldata, gas, len);
 }
 
+GoApiStatus create1Impl(usize api, RustVec * code, Bytes32 endowment, u64 * gas, u32 * len);
+GoApiStatus create1Wrap(usize api, RustVec * code, Bytes32 endowment, u64 * gas, u32 * len) {
+    return create1Impl(api, code, endowment, gas, len);
+}
+
+GoApiStatus create2Impl(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len);
+GoApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len) {
+    return create2Impl(api, code, endowment, salt, gas, len);
+}
+
 void getReturnDataImpl(usize api, RustVec * data);
 void getReturnDataWrap(usize api, RustVec * data) {
     return getReturnDataImpl(api, data);
 }
 
-void emitLogImpl(usize api, RustVec * data, usize topics);
-void emitLogWrap(usize api, RustVec * data, usize topics) {
+GoApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
+GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
 */
@@ -67,15 +77,23 @@ type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
 type contractCallType func(
 	contract common.Address, calldata []byte, gas uint64, value *big.Int) (
-	retdata_len uint32, gas_left uint64, err error,
+	retdata_len uint32, cost uint64, err error,
 )
 type delegateCallType func(
 	contract common.Address, calldata []byte, gas uint64) (
-	retdata_len uint32, gas_left uint64, err error,
+	retdata_len uint32, cost uint64, err error,
 )
 type staticCallType func(
 	contract common.Address, calldata []byte, gas uint64) (
-	retdata_len uint32, gas_left uint64, err error,
+	retdata_len uint32, cost uint64, err error,
+)
+type create1Type func(
+	code []byte, endowment *big.Int, gas uint64) (
+	addr common.Address, retdata_len uint32, cost uint64, err error,
+)
+type create2Type func(
+	code []byte, salt, endowment *big.Int, gas uint64) (
+	addr common.Address, retdata_len uint32, cost uint64, err error,
 )
 type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics int) error
@@ -86,6 +104,8 @@ type apiClosure struct {
 	contractCall  contractCallType
 	delegateCall  delegateCallType
 	staticCall    staticCallType
+	create1       create1Type
+	create2       create2Type
 	getReturnData getReturnDataType
 	emitLog       emitLogType
 }
@@ -96,6 +116,8 @@ func newAPI(
 	contractCall contractCallType,
 	delegateCall delegateCallType,
 	staticCall staticCallType,
+	create1 create1Type,
+	create2 create2Type,
 	getReturnData getReturnDataType,
 	emitLog emitLogType,
 ) C.GoApi {
@@ -106,6 +128,8 @@ func newAPI(
 		contractCall:  contractCall,
 		delegateCall:  delegateCall,
 		staticCall:    staticCall,
+		create1:       create1,
+		create2:       create2,
 		getReturnData: getReturnData,
 		emitLog:       emitLog,
 	})
@@ -115,6 +139,8 @@ func newAPI(
 		contract_call:   (*[0]byte)(C.contractCallWrap),
 		delegate_call:   (*[0]byte)(C.delegateCallWrap),
 		static_call:     (*[0]byte)(C.staticCallWrap),
+		create1:         (*[0]byte)(C.create1Wrap),
+		create2:         (*[0]byte)(C.create2Wrap),
 		get_return_data: (*[0]byte)(C.getReturnDataWrap),
 		emit_log:        (*[0]byte)(C.emitLogWrap),
 		id:              u64(id),

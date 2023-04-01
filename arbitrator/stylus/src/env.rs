@@ -123,12 +123,23 @@ pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
 /// Emits a log event: (data, topics) -> error
 pub type EmitLog = Box<dyn Fn(Vec<u8>, usize) -> eyre::Result<()> + Send>;
 
+/// Creates a contract: (code, endowment, evm_gas) -> (address/error, return_data_len, evm_cost)
+pub type Create1 = Box<dyn Fn(Vec<u8>, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
+
+/// Creates a contract: (code, endowment, salt, evm_gas) -> (address/error, return_data_len, evm_cost)
+pub type Create2 =
+    Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
+
+// Result<(Bytes20, u64), (u32, u64, ErrReport)>
+
 pub struct EvmAPI {
     get_bytes32: GetBytes32,
     set_bytes32: SetBytes32,
     contract_call: ContractCall,
     delegate_call: DelegateCall,
     static_call: StaticCall,
+    create1: Create1,
+    create2: Create2,
     get_return_data: GetReturnData,
     return_data_len: u32,
     emit_log: EmitLog,
@@ -149,6 +160,8 @@ impl WasmEnv {
         contract_call: ContractCall,
         delegate_call: DelegateCall,
         static_call: StaticCall,
+        create1: Create1,
+        create2: Create2,
         get_return_data: GetReturnData,
         emit_log: EmitLog,
     ) {
@@ -158,6 +171,8 @@ impl WasmEnv {
             contract_call,
             delegate_call,
             static_call,
+            create1,
+            create2,
             get_return_data,
             emit_log,
             return_data_len: 0,
@@ -220,6 +235,11 @@ pub struct HostioInfo<'a> {
 impl<'a> HostioInfo<'a> {
     pub fn meter(&mut self) -> &mut MeterData {
         self.meter.as_mut().unwrap()
+    }
+
+    pub fn evm_gas_left(&mut self) -> u64 {
+        let wasm_gas = self.gas_left().into();
+        self.meter().pricing.wasm_to_evm(wasm_gas)
     }
 
     pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
@@ -296,6 +316,16 @@ impl<'a> HostioInfo<'a> {
 
     pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
         self.view().write(ptr.into(), src)
+    }
+
+    pub fn write_bytes20(&self, ptr: u32, src: Bytes20) -> eyre::Result<()> {
+        self.write_slice(ptr, &src.0)?;
+        Ok(())
+    }
+
+    pub fn write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
+        self.write_slice(ptr, &src.0)?;
+        Ok(())
     }
 }
 
@@ -454,6 +484,25 @@ impl EvmAPI {
         evm_gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         (self.static_call)(contract, input, evm_gas)
+    }
+
+    pub fn create1(
+        &mut self,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        evm_gas: u64,
+    ) -> (eyre::Result<Bytes20>, u32, u64) {
+        (self.create1)(code, endowment, evm_gas)
+    }
+
+    pub fn create2(
+        &mut self,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        salt: Bytes32,
+        evm_gas: u64,
+    ) -> (eyre::Result<Bytes20>, u32, u64) {
+        (self.create2)(code, endowment, salt, evm_gas)
     }
 
     pub fn load_return_data(&mut self) -> Vec<u8> {
