@@ -579,7 +579,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
 		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
-		validatorPendingValidationsGauge.Inc(1)
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
@@ -602,6 +601,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 					validationStatus.Runs = append(validationStatus.Runs, run)
 				}
 			}
+			validatorPendingValidationsGauge.Inc(1)
 			replaced := validationStatus.replaceStatus(Prepared, ValidationSent)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set status"))
