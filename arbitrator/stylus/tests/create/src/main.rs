@@ -21,7 +21,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     }
 
     let code = input;
-    let contract = contract::create(code, endowment, salt);
+    let contract = contract::create(code, endowment, salt)?;
     evm::log(&[contract.into()], &[]).unwrap();
     Ok(contract.to_vec())
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -82,6 +83,21 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client arbutil.L1Interfac
 		return nil, fmt.Errorf("waitFoxTx got: %w", err)
 	}
 	return txRes, arbutil.DetailTxError(ctx, client, tx, txRes)
+}
+
+func EnsureTxFailed(t *testing.T, ctx context.Context, client arbutil.L1Interface, tx *types.Transaction) *types.Receipt {
+	t.Helper()
+	return EnsureTxFailedWithTimeout(t, ctx, client, tx, time.Second*5)
+}
+
+func EnsureTxFailedWithTimeout(t *testing.T, ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, timeout time.Duration) *types.Receipt {
+	t.Helper()
+	receipt, err := WaitForTx(ctx, client, tx.Hash(), timeout)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
+		Fail(t, "unexpected succeess")
+	}
+	return receipt
 }
 
 func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, client ethereum.ChainReader) {

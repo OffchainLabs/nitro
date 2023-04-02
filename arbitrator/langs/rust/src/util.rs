@@ -8,7 +8,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
 #[repr(C)]
 pub struct Bytes20(pub [u8; 20]);
 
@@ -19,6 +19,10 @@ impl Bytes20 {
 
     pub fn from_slice(data: &[u8]) -> Result<Self, TryFromSliceError> {
         Ok(Self(data.try_into()?))
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Bytes20::default()
     }
 }
 
@@ -101,6 +105,10 @@ impl Bytes32 {
 
     pub fn from_slice(data: &[u8]) -> Result<Self, TryFromSliceError> {
         Ok(Self(data.try_into()?))
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Bytes32::default()
     }
 }
 

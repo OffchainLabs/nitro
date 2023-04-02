@@ -161,9 +161,9 @@ extern "C" {
     fn return_data_size() -> u32;
 }
 
-pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Bytes20 {
+pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<Bytes20, Vec<u8>> {
     let mut contract = [0; 20];
-    unsafe {
+    let contract = unsafe {
         if let Some(salt) = salt {
             create2(
                 code.as_ptr(),
@@ -180,10 +180,20 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Bytes20
                 contract.as_mut_ptr(),
             );
         }
+        Bytes20(contract)
+    };
+    if contract.is_zero() {
+        unsafe {
+            let len = return_data_len();
+            let mut revert_data = Vec::with_capacity(len);
+            read_return_data(revert_data.as_mut_ptr());
+            revert_data.set_len(len);
+            return Err(revert_data)
+        }
     }
-    Bytes20(contract)
+    Ok(contract)
 }
 
-pub fn return_data_len() -> u32 {
-    unsafe { return_data_size() }
+pub fn return_data_len() -> usize {
+    unsafe { return_data_size() as usize }
 }

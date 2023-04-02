@@ -764,8 +764,12 @@ func deploySimple(
 	return addr, simple
 }
 
-func deployContractInitCode(code []byte) []byte {
+func deployContractInitCode(code []byte, revert bool) []byte {
 	// a small prelude to return the given contract code
+	last_opcode := vm.RETURN
+	if revert {
+		last_opcode = vm.REVERT
+	}
 	deploy := []byte{byte(vm.PUSH32)}
 	deploy = append(deploy, math.U256Bytes(big.NewInt(int64(len(code))))...)
 	deploy = append(deploy, byte(vm.DUP1))
@@ -776,7 +780,7 @@ func deployContractInitCode(code []byte) []byte {
 	deploy = append(deploy, byte(vm.CODECOPY))
 	deploy = append(deploy, byte(vm.PUSH1))
 	deploy = append(deploy, 0)
-	deploy = append(deploy, byte(vm.RETURN))
+	deploy = append(deploy, byte(last_opcode))
 	deploy = append(deploy, code...)
 	return deploy
 }
@@ -784,7 +788,7 @@ func deployContractInitCode(code []byte) []byte {
 func deployContract(
 	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
 ) common.Address {
-	deploy := deployContractInitCode(code)
+	deploy := deployContractInitCode(code, false)
 	basefee := GetBaseFee(t, client, ctx)
 	nonce, err := client.NonceAt(ctx, auth.From, nil)
 	Require(t, err)

@@ -161,11 +161,7 @@ func TestProgramCalls(t *testing.T) {
 		// execute onchain for proving's sake
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, data)
 		Require(t, l2client.SendTransaction(ctx, tx))
-		receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
-		Require(t, err)
-		if receipt.Status != types.ReceiptStatusFailed {
-			Fail(t, "unexpected success")
-		}
+		EnsureTxFailed(t, ctx, l2client, tx)
 	}
 
 	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
@@ -392,11 +388,7 @@ func TestProgramLogs(t *testing.T) {
 	tooMany := encode([]common.Hash{{}, {}, {}, {}, {}}, []byte{})
 	tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, tooMany)
 	Require(t, l2client.SendTransaction(ctx, tx))
-	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusFailed {
-		Fail(t, "call should have failed")
-	}
+	EnsureTxFailed(t, ctx, l2client, tx)
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
@@ -415,7 +407,7 @@ func TestProgramCreate(t *testing.T) {
 	}
 
 	deployWasm := readWasmFile(t, rustFile("storage"))
-	deployCode := deployContractInitCode(deployWasm)
+	deployCode := deployContractInitCode(deployWasm, false)
 	startValue := testhelpers.RandomCallValue(1e12)
 	salt := testhelpers.RandomHash()
 
@@ -463,6 +455,19 @@ func TestProgramCreate(t *testing.T) {
 	create2Addr := crypto.CreateAddress2(createAddr, salt, crypto.Keccak256(deployCode))
 	create(create1Args, create1Addr)
 	create(create2Args, create2Addr)
+
+	revertData := []byte("✌(✰‿✰)✌ ┏(✰‿✰)┛ ┗(✰‿✰)┓ ┗(✰‿✰)┛ ┏(✰‿✰)┓ ✌(✰‿✰)✌")
+	revertArgs := []byte{0x01}
+	revertArgs = append(revertArgs, common.BigToHash(startValue).Bytes()...)
+	revertArgs = append(revertArgs, deployContractInitCode(revertData, true)...)
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+	auth.Value = startValue
+	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
 func setupProgramTest(t *testing.T, file string, jit bool) (

@@ -266,7 +266,6 @@ func callUserWasm(
 	if status == userFailure {
 		log.Debug("program failure", "err", string(data), "program", actingAddress)
 	}
-
 	return data, err
 }
 
