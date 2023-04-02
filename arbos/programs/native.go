@@ -210,6 +210,10 @@ func callUserWasm(
 			keccakCost := arbmath.SaturatingUMul(params.Keccak256WordGas, keccakWords)
 			baseCost = arbmath.SaturatingUAdd(baseCost, keccakCost)
 		}
+		if gas < baseCost {
+			return zeroAddr, 0, gas, vm.ErrOutOfGas
+		}
+		gas -= baseCost
 
 		// apply the 63/64ths rule
 		one64th := gas / 64
