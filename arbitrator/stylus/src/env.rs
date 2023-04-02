@@ -278,22 +278,22 @@ impl<'a> HostioInfo<'a> {
         self.memory.view(&self.store.as_store_ref())
     }
 
-    pub fn write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
+    pub fn write_u8(&mut self, ptr: u32, x: u8) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x).unwrap();
-        self
+        ptr.deref(&self.view()).write(x)?;
+        Ok(self)
     }
 
-    pub fn write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
+    pub fn write_u32(&mut self, ptr: u32, x: u32) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x).unwrap();
-        self
+        ptr.deref(&self.view()).write(x)?;
+        Ok(self)
     }
 
-    pub fn write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
+    pub fn write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x).unwrap();
-        self
+        ptr.deref(&self.view()).write(x)?;
+        Ok(self)
     }
 
     pub fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryAccessError> {

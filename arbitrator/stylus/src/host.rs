@@ -74,7 +74,7 @@ pub(crate) fn call_contract(
 
     let (outs_len, evm_cost, status) = env.evm().contract_call(contract, input, evm_gas, value);
     env.set_return_data_len(outs_len);
-    env.write_u32(return_data_len, outs_len);
+    env.write_u32(return_data_len, outs_len)?;
     env.buy_evm_gas(evm_cost)?;
     Ok(status as u8)
 }
@@ -97,7 +97,7 @@ pub(crate) fn delegate_call_contract(
 
     let (outs_len, evm_cost, status) = env.evm().delegate_call(contract, input, evm_gas);
     env.set_return_data_len(outs_len);
-    env.write_u32(return_data_len, outs_len);
+    env.write_u32(return_data_len, outs_len)?;
     env.buy_evm_gas(evm_cost)?;
     Ok(status as u8)
 }
@@ -120,7 +120,7 @@ pub(crate) fn static_call_contract(
 
     let (outs_len, evm_cost, status) = env.evm().static_call(contract, input, evm_gas);
     env.set_return_data_len(outs_len);
-    env.write_u32(return_data_len, outs_len);
+    env.write_u32(return_data_len, outs_len)?;
     env.buy_evm_gas(evm_cost)?;
     Ok(status as u8)
 }
@@ -131,6 +131,7 @@ pub(crate) fn create1(
     code_len: u32,
     endowment: u32,
     contract: u32,
+    revert_data_len: u32,
 ) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(code_len as usize)?;
@@ -141,6 +142,7 @@ pub(crate) fn create1(
 
     let (result, ret_len, evm_cost) = env.evm().create1(code, endowment, evm_gas);
     env.set_return_data_len(ret_len);
+    env.write_u32(revert_data_len, ret_len)?;
     env.buy_evm_gas(evm_cost)?;
     env.write_bytes20(contract, result?)?;
     Ok(())
@@ -153,6 +155,7 @@ pub(crate) fn create2(
     endowment: u32,
     salt: u32,
     contract: u32,
+    revert_data_len: u32,
 ) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(code_len as usize)?;
@@ -164,6 +167,7 @@ pub(crate) fn create2(
 
     let (result, ret_len, evm_cost) = env.evm().create2(code, endowment, salt, evm_gas);
     env.set_return_data_len(ret_len);
+    env.write_u32(revert_data_len, ret_len)?;
     env.buy_evm_gas(evm_cost)?;
     env.write_bytes20(contract, result?)?;
     Ok(())
