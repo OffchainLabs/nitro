@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::host;
 use eyre::{eyre, ErrReport};
 use ouroboros::self_referencing;
 use prover::{
@@ -268,9 +269,9 @@ impl<'a> HostioInfo<'a> {
         }
     }
 
-    pub fn pay_for_evm_copy(&mut self, bytes: usize) -> MaybeEscape {
+    pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
         let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let evm_gas = evm_words(bytes as u64).saturating_mul(3); // 3 evm gas per word
+        let evm_gas = evm_words(bytes).saturating_mul(host::COPY_WORD_GAS);
         self.buy_evm_gas(evm_gas)
     }
 
@@ -416,9 +417,9 @@ impl<'a> MeterState<'a> {
         }
     }
 
-    pub fn pay_for_evm_copy(&mut self, bytes: usize) -> MaybeEscape {
+    pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
         let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let evm_gas = evm_words(bytes as u64).saturating_mul(3); // 3 evm gas per word
+        let evm_gas = evm_words(bytes).saturating_mul(host::COPY_WORD_GAS);
         self.buy_evm_gas(evm_gas)
     }
 }

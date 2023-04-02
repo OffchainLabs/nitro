@@ -6,11 +6,14 @@ use arbutil::Color;
 use prover::programs::prelude::*;
 
 // params.SstoreSentryGasEIP2200 (see operations_acl_arbitrum.go)
-const SSTORE_SENTRY_EVM_GAS: u64 = 2300;
+pub const SSTORE_SENTRY_EVM_GAS: u64 = 2300;
 
 // params.LogGas and params.LogDataGas
-const LOG_TOPIC_GAS: u64 = 375;
-const LOG_DATA_GAS: u64 = 8;
+pub const LOG_TOPIC_GAS: u64 = 375;
+pub const LOG_DATA_GAS: u64 = 8;
+
+// params.CopyGas
+pub const COPY_WORD_GAS: u64 = 3;
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     WasmEnv::begin(&mut env)?;
@@ -22,7 +25,7 @@ pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
 
 pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
     let mut meter = WasmEnv::begin(&mut env)?;
-    meter.pay_for_evm_copy(len as usize)?;
+    meter.pay_for_evm_copy(len.into())?;
 
     let (env, memory) = WasmEnv::data(&mut env);
     env.outs = memory.read_slice(ptr, len)?;
@@ -64,7 +67,7 @@ pub(crate) fn call_contract(
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(calldata_len as usize)?;
+    env.pay_for_evm_copy(calldata_len.into())?;
     wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
 
     let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
@@ -88,7 +91,7 @@ pub(crate) fn delegate_call_contract(
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(calldata_len as usize)?;
+    env.pay_for_evm_copy(calldata_len.into())?;
     wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
 
     let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
@@ -111,7 +114,7 @@ pub(crate) fn static_call_contract(
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(calldata_len as usize)?;
+    env.pay_for_evm_copy(calldata_len.into())?;
     wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
 
     let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
@@ -134,7 +137,7 @@ pub(crate) fn create1(
     revert_data_len: u32,
 ) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(code_len as usize)?;
+    env.pay_for_evm_copy(code_len.into())?;
 
     let code = env.read_slice(code, code_len)?;
     let endowment = env.read_bytes32(endowment)?;
@@ -158,7 +161,7 @@ pub(crate) fn create2(
     revert_data_len: u32,
 ) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(code_len as usize)?;
+    env.pay_for_evm_copy(code_len.into())?;
 
     let code = env.read_slice(code, code_len)?;
     let endowment = env.read_bytes32(endowment)?;
@@ -176,7 +179,7 @@ pub(crate) fn create2(
 pub(crate) fn read_return_data(mut env: WasmEnvMut, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let len = env.return_data_len();
-    env.pay_for_evm_copy(len as usize)?;
+    env.pay_for_evm_copy(len.into())?;
 
     let data = env.evm().load_return_data();
     env.write_slice(dest, &data)?;

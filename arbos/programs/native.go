@@ -136,10 +136,7 @@ func callUserWasm(
 		// computes makeCallVariantGasCallEIP2929 and gasCall/gasDelegateCall/gasStaticCall
 		baseCost, err := vm.WasmCallCost(db, contract, value, startGas)
 		if err != nil {
-			return 0, 0, err
-		}
-		if gas < baseCost {
-			return 0, 0, vm.ErrOutOfGas
+			return 0, gas, err
 		}
 		gas -= baseCost
 
@@ -150,7 +147,7 @@ func callUserWasm(
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
 			depth := evm.Depth()
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas-gas, startGas, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
 		}
 
 		// EVM rule: calls that pay get a stipend (opCall)
@@ -186,21 +183,50 @@ func callUserWasm(
 		return doCall(contract, vm.STATICCALL, input, gas, common.Big0)
 	}
 	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
+		// This closure can perform both kinds of contract creation based on the salt passed in.
+		// The implementation for each should match that of the EVM.
+		//
+		// Note that while the Yellow Paper is authoritative, the following go-ethereum
+		// functions provide corresponding implementations in the vm package.
+		//     - instructions.go opCreate() opCreate2()
+		//     - gas_table.go    gasCreate() gasCreate2()
+		//
+
+		opcode := vm.CREATE
+		if salt != nil {
+			opcode = vm.CREATE2
+		}
 		zeroAddr := common.Address{}
 		startGas := gas
 
 		if readOnly {
 			return zeroAddr, 0, 0, vm.ErrWriteProtection
 		}
+
+		// pay for static and dynamic costs (gasCreate and gasCreate2)
+		baseCost := params.CreateGas
+		if opcode == vm.CREATE2 {
+			keccakWords := arbmath.WordsForBytes(uint64(len(code)))
+			keccakCost := arbmath.SaturatingUMul(params.Keccak256WordGas, keccakWords)
+			baseCost = arbmath.SaturatingUAdd(baseCost, keccakCost)
+		}
+
+		// apply the 63/64ths rule
 		one64th := gas / 64
 		gas -= one64th
+
+		// Tracing: emit the create
+		if tracingInfo != nil {
+			depth := evm.Depth()
+			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
+		}
 
 		var res []byte
 		var addr common.Address // zero on failure
 		var returnGas uint64
 		var suberr error
 
-		if salt == nil {
+		if opcode == vm.CREATE {
 			res, addr, returnGas, suberr = evm.Create(contract, code, gas, endowment)
 		} else {
 			salt256, _ := uint256.FromBig(salt)
