@@ -109,7 +109,6 @@ impl NativeInstance {
 
         let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
         let gas_left = expect_global(STYLUS_GAS_LEFT);
-
         let gas_status = expect_global(STYLUS_GAS_STATUS);
 
         let env = func_env.as_mut(&mut store);

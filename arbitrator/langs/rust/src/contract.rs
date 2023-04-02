@@ -147,7 +147,13 @@ pub fn static_call(
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    fn create1(code: *const u8, code_len: usize, endowment: *const u8, contract: *mut u8, revert_data_len: *mut usize);
+    fn create1(
+        code: *const u8,
+        code_len: usize,
+        endowment: *const u8,
+        contract: *mut u8,
+        revert_data_len: *mut usize,
+    );
 
     fn create2(
         code: *const u8,
@@ -191,7 +197,7 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
             let mut revert_data = Vec::with_capacity(revert_data_len);
             read_return_data(revert_data.as_mut_ptr());
             revert_data.set_len(revert_data_len);
-            return Err(revert_data)
+            return Err(revert_data);
         }
     }
     Ok(contract)
