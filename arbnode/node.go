@@ -488,6 +488,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 
 	return &config
 }
@@ -500,6 +501,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
+	config.SyncMonitor = TestSyncMonitorConfig
 
 	return &config
 }
@@ -1136,8 +1138,8 @@ func (n *Node) SyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.SyncProgressMap()
 }
 
-func (n *Node) GetDelayedMaxMessageCount() arbutil.MessageIndex {
-	return n.SyncMonitor.GetDelayedMaxMessageCount()
+func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
+	return n.SyncMonitor.SyncTargetMessageCount()
 }
 
 // TODO: switch from pulling to pushing safe/finalized
