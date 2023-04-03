@@ -11,44 +11,6 @@ import (
 	"testing"
 )
 
-// import (
-// 	"context"
-// 	"fmt"
-// 	"math"
-// 	"math/rand"
-// 	"testing"
-
-// 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-// 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-// 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
-// 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-// 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-// 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
-// 	"github.com/ethereum/go-ethereum/common"
-// 	"github.com/ethereum/go-ethereum/crypto"
-// 	"github.com/offchainlabs/nitro/util/headerreader"
-// 	"github.com/stretchr/testify/require"
-// 	"math/big"
-// )
-
-// var _ = protocol.ChallengeVertex(&ChallengeVertex{})
-
-// func honestHashesUpTo(n uint64) []common.Hash {
-// 	hashes := make([]common.Hash, n)
-// 	for i := uint64(0); i < n; i++ {
-// 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
-// 	}
-// 	return hashes
-// }
-
-// func evilHashesUpTo(n uint64) []common.Hash {
-// 	hashes := make([]common.Hash, n)
-// 	for i := uint64(0); i < n; i++ {
-// 		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", math.MaxUint64-i)))
-// 	}
-// 	return hashes
-// }
-
 func TestEdgeChallengeManager_IsPresumptive(t *testing.T) {
 	ctx := context.Background()
 	height := protocol.Height(3)
@@ -144,131 +106,105 @@ func TestEdgeChallengeManager_IsPresumptive(t *testing.T) {
 	})
 }
 
-// func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
-// 	ctx := context.Background()
-// 	t.Run("children are one step away", func(t *testing.T) {
-// 		height1 := uint64(1)
-// 		height2 := uint64(1)
-// 		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
+func TestSpecChallengeManager_IsOneStepForkSource(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
 
-// 		honestHashes := honestHashesUpTo(10)
-// 		evilHashes := evilHashesUpTo(10)
-// 		honestManager, err := statemanager.New(honestHashes)
-// 		require.NoError(t, err)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
 
-// 		evilManager, err := statemanager.New(evilHashes)
-// 		require.NoError(t, err)
-// 		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
-// 		require.NoError(t, err)
-// 		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
-// 		require.NoError(t, err)
+	opts := []statemanager.Opt{
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	}
 
-// 		// We add two leaves to the challenge.
-// 		_, err = challenge.AddBlockChallengeLeaf(ctx, a1, honestCommit)
-// 		require.NoError(t, err)
-// 		_, err = challenge.AddBlockChallengeLeaf(ctx, a2, evilCommit)
-// 		require.NoError(t, err)
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
 
-// 		manager, err := chain.CurrentChallengeManager(ctx)
-// 		require.NoError(t, err)
-// 		challengeInner, err := challenge.inner(ctx)
-// 		require.NoError(t, err)
-// 		rootV, err := manager.GetVertex(ctx, challengeInner.RootId)
-// 		require.NoError(t, err)
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
 
-// 		atOSF, err := rootV.Unwrap().ChildrenAreAtOneStepFork(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, true, atOSF)
-// 	})
-// 	t.Run("different heights", func(t *testing.T) {
-// 		height1 := uint64(3)
-// 		height2 := uint64(7)
-// 		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
 
-// 		honestHashes := honestHashesUpTo(10)
-// 		evilHashes := evilHashesUpTo(10)
-// 		honestManager, err := statemanager.New(honestHashes)
-// 		require.NoError(t, err)
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
 
-// 		evilManager, err := statemanager.New(evilHashes)
-// 		require.NoError(t, err)
-// 		honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
-// 		require.NoError(t, err)
-// 		evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
-// 		require.NoError(t, err)
+	t.Run("lone level zero edge is not one step fork source", func(t *testing.T) {
+		isOSF, err := honestEdge.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
 
-// 		// We add two leaves to the challenge.
-// 		_, err = challenge.AddBlockChallengeLeaf(ctx, a1, honestCommit)
-// 		require.NoError(t, err)
-// 		_, err = challenge.AddBlockChallengeLeaf(ctx, a2, evilCommit)
-// 		require.NoError(t, err)
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
 
-// 		manager, err := chain.CurrentChallengeManager(ctx)
-// 		require.NoError(t, err)
-// 		challengeInner, err := challenge.inner(ctx)
-// 		require.NoError(t, err)
-// 		rootV, err := manager.GetVertex(ctx, challengeInner.RootId)
-// 		require.NoError(t, err)
+	t.Run("level zero edge with rivals is not one step fork source", func(t *testing.T) {
+		isOSF, err := honestEdge.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+		isOSF, err = evilEdge.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+	t.Run("single bisected edge is not one step fork source", func(t *testing.T) {
+		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+		require.NoError(t, err)
+		honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+		require.NoError(t, err)
+		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+		require.NoError(t, err)
 
-// 		atOSF, err := rootV.Unwrap().ChildrenAreAtOneStepFork(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, false, atOSF)
-// 	})
-// 	t.Run("two bisection leading to one step fork", func(t *testing.T) {
-// 		t.Skip()
-// 		height1 := uint64(2)
-// 		height2 := uint64(2)
-// 		a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
+		isOSF, err := lower.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+		isOSF, err = upper.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+	t.Run("post bisection, mutual edge is one step fork source", func(t *testing.T) {
+		evilBisectCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, 1)
+		require.NoError(t, err)
+		evilProof, err := evilStateManager.PrefixProof(ctx, 1, 3)
+		require.NoError(t, err)
+		lower, upper, err := evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
+		require.NoError(t, err)
 
-// 		honestHashes := honestHashesUpTo(height1)
-// 		evilHashes := evilHashesUpTo(height2)
-// 		honestCommit, err := util.NewHistoryCommitment(height1, honestHashes)
-// 		require.NoError(t, err)
-// 		evilCommit, err := util.NewHistoryCommitment(height2, evilHashes)
-// 		require.NoError(t, err)
+		isOSF, err := lower.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isOSF)
 
-// 		// We add two leaves to the challenge.
-// 		v1, err := challenge.AddBlockChallengeLeaf(ctx, a1, honestCommit)
-// 		require.NoError(t, err)
-// 		v2, err := challenge.AddBlockChallengeLeaf(ctx, a2, evilCommit)
-// 		require.NoError(t, err)
-
-// 		manager, err := chain.CurrentChallengeManager(ctx)
-// 		require.NoError(t, err)
-// 		challengeInner, err := challenge.inner(ctx)
-// 		require.NoError(t, err)
-// 		rootV, err := manager.GetVertex(ctx, challengeInner.RootId)
-// 		require.NoError(t, err)
-
-// 		atOSF, err := rootV.Unwrap().ChildrenAreAtOneStepFork(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, false, atOSF)
-
-// 		// We then bisect, and then the vertices we bisected to should
-// 		// now be at one step forks, as they will be at height 1 while their
-// 		// parent is at height 0.
-// 		bisectedTo2V, err := v2.Bisect(ctx, util.HistoryCommitment{}, make([]byte, 0))
-// 		require.NoError(t, err)
-// 		bisectedTo2 := bisectedTo2V.(*ChallengeVertex)
-// 		bisectedTo2Inner, err := bisectedTo2.inner(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, uint64(1), bisectedTo2Inner.Height.Uint64())
-
-// 		bisectedTo1V, err := v1.Bisect(ctx, util.HistoryCommitment{}, make([]byte, 0))
-// 		require.NoError(t, err)
-// 		bisectedTo1 := bisectedTo1V.(*ChallengeVertex)
-// 		bisectedTo1Inner, err := bisectedTo1.inner(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, uint64(1), bisectedTo1Inner.Height.Uint64())
-
-// 		rootV, err = manager.GetVertex(ctx, challengeInner.RootId)
-// 		require.NoError(t, err)
-
-// 		atOSF, err = rootV.Unwrap().ChildrenAreAtOneStepFork(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, true, atOSF)
-// 	})
-// }
+		isOSF, err = upper.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+}
 
 // func TestChallengeVertex_Bisect(t *testing.T) {
 // 	ctx := context.Background()

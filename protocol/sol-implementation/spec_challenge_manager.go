@@ -64,6 +64,8 @@ func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
 		switch {
 		case strings.Contains(errS, "not length 1"):
 			return false, nil
+		case strings.Contains(errS, "is presumptive"):
+			return false, nil
 		default:
 			return false, err
 		}
