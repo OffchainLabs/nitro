@@ -20,19 +20,19 @@ func NewSyncMonitor(exec *ExecutionEngine) *SyncMonitor {
 
 func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	res := s.consensus.SyncProgressMap()
-	consensusDelayedMax := s.consensus.GetDelayedMaxMessageCount()
+	consensusSyncTarget := s.consensus.SyncTargetMessageCount()
 
 	built, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		res["headMsgNumberError"] = err
 	}
 
-	if built+1 >= consensusDelayedMax && len(res) == 0 {
+	if built+1 >= consensusSyncTarget && len(res) == 0 {
 		return res
 	}
 
 	res["builtBlock"] = built
-	res["consensusDelayedMax"] = consensusDelayedMax
+	res["consensusSyncTarget"] = consensusSyncTarget
 
 	return res
 }

@@ -1138,8 +1138,8 @@ func (n *Node) SyncProgressMap() map[string]interface{} {
 	return n.SyncMonitor.SyncProgressMap()
 }
 
-func (n *Node) GetDelayedMaxMessageCount() arbutil.MessageIndex {
-	return n.SyncMonitor.GetDelayedMaxMessageCount()
+func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
+	return n.SyncMonitor.SyncTargetMessageCount()
 }
 
 // TODO: switch from pulling to pushing safe/finalized

@@ -74,7 +74,7 @@ type BatchFetcher interface {
 
 type ConsensusInfo interface {
 	SyncProgressMap() map[string]interface{}
-	GetDelayedMaxMessageCount() arbutil.MessageIndex
+	SyncTargetMessageCount() arbutil.MessageIndex
 
 	// TODO: switch from pulling to pushing safe/finalized
 	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)

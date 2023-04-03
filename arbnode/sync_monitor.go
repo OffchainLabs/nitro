@@ -19,9 +19,9 @@ type SyncMonitor struct {
 	coordinator *SeqCoordinator
 	initialized bool
 
-	maxMsgLock          sync.Mutex
-	lastMaxMessageCount arbutil.MessageIndex
-	prevMaxMessageCount arbutil.MessageIndex
+	syncTargetLock sync.Mutex
+	nextSyncTarget arbutil.MessageIndex
+	syncTarget     arbutil.MessageIndex
 }
 
 func NewSyncMonitor(config func() *SyncMonitorConfig) *SyncMonitor {
@@ -53,23 +53,23 @@ func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *Transacti
 	s.initialized = true
 }
 
-func (s *SyncMonitor) updateDelayedMaxMessageCount(ctx context.Context) time.Duration {
-	maxMsg, err := s.maxMessageCount()
+func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
+	nextSyncTarget, err := s.maxMessageCount()
 	if err != nil {
 		log.Warn("failed readin max msg count", "err", err)
 		return s.config().MsgLag
 	}
-	s.maxMsgLock.Lock()
-	defer s.maxMsgLock.Unlock()
-	s.prevMaxMessageCount = s.lastMaxMessageCount
-	s.lastMaxMessageCount = maxMsg
+	s.syncTargetLock.Lock()
+	defer s.syncTargetLock.Unlock()
+	s.syncTarget = s.nextSyncTarget
+	s.nextSyncTarget = nextSyncTarget
 	return s.config().MsgLag
 }
 
-func (s *SyncMonitor) GetDelayedMaxMessageCount() arbutil.MessageIndex {
-	s.maxMsgLock.Lock()
-	defer s.maxMsgLock.Unlock()
-	return s.prevMaxMessageCount
+func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
+	s.syncTargetLock.Lock()
+	defer s.syncTargetLock.Unlock()
+	return s.syncTarget
 }
 
 func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
@@ -122,8 +122,8 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		return res
 	}
 
-	delayedMax := s.GetDelayedMaxMessageCount()
-	res["delayedMaxMsgCount"] = delayedMax
+	syncTarget := s.SyncTargetMessageCount()
+	res["syncTargetMsgCount"] = syncTarget
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
@@ -175,7 +175,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 
 func (s *SyncMonitor) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
-	s.CallIteratively(s.updateDelayedMaxMessageCount)
+	s.CallIteratively(s.updateSyncTarget)
 }
 
 func (s *SyncMonitor) Synced() bool {
@@ -185,14 +185,14 @@ func (s *SyncMonitor) Synced() bool {
 	if !s.Started() {
 		return false
 	}
-	delayedMax := s.GetDelayedMaxMessageCount()
+	syncTarget := s.SyncTargetMessageCount()
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
 		return false
 	}
 
-	if delayedMax > msgCount {
+	if syncTarget > msgCount {
 		return false
 	}
 
