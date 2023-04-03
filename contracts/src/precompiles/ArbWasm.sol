@@ -30,9 +30,9 @@ interface ArbWasm {
     // @return cost the cost (in wasm gas) of starting a stylus hostio call
     function wasmHostioCost() external view returns (uint64 price);
 
-    // @notice gets the current program version
+    // @notice gets the stylus version the program was most recently compiled against, returns 0 for EVM contracts
     // @return version program version
-    function wasmProgramVersion(address program) external view returns (uint32 version);
+    function programVersion(address program) external view returns (uint32 version);
 
     error ProgramNotCompiled();
     error ProgramOutOfDate(uint32 version);

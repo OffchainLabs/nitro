@@ -48,7 +48,7 @@ func keccakTest(t *testing.T, jit bool) {
 	Require(t, err)
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
-	programVersion, err := arbWasm.WasmProgramVersion(nil, programAddress)
+	programVersion, err := arbWasm.ProgramVersion(nil, programAddress)
 	Require(t, err)
 	if stylusVersion == 0 || programVersion != stylusVersion {
 		Fail(t, "unexpected versions", stylusVersion, programVersion)
