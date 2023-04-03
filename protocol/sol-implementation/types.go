@@ -3,6 +3,7 @@ package solimpl
 import (
 	"bytes"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -62,20 +63,9 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	return &assertionNode, nil
 }
 
-// Challenge is a developer-friendly wrapper around
-// the protocol struct with the same name.
-type Challenge struct {
-	chain      *AssertionChain
+type SpecEdge struct {
 	id         [32]byte
-	challenger common.Address
-	typ        protocol.ChallengeType
-}
-
-// ChallengeVertex is a developer-friendly wrapper around
-// the protocol struct with the same name.
-type ChallengeVertex struct {
-	chain         *AssertionChain
-	id            [32]byte
-	height        uint64
-	historyCommit common.Hash
+	manager    *SpecChallengeManager
+	miniStaker util.Option[common.Address]
+	inner      challengeV2gen.ChallengeEdge
 }

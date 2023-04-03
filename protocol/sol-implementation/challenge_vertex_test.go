@@ -1,4 +1,4 @@
-package solimpl
+package solimpl_test
 
 // import (
 // 	"context"
@@ -21,46 +21,6 @@ package solimpl
 // )
 
 // var _ = protocol.ChallengeVertex(&ChallengeVertex{})
-
-// func TestChallengeVertex_ConfirmPsTimer(t *testing.T) {
-// 	ctx := context.Background()
-// 	height1 := uint64(7)
-// 	height2 := uint64(3)
-// 	a1, a2, challenge, chain1, _ := setupTopLevelFork(t, ctx, height1, height2)
-
-// 	// We add two leaves to the challenge.
-// 	honestHashes := honestHashesUpTo(10)
-// 	evilHashes := evilHashesUpTo(10)
-// 	honestManager, err := statemanager.New(honestHashes)
-// 	require.NoError(t, err)
-
-// 	evilManager, err := statemanager.New(evilHashes)
-// 	require.NoError(t, err)
-
-// 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
-// 	require.NoError(t, err)
-// 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
-// 	require.NoError(t, err)
-
-// 	// We add two leaves to the challenge.
-// 	v1, err := challenge.AddBlockChallengeLeaf(ctx, a1, honestCommit)
-// 	require.NoError(t, err)
-// 	_, err = challenge.AddBlockChallengeLeaf(ctx, a2, evilCommit)
-// 	require.NoError(t, err)
-
-// 	t.Run("vertex ps timer has not exceeded challenge duration", func(t *testing.T) {
-// 		require.ErrorIs(t, v1.ConfirmForPsTimer(ctx), ErrPsTimerNotYet)
-// 	})
-// 	t.Run("vertex ps timer has exceeded challenge duration", func(t *testing.T) {
-// 		t.Skip("TODO(RJ): Add customizable challenge period")
-// 		backend, ok := chain1.backend.(*backends.SimulatedBackend)
-// 		require.Equal(t, true, ok)
-// 		for i := 0; i < 1000; i++ {
-// 			backend.Commit()
-// 		}
-// 		require.NoError(t, v1.ConfirmForPsTimer(ctx))
-// 	})
-// }
 
 // func honestHashesUpTo(n uint64) []common.Hash {
 // 	hashes := make([]common.Hash, n)
@@ -91,43 +51,6 @@ package solimpl
 // 		divergingHashes[i] = common.BytesToHash(junk)
 // 	}
 // 	return divergingHashes
-// }
-
-// func TestChallengeVertex_HasConfirmedSibling(t *testing.T) {
-// 	ctx := context.Background()
-// 	height1 := uint64(3)
-// 	height2 := uint64(7)
-// 	a1, a2, challenge, chain, _ := setupTopLevelFork(t, ctx, height1, height2)
-
-// 	// We add two leaves to the challenge.
-// 	honestHashes := honestHashesUpTo(10)
-// 	evilHashes := evilHashesUpTo(10)
-// 	honestManager, err := statemanager.New(honestHashes)
-// 	require.NoError(t, err)
-
-// 	evilManager, err := statemanager.New(evilHashes)
-// 	require.NoError(t, err)
-
-// 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
-// 	require.NoError(t, err)
-// 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
-// 	require.NoError(t, err)
-
-// 	v1, err := challenge.AddBlockChallengeLeaf(ctx, a1, honestCommit)
-// 	require.NoError(t, err)
-// 	v2, err := challenge.AddBlockChallengeLeaf(ctx, a2, evilCommit)
-// 	require.NoError(t, err)
-
-// 	backend, ok := chain.backend.(*backends.SimulatedBackend)
-// 	require.Equal(t, true, ok)
-// 	for i := 0; i < 1000; i++ {
-// 		backend.Commit()
-// 	}
-// 	require.NoError(t, v1.ConfirmForPsTimer(ctx))
-
-// 	ok, err = v2.HasConfirmedSibling(ctx)
-// 	require.NoError(t, err)
-// 	require.Equal(t, true, ok)
 // }
 
 // func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {

@@ -17,13 +17,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-type SpecEdge struct {
-	id         [32]byte
-	manager    *SpecChallengeManager
-	miniStaker util.Option[common.Address]
-	inner      challengeV2gen.ChallengeEdge
-}
-
 func (e *SpecEdge) Id() protocol.EdgeId {
 	return e.id
 }
