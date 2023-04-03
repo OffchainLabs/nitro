@@ -418,7 +418,7 @@ contract EdgeChallengeManagerLibTest is Test {
         uint256 start = 3;
         uint256 agree = 5; // agree point is below the bisection point of 8
         uint256 end = 11;
-        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(3, 11);
+        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(start, end);
 
         (ChallengeEdge memory edge1, ChallengeEdge memory edge2, bytes32[] memory states1, bytes32[] memory states2) =
             twoRivalsFromLeaves(start, agree, end);
@@ -510,7 +510,7 @@ contract EdgeChallengeManagerLibTest is Test {
     function bisectMergeEdge(uint256 agree) internal {
         uint256 start = 3;
         uint256 end = 11;
-        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(3, 11);
+        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(start, end);
 
         (ChallengeEdge memory edge1, ChallengeEdge memory edge2, bytes32[] memory states1, bytes32[] memory states2) =
             twoRivalsFromLeaves(start, agree, end);
@@ -617,7 +617,7 @@ contract EdgeChallengeManagerLibTest is Test {
         uint256 start = 3;
         uint256 agree = 5;
         uint256 end = 11;
-        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(3, 11);
+        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(start, end);
 
         (ChallengeEdge memory edge1,, bytes32[] memory states1,) = twoRivalsFromLeaves(start, agree, end);
 
@@ -639,7 +639,7 @@ contract EdgeChallengeManagerLibTest is Test {
         uint256 start = 3;
         uint256 agree = 5;
         uint256 end = 11;
-        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(3, 11);
+        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(start, end);
 
         (ChallengeEdge memory edge1, ChallengeEdge memory edge2, bytes32[] memory states1,) =
             twoRivalsFromLeaves(start, agree, end);
@@ -665,7 +665,7 @@ contract EdgeChallengeManagerLibTest is Test {
         uint256 start = 3;
         uint256 agree = 5;
         uint256 end = 11;
-        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(3, 11);
+        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(start, end);
 
         (ChallengeEdge memory edge1, ChallengeEdge memory edge2, bytes32[] memory states1,) =
             twoRivalsFromLeaves(start, agree, end);
@@ -683,5 +683,60 @@ contract EdgeChallengeManagerLibTest is Test {
         );
         vm.expectRevert("Pre expansion root mismatch");
         store.bisectEdge(edgeId, bisectionRoot1, proof);
+    }
+
+    function testBisectEdgeConfirmed() public {
+        uint256 start = 3;
+        uint256 agree = 5; // agree point is below the bisection point of 8
+        uint256 end = 11;
+        uint256 bisectionPoint = EdgeChallengeManagerLib.mandatoryBisectionHeight(start, end);
+
+        (ChallengeEdge memory edge1, ChallengeEdge memory edge2, bytes32[] memory states1,) =
+            twoRivalsFromLeaves(start, agree, end);
+
+        edge1.status = EdgeStatus.Confirmed;
+
+        store.add(edge1);
+        store.add(edge2);
+
+        bytes32 bisectionRoot1 = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states1, 0, bisectionPoint + 1));
+        bytes memory proof = abi.encode(
+                ProofUtils.expansionFromLeaves(states1, 0, bisectionPoint + 1),
+                ProofUtils.generatePrefixProof(
+                    bisectionPoint + 1, ArrayUtilsLib.slice(states1, bisectionPoint + 1, states1.length)
+                )
+            );
+        bytes32 edgeId = edge1.id();
+        vm.expectRevert("Edge not pending");
+        store.bisectEdge(
+            edgeId,
+            bisectionRoot1,
+            proof
+        );
+    }
+
+    function testBisectEdgeLengthOne() public {
+        uint256 start = 0;
+        uint256 end = 1;
+
+        bytes32[] memory states1 = new bytes32[](2);
+        states1[0] = rand.hash();
+        states1[1] = rand.hash();
+        bytes32[] memory states2 = new bytes32[](2);
+        states2[0] = states1[0];
+        states2[1] = rand.hash();
+        ChallengeEdge memory edge1 = edgeFromStates(rand.hash(), start, end, states1);
+        ChallengeEdge memory edge2 = edgeFromStates(edge1.originId, start, end, states2);
+
+        store.add(edge1);
+        store.add(edge2);
+
+        bytes32 edgeId = edge1.id();
+        vm.expectRevert("Height difference not two or more");
+        store.bisectEdge(
+            edgeId,
+            edge1.endHistoryRoot,
+            ""
+        );
     }
 }
