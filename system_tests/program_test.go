@@ -122,20 +122,9 @@ func TestProgramStorage(t *testing.T) {
 
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
-
-	storeArgs := []byte{0x01}
-	storeArgs = append(storeArgs, key.Bytes()...)
-	storeArgs = append(storeArgs, value.Bytes()...)
-
-	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, storeArgs)
+	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
 	ensure(tx, l2client.SendTransaction(ctx, tx))
-
-	storedBytes, err := l2client.StorageAt(ctx, programAddress, key, nil)
-	Require(t, err)
-	storedValue := common.BytesToHash(storedBytes)
-	if value != storedValue {
-		Fail(t, "wrong value", value, storedValue)
-	}
+	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
@@ -172,11 +161,7 @@ func TestProgramCalls(t *testing.T) {
 		// execute onchain for proving's sake
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, data)
 		Require(t, l2client.SendTransaction(ctx, tx))
-		receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
-		Require(t, err)
-		if receipt.Status != types.ReceiptStatusFailed {
-			Fail(t, "unexpected success")
-		}
+		EnsureTxFailed(t, ctx, l2client, tx)
 	}
 
 	storeAddr := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
@@ -240,9 +225,7 @@ func TestProgramCalls(t *testing.T) {
 				slots[key] = value
 
 				// insert value @ key
-				args = append(args, 0x01)
-				args = append(args, key[:]...)
-				args = append(args, value[:]...)
+				args = append(args, argsForStorageWrite(key, value)...)
 				return args
 			}
 
@@ -264,14 +247,8 @@ func TestProgramCalls(t *testing.T) {
 		ensure(tx, l2client.SendTransaction(ctx, tx))
 
 		for key, value := range slots {
-			storedBytes, err := l2client.StorageAt(ctx, dest, key, nil)
-			Require(t, err)
-			storedValue := common.BytesToHash(storedBytes)
-			if value != storedValue {
-				Fail(t, "wrong value", value, storedValue)
-			}
+			assertStorageAt(t, ctx, l2client, dest, key, value)
 		}
-
 		return slots
 	}
 
@@ -282,8 +259,7 @@ func TestProgramCalls(t *testing.T) {
 	calldata := []byte{0}
 	expected := []byte{}
 	for key, value := range slots {
-		readKey := append([]byte{0x00}, key[:]...)
-		calldata = appendCall(calldata, vm.STATICCALL, storeAddr, readKey)
+		calldata = appendCall(calldata, vm.STATICCALL, storeAddr, argsForStorageRead(key))
 		expected = append(expected, value[:]...)
 	}
 	values := sendContractCall(t, ctx, callsAddr, l2client, calldata)
@@ -344,7 +320,7 @@ func TestProgramCalls(t *testing.T) {
 
 	colors.PrintBlue("Checking call with value (Rust => EOA)")
 	eoa := testhelpers.RandomAddress()
-	value := big.NewInt(1 + rand.Int63n(1e12))
+	value := testhelpers.RandomCallValue(1e12)
 	args = makeCalldata(vm.CALL, eoa, value, []byte{})
 	tx = l2info.PrepareTxTo("Owner", &callsAddr, 1e9, value, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
@@ -412,11 +388,83 @@ func TestProgramLogs(t *testing.T) {
 	tooMany := encode([]common.Hash{{}, {}, {}, {}, {}}, []byte{})
 	tx := l2info.PrepareTxTo("Owner", &logAddr, l2info.TransferGas, nil, tooMany)
 	Require(t, l2client.SendTransaction(ctx, tx))
-	receipt, err := WaitForTx(ctx, l2client, tx.Hash(), 5*time.Second)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusFailed {
-		Fail(t, "call should have failed")
+	EnsureTxFailed(t, ctx, l2client, tx)
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
+}
+
+func TestProgramCreate(t *testing.T) {
+	ctx, _, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), true)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
 	}
+
+	deployWasm := readWasmFile(t, rustFile("storage"))
+	deployCode := deployContractInitCode(deployWasm, false)
+	startValue := testhelpers.RandomCallValue(1e12)
+	salt := testhelpers.RandomHash()
+
+	create := func(createArgs []byte, correctStoreAddr common.Address) {
+		tx := l2info.PrepareTxTo("Owner", &createAddr, 1e9, startValue, createArgs)
+		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+		storeAddr := common.BytesToAddress(receipt.Logs[0].Topics[0][:])
+		if storeAddr == (common.Address{}) {
+			Fail(t, "failed to deploy storage.wasm")
+		}
+		colors.PrintBlue("deployed keccak to ", storeAddr.Hex())
+		balance, err := l2client.BalanceAt(ctx, storeAddr, nil)
+		Require(t, err)
+		if !arbmath.BigEquals(balance, startValue) {
+			Fail(t, "storage.wasm has the wrong balance", balance, startValue)
+		}
+
+		// compile the program
+		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+		Require(t, err)
+		ensure(arbWasm.CompileProgram(&auth, storeAddr))
+
+		// check the program works
+		key := testhelpers.RandomHash()
+		value := testhelpers.RandomHash()
+		tx = l2info.PrepareTxTo("Owner", &storeAddr, 1e9, nil, argsForStorageWrite(key, value))
+		ensure(tx, l2client.SendTransaction(ctx, tx))
+		assertStorageAt(t, ctx, l2client, storeAddr, key, value)
+
+		if storeAddr != correctStoreAddr {
+			Fail(t, "program deployed to the wrong address", storeAddr, correctStoreAddr)
+		}
+	}
+
+	create1Args := []byte{0x01}
+	create1Args = append(create1Args, common.BigToHash(startValue).Bytes()...)
+	create1Args = append(create1Args, deployCode...)
+
+	create2Args := []byte{0x02}
+	create2Args = append(create2Args, common.BigToHash(startValue).Bytes()...)
+	create2Args = append(create2Args, salt[:]...)
+	create2Args = append(create2Args, deployCode...)
+
+	create1Addr := crypto.CreateAddress(createAddr, 1)
+	create2Addr := crypto.CreateAddress2(createAddr, salt, crypto.Keccak256(deployCode))
+	create(create1Args, create1Addr)
+	create(create2Args, create2Addr)
+
+	revertData := []byte("✌(✰‿✰)✌ ┏(✰‿✰)┛ ┗(✰‿✰)┓ ┗(✰‿✰)┛ ┏(✰‿✰)┓ ✌(✰‿✰)✌")
+	revertArgs := []byte{0x01}
+	revertArgs = append(revertArgs, common.BigToHash(startValue).Bytes()...)
+	revertArgs = append(revertArgs, deployContractInitCode(revertData, true)...)
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+	auth.Value = startValue
+	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
 
 	// TODO: enable validation when prover side is PR'd
 	// validateBlocks(t, 1, ctx, node, l2client)
@@ -471,13 +519,10 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	ensure(arbOwner.SetWasmHostioCost(&auth, wasmHostioCost))
 
 	programAddress := deployWasm(t, ctx, auth, l2client, file)
-
 	return ctx, node, l2info, l2client, auth, programAddress, cleanup
 }
 
-func deployWasm(
-	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
-) common.Address {
+func readWasmFile(t *testing.T, file string) []byte {
 	wasmSource, err := os.ReadFile(file)
 	Require(t, err)
 	wasm, err := arbcompress.CompressWell(wasmSource)
@@ -487,7 +532,13 @@ func deployWasm(
 	colors.PrintMint(fmt.Sprintf("WASM len %.2fK vs %.2fK", toKb(wasm), toKb(wasmSource)))
 
 	wasm = append(state.StylusPrefix, wasm...)
+	return wasm
+}
 
+func deployWasm(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, l2client *ethclient.Client, file string,
+) common.Address {
+	wasm := readWasmFile(t, file)
 	programAddress := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
 
@@ -502,6 +553,30 @@ func deployWasm(
 	})
 
 	return programAddress
+}
+
+func argsForStorageRead(key common.Hash) []byte {
+	args := []byte{0x00}
+	args = append(args, key[:]...)
+	return args
+}
+
+func argsForStorageWrite(key, value common.Hash) []byte {
+	args := []byte{0x01}
+	args = append(args, key[:]...)
+	args = append(args, value[:]...)
+	return args
+}
+
+func assertStorageAt(
+	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
+) {
+	storedBytes, err := l2client.StorageAt(ctx, contract, key, nil)
+	Require(t, err)
+	storedValue := common.BytesToHash(storedBytes)
+	if value != storedValue {
+		Fail(t, "wrong value", value, storedValue)
+	}
 }
 
 func rustFile(name string) string {

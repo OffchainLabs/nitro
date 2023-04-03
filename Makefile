@@ -109,10 +109,12 @@ stylus_test_multicall_wasm  = $(call get_stylus_test_wasm,multicall)
 stylus_test_multicall_src   = $(call get_stylus_test_rust,multicall)
 stylus_test_log_wasm        = $(call get_stylus_test_wasm,log)
 stylus_test_log_src         = $(call get_stylus_test_rust,log)
+stylus_test_create_wasm     = $(call get_stylus_test_wasm,create)
+stylus_test_create_src      = $(call get_stylus_test_rust,create)
 stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -354,6 +356,10 @@ $(stylus_test_log_wasm): $(stylus_test_log_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
+$(stylus_test_create_wasm): $(stylus_test_create_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
 	clang $(filter %.c, $^) -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
@@ -399,6 +405,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
+	cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
 

@@ -144,3 +144,65 @@ pub fn static_call(
         _ => Err(outs),
     }
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    fn create1(
+        code: *const u8,
+        code_len: usize,
+        endowment: *const u8,
+        contract: *mut u8,
+        revert_data_len: *mut usize,
+    );
+
+    fn create2(
+        code: *const u8,
+        code_len: usize,
+        endowment: *const u8,
+        salt: *const u8,
+        contract: *mut u8,
+        revert_data_len: *mut usize,
+    );
+
+    /// Returns 0 when there's never been a call
+    fn return_data_size() -> u32;
+}
+
+pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<Bytes20, Vec<u8>> {
+    let mut contract = [0; 20];
+    let mut revert_data_len = 0;
+    let contract = unsafe {
+        if let Some(salt) = salt {
+            create2(
+                code.as_ptr(),
+                code.len(),
+                endowment.ptr(),
+                salt.ptr(),
+                contract.as_mut_ptr(),
+                &mut revert_data_len as *mut _,
+            );
+        } else {
+            create1(
+                code.as_ptr(),
+                code.len(),
+                endowment.ptr(),
+                contract.as_mut_ptr(),
+                &mut revert_data_len as *mut _,
+            );
+        }
+        Bytes20(contract)
+    };
+    if contract.is_zero() {
+        unsafe {
+            let mut revert_data = Vec::with_capacity(revert_data_len);
+            read_return_data(revert_data.as_mut_ptr());
+            revert_data.set_len(revert_data_len);
+            return Err(revert_data);
+        }
+    }
+    Ok(contract)
+}
+
+pub fn return_data_len() -> usize {
+    unsafe { return_data_size() as usize }
+}

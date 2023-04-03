@@ -7,12 +7,15 @@ use crate::{
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
-use prover::programs::{
-    counter::{Counter, CountingMachine, OP_OFFSETS},
-    depth::STYLUS_STACK_LEFT,
-    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
-    prelude::*,
-    start::STYLUS_START,
+use prover::{
+    programs::{
+        counter::{Counter, CountingMachine, OP_OFFSETS},
+        depth::STYLUS_STACK_LEFT,
+        meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
+        prelude::*,
+        start::STYLUS_START,
+    },
+    utils::Bytes20,
 };
 use std::{
     collections::BTreeMap,
@@ -90,7 +93,10 @@ impl NativeInstance {
                 "call_contract" => func!(host::call_contract),
                 "delegate_call_contract" => func!(host::delegate_call_contract),
                 "static_call_contract" => func!(host::static_call_contract),
+                "create1" => func!(host::create1),
+                "create2" => func!(host::create2),
                 "read_return_data" => func!(host::read_return_data),
+                "return_data_size" => func!(host::return_data_size),
                 "emit_log" => func!(host::emit_log),
             },
         };
@@ -161,6 +167,8 @@ impl NativeInstance {
         let contract_call = api.contract_call;
         let delegate_call = api.delegate_call;
         let static_call = api.static_call;
+        let create1 = api.create1;
+        let create2 = api.create2;
         let get_return_data = api.get_return_data;
         let emit_log = api.emit_log;
         let id = api.id;
@@ -217,6 +225,43 @@ impl NativeInstance {
             );
             (return_data_len, call_gas, api_status.into())
         });
+        let create1 = Box::new(move |code, endowment, evm_gas| unsafe {
+            let mut call_gas = evm_gas; // becomes the call's cost
+            let mut return_data_len = 0;
+            let mut code = RustVec::new(code);
+            let api_status = create1(
+                id,
+                ptr!(code),
+                endowment,
+                ptr!(call_gas),
+                ptr!(return_data_len),
+            );
+            let output = code.into_vec();
+            let result = match api_status {
+                Success => Ok(Bytes20::try_from(output).unwrap()),
+                Failure => Err(error!(output)),
+            };
+            (result, return_data_len, call_gas)
+        });
+        let create2 = Box::new(move |code, endowment, salt, evm_gas| unsafe {
+            let mut call_gas = evm_gas; // becomes the call's cost
+            let mut return_data_len = 0;
+            let mut code = RustVec::new(code);
+            let api_status = create2(
+                id,
+                ptr!(code),
+                endowment,
+                salt,
+                ptr!(call_gas),
+                ptr!(return_data_len),
+            );
+            let output = code.into_vec();
+            let result = match api_status {
+                Success => Ok(Bytes20::try_from(output).unwrap()),
+                Failure => Err(error!(output)),
+            };
+            (result, return_data_len, call_gas)
+        });
         let get_return_data = Box::new(move || unsafe {
             let mut data = RustVec::new(vec![]);
             get_return_data(id, ptr!(data));
@@ -238,6 +283,8 @@ impl NativeInstance {
             contract_call,
             delegate_call,
             static_call,
+            create1,
+            create2,
             get_return_data,
             emit_log,
         )
@@ -335,7 +382,10 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
             "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
+            "create1" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32|),
+            "create2" => stub!(|_: u32, _: u32, _: u32, _: u32, _: u32, _: u32|),
             "read_return_data" => stub!(|_: u32|),
+            "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
         },
     };

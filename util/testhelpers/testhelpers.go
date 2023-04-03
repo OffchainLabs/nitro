@@ -4,6 +4,7 @@
 package testhelpers
 
 import (
+	"math/big"
 	"math/rand"
 	"os"
 	"regexp"
@@ -50,6 +51,10 @@ func RandomAddress() common.Address {
 	var address common.Address
 	RandomizeSlice(address[:])
 	return address
+}
+
+func RandomCallValue(limit int64) *big.Int {
+	return big.NewInt(rand.Int63n(limit))
 }
 
 // Computes a psuedo-random uint64 on the interval [min, max]

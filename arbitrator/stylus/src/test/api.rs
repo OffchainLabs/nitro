@@ -111,7 +111,11 @@ impl NativeInstance {
             Box::new(move |_contract, _input, _evm_gas| todo!("static call not yet supported"));
         let get_return_data =
             Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
-
+        let create1 =
+            Box::new(move |_code, _endowment, _evm_gas| unimplemented!("create1 not supported"));
+        let create2 = Box::new(move |_code, _endowment, _salt, _evm_gas| {
+            unimplemented!("create2 not supported")
+        });
         let emit_log = Box::new(move |_data, _topics| Ok(()));
 
         self.env_mut().set_evm_api(
@@ -120,6 +124,8 @@ impl NativeInstance {
             contract_call,
             delegate_call,
             static_call,
+            create1,
+            create2,
             get_return_data,
             emit_log,
         );
