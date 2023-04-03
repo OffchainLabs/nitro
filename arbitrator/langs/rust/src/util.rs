@@ -8,7 +8,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
 #[repr(C)]
 pub struct Bytes20(pub [u8; 20]);
 
@@ -19,6 +19,10 @@ impl Bytes20 {
 
     pub fn from_slice(data: &[u8]) -> Result<Self, TryFromSliceError> {
         Ok(Self(data.try_into()?))
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Bytes20::default()
     }
 }
 
@@ -102,6 +106,10 @@ impl Bytes32 {
     pub fn from_slice(data: &[u8]) -> Result<Self, TryFromSliceError> {
         Ok(Self(data.try_into()?))
     }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Bytes32::default()
+    }
 }
 
 impl Deref for Bytes32 {
@@ -157,6 +165,14 @@ impl From<usize> for Bytes32 {
         let mut b = [0u8; 32];
         b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
         Self(b)
+    }
+}
+
+impl From<Bytes20> for Bytes32 {
+    fn from(value: Bytes20) -> Self {
+        let mut data = [0; 32];
+        data[12..].copy_from_slice(&value.0);
+        Self(data)
     }
 }
 
