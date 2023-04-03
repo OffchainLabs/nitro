@@ -124,23 +124,23 @@ impl WasmEnv {
         })
     }
 
-    pub(crate) fn evm(&mut self) -> &mut EvmAPI {
+    pub fn evm(&mut self) -> &mut EvmAPI {
         self.evm.as_mut().expect("no evm api")
     }
 
-    pub(crate) fn evm_ref(&self) -> &EvmAPI {
+    pub fn evm_ref(&self) -> &EvmAPI {
         self.evm.as_ref().expect("no evm api")
     }
 
-    pub(crate) fn return_data_len(&self) -> u32 {
+    pub fn return_data_len(&self) -> u32 {
         self.evm_ref().return_data_len
     }
 
-    pub(crate) fn set_return_data_len(&mut self, len: u32) {
+    pub fn set_return_data_len(&mut self, len: u32) {
         self.evm().return_data_len = len;
     }
 
-    pub(crate) fn start<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<HostioInfo<'a>, Escape> {
+    pub fn start<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<HostioInfo<'a>, Escape> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         let mut info = HostioInfo { env, memory, store };
