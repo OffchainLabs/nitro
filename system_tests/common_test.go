@@ -810,11 +810,17 @@ func deployContract(
 }
 
 func sendContractCall(
-	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+	t *testing.T, ctx context.Context, to common.Address, from *common.Address, client *ethclient.Client, data []byte,
 ) []byte {
 	t.Helper()
+
+	if from == nil {
+		addr := testhelpers.RandomAddress()
+		from = &addr
+	}
 	msg := ethereum.CallMsg{
 		To:    &to,
+		From:  *from,
 		Value: big.NewInt(0),
 		Data:  data,
 	}

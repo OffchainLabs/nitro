@@ -208,6 +208,13 @@ pub(crate) fn emit_log(mut env: WasmEnvMut, data: u32, len: u32, topics: u32) ->
     Ok(())
 }
 
+pub(crate) fn tx_origin(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
+    let env = WasmEnv::start(&mut env)?;
+    let origin = env.evm_data().origin;
+    env.write_bytes20(data, origin)?;
+    Ok(())
+}
+
 pub(crate) fn debug_println(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
     let memory = WasmEnv::memory(&mut env);
     let text = memory.read_slice(ptr, len)?;

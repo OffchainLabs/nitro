@@ -88,6 +88,8 @@ pub struct WasmEnv {
     pub meter: Option<MeterData>,
     /// Mechanism for reading and writing permanent storage, and doing calls
     pub evm: Option<EvmAPI>,
+    /// Mechanism for reading EVM context data
+    pub evm_data: Option<EvmData>,
     /// The instance's config
     pub config: StylusConfig,
 }
@@ -144,6 +146,11 @@ pub struct EvmAPI {
     emit_log: EmitLog,
 }
 
+#[repr(C)]
+pub struct EvmData {
+    pub origin: Bytes20,
+}
+
 impl WasmEnv {
     pub fn new(config: StylusConfig) -> Self {
         Self {
@@ -184,6 +191,10 @@ impl WasmEnv {
 
     pub fn evm_ref(&self) -> &EvmAPI {
         self.evm.as_ref().expect("no evm api")
+    }
+
+    pub fn evm_data(&self) -> &EvmData {
+        self.evm_data.as_ref().expect("no evm data")
     }
 
     pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
