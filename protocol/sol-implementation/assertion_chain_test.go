@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -403,7 +404,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 	loserStakeEscrow := common.Address{}
 	challengePeriodSeconds := big.NewInt(100)
 	miniStake := big.NewInt(1)
-	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
+	cfg := challenge_testing.GenerateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
 	addresses := deployFullRollupStack(
 		t,
 		ctx,

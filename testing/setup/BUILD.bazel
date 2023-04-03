@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "setup_lib",
+    testonly = 1,
     srcs = ["rollup_stack.go"],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing/setup",
     visibility = ["//visibility:public"],
@@ -12,6 +13,7 @@ go_library(
         "//solgen/go/challengeV2gen",
         "//solgen/go/ospgen",
         "//solgen/go/rollupgen",
+        "//testing",
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
