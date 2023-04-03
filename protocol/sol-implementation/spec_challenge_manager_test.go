@@ -4,12 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,6 +19,55 @@ var (
 	_ = protocol.SpecEdge(&solimpl.SpecEdge{})
 	_ = protocol.SpecChallengeManager(&solimpl.SpecChallengeManager{})
 )
+
+func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
+	ctx := context.Background()
+	height := uint64(3)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     height,
+		DivergeHeight: 0,
+	})
+	chain1 := createdData.Chains[0]
+	challengeManager, err := chain1.SpecChallengeManager(ctx)
+	require.NoError(t, err)
+
+	t.Run("claim predecessor does nt exist", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("invalid height", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("winner already declared", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("last state not in history", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("first state not in history", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+
+	leaves := make([]common.Hash, 4)
+	for i := range leaves {
+		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	history, err := util.NewHistoryCommitment(height, leaves)
+	require.NoError(t, err)
+	genesis, err := chain1.AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	t.Run("OK", func(t *testing.T) {
+		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(ctx, genesis, util.HistoryCommitment{}, history)
+		require.NoError(t, err)
+	})
+	t.Run("already exists", func(t *testing.T) {
+		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(ctx, genesis, util.HistoryCommitment{}, history)
+		require.ErrorContains(t, err, "already exists")
+	})
+}
 
 func TestEdgeChallengeManager_ConfirmByChildren(t *testing.T) {
 	ctx := context.Background()
@@ -371,5 +422,5 @@ func TestEdgeChallengeManager(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, true, isAtOneStepFork)
 
-	t.Log("Reached one step proof!!!")
+	t.Log("Reached one step proof")
 }

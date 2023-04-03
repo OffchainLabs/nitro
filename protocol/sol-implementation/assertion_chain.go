@@ -212,60 +212,25 @@ func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash pro
 	return protocol.AssertionSequenceNumber(res), nil
 }
 func (ac *AssertionChain) BlockChallenge(ctx context.Context, assertionSeqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
-	assertionId, err := ac.rollup.GetAssertionId(ac.callOpts, uint64(assertionSeqNum))
-	if err != nil {
-		return nil, err
-	}
-	manager, err := ac.CurrentChallengeManager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	challengeId, err := manager.CalculateChallengeHash(ctx, assertionId, protocol.BlockChallenge)
-	if err != nil {
-		return nil, err
-	}
-	chal, err := manager.GetChallenge(ctx, challengeId)
-	if err != nil {
-		return nil, err
-	}
-	if chal.IsNone() {
-		return nil, errors.Wrapf(
-			ErrNotFound,
-			"challenge with id %d",
-			challengeId,
-		)
-	}
-	return chal.Unwrap(), nil
+	return nil, errors.New("unimplemented")
 }
 
 // CreateSuccessionChallenge creates a succession challenge
 func (ac *AssertionChain) CreateSuccessionChallenge(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
-	_, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
-		return ac.userLogic.CreateChallenge(
-			ac.txOpts,
-			uint64(seqNum),
-		)
-	})
-	if err2 := handleCreateSuccessionChallengeError(err, uint64(seqNum)); err2 != nil {
-		return nil, err2
-	}
-	manager, err := ac.CurrentChallengeManager(ctx)
-	if err != nil {
-		return nil, err
-	}
-	assertionId, err := ac.rollup.GetAssertionId(ac.callOpts, uint64(seqNum))
-	if err != nil {
-		return nil, err
-	}
-	challengeId, err := manager.CalculateChallengeHash(ctx, assertionId, protocol.BlockChallenge)
-	if err != nil {
-		return nil, err
-	}
-	chal, err := manager.GetChallenge(ctx, challengeId)
-	if err != nil {
-		return nil, err
-	}
-	return chal.Unwrap(), nil
+	return nil, errors.New("unimplemented")
+}
+
+// CreateSuccessionChallenge creates a succession challenge
+func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+	return NewSpecChallengeManager(
+		ctx,
+		ac.edgeChallengeManagerAddr,
+		ac,
+		ac.backend,
+		ac.headerReader,
+		ac.callOpts,
+		ac.txOpts,
+	)
 }
 
 // Confirm creates a confirmation for an assertion at the block hash and send root.
