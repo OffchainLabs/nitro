@@ -2,7 +2,6 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
-import "../../src/challengeV2/DataEntities.sol";
 import "./Utils.sol";
 import "../MockAssertionChain.sol";
 import "../../src/challengeV2/EdgeChallengeManager.sol";

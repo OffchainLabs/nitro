@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
-import "../../src/challengeV2/DataEntities.sol";
+// import "../../src/challengeV2/DataEntities.sol";
 import "../MockAssertionChain.sol";
 import "../../src/challengeV2/EdgeChallengeManager.sol";
 // import "../src/osp/IOneStepProofEntry.sol";
@@ -46,7 +46,7 @@ contract EdgeChallengeManagerLibTest is Test {
 
         ChallengeEdge storage se = store.edges[edge.id()];
         assertTrue(se.exists(), "Edge exists");
-        assertTrue(store.firstRivals[se.mutualId()] == EdgeChallengeManagerLib.NO_RIVAL, "NO_RIVAL first rival");
+        assertTrue(store.firstRivals[se.mutualId()] == EdgeChallengeManagerLib.UNRIVALED, "NO_RIVAL first rival");
     }
 
     function testGet() public {
@@ -108,8 +108,8 @@ contract EdgeChallengeManagerLibTest is Test {
         ChallengeEdge storage se = store.edges[edge1.id()];
         ChallengeEdge storage se2 = store.edges[edge2.id()];
         assertTrue(se2.exists(), "Edge exists");
-        assertTrue(store.firstRivals[se.mutualId()] == EdgeChallengeManagerLib.NO_RIVAL, "First rival1");
-        assertTrue(store.firstRivals[se2.mutualId()] == EdgeChallengeManagerLib.NO_RIVAL, "First rival2");
+        assertTrue(store.firstRivals[se.mutualId()] == EdgeChallengeManagerLib.UNRIVALED, "First rival1");
+        assertTrue(store.firstRivals[se2.mutualId()] == EdgeChallengeManagerLib.UNRIVALED, "First rival2");
     }
 
     function testCannotAddSameEdgeTwice() public {

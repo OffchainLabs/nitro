@@ -2,7 +2,8 @@
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
-import "../src/challengeV2/DataEntities.sol";
+import {IAssertionChain} from "../src/challengeV2/DataEntities.sol";
+import { IEdgeChallengeManager } from "../src/challengeV2/EdgeChallengeManager.sol";
 
 struct MockAssertion {
     bytes32 predecessorId;
@@ -99,19 +100,5 @@ contract MockAssertionChain is IAssertionChain {
         require(stateHash != 0, "Empty state hash");
 
         return addAssertionUnsafe(predecessorId, height, inboxMsgCountSeen, stateHash, successionChallenge);
-    }
-
-    function createChallenge(bytes32 child1, bytes32 child2, IChallengeManager challengeManager)
-        public
-        returns (bytes32)
-    {
-        require(assertionExists(child1), "Child1 does not exist");
-        require(assertionExists(child2), "Child2 does not exist");
-        require(assertions[child1].predecessorId == assertions[child2].predecessorId, "Different predecessor");
-        require(assertionExists(assertions[child1].predecessorId), "Predecessor does not exist");
-
-        bytes32 challengeId = challengeManager.createChallenge(assertions[child1].predecessorId);
-        assertions[assertions[child1].predecessorId].successionChallenge = challengeId;
-        return challengeId;
     }
 }
