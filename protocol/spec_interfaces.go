@@ -2,9 +2,10 @@ package protocol
 
 import (
 	"context"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
-	"time"
 )
 
 // EdgeType corresponds to the three different challenge
@@ -147,7 +148,8 @@ type SpecEdge interface {
 	// Confirms an edge with the specified claim id.
 	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
 	ConfirmByOneStepProof(ctx context.Context) error
-	// The history commitment height for the top-level edge the current edge's challenge is made upon.
+	ConfirmByChildren(ctx context.Context) error
+	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
 	TopLevelClaimHeight(ctx context.Context) (Height, error)
 }

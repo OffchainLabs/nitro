@@ -24,8 +24,14 @@ import (
 )
 
 func TestRoot(t *testing.T) {
+	t.Run("tree with exactly size MAX_LEVEL should pass validation", func(t *testing.T) {
+		tree := make([]common.Hash, prefixproofs.MAX_LEVEL)
+		_, err := prefixproofs.Root(tree)
+		require.NotEqual(t, prefixproofs.ErrLevelTooHigh, err)
+
+	})
 	t.Run("tree too large", func(t *testing.T) {
-		tree := make([]common.Hash, 64)
+		tree := make([]common.Hash, prefixproofs.MAX_LEVEL+1)
 		_, err := prefixproofs.Root(tree)
 		require.Equal(t, prefixproofs.ErrLevelTooHigh, err)
 	})
