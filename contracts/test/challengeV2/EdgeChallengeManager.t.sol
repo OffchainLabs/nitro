@@ -149,7 +149,7 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.warp(block.timestamp + 1);
 
-        assertEq(ei.challengeManager.getCurrentTimeUnrivaled(edge1Id), 1, "Edge1 timer");
+        assertEq(ei.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
         {
             (, bytes32[] memory exp2) = appendRandomStates(genesisStates(), height1);
             bytes32 edge2Id = ei.challengeManager.createLayerZeroEdge(
@@ -166,8 +166,8 @@ contract EdgeChallengeManagerTest is Test {
             );
 
             vm.warp(block.timestamp + 2);
-            assertEq(ei.challengeManager.getCurrentTimeUnrivaled(edge1Id), 1, "Edge1 timer");
-            assertEq(ei.challengeManager.getCurrentTimeUnrivaled(edge2Id), 0, "Edge2 timer");
+            assertEq(ei.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
+            assertEq(ei.challengeManager.timeUnrivaled(edge2Id), 0, "Edge2 timer");
         }
 
         BisectionChildren memory children = bisect(ei.challengeManager, edge1Id, states, 16, states.length - 1);
@@ -372,7 +372,7 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.warp(block.timestamp + 1);
 
-        assertEq(args.challengeManager.getCurrentTimeUnrivaled(edge1Id), 1, "Edge1 timer");
+        assertEq(args.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
 
         (bytes32[] memory states2, bytes32[] memory exp2) =
             appendRandomStatesBetween(genesisStates(), args.endState2, height1);
