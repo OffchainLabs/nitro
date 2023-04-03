@@ -38,6 +38,10 @@ var DefaultSyncMonitorConfig = SyncMonitorConfig{
 	MsgLag: time.Second,
 }
 
+var TestSyncMonitorConfig = SyncMonitorConfig{
+	MsgLag: time.Millisecond * 10,
+}
+
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
