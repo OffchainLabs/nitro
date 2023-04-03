@@ -15,7 +15,7 @@ interface IEdgeChallengeManager {
     // Gets an edge by ID.
     function getEdge(bytes32 eId) external view returns (ChallengeEdge memory);
     // Gets the current time unrivaled by edge ID. TODO: Needs more thinking.
-    function getCurrentTimeUnrivaled(bytes32 eId) external view returns (uint256);
+    function timeUnrivaled(bytes32 eId) external view returns (uint256);
     // We define a mutual ID as hash(EdgeType  ++ originId ++ hash(startCommit ++ startHeight)) as a way
     // of checking if an edge has rivals. Rivals edges share the same mutual ID.
     function calculateMutualId(
@@ -33,6 +33,8 @@ interface IEdgeChallengeManager {
         uint256 endHeight,
         bytes32 endHistoryRoot
     ) external returns (bytes32);
+    // Checks if an edge's mutual ID corresponds to multiple rivals and checks if a one step fork exists.
+    function hasRival(bytes32 eId) external view returns (bool);
     // Checks if an edge's mutual ID corresponds to multiple rivals and checks if a one step fork exists.
     function hasLengthOneRival(bytes32 eId) external view returns (bool);
     // Creates a layer zero edge in a challenge.
@@ -264,11 +266,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     ///////////////////////////////////////////////
     ///////////// VIEW FUNCS ///////////////
 
-    function isUnrivaled(bytes32 edgeId) public view returns (bool) {
-        return !store.hasRival(edgeId);
+    function hasRival(bytes32 edgeId) public view returns (bool) {
+        return store.hasRival(edgeId);
     }
 
-    function getCurrentTimeUnrivaled(bytes32 edgeId) public view returns (uint256) {
+    function timeUnrivaled(bytes32 edgeId) public view returns (uint256) {
         return store.timeUnrivaled(edgeId);
     }
 
