@@ -36,9 +36,10 @@ type rollupAddresses struct {
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
 	DeployedAt             uint64         `json:"deployed-at"`
+	EdgeChallengeManager   common.Address `json:"edge-challenge-manager"`
 }
 
-func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
+func setupAssertionChains(t *testing.T, numChains uint64) ([]*solimpl.AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend) {
 	t.Helper()
 	ctx := context.Background()
 	accs, backend := setupAccounts(t, numChains)
@@ -70,7 +71,7 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 			accs[i].accountAddr,
 			backend,
 			headerReader,
-			common.Address{},
+			addresses.EdgeChallengeManager,
 		)
 		require.NoError(t, err)
 		chains[i] = chain
@@ -79,7 +80,7 @@ func setupAssertionChains(t testing.TB, numChains uint64) ([]*solimpl.AssertionC
 }
 
 func deployFullRollupStack(
-	t testing.TB,
+	t *testing.T,
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	deployAuth *bind.TransactOpts,
@@ -87,7 +88,7 @@ func deployFullRollupStack(
 	config rollupgen.Config,
 ) *rollupAddresses {
 	t.Helper()
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator := deployRollupCreator(t, ctx, backend, deployAuth)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr := deployRollupCreator(t, ctx, backend, deployAuth)
 
 	nonce, err := backend.PendingNonceAt(ctx, rollupCreatorAddress)
 	require.NoError(t, err)
@@ -143,11 +144,12 @@ func deployFullRollupStack(
 		RollupUserLogic:        rollupUserAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
+		EdgeChallengeManager:   edgeChallengeManagerAddr,
 	}
 }
 
 func deployBridgeCreator(
-	t testing.TB,
+	t *testing.T,
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend *backends.SimulatedBackend,
@@ -195,11 +197,11 @@ func deployBridgeCreator(
 }
 
 func deployChallengeFactory(
-	t testing.TB,
+	t *testing.T,
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend *backends.SimulatedBackend,
-) (common.Address, common.Address) {
+) (common.Address, common.Address, common.Address) {
 	t.Helper()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, backend)
 	backend.Commit()
@@ -247,18 +249,29 @@ func deployChallengeFactory(
 	err = andTxSucceeded(ctx, tx, challengeManagerAddr, backend, err)
 	require.NoError(t, err)
 
-	return ospEntryAddr, challengeManagerAddr
+	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
+		auth,
+		backend,
+		assertionChainAddr,
+		big.NewInt(1), // TODO: Challenge period length.
+		ospEntryAddr,
+	)
+	backend.Commit()
+	err = andTxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
+	require.NoError(t, err)
+
+	return ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr
 }
 
 func deployRollupCreator(
-	t testing.TB,
+	t *testing.T,
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	auth *bind.TransactOpts,
-) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address) {
+) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, common.Address) {
 	t.Helper()
 	bridgeCreator := deployBridgeCreator(t, ctx, auth, backend)
-	ospEntryAddr, challengeManagerAddr := deployChallengeFactory(t, ctx, auth, backend)
+	ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr := deployChallengeFactory(t, ctx, auth, backend)
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, backend)
 	backend.Commit()
@@ -301,7 +314,7 @@ func deployRollupCreator(
 	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt.Status)
-	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator
+	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr
 }
 
 func generateRollupConfig(
@@ -345,7 +358,7 @@ type testAccount struct {
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
+func setupAccounts(t *testing.T, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
 	t.Helper()
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
@@ -395,7 +408,7 @@ func andTxSucceeded(
 	if err != nil {
 		return err
 	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
+	if receipt.Status != 1 {
 		return errors.New("tx failed")
 	}
 	code, err := backend.CodeAt(ctx, addr, nil)

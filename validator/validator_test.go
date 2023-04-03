@@ -370,7 +370,8 @@ func setupAssertions(num int) []protocol.Assertion {
 	return assertions
 }
 
-func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
+func setupValidator(t *testing.T) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
+	t.Helper()
 	p := &mocks.MockProtocol{}
 	ctx := context.Background()
 	p.On(

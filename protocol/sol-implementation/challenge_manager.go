@@ -46,7 +46,7 @@ func (ac *AssertionChain) CurrentChallengeManager(ctx context.Context) (protocol
 }
 
 func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	return NewSpecCM(
+	return NewSpecChallengeManager(
 		ctx,
 		ac.edgeChallengeManagerAddr,
 		ac,
