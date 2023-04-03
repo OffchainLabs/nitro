@@ -8,6 +8,7 @@ use arbutil::wavm;
 pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
     let program = PROGRAMS.last().expect("no program");
     program.pricing.begin();
+    program.pricing.pay_for_evm_copy(program.args.len());
     wavm::write_slice_usize(&program.args, ptr);
 }
 
@@ -15,10 +16,6 @@ pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
 pub unsafe extern "C" fn user_host__return_data(ptr: usize, len: usize) {
     let program = PROGRAMS.last_mut().expect("no program");
     program.pricing.begin();
-
-    let evm_words = |count: u64| count.saturating_mul(31) / 32;
-    let evm_gas = evm_words(len as u64).saturating_mul(3); // 3 evm gas per word
-    program.pricing.buy_evm_gas(evm_gas);
-
+    program.pricing.pay_for_evm_copy(len);
     program.outs = wavm::read_slice_usize(ptr, len);
 }

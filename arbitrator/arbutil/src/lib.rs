@@ -3,6 +3,7 @@
 
 pub mod color;
 pub mod crypto;
+pub mod evm;
 pub mod format;
 pub mod math;
 pub mod operator;

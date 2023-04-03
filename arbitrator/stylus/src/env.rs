@@ -1,9 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::host;
+use arbutil::evm;
 use eyre::{eyre, ErrReport};
-use ouroboros::self_referencing;
 use prover::{
     programs::{
         config::{PricingParams, StylusConfig},
@@ -18,61 +17,8 @@ use std::{
 };
 use thiserror::Error;
 use wasmer::{
-    AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView,
-    StoreMut, StoreRef, WasmPtr,
+    AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, StoreMut, WasmPtr,
 };
-
-#[self_referencing]
-pub struct MemoryViewContainer {
-    memory: Memory,
-    #[borrows(memory)]
-    #[covariant]
-    view: MemoryView<'this>,
-}
-
-impl MemoryViewContainer {
-    fn create(env: &WasmEnvMut<'_>) -> Self {
-        // this func exists to properly constrain the closure's type
-        fn closure<'a>(
-            store: &'a StoreRef,
-        ) -> impl (for<'b> FnOnce(&'b Memory) -> MemoryView<'b>) + 'a {
-            move |memory: &Memory| memory.view(&store)
-        }
-
-        let store = env.as_store_ref();
-        let memory = env.data().memory.clone().unwrap();
-        let view_builder = closure(&store);
-        MemoryViewContainerBuilder {
-            memory,
-            view_builder,
-        }
-        .build()
-    }
-
-    pub fn view(&self) -> &MemoryView {
-        self.borrow_view()
-    }
-
-    pub fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryAccessError> {
-        let mut data = vec![0; len as usize];
-        self.view().read(ptr.into(), &mut data)?;
-        Ok(data)
-    }
-
-    pub fn read_bytes20(&self, ptr: u32) -> eyre::Result<Bytes20> {
-        let data = self.read_slice(ptr, 20)?;
-        Ok(data.try_into()?)
-    }
-
-    pub fn read_bytes32(&self, ptr: u32) -> eyre::Result<Bytes32> {
-        let data = self.read_slice(ptr, 32)?;
-        Ok(data.try_into()?)
-    }
-
-    pub fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryAccessError> {
-        self.view().write(ptr.into(), src)
-    }
-}
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 
@@ -178,44 +124,23 @@ impl WasmEnv {
         })
     }
 
-    pub fn evm(&mut self) -> &mut EvmAPI {
+    pub(crate) fn evm(&mut self) -> &mut EvmAPI {
         self.evm.as_mut().expect("no evm api")
     }
 
-    pub fn evm_ref(&self) -> &EvmAPI {
+    pub(crate) fn evm_ref(&self) -> &EvmAPI {
         self.evm.as_ref().expect("no evm api")
     }
 
-    pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
-        MemoryViewContainer::create(env)
-    }
-
-    pub fn return_data_len(&self) -> u32 {
+    pub(crate) fn return_data_len(&self) -> u32 {
         self.evm_ref().return_data_len
     }
 
-    pub fn set_return_data_len(&mut self, len: u32) {
+    pub(crate) fn set_return_data_len(&mut self, len: u32) {
         self.evm().return_data_len = len;
     }
 
-    pub fn data<'a, 'b: 'a>(env: &'a mut WasmEnvMut<'b>) -> (&'a mut Self, MemoryViewContainer) {
-        let memory = MemoryViewContainer::create(env);
-        (env.data_mut(), memory)
-    }
-
-    pub fn meter<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> MeterState<'a> {
-        let state = env.data().meter.clone().unwrap();
-        let store = env.as_store_mut();
-        MeterState::new(state, store)
-    }
-
-    pub fn begin<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<MeterState<'a>, Escape> {
-        let mut state = Self::meter(env);
-        state.buy_gas(state.pricing.hostio_cost)?;
-        Ok(state)
-    }
-
-    pub fn start<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<HostioInfo<'a>, Escape> {
+    pub(crate) fn start<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<HostioInfo<'a>, Escape> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         let mut info = HostioInfo { env, memory, store };
@@ -271,7 +196,7 @@ impl<'a> HostioInfo<'a> {
 
     pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
         let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let evm_gas = evm_words(bytes).saturating_mul(host::COPY_WORD_GAS);
+        let evm_gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
         self.buy_evm_gas(evm_gas)
     }
 
@@ -279,7 +204,7 @@ impl<'a> HostioInfo<'a> {
         self.memory.view(&self.store.as_store_ref())
     }
 
-    pub fn write_u8(&mut self, ptr: u32, x: u8) -> Result<&mut Self, MemoryAccessError> {
+    pub fn _write_u8(&mut self, ptr: u32, x: u8) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x)?;
         Ok(self)
@@ -291,7 +216,7 @@ impl<'a> HostioInfo<'a> {
         Ok(self)
     }
 
-    pub fn write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
+    pub fn _write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x)?;
         Ok(self)
@@ -322,7 +247,7 @@ impl<'a> HostioInfo<'a> {
         Ok(())
     }
 
-    pub fn write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
+    pub fn _write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
         self.write_slice(ptr, &src.0)?;
         Ok(())
     }
@@ -362,89 +287,6 @@ impl<'a> Deref for HostioInfo<'a> {
 impl<'a> DerefMut for HostioInfo<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.env
-    }
-}
-
-pub struct MeterState<'a> {
-    state: MeterData,
-    store: StoreMut<'a>,
-}
-
-impl<'a> Deref for MeterState<'a> {
-    type Target = MeterData;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state
-    }
-}
-
-impl<'a> DerefMut for MeterState<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.state
-    }
-}
-
-impl<'a> MeterState<'a> {
-    pub fn new(state: MeterData, store: StoreMut<'a>) -> Self {
-        Self { state, store }
-    }
-
-    pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
-        let MachineMeter::Ready(gas_left) = self.gas_left() else {
-            return Escape::out_of_gas();
-        };
-        if gas_left < gas {
-            return Escape::out_of_gas();
-        }
-        self.set_gas(gas_left - gas);
-        Ok(())
-    }
-
-    pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let wasm_gas = self.pricing.evm_to_wasm(evm);
-        self.buy_gas(wasm_gas)
-    }
-
-    /// Checks if the user has enough evm gas, but doesn't burn any
-    pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let wasm_gas = self.pricing.evm_to_wasm(evm);
-        let MachineMeter::Ready(gas_left) = self.gas_left() else {
-            return Escape::out_of_gas();
-        };
-        match gas_left < wasm_gas {
-            true => Escape::out_of_gas(),
-            false => Ok(()),
-        }
-    }
-
-    pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
-        let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let evm_gas = evm_words(bytes).saturating_mul(host::COPY_WORD_GAS);
-        self.buy_evm_gas(evm_gas)
-    }
-}
-
-impl<'a> MeteredMachine for MeterState<'a> {
-    fn gas_left(&mut self) -> MachineMeter {
-        let store = &mut self.store;
-        let state = &self.state;
-
-        let status = state.gas_status.get(store);
-        let status = status.try_into().expect("type mismatch");
-        let gas = state.gas_left.get(store);
-        let gas = gas.try_into().expect("type mismatch");
-
-        match status {
-            0_u32 => MachineMeter::Ready(gas),
-            _ => MachineMeter::Exhausted,
-        }
-    }
-
-    fn set_gas(&mut self, gas: u64) {
-        let store = &mut self.store;
-        let state = &self.state;
-        state.gas_left.set(store, gas.into()).unwrap();
-        state.gas_status.set(store, 0.into()).unwrap();
     }
 }
 
@@ -528,7 +370,7 @@ pub enum Escape {
 }
 
 impl Escape {
-    pub fn internal<T>(error: &'static str) -> Result<T, Escape> {
+    pub fn _internal<T>(error: &'static str) -> Result<T, Escape> {
         Err(Self::Internal(eyre!(error)))
     }
 
