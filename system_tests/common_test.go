@@ -813,7 +813,6 @@ func sendContractCall(
 	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
 ) []byte {
 	t.Helper()
-
 	msg := ethereum.CallMsg{
 		To:    &to,
 		Value: big.NewInt(0),
