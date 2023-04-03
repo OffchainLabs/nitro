@@ -4,6 +4,7 @@ pragma solidity ^0.8.17;
 import "./UintUtilsLib.sol";
 import "./MerkleTreeLib.sol";
 import "./ChallengeEdgeLib.sol";
+import "../../osp/IOneStepProofEntry.sol";
 
 /// @notice Stores all edges and their rival status
 struct EdgeStore {
@@ -16,12 +17,20 @@ struct EdgeStore {
     mapping(bytes32 => bytes32) firstRivals;
 }
 
+// CHRIS: TODO: move this and the edge store to data entities?
+struct OneStepData {
+    ExecutionContext execCtx;
+    uint256 machineStep;
+    bytes32 beforeHash;
+    bytes proof;
+}
+
 /// @title  Core functionality for the Edge Challenge Manager
 /// @notice The edge manager library allows edges to be added and bisected, and keeps track of the amount
 ///         of time an edge remained unrivaled.
 library EdgeChallengeManagerLib {
-    /// @dev Magic string hash to represent that an edge has no rivals
-    bytes32 constant NO_RIVAL = keccak256(abi.encodePacked("NO_RIVAL"));
+    /// @dev Magic string hash to represent that a edges with a given mutual id have no rivals
+    bytes32 constant UNRIVALED = keccak256(abi.encodePacked("UNRIVALED"));
 
     using ChallengeEdgeLib for ChallengeEdge;
 
@@ -59,8 +68,8 @@ library EdgeChallengeManagerLib {
         // will use an actual edge id so that we can look up the created when time
         // of the first rival, and use it for calculating time unrivaled
         if (firstRival == 0) {
-            store.firstRivals[mutualId] = NO_RIVAL;
-        } else if (firstRival == NO_RIVAL) {
+            store.firstRivals[mutualId] = UNRIVALED;
+        } else if (firstRival == UNRIVALED) {
             store.firstRivals[mutualId] = eId;
         } else {
             // after we've stored the first rival we dont need to keep a record of any
@@ -82,8 +91,8 @@ library EdgeChallengeManagerLib {
         // Sanity check: it should never be possible to create an edge without having an entry in firstRivals
         require(firstRival != 0, "Empty first rival");
 
-        // can only have no rival is the firstRival is the NO_RIVAL magic hash
-        return firstRival != NO_RIVAL;
+        // can only have no rival if the firstRival is the UNRIVALED magic hash
+        return firstRival != UNRIVALED;
     }
 
     /// @notice Is the edge a single step in length, and does it have at least one rival.
@@ -92,7 +101,7 @@ library EdgeChallengeManagerLib {
     function hasLengthOneRival(EdgeStore storage store, bytes32 edgeId) internal view returns (bool) {
         require(store.edges[edgeId].exists(), "Edge does not exist");
 
-        // must be length 1 and have rivals
+        // must be length 1 and have rivals - all rivals have the same length
         return (store.edges[edgeId].length() == 1 && hasRival(store, edgeId));
     }
 
@@ -110,7 +119,7 @@ library EdgeChallengeManagerLib {
 
         // this edge has no rivals, the time is still going up
         // we give the current amount of time unrivaled
-        if (firstRival == NO_RIVAL) {
+        if (firstRival == UNRIVALED) {
             return block.timestamp - store.edges[edgeId].createdWhen;
         } else {
             // Sanity check: it's not possible an edge does not exist for a first rival record
@@ -160,6 +169,8 @@ library EdgeChallengeManagerLib {
         internal
         returns (bytes32, bytes32)
     {
+        // CHRIS: TODO: add test for this
+        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
         require(hasRival(store, edgeId), "Cannot bisect an unrivaled edge");
 
         // cannot bisect an edge twice
@@ -182,11 +193,9 @@ library EdgeChallengeManagerLib {
         ChallengeEdge memory lowerChild = ChallengeEdgeLib.newChildEdge(
             ce.originId, ce.startHistoryRoot, ce.startHeight, bisectionHistoryRoot, middleHeight, ce.eType
         );
-
         ChallengeEdge memory upperChild = ChallengeEdgeLib.newChildEdge(
             ce.originId, bisectionHistoryRoot, middleHeight, ce.endHistoryRoot, ce.endHeight, ce.eType
         );
-
         bytes32 lowerChildId = lowerChild.id();
         bytes32 upperChildId = upperChild.id();
 
@@ -203,5 +212,178 @@ library EdgeChallengeManagerLib {
 
         store.edges[edgeId].setChildren(lowerChildId, upperChildId);
         return (lowerChildId, upperChildId);
+    }
+
+    /// @notice Confirm an edge if both its children are already confirmed
+    function confirmEdgeByChildren(EdgeStore storage store, bytes32 edgeId) internal {
+        require(store.edges[edgeId].exists(), "Edge does not exist");
+        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+
+        bytes32 lowerChildId = store.edges[edgeId].lowerChildId;
+        require(store.edges[lowerChildId].exists(), "Lower child does not exist");
+        require(store.edges[lowerChildId].status == EdgeStatus.Confirmed, "Lower child not confirmed");
+
+        bytes32 upperChildId = store.edges[edgeId].upperChildId;
+        require(store.edges[upperChildId].exists(), "Upper child does not exist");
+        require(store.edges[upperChildId].status == EdgeStatus.Confirmed, "Upper child not confirmed");
+
+        store.edges[edgeId].setConfirmed();
+    }
+
+    /// @notice Returns the sub edge type of the provided edge type
+    function nextEdgeType(EdgeType eType) internal pure returns (EdgeType) {
+        if (eType == EdgeType.Block) {
+            return EdgeType.BigStep;
+        } else if (eType == EdgeType.BigStep) {
+            return EdgeType.SmallStep;
+        } else if (eType == EdgeType.SmallStep) {
+            revert("No next type after SmallStep");
+        } else {
+            revert("Unexpected edge type");
+        }
+    }
+
+    /// @notice Check that the claimId of a claiming edge matched the edge id of a supplied edge
+    /// @dev    Does some additional sanity checks to ensure that the claim id link is valid
+    /// @param store            The store containing all edges and rivals
+    /// @param edgeId           The edge being claimed
+    /// @param claimingEdgeId   The edge with a claim id equal to edge id
+    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId)
+        internal
+        view
+        returns (bool)
+    {
+        // we do some extra checks that edge being claimed is eligible to be claimed by the claiming edge
+        // these shouldn't be necessary since it should be impossible to add layer zero edges that do not
+        // satisfy the checks below, but we conduct these checks anyway for double safety
+
+        // the origin id of an edge should be the mutual id of the edge in the level above
+        require(store.edges[edgeId].mutualId() == store.edges[claimingEdgeId].originId, "Origin id-mutual id mismatch");
+        // the claiming edge must be exactly one level below
+        require(
+            nextEdgeType(store.edges[edgeId].eType) == store.edges[claimingEdgeId].eType,
+            "Edge type does not match claiming edge type"
+        );
+
+        // the claiming edge references this edge
+        return edgeId == store.edges[claimingEdgeId].claimId;
+    }
+
+    /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
+    /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level above. If a zero layer
+    ///         edge is confirmed, it becomes possible to also confirm the edge that it claims
+    /// @param store            The store containing all edges and rivals data
+    /// @param edgeId           The if of the edge to confirm
+    /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
+    function confirmEdgeByClaim(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) internal {
+        // this edge is pending
+        require(store.edges[edgeId].exists(), "Edge does not exist");
+        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+        // the claiming edge is confirmed
+        require(store.edges[claimingEdgeId].exists(), "Claiming edge does not exist");
+        require(store.edges[claimingEdgeId].status == EdgeStatus.Confirmed, "Claiming edge not confirmed");
+
+        require(checkClaimIdLink(store, edgeId, claimingEdgeId), "Claim does not match edge");
+
+        store.edges[edgeId].setConfirmed();
+    }
+
+    /// @notice An edge can be confirmed if the total amount of time it and a single chain of its direct ancestors
+    ///         has spent unrivaled is greater than the challenge period.
+    /// @dev    Edges inherit time from their parents, so the sum of unrivaled timers is compared against the threshold.
+    ///         Given that an edge cannot become unrivaled after becoming rivaled, once the threshold is passed
+    ///         it will always remain passed. The direct ancestors of an edge are linked by parent-child links for edges
+    ///         of the same edgeType, and claimId-edgeid links for zero layer edges that claim an edge in the level above.
+    /// @param store                    The edge store containing all edges and rival data
+    /// @param edgeId                   The id of the edge to confirm
+    /// @param ancestorEdgeIds          The ids of the direct ancestors of an edge. These are ordered from the parent first, then going to grand-parent,
+    ///                                 great-grandparent etc. The chain can extend only as far as the zero layer edge of type Block.
+    /// @param confirmationThresholdSec The amount of time in seconds that the total unrivaled time of an ancestor chain needs to exceed in
+    ///                                 order to be confirmed
+    function confirmEdgeByTime(
+        EdgeStore storage store,
+        bytes32 edgeId,
+        bytes32[] memory ancestorEdgeIds,
+        uint256 confirmationThresholdSec
+    ) internal {
+        require(store.edges[edgeId].exists(), "Edge does not exist");
+        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+
+        bytes32 currentEdgeId = edgeId;
+        uint256 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
+
+        // ancestors start from parent, then extend upwards
+        for (uint256 i = 0; i < ancestorEdgeIds.length; i++) {
+            ChallengeEdge storage e = get(store, ancestorEdgeIds[i]);
+            // the ancestor must either have a parent-child link
+            // or have a claim id-edge link when the ancestor is of a different edge type to its child
+            require(
+                // parent child check
+                e.lowerChildId == currentEdgeId || e.upperChildId == currentEdgeId
+                // claim id - edge id check
+                || checkClaimIdLink(store, ancestorEdgeIds[i], currentEdgeId),
+                "Current is not a child of ancestor"
+            );
+
+            totalTimeUnrivaled += timeUnrivaled(store, e.id());
+            currentEdgeId = ancestorEdgeIds[i];
+        }
+
+        require(
+            totalTimeUnrivaled > confirmationThresholdSec,
+            "Total time unrivaled not greater than confirmation threshold"
+        );
+
+        store.edges[edgeId].setConfirmed();
+    }
+
+    /// @notice Confirm an edge by executing a one step proof
+    /// @dev    One step proofs can only be executed against edges that are rivaled, length one and of type SmallStep
+    /// @param store                        The edge store containing all edges and rival data
+    /// @param edgeId                       The id of the edge to confirm
+    /// @param oneStepProofEntry            The one step proof contract
+    /// @param oneStepData                  Input data to the one step proof
+    /// @param beforeHistoryInclusionProof  Proof that the state which is the start of the edge is committed to by the startHistoryRoot
+    /// @param afterHistoryInclusionProof   Proof that the state which is the end of the edge is committed to by the endHistoryRoot
+    function confirmEdgeByOneStepProof(
+        EdgeStore storage store,
+        bytes32 edgeId,
+        IOneStepProofEntry oneStepProofEntry,
+        OneStepData calldata oneStepData,
+        bytes32[] calldata beforeHistoryInclusionProof,
+        bytes32[] calldata afterHistoryInclusionProof
+    ) internal {
+        require(store.edges[edgeId].exists(), "Edge does not exist");
+        require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
+
+        // edge must have rivals, be length one and be of type SmallStep
+        require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
+        require(hasLengthOneRival(store, edgeId), "Edge does not have single step rival");
+
+        // the state in the onestep data must be committed to by the startHistoryRoot
+        require(
+            MerkleTreeLib.verifyInclusionProof(
+                store.edges[edgeId].startHistoryRoot,
+                oneStepData.beforeHash,
+                oneStepData.machineStep,
+                beforeHistoryInclusionProof
+            ),
+            "Before state not in history"
+        );
+
+        // execute the single step to produce the after state
+        bytes32 afterHash = oneStepProofEntry.proveOneStep(
+            oneStepData.execCtx, oneStepData.machineStep, oneStepData.beforeHash, oneStepData.proof
+        );
+
+        // check that the after state was indeed committed to by the endHistoryRoot
+        require(
+            MerkleTreeLib.verifyInclusionProof(
+                store.edges[edgeId].endHistoryRoot, afterHash, oneStepData.machineStep + 1, afterHistoryInclusionProof
+            ),
+            "After state not in history"
+        );
+
+        store.edges[edgeId].setConfirmed();
     }
 }

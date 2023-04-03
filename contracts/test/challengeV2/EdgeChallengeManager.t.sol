@@ -563,7 +563,7 @@ contract EdgeChallengeManagerTest is Test {
         );
         bytes32[] memory above = getAncestorsAbove(allWinners, 0);
         ei.challengeManager.confirmEdgeByTime(allWinners[0].upperChildId, above);
-        
+
         ei.challengeManager.confirmEdgeByChildren(allWinners[1].lowerChildId);
         ei.challengeManager.confirmEdgeByTime(allWinners[1].upperChildId, getAncestorsAbove(allWinners, 1));
 
