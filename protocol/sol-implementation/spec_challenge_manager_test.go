@@ -18,6 +18,74 @@ var (
 	_ = protocol.SpecChallengeManager(&solimpl.SpecChallengeManager{})
 )
 
+func TestEdgeChallengeManager_ConfirmByClaim(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	require.NoError(t, err)
+
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+		statemanager.WithBigStepStateDivergenceHeight(1),
+		statemanager.WithSmallStepStateDivergenceHeight(1),
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	honestEdge := leafAdder(honestEndCommit)
+	s0, err := honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s0)
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+	require.NoError(t, err)
+	honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+	require.NoError(t, err)
+	honestChildren1, _, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+	require.NoError(t, err)
+
+	require.NoError(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+
+	t.Run("Origin id-mutual id mismatch", func(t *testing.T) {
+		require.ErrorContains(t, honestChildren1.ConfirmByClaim(ctx, protocol.ClaimId(honestEdge.Id())), "execution reverted: Origin id-mutual id mismatch")
+	})
+}
+
 func TestEdgeChallengeManager_ConfirmByChildren(t *testing.T) {
 	ctx := context.Background()
 	height := protocol.Height(3)

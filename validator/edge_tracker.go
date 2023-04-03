@@ -13,10 +13,10 @@ import (
 	"time"
 )
 
-func (et *edgeTracker) act(ctx context.Context) error {
+func (et *edgeTracker) uniqueTrackerLogFields() logrus.Fields {
 	startHeight, startCommit := et.edge.StartCommitment()
 	endHeight, endCommit := et.edge.EndCommitment()
-	fields := logrus.Fields{
+	return logrus.Fields{
 		"startHeight":   startHeight,
 		"startCommit":   util.Trunc(startCommit.Bytes()),
 		"endHeight":     endHeight,
@@ -25,6 +25,10 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		"challengeType": et.edge.GetType(),
 		"address":       util.Trunc(et.cfg.validatorAddress.Bytes()),
 	}
+}
+
+func (et *edgeTracker) act(ctx context.Context) error {
+	fields := et.uniqueTrackerLogFields()
 	current := et.fsm.Current()
 	switch current.State {
 	// Start state.
@@ -177,10 +181,10 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 		return util.HistoryCommitment{}, nil, fmt.Errorf("unsupported challenge type: %s", et.edge.GetType())
 	}
 	if commitErr != nil {
-		return util.HistoryCommitment{}, nil, commitErr
+		return util.HistoryCommitment{}, nil, errors.Wrap(commitErr, "could not produce history commitment")
 	}
 	if proofErr != nil {
-		return util.HistoryCommitment{}, nil, proofErr
+		return util.HistoryCommitment{}, nil, errors.Wrap(proofErr, "could not produce prefix proof")
 	}
 	return historyCommit, proof, nil
 }
@@ -204,14 +208,9 @@ func (et *edgeTracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.
 			util.Trunc(endCommit.Bytes()),
 		)
 	}
-	isPs, err := firstChild.IsPresumptive(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
 	log.WithFields(logrus.Fields{
 		"name":               et.cfg.validatorName,
 		"challengeType":      et.edge.GetType(),
-		"isPs":               isPs,
 		"bisectedFrom":       endHeight,
 		"bisectedFromMerkle": util.Trunc(endCommit.Bytes()),
 		"bisectedTo":         bisectTo,
@@ -321,17 +320,7 @@ func newEdgeTracker(
 }
 
 func (et *edgeTracker) spawn(ctx context.Context) {
-	startHeight, startCommit := et.edge.StartCommitment()
-	endHeight, endCommit := et.edge.EndCommitment()
-	fields := logrus.Fields{
-		"start":         startHeight,
-		"end":           endHeight,
-		"startMerkle":   util.Trunc(startCommit.Bytes()),
-		"endMerkle":     util.Trunc(endCommit.Bytes()),
-		"validatorName": et.cfg.validatorName,
-		"challengeType": et.edge.GetType(),
-		"address":       util.Trunc(et.cfg.validatorAddress.Bytes()),
-	}
+	fields := et.uniqueTrackerLogFields()
 	log.WithFields(fields).Info("Tracking edge vertex")
 
 	t := et.cfg.timeRef.NewTicker(et.cfg.actEveryNSeconds)
@@ -360,6 +349,7 @@ func (et *edgeTracker) spawn(ctx context.Context) {
 	}
 }
 
+// TODO(RJ): Implement
 func (et *edgeTracker) shouldComplete(ctx context.Context) (bool, error) {
 	return false, nil
 }
