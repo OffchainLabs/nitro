@@ -281,7 +281,7 @@ func DeployFullRollupStack(
 	sequencer common.Address,
 	config rollupgen.Config,
 ) (*RollupAddresses, error) {
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr, err := deployRollupCreator(ctx, backend, deployAuth)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, ospEntryAddr, err := deployRollupCreator(ctx, backend, deployAuth)
 	if err != nil {
 		return nil, err
 	}
@@ -355,6 +355,19 @@ func DeployFullRollupStack(
 	}
 	if receipt2.Status != types.ReceiptStatusSuccessful {
 		return nil, errors.New("receipt failed")
+	}
+
+	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
+		deployAuth,
+		backend,
+		info.RollupAddress,
+		big.NewInt(1), // TODO: Challenge period length.
+		ospEntryAddr,
+	)
+	backend.Commit()
+	err = andTxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
+	if err != nil {
+		return nil, err
 	}
 
 	return &RollupAddresses{
@@ -437,40 +450,40 @@ func deployChallengeFactory(
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	backend *backends.SimulatedBackend,
-) (common.Address, common.Address, common.Address, error) {
+) (common.Address, common.Address, error) {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, backend)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, osp0, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, backend)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, ospMem, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, backend)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, ospMath, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, backend)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, ospHostIo, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, backend, osp0, ospMem, ospMath, ospHostIo)
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, ospEntryAddr, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
 
 	// TODO(RJ): This assertion chain is not used, but still needed by challenge manager. Need to remove.
@@ -480,7 +493,7 @@ func deployChallengeFactory(
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, assertionChainAddr, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
 
 	miniStakeValue := big.NewInt(1)
@@ -495,23 +508,9 @@ func deployChallengeFactory(
 	backend.Commit()
 	err = andTxSucceeded(ctx, tx, challengeManagerAddr, backend, err)
 	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, err
 	}
-
-	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
-		auth,
-		backend,
-		assertionChainAddr,
-		big.NewInt(1), // TODO: Challenge period length.
-		ospEntryAddr,
-	)
-	backend.Commit()
-	err = andTxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
-	if err != nil {
-		return common.Address{}, common.Address{}, common.Address{}, err
-	}
-
-	return ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr, nil
+	return ospEntryAddr, challengeManagerAddr, nil
 }
 
 func deployRollupCreator(
@@ -523,7 +522,7 @@ func deployRollupCreator(
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
-	ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr, err := deployChallengeFactory(ctx, auth, backend)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, auth, backend)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
@@ -577,7 +576,7 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 	backend.Commit()
-	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr, nil
+	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, ospEntryAddr, nil
 }
 
 func GenerateRollupConfig(

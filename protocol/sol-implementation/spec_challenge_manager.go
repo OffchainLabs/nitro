@@ -343,11 +343,19 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			assertion.SeqNum(),
 		)
 	}
+	prevSeqNum, err := assertion.PrevSeqNum()
+	if err != nil {
+		return nil, err
+	}
+	prevAssertionId, err := cm.assertionChain.GetAssertionId(ctx, prevSeqNum)
+	if err != nil {
+		return nil, err
+	}
 	_, err = transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
 			cm.txOpts,
 			challengeV2gen.CreateEdgeArgs{
-				EdgeType:         uint8(protocol.BlockChallenge),
+				EdgeType:         uint8(protocol.BlockChallengeEdge),
 				StartHistoryRoot: startCommit.Merkle,
 				StartHeight:      big.NewInt(int64(startCommit.Height)),
 				EndHistoryRoot:   endCommit.Merkle,
@@ -366,7 +374,7 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	edgeId, err := cm.CalculateEdgeId(
 		ctx,
 		protocol.BlockChallengeEdge,
-		protocol.OriginId(assertionId),
+		protocol.OriginId(prevAssertionId),
 		protocol.Height(startCommit.Height),
 		startCommit.Merkle,
 		protocol.Height(endCommit.Height),
