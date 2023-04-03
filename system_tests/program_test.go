@@ -44,6 +44,16 @@ func keccakTest(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()
 
+	arbWasm, err := precompilesgen.NewArbWasm(programAddress, l2client)
+	Require(t, err)
+	stylusVersion, err := arbWasm.StylusVersion(nil)
+	Require(t, err)
+	programVersion, err := arbWasm.WasmProgramVersion(nil, programAddress)
+	Require(t, err)
+	if stylusVersion == 0 || programVersion != stylusVersion {
+		Fail(t, "unexpected versions", stylusVersion, programVersion)
+	}
+
 	preimage := []byte("°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan")
 	correct := crypto.Keccak256Hash(preimage)
 
