@@ -1,5 +1,16 @@
 package solimpl_test
 
+import (
+	"context"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
+	"testing"
+)
+
 // import (
 // 	"context"
 // 	"fmt"
@@ -38,79 +49,100 @@ package solimpl_test
 // 	return hashes
 // }
 
-// func divergingHashesStartingAt(t *testing.T, n uint64, hashes []common.Hash) []common.Hash {
-// 	t.Helper()
-// 	divergingHashes := make([]common.Hash, len(hashes))
-// 	for i := uint64(0); i < n; i++ {
-// 		divergingHashes[i] = hashes[i]
-// 	}
-// 	for i := n; i < uint64(len(divergingHashes)); i++ {
-// 		junk := make([]byte, 32)
-// 		_, err := rand.Read(junk)
-// 		require.NoError(t, err)
-// 		divergingHashes[i] = common.BytesToHash(junk)
-// 	}
-// 	return divergingHashes
-// }
+func TestEdgeChallengeManager_IsPresumptive(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
 
-// func TestChallengeVertex_IsPresumptiveSuccessor(t *testing.T) {
-// 	ctx := context.Background()
-// 	height1 := uint64(7)
-// 	height2 := uint64(7)
-// 	a1, a2, challenge, _, _ := setupTopLevelFork(t, ctx, height1, height2)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
 
-// 	honestHashes := honestHashesUpTo(10)
-// 	evilHashes := evilHashesUpTo(10)
+	opts := []statemanager.Opt{
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	}
 
-// 	honestManager, err := statemanager.New(honestHashes)
-// 	require.NoError(t, err)
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
 
-// 	evilManager, err := statemanager.New(evilHashes)
-// 	require.NoError(t, err)
-// 	honestCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height1)
-// 	require.NoError(t, err)
-// 	evilCommit, err := evilManager.HistoryCommitmentUpTo(ctx, height2)
-// 	require.NoError(t, err)
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
 
-// 	// We add two leaves to the challenge.
-// 	v1, err := challenge.AddBlockChallengeLeaf(ctx, a1, honestCommit)
-// 	require.NoError(t, err)
-// 	v2, err := challenge.AddBlockChallengeLeaf(ctx, a2, evilCommit)
-// 	require.NoError(t, err)
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
 
-// 	t.Run("both are rivals, so no one is presumptive", func(t *testing.T) {
-// 		isPs, err := v1.IsPresumptiveSuccessor(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, false, isPs)
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
 
-// 		isPs, err = v2.IsPresumptiveSuccessor(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, false, isPs)
-// 	})
-// 	t.Run("the newly bisected vertex is now presumptive", func(t *testing.T) {
-// 		preCommit, err := evilManager.HistoryCommitmentUpTo(ctx, 3)
-// 		require.NoError(t, err)
-// 		proof, err := evilManager.PrefixProof(ctx, 3, 7)
-// 		require.NoError(t, err)
+	t.Run("first leaf is presumptive", func(t *testing.T) {
+		isPs, err := honestEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+	})
 
-// 		bisectedToV, err := v2.Bisect(ctx, preCommit, proof)
-// 		require.NoError(t, err)
-// 		bisectedTo := bisectedToV.(*ChallengeVertex)
-// 		bisectedToInner, err := bisectedTo.inner(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, uint64(3), bisectedToInner.Height.Uint64())
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
 
-// 		// V1 should no longer be presumptive.
-// 		isPs, err := v1.IsPresumptiveSuccessor(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, false, isPs)
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
 
-// 		// Bisected to should be presumptive.
-// 		isPs, err = bisectedTo.IsPresumptiveSuccessor(ctx)
-// 		require.NoError(t, err)
-// 		require.Equal(t, true, isPs)
-// 	})
-// }
+	t.Run("neither is presumptive if rivals", func(t *testing.T) {
+		isPs, err := honestEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+
+		isPs, err = evilEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+	})
+
+	t.Run("bisected children are presumptive", func(t *testing.T) {
+		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+		require.NoError(t, err)
+		honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+		require.NoError(t, err)
+		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+		require.NoError(t, err)
+
+		isPs, err := lower.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+		isPs, err = upper.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+
+		isPs, err = honestEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+
+		isPs, err = evilEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+	})
+}
 
 // func TestChallengeVertex_ChildrenAreAtOneStepFork(t *testing.T) {
 // 	ctx := context.Background()
