@@ -108,7 +108,7 @@ func MostSignificantBit(x uint64) (uint64, error) {
 // The root of a tree is defined as the cumulative hashing of the roots of
 // all its subtrees. Returns error for empty tree.
 func Root(me []common.Hash) (common.Hash, error) {
-	if uint64(len(me)) >= MAX_LEVEL {
+	if uint64(len(me)) > MAX_LEVEL {
 		return common.Hash{}, ErrLevelTooHigh
 	}
 	if uint64(len(me)) == 0 {
