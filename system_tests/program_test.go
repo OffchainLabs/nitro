@@ -44,7 +44,7 @@ func keccakTest(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()
 
-	arbWasm, err := precompilesgen.NewArbWasm(programAddress, l2client)
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
