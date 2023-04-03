@@ -2,22 +2,20 @@ package solimpl
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 
 	"crypto/ecdsa"
-	"errors"
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/bridgegen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/ospgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +28,7 @@ func TestDeployFullRollupStack(t *testing.T) {
 	rollupOwner := accs[0].accountAddr
 	chainId := big.NewInt(1337)
 	loserStakeEscrow := common.Address{}
-	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, big.NewInt(1), big.NewInt(1))
+	cfg := challenge_testing.GenerateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, big.NewInt(1), big.NewInt(1))
 	deployFullRollupStack(
 		t,
 		ctx,
@@ -131,32 +129,32 @@ func deployBridgeCreator(
 	t.Helper()
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, bridgeTemplate, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, bridgeTemplate, backend, err)
 	require.NoError(t, err)
 
 	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, seqInboxTemplate, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, seqInboxTemplate, backend, err)
 	require.NoError(t, err)
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, inboxTemplate, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, inboxTemplate, backend, err)
 	require.NoError(t, err)
 
 	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventInbox(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, rollupEventBridgeTemplate, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, rollupEventBridgeTemplate, backend, err)
 	require.NoError(t, err)
 
 	outboxTemplate, tx, _, err := bridgegen.DeployOutbox(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, outboxTemplate, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, outboxTemplate, backend, err)
 	require.NoError(t, err)
 
 	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, bridgeCreatorAddr, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, bridgeCreatorAddr, backend, err)
 	require.NoError(t, err)
 
 	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
@@ -179,27 +177,27 @@ func deployChallengeFactory(
 	t.Helper()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, osp0, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, osp0, backend, err)
 	require.NoError(t, err)
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, ospMem, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, ospMem, backend, err)
 	require.NoError(t, err)
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, ospMath, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, ospMath, backend, err)
 	require.NoError(t, err)
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, ospHostIo, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, ospHostIo, backend, err)
 	require.NoError(t, err)
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, backend, osp0, ospMem, ospMath, ospHostIo)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, ospEntryAddr, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, ospEntryAddr, backend, err)
 	require.NoError(t, err)
 
 	// TODO(RJ): This assertion chain is not used, but still needed by challenge manager. Need to remove.
@@ -207,7 +205,7 @@ func deployChallengeFactory(
 
 	assertionChainAddr, tx, _, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, big.NewInt(1))
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, assertionChainAddr, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, assertionChainAddr, backend, err)
 	require.NoError(t, err)
 
 	miniStakeValue := big.NewInt(1)
@@ -220,7 +218,7 @@ func deployChallengeFactory(
 		ospEntryAddr,
 	)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, challengeManagerAddr, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, challengeManagerAddr, backend, err)
 	require.NoError(t, err)
 
 	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
@@ -231,7 +229,7 @@ func deployChallengeFactory(
 		ospEntryAddr,
 	)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
 	require.NoError(t, err)
 
 	return ospEntryAddr, challengeManagerAddr, edgeChallengeManagerAddr
@@ -249,27 +247,27 @@ func deployRollupCreator(
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, rollupAdminLogic, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, rollupAdminLogic, backend, err)
 	require.NoError(t, err)
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, rollupUserLogic, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, rollupUserLogic, backend, err)
 	require.NoError(t, err)
 
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, rollupCreatorAddress, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, rollupCreatorAddress, backend, err)
 	require.NoError(t, err)
 
 	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, validatorUtils, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, validatorUtils, backend, err)
 	require.NoError(t, err)
 
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, backend)
 	backend.Commit()
-	err = andTxSucceeded(ctx, tx, validatorWalletCreator, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, validatorWalletCreator, backend, err)
 	require.NoError(t, err)
 
 	tx, err = rollupCreator.SetTemplates(
@@ -289,41 +287,6 @@ func deployRollupCreator(
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), receipt.Status)
 	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, edgeChallengeManagerAddr
-}
-
-func generateRollupConfig(
-	prod bool,
-	wasmModuleRoot common.Hash,
-	rollupOwner common.Address,
-	chainId *big.Int,
-	loserStakeEscrow common.Address,
-	challengePeriodSeconds *big.Int,
-	miniStakeValue *big.Int,
-) rollupgen.Config {
-	var confirmPeriod uint64
-	if prod {
-		confirmPeriod = 45818
-	} else {
-		confirmPeriod = 20
-	}
-	return rollupgen.Config{
-		ChallengePeriodSeconds:   challengePeriodSeconds,
-		MiniStakeValue:           miniStakeValue,
-		ConfirmPeriodBlocks:      confirmPeriod,
-		ExtraChallengeTimeBlocks: 200,
-		StakeToken:               common.Address{},
-		BaseStake:                big.NewInt(100),
-		WasmModuleRoot:           wasmModuleRoot,
-		Owner:                    rollupOwner,
-		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainId,
-		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-			FutureBlocks:  big.NewInt(12),
-			DelaySeconds:  big.NewInt(60 * 60 * 24),
-			FutureSeconds: big.NewInt(60 * 60),
-		},
-	}
 }
 
 // Represents a test EOA account in the simulated backend,
@@ -366,31 +329,4 @@ func setupAccounts(t *testing.T, numAccounts uint64) ([]*testAccount, *backends.
 	}
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
 	return accs, backend
-}
-
-func andTxSucceeded(
-	ctx context.Context,
-	tx *types.Transaction,
-	addr common.Address,
-	backend *backends.SimulatedBackend,
-	err error,
-) error {
-	if err != nil {
-		return fmt.Errorf("error submitting tx: %w", err)
-	}
-	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		return err
-	}
-	if receipt.Status != 1 {
-		return errors.New("tx failed")
-	}
-	code, err := backend.CodeAt(ctx, addr, nil)
-	if err != nil {
-		return err
-	}
-	if len(code) == 0 {
-		return errors.New("contract not deployed")
-	}
-	return nil
 }
