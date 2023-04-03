@@ -51,7 +51,7 @@ func keccakTest(t *testing.T, jit bool) {
 	args = append(args, preimage...)
 
 	timed(t, "execute", func() {
-		result := sendContractCall(t, ctx, programAddress, nil, l2client, args)
+		result := sendContractCall(t, ctx, programAddress, l2client, args)
 		if len(result) != 32 {
 			Fail(t, "unexpected return result: ", "result", result)
 		}
@@ -262,7 +262,7 @@ func TestProgramCalls(t *testing.T) {
 		calldata = appendCall(calldata, vm.STATICCALL, storeAddr, argsForStorageRead(key))
 		expected = append(expected, value[:]...)
 	}
-	values := sendContractCall(t, ctx, callsAddr, nil, l2client, calldata)
+	values := sendContractCall(t, ctx, callsAddr, l2client, calldata)
 	if !bytes.Equal(expected, values) {
 		Fail(t, "wrong results static call", common.Bytes2Hex(expected), common.Bytes2Hex(values))
 	}
@@ -489,7 +489,7 @@ func TestProgramEvmData(t *testing.T) {
 	opts := bind.CallOpts{
 		From: expected,
 	}
-	result, err := mock.CallProgram(&opts, dataAddr, []byte{})
+	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
 	Require(t, err)
 	if len(result) != 20 {
 		Fail(t, "unexpected return result: ", result)

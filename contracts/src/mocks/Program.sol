@@ -18,7 +18,7 @@ contract ProgramTest {
         require(hash == keccak256(data[1:]));
     }
 
-    function callProgram(address program, bytes calldata data)
+    function staticcallProgram(address program, bytes calldata data)
         external
         view
         returns (bytes memory)
