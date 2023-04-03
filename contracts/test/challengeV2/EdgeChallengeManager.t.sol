@@ -3,10 +3,10 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../../src/challengeV2/DataEntities.sol";
+import "./Utils.sol";
 import "../MockAssertionChain.sol";
 import "../../src/challengeV2/EdgeChallengeManager.sol";
 // import "../src/osp/IOneStepProofEntry.sol";
-import "./Utils.sol";
 import "./StateTools.sol";
 // import "../src/state/GlobalState.sol";
 // import "../src/state/Machine.sol";
@@ -124,7 +124,7 @@ contract EdgeChallengeManagerTest is Test {
         vm.warp(challengePeriodSec + 2);
 
         bytes32[] memory ancestorEdges = new bytes32[](0);
-        ei.challengeManager.confirmEdgeByTimer(edgeId, ancestorEdges);
+        ei.challengeManager.confirmEdgeByTime(edgeId, ancestorEdges);
 
         assertTrue(ei.challengeManager.getEdge(edgeId).status == EdgeStatus.Confirmed, "Edge confirmed");
     }
@@ -149,7 +149,7 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.warp(block.timestamp + 1);
 
-        assertEq(ei.challengeManager.getCurrentPsTimer(edge1Id), 1, "Edge1 timer");
+        assertEq(ei.challengeManager.getCurrentTimeUnrivaled(edge1Id), 1, "Edge1 timer");
         {
             (, bytes32[] memory exp2) = appendRandomStates(genesisStates(), height1);
             bytes32 edge2Id = ei.challengeManager.createLayerZeroEdge(
@@ -166,18 +166,18 @@ contract EdgeChallengeManagerTest is Test {
             );
 
             vm.warp(block.timestamp + 2);
-            assertEq(ei.challengeManager.getCurrentPsTimer(edge1Id), 1, "Edge1 timer");
-            assertEq(ei.challengeManager.getCurrentPsTimer(edge2Id), 0, "Edge2 timer");
+            assertEq(ei.challengeManager.getCurrentTimeUnrivaled(edge1Id), 1, "Edge1 timer");
+            assertEq(ei.challengeManager.getCurrentTimeUnrivaled(edge2Id), 0, "Edge2 timer");
         }
 
-        BisectionChildren memory children = bisect(ei.challengeManager, edge1Id, states, 16, states.length);
+        BisectionChildren memory children = bisect(ei.challengeManager, edge1Id, states, 16, states.length - 1);
 
         vm.warp(challengePeriodSec + 5);
 
         bytes32[] memory ancestors = new bytes32[](1);
         ancestors[0] = edge1Id;
-        ei.challengeManager.confirmEdgeByTimer(children.lowerChildId, ancestors);
-        ei.challengeManager.confirmEdgeByTimer(children.upperChildId, ancestors);
+        ei.challengeManager.confirmEdgeByTime(children.lowerChildId, ancestors);
+        ei.challengeManager.confirmEdgeByTime(children.upperChildId, ancestors);
         ei.challengeManager.confirmEdgeByChildren(edge1Id);
 
         assertTrue(ei.challengeManager.getEdge(edge1Id).status == EdgeStatus.Confirmed, "Edge confirmed");
@@ -190,13 +190,13 @@ contract EdgeChallengeManagerTest is Test {
         uint256 bisectionSize,
         uint256 endSize
     ) internal returns (BisectionChildren memory) {
-        bytes32[] memory middleExp = ProofUtils.expansionFromLeaves(states, 0, bisectionSize);
-        bytes32[] memory upperStates = ArrayUtilsLib.slice(states, bisectionSize, endSize);
+        bytes32[] memory middleExp = ProofUtils.expansionFromLeaves(states, 0, bisectionSize + 1);
+        bytes32[] memory upperStates = ArrayUtilsLib.slice(states, bisectionSize + 1, endSize + 1);
 
         (bytes32 lowerChildId, bytes32 upperChildId) = challengeManager.bisectEdge(
             edgeId,
             MerkleTreeLib.root(middleExp),
-            abi.encode(middleExp, ProofUtils.generatePrefixProof(bisectionSize, upperStates))
+            abi.encode(middleExp, ProofUtils.generatePrefixProof(bisectionSize + 1, upperStates))
         );
 
         return BisectionChildren(lowerChildId, upperChildId);
@@ -218,33 +218,37 @@ contract EdgeChallengeManagerTest is Test {
 
     function bisectToForkOnly(BisectToForkOnlyArgs memory args)
         internal
-        returns (BisectionChildren[5] memory, BisectionChildren[5] memory)
+        returns (BisectionChildren[6] memory, BisectionChildren[6] memory)
     {
-        BisectionChildren[5] memory winningEdges;
-        BisectionChildren[5] memory losingEdges;
+        BisectionChildren[6] memory winningEdges;
+        BisectionChildren[6] memory losingEdges;
 
-        winningEdges[4] = BisectionChildren(args.winningId, 0);
-        losingEdges[4] = BisectionChildren(args.losingId, 0);
+        winningEdges[5] = BisectionChildren(args.winningId, 0);
+        losingEdges[5] = BisectionChildren(args.losingId, 0);
 
         // height 16
-        winningEdges[3] = bisect(
-            args.challengeManager, winningEdges[4].lowerChildId, args.winningLeaves, 16, args.winningLeaves.length
+        winningEdges[4] = bisect(
+            args.challengeManager, winningEdges[5].lowerChildId, args.winningLeaves, 16, args.winningLeaves.length - 1
         );
-        losingEdges[3] =
-            bisect(args.challengeManager, losingEdges[4].lowerChildId, args.losingLeaves, 16, args.losingLeaves.length);
+        losingEdges[4] = bisect(
+            args.challengeManager, losingEdges[5].lowerChildId, args.losingLeaves, 16, args.losingLeaves.length - 1
+        );
 
         // height 8
-        winningEdges[2] = bisect(args.challengeManager, winningEdges[3].lowerChildId, args.winningLeaves, 8, 16);
-        losingEdges[2] = bisect(args.challengeManager, losingEdges[3].lowerChildId, args.losingLeaves, 8, 16);
+        winningEdges[3] = bisect(args.challengeManager, winningEdges[4].lowerChildId, args.winningLeaves, 8, 16);
+        losingEdges[3] = bisect(args.challengeManager, losingEdges[4].lowerChildId, args.losingLeaves, 8, 16);
 
         // height 4
-        winningEdges[1] = bisect(args.challengeManager, winningEdges[2].lowerChildId, args.winningLeaves, 4, 8);
-        losingEdges[1] = bisect(args.challengeManager, losingEdges[2].lowerChildId, args.losingLeaves, 4, 8);
+        winningEdges[2] = bisect(args.challengeManager, winningEdges[3].lowerChildId, args.winningLeaves, 4, 8);
+        losingEdges[2] = bisect(args.challengeManager, losingEdges[3].lowerChildId, args.losingLeaves, 4, 8);
+
+        winningEdges[1] = bisect(args.challengeManager, winningEdges[2].lowerChildId, args.winningLeaves, 2, 4);
+        losingEdges[1] = bisect(args.challengeManager, losingEdges[2].lowerChildId, args.losingLeaves, 2, 4);
 
         // height 2
-        winningEdges[0] = bisect(args.challengeManager, winningEdges[1].lowerChildId, args.winningLeaves, 2, 4);
+        winningEdges[0] = bisect(args.challengeManager, winningEdges[1].lowerChildId, args.winningLeaves, 1, 2);
         if (!args.skipLast) {
-            losingEdges[0] = bisect(args.challengeManager, losingEdges[1].lowerChildId, args.losingLeaves, 2, 4);
+            losingEdges[0] = bisect(args.challengeManager, losingEdges[1].lowerChildId, args.losingLeaves, 1, 2);
         }
 
         return (winningEdges, losingEdges);
@@ -260,8 +264,8 @@ contract EdgeChallengeManagerTest is Test {
         return (fullStates, fullExp);
     }
 
-    function toDynamic(BisectionChildren[5] memory l) internal pure returns (BisectionChildren[] memory) {
-        BisectionChildren[] memory d = new BisectionChildren[](5);
+    function toDynamic(BisectionChildren[6] memory l) internal pure returns (BisectionChildren[] memory) {
+        BisectionChildren[] memory d = new BisectionChildren[](6);
         for (uint256 i = 0; i < d.length; i++) {
             d[i] = l[i];
         }
@@ -298,7 +302,7 @@ contract EdgeChallengeManagerTest is Test {
     function testCanConfirmByClaim() public {
         EdgeInitData memory ei = deployAndInit();
 
-        (bytes32[] memory states1,, BisectionChildren[5] memory edges1,) = createEdgesAndBisectToFork(
+        (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(ei.challengeManager, EdgeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false)
         );
 
@@ -318,19 +322,19 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.warp(challengePeriodSec + 5);
 
-        ei.challengeManager.confirmEdgeByTimer(edge1BigStepId, new bytes32[](0));
+        ei.challengeManager.confirmEdgeByTime(edge1BigStepId, new bytes32[](0));
 
         ei.challengeManager.confirmEdgeByClaim(edges1[0].lowerChildId, edge1BigStepId);
-        ei.challengeManager.confirmEdgeByTimer(edges1[0].upperChildId, getAncestorsAbove(toDynamic(edges1), 0));
+        ei.challengeManager.confirmEdgeByTime(edges1[0].upperChildId, getAncestorsAbove(toDynamic(edges1), 0));
 
         ei.challengeManager.confirmEdgeByChildren(edges1[1].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(edges1[1].upperChildId, getAncestorsAbove(toDynamic(edges1), 1));
+        ei.challengeManager.confirmEdgeByTime(edges1[1].upperChildId, getAncestorsAbove(toDynamic(edges1), 1));
 
         ei.challengeManager.confirmEdgeByChildren(edges1[2].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(edges1[2].upperChildId, getAncestorsAbove(toDynamic(edges1), 2));
+        ei.challengeManager.confirmEdgeByTime(edges1[2].upperChildId, getAncestorsAbove(toDynamic(edges1), 2));
 
         ei.challengeManager.confirmEdgeByChildren(edges1[3].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(edges1[3].upperChildId, getAncestorsAbove(toDynamic(edges1), 3));
+        ei.challengeManager.confirmEdgeByTime(edges1[3].upperChildId, getAncestorsAbove(toDynamic(edges1), 3));
 
         ei.challengeManager.confirmEdgeByChildren(edges1[4].lowerChildId);
 
@@ -349,7 +353,7 @@ contract EdgeChallengeManagerTest is Test {
 
     function createEdgesAndBisectToFork(CreateEdgesBisectArgs memory args)
         internal
-        returns (bytes32[] memory, bytes32[] memory, BisectionChildren[5] memory, BisectionChildren[5] memory)
+        returns (bytes32[] memory, bytes32[] memory, BisectionChildren[6] memory, BisectionChildren[6] memory)
     {
         (bytes32[] memory states1, bytes32[] memory exp1) =
             appendRandomStatesBetween(genesisStates(), args.endState1, height1);
@@ -368,7 +372,7 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.warp(block.timestamp + 1);
 
-        assertEq(args.challengeManager.getCurrentPsTimer(edge1Id), 1, "Edge1 timer");
+        assertEq(args.challengeManager.getCurrentTimeUnrivaled(edge1Id), 1, "Edge1 timer");
 
         (bytes32[] memory states2, bytes32[] memory exp2) =
             appendRandomStatesBetween(genesisStates(), args.endState2, height1);
@@ -387,7 +391,7 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.warp(block.timestamp + 2);
 
-        (BisectionChildren[5] memory edges1, BisectionChildren[5] memory edges2) = bisectToForkOnly(
+        (BisectionChildren[6] memory edges1, BisectionChildren[6] memory edges2) = bisectToForkOnly(
             BisectToForkOnlyArgs(args.challengeManager, edge1Id, edge2Id, states1, states2, args.skipLast)
         );
 
@@ -400,8 +404,8 @@ contract EdgeChallengeManagerTest is Test {
         (
             bytes32[] memory blockStates1,
             bytes32[] memory blockStates2,
-            BisectionChildren[5] memory blockEdges1,
-            BisectionChildren[5] memory blockEdges2
+            BisectionChildren[6] memory blockEdges1,
+            BisectionChildren[6] memory blockEdges2
         ) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(ei.challengeManager, EdgeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false)
         );
@@ -409,8 +413,8 @@ contract EdgeChallengeManagerTest is Test {
         (
             bytes32[] memory bigStepStates1,
             bytes32[] memory bigStepStates2,
-            BisectionChildren[5] memory bigStepEdges1,
-            BisectionChildren[5] memory bigStepEdges2
+            BisectionChildren[6] memory bigStepEdges1,
+            BisectionChildren[6] memory bigStepEdges2
         ) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
@@ -423,7 +427,7 @@ contract EdgeChallengeManagerTest is Test {
             )
         );
 
-        (,, BisectionChildren[5] memory smallStepEdges1,) = createEdgesAndBisectToFork(
+        (,, BisectionChildren[6] memory smallStepEdges1,) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
                 EdgeType.SmallStep,
@@ -440,47 +444,56 @@ contract EdgeChallengeManagerTest is Test {
         BisectionChildren[] memory allWinners =
             concat(concat(toDynamic(smallStepEdges1), toDynamic(bigStepEdges1)), toDynamic(blockEdges1));
 
-        ei.challengeManager.confirmEdgeByTimer(allWinners[0].lowerChildId, getAncestorsAbove(allWinners, 0));
-        ei.challengeManager.confirmEdgeByTimer(allWinners[0].upperChildId, getAncestorsAbove(allWinners, 0));
+        ei.challengeManager.confirmEdgeByTime(allWinners[0].lowerChildId, getAncestorsAbove(allWinners, 0));
+        ei.challengeManager.confirmEdgeByTime(allWinners[0].upperChildId, getAncestorsAbove(allWinners, 0));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[1].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[1].upperChildId, getAncestorsAbove(allWinners, 1));
+        ei.challengeManager.confirmEdgeByTime(allWinners[1].upperChildId, getAncestorsAbove(allWinners, 1));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[2].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[2].upperChildId, getAncestorsAbove(allWinners, 2));
+        ei.challengeManager.confirmEdgeByTime(allWinners[2].upperChildId, getAncestorsAbove(allWinners, 2));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[3].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[3].upperChildId, getAncestorsAbove(allWinners, 3));
+        ei.challengeManager.confirmEdgeByTime(allWinners[3].upperChildId, getAncestorsAbove(allWinners, 3));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[4].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[4].upperChildId, getAncestorsAbove(allWinners, 4));
 
-        ei.challengeManager.confirmEdgeByClaim(allWinners[5].lowerChildId, allWinners[4].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[5].upperChildId, getAncestorsAbove(allWinners, 5));
+        ei.challengeManager.confirmEdgeByChildren(allWinners[5].lowerChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[6].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[6].upperChildId, getAncestorsAbove(allWinners, 6));
+        ei.challengeManager.confirmEdgeByClaim(allWinners[6].lowerChildId, allWinners[5].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[6].upperChildId, getAncestorsAbove(allWinners, 6));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[7].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[7].upperChildId, getAncestorsAbove(allWinners, 7));
+        ei.challengeManager.confirmEdgeByTime(allWinners[7].upperChildId, getAncestorsAbove(allWinners, 7));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[8].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[8].upperChildId, getAncestorsAbove(allWinners, 8));
+        ei.challengeManager.confirmEdgeByTime(allWinners[8].upperChildId, getAncestorsAbove(allWinners, 8));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[9].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[9].upperChildId, getAncestorsAbove(allWinners, 9));
 
-        ei.challengeManager.confirmEdgeByClaim(allWinners[10].lowerChildId, allWinners[9].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[10].upperChildId, getAncestorsAbove(allWinners, 10));
+        ei.challengeManager.confirmEdgeByChildren(allWinners[10].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[10].upperChildId, getAncestorsAbove(allWinners, 10));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[11].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[11].upperChildId, getAncestorsAbove(allWinners, 11));
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[12].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[12].upperChildId, getAncestorsAbove(allWinners, 12));
+        ei.challengeManager.confirmEdgeByClaim(allWinners[12].lowerChildId, allWinners[11].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[12].upperChildId, getAncestorsAbove(allWinners, 12));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[13].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[13].upperChildId, getAncestorsAbove(allWinners, 13));
+        ei.challengeManager.confirmEdgeByTime(allWinners[13].upperChildId, getAncestorsAbove(allWinners, 13));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[14].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[14].upperChildId, getAncestorsAbove(allWinners, 14));
+
+        ei.challengeManager.confirmEdgeByChildren(allWinners[15].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[15].upperChildId, getAncestorsAbove(allWinners, 15));
+
+        ei.challengeManager.confirmEdgeByChildren(allWinners[16].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[16].upperChildId, getAncestorsAbove(allWinners, 16));
+
+        ei.challengeManager.confirmEdgeByChildren(allWinners[17].lowerChildId);
 
         assertTrue(
             ei.challengeManager.getEdge(allWinners[14].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed"
@@ -493,8 +506,8 @@ contract EdgeChallengeManagerTest is Test {
         (
             bytes32[] memory blockStates1,
             bytes32[] memory blockStates2,
-            BisectionChildren[5] memory blockEdges1,
-            BisectionChildren[5] memory blockEdges2
+            BisectionChildren[6] memory blockEdges1,
+            BisectionChildren[6] memory blockEdges2
         ) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(ei.challengeManager, EdgeType.Block, ei.a1, ei.a2, rand.hash(), rand.hash(), false)
         );
@@ -502,8 +515,8 @@ contract EdgeChallengeManagerTest is Test {
         (
             bytes32[] memory bigStepStates1,
             bytes32[] memory bigStepStates2,
-            BisectionChildren[5] memory bigStepEdges1,
-            BisectionChildren[5] memory bigStepEdges2
+            BisectionChildren[6] memory bigStepEdges1,
+            BisectionChildren[6] memory bigStepEdges2
         ) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
@@ -516,7 +529,7 @@ contract EdgeChallengeManagerTest is Test {
             )
         );
 
-        (bytes32[] memory smallStepStates1,, BisectionChildren[5] memory smallStepEdges1,) = createEdgesAndBisectToFork(
+        (bytes32[] memory smallStepStates1,, BisectionChildren[6] memory smallStepEdges1,) = createEdgesAndBisectToFork(
             CreateEdgesBisectArgs(
                 ei.challengeManager,
                 EdgeType.SmallStep,
@@ -548,49 +561,59 @@ contract EdgeChallengeManagerTest is Test {
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(genesisStates()), 0),
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(firstStates), 1)
         );
-        ei.challengeManager.confirmEdgeByTimer(allWinners[0].upperChildId, getAncestorsAbove(allWinners, 0));
-
+        bytes32[] memory above = getAncestorsAbove(allWinners, 0);
+        ei.challengeManager.confirmEdgeByTime(allWinners[0].upperChildId, above);
+        
         ei.challengeManager.confirmEdgeByChildren(allWinners[1].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[1].upperChildId, getAncestorsAbove(allWinners, 1));
+        ei.challengeManager.confirmEdgeByTime(allWinners[1].upperChildId, getAncestorsAbove(allWinners, 1));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[2].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[2].upperChildId, getAncestorsAbove(allWinners, 2));
+        ei.challengeManager.confirmEdgeByTime(allWinners[2].upperChildId, getAncestorsAbove(allWinners, 2));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[3].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[3].upperChildId, getAncestorsAbove(allWinners, 3));
+        ei.challengeManager.confirmEdgeByTime(allWinners[3].upperChildId, getAncestorsAbove(allWinners, 3));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[4].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[4].upperChildId, getAncestorsAbove(allWinners, 4));
 
-        ei.challengeManager.confirmEdgeByClaim(allWinners[5].lowerChildId, allWinners[4].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[5].upperChildId, getAncestorsAbove(allWinners, 5));
+        ei.challengeManager.confirmEdgeByChildren(allWinners[5].lowerChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[6].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[6].upperChildId, getAncestorsAbove(allWinners, 6));
+        ei.challengeManager.confirmEdgeByClaim(allWinners[6].lowerChildId, allWinners[5].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[6].upperChildId, getAncestorsAbove(allWinners, 6));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[7].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[7].upperChildId, getAncestorsAbove(allWinners, 7));
+        ei.challengeManager.confirmEdgeByTime(allWinners[7].upperChildId, getAncestorsAbove(allWinners, 7));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[8].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[8].upperChildId, getAncestorsAbove(allWinners, 8));
+        ei.challengeManager.confirmEdgeByTime(allWinners[8].upperChildId, getAncestorsAbove(allWinners, 8));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[9].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[9].upperChildId, getAncestorsAbove(allWinners, 9));
 
-        ei.challengeManager.confirmEdgeByClaim(allWinners[10].lowerChildId, allWinners[9].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[10].upperChildId, getAncestorsAbove(allWinners, 10));
+        ei.challengeManager.confirmEdgeByChildren(allWinners[10].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[10].upperChildId, getAncestorsAbove(allWinners, 10));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[11].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[11].upperChildId, getAncestorsAbove(allWinners, 11));
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[12].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[12].upperChildId, getAncestorsAbove(allWinners, 12));
+        ei.challengeManager.confirmEdgeByClaim(allWinners[12].lowerChildId, allWinners[11].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[12].upperChildId, getAncestorsAbove(allWinners, 12));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[13].lowerChildId);
-        ei.challengeManager.confirmEdgeByTimer(allWinners[13].upperChildId, getAncestorsAbove(allWinners, 13));
+        ei.challengeManager.confirmEdgeByTime(allWinners[13].upperChildId, getAncestorsAbove(allWinners, 13));
 
         ei.challengeManager.confirmEdgeByChildren(allWinners[14].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[14].upperChildId, getAncestorsAbove(allWinners, 14));
+
+        ei.challengeManager.confirmEdgeByChildren(allWinners[15].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[15].upperChildId, getAncestorsAbove(allWinners, 15));
+
+        ei.challengeManager.confirmEdgeByChildren(allWinners[16].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[16].upperChildId, getAncestorsAbove(allWinners, 16));
+
+        ei.challengeManager.confirmEdgeByChildren(allWinners[17].lowerChildId);
 
         assertTrue(
-            ei.challengeManager.getEdge(allWinners[14].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed"
+            ei.challengeManager.getEdge(allWinners[17].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed"
         );
     }
 }
