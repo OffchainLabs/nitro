@@ -1,45 +1,42 @@
-package solimpl
+package solimpl_test
 
 import (
 	"context"
 	"testing"
 
-	"crypto/rand"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/stretchr/testify/require"
-	"math/big"
 )
 
 var (
-	_ = protocol.SpecEdge(&SpecEdge{})
-	_ = protocol.SpecChallengeManager(&SpecChallengeManager{})
+	_ = protocol.SpecEdge(&solimpl.SpecEdge{})
+	_ = protocol.SpecChallengeManager(&solimpl.SpecChallengeManager{})
 )
 
-func TestEdgeChallengeManager(t *testing.T) {
+func TestEdgeChallengeManager_ConfirmByChildren(t *testing.T) {
 	ctx := context.Background()
 	height := protocol.Height(3)
 
-	createdData := createTwoValidatorFork(t, ctx, &createForkConfig{
-		numBlocks:     uint64(height) + 1,
-		divergeHeight: 0,
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
 	})
+	require.NoError(t, err)
 
 	honestStateManager, err := statemanager.New(
-		createdData.honestValidatorStateRoots,
+		createdData.HonestValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
 		statemanager.WithMaxWavmOpcodesPerBlock(1),
 	)
 	require.NoError(t, err)
 
 	evilStateManager, err := statemanager.New(
-		createdData.evilValidatorStateRoots,
+		createdData.EvilValidatorStateRoots,
 		statemanager.WithNumOpcodesPerBigStep(1),
 		statemanager.WithMaxWavmOpcodesPerBlock(1),
 		statemanager.WithBigStepStateDivergenceHeight(1),
@@ -47,10 +44,153 @@ func TestEdgeChallengeManager(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	challengeManager, err := createdData.chains[0].SpecChallengeManager(ctx)
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
-	genesis, err := createdData.chains[0].AssertionBySequenceNum(ctx, 0)
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	honestEdge := leafAdder(honestEndCommit)
+	s0, err := honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s0)
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+	require.NoError(t, err)
+	honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+	require.NoError(t, err)
+	honestChildren1, honestChildren2, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+	require.NoError(t, err)
+
+	s1, err := honestChildren1.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s1)
+	s2, err := honestChildren2.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgePending, s2)
+
+	require.NoError(t, honestChildren1.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+	require.NoError(t, honestChildren2.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+	s1, err = honestChildren1.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, s1)
+	s2, err = honestChildren2.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, s2)
+
+	require.NoError(t, honestEdge.ConfirmByChildren(ctx))
+	s0, err = honestEdge.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, protocol.EdgeConfirmed, s0)
+}
+
+func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+	isPs, err := honestEdge.IsPresumptive(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, isPs)
+
+	t.Run("confirmed by timer", func(t *testing.T) {
+		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{protocol.EdgeId(common.Hash{1})}), "execution reverted: Edge does not exist")
+	})
+	t.Run("confirmed by timer", func(t *testing.T) {
+		require.NoError(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}))
+		status, err := honestEdge.Status(ctx)
+		require.NoError(t, err)
+		require.Equal(t, protocol.EdgeConfirmed, status)
+	})
+
+	t.Run("can't confirm again", func(t *testing.T) {
+		status, err := honestEdge.Status(ctx)
+		require.NoError(t, err)
+		require.Equal(t, protocol.EdgeConfirmed, status)
+		require.ErrorContains(t, honestEdge.ConfirmByTimer(ctx, []protocol.EdgeId{}), "execution reverted: Edge not pending")
+	})
+}
+
+func TestEdgeChallengeManager(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	)
+	require.NoError(t, err)
+
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+		statemanager.WithBigStepStateDivergenceHeight(1),
+		statemanager.WithSmallStepStateDivergenceHeight(1),
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
 	// Honest assertion being added.
@@ -232,202 +372,4 @@ func TestEdgeChallengeManager(t *testing.T) {
 	require.Equal(t, true, isAtOneStepFork)
 
 	t.Log("Reached one step proof!!!")
-}
-
-type createdValidatorFork struct {
-	leaf1                     protocol.Assertion
-	leaf2                     protocol.Assertion
-	chains                    []*AssertionChain
-	accounts                  []*testAccount
-	backend                   *backends.SimulatedBackend
-	honestValidatorStateRoots []common.Hash
-	evilValidatorStateRoots   []common.Hash
-	addrs                     *rollupAddresses
-}
-
-type createForkConfig struct {
-	numBlocks     uint64
-	divergeHeight uint64
-}
-
-func createTwoValidatorFork(
-	t *testing.T,
-	ctx context.Context,
-	cfg *createForkConfig,
-) *createdValidatorFork {
-	divergenceHeight := cfg.divergeHeight
-	numBlocks := cfg.numBlocks
-
-	chains, accs, addresses, backend, _ := setupChainsWithEdgeChallengeManager(t)
-	prevInboxMaxCount := big.NewInt(1)
-
-	// Advance the backend by some blocks to get over time delta failures when
-	// using the assertion chain.
-	for i := 0; i < 100; i++ {
-		backend.Commit()
-	}
-
-	genesis, err := chains[0].AssertionBySequenceNum(ctx, 0)
-	require.NoError(t, err)
-
-	genesisState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: common.Hash{},
-		},
-		MachineStatus: protocol.MachineStatusFinished,
-	}
-	genesisStateHash := protocol.ComputeStateHash(genesisState, big.NewInt(1))
-
-	actualGenesisStateHash, err := genesis.StateHash()
-	require.NoError(t, err)
-	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
-
-	height := uint64(0)
-	honestValidatorStateRoots := make([]common.Hash, 0)
-	evilValidatorStateRoots := make([]common.Hash, 0)
-	honestValidatorStateRoots = append(honestValidatorStateRoots, genesisStateHash)
-	evilValidatorStateRoots = append(evilValidatorStateRoots, genesisStateHash)
-
-	var honestBlockHash common.Hash
-	for i := uint64(1); i < numBlocks; i++ {
-		height += 1
-		honestBlockHash = backend.Commit()
-
-		state := &protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
-				BlockHash: honestBlockHash,
-				Batch:     1,
-			},
-			MachineStatus: protocol.MachineStatusFinished,
-		}
-
-		honestValidatorStateRoots = append(honestValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
-
-		// Before the divergence height, the evil validator agrees.
-		if i < divergenceHeight {
-			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
-		} else {
-			junkRoot := make([]byte, 32)
-			_, err := rand.Read(junkRoot)
-			require.NoError(t, err)
-			blockHash := crypto.Keccak256Hash(junkRoot)
-			state.GlobalState.BlockHash = blockHash
-			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
-		}
-
-	}
-
-	height += 1
-	honestBlockHash = backend.Commit()
-	assertion, err := chains[0].CreateAssertion(
-		ctx,
-		height,
-		genesis.SeqNum(),
-		genesisState,
-		&protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
-				BlockHash: honestBlockHash,
-				Batch:     1,
-			},
-			MachineStatus: protocol.MachineStatusFinished,
-		},
-		prevInboxMaxCount,
-	)
-	require.NoError(t, err)
-
-	assertionStateHash, err := assertion.StateHash()
-	require.NoError(t, err)
-	honestValidatorStateRoots = append(honestValidatorStateRoots, assertionStateHash)
-
-	evilPostState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: common.BytesToHash([]byte("evilcommit")),
-			Batch:     1,
-		},
-		MachineStatus: protocol.MachineStatusFinished,
-	}
-	forkedAssertion, err := chains[1].CreateAssertion(
-		ctx,
-		height,
-		genesis.SeqNum(),
-		genesisState,
-		evilPostState,
-		prevInboxMaxCount,
-	)
-	require.NoError(t, err)
-
-	forkedAssertionStateHash, err := forkedAssertion.StateHash()
-	require.NoError(t, err)
-	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertionStateHash)
-
-	return &createdValidatorFork{
-		leaf1:                     assertion,
-		leaf2:                     forkedAssertion,
-		chains:                    chains,
-		accounts:                  accs,
-		backend:                   backend,
-		addrs:                     addresses,
-		honestValidatorStateRoots: honestValidatorStateRoots,
-		evilValidatorStateRoots:   evilValidatorStateRoots,
-	}
-}
-
-func setupChainsWithEdgeChallengeManager(t *testing.T) (
-	[]*AssertionChain, []*testAccount, *rollupAddresses, *backends.SimulatedBackend, *headerreader.HeaderReader,
-) {
-	t.Helper()
-	ctx := context.Background()
-	accs, backend := setupAccounts(t, 3)
-	prod := false
-	wasmModuleRoot := common.Hash{}
-	rollupOwner := accs[0].accountAddr
-	chainId := big.NewInt(1337)
-	loserStakeEscrow := common.Address{}
-	challengePeriodSeconds := big.NewInt(100)
-	miniStake := big.NewInt(1)
-	cfg := generateRollupConfig(
-		prod,
-		wasmModuleRoot,
-		rollupOwner,
-		chainId,
-		loserStakeEscrow,
-		challengePeriodSeconds,
-		miniStake,
-	)
-	addresses := deployFullRollupStack(
-		t,
-		ctx,
-		backend,
-		accs[0].txOpts,
-		common.Address{}, // Sequencer addr.
-		cfg,
-	)
-	headerReader := headerreader.New(util.SimulatedBackendWrapper{SimulatedBackend: backend}, func() *headerreader.Config { return &headerreader.TestConfig })
-	headerReader.Start(ctx)
-	chains := make([]*AssertionChain, 2)
-	chain1, err := NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[1].txOpts,
-		&bind.CallOpts{},
-		accs[1].accountAddr,
-		backend,
-		headerReader,
-		addresses.EdgeChallengeManager,
-	)
-	require.NoError(t, err)
-	chains[0] = chain1
-	chain2, err := NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[2].txOpts,
-		&bind.CallOpts{},
-		accs[2].accountAddr,
-		backend,
-		headerReader,
-		addresses.EdgeChallengeManager,
-	)
-	require.NoError(t, err)
-	chains[1] = chain2
-	return chains, accs, addresses, backend, headerReader
 }

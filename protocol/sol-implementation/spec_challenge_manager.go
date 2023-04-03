@@ -3,6 +3,7 @@ package solimpl
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -123,6 +124,13 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	}
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, ancestors)
+	})
+	return err
+}
+
+func (e *SpecEdge) ConfirmByChildren(ctx context.Context) error {
+	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
+		return e.manager.writer.ConfirmEdgeByChildren(e.manager.txOpts, e.id)
 	})
 	return err
 }
