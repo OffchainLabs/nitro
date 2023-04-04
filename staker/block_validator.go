@@ -16,11 +16,20 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+)
+
+var (
+	validatorPendingValidationsGauge   = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
+	validatorValidValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
+	validatorFailedValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
+	validatorLastBlockInLastBatchGauge = metrics.NewRegisteredGauge("arb/validator/last_block_in_last_batch", nil)
+	validatorLastBlockValidatedGauge   = metrics.NewRegisteredGauge("arb/validator/last_block_validated", nil)
 )
 
 type BlockValidator struct {
@@ -29,21 +38,29 @@ type BlockValidator struct {
 
 	validations      sync.Map
 	sequencerBatches sync.Map
-	blockMutex       sync.Mutex
-	batchMutex       sync.Mutex
-	reorgMutex       sync.Mutex
-	reorgsPending    int32 // atomic
 
-	lastBlockValidated      uint64      // both atomic and behind lastBlockValidatedMutex
-	lastBlockValidatedHash  common.Hash // behind lastBlockValidatedMutex
+	// acquiring multiple Mutexes must be done in order:
+	reorgMutex              sync.Mutex
+	batchMutex              sync.Mutex
+	blockMutex              sync.Mutex
 	lastBlockValidatedMutex sync.Mutex
-	earliestBatchKept       uint64
-	nextBatchKept           uint64 // 1 + the last batch number kept
 
-	nextBlockToValidate       uint64
-	lastValidationEntryBlock  uint64 // used to delete entries in reorg, protected by blockMutex
+	reorgsPending int32 // atomic
+
+	earliestBatchKept uint64 // atomic
+	nextBatchKept     uint64 // behind batchMutex, 1 + the last batch number kept
+
+	// protected by reorgMutex
+	globalPosNextSend GlobalStatePosition
+
+	// protected by BlockMutex:
+	nextBlockToValidate      uint64
+	lastValidationEntryBlock uint64
+
+	// behind lastBlockValidatedMutex
 	lastBlockValidatedUnknown bool
-	globalPosNextSend         GlobalStatePosition
+	lastBlockValidated        uint64 // also atomic
+	lastBlockValidatedHash    common.Hash
 
 	config BlockValidatorConfigFetcher
 
@@ -246,7 +263,14 @@ func (v *BlockValidator) recentShutdown() error {
 	return err
 }
 
+// only called by NewBlockValidator
 func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Block) error {
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+
 	v.lastBlockValidatedMutex.Lock()
 	defer v.lastBlockValidatedMutex.Unlock()
 
@@ -259,10 +283,12 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
 		atomic.StoreUint64(&v.lastBlockValidated, v.genesisBlockNum)
+		validatorLastBlockValidatedGauge.Update(int64(v.genesisBlockNum))
 		genesisBlock := v.blockchain.GetBlockByNumber(v.genesisBlockNum)
 		if genesisBlock == nil {
 			return fmt.Errorf("blockchain missing genesis block number %v", v.genesisBlockNum)
 		}
+
 		v.lastBlockValidatedHash = genesisBlock.Hash()
 		v.nextBlockToValidate = v.genesisBlockNum + 1
 		v.globalPosNextSend = GlobalStatePosition{
@@ -296,12 +322,13 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 	}
 
 	atomic.StoreUint64(&v.lastBlockValidated, info.BlockNumber)
+	validatorLastBlockValidatedGauge.Update(int64(info.BlockNumber))
 	v.lastBlockValidatedHash = info.BlockHash
 	v.nextBlockToValidate = v.lastBlockValidated + 1
 	v.globalPosNextSend = info.AfterPosition
 
 	if reorgingToBlock != nil {
-		err = v.reorgToBlockImpl(reorgingToBlock.NumberU64(), reorgingToBlock.Hash(), true)
+		err = v.reorgToBlockImpl(reorgingToBlock.NumberU64(), reorgingToBlock.Hash())
 		if err != nil {
 			return err
 		}
@@ -362,22 +389,28 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
 	blockNum := block.NumberU64()
+	v.lastBlockValidatedMutex.Lock()
 	if blockNum < v.lastBlockValidated {
+		v.lastBlockValidatedMutex.Unlock()
 		return
 	}
 	if v.lastBlockValidatedUnknown {
 		if block.Hash() == v.lastBlockValidatedHash {
 			v.lastBlockValidated = blockNum
+			validatorLastBlockValidatedGauge.Update(int64(blockNum))
 			v.nextBlockToValidate = blockNum + 1
 			v.lastBlockValidatedUnknown = false
 			log.Info("Block building caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
 			// note: this block is already valid
 		}
+		v.lastBlockValidatedMutex.Unlock()
 		return
 	}
 	if v.nextBlockToValidate+v.config().ForwardBlocks <= blockNum {
+		v.lastBlockValidatedMutex.Unlock()
 		return
 	}
+	v.lastBlockValidatedMutex.Unlock()
 	status, err := v.newValidationStatus(prevHeader, block.Header(), &msg)
 	if err != nil {
 		log.Error("failed creating validation status", "err", err)
@@ -488,26 +521,31 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			seqBatchEntry = seqMsg
 		}
 		v.blockMutex.Lock()
+		v.lastBlockValidatedMutex.Lock()
 		if v.lastBlockValidatedUnknown {
 			firstMsgInBatch := arbutil.MessageIndex(0)
 			if v.globalPosNextSend.BatchNumber > 0 {
 				var err error
 				firstMsgInBatch, err = v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber - 1)
 				if err != nil {
+					v.lastBlockValidatedMutex.Unlock()
 					v.blockMutex.Unlock()
 					log.Error("validator couldnt read message count", "err", err)
 					return
 				}
 			}
 			v.lastBlockValidated = uint64(arbutil.MessageCountToBlockNumber(firstMsgInBatch+arbutil.MessageIndex(v.globalPosNextSend.PosInBatch), v.genesisBlockNum))
+			validatorLastBlockValidatedGauge.Update(int64(v.lastBlockValidated))
 			v.nextBlockToValidate = v.lastBlockValidated + 1
 			v.lastBlockValidatedUnknown = false
 			log.Info("Inbox caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
 		}
+		v.lastBlockValidatedMutex.Unlock()
+		nextBlockToValidate := v.nextBlockToValidate
 		v.blockMutex.Unlock()
-		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
+		nextMsg := arbutil.BlockNumberToMessageCount(nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
-		entry, found := v.validations.Load(v.nextBlockToValidate)
+		entry, found := v.validations.Load(nextBlockToValidate)
 		if !found {
 			return
 		}
@@ -531,9 +569,17 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		seqMsg, ok := seqBatchEntry.([]byte)
 		if !ok {
 			batchNum := validationStatus.Entry.StartPosition.BatchNumber
-			log.Error("sequencer message bad format", "blockNr", v.nextBlockToValidate, "msgNum", batchNum)
+			log.Error("sequencer message bad format", "blockNr", nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
+		msgCountInBatch, err := v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber)
+		if err != nil {
+			log.Error("failed to get batch message count", "err", err, "batch", v.globalPosNextSend.BatchNumber)
+			return
+		}
+		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
+		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
+		validatorPendingValidationsGauge.Inc(1)
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
@@ -560,7 +606,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			}
 		})
 		room--
+		v.blockMutex.Lock()
 		v.nextBlockToValidate++
+		v.blockMutex.Unlock()
 		v.globalPosNextSend = endPos
 	}
 }
@@ -568,7 +616,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 func (v *BlockValidator) sendRecords(ctx context.Context) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
+	v.blockMutex.Lock()
 	nextRecord := v.nextBlockToValidate
+	v.blockMutex.Unlock()
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		if nextRecord >= v.nextBlockToValidate+v.config().PrerecordedBlocks {
 			return
@@ -708,6 +758,8 @@ func (v *BlockValidator) progressValidated() {
 			if err != nil {
 				v.possiblyFatal(err)
 				validationStatus.setStatus(Failed)
+				validatorFailedValidationsCounter.Inc(1)
+				validatorPendingValidationsGauge.Dec(1)
 				return
 			}
 		}
@@ -715,6 +767,8 @@ func (v *BlockValidator) progressValidated() {
 			run.Close()
 		}
 		validationStatus.replaceStatus(ValidationSent, Valid)
+		validatorValidValidationsCounter.Inc(1)
+		validatorPendingValidationsGauge.Dec(1)
 		v.triggerSendValidations()
 		earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
 		seqMsgNr := validationEntry.StartPosition.BatchNumber
@@ -727,7 +781,12 @@ func (v *BlockValidator) progressValidated() {
 
 		v.lastBlockValidatedMutex.Lock()
 		atomic.StoreUint64(&v.lastBlockValidated, checkingBlock)
+		validatorLastBlockValidatedGauge.Update(int64(checkingBlock))
 		v.lastBlockValidatedHash = validationEntry.BlockHash
+		err = v.writeLastValidatedToDb(validationEntry.BlockNumber, validationEntry.BlockHash, validationEntry.EndPosition)
+		if err != nil {
+			log.Error("failed to write validated entry to database", "err", err)
+		}
 		v.lastBlockValidatedMutex.Unlock()
 		v.recentlyValid(validationEntry.BlockHeader)
 
@@ -736,10 +795,6 @@ func (v *BlockValidator) progressValidated() {
 		case v.progressChan <- checkingBlock:
 		default:
 		}
-		err = v.writeLastValidatedToDb(validationEntry.BlockNumber, validationEntry.BlockHash, validationEntry.EndPosition)
-		if err != nil {
-			log.Error("failed to write validated entry to database", "err", err)
-		}
 	}
 }
 
@@ -747,6 +802,13 @@ func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error 
 	if v.Started() {
 		return errors.Errorf("cannot handle AssumeValid while running")
 	}
+
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+
 	v.lastBlockValidatedMutex.Lock()
 	defer v.lastBlockValidatedMutex.Unlock()
 
@@ -763,6 +825,7 @@ func (v *BlockValidator) AssumeValid(globalState validator.GoGlobalState) error 
 		v.lastBlockValidatedUnknown = true
 	} else {
 		v.lastBlockValidated = block.NumberU64()
+		validatorLastBlockValidatedGauge.Update(int64(v.lastBlockValidated))
 		v.nextBlockToValidate = v.lastBlockValidated + 1
 	}
 	v.lastBlockValidatedHash = globalState.BlockHash
@@ -826,17 +889,20 @@ func (v *BlockValidator) ProcessBatches(pos uint64, batches [][]byte) {
 }
 
 func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) error {
-	v.blockMutex.Lock()
-	defer v.blockMutex.Unlock()
-
 	atomic.AddInt32(&v.reorgsPending, 1)
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	atomic.AddInt32(&v.reorgsPending, -1)
 
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+
+	v.lastBlockValidatedMutex.Lock()
+	defer v.lastBlockValidatedMutex.Unlock()
+
 	if blockNum < v.lastValidationEntryBlock {
 		log.Warn("block validator processing reorg", "blockNum", blockNum)
-		err := v.reorgToBlockImpl(blockNum, blockHash, false)
+		err := v.reorgToBlockImpl(blockNum, blockHash)
 		if err != nil {
 			return fmt.Errorf("block validator reorg failed: %w", err)
 		}
@@ -845,7 +911,8 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 	return nil
 }
 
-func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash, hasLastValidatedMutex bool) error {
+// must hold reorgMutex, blockMutex, and lastBlockValidatedMutex
+func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash) error {
 	for b := blockNum + 1; b <= v.lastValidationEntryBlock; b++ {
 		entry, found := v.validations.Load(b)
 		if !found {
@@ -909,14 +976,9 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 	}
 
 	if v.lastBlockValidated > blockNum {
-		if !hasLastValidatedMutex {
-			v.lastBlockValidatedMutex.Lock()
-		}
 		atomic.StoreUint64(&v.lastBlockValidated, blockNum)
+		validatorLastBlockValidatedGauge.Update(int64(blockNum))
 		v.lastBlockValidatedHash = blockHash
-		if !hasLastValidatedMutex {
-			v.lastBlockValidatedMutex.Unlock()
-		}
 
 		err = v.writeLastValidatedToDb(blockNum, blockHash, v.globalPosNextSend)
 		if err != nil {

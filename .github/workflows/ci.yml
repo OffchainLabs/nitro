@@ -146,7 +146,7 @@ jobs:
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- -p 1 -run TestRedis -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
