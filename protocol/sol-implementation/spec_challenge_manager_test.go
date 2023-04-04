@@ -228,7 +228,7 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	challengeManager, err := chain1.SpecChallengeManager(ctx)
 	require.NoError(t, err)
 
-	t.Run("claim predecessor does nt exist", func(t *testing.T) {
+	t.Run("claim predecessor does not exist", func(t *testing.T) {
 		t.Skip("Needs Solidity code")
 	})
 	t.Run("invalid height", func(t *testing.T) {
