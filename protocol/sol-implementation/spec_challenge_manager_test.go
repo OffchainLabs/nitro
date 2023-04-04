@@ -4,12 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,6 +19,337 @@ var (
 	_ = protocol.SpecEdge(&solimpl.SpecEdge{})
 	_ = protocol.SpecChallengeManager(&solimpl.SpecChallengeManager{})
 )
+
+func TestEdgeChallengeManager_IsPresumptive(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	opts := []statemanager.Opt{
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	}
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+
+	t.Run("first leaf is presumptive", func(t *testing.T) {
+		isPs, err := honestEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+	})
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	t.Run("neither is presumptive if rivals", func(t *testing.T) {
+		isPs, err := honestEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+
+		isPs, err = evilEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+	})
+
+	t.Run("bisected children are presumptive", func(t *testing.T) {
+		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+		require.NoError(t, err)
+		honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+		require.NoError(t, err)
+		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+		require.NoError(t, err)
+
+		isPs, err := lower.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+		isPs, err = upper.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isPs)
+
+		isPs, err = honestEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+
+		isPs, err = evilEdge.IsPresumptive(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isPs)
+	})
+}
+
+func TestSpecChallengeManager_IsOneStepForkSource(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	opts := []statemanager.Opt{
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	}
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	// Honest assertion being added.
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+
+	t.Run("lone level zero edge is not one step fork source", func(t *testing.T) {
+		isOSF, err := honestEdge.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	t.Run("level zero edge with rivals is not one step fork source", func(t *testing.T) {
+		isOSF, err := honestEdge.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+		isOSF, err = evilEdge.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+	t.Run("single bisected edge is not one step fork source", func(t *testing.T) {
+		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, 1)
+		require.NoError(t, err)
+		honestProof, err := honestStateManager.PrefixProof(ctx, 1, 3)
+		require.NoError(t, err)
+		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
+		require.NoError(t, err)
+
+		isOSF, err := lower.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+		isOSF, err = upper.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+	t.Run("post bisection, mutual edge is one step fork source", func(t *testing.T) {
+		evilBisectCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, 1)
+		require.NoError(t, err)
+		evilProof, err := evilStateManager.PrefixProof(ctx, 1, 3)
+		require.NoError(t, err)
+		lower, upper, err := evilEdge.Bisect(ctx, evilBisectCommit.Merkle, evilProof)
+		require.NoError(t, err)
+
+		isOSF, err := lower.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, isOSF)
+
+		isOSF, err = upper.IsOneStepForkSource(ctx)
+		require.NoError(t, err)
+		require.Equal(t, false, isOSF)
+	})
+}
+
+func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
+	ctx := context.Background()
+	height := uint64(3)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     height,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	chain1 := createdData.Chains[0]
+	challengeManager, err := chain1.SpecChallengeManager(ctx)
+	require.NoError(t, err)
+
+	t.Run("claim predecessor does not exist", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("invalid height", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("last state is not assertion claim block hash", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("winner already declared", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("last state not in history", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+	t.Run("first state not in history", func(t *testing.T) {
+		t.Skip("Needs Solidity code")
+	})
+
+	leaves := make([]common.Hash, 4)
+	for i := range leaves {
+		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	history, err := util.NewHistoryCommitment(height, leaves)
+	require.NoError(t, err)
+	genesis, err := chain1.AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	t.Run("OK", func(t *testing.T) {
+		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(ctx, genesis, util.HistoryCommitment{}, history)
+		require.NoError(t, err)
+	})
+	t.Run("already exists", func(t *testing.T) {
+		_, err = challengeManager.AddBlockChallengeLevelZeroEdge(ctx, genesis, util.HistoryCommitment{}, history)
+		require.ErrorContains(t, err, "already exists")
+	})
+}
+
+func TestEdgeChallengeManager_Bisect(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
+	})
+	require.NoError(t, err)
+
+	opts := []statemanager.Opt{
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	}
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	t.Run("cannot bisect presumptive", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("invalid prefix proof", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("edge has children", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("OK", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+}
+
+func TestEdgeChallengeManager_SubChallenges(t *testing.T) {
+	t.Run("leaf cannot be a fork candidate", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("lowest height not one step fork", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("has presumptive successor", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("empty history root", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("OK", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+}
 
 func TestEdgeChallengeManager_ConfirmByClaim(t *testing.T) {
 	ctx := context.Background()
@@ -439,5 +772,5 @@ func TestEdgeChallengeManager(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, true, isAtOneStepFork)
 
-	t.Log("Reached one step proof!!!")
+	t.Log("Reached one step proof")
 }
