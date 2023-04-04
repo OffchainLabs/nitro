@@ -328,7 +328,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
+	./build-brotli.sh -l
 	test -f target/include/brotli/encode.h
 	test -f target/include/brotli/decode.h
 	test -f target/lib/libbrotlicommon-static.a
@@ -337,7 +337,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	@printf "%btesting cbrotli wasm build exists. If this step fails, run ./build-brotli.sh -w%b\n" $(color_pink) $(color_reset)
+	./build-brotli.sh -w -d
 	test -f target/lib-wasm/libbrotlicommon-static.a
 	test -f target/lib-wasm/libbrotlienc-static.a
 	test -f target/lib-wasm/libbrotlidec-static.a
