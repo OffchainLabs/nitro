@@ -228,7 +228,7 @@ impl<'a> HostioInfo<'a> {
         Ok(self)
     }
 
-    pub fn _write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
+    pub fn write_u64(&mut self, ptr: u32, x: u64) -> Result<&mut Self, MemoryAccessError> {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x)?;
         Ok(self)

@@ -197,12 +197,12 @@ pub(crate) fn tx_origin(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub(crate) fn tx_gas_price(mut env: WasmEnvMut, data: u64) -> MaybeEscape {
+pub(crate) fn tx_gas_price(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_evm_gas(evm::GASPRICE_EVM_GAS)?;
 
-    let origin = env.evm_data().origin;
-    env.write_u64(data, origin)?;
+    let gas_price = env.evm_data().gas_price;
+    env.write_u64(data, gas_price)?;
     Ok(())
 }
 
