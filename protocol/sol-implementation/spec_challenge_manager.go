@@ -157,6 +157,17 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 	return err
 }
 
+func (e *SpecEdge) MutualId() (protocol.MutualId, error) {
+	return e.manager.caller.CalculateMutualId(
+		e.manager.callOpts,
+		e.inner.EType,
+		e.inner.OriginId,
+		e.inner.StartHeight,
+		e.inner.StartHistoryRoot,
+		e.inner.EndHeight,
+	)
+}
+
 // TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.
 // For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
 // If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
@@ -290,25 +301,6 @@ func (cm *SpecChallengeManager) GetEdge(
 }
 
 // Calculates an edge hash given its challenge id, start history, and end history.
-func (cm *SpecChallengeManager) CalculateMutualId(
-	ctx context.Context,
-	edgeType protocol.EdgeType,
-	originId protocol.OriginId,
-	startHeight protocol.Height,
-	startHistoryRoot common.Hash,
-	endHeight protocol.Height,
-) (protocol.MutualId, error) {
-	return cm.caller.CalculateMutualId(
-		cm.callOpts,
-		uint8(edgeType),
-		originId,
-		big.NewInt(int64(startHeight)),
-		startHistoryRoot,
-		big.NewInt(int64(endHeight)),
-	)
-}
-
-// Calculates an edge hash given its challenge id, start history, and end history.
 func (cm *SpecChallengeManager) CalculateEdgeId(
 	ctx context.Context,
 	edgeType protocol.EdgeType,
@@ -431,14 +423,7 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	if !ok {
 		return nil, errors.New("not a *SpecEdge")
 	}
-	mutualId, err := cm.CalculateMutualId(
-		ctx,
-		challengedEdge.GetType(),
-		challenged.inner.OriginId,
-		protocol.Height(challenged.inner.StartHeight.Uint64()),
-		challenged.inner.StartHistoryRoot,
-		protocol.Height(challenged.inner.EndHeight.Uint64()),
-	)
+	mutualId, err := challenged.MutualId()
 	if err != nil {
 		return nil, err
 	}

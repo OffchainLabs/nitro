@@ -69,15 +69,6 @@ type SpecChallengeManager interface {
 	ChallengePeriodSeconds(ctx context.Context) (time.Duration, error)
 	// Gets an edge by its id.
 	GetEdge(ctx context.Context, edgeId EdgeId) (util.Option[SpecEdge], error)
-	// Calculates a mutual id for an edge.
-	CalculateMutualId(
-		ctx context.Context,
-		edgeType EdgeType,
-		originId OriginId,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-	) (MutualId, error)
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(
 		ctx context.Context,
