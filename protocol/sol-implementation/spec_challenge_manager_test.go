@@ -265,28 +265,87 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 }
 
 func TestEdgeChallengeManager_Bisect(t *testing.T) {
-	t.Run("winner already declared", func(t *testing.T) {
+	ctx := context.Background()
+	height := protocol.Height(3)
+
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
+		NumBlocks:     uint64(height) + 1,
+		DivergeHeight: 0,
 	})
+	require.NoError(t, err)
+
+	opts := []statemanager.Opt{
+		statemanager.WithNumOpcodesPerBigStep(1),
+		statemanager.WithMaxWavmOpcodesPerBlock(1),
+	}
+
+	honestStateManager, err := statemanager.New(
+		createdData.HonestValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+	evilStateManager, err := statemanager.New(
+		createdData.EvilValidatorStateRoots,
+		opts...,
+	)
+	require.NoError(t, err)
+
+	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
+	require.NoError(t, err)
+	genesis, err := createdData.Chains[0].AssertionBySequenceNum(ctx, 0)
+	require.NoError(t, err)
+
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			util.HistoryCommitment{Merkle: common.Hash{}},
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+	honestEndCommit, err := honestStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+
+	evilEndCommit, err := evilStateManager.HistoryCommitmentUpTo(ctx, uint64(height))
+	require.NoError(t, err)
+
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
 	t.Run("cannot bisect presumptive", func(t *testing.T) {
-	})
-	t.Run("presumptive already confirmable", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("invalid prefix proof", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
+	})
+	t.Run("edge has children", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("OK", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 }
 
 func TestEdgeChallengeManager_SubChallenges(t *testing.T) {
 	t.Run("leaf cannot be a fork candidate", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("lowest height not one step fork", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("has presumptive successor", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("empty history root", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 	t.Run("OK", func(t *testing.T) {
+		t.Skip("TODO(RJ): Implement")
 	})
 }
 
