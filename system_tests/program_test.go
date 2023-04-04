@@ -6,7 +6,9 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"math/big"
 	"math/rand"
 	"os"
@@ -495,18 +497,28 @@ func TestProgramEvmData(t *testing.T) {
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
-	expected := testhelpers.RandomAddress()
+	expectedGasPrice := GetBaseFee(t, l2client, ctx).Uint64()
+	expectedOrigin := testhelpers.RandomAddress()
+	expectedLength := len(expectedOrigin) + programs.SizeofU64
+
 	opts := bind.CallOpts{
-		From: expected,
+		From: expectedOrigin,
 	}
 	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
 	Require(t, err)
-	if len(result) != 20 {
-		Fail(t, "unexpected return result: ", result)
+	if len(result) != expectedLength {
+		Fail(t, "unexpected return length: ", expectedLength, len(result))
 	}
-	origin := common.BytesToAddress(result)
-	if origin != expected {
-		Fail(t, "origin mismatch: ", expected, origin)
+	offset := 0
+	gasPrice := binary.LittleEndian.Uint64(result[offset:programs.SizeofU64])
+	offset += programs.SizeofU64
+	origin := common.BytesToAddress(result[offset:20])
+
+	if gasPrice != expectedGasPrice {
+		Fail(t, "gas price mismatch", expectedGasPrice, gasPrice)
+	}
+	if origin != expectedOrigin {
+		Fail(t, "origin mismatch: ", expectedOrigin, origin)
 	}
 
 	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})

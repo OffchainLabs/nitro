@@ -396,7 +396,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
             "tx_origin" => stub!(|_: u32|),
-            "tx_gasprice" => stub!(|_: u64|),
+            "tx_gas_price" => stub!(u64 <- ||),
         },
     };
     if config.debug.debug_funcs {
