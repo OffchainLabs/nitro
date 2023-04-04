@@ -328,19 +328,17 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	./build-brotli.sh -l
-	test -f target/include/brotli/encode.h
-	test -f target/include/brotli/decode.h
-	test -f target/lib/libbrotlicommon-static.a
-	test -f target/lib/libbrotlienc-static.a
-	test -f target/lib/libbrotlidec-static.a
+	test -f target/include/brotli/encode.h || ./build-brotli.sh -l
+	test -f target/include/brotli/decode.h || ./build-brotli.sh -l
+	test -f target/lib/libbrotlicommon-static.a || ./build-brotli.sh -l
+	test -f target/lib/libbrotlienc-static.a || ./build-brotli.sh -l
+	test -f target/lib/libbrotlidec-static.a || ./build-brotli.sh -l
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	./build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlicommon-static.a
-	test -f target/lib-wasm/libbrotlienc-static.a
-	test -f target/lib-wasm/libbrotlidec-static.a
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlienc-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
 	@touch $@
 
 .make:
