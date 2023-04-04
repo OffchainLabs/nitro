@@ -86,7 +86,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
                 0, // confirm data
                 0, // prev assertion
                 uint64(block.number), // deadline block (not challengeable)
-                0, // initial assertion has a assertion hash of 0
+                GENESIS_HASH, // initial assertion has a assertion hash of 0
                 0, // initial assertion has a height of 0
                 1, // initial assertion has a inboxMsgCountSeen of 1, since we want the next assertion to consume one message
                 true // initial assertion is first child

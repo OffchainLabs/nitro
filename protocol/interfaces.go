@@ -42,8 +42,6 @@ type AssertionChain interface {
 	NumAssertions(ctx context.Context) (uint64, error)
 	AssertionBySequenceNum(ctx context.Context, seqNum AssertionSequenceNumber) (Assertion, error)
 	LatestConfirmed(ctx context.Context) (Assertion, error)
-	// TODO: Remove.
-	CurrentChallengeManager(ctx context.Context) (ChallengeManager, error)
 	GetAssertionId(ctx context.Context, seqNum AssertionSequenceNumber) (AssertionHash, error)
 	GetAssertionNum(ctx context.Context, assertionHash AssertionHash) (AssertionSequenceNumber, error)
 	BlockChallenge(ctx context.Context, assertionSeqNum AssertionSequenceNumber) (Challenge, error)
@@ -63,7 +61,6 @@ type AssertionChain interface {
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
-	CreateSpecChallenge(ctx context.Context, seqNum AssertionSequenceNumber) error
 }
 
 // ChallengeManager allows for retrieving details of challenges such

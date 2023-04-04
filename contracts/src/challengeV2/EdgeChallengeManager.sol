@@ -6,6 +6,11 @@ import {IAssertionChain} from "./DataEntities.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
 
 interface IEdgeChallengeManager {
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) external;
     // // Checks if an edge by ID exists.
     // function edgeExists(bytes32 eId) external view returns (bool);
     // Gets an edge by ID.
@@ -92,8 +97,18 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     IOneStepProofEntry oneStepProofEntry;
 
     constructor(IAssertionChain _assertionChain, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
-        challengePeriodSec = _challengePeriodSec;
+        // HN: TODO: remove constructor?
+        initialize(_assertionChain, _challengePeriodSec, _oneStepProofEntry);
+    }
+
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) public {
+        require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
+        challengePeriodSec = _challengePeriodSec;
         oneStepProofEntry = _oneStepProofEntry;
     }
 
