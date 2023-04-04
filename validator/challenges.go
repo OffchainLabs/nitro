@@ -67,8 +67,6 @@ func (v *Validator) onChallengeStarted(
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.Assertion) error {
-	var challenge protocol.Challenge
-	var err error
 	assertionPrevSeqNum, err := assertion.PrevSeqNum()
 	if err != nil {
 		return err
@@ -79,8 +77,8 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
 			// TODO: Should we return error here instead of a log and nil?
 			log.Infof(
-				"Attempted to add a challenge leaf that already exists with challenge hash %#x",
-				challenge.Id(),
+				"Attempted to add a challenge leaf that already exists on assertion with sequence num %d",
+				assertionPrevSeqNum,
 			)
 			return nil
 		}
