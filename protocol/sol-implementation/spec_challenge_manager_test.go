@@ -2,9 +2,9 @@ package solimpl_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
-	"fmt"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"

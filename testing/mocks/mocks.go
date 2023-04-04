@@ -339,7 +339,7 @@ func (m *MockChallengeManager) Address() common.Address {
 	return m.MockAddr
 }
 
-// MockSpecChallengeManager
+// MockSpecChallengeManager is a mock implementation of the SpecChallengeManager interface.
 type MockSpecChallengeManager struct {
 	mock.Mock
 	MockAddr common.Address
@@ -407,7 +407,7 @@ func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 
-// MockSpecEdge
+// MockSpecEdge is a mock implementation of the SpecEdge interface.
 type MockSpecEdge struct {
 	mock.Mock
 }

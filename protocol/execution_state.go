@@ -70,22 +70,6 @@ type ExecutionState struct {
 	MachineStatus MachineStatus
 }
 
-func NewExecutionStateFromSolidity(eth rollupgen.ExecutionState) *ExecutionState {
-	return &ExecutionState{
-		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
-		MachineStatus: MachineStatus(eth.MachineStatus),
-	}
-}
-
-func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
-	return GoGlobalState{
-		BlockHash:  gs.Bytes32Vals[0],
-		SendRoot:   gs.Bytes32Vals[1],
-		Batch:      gs.U64Vals[0],
-		PosInBatch: gs.U64Vals[1],
-	}
-}
-
 func (s *ExecutionState) AsSolidityStruct() rollupgen.ExecutionState {
 	return rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),

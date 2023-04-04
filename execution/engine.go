@@ -100,7 +100,7 @@ func (engine *Engine) Serialize() []byte {
 // We want validators to agree up to a certain height in subchallenges, and by encoding only
 // the start state root and num steps in the machine serialization we achieve that.
 func (engine *Engine) SerializeForHash() []byte {
-	ret := []byte{}
+	var ret []byte
 	ret = append(ret, engine.startStateRoot.Bytes()...)
 	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)
 	return ret

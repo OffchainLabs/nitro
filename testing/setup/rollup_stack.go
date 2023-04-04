@@ -2,10 +2,9 @@ package setup
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"math/big"
-
-	"crypto/ecdsa"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
