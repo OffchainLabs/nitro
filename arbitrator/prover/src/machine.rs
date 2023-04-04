@@ -3,7 +3,7 @@
 
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
-    host::get_host_impl,
+    host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -113,7 +113,7 @@ impl Function {
         Ok(Function::new_from_wavm(insts, func_ty, locals_with_params))
     }
 
-    fn new_from_wavm(
+    pub fn new_from_wavm(
         code: Vec<Instruction>,
         ty: FunctionType,
         local_types: Vec<ArbValueType>,
@@ -237,15 +237,6 @@ impl Table {
     }
 }
 
-fn make_internal_func(opcode: Opcode, ty: FunctionType) -> Function {
-    let wavm = vec![
-        Instruction::simple(Opcode::InitFrame),
-        Instruction::simple(opcode),
-        Instruction::simple(Opcode::Return),
-    ];
-    Function::new_from_wavm(wavm, ty, Vec::new())
-}
-
 #[derive(Clone, Debug)]
 struct AvailableImport {
     ty: FunctionType,
@@ -307,7 +298,7 @@ impl Module {
                     ];
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
-                    func = get_host_impl(import.module, import.name)?;
+                    func = host::get_impl(import.module, import.name)?;
                     ensure!(
                         &func.ty == have_ty,
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
@@ -488,48 +479,8 @@ impl Module {
         );
         ensure!(!code.is_empty(), "Module has no code");
 
-        // Make internal functions
         let internals_offset = code.len() as u32;
-        let mut memory_load_internal_type = FunctionType::default();
-        memory_load_internal_type.inputs.push(ArbValueType::I32);
-        memory_load_internal_type.outputs.push(ArbValueType::I32);
-        func_types.push(memory_load_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryLoad {
-                ty: ArbValueType::I32,
-                bytes: 1,
-                signed: false,
-            },
-            memory_load_internal_type.clone(),
-        ));
-        func_types.push(memory_load_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryLoad {
-                ty: ArbValueType::I32,
-                bytes: 4,
-                signed: false,
-            },
-            memory_load_internal_type,
-        ));
-        let mut memory_store_internal_type = FunctionType::default();
-        memory_store_internal_type.inputs.push(ArbValueType::I32);
-        memory_store_internal_type.inputs.push(ArbValueType::I32);
-        func_types.push(memory_store_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryStore {
-                ty: ArbValueType::I32,
-                bytes: 1,
-            },
-            memory_store_internal_type.clone(),
-        ));
-        func_types.push(memory_store_internal_type.clone());
-        code.push(make_internal_func(
-            Opcode::MemoryStore {
-                ty: ArbValueType::I32,
-                bytes: 4,
-            },
-            memory_store_internal_type,
-        ));
+        host::add_internal_funcs(&mut code, &mut func_types);
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 

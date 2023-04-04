@@ -267,10 +267,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
     };
     wasmparser::Validator::new_with_features(features).validate_all(input)?;
 
-    let sections: Vec<_> = Parser::new(0)
-        .parse_all(input)
-        .into_iter()
-        .collect::<Result<_, _>>()?;
+    let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
     let mut binary = WasmBinary::default();
 
