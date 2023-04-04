@@ -169,7 +169,6 @@ library EdgeChallengeManagerLib {
         internal
         returns (bytes32, bytes32)
     {
-        // CHRIS: TODO: add test for this
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
         require(hasRival(store, edgeId), "Cannot bisect an unrivaled edge");
 
@@ -220,10 +219,12 @@ library EdgeChallengeManagerLib {
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
 
         bytes32 lowerChildId = store.edges[edgeId].lowerChildId;
+        // Sanity check: it bisect should already enforce that this child exists
         require(store.edges[lowerChildId].exists(), "Lower child does not exist");
         require(store.edges[lowerChildId].status == EdgeStatus.Confirmed, "Lower child not confirmed");
 
         bytes32 upperChildId = store.edges[edgeId].upperChildId;
+        // Sanity check: it bisect should already enforce that this child exists
         require(store.edges[upperChildId].exists(), "Upper child does not exist");
         require(store.edges[upperChildId].status == EdgeStatus.Confirmed, "Upper child not confirmed");
 
@@ -248,11 +249,7 @@ library EdgeChallengeManagerLib {
     /// @param store            The store containing all edges and rivals
     /// @param edgeId           The edge being claimed
     /// @param claimingEdgeId   The edge with a claim id equal to edge id
-    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId)
-        internal
-        view
-        returns (bool)
-    {
+    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) internal view {
         // we do some extra checks that edge being claimed is eligible to be claimed by the claiming edge
         // these shouldn't be necessary since it should be impossible to add layer zero edges that do not
         // satisfy the checks below, but we conduct these checks anyway for double safety
@@ -264,9 +261,6 @@ library EdgeChallengeManagerLib {
             nextEdgeType(store.edges[edgeId].eType) == store.edges[claimingEdgeId].eType,
             "Edge type does not match claiming edge type"
         );
-
-        // the claiming edge references this edge
-        return edgeId == store.edges[claimingEdgeId].claimId;
     }
 
     /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
@@ -283,7 +277,8 @@ library EdgeChallengeManagerLib {
         require(store.edges[claimingEdgeId].exists(), "Claiming edge does not exist");
         require(store.edges[claimingEdgeId].status == EdgeStatus.Confirmed, "Claiming edge not confirmed");
 
-        require(checkClaimIdLink(store, edgeId, claimingEdgeId), "Claim does not match edge");
+        checkClaimIdLink(store, edgeId, claimingEdgeId);
+        require(edgeId == store.edges[claimingEdgeId].claimId, "Claim does not match edge");
 
         store.edges[edgeId].setConfirmed();
     }
@@ -317,16 +312,16 @@ library EdgeChallengeManagerLib {
             ChallengeEdge storage e = get(store, ancestorEdgeIds[i]);
             // the ancestor must either have a parent-child link
             // or have a claim id-edge link when the ancestor is of a different edge type to its child
-            require(
-                // parent child check
-                e.lowerChildId == currentEdgeId || e.upperChildId == currentEdgeId
-                // claim id - edge id check
-                || checkClaimIdLink(store, ancestorEdgeIds[i], currentEdgeId),
-                "Current is not a child of ancestor"
-            );
-
-            totalTimeUnrivaled += timeUnrivaled(store, e.id());
-            currentEdgeId = ancestorEdgeIds[i];
+            if (e.lowerChildId == currentEdgeId || e.upperChildId == currentEdgeId) {
+                totalTimeUnrivaled += timeUnrivaled(store, e.id());
+                currentEdgeId = ancestorEdgeIds[i];
+            } else if (ancestorEdgeIds[i] == store.edges[currentEdgeId].claimId) {
+                checkClaimIdLink(store, ancestorEdgeIds[i], currentEdgeId);
+                totalTimeUnrivaled += timeUnrivaled(store, e.id());
+                currentEdgeId = ancestorEdgeIds[i];
+            } else {
+                revert("Current is not a child of ancestor");
+            }
         }
 
         require(
@@ -349,9 +344,9 @@ library EdgeChallengeManagerLib {
         EdgeStore storage store,
         bytes32 edgeId,
         IOneStepProofEntry oneStepProofEntry,
-        OneStepData calldata oneStepData,
-        bytes32[] calldata beforeHistoryInclusionProof,
-        bytes32[] calldata afterHistoryInclusionProof
+        OneStepData memory oneStepData,
+        bytes32[] memory beforeHistoryInclusionProof,
+        bytes32[] memory afterHistoryInclusionProof
     ) internal {
         require(store.edges[edgeId].exists(), "Edge does not exist");
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
