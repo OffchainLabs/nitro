@@ -34,7 +34,7 @@ import "./UintUtilsLib.sol";
 ///         eg. from the example above
 ///         ME of the AB tree = (0, AB), root=AB
 ///         ME of the C tree = (C), root=(C, 0)
-///         ME of the composed ABC tree = (AB, C), root=hash(AB, hash(C, 0)) - here C is hashed with 0
+///         ME of the composed ABC tree = (C, AB), root=hash(AB, hash(C, 0)) - here C is hashed with 0
 ///         to balance the tree, before then being hashed with AB.
 ///
 ///         Tree operations
@@ -81,7 +81,7 @@ library MerkleTreeLib {
                     accum = val;
 
                     // the tree is balanced if the only non zero entry in the merkle extension
-                    // us the last entry
+                    // is the last entry
                     // otherwise the lowest level entry needs to be combined with a zero to balance the bottom
                     // level, after which zeros in the merkle extension above that will balance the rest
                     if (i != me.length - 1) {

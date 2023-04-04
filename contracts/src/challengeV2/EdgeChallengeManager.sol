@@ -8,6 +8,11 @@ import "../osp/IOneStepProofEntry.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
 
 interface IEdgeChallengeManager {
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) external;
     // // Gets the winning claim ID for a challenge. TODO: Needs more thinking.
     // function winningClaim(bytes32 challengeId) external view returns (bytes32);
     // // Checks if an edge by ID exists.
@@ -98,8 +103,18 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     IOneStepProofEntry oneStepProofEntry;
 
     constructor(IAssertionChain _assertionChain, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
-        challengePeriodSec = _challengePeriodSec;
+        // HN: TODO: remove constructor?
+        initialize(_assertionChain, _challengePeriodSec, _oneStepProofEntry);
+    }
+
+    function initialize(
+        IAssertionChain _assertionChain,
+        uint256 _challengePeriodSec,
+        IOneStepProofEntry _oneStepProofEntry
+    ) public {
+        require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
+        challengePeriodSec = _challengePeriodSec;
         oneStepProofEntry = _oneStepProofEntry;
     }
 
