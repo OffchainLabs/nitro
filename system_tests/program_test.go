@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"math/big"
 	"math/rand"
 	"os"
@@ -497,9 +496,11 @@ func TestProgramEvmData(t *testing.T) {
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
+	expectedLength := 0
 	expectedGasPrice := GetBaseFee(t, l2client, ctx).Uint64()
+	expectedLength += 8
 	expectedOrigin := testhelpers.RandomAddress()
-	expectedLength := len(expectedOrigin) + programs.SizeofU64
+	expectedLength += len(expectedOrigin)
 
 	opts := bind.CallOpts{
 		From: expectedOrigin,
@@ -510,9 +511,9 @@ func TestProgramEvmData(t *testing.T) {
 		Fail(t, "unexpected return length: ", expectedLength, len(result))
 	}
 	offset := 0
-	gasPrice := binary.LittleEndian.Uint64(result[offset:programs.SizeofU64])
-	offset += programs.SizeofU64
-	origin := common.BytesToAddress(result[offset:20])
+	gasPrice := binary.BigEndian.Uint64(result[offset:8])
+	offset += 8
+	origin := common.BytesToAddress(result[offset : offset+20])
 
 	if gasPrice != expectedGasPrice {
 		Fail(t, "gas price mismatch", expectedGasPrice, gasPrice)

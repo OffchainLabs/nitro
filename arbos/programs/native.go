@@ -51,8 +51,6 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
-var SizeofU64 = C.sizeof_uint64_t
-
 func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) error {
 	debugMode := 0
 	if debug {
@@ -281,7 +279,7 @@ func callUserWasm(
 
 	evmData := C.EvmData{
 		origin:    addressToBytes20(evm.TxContext.Origin),
-		gas_price: u64(evm.TxContext.GasPrice.Int64()),
+		gas_price: u64(evm.TxContext.GasPrice.Uint64()),
 	}
 
 	output := &rustVec{}
