@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
     binary::FloatInstruction,
@@ -434,6 +434,7 @@ pub fn wasm_to_wavm<'a>(
     func_types: &[FunctionType],
     all_types: &[FunctionType],
     all_types_func_idx: u32,
+    internals_offset: u32,
 ) -> Result<()> {
     use Operator::*;
 
@@ -538,6 +539,13 @@ pub fn wasm_to_wavm<'a>(
             let op = Opcode::Reinterpret(ArbValueType::$dest, ArbValueType::$source);
             out.push(Instruction::simple(op));
         }};
+    }
+    macro_rules! call {
+        ($func:expr) => {{
+            let ty = &func_types[($func) as usize];
+            let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
+            opcode!(Call, ($func).into(), @push delta)
+        }}
     }
     macro_rules! float {
         ($func:ident) => {
@@ -766,11 +774,8 @@ pub fn wasm_to_wavm<'a>(
                 }
             }
             Return => branch!(ArbitraryJump, scopes.len() - 1),
-            Call { function_index } => {
-                let ty = &func_types[*function_index as usize];
-                let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
-                opcode!(Call, *function_index as u64, @push delta);
-            },
+            Call { function_index } => call!(*function_index),
+
             CallIndirect { index, table_index, .. } => {
                 let ty = &all_types[*index as usize];
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
@@ -977,12 +982,21 @@ pub fn wasm_to_wavm<'a>(
             I64TruncSatF64S => float!(TruncIntOp, I64, F64, true, true),
             I64TruncSatF64U => float!(TruncIntOp, I64, F64, true, false),
 
+            MemoryFill { mem } => {
+                ensure!(*mem == 0, "multi-memory proposal not supported");
+                call!(internals_offset + 4) // memory_fill in bulk_memory.wat
+            },
+            MemoryCopy { src, dst } => {
+                ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
+                call!(internals_offset + 5) // memory_copy in bulk_memory.wat
+            },
+
             unsupported @ (
                 dot!(
-                    MemoryInit, DataDrop, MemoryCopy, MemoryFill, TableInit, ElemDrop,
+                    MemoryInit, DataDrop, TableInit, ElemDrop,
                     TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                 )
-            ) => bail!("bulk-memory-operations extension not supported {:?}", unsupported),
+            ) => bail!("bulk-memory-operations extension not fully supported {:?}", unsupported),
 
             unsupported @ (
                 dot!(

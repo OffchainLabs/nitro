@@ -318,11 +318,20 @@ impl Module {
             }
         }
         func_type_idxs.extend(bin.functions.iter());
-        let types = &bin.types;
-        let mut func_types: Vec<FunctionType> = func_type_idxs
+
+        let internals = host::new_internal_funcs();
+        let internals_offset = (code.len() + bin.codes.len()) as u32;
+        let internals_types = internals.iter().map(|f| f.ty.clone());
+
+        let mut types = bin.types.clone();
+        let mut func_types: Vec<_> = func_type_idxs
             .iter()
             .map(|i| types[*i as usize].clone())
             .collect();
+
+        func_types.extend(internals_types.clone());
+        types.extend(internals_types);
+
         for c in &bin.codes {
             let idx = code.len();
             let func_ty = func_types[idx].clone();
@@ -334,14 +343,21 @@ impl Module {
                         code,
                         floating_point_impls,
                         &func_types,
-                        types,
+                        &types,
                         func_type_idxs[idx],
+                        internals_offset,
                     )
                 },
                 func_ty.clone(),
-                types,
+                &types,
             )?);
         }
+        code.extend(internals);
+        ensure!(
+            code.len() < (1usize << 31),
+            "Module function count must be under 2^31",
+        );
+
         ensure!(
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
@@ -473,14 +489,6 @@ impl Module {
             );
             table.elems[offset..][..len].clone_from_slice(&contents);
         }
-        ensure!(
-            code.len() < (1usize << 31),
-            "Module function count must be under 2^31",
-        );
-        ensure!(!code.is_empty(), "Module has no code");
-
-        let internals_offset = code.len() as u32;
-        host::add_internal_funcs(&mut code, &mut func_types);
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
@@ -494,7 +502,7 @@ impl Module {
                 code.iter().map(|f| f.hash()).collect(),
             )),
             funcs: Arc::new(code),
-            types: Arc::new(bin.types.to_owned()),
+            types: Arc::new(types.to_owned()),
             internals_offset,
             names: Arc::new(bin.names.to_owned()),
             host_call_hooks: Arc::new(host_call_hooks),

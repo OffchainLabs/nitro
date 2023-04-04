@@ -1,13 +1,17 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use std::collections::HashMap;
+
 use crate::{
+    binary,
     machine::{Function, InboxIdentifier},
     value::{ArbValueType, FunctionType},
-    wavm::{Instruction, Opcode},
+    wavm::{wasm_to_wavm, Instruction, Opcode},
 };
 use arbutil::Color;
 use eyre::{bail, Result};
+use lazy_static::lazy_static;
 
 /// Represents the internal hostio functions a module may have.
 #[repr(u64)]
@@ -16,12 +20,19 @@ enum InternalFunc {
     WavmCallerLoad32,
     WavmCallerStore8,
     WavmCallerStore32,
+    _MemoryFill,
+    _MemoryCopy,
 }
 
 impl InternalFunc {
     fn ty(&self) -> FunctionType {
         use ArbValueType::*;
-        FunctionType::new(vec![I32], vec![I32])
+        use InternalFunc::*;
+        match self {
+            WavmCallerLoad8 | WavmCallerLoad32 => FunctionType::new(vec![I32], vec![I32]),
+            WavmCallerStore8 | WavmCallerStore32 => FunctionType::new(vec![I32, I32], vec![]),
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -136,7 +147,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn add_internal_funcs(funcs: &mut Vec<Function>, func_types: &mut Vec<FunctionType>) {
+pub fn new_internal_funcs() -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -148,15 +159,11 @@ pub fn add_internal_funcs(funcs: &mut Vec<Function>, func_types: &mut Vec<Functi
         Function::new_from_wavm(wavm, ty, vec![])
     }
 
-    fn op_func(opcode: Opcode, ty: FunctionType) -> Function {
-        code_func(vec![Instruction::simple(opcode)], ty)
+    fn op_func(opcode: Opcode, func: InternalFunc) -> Function {
+        code_func(vec![Instruction::simple(opcode)], func.ty())
     }
 
-    let mut host = |func: InternalFunc| -> FunctionType {
-        let ty = func.ty();
-        func_types.push(ty.clone());
-        ty
-    };
+    let mut funcs = vec![];
 
     // order matters!
     funcs.push(op_func(
@@ -165,7 +172,7 @@ pub fn add_internal_funcs(funcs: &mut Vec<Function>, func_types: &mut Vec<Functi
             bytes: 1,
             signed: false,
         },
-        host(WavmCallerLoad8),
+        WavmCallerLoad8,
     ));
     funcs.push(op_func(
         MemoryLoad {
@@ -173,14 +180,43 @@ pub fn add_internal_funcs(funcs: &mut Vec<Function>, func_types: &mut Vec<Functi
             bytes: 4,
             signed: false,
         },
-        host(WavmCallerLoad32),
+        WavmCallerLoad32,
     ));
-    funcs.push(op_func(
-        MemoryStore { ty: I32, bytes: 1 },
-        host(WavmCallerStore8),
-    ));
+    funcs.push(op_func(MemoryStore { ty: I32, bytes: 1 }, WavmCallerStore8));
     funcs.push(op_func(
         MemoryStore { ty: I32, bytes: 4 },
-        host(WavmCallerStore32),
+        WavmCallerStore32,
     ));
+
+    let [memory_fill, memory_copy] = (*BULK_MEMORY_FUNCS).clone();
+    funcs.push(memory_fill);
+    funcs.push(memory_copy);
+    funcs
+}
+
+lazy_static! {
+    static ref BULK_MEMORY_FUNCS: [Function; 2] = {
+        let data = include_bytes!("bulk_memory.wat");
+        let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory.wat");
+        let bin = binary::parse(&wasm).expect("failed to parse bulk_memory.wasm");
+        [0, 1].map(|i| {
+            let code = &bin.codes[i];
+            let ty = &bin.types[bin.functions[i] as usize];
+            let func = Function::new(
+                &code.locals,
+                |wasm| wasm_to_wavm(
+                    &code.expr,
+                    wasm,
+                    &HashMap::default(), // impls don't use floating point
+                    &[],                // impls don't make calls
+                    &[ty.clone()],      // only type needed is the func itself
+                    0,                  // -----------------------------------
+                    0,                  // impls don't use other internals
+                ),
+                ty.clone(),
+                &[] // impls don't make calls
+            );
+            func.expect("failed to create bulk memory func")
+        })
+    };
 }
