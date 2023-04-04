@@ -277,6 +277,10 @@ func callUserWasm(
 		return nil
 	}
 
+	evmData := C.EvmData{
+		origin: addressToBytes20(evm.TxContext.Origin),
+	}
+
 	output := &rustVec{}
 	status := userStatus(C.stylus_call(
 		goSlice(module),
@@ -287,6 +291,7 @@ func callUserWasm(
 			contractCall, delegateCall, staticCall, create1, create2, getReturnData,
 			emitLog,
 		),
+		evmData,
 		output,
 		(*u64)(&contract.Gas),
 	))
@@ -435,6 +440,14 @@ func (value bytes32) toBig() *big.Int {
 func hashToBytes32(hash common.Hash) bytes32 {
 	value := bytes32{}
 	for index, b := range hash.Bytes() {
+		value.bytes[index] = u8(b)
+	}
+	return value
+}
+
+func addressToBytes20(addr common.Address) bytes20 {
+	value := bytes20{}
+	for index, b := range addr.Bytes() {
 		value.bytes[index] = u8(b)
 	}
 	return value

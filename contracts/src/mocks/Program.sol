@@ -18,6 +18,16 @@ contract ProgramTest {
         require(hash == keccak256(data[1:]));
     }
 
+    function staticcallProgram(address program, bytes calldata data)
+        external
+        view
+        returns (bytes memory)
+    {
+        (bool success, bytes memory result) = address(program).staticcall(data);
+        require(success, "call failed");
+        return result;
+    }
+
     function checkRevertData(
         address program,
         bytes calldata data,

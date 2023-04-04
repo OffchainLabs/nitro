@@ -10,6 +10,7 @@ use prover::{
 use run::RunProgram;
 use std::mem;
 
+use crate::env::EvmData;
 pub use prover;
 
 mod env;
@@ -190,6 +191,7 @@ pub unsafe extern "C" fn stylus_call(
     calldata: GoSliceData,
     params: GoParams,
     go_api: GoApi,
+    evm_data: EvmData,
     output: *mut RustVec,
     evm_gas: *mut u64,
 ) -> UserOutcomeKind {
@@ -207,6 +209,7 @@ pub unsafe extern "C" fn stylus_call(
         Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
     instance.set_go_api(go_api);
+    instance.set_evm_data(evm_data);
     instance.set_gas(wasm_gas);
 
     let status = match instance.run_main(&calldata, &config) {
