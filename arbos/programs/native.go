@@ -83,6 +83,7 @@ func callUserWasm(
 	contract := scope.Contract
 	readOnly := interpreter.ReadOnly()
 	evm := interpreter.Evm()
+	depth := evm.Depth()
 
 	actingAddress := contract.Address() // not necessarily WASM
 	program := actingAddress
@@ -146,7 +147,6 @@ func callUserWasm(
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
-			depth := evm.Depth()
 			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
 		}
 
@@ -221,7 +221,6 @@ func callUserWasm(
 
 		// Tracing: emit the create
 		if tracingInfo != nil {
-			depth := evm.Depth()
 			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
 		}
 

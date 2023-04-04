@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use arbutil::evm;
 use prover::programs::config::PricingParams;
 use std::ops::Deref;
 
@@ -43,5 +44,11 @@ impl Pricing {
     pub fn buy_evm_gas(&self, evm: u64) {
         let wasm_gas = evm.saturating_mul(100_00) / self.wasm_gas_price;
         self.buy_gas(wasm_gas)
+    }
+
+    pub fn pay_for_evm_copy(&self, bytes: usize) {
+        let evm_words = |count: u64| count.saturating_mul(31) / 32;
+        let evm_gas = evm_words(bytes as u64).saturating_mul(evm::COPY_WORD_GAS);
+        self.buy_evm_gas(evm_gas)
     }
 }
