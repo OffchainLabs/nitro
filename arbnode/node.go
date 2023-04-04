@@ -1434,11 +1434,7 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		EnablePreimageRecording: false,
 	}
 
-	genesis := core.Genesis{ // TODO this seems wrong, genesis probably needs
-		Config: chainConfig, // other fields populated.
-	}
-
-	return core.NewBlockChain(chainDb, cacheConfig, &genesis, nil, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
+	return core.NewBlockChain(chainDb, cacheConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {
