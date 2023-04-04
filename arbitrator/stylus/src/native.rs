@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::env::EvmData;
 use crate::{
     env::{MeterData, WasmEnv},
     host, GoApi, GoApiStatus, RustVec,
@@ -98,6 +99,7 @@ impl NativeInstance {
                 "read_return_data" => func!(host::read_return_data),
                 "return_data_size" => func!(host::return_data_size),
                 "emit_log" => func!(host::emit_log),
+                "tx_origin" => func!(host::tx_origin),
             },
         };
         if debug_funcs {
@@ -289,6 +291,11 @@ impl NativeInstance {
             emit_log,
         )
     }
+
+    pub fn set_evm_data(&mut self, evm_data: EvmData) {
+        let env = self.env.as_mut(&mut self.store);
+        env.evm_data = Some(evm_data);
+    }
 }
 
 impl Deref for NativeInstance {
@@ -387,6 +394,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "read_return_data" => stub!(|_: u32|),
             "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
+            "tx_origin" => stub!(|_: u32|),
         },
     };
     if config.debug.debug_funcs {

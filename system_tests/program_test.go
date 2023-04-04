@@ -480,6 +480,42 @@ func TestProgramCreate(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
+func TestProgramEvmData(t *testing.T) {
+	ctx, _, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+
+	expected := testhelpers.RandomAddress()
+	opts := bind.CallOpts{
+		From: expected,
+	}
+	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
+	Require(t, err)
+	if len(result) != 20 {
+		Fail(t, "unexpected return result: ", result)
+	}
+	origin := common.BytesToAddress(result)
+	if origin != expected {
+		Fail(t, "origin mismatch: ", expected, origin)
+	}
+
+	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	// TODO: enable validation when prover side is PR'd
+	// validateBlocks(t, 1, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, file string, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
 ) {
