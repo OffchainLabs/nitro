@@ -96,6 +96,10 @@ func (p Programs) SetWasmHostioCost(cost uint64) error {
 	return p.wasmHostioCost.Set(cost)
 }
 
+func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
+	return p.machineVersions.GetUint32(program.Hash())
+}
+
 func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
 	version, err := p.StylusVersion()
 	if err != nil {
