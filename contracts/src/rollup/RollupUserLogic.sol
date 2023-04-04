@@ -151,7 +151,7 @@ abstract contract AbsRollupUserLogic is
         if(prevAssertion.secondChildBlock > 0) {
             // check if assertion is the challenge winner
             ChallengeEdge memory _winningEdge = challengeManager.getEdge(winningEdge);
-            require(getAssertionNum(_winningEdge.claimEdgeId) == assertionNum, "NOT_WINNER");
+            require(getAssertionNum(_winningEdge.claimId) == assertionNum, "NOT_WINNER");
             require(_winningEdge.status == EdgeStatus.Confirmed, "EDGE_NOT_CONFIRMED");
         }
 

@@ -75,7 +75,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     uint256 public rollupDeploymentBlock;
 
     // The assertion number of the initial assertion
-    uint64 internal constant GENESIS_NODE = 0;
+    uint64 internal constant GENESIS_NODE = 1;
+    bytes32 internal constant GENESIS_HASH = keccak256(abi.encodePacked(GENESIS_NODE));
 
     bool public validatorWhitelistDisabled;
 
@@ -87,6 +88,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
      * @return Assertion struct
      */
     function getAssertionStorage(uint64 assertionNum) internal view returns (AssertionNode storage) {
+        require(assertionNum != 0, "ASSERTION_NUM_CANNOT_BE_ZERO");
         return _assertions[assertionNum];
     }
 
@@ -260,8 +262,12 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
      */
     function initializeCore(AssertionNode memory initialAssertion) internal {
         __Pausable_init();
+        // TODO: HN: prolly should use the internal function to create genesis
         _assertions[GENESIS_NODE] = initialAssertion;
+        _latestConfirmed = GENESIS_NODE;
+        _latestAssertionCreated = GENESIS_NODE;
         _firstUnresolvedAssertion = GENESIS_NODE + 1;
+        _assertionHashToNum[initialAssertion.assertionHash] = GENESIS_NODE;
     }
 
     /**
@@ -707,11 +713,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     // HN: TODO: decide to keep using index or hash
     function getAssertionNum(bytes32 id) public view returns(uint64){
         uint64 num = _assertionHashToNum[id];
-        // HN: TODO: genesis assertion is 0, which will fail this check
-        //           bump genesis assertion to 1 instead?
-        // require(num > 0, "ASSERTION_NOT_EXIST");
-        // HN: TODO: workaround by double checking
-        require(id == getAssertionId(num), "INVALID_ASSERTION_ID");
+        require(num > 0, "ASSERTION_NOT_EXIST");
         return uint64(num);
     }
     function getAssertionId(uint64 num) public view returns(bytes32){

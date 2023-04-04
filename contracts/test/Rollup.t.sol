@@ -318,14 +318,14 @@ contract RollupTest is Test {
             prevAssertionInboxMaxCount: 1
         });
 
-        assertEq(userRollup.getAssertion(0).secondChildBlock, block.number);
+        assertEq(userRollup.getAssertion(1).secondChildBlock, block.number);
 
         return (beforeState, afterState, afterState2, genesisInboxCount);
     }
 
     function testRevertConfirmWrongInput() public {
         testSuccessCreateAssertions();
-        vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
+        vm.roll(userRollup.getAssertion(1).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.prank(validator1);
         vm.expectRevert("CONFIRM_DATA");
         userRollup.confirmNextAssertion(bytes32(0), bytes32(0), bytes32(0));
@@ -333,14 +333,14 @@ contract RollupTest is Test {
 
     function testSuccessConfirmUnchallengedAssertions() public {
         testSuccessCreateAssertions();
-        vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
+        vm.roll(userRollup.getAssertion(1).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.prank(validator1);
         userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT, bytes32(0));
     }
 
     function testRevertConfirmSiblingedAssertions() public {
         testSuccessCreateSecondChild();
-        vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
+        vm.roll(userRollup.getAssertion(1).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.prank(validator1);
         vm.expectRevert("Edge does not exist"); // If there is a sibling, you need to supply a winning edge
         userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT, bytes32(0));
@@ -350,8 +350,8 @@ contract RollupTest is Test {
         (,ExecutionState memory afterState,,uint256 genesisInboxCount) = testSuccessCreateSecondChild();
         vm.prank(validator1);
 
-        bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(0));
-        bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(1));
+        bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(1));
+        bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(2));
 
         bytes32[] memory states0 = new bytes32[](1);
         states0[0] = h0;
@@ -367,7 +367,7 @@ contract RollupTest is Test {
                 startHeight: 0,
                 endHistoryRoot: root,
                 endHeight: 8,
-                claimId: userRollup.getAssertionId(1)
+                claimId: userRollup.getAssertionId(2)
             }),
             "",
             ""
@@ -389,18 +389,18 @@ contract RollupTest is Test {
         return states;
     }
 
-    function testSuccessConfirmForPsTimer() public {
+    function testSuccessConfirmEdgeByTime() public {
         bytes32 e1Id = testSuccessCreateChallenge();
 
-        vm.roll(userRollup.getAssertion(0).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
+        vm.roll(userRollup.getAssertion(1).firstChildBlock + CONFIRM_PERIOD_BLOCKS + 1);
         vm.warp(block.timestamp + CONFIRM_PERIOD_BLOCKS * 15);
-        userRollup.challengeManager().confirmEdgeByTimer(e1Id, new bytes32[](0));
+        userRollup.challengeManager().confirmEdgeByTime(e1Id, new bytes32[](0));
         vm.prank(validator1);
         userRollup.confirmNextAssertion(FIRST_ASSERTION_BLOCKHASH, FIRST_ASSERTION_SENDROOT, e1Id);
     }
 
     function testSuccessRejection() public {
-        testSuccessConfirmForPsTimer();
+        testSuccessConfirmEdgeByTime();
         vm.prank(validator1);
         userRollup.rejectNextAssertion(validator2);
     }
