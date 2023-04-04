@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "testing",
+    testonly = 1,
+    srcs = [
+        "rollup_config.go",
+        "tx.go",
+    ],
+    importpath = "github.com/OffchainLabs/challenge-protocol-v2/testing",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//solgen/go/rollupgen",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core/types",
+    ],
+)

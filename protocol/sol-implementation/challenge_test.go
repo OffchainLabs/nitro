@@ -129,6 +129,7 @@ func setupTopLevelFork(
 		accs[2].accountAddr,
 		backend,
 		headerReader,
+		common.Address{},
 	)
 	require.NoError(t, err)
 

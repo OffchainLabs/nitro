@@ -82,6 +82,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     using EdgeChallengeManagerLib for EdgeStore;
     using ChallengeEdgeLib for ChallengeEdge;
 
+    event Bisected(bytes32 bisectedEdgeId);
+    event LevelZeroEdgeAdded(bytes32 edgeId);
+
     EdgeStore internal store;
 
     uint256 public challengePeriodSec;
@@ -141,6 +144,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         );
 
         store.add(ce);
+
+        emit LevelZeroEdgeAdded(ce.id());
 
         return ce.id();
     }

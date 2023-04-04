@@ -1,17 +1,19 @@
 package validator
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"math"
 	"math/big"
-	"sync"
 	"testing"
 	"time"
 
+	"bytes"
+	"sync"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -26,9 +28,8 @@ import (
 
 var (
 	// TODO: These are brittle and could break if the event sigs change in Solidity.
-	leafAddedEventSig = hexutil.MustDecode("0x4383ba11a7cd16be5880c5f674b93be38b3b1fcafd7a7b06151998fa2a675349")
-	mergeEventSig     = hexutil.MustDecode("0x72b50597145599e4288d411331c925b40b33b0fa3cccadc1f57d2a1ab973553a")
-	bisectEventSig    = hexutil.MustDecode("0x69d5465c81edf7aaaf2e5c6c8829500df87d84c87f8d5b1221b59eaeaca70d27")
+	bisectEventSig    = hexutil.MustDecode("0xaab36db1c086a1a8a2a953ec2a3f131e133f7be8e6e1970f8fd79a2ab341c001")
+	leafAddedEventSig = hexutil.MustDecode("0x102ba5fcc71c9f7d7075d3f9cc9cb52fe4feb2cb843bef52f5f9fe9825b539e5")
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
@@ -89,12 +90,11 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
 		cfg.expectedLeavesAdded = 6
-		cfg.expectedBisections = 12
-		cfg.expectedMerges = 6
+		cfg.expectedBisections = 10
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 	t.Run("two validators opening leaves at height 255", func(t *testing.T) {
@@ -109,12 +109,11 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			smallStepDivergenceHeight:    3,
 		}
 		cfg.expectedLeavesAdded = 6
-		cfg.expectedBisections = 22
-		cfg.expectedMerges = 6
+		cfg.expectedBisections = 20
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 }
@@ -139,7 +138,6 @@ type challengeProtocolTestConfig struct {
 	currentChainHeight        uint64
 	// Events we want to assert are fired from the goimpl.
 	expectedBisections  uint64
-	expectedMerges      uint64
 	expectedLeavesAdded uint64
 }
 
@@ -224,10 +222,16 @@ func prepareMaliciousStates(
 	return states, inboxCounts
 }
 
-func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengeProtocolTestConfig) {
+func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengeProtocolTestConfig) {
+	t.Helper()
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
-	chains, accs, addrs, backend := setupAssertionChains(t, 3) // 0th is admin chain.
+	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
+	require.NoError(t, err)
+	chains := setupCfg.Chains
+	accs := setupCfg.Accounts
+	addrs := setupCfg.Addrs
+	backend := setupCfg.Backend
 	prevInboxMaxCount := big.NewInt(1)
 
 	// Advance the chain by 100 blocks as there needs to be a minimum period of time
@@ -243,7 +247,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	honestStates, honestInboxCounts := prepareHonestStates(
 		t,
 		ctx,
-		chains[1],
+		chains[0],
 		backend,
 		honestHashes,
 		cfg.currentChainHeight,
@@ -267,17 +271,17 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		statemanager.WithNumOpcodesPerBigStep(7),
 	)
 	require.NoError(t, err)
-	aliceAddr := accs[1].accountAddr
+	aliceAddr := accs[1].AccountAddr
 	alice, err := New(
 		ctx,
-		chains[1], // Chain 0 is reserved for admin controls.
+		chains[0],
 		backend,
 		honestManager,
 		addrs.Rollup,
 		WithName("alice"),
 		WithAddress(aliceAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*100),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
 		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
@@ -292,17 +296,17 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
 	require.NoError(t, err)
-	bobAddr := accs[2].accountAddr
+	bobAddr := accs[1].AccountAddr
 	bob, err := New(
 		ctx,
-		chains[2], // Chain 0 is reserved for admin controls.
+		chains[1], // Chain 0 is reserved for admin controls.
 		backend,
 		maliciousManager,
 		addrs.Rollup,
 		WithName("bob"),
 		WithAddress(bobAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*10),
+		WithChallengeVertexWakeInterval(time.Millisecond*100),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
 		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
@@ -311,14 +315,12 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
 
-	var managerAddr common.Address
-	manager, err := chains[1].CurrentChallengeManager(ctx)
+	challengeManager, err := chains[1].SpecChallengeManager(ctx)
 	require.NoError(t, err)
-	managerAddr = manager.Address()
+	managerAddr := challengeManager.Address()
 
 	var totalLeavesAdded uint64
 	var totalBisections uint64
-	var totalMerges uint64
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -347,8 +349,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 					totalLeavesAdded++
 				case bytes.Equal(topic[:], bisectEventSig):
 					totalBisections++
-				case bytes.Equal(topic[:], mergeEventSig):
-					totalMerges++
 				default:
 				}
 			}
@@ -358,7 +358,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	// Submit leaf creation manually for each validator.
 	latestHonest, err := honestManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	honestAssertion, err := alice.chain.CreateAssertion(
+	_, err = alice.chain.CreateAssertion(
 		ctx,
 		latestHonest.Height,
 		0,
@@ -370,7 +370,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 
 	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	evilAssertion, err := bob.chain.CreateAssertion(
+	_, err = bob.chain.CreateAssertion(
 		ctx,
 		latestEvil.Height,
 		0,
@@ -380,26 +380,47 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	)
 	require.NoError(t, err)
 
-	challenge, err := alice.submitProtocolChallenge(ctx, 0)
+	genesis, err := alice.chain.AssertionBySequenceNum(ctx, 0)
 	require.NoError(t, err)
 
-	height, err := honestAssertion.Height()
+	// Honest assertion being added.
+	startCommit := util.HistoryCommitment{
+		Height: 0,
+		Merkle: common.Hash{},
+	}
+	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
+		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+			ctx,
+			genesis,
+			startCommit,
+			endCommit,
+		)
+		require.NoError(t, err)
+		return leaf
+	}
+
+	honestEndCommit, err := honestManager.HistoryCommitmentUpTo(ctx, latestHonest.Height)
 	require.NoError(t, err)
 
-	historyCommit, err := honestManager.HistoryCommitmentUpTo(ctx, height)
+	t.Log("Alice creates level zero block edge")
+
+	honestEdge := leafAdder(honestEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
+
+	isPs, err := honestEdge.IsPresumptive(ctx)
 	require.NoError(t, err)
-	honestLeaf, err := challenge.AddBlockChallengeLeaf(ctx, honestAssertion, historyCommit)
+	require.Equal(t, true, isPs)
+
+	evilEndCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, uint64(latestEvil.Height))
 	require.NoError(t, err)
 
-	height, err = evilAssertion.Height()
-	require.NoError(t, err)
-	historyCommit, err = maliciousManager.HistoryCommitmentUpTo(ctx, height)
-	require.NoError(t, err)
-	evilLeaf, err := challenge.AddBlockChallengeLeaf(ctx, evilAssertion, historyCommit)
-	require.NoError(t, err)
+	t.Log("Bob creates level zero block edge")
 
-	aliceTracker, err := newVertexTracker(
-		&vertexTrackerConfig{
+	evilEdge := leafAdder(evilEndCommit)
+	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
+
+	aliceTracker, err := newEdgeTracker(
+		&edgeTrackerConfig{
 			timeRef:          alice.timeRef,
 			actEveryNSeconds: alice.challengeVertexWakeInterval,
 			chain:            alice.chain,
@@ -407,13 +428,12 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 			validatorName:    alice.name,
 			validatorAddress: alice.address,
 		},
-		challenge,
-		honestLeaf,
+		honestEdge,
 	)
 	require.NoError(t, err)
 
-	bobTracker, err := newVertexTracker(
-		&vertexTrackerConfig{
+	bobTracker, err := newEdgeTracker(
+		&edgeTrackerConfig{
 			timeRef:          bob.timeRef,
 			actEveryNSeconds: bob.challengeVertexWakeInterval,
 			chain:            bob.chain,
@@ -421,8 +441,7 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 			validatorName:    bob.name,
 			validatorAddress: bob.address,
 		},
-		challenge,
-		evilLeaf,
+		evilEdge,
 	)
 	require.NoError(t, err)
 
@@ -432,7 +451,6 @@ func runChallengeIntegrationTest(t testing.TB, hook *test.Hook, cfg *challengePr
 	wg.Wait()
 	assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
-	assert.Equal(t, cfg.expectedMerges, totalMerges, "Did not get expected total merges")
 }
 
 func evilHashesForUints(lo, hi uint64) []common.Hash {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
+	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -88,6 +89,7 @@ func TestCreateAssertion(t *testing.T) {
 			accs[2].accountAddr,
 			backend,
 			headerReader,
+			common.Address{},
 		)
 		require.NoError(t, err)
 		height := uint64(1)
@@ -176,6 +178,7 @@ func TestBlockChallenge(t *testing.T) {
 		accs[2].accountAddr,
 		backend,
 		headerReader,
+		common.Address{},
 	)
 	require.NoError(t, err)
 
@@ -374,6 +377,7 @@ func TestCreateSuccessionChallenge(t *testing.T) {
 			accs[2].accountAddr,
 			backend,
 			headerReader,
+			common.Address{},
 		)
 		require.NoError(t, err)
 
@@ -400,7 +404,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 	loserStakeEscrow := common.Address{}
 	challengePeriodSeconds := big.NewInt(100)
 	miniStake := big.NewInt(1)
-	cfg := generateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
+	cfg := challenge_testing.GenerateRollupConfig(prod, wasmModuleRoot, rollupOwner, chainId, loserStakeEscrow, challengePeriodSeconds, miniStake)
 	addresses := deployFullRollupStack(
 		t,
 		ctx,
@@ -419,6 +423,7 @@ func setupAssertionChainWithChallengeManager(t *testing.T) (*AssertionChain, []*
 		accs[1].accountAddr,
 		backend,
 		headerReader,
+		common.Address{},
 	)
 	require.NoError(t, err)
 	return chain, accs, addresses, backend, headerReader

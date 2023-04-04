@@ -2,9 +2,10 @@ package protocol
 
 import (
 	"context"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/common"
-	"time"
 )
 
 // EdgeType corresponds to the three different challenge
@@ -18,11 +19,28 @@ const (
 	SmallStepChallengeEdge
 )
 
+func (et EdgeType) IsSubChallenge() bool {
+	return et == BigStepChallengeEdge || et == SmallStepChallengeEdge
+}
+
+func (et EdgeType) String() string {
+	switch et {
+	case BlockChallengeEdge:
+		return "block_challenge_edge"
+	case BigStepChallengeEdge:
+		return "big_step_challenge_edge"
+	case SmallStepChallengeEdge:
+		return "small_step_challenge_edge"
+	default:
+		return "unknown"
+	}
+}
+
 // OriginId is the id of the item that originated a challenge an edge
 // is a part of. In a block challenge, the origin id is the id of the assertion
-// being challenged. In a big step challenge, it is the id of the edge at the block challenge
+// being challenged. In a big step challenge, it is the mutual id of the edge at the block challenge
 // level that was the source of the one step fork leading to the big step challenge.
-// In a small step challenge, it is the id of the edge at the big step level that was
+// In a small step challenge, it is the mutual id of the edge at the big step level that was
 // the source of the one step fork leading to the small step challenge.
 type OriginId common.Hash
 
@@ -51,15 +69,6 @@ type SpecChallengeManager interface {
 	ChallengePeriodSeconds(ctx context.Context) (time.Duration, error)
 	// Gets an edge by its id.
 	GetEdge(ctx context.Context, edgeId EdgeId) (util.Option[SpecEdge], error)
-	// Calculates a mutual id for an edge.
-	CalculateMutualId(
-		ctx context.Context,
-		edgeType EdgeType,
-		originId OriginId,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-	) (MutualId, error)
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(
 		ctx context.Context,
@@ -74,19 +83,15 @@ type SpecChallengeManager interface {
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
 		assertion Assertion,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-		endHistoryRoot common.Hash,
+		startCommit util.HistoryCommitment,
+		endCommit util.HistoryCommitment,
 	) (SpecEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
 	AddSubChallengeLevelZeroEdge(
 		ctx context.Context,
 		challengedEdge SpecEdge,
-		startHeight Height,
-		startHistoryRoot common.Hash,
-		endHeight Height,
-		endHistoryRoot common.Hash,
+		startCommit util.HistoryCommitment,
+		endCommit util.HistoryCommitment,
 	) (SpecEdge, error)
 }
 
@@ -108,9 +113,8 @@ type SpecEdge interface {
 	Id() EdgeId
 	// The type of challenge the edge is a part of.
 	GetType() EdgeType
-	// The ministaker of an edge. Only valid for level zero
-	// edges and will error otherwise.
-	MiniStaker() (common.Address, error)
+	// The ministaker of an edge. Only existing for level zero edges.
+	MiniStaker() util.Option[common.Address]
 	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.
@@ -134,7 +138,9 @@ type SpecEdge interface {
 	ConfirmByTimer(ctx context.Context, ancestorIds []EdgeId) error
 	// Confirms an edge with the specified claim id.
 	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
+	ConfirmByOneStepProof(ctx context.Context) error
+	ConfirmByChildren(ctx context.Context) error
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
-	OriginCommitment(ctx context.Context) (Height, common.Hash, error)
+	TopLevelClaimHeight(ctx context.Context) (Height, error)
 }
