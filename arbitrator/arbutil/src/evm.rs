@@ -10,3 +10,9 @@ pub const LOG_DATA_GAS: u64 = 8;
 
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const GASPRICE_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const ORIGIN_EVM_GAS: u64 = 2;

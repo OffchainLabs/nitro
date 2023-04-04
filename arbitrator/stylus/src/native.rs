@@ -100,6 +100,7 @@ impl NativeInstance {
                 "return_data_size" => func!(host::return_data_size),
                 "emit_log" => func!(host::emit_log),
                 "tx_origin" => func!(host::tx_origin),
+                "tx_gas_price" => func!(host::tx_gas_price),
             },
         };
         if debug_funcs {
@@ -395,6 +396,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
             "tx_origin" => stub!(|_: u32|),
+            "tx_gasprice" => stub!(|_: u64|),
         },
     };
     if config.debug.debug_funcs {

@@ -95,6 +95,7 @@ pub struct EvmAPI {
 #[repr(C)]
 pub struct EvmData {
     pub origin: Bytes20,
+    pub gas_price: u64,
 }
 
 impl WasmEnv {

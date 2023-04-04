@@ -278,7 +278,8 @@ func callUserWasm(
 	}
 
 	evmData := C.EvmData{
-		origin: addressToBytes20(evm.TxContext.Origin),
+		origin:    addressToBytes20(evm.TxContext.Origin),
+		gas_price: u64(evm.TxContext.GasPrice),
 	}
 
 	output := &rustVec{}
