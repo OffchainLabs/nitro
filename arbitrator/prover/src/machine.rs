@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
@@ -27,7 +27,7 @@ use smallvec::SmallVec;
 use std::{
     borrow::Cow,
     convert::{TryFrom, TryInto},
-    fmt,
+    fmt::{self, Display},
     fs::File,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
@@ -620,6 +620,17 @@ pub enum MachineStatus {
     TooFar,
 }
 
+impl Display for MachineStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Running => write!(f, "running"),
+            Self::Finished => write!(f, "finished"),
+            Self::Errored => write!(f, "errored"),
+            Self::TooFar => write!(f, "too far"),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModuleState<'a> {
     globals: Cow<'a, Vec<Value>>,
@@ -888,6 +899,8 @@ impl Machine {
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
+        use ArbValueType::*;
+
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
@@ -930,10 +943,10 @@ impl Machine {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
                     for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
-                        if *ty == ArbValueType::F32 {
-                            *ty = ArbValueType::I32;
-                        } else if *ty == ArbValueType::F64 {
-                            *ty = ArbValueType::I64;
+                        if *ty == F32 {
+                            *ty = I32;
+                        } else if *ty == F64 {
+                            *ty = I64;
                         }
                     }
                     ensure!(
@@ -990,17 +1003,13 @@ impl Machine {
         let main_module = &modules[main_module_idx];
 
         // Rust support
-        if let Some(&f) = main_module.exports.get("main").filter(|_| runtime_support) {
-            let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ArbValueType::I32); // argc
-            expected_type.inputs.push(ArbValueType::I32); // argv
-            expected_type.outputs.push(ArbValueType::I32); // ret
+        let rust_fn = "__main_void";
+        if let Some(&f) = main_module.exports.get(rust_fn).filter(|_| runtime_support) {
+            let expected_type = FunctionType::new(vec![], vec![I32]);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
-                "Main function doesn't match expected signature of [argc, argv] -> [ret]",
+                "Main function doesn't match expected signature of [] -> [ret]",
             );
-            entry!(I32Const, 0);
-            entry!(I32Const, 0);
             entry!(@cross, u32::try_from(main_module_idx).unwrap(), f);
             entry!(Drop);
             entry!(HaltAndSetFinished);
@@ -1009,8 +1018,8 @@ impl Machine {
         // Go support
         if let Some(&f) = main_module.exports.get("run").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ArbValueType::I32); // argc
-            expected_type.inputs.push(ArbValueType::I32); // argv
+            expected_type.inputs.push(I32); // argc
+            expected_type.inputs.push(I32); // argv
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
