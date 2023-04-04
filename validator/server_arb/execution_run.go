@@ -46,7 +46,7 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) {
 }
 
 func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
-	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](&e.StopWaiterSafe, func(ctx context.Context) (*validator.MachineStepResult, error) {
+	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](e, func(ctx context.Context) (*validator.MachineStepResult, error) {
 		var machine MachineInterface
 		var err error
 		if position == ^uint64(0) {
@@ -77,7 +77,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 }
 
 func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
-	return stopwaiter.LaunchPromiseThread[[]byte](&e.StopWaiterSafe, func(ctx context.Context) ([]byte, error) {
+	return stopwaiter.LaunchPromiseThread[[]byte](e, func(ctx context.Context) ([]byte, error) {
 		machine, err := e.cache.GetMachineAt(ctx, position)
 		if err != nil {
 			return nil, err

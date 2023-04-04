@@ -43,14 +43,14 @@ func (s *StopWaiterSafe) Stopped() bool {
 	return s.stopped
 }
 
-func (s *StopWaiterSafe) GetContext() (context.Context, error) {
+func (s *StopWaiterSafe) GetContextSafe() (context.Context, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return s.getContext()
 }
 
 // this context is not cancelled even after someone calls Stop
-func (s *StopWaiterSafe) GetParentContext() (context.Context, error) {
+func (s *StopWaiterSafe) GetParentContextSafe() (context.Context, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return s.getParentContext()
@@ -167,8 +167,8 @@ func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
 }
 
 // If stop was already called, thread might silently not be launched
-func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
-	ctx, err := s.GetContext()
+func (s *StopWaiterSafe) LaunchThreadSafe(foo func(context.Context)) error {
+	ctx, err := s.GetContextSafe()
 	if err != nil {
 		return err
 	}
@@ -191,8 +191,8 @@ func (s *StopWaiterSafe) LaunchUntrackedThread(foo func()) {
 
 // CallIteratively calls function iteratively in a thread.
 // input param return value is how long to wait before next invocation
-func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration) error {
-	return s.LaunchThread(func(ctx context.Context) {
+func (s *StopWaiterSafe) CallIterativelySafe(foo func(context.Context) time.Duration) error {
+	return s.LaunchThreadSafe(func(ctx context.Context) {
 		for {
 			interval := foo(ctx)
 			if ctx.Err() != nil {
@@ -209,15 +209,22 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 	})
 }
 
+type ThreadLauncher interface {
+	GetContextSafe() (context.Context, error)
+	LaunchThreadSafe(foo func(context.Context)) error
+	LaunchUntrackedThread(foo func())
+	Stopped() bool
+}
+
 // CallIterativelyWith calls function iteratively in a thread.
 // The return value of foo is how long to wait before next invocation
 // Anything sent to triggerChan parameter triggers call to happen immediately
 func CallIterativelyWith[T any](
-	s *StopWaiterSafe,
+	s ThreadLauncher,
 	foo func(context.Context, T) time.Duration,
 	triggerChan <-chan T,
 ) error {
-	return s.LaunchThread(func(ctx context.Context) {
+	return s.LaunchThreadSafe(func(ctx context.Context) {
 		var defaultVal T
 		var val T
 		for {
@@ -239,10 +246,10 @@ func CallIterativelyWith[T any](
 }
 
 func LaunchPromiseThread[T any](
-	s *StopWaiterSafe,
+	s ThreadLauncher,
 	foo func(context.Context) (T, error),
 ) containers.PromiseInterface[T] {
-	ctx, err := s.GetContext()
+	ctx, err := s.GetContextSafe()
 	if err != nil {
 		promise := containers.NewPromise[T](nil)
 		promise.ProduceError(err)
@@ -254,24 +261,25 @@ func LaunchPromiseThread[T any](
 		return &promise
 	}
 	innerCtx, cancel := context.WithCancel(ctx)
-	s.wg.Add(1)
 	promise := containers.NewPromise[T](cancel)
-	go func() {
+	err = s.LaunchThreadSafe(func(context.Context) { // we don't use the param's context
 		val, err := foo(innerCtx)
 		if err != nil {
 			promise.ProduceError(err)
 		} else {
 			promise.Produce(val)
 		}
-		s.wg.Done()
 		cancel()
-	}()
+	})
+	if err != nil {
+		promise.ProduceError(err)
+	}
 	return &promise
 }
 
 func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback func() time.Duration) (<-chan T, error) {
 	outChan := make(chan T)
-	err := s.LaunchThread(func(ctx context.Context) {
+	err := s.LaunchThreadSafe(func(ctx context.Context) {
 		nextAllowedTriggerTime := time.Now()
 		for {
 			select {
@@ -314,19 +322,19 @@ func (s *StopWaiter) StopAndWait() {
 
 // If stop was already called, thread might silently not be launched
 func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
-	if err := s.StopWaiterSafe.LaunchThread(foo); err != nil {
+	if err := s.StopWaiterSafe.LaunchThreadSafe(foo); err != nil {
 		panic(err)
 	}
 }
 
 func (s *StopWaiter) CallIteratively(foo func(context.Context) time.Duration) {
-	if err := s.StopWaiterSafe.CallIteratively(foo); err != nil {
+	if err := s.StopWaiterSafe.CallIterativelySafe(foo); err != nil {
 		panic(err)
 	}
 }
 
 func (s *StopWaiter) GetContext() context.Context {
-	ctx, err := s.StopWaiterSafe.GetContext()
+	ctx, err := s.StopWaiterSafe.GetContextSafe()
 	if err != nil {
 		panic(err)
 	}
@@ -334,7 +342,7 @@ func (s *StopWaiter) GetContext() context.Context {
 }
 
 func (s *StopWaiter) GetParentContext() context.Context {
-	ctx, err := s.StopWaiterSafe.GetParentContext()
+	ctx, err := s.StopWaiterSafe.GetParentContextSafe()
 	if err != nil {
 		panic(err)
 	}
