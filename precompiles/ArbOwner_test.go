@@ -4,11 +4,10 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -94,7 +93,7 @@ func TestArbOwner(t *testing.T) {
 
 	costCap, err := gasInfo.GetAmortizedCostCapBips(callCtx, evm)
 	Require(t, err)
-	if costCap != math.MaxUint64 {
+	if costCap != 0 {
 		Fail(t, costCap)
 	}
 	newCostCap := uint64(77734)
