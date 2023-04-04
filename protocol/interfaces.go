@@ -2,10 +2,11 @@ package protocol
 
 import (
 	"context"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"time"
+
+	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // AssertionSequenceNumber is a monotonically increasing ID
@@ -59,7 +60,6 @@ type AssertionChain interface {
 	// TODO: Remove.
 	CreateSuccessionChallenge(ctx context.Context, seqNum AssertionSequenceNumber) (Challenge, error)
 	Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error
-	Reject(ctx context.Context, staker common.Address) error
 
 	// Spec-based implementation methods.
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
@@ -175,7 +175,6 @@ type ChallengeVertex interface {
 	// Mutating calls for challenge moves.
 	CreateSubChallenge(ctx context.Context) (Challenge, error)
 	Bisect(ctx context.Context, history util.HistoryCommitment, proof []byte) (ChallengeVertex, error)
-	Merge(ctx context.Context, mergingToHistory util.HistoryCommitment, proof []byte) (ChallengeVertex, error)
 
 	// Mutating calls for confirmations.
 	ConfirmForPsTimer(ctx context.Context) error
