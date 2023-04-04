@@ -38,7 +38,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		if i >= 500 {
 			Fail(t, "Failed to read batch from L1")
 		}
-		msgNum, err := execNode.ExecEngine.HeadMessageNumber()
+		msgNum, err := execNode.ExecEngine.HeadMessageNumber().Await(ctx)
 		Require(t, err)
 		if msgNum == 1 {
 			break
@@ -97,7 +97,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, err = arbNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, err = arbNode.InboxReader.GetSequencerMessageBytes(1).Await(ctx)
 	Require(t, err)
 
 	l2Header, err := l2Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)

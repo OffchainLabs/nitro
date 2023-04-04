@@ -2,27 +2,62 @@ package gethexec
 
 import (
 	"context"
+	"time"
 
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 )
 
-type SyncMonitor struct {
-	consensus execution.ConsensusInfo
-	exec      *ExecutionEngine
+type SyncMonitorConfig struct {
+	ConsensusTimeout time.Duration `koanf:"consensus-timeout" reload:"hot"`
 }
 
-func NewSyncMonitor(exec *ExecutionEngine) *SyncMonitor {
+var DefaultSyncMonitorConfig = &SyncMonitorConfig{
+	ConsensusTimeout: time.Second * 5,
+}
+
+type SyncMonitorConfigFetcher func() *SyncMonitorConfig
+
+type SyncMonitor struct {
+	stopwaiter.StopWaiter
+	consensus execution.ConsensusInfo
+	exec      *ExecutionEngine
+	config    SyncMonitorConfigFetcher
+}
+
+func NewSyncMonitor(exec *ExecutionEngine, config SyncMonitorConfigFetcher) *SyncMonitor {
 	return &SyncMonitor{
-		exec: exec,
+		exec:   exec,
+		config: config,
 	}
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	res := s.consensus.SyncProgressMap()
-	consensusSyncTarget := s.consensus.SyncTargetMessageCount()
+func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".consensus-timeout", DefaultSyncMonitorConfig.ConsensusTimeout, "timeout for requests to consensus client")
+}
 
-	built, err := s.exec.HeadMessageNumber()
+func (s *SyncMonitor) Start(ctx_in context.Context) {
+	s.StopWaiter.Start(ctx_in, s)
+}
+
+func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
+	ctx, cancel := context.WithTimeout(s.GetContext(), s.config().ConsensusTimeout)
+	defer cancel()
+	res, err := s.consensus.SyncProgressMap().Await(ctx)
+	if err != nil {
+		res = make(map[string]interface{})
+		res["consensusSyncErr"] = err
+		return res
+	}
+	consensusSyncTarget, err := s.consensus.SyncTargetMessageCount().Await(ctx)
+	if err != nil {
+		res["syncTargetError"] = err
+		return res
+	}
+
+	built, err := s.exec.HeadMessageNumber().Await(s.GetContext())
 	if err != nil {
 		res["headMsgNumberError"] = err
 	}
@@ -41,7 +76,7 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if s.consensus == nil {
 		return 0, errors.New("not set up for safeblock")
 	}
-	msg, err := s.consensus.GetSafeMsgCount(ctx)
+	msg, err := s.consensus.GetSafeMsgCount().Await(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -53,7 +88,7 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if s.consensus == nil {
 		return 0, errors.New("not set up for safeblock")
 	}
-	msg, err := s.consensus.GetFinalizedMsgCount(ctx)
+	msg, err := s.consensus.GetFinalizedMsgCount().Await(ctx)
 	if err != nil {
 		return 0, err
 	}

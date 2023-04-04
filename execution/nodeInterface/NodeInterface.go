@@ -64,7 +64,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	if fetcher == nil {
 		return 0, errors.New("batch fetcher not set")
 	}
-	batch, err := fetcher.FindL1BatchForMessage(msgIndex)
+	batch, err := fetcher.FindL1BatchForMessage(msgIndex).Await(node.ExecEngine.GetContext())
 	return batch, err
 }
 
@@ -90,7 +90,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if err != nil {
 		return 0, err
 	}
-	blockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchL1Block(batchNum)
+	blockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchL1Block(batchNum).Await(node.ExecEngine.GetContext())
 	if err != nil {
 		return 0, err
 	}

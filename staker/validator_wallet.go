@@ -354,7 +354,7 @@ func GetValidatorWalletContract(
 		return nil, err
 	}
 
-	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+	receipt, err := l1Reader.WaitForTxApproval(tx).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

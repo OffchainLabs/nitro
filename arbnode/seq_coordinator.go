@@ -503,7 +503,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	if chosenSeq != c.config.MyUrl() && chosenSeq != c.prevChosenSequencer {
 		var err error
 		if c.sequencer != nil {
-			err = c.sequencer.ForwardTo(chosenSeq)
+			_, err = c.sequencer.ForwardTo(chosenSeq).Await(ctx)
 		}
 		if err == nil {
 			c.prevChosenSequencer = chosenSeq
@@ -604,7 +604,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	syncProgress := c.sync.SyncProgressMap()
+	syncProgress := c.sync.syncProgressMap()
 	synced := len(syncProgress) == 0
 	if !synced {
 		var detailsList []interface{}

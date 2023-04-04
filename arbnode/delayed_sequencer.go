@@ -79,7 +79,7 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReade
 }
 
 func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
-	return d.exec.NextDelayedMessageNumber()
+	return d.exec.NextDelayedMessageNumber().Await(d.GetContext())
 }
 
 func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
@@ -175,7 +175,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
 		for i, msg := range messages {
-			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
+			_, err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i)).Await(d.GetContext())
 			if err != nil {
 				return err
 			}

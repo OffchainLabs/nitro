@@ -124,7 +124,7 @@ func (c *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durati
 	if wentPastTimeOfDay(c.lastCheck, now, config.minutesAfterMidnight) {
 		log.Info("attempting to release sequencer lockout to run database compaction", "targetTime", config.TimeOfDay)
 		if c.seqCoordinator == nil {
-			c.runMaintenance()
+			c.runMaintenance(ctx)
 		} else {
 			// We want to switch sequencers before running maintenance
 			success := c.seqCoordinator.AvoidLockout(ctx)
@@ -133,7 +133,7 @@ func (c *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durati
 				// We've unset the wants lockout key, now wait for the handoff
 				success = c.seqCoordinator.TryToHandoffChosenOne(ctx)
 				if success {
-					c.runMaintenance()
+					c.runMaintenance(ctx)
 				}
 			}
 		}
@@ -142,7 +142,7 @@ func (c *MaintenanceRunner) maybeRunMaintenance(ctx context.Context) time.Durati
 	return time.Minute
 }
 
-func (c *MaintenanceRunner) runMaintenance() {
+func (c *MaintenanceRunner) runMaintenance(ctx context.Context) {
 	log.Info("compacting databases (this may take a while...)")
 	results := make(chan error, len(c.dbs))
 	expected := 0
@@ -155,7 +155,8 @@ func (c *MaintenanceRunner) runMaintenance() {
 	}
 	expected++
 	go func() {
-		results <- c.exec.Maintenance()
+		_, err := c.exec.Maintenance().Await(ctx)
+		results <- err
 	}()
 	for i := 0; i < expected; i++ {
 		err := <-results

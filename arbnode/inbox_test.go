@@ -16,8 +16,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/pkg/errors"
 
 	nitroutil "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,9 +36,20 @@ type execClientWrapper struct {
 	t *testing.T
 }
 
-func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
-func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
-func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+func (w *execClientWrapper) Pause() containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("Pause not supported"))
+}
+
+func (w *execClientWrapper) Activate() containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("Activate not supported"))
+}
+
+func (w *execClientWrapper) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+	w.t.Error("not supported")
+	return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("ForwardTo not supported"))
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()

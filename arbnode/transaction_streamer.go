@@ -31,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -278,7 +279,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	err = s.exec.Reorg(count, newMessages, oldMessages)
+	_, err = s.exec.Reorg(count, newMessages, oldMessages).Await(s.GetContext())
 	if err != nil {
 		return err
 	}
@@ -354,7 +355,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	if err != nil {
 		return 0, err
 	}
-	digestedHead, err := s.exec.HeadMessageNumber()
+	digestedHead, err := s.exec.HeadMessageNumber().Await(s.GetContext())
 	if err != nil {
 		return 0, err
 	}
@@ -763,7 +764,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 }
 
 // The caller must hold the insertionMutex
-func (s *TransactionStreamer) ExpectChosenSequencer() error {
+func (s *TransactionStreamer) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, s.expectChosenSequencer())
+}
+
+func (s *TransactionStreamer) expectChosenSequencer() error {
 	if s.coordinator != nil {
 		if !s.coordinator.CurrentlyChosen() {
 			return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
@@ -772,8 +777,12 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
-	if err := s.ExpectChosenSequencer(); err != nil {
+func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, s.writeMessageFromSequencer(pos, msgWithMeta))
+}
+
+func (s *TransactionStreamer) writeMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+	if err := s.expectChosenSequencer(); err != nil {
 		return err
 	}
 	if !s.insertionMutex.TryLock() {
@@ -862,7 +871,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	if count == 0 {
 		return &execution.MessageResult{}, nil
 	}
-	return s.exec.ResultAtPos(count - 1)
+	return s.exec.ResultAtPos(count - 1).Await(s.GetContext())
 }
 
 // return value: true if should be called again
@@ -879,7 +888,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
-	pos, err := s.exec.HeadMessageNumber()
+	pos, err := s.exec.HeadMessageNumber().Await(ctx)
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
 		return false
@@ -893,7 +902,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
 	}
-	err = s.exec.DigestMessage(pos, msg)
+	_, err = s.exec.DigestMessage(pos, msg).Await(ctx)
 	if err != nil {
 		log.Info("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false

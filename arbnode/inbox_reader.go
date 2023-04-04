@@ -18,6 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -178,7 +179,11 @@ func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (a
 	}
 }
 
-func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) GetSafeMsgCount() containers.PromiseInterface[arbutil.MessageIndex] {
+	return stopwaiter.LaunchPromiseThread[arbutil.MessageIndex](&r.StopWaiterSafe, r.getSafeMsgCount)
+}
+
+func (r *InboxReader) getSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	l1block, err := r.l1Reader.LatestSafeBlockNr(ctx)
 	if err != nil {
 		return 0, err
@@ -186,7 +191,11 @@ func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex
 	return r.recentL1BlockToMsg(ctx, l1block)
 }
 
-func (r *InboxReader) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) GetFinalizedMsgCount() containers.PromiseInterface[arbutil.MessageIndex] {
+	return stopwaiter.LaunchPromiseThread[arbutil.MessageIndex](&r.StopWaiterSafe, r.getFinalizedMsgCount)
+}
+
+func (r *InboxReader) getFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	l1block, err := r.l1Reader.LatestFinalizedBlockNr(ctx)
 	if err != nil {
 		return 0, err
@@ -388,7 +397,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 					}
 				}
-				return r.GetSequencerMessageBytes(ctx, batchNum)
+				return r.GetSequencerMessageBytes(batchNum).Await(ctx)
 			})
 			if err != nil {
 				return err
@@ -551,7 +560,13 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	return msgBlock, nil
 }
 
-func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+func (r *InboxReader) GetSequencerMessageBytes(seqNum uint64) containers.PromiseInterface[[]byte] {
+	return stopwaiter.LaunchPromiseThread[[]byte](&r.StopWaiterSafe, func(ctx context.Context) ([]byte, error) {
+		return r.getSequencerMessageBytes(ctx, seqNum)
+	})
+}
+
+func (r *InboxReader) getSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
 	metadata, err := r.tracker.GetBatchMetadata(seqNum)
 	if err != nil {
 		return nil, err

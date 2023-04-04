@@ -192,19 +192,6 @@ func NewBlockValidator(
 			ret.lastValidGS = validated.GlobalState
 		}
 	}
-	// genesis block is impossible to validate unless genesis state is empty
-	if ret.lastValidGS.Batch == 0 {
-		genesis, err := streamer.ResultAtCount(1)
-		if err != nil {
-			return nil, err
-		}
-		ret.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
 	return ret, nil
@@ -432,7 +419,7 @@ func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, 
 	if err != nil {
 		return false, nil, 0, err
 	}
-	batch, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	batch, err := v.inboxReader.GetSequencerMessageBytes(batchNum).Await(ctx)
 	if err != nil {
 		return false, nil, 0, err
 	}
@@ -536,7 +523,7 @@ func (v *BlockValidator) sendNextRecordPrepare() error {
 		return nil
 	}
 	nextPromise := stopwaiter.LaunchPromiseThread[arbutil.MessageIndex](&v.StopWaiterSafe, func(ctx context.Context) (arbutil.MessageIndex, error) {
-		err := v.recorder.PrepareForRecord(ctx, v.prepared, nextPrepared-1)
+		_, err := v.recorder.PrepareForRecord(v.prepared, nextPrepared-1).Await(ctx)
 		if err != nil {
 			return 0, err
 		}
@@ -898,6 +885,21 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
+	// genesis block is impossible to validate unless genesis state is empty
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	if v.lastValidGS.Batch == 0 {
+		genesis, err := v.streamer.ResultAtCount(1)
+		if err != nil {
+			return err
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
+	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	return nil
 }

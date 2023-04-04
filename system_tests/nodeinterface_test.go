@@ -319,7 +319,7 @@ func TestFindBatch(t *testing.T) {
 		if expBatchNum != gotBatchNum {
 			Fail(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
 		}
-		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum)
+		batchL1Block, err := consensus.InboxTracker.GetBatchL1Block(gotBatchNum).Await(ctx)
 		Require(t, err)
 		blockHeader, err := l2Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
 		Require(t, err)

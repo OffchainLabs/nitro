@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -293,30 +294,32 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	}
 }
 
-func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
-	headerchan, unsubscribe := s.Subscribe(true)
-	defer unsubscribe()
-	ctx, cancel := context.WithTimeout(ctxIn, s.config().TxTimeout)
-	defer cancel()
-	txHash := tx.Hash()
-	for {
-		receipt, err := s.client.TransactionReceipt(ctx, txHash)
-		if err == nil && receipt.BlockNumber.IsUint64() {
-			receiptBlockNr := receipt.BlockNumber.Uint64()
-			callBlockNr := s.LastPendingCallBlockNr()
-			if callBlockNr > receiptBlockNr {
-				return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
+func (s *HeaderReader) WaitForTxApproval(tx *types.Transaction) containers.PromiseInterface[*types.Receipt] {
+	return stopwaiter.LaunchPromiseThread[*types.Receipt](&s.StopWaiterSafe, func(ctxIn context.Context) (*types.Receipt, error) {
+		headerchan, unsubscribe := s.Subscribe(true)
+		defer unsubscribe()
+		ctx, cancel := context.WithTimeout(ctxIn, s.config().TxTimeout)
+		defer cancel()
+		txHash := tx.Hash()
+		for {
+			receipt, err := s.client.TransactionReceipt(ctx, txHash)
+			if err == nil && receipt.BlockNumber.IsUint64() {
+				receiptBlockNr := receipt.BlockNumber.Uint64()
+				callBlockNr := s.LastPendingCallBlockNr()
+				if callBlockNr > receiptBlockNr {
+					return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
+				}
+			}
+			select {
+			case _, ok := <-headerchan:
+				if !ok {
+					return nil, fmt.Errorf("waiting for %v: channel closed", txHash)
+				}
+			case <-ctx.Done():
+				return nil, ctx.Err()
 			}
 		}
-		select {
-		case _, ok := <-headerchan:
-			if !ok {
-				return nil, fmt.Errorf("waiting for %v: channel closed", txHash)
-			}
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
+	})
 }
 
 func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {

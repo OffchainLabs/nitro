@@ -1,13 +1,13 @@
 package execution
 
 import (
-	"context"
 	"errors"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -28,32 +28,28 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
-	HeadMessageNumber() (arbutil.MessageIndex, error)
-	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
-	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
+	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
+	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
+	HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex]
+	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 }
 
 // needed for validators / stakers
 type ExecutionRecorder interface {
-	RecordBlockCreation(
-		ctx context.Context,
-		pos arbutil.MessageIndex,
-		msg *arbostypes.MessageWithMetadata,
-	) (*RecordResult, error)
+	RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*RecordResult]
 	MarkValid(pos arbutil.MessageIndex, resultHash common.Hash)
-	PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error
+	PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}]
 }
 
 // needed for sequencer
 type ExecutionSequencer interface {
 	ExecutionClient
-	Pause()
-	Activate()
-	ForwardTo(url string) error
-	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
-	NextDelayedMessageNumber() (uint64, error)
+	Pause() containers.PromiseInterface[struct{}]
+	Activate() containers.PromiseInterface[struct{}]
+	ForwardTo(url string) containers.PromiseInterface[struct{}]
+	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}]
+	NextDelayedMessageNumber() containers.PromiseInterface[uint64]
 }
 
 type FullExecutionClient interface {
@@ -61,29 +57,29 @@ type FullExecutionClient interface {
 	ExecutionRecorder
 	ExecutionSequencer
 
-	Maintenance() error
+	Maintenance() containers.PromiseInterface[struct{}]
 }
 
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error)
-	FindL1BatchForMessage(message arbutil.MessageIndex) (uint64, error)
-	GetBatchL1Block(seqNum uint64) (uint64, error)
+	FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte]
+	FindL1BatchForMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	GetBatchL1Block(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {
-	SyncProgressMap() map[string]interface{}
-	SyncTargetMessageCount() arbutil.MessageIndex
+	SyncProgressMap() containers.PromiseInterface[map[string]interface{}]
+	SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
 
 	// TODO: switch from pulling to pushing safe/finalized
-	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
-	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetSafeMsgCount() containers.PromiseInterface[arbutil.MessageIndex]
+	GetFinalizedMsgCount() containers.PromiseInterface[arbutil.MessageIndex]
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
-	ExpectChosenSequencer() error
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
+	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 
 type FullConsensusClient interface {

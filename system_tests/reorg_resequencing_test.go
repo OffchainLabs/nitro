@@ -53,7 +53,7 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	_, err = execNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = execNode.ExecEngine.HeadMessageNumberSync(t).Await(ctx)
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
@@ -78,7 +78,7 @@ func TestReorgResequencing(t *testing.T) {
 	}})
 	Require(t, err)
 
-	_, err = execNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = execNode.ExecEngine.HeadMessageNumberSync(t).Await(ctx)
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
@@ -87,7 +87,7 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	_, err = execNode.ExecEngine.HeadMessageNumberSync(t)
+	_, err = execNode.ExecEngine.HeadMessageNumberSync(t).Await(ctx)
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")
