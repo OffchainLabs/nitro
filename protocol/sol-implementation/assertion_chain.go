@@ -291,31 +291,6 @@ func (ac *AssertionChain) Reject(ctx context.Context, staker common.Address) err
 	}
 }
 
-func handleCreateSuccessionChallengeError(err error, assertionId uint64) error {
-	if err == nil {
-		return nil
-	}
-	errS := err.Error()
-	switch {
-	case strings.Contains(errS, "Assertion does not exist"):
-		return errors.Wrapf(ErrNotFound, "assertion id %d", assertionId)
-	case strings.Contains(errS, "Assertion already rejected"):
-		return errors.Wrapf(ErrRejectedAssertion, "assertion id %d", assertionId)
-	case strings.Contains(errS, "Challenge already created"):
-		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
-	case strings.Contains(errS, "ALREADY_CHALLENGED"):
-		return errors.Wrapf(ErrAlreadyExists, "assertion id %d", assertionId)
-	case strings.Contains(errS, "At least two children not created"):
-		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
-	case strings.Contains(errS, "NO_SECOND_CHILD"):
-		return errors.Wrapf(ErrInvalidChildren, "assertion id %d", assertionId)
-	case strings.Contains(errS, "too late"):
-		return errors.Wrapf(ErrTooLate, "assertion id %d", assertionId)
-	default:
-		return err
-	}
-}
-
 func handleCreateAssertionError(err error, height uint64, blockHash common.Hash) error {
 	if err == nil {
 		return nil

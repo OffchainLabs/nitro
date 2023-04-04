@@ -222,6 +222,8 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 		NumBlocks:     height,
 		DivergeHeight: 0,
 	})
+	require.NoError(t, err)
+
 	chain1 := createdData.Chains[0]
 	challengeManager, err := chain1.SpecChallengeManager(ctx)
 	require.NoError(t, err)
