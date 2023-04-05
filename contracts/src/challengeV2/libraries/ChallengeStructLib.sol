@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import "../DataEntities.sol";
+import "../DataEntitiesOld.sol";
 
 // CHRIS: TODO: rename later when we dont have conflicting names
 library ChallengeStructLib {

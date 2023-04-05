@@ -18,7 +18,7 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 import "../challengeV2/ChallengeManagerImpl.sol";
-import "../challengeV2/DataEntities.sol";
+import "../challengeV2/DataEntitiesOld.sol";
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
 abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChain {

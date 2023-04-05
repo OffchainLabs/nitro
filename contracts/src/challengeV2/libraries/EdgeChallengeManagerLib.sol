@@ -17,11 +17,15 @@ struct EdgeStore {
     mapping(bytes32 => bytes32) firstRivals;
 }
 
-// CHRIS: TODO: move this and the edge store to data entities?
+/// @notice Input data to a one step proof
 struct OneStepData {
+    /// @notice The one step proof execution context
     ExecutionContext execCtx;
+    /// @notice The machine counter of the state that's being executed from
     uint256 machineStep;
+    /// @notice The hash of the state that's being executed from
     bytes32 beforeHash;
+    /// @notice Proof data to accompany the execution context
     bytes proof;
 }
 
@@ -49,7 +53,7 @@ library EdgeChallengeManagerLib {
     /// @param edge     The edge to add
     function add(EdgeStore storage store, ChallengeEdge memory edge) internal {
         // add the edge if it doesnt exist already
-        bytes32 eId = edge.id();
+        bytes32 eId = edge.idMem();
         require(!store.edges[eId].exists(), "Edge already exists");
         store.edges[eId] = edge;
 
@@ -195,8 +199,8 @@ library EdgeChallengeManagerLib {
         ChallengeEdge memory upperChild = ChallengeEdgeLib.newChildEdge(
             ce.originId, bisectionHistoryRoot, middleHeight, ce.endHistoryRoot, ce.endHeight, ce.eType
         );
-        bytes32 lowerChildId = lowerChild.id();
-        bytes32 upperChildId = upperChild.id();
+        bytes32 lowerChildId = lowerChild.idMem();
+        bytes32 upperChildId = upperChild.idMem();
 
         // it's possible that the store already has the lower child if it was created by a rival
         // (aka a merge move)

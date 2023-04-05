@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import "../DataEntities.sol";
+import "../DataEntitiesOld.sol";
 
 // CHRIS: TODO: check that all the lib functions have the correct visibility
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import "./DataEntities.sol";
+import "./DataEntitiesOld.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "./libraries/ChallengeVertexLib.sol";
 import "./libraries/PsVerticesLib.sol";

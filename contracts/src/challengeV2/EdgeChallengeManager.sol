@@ -2,12 +2,12 @@
 pragma solidity ^0.8.17;
 
 import "./libraries/UintUtilsLib.sol";
-import {IAssertionChain} from "./DataEntities.sol";
+import "./DataEntities.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
 
 interface IEdgeChallengeManager {
-    // // Checks if an edge by ID exists.
-    // function edgeExists(bytes32 eId) external view returns (bool);
+    // Checks if an edge by ID exists.
+    function edgeExists(bytes32 eId) external view returns (bool);
     // Gets an edge by ID.
     function getEdge(bytes32 eId) external view returns (ChallengeEdge memory);
     // Gets the current time unrivaled by edge ID. TODO: Needs more thinking.
@@ -132,6 +132,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         // CHRIS: TODO: also prove that the the start root is a prefix of the end root
         // CHRIS: TODO: we had inclusion proofs before?
 
+        // CHRIS: TODO: currently the claim id is not part of the edge id hash, this means that two edges with the same id cannot have a different claim id
+        // CHRIS: TODO: this method needs to enforce that this is not possible by tying the end state to the claim id somehow, to ensure that it's not logically
+        // CHRIS: TODO: possible to have the same endHistoryRoot but a different claim id. This needs to be done for all edge types
+
         ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
             originId,
             args.startHistoryRoot,
@@ -145,9 +149,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
         store.add(ce);
 
-        emit LevelZeroEdgeAdded(ce.id());
+        emit LevelZeroEdgeAdded(ce.idMem());
 
-        return ce.id();
+        return ce.idMem();
     }
 
     function confirmEdgeByChildren(bytes32 edgeId) public {
@@ -209,6 +213,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         uint256 endHeight
     ) public pure returns (bytes32) {
         return ChallengeEdgeLib.mutualIdComponent(edgeType, originId, startHeight, startHistoryRoot, endHeight);
+    }
+
+    function edgeExists(bytes32 edgeId) public view returns (bool) {
+        return store.edges[edgeId].exists();
     }
 
     function getEdge(bytes32 edgeId) public view returns (ChallengeEdge memory) {
