@@ -2,7 +2,6 @@ package execution
 
 import (
 	"errors"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -31,7 +30,6 @@ type ExecutionClient interface {
 	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
 	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
-	HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex]
 	ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*MessageResult]
 }
 

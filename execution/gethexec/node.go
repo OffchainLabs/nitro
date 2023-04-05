@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -315,9 +314,6 @@ func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostyp
 }
 func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return n.ExecEngine.HeadMessageNumber()
-}
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.ExecEngine.HeadMessageNumberSync(t)
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
 	return n.ExecEngine.NextDelayedMessageNumber()
