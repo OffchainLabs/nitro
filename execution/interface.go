@@ -10,6 +10,8 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
+const RPCNamespace = "nitroexec"
+
 type MessageResult struct {
 	BlockHash common.Hash
 	SendRoot  common.Hash
