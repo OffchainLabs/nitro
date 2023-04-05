@@ -341,7 +341,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
 	@touch $@
 
-.make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+.make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
 	./build-brotli.sh -f -d
 	@touch $@
 
