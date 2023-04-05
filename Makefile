@@ -233,7 +233,7 @@ arbitrator/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) arbitrator/w
 arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings64.c
 	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
 
-$(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) \
+$(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/soft-float/*/*) .make/wasm-lib \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a
@@ -339,6 +339,10 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	test -f target/lib-wasm/libbrotlicommon-static.a || ./build-brotli.sh -w -d
 	test -f target/lib-wasm/libbrotlienc-static.a || ./build-brotli.sh -w -d
 	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
+	@touch $@
+
+.make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	./build-brotli.sh -f -d
 	@touch $@
 
 .make:
