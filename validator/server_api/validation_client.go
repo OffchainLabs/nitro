@@ -105,7 +105,7 @@ func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
 }
 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](&c.StopWaiterSafe, func(ctx context.Context) (validator.ExecutionRun, error) {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
 		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
 		if err != nil {
@@ -127,7 +127,7 @@ type ExecutionClientRun struct {
 }
 
 func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return stopwaiter.LaunchPromiseThread[common.Hash](&c.StopWaiterSafe, func(ctx context.Context) (common.Hash, error) {
+	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
 		err := c.client.CallContext(c.GetContext(), &res, Namespace+"_latestWasmModuleRoot")
 		if err != nil {
@@ -139,7 +139,7 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 
 func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	jsonInput := ValidationInputToJson(input)
-	return stopwaiter.LaunchPromiseThread[struct{}](&c.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
+	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
 		return struct{}{}, err
 	})
@@ -159,7 +159,7 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 }
 
 func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
-	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](&r.StopWaiterSafe, func(ctx context.Context) (*validator.MachineStepResult, error) {
+	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](r, func(ctx context.Context) (*validator.MachineStepResult, error) {
 		var resJson MachineStepResultJson
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
@@ -174,7 +174,7 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 }
 
 func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
-	return stopwaiter.LaunchPromiseThread[[]byte](&r.StopWaiterSafe, func(ctx context.Context) ([]byte, error) {
+	return stopwaiter.LaunchPromiseThread[[]byte](r, func(ctx context.Context) ([]byte, error) {
 		var resString string
 		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
 		if err != nil {

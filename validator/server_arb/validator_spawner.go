@@ -99,7 +99,7 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 }
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return stopwaiter.LaunchPromiseThread[common.Hash](&s.StopWaiterSafe, func(ctx context.Context) (common.Hash, error) {
+	return stopwaiter.LaunchPromiseThread[common.Hash](s, func(ctx context.Context) (common.Hash, error) {
 		return s.locator.LatestWasmModuleRoot(), nil
 	})
 }
@@ -323,7 +323,7 @@ func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.Va
 }
 
 func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread[struct{}](&v.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
+	return stopwaiter.LaunchPromiseThread[struct{}](v, func(ctx context.Context) (struct{}, error) {
 		err := v.writeToFile(ctx, input, expOut, moduleRoot)
 		return struct{}{}, err
 	})
@@ -344,7 +344,7 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 		return machine, nil
 	}
 	currentExecConfig := v.config().Execution
-	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](&v.StopWaiterSafe, func(ctx context.Context) (validator.ExecutionRun, error) {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {
 		return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
 	})
 }
