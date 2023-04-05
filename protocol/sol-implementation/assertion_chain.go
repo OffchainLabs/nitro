@@ -27,14 +27,13 @@ import (
 var (
 	ErrUnconfirmedParent = errors.New("parent assertion is not confirmed")
 	ErrNoUnresolved      = errors.New("no assertion to resolve")
-	ErrRejectedAssertion = errors.New("assertion already rejected")
-	ErrInvalidChildren   = errors.New("invalid children")
-	ErrNotFound          = errors.New("item not found on-chain")
-	ErrAlreadyExists     = errors.New("item already exists on-chain")
-	ErrPrevDoesNotExist  = errors.New("assertion predecessor does not exist")
-	ErrTooLate           = errors.New("too late to create assertion sibling")
-	ErrTooSoon           = errors.New("too soon to confirm assertion")
-	ErrInvalidHeight     = errors.New("invalid assertion height")
+
+	ErrNotFound         = errors.New("item not found on-chain")
+	ErrAlreadyExists    = errors.New("item already exists on-chain")
+	ErrPrevDoesNotExist = errors.New("assertion predecessor does not exist")
+	ErrTooLate          = errors.New("too late to create assertion sibling")
+	ErrTooSoon          = errors.New("too soon to confirm assertion")
+	ErrInvalidHeight    = errors.New("invalid assertion height")
 )
 
 // ChainBackend to interact with the underlying blockchain.
@@ -217,7 +216,7 @@ func (ac *AssertionChain) CreateSuccessionChallenge(_ context.Context, _ protoco
 	return nil, errors.New("unimplemented")
 }
 
-// CreateSuccessionChallenge creates a succession challenge
+// SpecChallengeManager creates a new spec challenge manager
 func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
 	return NewSpecChallengeManager(
 		ctx,

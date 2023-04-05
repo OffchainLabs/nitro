@@ -4,13 +4,13 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"time"
 )
 
 func TestAssertionStateHash(t *testing.T) {

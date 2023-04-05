@@ -2,7 +2,6 @@ package util
 
 import (
 	"encoding/binary"
-
 	"errors"
 
 	inclusionproofs "github.com/OffchainLabs/challenge-protocol-v2/util/inclusion-proofs"

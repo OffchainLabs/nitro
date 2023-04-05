@@ -2,12 +2,10 @@ package prefixproofs_test
 
 import (
 	"context"
-	"testing"
-
 	"crypto/ecdsa"
-	"math/big"
-
 	"fmt"
+	"math/big"
+	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"

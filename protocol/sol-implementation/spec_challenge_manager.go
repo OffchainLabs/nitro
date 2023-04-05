@@ -218,7 +218,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 	}
 }
 
-// ChallengeManager --
+// SpecChallengeManager is a wrapper around the challenge manager contract.
 type SpecChallengeManager struct {
 	addr           common.Address
 	backend        ChainBackend

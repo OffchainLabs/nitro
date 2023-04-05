@@ -196,9 +196,6 @@ func AssertLogsContain(tb testing.TB, hook *test.Hook, want string, msg ...inter
 }
 
 // AssertLogsDoNotContain is the inverse check of LogsContain.
-func AssertLogsDoNotContain(tb testing.TB, hook *test.Hook, want string, msg ...interface{}) {
-	checkLogs(tb, hook, want, false, msg...)
-}
 
 // LogsContain checks whether a given substring is a part of logs. If flag=false, inverse is checked.
 func checkLogs(tb testing.TB, hook *test.Hook, want string, flag bool, msg ...interface{}) {

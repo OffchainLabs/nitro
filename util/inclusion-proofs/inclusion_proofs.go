@@ -9,16 +9,12 @@ import (
 )
 
 var (
-	ErrInvalidLevel   = errors.New("invalid level")
-	ErrInvalidHeight  = errors.New("invalid height")
-	ErrMisaligned     = errors.New("misaligned")
-	ErrIncorrectProof = errors.New("incorrect proof")
-	ErrProofTooLong   = errors.New("merkle proof too long")
-	ErrInvalidTree    = errors.New("invalid merkle tree")
-	ErrInvalidLeaves  = errors.New("invalid number of leaves for merkle tree")
+	ErrProofTooLong  = errors.New("merkle proof too long")
+	ErrInvalidTree   = errors.New("invalid merkle tree")
+	ErrInvalidLeaves = errors.New("invalid number of leaves for merkle tree")
 )
 
-// Calculates a Merkle root from a Merkle proof, index, and leaf.
+// CalculateRootFromProof calculates a Merkle root from a Merkle proof, index, and leaf.
 func CalculateRootFromProof(proof []common.Hash, index uint64, leaf common.Hash) (common.Hash, error) {
 	if len(proof) > 256 {
 		return common.Hash{}, ErrProofTooLong
