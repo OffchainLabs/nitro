@@ -67,7 +67,6 @@ type AssertionChain struct {
 	backend      ChainBackend
 	rollup       *rollupgen.RollupCore
 	userLogic    *rollupgen.RollupUserLogic
-	callOpts     *bind.CallOpts
 	txOpts       *bind.TransactOpts
 	stakerAddr   common.Address
 	headerReader *headerreader.HeaderReader
@@ -81,7 +80,6 @@ func NewAssertionChain(
 	ctx context.Context,
 	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
-	callOpts *bind.CallOpts,
 	stakerAddr common.Address,
 	backend ChainBackend,
 	headerReader *headerreader.HeaderReader,
@@ -89,7 +87,6 @@ func NewAssertionChain(
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
 		backend:                  backend,
-		callOpts:                 callOpts,
 		txOpts:                   txOpts,
 		stakerAddr:               stakerAddr,
 		headerReader:             headerReader,
@@ -113,12 +110,12 @@ func NewAssertionChain(
 }
 
 func (ac *AssertionChain) NumAssertions(ctx context.Context) (uint64, error) {
-	return ac.rollup.NumAssertions(ac.callOpts)
+	return ac.rollup.NumAssertions(&bind.CallOpts{Context: ctx})
 }
 
 // AssertionBySequenceNum --
 func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Assertion, error) {
-	res, err := ac.userLogic.GetAssertion(ac.callOpts, uint64(seqNum))
+	res, err := ac.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, uint64(seqNum))
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +137,7 @@ func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum pro
 }
 
 func (ac *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
-	res, err := ac.rollup.LatestConfirmed(ac.callOpts)
+	res, err := ac.rollup.LatestConfirmed(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +165,7 @@ func (ac *AssertionChain) CreateAssertion(
 	if prevHeight >= height {
 		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
 	}
-	stake, err := ac.userLogic.CurrentRequiredStake(ac.callOpts)
+	stake, err := ac.userLogic.CurrentRequiredStake(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get current required stake")
 	}
@@ -201,11 +198,11 @@ func (ac *AssertionChain) CreateAssertion(
 }
 
 func (ac *AssertionChain) GetAssertionId(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.AssertionHash, error) {
-	return ac.userLogic.GetAssertionId(ac.callOpts, uint64(seqNum))
+	return ac.userLogic.GetAssertionId(&bind.CallOpts{Context: ctx}, uint64(seqNum))
 }
 
 func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.AssertionSequenceNumber, error) {
-	res, err := ac.userLogic.GetAssertionNum(ac.callOpts, assertionHash)
+	res, err := ac.userLogic.GetAssertionNum(&bind.CallOpts{Context: ctx}, assertionHash)
 	if err != nil {
 		return 0, err
 	}
@@ -228,7 +225,6 @@ func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Sp
 		ac,
 		ac.backend,
 		ac.headerReader,
-		ac.callOpts,
 		ac.txOpts,
 	)
 }

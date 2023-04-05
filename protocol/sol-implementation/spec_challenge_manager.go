@@ -38,7 +38,7 @@ func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 }
 
 func (e *SpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
-	timer, err := e.manager.caller.GetCurrentPsTimer(e.manager.callOpts, e.id)
+	timer, err := e.manager.caller.GetCurrentPsTimer(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
 		return 0, err
 	}
@@ -46,11 +46,11 @@ func (e *SpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
 }
 
 func (e *SpecEdge) IsPresumptive(ctx context.Context) (bool, error) {
-	return e.manager.caller.IsPresumptive(e.manager.callOpts, e.id)
+	return e.manager.caller.IsPresumptive(&bind.CallOpts{Context: ctx}, e.id)
 }
 
 func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
-	edge, err := e.manager.caller.GetEdge(e.manager.callOpts, e.id)
+	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
 		return 0, err
 	}
@@ -58,7 +58,7 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 }
 
 func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
-	ok, err := e.manager.caller.IsAtOneStepFork(e.manager.callOpts, e.id)
+	ok, err := e.manager.caller.IsAtOneStepFork(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
 		errS := err.Error()
 		switch {
@@ -152,9 +152,9 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 	return err
 }
 
-func (e *SpecEdge) MutualId() (protocol.MutualId, error) {
+func (e *SpecEdge) MutualId(ctx context.Context) (protocol.MutualId, error) {
 	return e.manager.caller.CalculateMutualId(
-		e.manager.callOpts,
+		&bind.CallOpts{Context: ctx},
 		e.inner.EType,
 		e.inner.OriginId,
 		e.inner.StartHeight,
@@ -170,7 +170,7 @@ func (e *SpecEdge) MutualId() (protocol.MutualId, error) {
 func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
 	switch e.GetType() {
 	case protocol.BigStepChallengeEdge:
-		rivalId, err := e.manager.caller.FirstRival(e.manager.callOpts, e.inner.OriginId)
+		rivalId, err := e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, e.inner.OriginId)
 		if err != nil {
 			return 0, err
 		}
@@ -184,7 +184,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
 		return startHeight, nil
 	case protocol.SmallStepChallengeEdge:
-		rivalId, err := e.manager.caller.FirstRival(e.manager.callOpts, e.inner.OriginId)
+		rivalId, err := e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, e.inner.OriginId)
 		if err != nil {
 			return 0, err
 		}
@@ -199,7 +199,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		if !ok {
 			return 0, errors.New("not *SpecEdge")
 		}
-		rivalId, err = e.manager.caller.FirstRival(e.manager.callOpts, bigStepEdge.inner.OriginId)
+		rivalId, err = e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, bigStepEdge.inner.OriginId)
 		if err != nil {
 			return 0, err
 		}
@@ -224,7 +224,6 @@ type SpecChallengeManager struct {
 	backend        ChainBackend
 	assertionChain *AssertionChain
 	reader         *headerreader.HeaderReader
-	callOpts       *bind.CallOpts
 	txOpts         *bind.TransactOpts
 	caller         *challengeV2gen.EdgeChallengeManagerCaller
 	writer         *challengeV2gen.EdgeChallengeManagerTransactor
@@ -239,7 +238,6 @@ func NewSpecChallengeManager(
 	assertionChain *AssertionChain,
 	backend ChainBackend,
 	reader *headerreader.HeaderReader,
-	callOpts *bind.CallOpts,
 	txOpts *bind.TransactOpts,
 ) (protocol.SpecChallengeManager, error) {
 	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(addr, backend)
@@ -251,7 +249,6 @@ func NewSpecChallengeManager(
 		assertionChain: assertionChain,
 		backend:        backend,
 		reader:         reader,
-		callOpts:       callOpts,
 		txOpts:         txOpts,
 		caller:         &managerBinding.EdgeChallengeManagerCaller,
 		writer:         &managerBinding.EdgeChallengeManagerTransactor,
@@ -267,7 +264,7 @@ func (cm *SpecChallengeManager) Address() common.Address {
 func (cm *SpecChallengeManager) ChallengePeriodSeconds(
 	ctx context.Context,
 ) (time.Duration, error) {
-	res, err := cm.caller.ChallengePeriodSec(cm.callOpts)
+	res, err := cm.caller.ChallengePeriodSec(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return time.Second, err
 	}
@@ -279,7 +276,7 @@ func (cm *SpecChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 ) (util.Option[protocol.SpecEdge], error) {
-	edge, err := cm.caller.GetEdge(cm.callOpts, edgeId)
+	edge, err := cm.caller.GetEdge(&bind.CallOpts{Context: ctx}, edgeId)
 	if err != nil {
 		return util.None[protocol.SpecEdge](), err
 	}
@@ -306,7 +303,7 @@ func (cm *SpecChallengeManager) CalculateEdgeId(
 	endHistoryRoot common.Hash,
 ) (protocol.EdgeId, error) {
 	return cm.caller.CalculateEdgeId(
-		cm.callOpts,
+		&bind.CallOpts{Context: ctx},
 		uint8(edgeType),
 		originId,
 		big.NewInt(int64(startHeight)),
@@ -418,7 +415,7 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	if !ok {
 		return nil, errors.New("not a *SpecEdge")
 	}
-	mutualId, err := challenged.MutualId()
+	mutualId, err := challenged.MutualId(ctx)
 	if err != nil {
 		return nil, err
 	}

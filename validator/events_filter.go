@@ -79,7 +79,7 @@ func (v *Validator) pollForAssertions(ctx context.Context) {
 				v.assertionsLock.Lock()
 				v.assertions[assertion.SeqNum()] = assertion
 				v.assertionsLock.Unlock()
-				selfStakedAssertion, err := v.rollup.AssertionHasStaker(&bind.CallOpts{}, i, v.address)
+				selfStakedAssertion, err := v.rollup.AssertionHasStaker(&bind.CallOpts{Context: ctx}, i, v.address)
 				if err != nil {
 					log.Error(err)
 					continue

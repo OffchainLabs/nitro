@@ -6,6 +6,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
@@ -49,7 +50,7 @@ func (a *Assertion) StateHash() (common.Hash, error) {
 }
 
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
-	assertionNode, err := a.chain.userLogic.GetAssertion(a.chain.callOpts, a.id)
+	assertionNode, err := a.chain.userLogic.GetAssertion(&bind.CallOpts{}, a.id)
 	if err != nil {
 		return nil, err
 	}
