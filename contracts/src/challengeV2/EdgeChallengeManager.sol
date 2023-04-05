@@ -132,14 +132,17 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
             // challenge id is the assertion which is the root of challenge
             originId = assertionChain.getPredecessorId(args.claimId);
+            // CHRIS: TODO: add a check that there is a fork in the assertion chain
         } else if (args.edgeType == EdgeType.BigStep) {
             require(store.get(args.claimId).eType == EdgeType.Block, "Claim challenge type is not Block");
 
             originId = store.get(args.claimId).mutualId();
+            require(store.hasRival(args.claimId), "Claim does not have rival");
         } else if (args.edgeType == EdgeType.SmallStep) {
             require(store.get(args.claimId).eType == EdgeType.BigStep, "Claim challenge type is not BigStep");
 
             originId = store.get(args.claimId).mutualId();
+            require(store.hasRival(args.claimId), "Claim does not have rival");
         } else {
             revert("Unexpected challenge type");
         }
