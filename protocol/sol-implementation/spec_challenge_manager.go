@@ -17,13 +17,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-type SpecEdge struct {
-	id         [32]byte
-	manager    *SpecChallengeManager
-	miniStaker util.Option[common.Address]
-	inner      challengeV2gen.ChallengeEdge
-}
-
 func (e *SpecEdge) Id() protocol.EdgeId {
 	return e.id
 }
@@ -70,6 +63,8 @@ func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
 		errS := err.Error()
 		switch {
 		case strings.Contains(errS, "not length 1"):
+			return false, nil
+		case strings.Contains(errS, "is presumptive"):
 			return false, nil
 		default:
 			return false, err
