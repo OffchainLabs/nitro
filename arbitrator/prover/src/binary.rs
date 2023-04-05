@@ -3,8 +3,9 @@
 
 use crate::{
     programs::{
-        config::StylusConfig, counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter,
-        start::StartMover, FuncMiddleware, Middleware, StylusGlobals,
+        config::StylusConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware,
+        StylusGlobals,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -512,11 +513,13 @@ impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
     pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
         let meter = Meter::new(config.costs, config.start_gas);
+        let dygas = DynamicMeter::new(&config.pricing);
         let depth = DepthChecker::new(config.depth);
         let bound = HeapBound::new(config.heap_bound)?;
         let start = StartMover::default();
 
         meter.update_module(self)?;
+        dygas.update_module(self)?;
         depth.update_module(self)?;
         bound.update_module(self)?;
         start.update_module(self)?;
@@ -551,6 +554,7 @@ impl<'a> WasmBinary<'a> {
             // add the instrumentation in the order of application
             // note: this must be consistent with native execution
             apply!(meter);
+            apply!(dygas);
             apply!(depth);
             apply!(bound);
             apply!(start);
@@ -562,7 +566,7 @@ impl<'a> WasmBinary<'a> {
             code.expr = build;
         }
 
-        let (gas_left, gas_status) = meter.globals();
+        let [gas_left, gas_status] = meter.globals();
         let depth_left = depth.globals();
         Ok(StylusGlobals {
             gas_left,

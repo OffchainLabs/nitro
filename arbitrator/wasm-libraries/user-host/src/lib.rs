@@ -31,9 +31,15 @@ impl Program {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__push_program(len: usize, price: u64, hostio: u64) -> *const u8 {
+pub unsafe extern "C" fn user_host__push_program(
+    len: usize,
+    price: u64,
+    hostio: u64,
+    memory_fill: u64,
+    memory_copy: u64,
+) -> *const u8 {
     let args = vec![0; len];
-    let pricing = PricingParams::new(price, hostio);
+    let pricing = PricingParams::new(price, hostio, memory_fill, memory_copy);
     let program = Program::new(args, pricing);
     let data = program.args.as_ptr();
     PROGRAMS.push(program);

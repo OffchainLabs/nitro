@@ -4,6 +4,7 @@ members = [
         "prover",
         "stylus",
         "jit",
+        "tools/module_roots"
 ]
 exclude = [
         "stylus/tests/"

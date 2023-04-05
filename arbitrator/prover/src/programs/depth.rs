@@ -168,7 +168,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
             bail!("frame too large: {} > {}-word limit", size.red(), limit);
         }
 
-        out.extend(vec![
+        out.extend([
             // if space <= size => panic with depth = 0
             GlobalGet { global_index },
             I32Const { value: size as i32 },
@@ -188,7 +188,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
         ]);
 
         let reclaim = |out: &mut O| {
-            out.extend(vec![
+            out.extend([
                 // space += size
                 GlobalGet { global_index },
                 I32Const { value: size as i32 },
@@ -208,7 +208,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
             if exit {
                 reclaim(out);
             }
-            out.extend(vec![op]);
+            out.extend([op]);
         }
 
         self.done = true;
