@@ -94,8 +94,17 @@ pub struct EvmAPI {
 
 #[repr(C)]
 pub struct EvmData {
+    pub block_basefee: Bytes32,
+    pub block_chainid: Bytes32,
+    pub block_coinbase: Bytes20,
+    pub block_difficulty: Bytes32,
+    pub block_gas_limit: u64,
+    pub block_number: Bytes32,
+    pub block_timestamp: Bytes32,
+    pub msg_sender: Bytes20,
+    pub msg_value: Bytes32,
+    pub gas_price: Bytes32,
     pub origin: Bytes20,
-    pub gas_price: u64,
 }
 
 impl WasmEnv {
@@ -259,7 +268,7 @@ impl<'a> HostioInfo<'a> {
         Ok(())
     }
 
-    pub fn _write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
+    pub fn write_bytes32(&self, ptr: u32, src: Bytes32) -> eyre::Result<()> {
         self.write_slice(ptr, &src.0)?;
         Ok(())
     }

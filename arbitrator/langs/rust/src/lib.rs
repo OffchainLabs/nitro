@@ -6,6 +6,8 @@ pub use util::{Bytes20, Bytes32};
 pub mod contract;
 pub mod debug;
 pub mod evm;
+pub mod block;
+pub mod msg;
 pub mod tx;
 mod util;
 

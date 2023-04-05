@@ -497,10 +497,29 @@ func TestProgramEvmData(t *testing.T) {
 	ensure(tx, err)
 
 	expectedLength := 0
-	expectedGasPrice := GetBaseFee(t, l2client, ctx).Uint64()
+	expectedBaseFee := big.NewInt(100000000)
+	expectedLength += 32
+	expectedChainid, err := l2client.ChainID(ctx)
+	ensure(tx, err)
+	expectedLength += 32
+	expectedCoinbase := common.HexToAddress("0xA4b000000000000000000073657175656e636572")
+	expectedLength += 20
+	expectedDifficulty := big.NewInt(1)
+	expectedLength += 32
+	expectedGasLimit := uint64(1125899906842624)
 	expectedLength += 8
-	expectedOrigin := testhelpers.RandomAddress()
-	expectedLength += len(expectedOrigin)
+	expectedBlockNumber := big.NewInt(6)
+	expectedLength += 32
+	expectedMinimumTimestamp := big.NewInt(1680662290)
+	expectedLength += 32
+	expectedSender := testhelpers.RandomAddress()
+	expectedLength += 20
+	expectedValue := big.NewInt(0)
+	expectedLength += 32
+	expectedGasPrice := big.NewInt(0)
+	expectedLength += 32
+	expectedOrigin := expectedSender
+	expectedLength += 20
 
 	opts := bind.CallOpts{
 		From: expectedOrigin,
@@ -511,11 +530,56 @@ func TestProgramEvmData(t *testing.T) {
 		Fail(t, "unexpected return length: ", expectedLength, len(result))
 	}
 	offset := 0
-	gasPrice := binary.BigEndian.Uint64(result[offset:8])
+	baseFee := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
+	chainid := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
+	coinbase := common.BytesToAddress(result[offset : offset+20])
+	offset += 20
+	difficulty := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
+	gasLimit := binary.BigEndian.Uint64(result[offset : offset+8])
 	offset += 8
+	blockNumber := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
+	timestamp := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
+	sender := common.BytesToAddress(result[offset : offset+20])
+	offset += 20
+	value := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
+	gasPrice := new(big.Int).SetBytes(result[offset : offset+32])
+	offset += 32
 	origin := common.BytesToAddress(result[offset : offset+20])
 
-	if gasPrice != expectedGasPrice {
+	if baseFee.Cmp(expectedBaseFee) != 0 {
+		Fail(t, "base fee mismatch", expectedBaseFee, baseFee)
+	}
+	if chainid.Cmp(expectedChainid) != 0 {
+		Fail(t, "chainid mismatch", expectedChainid, chainid)
+	}
+	if coinbase != expectedCoinbase {
+		Fail(t, "coinbase mismatch", expectedCoinbase, coinbase)
+	}
+	if difficulty.Cmp(expectedDifficulty) != 0 {
+		Fail(t, "difficulty mismatch", expectedDifficulty, difficulty)
+	}
+	if gasLimit != expectedGasLimit {
+		Fail(t, "gas limit mismatch", expectedGasLimit, gasLimit)
+	}
+	if blockNumber.Cmp(expectedBlockNumber) != 0 {
+		Fail(t, "block number mismatch", expectedBlockNumber, blockNumber)
+	}
+	if timestamp.Cmp(expectedMinimumTimestamp) < 0 {
+		Fail(t, "timestamp too old", expectedMinimumTimestamp, timestamp)
+	}
+	if sender != expectedSender {
+		Fail(t, "sender mismatch", expectedSender, sender)
+	}
+	if value.Cmp(expectedValue) != 0 {
+		Fail(t, "value mismatch", expectedValue, value)
+	}
+	if gasPrice.Cmp(expectedGasPrice) != 0 {
 		Fail(t, "gas price mismatch", expectedGasPrice, gasPrice)
 	}
 	if origin != expectedOrigin {

@@ -11,6 +11,36 @@ pub const LOG_DATA_GAS: u64 = 8;
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
 
+// vm.GasQuickStep (see eips.go)
+pub const BASEFEE_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see eips.go)
+pub const CHAINID_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const COINBASE_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const DIFFICULTY_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const GASLIMIT_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const NUMBER_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const TIMESTAMP_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const GASLEFT_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const CALLER_EVM_GAS: u64 = 2;
+
+// vm.GasQuickStep (see jump_table.go)
+pub const CALLVALUE_EVM_GAS: u64 = 2;
+
 // vm.GasQuickStep (see jump_table.go)
 pub const GASPRICE_EVM_GAS: u64 = 2;
 

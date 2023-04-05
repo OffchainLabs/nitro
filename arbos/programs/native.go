@@ -278,8 +278,17 @@ func callUserWasm(
 	}
 
 	evmData := C.EvmData{
-		origin:    addressToBytes20(evm.TxContext.Origin),
-		gas_price: u64(evm.TxContext.GasPrice.Uint64()),
+		block_basefee:    bigToBytes32(evm.Context.BaseFee),
+		block_chainid:    bigToBytes32(evm.ChainConfig().ChainID),
+		block_coinbase:   addressToBytes20(evm.Context.Coinbase),
+		block_difficulty: bigToBytes32(evm.Context.Difficulty),
+		block_gas_limit:  C.uint64_t(evm.Context.GasLimit),
+		block_number:     bigToBytes32(evm.Context.BlockNumber),
+		block_timestamp:  bigToBytes32(evm.Context.Time),
+		msg_sender:       addressToBytes20(msg.From()),
+		msg_value:        bigToBytes32(msg.Value()),
+		gas_price:        bigToBytes32(evm.TxContext.GasPrice),
+		origin:           addressToBytes20(evm.TxContext.Origin),
 	}
 
 	output := &rustVec{}
@@ -444,6 +453,10 @@ func hashToBytes32(hash common.Hash) bytes32 {
 		value.bytes[index] = u8(b)
 	}
 	return value
+}
+
+func bigToBytes32(big *big.Int) bytes32 {
+	return hashToBytes32(common.BigToHash(big))
 }
 
 func addressToBytes20(addr common.Address) bytes20 {
