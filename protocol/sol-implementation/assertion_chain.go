@@ -68,7 +68,6 @@ type AssertionChain struct {
 	rollup       *rollupgen.RollupCore
 	userLogic    *rollupgen.RollupUserLogic
 	txOpts       *bind.TransactOpts
-	stakerAddr   common.Address
 	headerReader *headerreader.HeaderReader
 	// TODO: Should be fetchable from the assertion chain contract itself.
 	edgeChallengeManagerAddr common.Address
@@ -80,7 +79,6 @@ func NewAssertionChain(
 	ctx context.Context,
 	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
-	stakerAddr common.Address,
 	backend ChainBackend,
 	headerReader *headerreader.HeaderReader,
 	edgeChallengeManagerAddr common.Address,
@@ -88,7 +86,6 @@ func NewAssertionChain(
 	chain := &AssertionChain{
 		backend:                  backend,
 		txOpts:                   txOpts,
-		stakerAddr:               stakerAddr,
 		headerReader:             headerReader,
 		edgeChallengeManagerAddr: edgeChallengeManagerAddr,
 	}
