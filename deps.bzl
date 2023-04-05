@@ -1222,13 +1222,6 @@ def go_dependencies():
     )
 
     go_repository(
-        name = "com_github_labstack_echo_v5",
-        importpath = "github.com/labstack/echo/v5",
-        sum = "h1:07/Vl+8iDqHkOFA59B2UvXfV/Wih+YHoEaLTWSxRiRE=",
-        version = "v5.0.0-20220717203827-74022662be4a",
-    )
-
-    go_repository(
         name = "com_github_libp2p_go_buffer_pool",
         importpath = "github.com/libp2p/go-buffer-pool",
         sum = "h1:oK4mSFcQz7cTQIfqbe4MIj9gLW+mnanjyFtc6cdF0Y8=",
@@ -1884,20 +1877,6 @@ def go_dependencies():
     )
 
     go_repository(
-        name = "com_github_valyala_bytebufferpool",
-        importpath = "github.com/valyala/bytebufferpool",
-        sum = "h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=",
-        version = "v1.0.0",
-    )
-
-    go_repository(
-        name = "com_github_valyala_fasttemplate",
-        importpath = "github.com/valyala/fasttemplate",
-        sum = "h1:TVEnxayobAdVkhQfrfes2IzOB6o+z4roRkPF52WA1u4=",
-        version = "v1.2.1",
-    )
-
-    go_repository(
         name = "com_github_victoriametrics_fastcache",
         importpath = "github.com/VictoriaMetrics/fastcache",
         sum = "h1:i0mICQuojGDL3KblA7wUNlY5lOK6a4bwt3uRKnkZU40=",
@@ -2203,8 +2182,8 @@ def go_dependencies():
     go_repository(
         name = "org_golang_x_time",
         importpath = "golang.org/x/time",
-        sum = "h1:GZokNIeuVkl3aZHJchRrr13WCsols02MLUcz1U9is6M=",
-        version = "v0.0.0-20211116232009-f0f3c7e86c11",
+        sum = "h1:O8mE0/t419eoIwhTFpKVkHiTs/Igowgfkj25AcZrtiE=",
+        version = "v0.0.0-20210220033141-f8bda1e9f3ba",
     )
     go_repository(
         name = "org_golang_x_tools",
