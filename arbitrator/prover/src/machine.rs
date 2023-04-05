@@ -327,7 +327,7 @@ impl Module {
                     Instruction::simple(Opcode::Return),
                 ];
                 Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else if let Ok(hostio) = host::get_host_impl(import.module, import_name) {
+            } else if let Ok(hostio) = host::get_impl(import.module, import_name) {
                 ensure!(
                     allow_hostapi,
                     "Calling hostapi directly is not allowed. Func {}",
@@ -352,11 +352,20 @@ impl Module {
             host_call_hooks.push(Some((import.module.into(), import_name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
-        let types = &bin.types;
-        let mut func_types: Vec<FunctionType> = func_type_idxs
+
+        let internals = host::new_internal_funcs(stylus_data);
+        let internals_offset = (code.len() + bin.codes.len()) as u32;
+        let internals_types = internals.iter().map(|f| f.ty.clone());
+
+        let mut types = bin.types.clone();
+        let mut func_types: Vec<_> = func_type_idxs
             .iter()
             .map(|i| types[*i as usize].clone())
             .collect();
+
+        func_types.extend(internals_types.clone());
+        types.extend(internals_types);
+
         for c in &bin.codes {
             let idx = code.len();
             let func_ty = func_types[idx].clone();
@@ -368,14 +377,21 @@ impl Module {
                         code,
                         floating_point_impls,
                         &func_types,
-                        types,
+                        &types,
                         func_type_idxs[idx],
+                        internals_offset,
                     )
                 },
                 func_ty.clone(),
-                types,
+                &types,
             )?);
         }
+        code.extend(internals);
+        ensure!(
+            code.len() < (1usize << 31),
+            "Module function count must be under 2^31",
+        );
+
         ensure!(
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
@@ -492,9 +508,6 @@ impl Module {
         );
         ensure!(!code.is_empty(), "Module has no code");
 
-        let internals_offset = code.len() as u32;
-        host::add_internal_funcs(&mut code, &mut func_types, stylus_data);
-
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
         let func_exports = bin
             .exports
@@ -514,7 +527,7 @@ impl Module {
                 code.iter().map(|f| f.hash()).collect(),
             )),
             funcs: Arc::new(code),
-            types: Arc::new(bin.types.to_owned()),
+            types: Arc::new(types.to_owned()),
             internals_offset,
             names: Arc::new(bin.names.to_owned()),
             host_call_hooks: Arc::new(host_call_hooks),
@@ -1093,6 +1106,8 @@ impl Machine {
         preimage_resolver: PreimageResolver,
         stylus_data: Option<StylusGlobals>,
     ) -> Result<Machine> {
+        use ArbValueType::*;
+
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
@@ -1138,10 +1153,10 @@ impl Machine {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
                     for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
-                        if *ty == ArbValueType::F32 {
-                            *ty = ArbValueType::I32;
-                        } else if *ty == ArbValueType::F64 {
-                            *ty = ArbValueType::I64;
+                        if *ty == F32 {
+                            *ty = I32;
+                        } else if *ty == F64 {
+                            *ty = I64;
                         }
                     }
                     ensure!(
@@ -1200,17 +1215,13 @@ impl Machine {
         let main_exports = &main_module.func_exports;
 
         // Rust support
-        if let Some(&f) = main_exports.get("main").filter(|_| runtime_support) {
-            let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ArbValueType::I32); // argc
-            expected_type.inputs.push(ArbValueType::I32); // argv
-            expected_type.outputs.push(ArbValueType::I32); // ret
+        let rust_fn = "__main_void";
+        if let Some(&f) = main_exports.get(rust_fn).filter(|_| runtime_support) {
+            let expected_type = FunctionType::new(vec![], vec![I32]);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
-                "Main function doesn't match expected signature of [argc, argv] -> [ret]",
+                "Main function doesn't match expected signature of [] -> [ret]",
             );
-            entry!(I32Const, 0);
-            entry!(I32Const, 0);
             entry!(@cross, u32::try_from(main_module_idx).unwrap(), f);
             entry!(Drop);
             entry!(HaltAndSetFinished);
@@ -1219,8 +1230,8 @@ impl Machine {
         // Go support
         if let Some(&f) = main_exports.get("run").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ArbValueType::I32); // argc
-            expected_type.inputs.push(ArbValueType::I32); // argv
+            expected_type.inputs.push(I32); // argc
+            expected_type.inputs.push(I32); // argv
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
