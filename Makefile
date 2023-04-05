@@ -233,7 +233,11 @@ arbitrator/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) arbitrator/w
 arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings64.c
 	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
 
-$(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/soft-float/*/*) .make/wasm-lib
+$(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) \
+		arbitrator/wasm-libraries/soft-float/bindings32.o \
+		arbitrator/wasm-libraries/soft-float/bindings64.o \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a \
+		.make/wasm-lib
 	mkdir -p $(output_root)/machines/latest
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
@@ -263,7 +267,8 @@ $(output_root)/machines/latest/host_io.wasm: $(DEP_PREDICATE) $(wildcard arbitra
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
-$(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm	mkdir -p $(output_root)/machines/latest
+$(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm
+	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
@@ -338,9 +343,9 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/arbitrator/wasm-libraries/soft-float/bindings32.o || ./build-brotli.sh -f -d
-	test -f target/arbitrator/wasm-libraries/soft-float/bindings64.o || ./build-brotli.sh -f -d
-	test -f target/arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./build-brotli.sh -f -d
+	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./build-brotli.sh -f -d
+	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./build-brotli.sh -f -d
+	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./build-brotli.sh -f -d
 	@touch $@
 
 .make:
