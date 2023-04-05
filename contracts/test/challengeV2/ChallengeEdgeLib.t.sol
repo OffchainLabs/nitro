@@ -3,9 +3,7 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "./Utils.sol";
-import "../MockAssertionChain.sol";
 import "../../src/challengeV2/libraries/ChallengeEdgeLib.sol";
-import "./StateTools.sol";
 
 contract ChallengeEdgeLibTest is Test {
     Random rand = new Random();
