@@ -3,6 +3,7 @@
 
 use crate::{
     binary::FloatInstruction,
+    host::InternalFunc,
     utils::Bytes32,
     value::{ArbValueType, FunctionType, IntegerValType},
 };
@@ -984,11 +985,11 @@ pub fn wasm_to_wavm(
 
             MemoryFill { mem } => {
                 ensure!(*mem == 0, "multi-memory proposal not supported");
-                call!(internals_offset + 4) // memory_fill in bulk_memory.wat
+                call!(internals_offset + InternalFunc::MemoryFill as u32)
             },
             MemoryCopy { src, dst } => {
                 ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
-                call!(internals_offset + 5) // memory_copy in bulk_memory.wat
+                call!(internals_offset + InternalFunc::MemoryCopy as u32)
             },
 
             unsupported @ (

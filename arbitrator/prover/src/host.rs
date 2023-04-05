@@ -17,23 +17,23 @@ use lazy_static::lazy_static;
 
 /// Represents the internal hostio functions a module may have.
 #[repr(u64)]
-enum InternalFunc {
+pub enum InternalFunc {
     WavmCallerLoad8,
     WavmCallerLoad32,
     WavmCallerStore8,
     WavmCallerStore32,
-    _MemoryFill,
-    _MemoryCopy,
+    MemoryFill,
+    MemoryCopy,
 }
 
 impl InternalFunc {
-    fn ty(&self) -> FunctionType {
+    pub fn ty(&self) -> FunctionType {
         use ArbValueType::*;
         use InternalFunc::*;
         match self {
             WavmCallerLoad8 | WavmCallerLoad32 => FunctionType::new(vec![I32], vec![I32]),
             WavmCallerStore8 | WavmCallerStore32 => FunctionType::new(vec![I32, I32], vec![]),
-            _ => unimplemented!(),
+            MemoryFill | MemoryCopy => FunctionType::new(vec![I32, I32, I32], vec![]),
         }
     }
 }
