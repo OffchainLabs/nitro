@@ -16,7 +16,6 @@ go_library(
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//core",
         "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_offchainlabs_nitro//util/headerreader",
         "@com_github_pkg_errors//:errors",

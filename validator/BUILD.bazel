@@ -31,11 +31,13 @@ go_test(
     srcs = [
         "challenges_test.go",
         "edge_tracker_test.go",
+        "validator_example_test.go",
         "validator_test.go",
     ],
     embed = [":validator"],
     deps = [
         "//protocol",
+        "//protocol/sol-implementation",
         "//state-manager",
         "//testing/mocks",
         "//testing/setup:setup_lib",
@@ -46,6 +48,8 @@ go_test(
         "@com_github_ethereum_go_ethereum//common/hexutil",
         "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_ethereum_go_ethereum//ethclient",
+        "@com_github_offchainlabs_nitro//util/headerreader",
         "@com_github_sirupsen_logrus//:logrus",
         "@com_github_sirupsen_logrus//hooks/test",
         "@com_github_stretchr_testify//assert",

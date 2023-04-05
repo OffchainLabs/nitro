@@ -18,7 +18,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/pkg/errors"
@@ -39,7 +38,6 @@ var (
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
 	bind.ContractBackend
-	BlockchainReader
 	ReceiptFetcher
 }
 
@@ -53,11 +51,6 @@ type ChainCommitter interface {
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
-}
-
-// BlockchainReader --
-type BlockchainReader interface {
-	Blockchain() *core.BlockChain
 }
 
 // AssertionChain is a wrapper around solgen bindings
