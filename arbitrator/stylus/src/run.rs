@@ -47,9 +47,9 @@ impl RunProgram for Machine {
             UserOutcome::Failure(error)
         });
 
-        let outs_len = call!(USER_HOST, "get_output_len", vec![]);
         let outs_ptr = call!(USER_HOST, "get_output_ptr", vec![]);
-        let outs = self.read_memory(user_host, outs_len, outs_ptr)?.to_vec();
+        let outs_len = call!(USER_HOST, "get_output_len", vec![]);
+        let outs = self.read_memory(user_host, outs_ptr, outs_len)?.to_vec();
 
         let num_progs: u32 = call!(USER_HOST, "pop_program", vec![]);
         ensure!(num_progs == 0, "dirty user_host");

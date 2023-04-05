@@ -3,7 +3,7 @@
 
 (module
     (import "env" "wavm_halt_and_set_finished" (func $halt))
-    (func $start
+    (func $start (export "start")
         ;; test memory_fill
         (memory.fill (i32.const 0x1003) (i32.const 5) (i32.const 4)) ;; ---5555---
         (memory.fill (i32.const 0x1001) (i32.const 8) (i32.const 3)) ;; -888555---
@@ -51,4 +51,4 @@
         i32.ne
         (if (then (unreachable))))
     (start $start)
-    (memory 1))
+    (memory (export "mem") 1))

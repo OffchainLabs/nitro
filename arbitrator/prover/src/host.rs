@@ -17,13 +17,13 @@ use std::{collections::HashMap, path::Path};
 
 /// Represents the internal hostio functions a module may have.
 #[repr(u64)]
-enum InternalFunc {
+pub enum InternalFunc {
     WavmCallerLoad8,
     WavmCallerLoad32,
     WavmCallerStore8,
     WavmCallerStore32,
-    _MemoryFill,
-    _MemoryCopy,
+    MemoryFill,
+    MemoryCopy,
     UserGasLeft,
     UserGasStatus,
     UserSetGas,
@@ -32,7 +32,7 @@ enum InternalFunc {
 }
 
 impl InternalFunc {
-    fn ty(&self) -> FunctionType {
+    pub fn ty(&self) -> FunctionType {
         use ArbValueType::*;
         use InternalFunc::*;
         macro_rules! func {
@@ -43,12 +43,13 @@ impl InternalFunc {
         match self {
             WavmCallerLoad8 | WavmCallerLoad32 => func!([I32], [I32]),
             WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
+            MemoryFill => func!([I32, I32, I32], []),
+            MemoryCopy => func!([I32, I32, I32], []),
             UserGasLeft => func!([], [I64]),
             UserGasStatus => func!([], [I32]),
             UserSetGas => func!([I64, I32], []),
             UserStackLeft => func!([], [I32]),
             UserSetStack => func!([I32], []),
-            _ => unimplemented!(),
         }
     }
 }

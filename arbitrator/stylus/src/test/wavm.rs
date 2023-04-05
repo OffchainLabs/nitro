@@ -1,32 +1,9 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::test::new_test_machine;
 use eyre::Result;
-use prover::{machine::GlobalState, programs::prelude::*, Machine};
-use std::{collections::HashMap, path::Path, sync::Arc};
-
-pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
-    let wat = std::fs::read(path)?;
-    let wasm = wasmer::wat2wasm(&wat)?;
-    let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
-    let stylus_data = bin.instrument(&config)?;
-
-    let wat = std::fs::read("tests/test.wat")?;
-    let wasm = wasmer::wat2wasm(&wat)?;
-    let lib = prover::binary::parse(&wasm, Path::new("test"))?;
-
-    Machine::from_binaries(
-        &[lib],
-        bin,
-        false,
-        false,
-        false,
-        GlobalState::default(),
-        HashMap::default(),
-        Arc::new(|_, _| panic!("tried to read preimage")),
-        Some(stylus_data),
-    )
-}
+use prover::{programs::prelude::*, Machine};
 
 #[test]
 fn test_gas() -> Result<()> {

@@ -1643,7 +1643,7 @@ impl Machine {
         bail!("global {} not found", name.red())
     }
 
-    pub fn read_memory(&self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
+    pub fn read_memory(&self, module: u32, ptr: u32, len: u32) -> Result<&[u8]> {
         let Some(module) = &self.modules.get(module as usize) else {
             bail!("no module at offset {}", module.red())
         };

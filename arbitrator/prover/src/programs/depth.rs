@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{config::DepthParams, FuncMiddleware, Middleware, ModuleMod};
-use crate::{value::FunctionType, Machine};
+use crate::{host::InternalFunc, value::FunctionType, Machine};
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -325,6 +325,9 @@ impl<'a> FuncDepthChecker<'a> {
                     ins_and_outs!(ty)
                 }
 
+                MemoryFill { .. } => ins_and_outs!(InternalFunc::MemoryFill.ty()),
+                MemoryCopy { .. } => ins_and_outs!(InternalFunc::MemoryCopy.ty()),
+
                 op!(
                     Nop, Unreachable,
                     I32Eqz, I64Eqz, I32Clz, I32Ctz, I32Popcnt, I64Clz, I64Ctz, I64Popcnt,
@@ -391,10 +394,10 @@ impl<'a> FuncDepthChecker<'a> {
 
                 unsupported @ (
                     dot!(
-                        MemoryInit, DataDrop, MemoryCopy, MemoryFill, TableInit, ElemDrop,
+                        MemoryInit, DataDrop, TableInit, ElemDrop,
                         TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                     )
-                ) => bail!("bulk-memory-operations extension not supported {:?}", unsupported),
+                ) => bail!("bulk-memory-operations extension not fully supported {:?}", unsupported),
 
                 unsupported @ (
                     dot!(
