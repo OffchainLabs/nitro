@@ -1,9 +1,0 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-svg {
-    min-height: 300px;
-    max-height: 500px;
-    width: 100%;
-}
