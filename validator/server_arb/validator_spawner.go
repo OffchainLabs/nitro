@@ -99,9 +99,7 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 }
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return stopwaiter.LaunchPromiseThread[common.Hash](s, func(ctx context.Context) (common.Hash, error) {
-		return s.locator.LatestWasmModuleRoot(), nil
-	})
+	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
 }
 
 func (s *ArbitratorSpawner) Name() string {

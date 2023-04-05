@@ -106,3 +106,13 @@ func NewPromise[R any](cancel func()) Promise[R] {
 		cancel:    cancel,
 	}
 }
+
+func NewReadyPromise[R any](val R, err error) PromiseInterface[R] {
+	promise := NewPromise[R](nil)
+	if err == nil {
+		promise.Produce(val)
+	} else {
+		promise.ProduceError(err)
+	}
+	return &promise
+}

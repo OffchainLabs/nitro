@@ -65,28 +65,21 @@ func (s *mockSpawner) Name() string                { return "mock" }
 func (s *mockSpawner) Room() int                   { return 4 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	promise := containers.NewPromise[validator.ExecutionRun](nil)
 	if wasmModuleRoot != mockWasmModuleRoot {
-		promise.ProduceError(errors.New("unsupported root"))
-		return &promise
+		return containers.NewReadyPromise[validator.ExecutionRun](nil, errors.New("unsupported root"))
 	}
-	promise.Produce(&mockExecRun{
+	return containers.NewReadyPromise[validator.ExecutionRun](&mockExecRun{
 		startState: input.StartState,
 		endState:   globalstateFromTestPreimages(input.Preimages),
-	})
-	return &promise
+	}, nil)
 }
 
 func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	promise := containers.NewPromise[common.Hash](nil)
-	promise.Produce(mockWasmModuleRoot)
-	return &promise
+	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoot, nil)
 }
 
 func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	promise := containers.NewPromise[struct{}](nil)
-	promise.Produce(struct{}{})
-	return &promise
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 type mockValRun struct {
@@ -105,7 +98,6 @@ type mockExecRun struct {
 }
 
 func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
-	res := containers.NewPromise[*validator.MachineStepResult](nil)
 	status := validator.MachineStatusRunning
 	resState := r.startState
 	if position >= mockExecLastPos {
@@ -113,13 +105,12 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 		status = validator.MachineStatusFinished
 		resState = r.endState
 	}
-	res.Produce(&validator.MachineStepResult{
+	return containers.NewReadyPromise[*validator.MachineStepResult](&validator.MachineStepResult{
 		Hash:        crypto.Keccak256Hash(new(big.Int).SetUint64(position).Bytes()),
 		Position:    position,
 		Status:      status,
 		GlobalState: resState,
-	})
-	return &res
+	}, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
