@@ -69,7 +69,6 @@ if [ ! -d "$TARGET_DIR" ]; then
     mkdir -p "${TARGET_DIR}lib"
     ln -s "lib" "${TARGET_DIR}lib64" # Fedora build
 fi
-DIR_ABS=`pwd`
 TARGET_DIR_ABS=`cd -P "$TARGET_DIR"; pwd`
 
 
@@ -81,7 +80,7 @@ if $USE_DOCKER; then
         DOCKER_BUILDKIT=1 docker build --target brotli-library-export -o type=local,dest="$TARGET_DIR_ABS" .
     fi
     if $BUILD_SOFTFLOAT; then
-        DOCKER_BUILDKIT=1 docker build --target wasm-libs-export -o type=local,dest="$DIR_ABS" .
+        DOCKER_BUILDKIT=1 docker build --target wasm-libs-export -o type=local,dest="$TARGET_DIR_ABS" .
     fi
     exit 0
 fi
