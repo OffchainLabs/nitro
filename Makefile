@@ -342,7 +342,6 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	./build-brotli.sh -f -d
 	@touch $@
 
 .make:
