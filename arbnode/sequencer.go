@@ -401,8 +401,10 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	select {
 	case res := <-resultChan:
 		return res
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-parentCtx.Done():
+		// We use parentCtx here and not ctx, because the QueueTimeout only applies to the background queue.
+		// We want to give the background queue as much time as possible to make a response.
+		return parentCtx.Err()
 	}
 }
 
