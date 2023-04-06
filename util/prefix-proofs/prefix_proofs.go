@@ -14,25 +14,58 @@
 // ---------
 // eg. Below a tree of size 3 is represented as the composition of 2 complete subtrees, one of size
 // 2 (AB) and one of size one (C).
-//    AB
-//   /  \
-//  A    B    C
-
+//
+//	  AB
+//	 /  \
+//	A    B    C
+//
 // Merkle expansions and roots
 // --------------------------------------------------------------------------------------------
 // The minimal amount of information we need to keep in order to compute the root of a tree
-// is the roots of each of it's sub trees, and the levels of each of those trees
+// is the roots of each of its sub trees, and the levels of each of those trees
 // A "merkle expansion" (ME) is this information - it is a vector of roots of each complete subtree,
 // the level of the tree being the index in the vector, the subtree root being the value.
 // The root is calculated by hashing each of the levels of the subtree together, adding zero hashes
 // where relevant to make a balanced tree.
 // ---------
-// eg. from the example above
+//
+// # ME Example 1
+//
+// C => (C)
+//
+// ME of the C tree = (C), root=(C)
+// The merkle expansion of a tree consisting of a single leaf is vector of size one with the
+// zeroth index being the leaf C. The zeroth index of the vector represents the presence of a size
+// one complete subtree in the overall tree. So if a tree has a size one complete subtree as part
+// of its composition, the root of that size one tree will be present in the zeroth index.
+//
+// ME Example 2
+//
+//	  AB
+//	 /  \
+//	A    B
+//
 // ME of the AB tree = (0, AB), root=AB
-// ME of the C tree = (C), root=(C, 0)
-// ME of the composed ABC tree = (AB, C), root=hash(AB, hash(C, 0)) - here C is hashed with 0
-// to balance the tree, before then being hashed with AB.
-
+// The merkle expansion of a tree consisting of a single size 2 complete subtree is a vector
+// of size 2, with the zeroth index value being 0, and the 1st index value being the root of the size
+// 2 subtree. The zero in the zeroth index indicated that there is not a size 1 subtree in the tree's
+// composition. If a tree has a size 2 subtree in its composition its root will be present in the
+// 1st index.
+//
+// ME Example 3
+//
+//	  AB
+//	 /  \
+//	A    B    C
+//
+// ME of the composed ABC tree = (C, AB), root=hash(AB, hash(C, 0)).
+// When a tree is not itself a complete subtree, but rather a composition, zeros are added when
+// calculating the root. To do this hash the first complete sub tree with zero, and from there
+// cumulatively hash the merkle expansion.
+// The merkle expansion of this composed tree is a vector of size two. Since it has a size one tree in
+// its composition the root of that goes in the zeroth index of the expansion - C, and since it has a
+// size two tree in its composition the root of that goes in the 1st index, to give (C, AB).
+//
 // Tree operations
 // --------------------------------------------------------------------------------------------
 // Binary trees are modified by adding or subtracting complete subtrees, however this libary
@@ -55,7 +88,12 @@
 //	 /  \         +       =    /  \   /  \
 //	A    B    C       D       A    B C    D
 //
-// ME of ABCD = (0, 0, ABCD), root=hash(AB, CD)
+// ME of ABCD = (0, AB) + (C) + (D)
+//
+//	= (C, AB) + (D)
+//	= (0, 0, ABCD)
+//
+// root of ABCD =hash(AB, CD)
 // --------------------------------------------------------------------------------------------
 package prefixproofs
 
