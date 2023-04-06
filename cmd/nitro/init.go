@@ -124,7 +124,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 					}
 					done := resp.BytesComplete()
 					total := resp.Size()
-					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
+					timeRemaining := time.Second * (time.Duration(total-done) / time.Duration(bps))
 					timeRemaining = timeRemaining.Truncate(time.Millisecond * 10)
 					fmt.Printf("\033[2K\r  transferred %v / %v bytes (%.2f%%) [%.2fMbps, %s remaining]",
 						done,
