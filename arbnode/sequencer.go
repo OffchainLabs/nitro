@@ -126,10 +126,11 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type txQueueItem struct {
-	tx             *types.Transaction
-	resultChan     chan<- error
-	returnedResult bool
-	ctx            context.Context
+	tx              *types.Transaction
+	resultChan      chan<- error
+	returnedResult  bool
+	ctx             context.Context
+	firstAppearance time.Time
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -249,7 +250,7 @@ func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
 	val := &nonceFailure{
 		queueItem: queueItem,
 		nonceErr:  err,
-		expiry:    time.Now().Add(c.getExpiry()),
+		expiry:    queueItem.firstAppearance.Add(c.getExpiry()),
 		revived:   false,
 	}
 	evicted := c.LruCache.Add(key, val)
@@ -391,6 +392,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		resultChan,
 		false,
 		ctx,
+		time.Now(),
 	}
 	select {
 	case s.txQueue <- queueItem:
