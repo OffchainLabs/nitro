@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -22,7 +22,7 @@ type SyncMonitorConfigFetcher func() *SyncMonitorConfig
 
 type SyncMonitor struct {
 	stopwaiter.StopWaiter
-	consensus execution.ConsensusInfo
+	consensus consensus.ConsensusInfo
 	exec      *ExecutionEngine
 	config    SyncMonitorConfigFetcher
 }
@@ -100,6 +100,6 @@ func (s *SyncMonitor) Synced() bool {
 	return len(s.SyncProgressMap()) == 0
 }
 
-func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {
+func (s *SyncMonitor) SetConsensusInfo(consensus consensus.ConsensusInfo) {
 	s.consensus = consensus
 }

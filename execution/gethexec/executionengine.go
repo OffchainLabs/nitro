@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
@@ -29,7 +30,7 @@ type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc        *core.BlockChain
-	consensus execution.FullConsensusClient
+	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
@@ -72,7 +73,7 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 	s.reorgSequencing = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(consensus execution.FullConsensusClient) {
+func (s *ExecutionEngine) SetTransactionStreamer(consensus consensus.FullConsensusClient) {
 	if s.Started() {
 		panic("trying to set transaction consensus after start")
 	}
@@ -82,7 +83,7 @@ func (s *ExecutionEngine) SetTransactionStreamer(consensus execution.FullConsens
 	s.consensus = consensus
 }
 
-func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
 	return s.consensus
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -359,7 +360,7 @@ func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct
 	}
 }
 
-func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
+func (n *ExecutionNode) SetConsensusClient(consensus consensus.FullConsensusClient) {
 	n.ExecEngine.SetTransactionStreamer(consensus)
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
