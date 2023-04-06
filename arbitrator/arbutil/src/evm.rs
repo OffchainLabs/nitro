@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 // params.SstoreSentryGasEIP2200
-pub const SSTORE_SENTRY_EVM_GAS: u64 = 2300;
+pub const SSTORE_SENTRY_GAS: u64 = 2300;
 
 // params.LogGas and params.LogDataGas
 pub const LOG_TOPIC_GAS: u64 = 375;

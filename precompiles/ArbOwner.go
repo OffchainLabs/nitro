@@ -159,9 +159,9 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 	return weiToTransfer, nil
 }
 
-// Sets the price (in evm gas basis points) of wasm gas
-func (con ArbOwner) SetWasmGasPrice(c ctx, evm mech, price uint64) error {
-	return c.State.Programs().SetWasmGasPrice(arbmath.UBips(price))
+// Sets the price (in evm gas basis points) of ink
+func (con ArbOwner) SetInkPrice(c ctx, evm mech, price uint64) error {
+	return c.State.Programs().SetInkPrice(arbmath.UBips(price))
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
@@ -169,7 +169,7 @@ func (con ArbOwner) SetWasmMaxDepth(c ctx, evm mech, depth uint32) error {
 	return c.State.Programs().SetWasmMaxDepth(depth)
 }
 
-// Sets the cost (in wasm gas) of starting a stylus hostio call
-func (con ArbOwner) SetWasmHostioCost(c ctx, evm mech, cost uint64) error {
-	return c.State.Programs().SetWasmHostioCost(cost)
+// Sets the cost of starting a stylus hostio call
+func (con ArbOwner) SetWasmHostioInk(c ctx, evm mech, cost uint64) error {
+	return c.State.Programs().SetWasmHostioInk(cost)
 }

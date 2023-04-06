@@ -80,14 +80,14 @@ fn test_gas() -> Result<()> {
     let exports = &instance.exports;
     let add_one = exports.get_typed_function::<i32, i32>(&instance.store, "add_one")?;
 
-    assert_eq!(instance.gas_left(), MachineMeter::Ready(0));
+    assert_eq!(instance.ink_left(), MachineMeter::Ready(0));
 
     macro_rules! exhaust {
-        ($gas:expr) => {
-            instance.set_gas($gas);
-            assert_eq!(instance.gas_left(), MachineMeter::Ready($gas));
+        ($ink:expr) => {
+            instance.set_ink($ink);
+            assert_eq!(instance.ink_left(), MachineMeter::Ready($ink));
             assert!(add_one.call(&mut instance.store, 32).is_err());
-            assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
+            assert_eq!(instance.ink_left(), MachineMeter::Exhausted);
         };
     }
 
@@ -95,15 +95,15 @@ fn test_gas() -> Result<()> {
     exhaust!(50);
     exhaust!(99);
 
-    let mut gas_left = 500;
-    instance.set_gas(gas_left);
-    while gas_left > 0 {
-        assert_eq!(instance.gas_left(), MachineMeter::Ready(gas_left));
+    let mut ink_left = 500;
+    instance.set_ink(ink_left);
+    while ink_left > 0 {
+        assert_eq!(instance.ink_left(), MachineMeter::Ready(ink_left));
         assert_eq!(add_one.call(&mut instance.store, 64)?, 65);
-        gas_left -= 100;
+        ink_left -= 100;
     }
     assert!(add_one.call(&mut instance.store, 32).is_err());
-    assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
+    assert_eq!(instance.ink_left(), MachineMeter::Exhausted);
     Ok(())
 }
 
@@ -219,7 +219,7 @@ fn test_count() -> Result<()> {
 #[test]
 fn test_import_export_safety() -> Result<()> {
     // test wasms
-    //     bad-export.wat   there's a global named `stylus_gas_left`
+    //     bad-export.wat   there's a global named `stylus_ink_left`
     //     bad-export2.wat  there's a func named `stylus_global_with_random_name`
     //     bad-import.wat   there's an import named `stylus_global_with_random_name`
 
@@ -395,7 +395,7 @@ fn test_fallible() -> Result<()> {
         err => bail!("expected hard error: {}", err.red()),
     }
 
-    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.ink_left(), machine.ink_left());
     assert_eq!(native.stack_left(), machine.stack_left());
 
     let native_counts = native.operator_counts()?;

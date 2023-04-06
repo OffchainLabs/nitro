@@ -6,22 +6,22 @@ use eyre::Result;
 use prover::{programs::prelude::*, Machine};
 
 #[test]
-fn test_gas() -> Result<()> {
+fn test_ink() -> Result<()> {
     let mut config = StylusConfig::default();
     config.costs = super::expensive_add;
-    config.start_gas = 10;
+    config.start_ink = 10;
 
     let machine = &mut new_test_machine("tests/add.wat", config)?;
     let call = |mech: &mut Machine, v: u32| mech.call_function("user", "add_one", vec![v.into()]);
 
-    assert_eq!(machine.gas_left(), MachineMeter::Ready(10));
+    assert_eq!(machine.ink_left(), MachineMeter::Ready(10));
 
     macro_rules! exhaust {
-        ($gas:expr) => {
-            machine.set_gas($gas);
-            assert_eq!(machine.gas_left(), MachineMeter::Ready($gas));
+        ($ink:expr) => {
+            machine.set_ink($ink);
+            assert_eq!(machine.ink_left(), MachineMeter::Ready($ink));
             assert!(call(machine, 32).is_err());
-            assert_eq!(machine.gas_left(), MachineMeter::Exhausted);
+            assert_eq!(machine.ink_left(), MachineMeter::Exhausted);
         };
     }
 
@@ -29,15 +29,15 @@ fn test_gas() -> Result<()> {
     exhaust!(50);
     exhaust!(99);
 
-    let mut gas_left = 500;
-    machine.set_gas(gas_left);
-    while gas_left > 0 {
-        assert_eq!(machine.gas_left(), MachineMeter::Ready(gas_left));
+    let mut ink_left = 500;
+    machine.set_ink(ink_left);
+    while ink_left > 0 {
+        assert_eq!(machine.ink_left(), MachineMeter::Ready(ink_left));
         assert_eq!(call(machine, 64)?, vec![65_u32.into()]);
-        gas_left -= 100;
+        ink_left -= 100;
     }
     assert!(call(machine, 32).is_err());
-    assert_eq!(machine.gas_left(), MachineMeter::Exhausted);
+    assert_eq!(machine.ink_left(), MachineMeter::Exhausted);
     Ok(())
 }
 

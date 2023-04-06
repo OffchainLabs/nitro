@@ -1,10 +1,10 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use gas::Pricing;
+use ink::Pricing;
 use prover::programs::config::PricingParams;
 
-mod gas;
+mod ink;
 mod link;
 mod user;
 

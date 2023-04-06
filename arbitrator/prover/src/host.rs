@@ -86,13 +86,13 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
         ("env", "wavm_halt_and_set_finished")      => func!(),
         ("hostio", "link_module")        => func!([I32], [I32]),           // λ(module_hash) -> module
         ("hostio", "unlink_module")      => func!(),                       // λ()
-        ("hostio", "user_gas_left")      => func!([], [I64]),              // λ() -> gas_left
-        ("hostio", "user_gas_status")    => func!([], [I32]),              // λ() -> gas_status
-        ("hostio", "user_set_gas")       => func!([I64, I32]),             // λ(gas_left, gas_status)
-        ("hostio", "program_gas_left")   => func!([I32, I32], [I64]),      // λ(module, internals) -> gas_left
-        ("hostio", "program_gas_status") => func!([I32, I32], [I32]),      // λ(module, internals) -> gas_status
+        ("hostio", "user_ink_left")      => func!([], [I64]),              // λ() -> ink_left
+        ("hostio", "user_ink_status")    => func!([], [I32]),              // λ() -> ink_status
+        ("hostio", "user_set_ink")       => func!([I64, I32]),             // λ(ink_left, ink_status)
+        ("hostio", "program_ink_left")   => func!([I32, I32], [I64]),      // λ(module, internals) -> ink_left
+        ("hostio", "program_ink_status") => func!([I32, I32], [I32]),      // λ(module, internals) -> ink_status
         ("hostio", "program_stack_left") => func!([I32, I32], [I32]),      // λ(module, internals) -> stack_left
-        ("hostio", "program_set_gas")    => func!([I32, I32, I64]),        // λ(module, internals, gas_left)
+        ("hostio", "program_set_ink")    => func!([I32, I32, I64]),        // λ(module, internals, ink_left)
         ("hostio", "program_set_stack")  => func!([I32, I32, I32]),        // λ(module, internals, stack_left)
         ("hostio", "program_call_main")  => func!([I32, I32, I32], [I32]), // λ(module, main, args_len) -> status
         _ => bail!("no such hostio {} in {}", name.red(), module.red()),
@@ -175,16 +175,16 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
             ("env", "wavm_halt_and_set_finished") => {
                 opcode!(HaltAndSetFinished);
             }
-            ("hostio", "user_gas_left") => {
-                // λ() -> gas_left
+            ("hostio", "user_ink_left") => {
+                // λ() -> ink_left
                 opcode!(CallerModuleInternalCall, UserGasLeft);
             }
-            ("hostio", "user_gas_status") => {
-                // λ() -> gas_status
+            ("hostio", "user_ink_status") => {
+                // λ() -> ink_status
                 opcode!(CallerModuleInternalCall, UserGasStatus);
             }
-            ("hostio", "user_set_gas") => {
-                // λ(gas_left, gas_status)
+            ("hostio", "user_set_ink") => {
+                // λ(ink_left, ink_status)
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(CallerModuleInternalCall, UserSetGas);
@@ -198,18 +198,18 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 // λ()
                 opcode!(UnlinkModule);
             }
-            ("hostio", "program_gas_left") => {
-                // λ(module, internals) -> gas_left
+            ("hostio", "program_ink_left") => {
+                // λ(module, internals) -> ink_left
                 dynamic!(UserGasLeft);
             }
-            ("hostio", "program_gas_status") => {
-                // λ(module, internals) -> gas_status
+            ("hostio", "program_ink_status") => {
+                // λ(module, internals) -> ink_status
                 dynamic!(UserGasStatus);
             }
-            ("hostio", "program_set_gas") => {
-                // λ(module, internals, gas_left)
-                opcode!(LocalGet, 2); // gas_left
-                opcode!(I32Const, 0); // gas_status
+            ("hostio", "program_set_ink") => {
+                // λ(module, internals, ink_left)
+                opcode!(LocalGet, 2); // ink_left
+                opcode!(I32Const, 0); // ink_status
                 dynamic!(UserSetGas);
             }
             ("hostio", "program_stack_left") => {

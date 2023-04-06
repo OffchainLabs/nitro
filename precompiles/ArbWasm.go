@@ -22,9 +22,9 @@ func (con ArbWasm) StylusVersion(c ctx, _ mech) (uint32, error) {
 	return c.State.Programs().StylusVersion()
 }
 
-// Gets the price (in evm gas basis points) of wasm gas
-func (con ArbWasm) WasmGasPrice(c ctx, _ mech) (uint64, error) {
-	bips, err := c.State.Programs().WasmGasPrice()
+// Gets the price (in evm gas basis points) of ink
+func (con ArbWasm) InkPrice(c ctx, _ mech) (uint64, error) {
+	bips, err := c.State.Programs().InkPrice()
 	return bips.Uint64(), err
 }
 
@@ -33,9 +33,9 @@ func (con ArbWasm) WasmMaxDepth(c ctx, _ mech) (uint32, error) {
 	return c.State.Programs().WasmMaxDepth()
 }
 
-// Gets the cost (in wasm gas) of starting a stylus hostio call
-func (con ArbWasm) WasmHostioCost(c ctx, _ mech) (uint64, error) {
-	return c.State.Programs().WasmHostioCost()
+// Gets the cost of starting a stylus hostio call
+func (con ArbWasm) WasmHostioInk(c ctx, _ mech) (uint64, error) {
+	return c.State.Programs().WasmHostioInk()
 }
 
 // Gets the current program version

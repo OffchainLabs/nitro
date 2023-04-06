@@ -41,11 +41,11 @@ fn uniform_cost_config() -> StylusConfig {
     let mut config = StylusConfig::default();
     config.debug.count_ops = true;
     config.debug.debug_funcs = true;
-    config.start_gas = 1_000_000;
-    config.pricing.wasm_gas_price = 100_00;
-    config.pricing.hostio_cost = 100;
-    config.pricing.memory_fill_byte_cost = 1;
-    config.pricing.memory_copy_byte_cost = 1;
+    config.start_ink = 1_000_000;
+    config.pricing.ink_price = 100_00;
+    config.pricing.hostio_ink = 100;
+    config.pricing.memory_fill_ink = 1;
+    config.pricing.memory_copy_ink = 1;
     config.costs = |_| 1;
     config
 }
@@ -95,7 +95,7 @@ pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
 }
 
 pub fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
-    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.ink_left(), machine.ink_left());
     assert_eq!(native.stack_left(), machine.stack_left());
 
     let native_counts = native.operator_counts()?;

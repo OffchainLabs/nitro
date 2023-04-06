@@ -22,19 +22,19 @@ pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscap
 pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let key = env.read_bytes32(key)?;
-    let (value, cost) = env.evm().load_bytes32(key);
+    let (value, gas_cost) = env.evm().load_bytes32(key);
     env.write_slice(dest, &value.0)?;
-    env.buy_evm_gas(cost)
+    env.buy_gas(gas_cost)
 }
 
 pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
-    env.require_evm_gas(evm::SSTORE_SENTRY_EVM_GAS)?; // see operations_acl_arbitrum.go
+    env.require_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
     let key = env.read_bytes32(key)?;
     let value = env.read_bytes32(value)?;
-    let cost = env.evm().store_bytes32(key, value)?;
-    env.buy_evm_gas(cost)
+    let gas_cost = env.evm().store_bytes32(key, value)?;
+    env.buy_gas(gas_cost)
 }
 
 pub(crate) fn call_contract(
@@ -43,22 +43,22 @@ pub(crate) fn call_contract(
     calldata: u32,
     calldata_len: u32,
     value: u32,
-    mut wasm_gas: u64,
+    mut ink: u64,
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(calldata_len.into())?;
-    wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
+    ink = ink.min(env.ink_left().into()); // provide no more than what the user has
 
-    let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
+    let gas = env.meter().pricing.ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
     let value = env.read_bytes32(value)?;
 
-    let (outs_len, evm_cost, status) = env.evm().contract_call(contract, input, evm_gas, value);
+    let (outs_len, gas_cost, status) = env.evm().contract_call(contract, input, gas, value);
     env.set_return_data_len(outs_len);
     env.write_u32(return_data_len, outs_len)?;
-    env.buy_evm_gas(evm_cost)?;
+    env.buy_gas(gas_cost)?;
     Ok(status as u8)
 }
 
@@ -67,21 +67,21 @@ pub(crate) fn delegate_call_contract(
     contract: u32,
     calldata: u32,
     calldata_len: u32,
-    mut wasm_gas: u64,
+    mut ink: u64,
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(calldata_len.into())?;
-    wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
+    ink = ink.min(env.ink_left().into()); // provide no more than what the user has
 
-    let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
+    let gas = env.meter().pricing.ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
 
-    let (outs_len, evm_cost, status) = env.evm().delegate_call(contract, input, evm_gas);
+    let (outs_len, gas_cost, status) = env.evm().delegate_call(contract, input, gas);
     env.set_return_data_len(outs_len);
     env.write_u32(return_data_len, outs_len)?;
-    env.buy_evm_gas(evm_cost)?;
+    env.buy_gas(gas_cost)?;
     Ok(status as u8)
 }
 
@@ -90,21 +90,21 @@ pub(crate) fn static_call_contract(
     contract: u32,
     calldata: u32,
     calldata_len: u32,
-    mut wasm_gas: u64,
+    mut ink: u64,
     return_data_len: u32,
 ) -> Result<u8, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(calldata_len.into())?;
-    wasm_gas = wasm_gas.min(env.gas_left().into()); // provide no more than what the user has
+    ink = ink.min(env.ink_left().into()); // provide no more than what the user has
 
-    let evm_gas = env.meter().pricing.wasm_to_evm(wasm_gas);
+    let gas = env.meter().pricing.ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
 
-    let (outs_len, evm_cost, status) = env.evm().static_call(contract, input, evm_gas);
+    let (outs_len, gas_cost, status) = env.evm().static_call(contract, input, gas);
     env.set_return_data_len(outs_len);
     env.write_u32(return_data_len, outs_len)?;
-    env.buy_evm_gas(evm_cost)?;
+    env.buy_gas(gas_cost)?;
     Ok(status as u8)
 }
 
@@ -121,12 +121,12 @@ pub(crate) fn create1(
 
     let code = env.read_slice(code, code_len)?;
     let endowment = env.read_bytes32(endowment)?;
-    let evm_gas = env.evm_gas_left();
+    let gas = env.gas_left();
 
-    let (result, ret_len, evm_cost) = env.evm().create1(code, endowment, evm_gas);
+    let (result, ret_len, gas_cost) = env.evm().create1(code, endowment, gas);
     env.set_return_data_len(ret_len);
     env.write_u32(revert_data_len, ret_len)?;
-    env.buy_evm_gas(evm_cost)?;
+    env.buy_gas(gas_cost)?;
     env.write_bytes20(contract, result?)?;
     Ok(())
 }
@@ -146,12 +146,12 @@ pub(crate) fn create2(
     let code = env.read_slice(code, code_len)?;
     let endowment = env.read_bytes32(endowment)?;
     let salt = env.read_bytes32(salt)?;
-    let evm_gas = env.evm_gas_left();
+    let gas = env.gas_left();
 
-    let (result, ret_len, evm_cost) = env.evm().create2(code, endowment, salt, evm_gas);
+    let (result, ret_len, gas_cost) = env.evm().create2(code, endowment, salt, gas);
     env.set_return_data_len(ret_len);
     env.write_u32(revert_data_len, ret_len)?;
-    env.buy_evm_gas(evm_cost)?;
+    env.buy_gas(gas_cost)?;
     env.write_bytes20(contract, result?)?;
     Ok(())
 }
@@ -180,8 +180,8 @@ pub(crate) fn emit_log(mut env: WasmEnvMut, data: u32, len: u32, topics: u32) ->
     if length < topics * 32 || topics > 4 {
         return Escape::logical("bad topic data");
     }
-    env.buy_evm_gas((1 + topics) * evm::LOG_TOPIC_GAS)?;
-    env.buy_evm_gas((length - topics * 32) * evm::LOG_DATA_GAS)?;
+    env.buy_gas((1 + topics) * evm::LOG_TOPIC_GAS)?;
+    env.buy_gas((length - topics * 32) * evm::LOG_DATA_GAS)?;
 
     let data = env.read_slice(data, len)?;
     env.evm().emit_log(data, topics as usize)?;

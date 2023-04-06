@@ -1044,16 +1044,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "module_roots"
-version = "0.1.0"
-dependencies = [
- "arbutil",
- "eyre",
- "prover",
- "structopt",
-]
-
-[[package]]
 name = "more-asserts"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

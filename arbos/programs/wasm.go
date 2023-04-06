@@ -35,7 +35,7 @@ func compileUserWasmRustImpl(wasm []byte, version u32) (machine *rustMachine, er
 func callUserWasmRustImpl(machine *rustMachine, calldata []byte, params *rustConfig, gas *u64, root *hash) (status userStatus, out *rustVec)
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
-func rustConfigImpl(version, maxDepth u32, wasmGasPrice, hostioCost u64) *rustConfig
+func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64) *rustConfig
 
 func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32, debug bool) error {
 	_, err := compileMachine(db, program, wasm, version)
@@ -86,5 +86,5 @@ func (vec *rustVec) intoSlice() []byte {
 }
 
 func (p *goParams) encode() *rustConfig {
-	return rustConfigImpl(p.version, p.maxDepth, p.wasmGasPrice, p.hostioCost)
+	return rustConfigImpl(p.version, p.maxDepth, p.inkPrice, p.hostioInk)
 }
