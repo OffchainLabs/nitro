@@ -16,21 +16,21 @@ type PersistentConfig struct {
 	GlobalConfig string `koanf:"global-config"`
 	Chain        string `koanf:"chain"`
 	Handles      int    `koanf:"handles"`
-	Ancients     string `koanf:"ancients"`
+	Ancient      string `koanf:"ancient"`
 }
 
 var PersistentConfigDefault = PersistentConfig{
 	GlobalConfig: ".arbitrum",
 	Chain:        "",
 	Handles:      512,
-	Ancients:     "",
+	Ancient:      "",
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
 	f.Int(prefix+".handles", PersistentConfigDefault.Handles, "number of file descriptor handles to use for the database")
-	f.String(prefix+".ancients", PersistentConfigDefault.Ancients, "directory of ancients where the chain freezer can be opened")
+	f.String(prefix+".ancient", PersistentConfigDefault.Ancient, "directory of ancient where the chain freezer can be opened")
 }
 
 func (c *PersistentConfig) ResolveDirectoryNames() error {
