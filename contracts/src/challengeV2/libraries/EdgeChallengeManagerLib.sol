@@ -17,11 +17,15 @@ struct EdgeStore {
     mapping(bytes32 => bytes32) firstRivals;
 }
 
-// CHRIS: TODO: move this and the edge store to data entities?
+/// @notice Input data to a one step proof
 struct OneStepData {
+    /// @notice The one step proof execution context
     ExecutionContext execCtx;
+    /// @notice The machine counter of the state that's being executed from
     uint256 machineStep;
+    /// @notice The hash of the state that's being executed from
     bytes32 beforeHash;
+    /// @notice Proof data to accompany the execution context
     bytes proof;
 }
 
@@ -29,10 +33,59 @@ struct OneStepData {
 /// @notice The edge manager library allows edges to be added and bisected, and keeps track of the amount
 ///         of time an edge remained unrivaled.
 library EdgeChallengeManagerLib {
+    using ChallengeEdgeLib for ChallengeEdge;
+
     /// @dev Magic string hash to represent that a edges with a given mutual id have no rivals
     bytes32 constant UNRIVALED = keccak256(abi.encodePacked("UNRIVALED"));
 
-    using ChallengeEdgeLib for ChallengeEdge;
+    /// @notice A new edge has been added to the challenge manager
+    /// @param edgeId       The id of the newly added edge
+    /// @param mutualId     The mutual id of the added edge - all rivals share the same mutual id
+    /// @param originId     The origin id of the added edge - origin ids link an edge to the level above
+    /// @param hasRival     Does the newly added edge have a rival upon creation
+    /// @param length       The length of the new edge
+    /// @param eType        The type of the new edge
+    /// @param isLayerZero  Whether the new edge was added at layer zero - has a claim and a staker
+    event EdgeAdded(
+        bytes32 indexed edgeId,
+        bytes32 indexed mutualId,
+        bytes32 indexed originId,
+        bool hasRival,
+        uint256 length,
+        EdgeType eType,
+        bool isLayerZero
+    );
+
+    /// @notice An edge has been bisected
+    /// @param edgeId                   The id of the edge that was bisected
+    /// @param lowerChildId             The id of the lower child created during bisection
+    /// @param upperChildId             The id of the upper child created during bisection
+    /// @param lowerChildAlreadyExists  When an edge is bisected the lower child may already exist - created by a rival.
+    event EdgeBisected(
+        bytes32 indexed edgeId, bytes32 indexed lowerChildId, bytes32 indexed upperChildId, bool lowerChildAlreadyExists
+    );
+
+    /// @notice An edge can be confirmed if both of its children were already confirmed.
+    /// @param edgeId   The edge that was confirmed
+    /// @param mutualId The mutual id of the confirmed edge
+    event EdgeConfirmedByChildren(bytes32 indexed edgeId, bytes32 indexed mutualId);
+
+    /// @notice An edge can be confirmed if the cumulative time unrivaled of it and a direct chain of ancestors is greater than a threshold
+    /// @param edgeId               The edge that was confirmed
+    /// @param mutualId             The mutual id of the confirmed edge
+    /// @param totalTimeUnrivaled   The cumulative amount of time this edge spent unrivaled
+    event EdgeConfirmedByTime(bytes32 indexed edgeId, bytes32 indexed mutualId, uint256 totalTimeUnrivaled);
+
+    /// @notice An edge can be confirmed if a zero layer edge in the level below claims this edge
+    /// @param edgeId           The edge that was confirmed
+    /// @param mutualId         The mutual id of the confirmed edge
+    /// @param claimingEdgeId   The id of the zero layer edge that claimed this edge
+    event EdgeConfirmedByClaim(bytes32 indexed edgeId, bytes32 indexed mutualId, bytes32 claimingEdgeId);
+
+    /// @notice A SmallStep edge of length 1 can be confirmed via a one step proof
+    /// @param edgeId   The edge that was confirmed
+    /// @param mutualId The mutual id of the confirmed edge
+    event EdgeConfirmedByOneStepProof(bytes32 indexed edgeId, bytes32 indexed mutualId);
 
     /// @notice Get an edge from the store
     /// @dev    Throws if the edge does not exist in the store
@@ -48,8 +101,8 @@ library EdgeChallengeManagerLib {
     /// @param store    The store to add the edge to
     /// @param edge     The edge to add
     function add(EdgeStore storage store, ChallengeEdge memory edge) internal {
+        bytes32 eId = edge.idMem();
         // add the edge if it doesnt exist already
-        bytes32 eId = edge.id();
         require(!store.edges[eId].exists(), "Edge already exists");
         store.edges[eId] = edge;
 
@@ -75,6 +128,21 @@ library EdgeChallengeManagerLib {
             // after we've stored the first rival we dont need to keep a record of any
             // other rival edges - they will all have a zero time unrivaled
         }
+
+        emit EdgeAdded(
+            eId,
+            mutualId,
+            edge.originId,
+            hasRivalVal(store.firstRivals[mutualId]),
+            store.edges[eId].length(),
+            edge.eType,
+            edge.staker != address(0)
+        );
+    }
+
+    /// @dev    Determines if the rival val is currently unrivaled
+    function hasRivalVal(bytes32 rivalVal) private pure returns (bool) {
+        return rivalVal != UNRIVALED;
     }
 
     /// @notice Does this edge currently have one or more rivals
@@ -92,7 +160,7 @@ library EdgeChallengeManagerLib {
         require(firstRival != 0, "Empty first rival");
 
         // can only have no rival if the firstRival is the UNRIVALED magic hash
-        return firstRival != UNRIVALED;
+        return hasRivalVal(firstRival);
     }
 
     /// @notice Is the edge a single step in length, and does it have at least one rival.
@@ -188,28 +256,41 @@ library EdgeChallengeManagerLib {
             );
         }
 
-        // midpoint proof it valid, create and store the children
-        ChallengeEdge memory lowerChild = ChallengeEdgeLib.newChildEdge(
-            ce.originId, ce.startHistoryRoot, ce.startHeight, bisectionHistoryRoot, middleHeight, ce.eType
-        );
-        ChallengeEdge memory upperChild = ChallengeEdgeLib.newChildEdge(
-            ce.originId, bisectionHistoryRoot, middleHeight, ce.endHistoryRoot, ce.endHeight, ce.eType
-        );
-        bytes32 lowerChildId = lowerChild.id();
-        bytes32 upperChildId = upperChild.id();
-
-        // it's possible that the store already has the lower child if it was created by a rival
-        // (aka a merge move)
-        if (!store.edges[lowerChildId].exists()) {
-            add(store, lowerChild);
+        bytes32 lowerChildId;
+        bool lowerChildExists;
+        {
+            // midpoint proof it valid, create and store the children
+            ChallengeEdge memory lowerChild = ChallengeEdgeLib.newChildEdge(
+                ce.originId, ce.startHistoryRoot, ce.startHeight, bisectionHistoryRoot, middleHeight, ce.eType
+            );
+            lowerChildId = lowerChild.idMem();
+            // it's possible that the store already has the lower child if it was created by a rival
+            // (aka a merge move)
+            if (store.edges[lowerChildId].exists()) {
+                lowerChildExists = true;
+            } else {
+                add(store, lowerChild);
+                lowerChildExists = false;
+            }
         }
 
-        // Sanity check: it's not possible that the upper child already exists, for this to be the case
-        // the edge would have to have been bisected already.
-        require(!store.edges[upperChildId].exists(), "Store contains upper child");
-        add(store, upperChild);
+        bytes32 upperChildId;
+        {
+            ChallengeEdge memory upperChild = ChallengeEdgeLib.newChildEdge(
+                ce.originId, bisectionHistoryRoot, middleHeight, ce.endHistoryRoot, ce.endHeight, ce.eType
+            );
+            upperChildId = upperChild.idMem();
+
+            // Sanity check: it's not possible that the upper child already exists, for this to be the case
+            // the edge would have to have been bisected already.
+            require(!store.edges[upperChildId].exists(), "Store contains upper child");
+            add(store, upperChild);
+        }
 
         store.edges[edgeId].setChildren(lowerChildId, upperChildId);
+
+        emit EdgeBisected(edgeId, lowerChildId, upperChildId, lowerChildExists);
+
         return (lowerChildId, upperChildId);
     }
 
@@ -229,6 +310,8 @@ library EdgeChallengeManagerLib {
         require(store.edges[upperChildId].status == EdgeStatus.Confirmed, "Upper child not confirmed");
 
         store.edges[edgeId].setConfirmed();
+
+        emit EdgeConfirmedByChildren(edgeId, store.edges[edgeId].mutualId());
     }
 
     /// @notice Returns the sub edge type of the provided edge type
@@ -249,7 +332,7 @@ library EdgeChallengeManagerLib {
     /// @param store            The store containing all edges and rivals
     /// @param edgeId           The edge being claimed
     /// @param claimingEdgeId   The edge with a claim id equal to edge id
-    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) internal view {
+    function checkClaimIdLink(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) private view {
         // we do some extra checks that edge being claimed is eligible to be claimed by the claiming edge
         // these shouldn't be necessary since it should be impossible to add layer zero edges that do not
         // satisfy the checks below, but we conduct these checks anyway for double safety
@@ -267,7 +350,7 @@ library EdgeChallengeManagerLib {
     /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level above. If a zero layer
     ///         edge is confirmed, it becomes possible to also confirm the edge that it claims
     /// @param store            The store containing all edges and rivals data
-    /// @param edgeId           The if of the edge to confirm
+    /// @param edgeId           The id of the edge to confirm
     /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
     function confirmEdgeByClaim(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId) internal {
         // this edge is pending
@@ -281,6 +364,8 @@ library EdgeChallengeManagerLib {
         require(edgeId == store.edges[claimingEdgeId].claimId, "Claim does not match edge");
 
         store.edges[edgeId].setConfirmed();
+
+        emit EdgeConfirmedByClaim(edgeId, store.edges[edgeId].mutualId(), claimingEdgeId);
     }
 
     /// @notice An edge can be confirmed if the total amount of time it and a single chain of its direct ancestors
@@ -330,6 +415,8 @@ library EdgeChallengeManagerLib {
         );
 
         store.edges[edgeId].setConfirmed();
+
+        emit EdgeConfirmedByTime(edgeId, store.edges[edgeId].mutualId(), totalTimeUnrivaled);
     }
 
     /// @notice Confirm an edge by executing a one step proof
@@ -380,5 +467,7 @@ library EdgeChallengeManagerLib {
         );
 
         store.edges[edgeId].setConfirmed();
+
+        emit EdgeConfirmedByOneStepProof(edgeId, store.edges[edgeId].mutualId());
     }
 }

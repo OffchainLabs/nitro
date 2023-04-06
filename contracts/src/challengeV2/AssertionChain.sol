@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
-import {Status, IAssertionChain, IChallengeManager} from "./DataEntities.sol";
+import {Status, IAssertionChain, IChallengeManager} from "./DataEntitiesOld.sol";
 
 // Questions
 // 2. I have a different idea of when the challenge endtime should be. I think it should be 1 challenge period after the second child creation

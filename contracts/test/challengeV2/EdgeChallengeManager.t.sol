@@ -5,10 +5,7 @@ import "forge-std/Test.sol";
 import "./Utils.sol";
 import "../MockAssertionChain.sol";
 import "../../src/challengeV2/EdgeChallengeManager.sol";
-// import "../src/osp/IOneStepProofEntry.sol";
 import "./StateTools.sol";
-// import "../src/state/GlobalState.sol";
-// import "../src/state/Machine.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
     function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)

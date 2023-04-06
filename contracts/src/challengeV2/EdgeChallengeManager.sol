@@ -2,10 +2,12 @@
 pragma solidity ^0.8.17;
 
 import "./libraries/UintUtilsLib.sol";
-import {IAssertionChain} from "./DataEntities.sol";
+import "./DataEntities.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
 
 interface IEdgeChallengeManager {
+    // Checks if an edge by ID exists.
+    function edgeExists(bytes32 eId) external view returns (bool);
     function initialize(
         IAssertionChain _assertionChain,
         uint256 _challengePeriodSec,
@@ -130,14 +132,17 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
             // challenge id is the assertion which is the root of challenge
             originId = assertionChain.getPredecessorId(args.claimId);
+            // CHRIS: TODO: add a check that there is a fork in the assertion chain
         } else if (args.edgeType == EdgeType.BigStep) {
             require(store.get(args.claimId).eType == EdgeType.Block, "Claim challenge type is not Block");
 
             originId = store.get(args.claimId).mutualId();
+            require(store.hasRival(args.claimId), "Claim does not have rival");
         } else if (args.edgeType == EdgeType.SmallStep) {
             require(store.get(args.claimId).eType == EdgeType.BigStep, "Claim challenge type is not BigStep");
 
             originId = store.get(args.claimId).mutualId();
+            require(store.hasRival(args.claimId), "Claim does not have rival");
         } else {
             revert("Unexpected challenge type");
         }
@@ -146,6 +151,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         // CHRIS: TODO: check the ministake was provided
         // CHRIS: TODO: also prove that the the start root is a prefix of the end root
         // CHRIS: TODO: we had inclusion proofs before?
+
+        // CHRIS: TODO: currently the claim id is not part of the edge id hash, this means that two edges with the same id cannot have a different claim id
+        // CHRIS: TODO: this method needs to enforce that this is not possible by tying the end state to the claim id somehow, to ensure that it's not logically
+        // CHRIS: TODO: possible to have the same endHistoryRoot but a different claim id. This needs to be done for all edge types
 
         ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
             originId,
@@ -160,9 +169,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
         store.add(ce);
 
-        emit LevelZeroEdgeAdded(ce.id());
+        emit LevelZeroEdgeAdded(ce.idMem());
 
-        return ce.id();
+        return ce.idMem();
     }
 
     function confirmEdgeByChildren(bytes32 edgeId) public {
@@ -224,6 +233,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         uint256 endHeight
     ) public pure returns (bytes32) {
         return ChallengeEdgeLib.mutualIdComponent(edgeType, originId, startHeight, startHistoryRoot, endHeight);
+    }
+
+    function edgeExists(bytes32 edgeId) public view returns (bool) {
+        return store.edges[edgeId].exists();
     }
 
     function getEdge(bytes32 edgeId) public view returns (ChallengeEdge memory) {
