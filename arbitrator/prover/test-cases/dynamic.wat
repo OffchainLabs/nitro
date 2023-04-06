@@ -2,7 +2,7 @@
 (module
     (import "hostio" "link_module"        (func $link       (param i32)         (result i32)))
     (import "hostio" "unlink_module"      (func $unlink                                     ))
-    (import "hostio" "program_set_gas"    (func $set_gas    (param i32 i32 i64)             ))
+    (import "hostio" "program_set_ink"    (func $set_ink    (param i32 i32 i64)             ))
     (import "hostio" "program_ink_left"   (func $ink_left   (param i32 i32)     (result i64)))
     (import "hostio" "program_ink_status" (func $ink_status (param i32 i32)     (result i32)))
     (import "hostio" "program_call_main"  (func $user_func  (param i32 i32 i32) (result i32)))
@@ -22,7 +22,7 @@
         local.get $user
         local.get $internals
         i64.const 1024
-        call $set_gas
+        call $set_ink
 
         ;; get gas
         local.get $user
