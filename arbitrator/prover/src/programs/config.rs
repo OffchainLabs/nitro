@@ -50,9 +50,9 @@ pub struct PricingParams {
     /// The amount of wasm gas one pays to do a user_host call
     pub hostio_cost: u64,
     /// Per-byte `MemoryFill` cost
-    pub memory_fill_byte_cost: u64,
+    pub memory_fill_cost: u64,
     /// Per-byte `MemoryCopy` cost
-    pub memory_copy_byte_cost: u64,
+    pub memory_copy_cost: u64,
 }
 
 impl Default for StylusConfig {
@@ -75,8 +75,8 @@ impl Default for PricingParams {
         Self {
             wasm_gas_price: 1,
             hostio_cost: 0,
-            memory_fill_byte_cost: 0,
-            memory_copy_byte_cost: 0,
+            memory_fill_cost: 0,
+            memory_copy_cost: 0,
         }
     }
 }
@@ -100,8 +100,8 @@ impl StylusConfig {
             1 => {
                 // TODO: settle on reasonable values for the v1 release
                 config.costs = |_| 1;
-                config.pricing.memory_fill_byte_cost = 1;
-                config.pricing.memory_copy_byte_cost = 1;
+                config.pricing.memory_fill_cost = 1;
+                config.pricing.memory_copy_cost = 1;
                 config.heap_bound = Bytes(2 * 1024 * 1024);
                 config.depth.max_depth = 1 * 1024 * 1024;
             }
@@ -126,8 +126,8 @@ impl PricingParams {
         Self {
             wasm_gas_price,
             hostio_cost,
-            memory_fill_byte_cost: memory_fill,
-            memory_copy_byte_cost: memory_copy,
+            memory_fill_cost: memory_fill,
+            memory_copy_cost: memory_copy,
         }
     }
 

@@ -23,8 +23,8 @@ impl DynamicMeter {
 
     pub fn new(pricing: &PricingParams) -> Self {
         Self {
-            memory_fill: pricing.memory_copy_byte_cost,
-            memory_copy: pricing.memory_fill_byte_cost,
+            memory_fill: pricing.memory_fill_cost,
+            memory_copy: pricing.memory_copy_cost,
             globals: Mutex::new(None),
         }
     }

@@ -29,7 +29,7 @@ pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> 
 
 pub(crate) fn account_store_bytes32(mut env: WasmEnvMut, key: u32, value: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
-    env.require_evm_gas(evm::SSTORE_SENTRY_EVM_GAS)?; // see operations_acl_arbitrum.go
+    env.require_evm_gas(evm::SSTORE_SENTRY_GAS)?; // see operations_acl_arbitrum.go
 
     let key = env.read_bytes32(key)?;
     let value = env.read_bytes32(value)?;

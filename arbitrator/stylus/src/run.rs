@@ -32,8 +32,8 @@ impl RunProgram for Machine {
             args_len,
             pricing.wasm_gas_price.into(),
             pricing.hostio_cost.into(),
-            pricing.memory_fill_byte_cost.into(),
-            pricing.memory_copy_byte_cost.into(),
+            pricing.memory_fill_cost.into(),
+            pricing.memory_copy_cost.into(),
         ];
         let args_ptr = call!("user_host", "push_program", push_vec);
         let user_host = self.find_module(USER_HOST)?;
