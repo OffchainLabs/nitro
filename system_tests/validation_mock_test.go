@@ -125,8 +125,11 @@ func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
 	return &res
 }
 
-func (r *mockExecRun) PrepareRange(uint64, uint64) {}
-func (r *mockExecRun) Close()                      {}
+func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+}
+
+func (r *mockExecRun) Close() {}
 
 func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) *node.Node {
 	stackConf := node.DefaultConfig

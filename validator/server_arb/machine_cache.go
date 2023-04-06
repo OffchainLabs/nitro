@@ -139,11 +139,7 @@ func (c *MachineCache) unlockBuild(err error) {
 	c.buildingLock <- struct{}{}
 }
 
-func (c *MachineCache) SetRange(ctx context.Context, start uint64, end uint64) {
-	err := c.lockBuild(ctx)
-	if err != nil {
-		return
-	}
+func (c *MachineCache) setRangeLocked(ctx context.Context, start uint64, end uint64) error {
 	newInterval := (end - start) / uint64(c.config.CachedChallengeMachines)
 	if newInterval == 0 {
 		newInterval = 2
@@ -159,43 +155,46 @@ func (c *MachineCache) SetRange(ctx context.Context, start uint64, end uint64) {
 		newInterval = 1
 	}
 	if start == c.firstMachineStep && newInterval == c.machineStepInterval {
-		c.unlockBuild(nil)
-		return
+		return nil
 	}
-	go func() {
-		closestIndex, closest := c.getClosestMachine(start)
-		closestStep := closest.GetStepCount()
-		if closestStep > start {
-			err = fmt.Errorf("initial machine step too large %d > %d", closestStep, start)
-			c.unlockBuild(err)
-			return
+	closestIndex, closest := c.getClosestMachine(start)
+	closestStep := closest.GetStepCount()
+	if closestStep > start {
+		return fmt.Errorf("initial machine step too large %d > %d", closestStep, start)
+	}
+	for i, mach := range c.machines {
+		if i != closestIndex {
+			mach.Destroy()
 		}
-		for i, mach := range c.machines {
-			if i != closestIndex {
-				mach.Destroy()
-			}
+	}
+	var initial MachineInterface
+	if closestStep < start {
+		initial = closest.CloneMachineInterface()
+		err := initial.Step(ctx, start-closestStep)
+		if err != nil {
+			return err
 		}
-		var initial MachineInterface
-		if closestStep < start {
-			initial = closest.CloneMachineInterface()
-			err = initial.Step(ctx, start-closestStep)
-			if err != nil {
-				c.unlockBuild(err)
-				return
-			}
-			if closest != c.zeroStepMachine && closest != c.finalMachine {
-				closest.Destroy()
-			}
-			initial.Freeze()
-		} else {
-			initial = closest
+		if closest != c.zeroStepMachine && closest != c.finalMachine {
+			closest.Destroy()
 		}
-		c.machines = []MachineInterface{initial}
-		c.firstMachineStep = start
-		c.machineStepInterval = newInterval
-		err = c.populateCache(ctx)
-		c.unlockBuild(err)
-	}()
+		initial.Freeze()
+	} else {
+		initial = closest
+	}
+	c.machines = []MachineInterface{initial}
+	c.firstMachineStep = start
+	c.machineStepInterval = newInterval
+	return c.populateCache(ctx)
+}
+
+func (c *MachineCache) SetRange(ctx context.Context, start uint64, end uint64) error {
+	err := c.lockBuild(ctx)
+	if err != nil {
+		return err
+	}
+	err = c.setRangeLocked(ctx, start, end)
+	c.unlockBuild(err)
+	return err
 }
 
 func (c *MachineCache) populateCache(ctx context.Context) error {
