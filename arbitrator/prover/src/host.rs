@@ -84,17 +84,25 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
         ("env", "wavm_read_inbox_message")      => func!([I64, I32, I32], [I32]),
         ("env", "wavm_read_delayed_inbox_message") => func!([I64, I32, I32], [I32]),
         ("env", "wavm_halt_and_set_finished")      => func!(),
-        ("hostio", "link_module")        => func!([I32], [I32]),           // λ(module_hash) -> module
+        ("hostio", "link_module")        => func!([I32], [I32]),           // λ(module_hash) → module
         ("hostio", "unlink_module")      => func!(),                       // λ()
-        ("hostio", "user_ink_left")      => func!([], [I64]),              // λ() -> ink_left
-        ("hostio", "user_ink_status")    => func!([], [I32]),              // λ() -> ink_status
+        ("hostio", "user_ink_left")      => func!([], [I64]),              // λ() → ink_left
+        ("hostio", "user_ink_status")    => func!([], [I32]),              // λ() → ink_status
         ("hostio", "user_set_ink")       => func!([I64, I32]),             // λ(ink_left, ink_status)
-        ("hostio", "program_ink_left")   => func!([I32, I32], [I64]),      // λ(module, internals) -> ink_left
-        ("hostio", "program_ink_status") => func!([I32, I32], [I32]),      // λ(module, internals) -> ink_status
-        ("hostio", "program_stack_left") => func!([I32, I32], [I32]),      // λ(module, internals) -> stack_left
+        ("hostio", "program_ink_left")   => func!([I32, I32], [I64]),      // λ(module, internals) → ink_left
+        ("hostio", "program_ink_status") => func!([I32, I32], [I32]),      // λ(module, internals) → ink_status
+        ("hostio", "program_stack_left") => func!([I32, I32], [I32]),      // λ(module, internals) → stack_left
         ("hostio", "program_set_ink")    => func!([I32, I32, I64]),        // λ(module, internals, ink_left)
         ("hostio", "program_set_stack")  => func!([I32, I32, I32]),        // λ(module, internals, stack_left)
-        ("hostio", "program_call_main")  => func!([I32, I32, I32], [I32]), // λ(module, main, args_len) -> status
+        ("hostio", "program_call_main")  => func!([I32, I32, I32], [I32]), // λ(module, main, args_len) → status
+        ("console", "log_i32")            => func!([I32]),                 // λ(value)
+        ("console", "log_i64")            => func!([I64]),                 // λ(value)
+        ("console", "log_f32")            => func!([F32]),                 // λ(value)
+        ("console", "log_f64")            => func!([F64]),                 // λ(value)
+        ("console", "tee_i32")            => func!([I32], [I32]),          // λ(value) → value
+        ("console", "tee_i64")            => func!([I64], [I64]),          // λ(value) → value
+        ("console", "tee_f32")            => func!([F32], [F32]),          // λ(value) → value
+        ("console", "tee_f64")            => func!([F64], [F64]),          // λ(value) → value
         _ => bail!("no such hostio {} in {}", name.red(), module.red()),
     };
 
@@ -176,11 +184,11 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 opcode!(HaltAndSetFinished);
             }
             ("hostio", "user_ink_left") => {
-                // λ() -> ink_left
+                // λ() → ink_left
                 opcode!(CallerModuleInternalCall, UserGasLeft);
             }
             ("hostio", "user_ink_status") => {
-                // λ() -> ink_status
+                // λ() → ink_status
                 opcode!(CallerModuleInternalCall, UserGasStatus);
             }
             ("hostio", "user_set_ink") => {
@@ -190,7 +198,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 opcode!(CallerModuleInternalCall, UserSetGas);
             }
             ("hostio", "link_module") => {
-                // λ(module_hash) -> module
+                // λ(module_hash) → module
                 opcode!(LocalGet, 0);
                 opcode!(LinkModule);
             }
@@ -199,11 +207,11 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 opcode!(UnlinkModule);
             }
             ("hostio", "program_ink_left") => {
-                // λ(module, internals) -> ink_left
+                // λ(module, internals) → ink_left
                 dynamic!(UserGasLeft);
             }
             ("hostio", "program_ink_status") => {
-                // λ(module, internals) -> ink_status
+                // λ(module, internals) → ink_status
                 dynamic!(UserGasStatus);
             }
             ("hostio", "program_set_ink") => {
@@ -213,7 +221,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 dynamic!(UserSetGas);
             }
             ("hostio", "program_stack_left") => {
-                // λ(module, internals) -> stack_left
+                // λ(module, internals) → stack_left
                 dynamic!(UserStackLeft);
             }
             ("hostio", "program_set_stack") => {
@@ -222,7 +230,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 dynamic!(UserSetStack);
             }
             ("hostio", "program_call_main") => {
-                // λ(module, main, args_len) -> status
+                // λ(module, main, args_len) → status
                 opcode!(PushErrorGuard);
                 opcode!(ArbitraryJumpIf, code.len() + 3);
                 opcode!(I32Const, UserOutcomeKind::Failure as u32);
@@ -234,6 +242,10 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 opcode!(LocalGet, 1); // main
                 opcode!(CrossModuleDynamicCall); // consumes module and main, passing args_len
                 opcode!(PopErrorGuard);
+            }
+            ("console", "log_i32" | "log_i64" | "log_f32" | "log_f64") => {}
+            ("console", "tee_i32" | "tee_i64" | "tee_f32" | "tee_f64") => {
+                opcode!(LocalGet, 0);
             }
             _ => bail!("no such hostio {} in {}", name.red(), module.red()),
         }

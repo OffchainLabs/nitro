@@ -7,7 +7,7 @@ use crate::{
     test::{check_instrumentation, new_test_machine, uniform_cost_config},
 };
 use eyre::Result;
-use prover::programs::prelude::*;
+use prover::programs::{prelude::*, start::STYLUS_START};
 use wasmer::{imports, Function, Instance, Module};
 
 #[test]
@@ -44,4 +44,18 @@ fn test_bulk_memory() -> Result<()> {
     assert_eq!(expected, hex::encode(data));
 
     check_instrumentation(native, machine)
+}
+
+#[test]
+fn test_console() -> Result<()> {
+    let filename = "tests/console.wat";
+    let config = uniform_cost_config();
+
+    let mut machine = new_test_machine(filename, config.clone())?;
+    machine.call_function("user", STYLUS_START, vec![])?;
+
+    let mut native = NativeInstance::from_path(filename, &config)?;
+    let starter = native.get_start()?;
+    starter.call(&mut native.store)?;
+    Ok(())
 }

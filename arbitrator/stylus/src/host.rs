@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
-use arbutil::{evm, Color};
-use prover::programs::prelude::*;
+use arbutil::evm;
+use prover::{programs::prelude::*, value::Value};
 
 pub(crate) fn read_args(mut env: WasmEnvMut, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
@@ -195,13 +195,24 @@ pub(crate) fn tx_origin(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub(crate) fn debug_println(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
+pub(crate) fn console_log_text(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
     let env = WasmEnv::start(&mut env)?;
     let text = env.read_slice(ptr, len)?;
-    println!(
-        "{} {}",
-        "Stylus says:".yellow(),
-        String::from_utf8_lossy(&text)
-    );
+    env.say(String::from_utf8_lossy(&text));
     Ok(())
+}
+
+pub(crate) fn console_log<T: Into<Value>>(mut env: WasmEnvMut, value: T) -> MaybeEscape {
+    let env = WasmEnv::start(&mut env)?;
+    env.say(Value::from(value.into()));
+    Ok(())
+}
+
+pub(crate) fn console_tee<T: Into<Value> + Copy>(
+    mut env: WasmEnvMut,
+    value: T,
+) -> Result<T, Escape> {
+    let env = WasmEnv::start(&mut env)?;
+    env.say(Value::from(value.into()));
+    Ok(value)
 }
