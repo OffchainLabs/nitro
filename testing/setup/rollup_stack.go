@@ -59,7 +59,7 @@ func CreateTwoValidatorFork(
 		setup.Backend.Commit()
 	}
 
-	genesis, err := setup.Chains[0].AssertionBySequenceNum(ctx, 0)
+	genesis, err := setup.Chains[0].AssertionBySequenceNum(ctx, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func CreateTwoValidatorFork(
 	assertion, err := setup.Chains[0].CreateAssertion(
 		ctx,
 		height,
-		genesis.SeqNum(),
+		1,
 		genesisState,
 		&protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
@@ -153,7 +153,7 @@ func CreateTwoValidatorFork(
 	forkedAssertion, err := setup.Chains[1].CreateAssertion(
 		ctx,
 		height,
-		genesis.SeqNum(),
+		1,
 		genesisState,
 		evilPostState,
 		prevInboxMaxCount,
@@ -231,7 +231,6 @@ func SetupChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		accs[1].TxOpts,
 		backend,
 		headerReader,
-		addresses.EdgeChallengeManager,
 	)
 	if err != nil {
 		return nil, err
@@ -243,7 +242,6 @@ func SetupChainsWithEdgeChallengeManager() (*ChainSetup, error) {
 		accs[2].TxOpts,
 		backend,
 		headerReader,
-		addresses.EdgeChallengeManager,
 	)
 	if err != nil {
 		return nil, err
@@ -267,7 +265,6 @@ type RollupAddresses struct {
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
 	DeployedAt             uint64         `json:"deployed-at"`
-	EdgeChallengeManager   common.Address `json:"edge-challenge-manager"`
 }
 
 func DeployFullRollupStack(
@@ -277,7 +274,7 @@ func DeployFullRollupStack(
 	sequencer common.Address,
 	config rollupgen.Config,
 ) (*RollupAddresses, error) {
-	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, ospEntryAddr, err := deployRollupCreator(ctx, backend, deployAuth)
+	rollupCreator, rollupUserAddr, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, backend, deployAuth)
 	if err != nil {
 		return nil, err
 	}
@@ -353,19 +350,6 @@ func DeployFullRollupStack(
 		return nil, errors.New("receipt failed")
 	}
 
-	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
-		deployAuth,
-		backend,
-		info.RollupAddress,
-		big.NewInt(1), // TODO: Challenge period length.
-		ospEntryAddr,
-	)
-	backend.Commit()
-	err = challenge_testing.TxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
-	if err != nil {
-		return nil, err
-	}
-
 	return &RollupAddresses{
 		Bridge:                 info.Bridge,
 		Inbox:                  info.InboxAddress,
@@ -375,7 +359,6 @@ func DeployFullRollupStack(
 		RollupUserLogic:        rollupUserAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
-		EdgeChallengeManager:   edgeChallengeManagerAddr,
 	}, nil
 }
 
@@ -491,71 +474,68 @@ func deployChallengeFactory(
 	if err != nil {
 		return common.Address{}, common.Address{}, err
 	}
-
-	miniStakeValue := big.NewInt(1)
-	challengeManagerAddr, tx, _, err := challengeV2gen.DeployChallengeManagerImpl(
+	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
 		auth,
 		backend,
 		assertionChainAddr,
-		miniStakeValue,
-		big.NewInt(1),
+		big.NewInt(1), // TODO: Challenge period length.
 		ospEntryAddr,
 	)
 	backend.Commit()
-	err = challenge_testing.TxSucceeded(ctx, tx, challengeManagerAddr, backend, err)
+	err = challenge_testing.TxSucceeded(ctx, tx, edgeChallengeManagerAddr, backend, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, err
 	}
-	return ospEntryAddr, challengeManagerAddr, nil
+	return ospEntryAddr, edgeChallengeManagerAddr, nil
 }
 
 func deployRollupCreator(
 	ctx context.Context,
 	backend *backends.SimulatedBackend,
 	auth *bind.TransactOpts,
-) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, common.Address, error) {
+) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, auth, backend)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, auth, backend)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, backend)
 	backend.Commit()
 	err = challenge_testing.TxSucceeded(ctx, tx, rollupAdminLogic, backend, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, backend)
 	backend.Commit()
 	err = challenge_testing.TxSucceeded(ctx, tx, rollupUserLogic, backend, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, backend)
 	backend.Commit()
 	err = challenge_testing.TxSucceeded(ctx, tx, rollupCreatorAddress, backend, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, backend)
 	backend.Commit()
 	err = challenge_testing.TxSucceeded(ctx, tx, validatorUtils, backend, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, backend)
 	backend.Commit()
 	err = challenge_testing.TxSucceeded(ctx, tx, validatorWalletCreator, backend, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	_, err = rollupCreator.SetTemplates(
@@ -569,10 +549,10 @@ func deployRollupCreator(
 		validatorWalletCreator,
 	)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 	backend.Commit()
-	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, ospEntryAddr, nil
+	return rollupCreator, rollupUserLogic, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
 // Represents a test EOA account in the simulated backend,

@@ -39,6 +39,9 @@ func (a *Assertion) PrevSeqNum() (protocol.AssertionSequenceNumber, error) {
 	if err != nil {
 		return 0, err
 	}
+	if inner.PrevNum == 0 {
+		return protocol.AssertionSequenceNumber(1), nil
+	}
 	return protocol.AssertionSequenceNumber(inner.PrevNum), nil
 }
 

@@ -48,7 +48,6 @@ func Example() {
 		txOpts,
 		backend,
 		hr, // headerReader
-		EdgeChallengeManager,
 	)
 	if err != nil {
 		// An error is unlikely to occur at this point, but your application should handle any

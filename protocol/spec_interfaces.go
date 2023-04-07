@@ -119,14 +119,14 @@ type SpecEdge interface {
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.
 	EndCommitment() (Height, common.Hash)
-	// The presumptive timer in seconds for an edge.
-	PresumptiveTimer(ctx context.Context) (uint64, error)
-	// Whether or not an edge is presumptive.
-	IsPresumptive(ctx context.Context) (bool, error)
+	// The time in seconds an edge has been unrivaled.
+	TimeUnrivaled(ctx context.Context) (uint64, error)
+	// Whether or not an edge has rivals.
+	HasRival(ctx context.Context) (bool, error)
 	// The status of an edge.
 	Status(ctx context.Context) (EdgeStatus, error)
-	// Checks the start commitment of an edge is the source of a one-step fork.
-	IsOneStepForkSource(ctx context.Context) (bool, error)
+	// Checks if an edge has a length one rival.
+	HasLengthOneRival(ctx context.Context) (bool, error)
 	// Bisection capabilities for an edge. Returns the two child
 	// edges that are created as a result.
 	Bisect(

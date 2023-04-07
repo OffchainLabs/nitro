@@ -38,16 +38,16 @@ func Test_act(t *testing.T) {
 		edge.On("Id").Return(protocol.EdgeId([32]byte{}))
 		edge.On("GetType").Return(protocol.BlockChallengeEdge)
 		edge.On(
-			"IsOneStepForkSource",
+			"HasLengthOneRival",
 			ctx,
 		).Return(
 			true, nil,
 		)
 		edge.On(
-			"IsPresumptive",
+			"HasRival",
 			ctx,
 		).Return(
-			false, nil,
+			true, nil,
 		)
 		p.On("SpecChallengeManager", ctx).Return(
 			manager,
@@ -87,16 +87,16 @@ func Test_act(t *testing.T) {
 		edge.On("Id").Return(protocol.EdgeId([32]byte{}))
 		edge.On("GetType").Return(protocol.BlockChallengeEdge)
 		edge.On(
-			"IsOneStepForkSource",
+			"HasLengthOneRival",
 			ctx,
 		).Return(
 			false, nil,
 		)
 		edge.On(
-			"IsPresumptive",
+			"HasRival",
 			ctx,
 		).Return(
-			true, nil,
+			false, nil,
 		)
 		p.On("SpecChallengeManager", ctx).Return(
 			manager,
@@ -133,7 +133,7 @@ func Test_act(t *testing.T) {
 func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTracker) {
 	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
 		DivergeHeight: 0,
-		NumBlocks:     3,
+		NumBlocks:     7,
 	})
 	require.NoError(t, err)
 
@@ -165,18 +165,18 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 
 	honestValidator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
 	honestValidator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
-	honestEdge, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, 0)
+	honestEdge, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, 1)
 	require.NoError(t, err)
 
 	evilValidator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
 	evilValidator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
-	evilEdge, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, 0)
+	evilEdge, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, 1)
 	require.NoError(t, err)
 
 	// Check presumptive statuses.
-	isPs, err := honestEdge.IsPresumptive(ctx)
+	hasRival, err := honestEdge.HasRival(ctx)
 	require.NoError(t, err)
-	require.Equal(t, false, isPs)
+	require.Equal(t, false, !hasRival)
 	tracker1, err := newEdgeTracker(
 		&edgeTrackerConfig{
 			timeRef:          util.NewArtificialTimeReference(),

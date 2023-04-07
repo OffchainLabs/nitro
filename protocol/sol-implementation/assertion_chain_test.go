@@ -44,7 +44,7 @@ func TestCreateAssertion(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		height := uint64(1)
-		prev := uint64(0)
+		prev := uint64(1)
 
 		latestBlockHash := common.Hash{}
 		for i := uint64(0); i < 100; i++ {
@@ -78,7 +78,7 @@ func TestCreateAssertion(t *testing.T) {
 	t.Run("can create fork", func(t *testing.T) {
 		assertionChain := cfg.Chains[1]
 		height := uint64(1)
-		prev := uint64(0)
+		prev := uint64(1)
 
 		for i := uint64(0); i < 100; i++ {
 			backend.Commit()
@@ -112,14 +112,14 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
-	resp, err := chain.AssertionBySequenceNum(ctx, 0)
+	resp, err := chain.AssertionBySequenceNum(ctx, 1)
 	require.NoError(t, err)
 
 	stateHash, err := resp.StateHash()
 	require.NoError(t, err)
 	require.Equal(t, true, stateHash != [32]byte{})
 
-	_, err = chain.AssertionBySequenceNum(ctx, 1)
+	_, err = chain.AssertionBySequenceNum(ctx, 2)
 	require.ErrorIs(t, err, solimpl.ErrNotFound)
 }
 
@@ -133,7 +133,7 @@ func TestAssertion_Confirm(t *testing.T) {
 		backend := cfg.Backend
 
 		height := uint64(1)
-		prev := uint64(0)
+		prev := uint64(1)
 
 		assertionBlockHash := common.Hash{}
 		for i := uint64(0); i < 100; i++ {
@@ -183,7 +183,7 @@ func TestAssertion_Reject(t *testing.T) {
 		backend := cfg.Backend
 
 		height := uint64(1)
-		prev := uint64(0)
+		prev := uint64(1)
 
 		assertionBlockHash := common.Hash{}
 		for i := uint64(0); i < 100; i++ {
@@ -226,5 +226,5 @@ func TestChallengePeriodSeconds(t *testing.T) {
 
 	chalPeriod, err := manager.ChallengePeriodSeconds(ctx)
 	require.NoError(t, err)
-	require.Equal(t, time.Second, chalPeriod)
+	require.Equal(t, 100*time.Second, chalPeriod)
 }

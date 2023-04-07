@@ -33,15 +33,15 @@ func (et *edgeTracker) act(ctx context.Context) error {
 	switch current.State {
 	// Start state.
 	case edgeStarted:
-		isPresumptive, err := et.edge.IsPresumptive(ctx)
+		hasRival, err := et.edge.HasRival(ctx)
 		if err != nil {
 			return errors.Wrap(err, "could not check presumptive")
 		}
-		if isPresumptive {
+		if !hasRival {
 			return et.fsm.Do(edgeMarkPresumptive{})
 		}
 		// TODO: Add a conditional to check if we can confirm.
-		atOneStepFork, err := et.edge.IsOneStepForkSource(ctx)
+		atOneStepFork, err := et.edge.HasLengthOneRival(ctx)
 		if err != nil {
 			return errors.Wrap(err, "could not check if edge is at one step fork")
 		}
@@ -110,11 +110,11 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		return et.fsm.Do(edgeAwaitSubchallengeResolution{})
 	// Edge is presumptive, should do nothing until it loses ps status.
 	case edgePresumptive:
-		isPs, err := et.edge.IsPresumptive(ctx)
+		hasRival, err := et.edge.HasRival(ctx)
 		if err != nil {
 			return errors.Wrap(err, "could not check if presumptive")
 		}
-		if !isPs {
+		if hasRival {
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		return et.fsm.Do(edgeMarkPresumptive{})
@@ -138,7 +138,6 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 	if err != nil {
 		return util.HistoryCommitment{}, nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", startHeight, endHeight)
 	}
-
 	if et.edge.GetType() == protocol.BlockChallengeEdge {
 		historyCommit, commitErr := et.cfg.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
 		if commitErr != nil {

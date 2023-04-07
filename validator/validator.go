@@ -122,7 +122,7 @@ func New(
 	for _, o := range opts {
 		o(v)
 	}
-	genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, 0)
+	genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, 1)
 	if err != nil {
 		return nil, err
 	}

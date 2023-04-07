@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/pkg/errors"
 )
 
@@ -61,8 +62,6 @@ type AssertionChain struct {
 	userLogic    *rollupgen.RollupUserLogic
 	txOpts       *bind.TransactOpts
 	headerReader *headerreader.HeaderReader
-	// TODO: Should be fetchable from the assertion chain contract itself.
-	edgeChallengeManagerAddr common.Address
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -73,13 +72,11 @@ func NewAssertionChain(
 	txOpts *bind.TransactOpts,
 	backend ChainBackend,
 	headerReader *headerreader.HeaderReader,
-	edgeChallengeManagerAddr common.Address,
 ) (*AssertionChain, error) {
 	chain := &AssertionChain{
-		backend:                  backend,
-		txOpts:                   txOpts,
-		headerReader:             headerReader,
-		edgeChallengeManagerAddr: edgeChallengeManagerAddr,
+		backend:      backend,
+		txOpts:       txOpts,
+		headerReader: headerReader,
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,
@@ -208,9 +205,15 @@ func (ac *AssertionChain) CreateSuccessionChallenge(_ context.Context, _ protoco
 
 // SpecChallengeManager creates a new spec challenge manager
 func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
+	challengeManagerAddr, err := ac.userLogic.RollupUserLogicCaller.ChallengeManager(
+		&bind.CallOpts{Context: ctx},
+	)
+	if err != nil {
+		return nil, err
+	}
 	return NewSpecChallengeManager(
 		ctx,
-		ac.edgeChallengeManagerAddr,
+		challengeManagerAddr,
 		ac,
 		ac.backend,
 		ac.headerReader,
@@ -221,7 +224,7 @@ func (ac *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Sp
 // Confirm creates a confirmation for an assertion at the block hash and send root.
 func (ac *AssertionChain) Confirm(ctx context.Context, blockHash, sendRoot common.Hash) error {
 	receipt, err := transact(ctx, ac.backend, ac.headerReader, func() (*types.Transaction, error) {
-		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot)
+		return ac.userLogic.ConfirmNextAssertion(ac.txOpts, blockHash, sendRoot, [32]byte{}) // TODO(RJ): Add winning edge.
 	})
 	if err != nil {
 		switch {
@@ -324,7 +327,18 @@ func transact(ctx context.Context, backend ChainBackend, l1Reader *headerreader.
 		return nil, err
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return nil, fmt.Errorf("receipt status shows failing transaction: %+v", receipt)
+		callMsg := ethereum.CallMsg{
+			From:       common.Address{},
+			To:         tx.To(),
+			Gas:        0,
+			GasPrice:   nil,
+			Value:      tx.Value(),
+			Data:       tx.Data(),
+			AccessList: tx.AccessList(),
+		}
+		if _, err := backend.CallContract(ctx, callMsg, nil); err != nil {
+			return nil, errors.Wrap(err, "failed transaction")
+		}
 	}
 	return receipt, nil
 }

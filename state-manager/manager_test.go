@@ -37,8 +37,6 @@ func TestPrefixProof(t *testing.T) {
 	require.NoError(t, err)
 	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, endHeight)
 	require.NoError(t, err)
-	_ = loCommit
-	_ = hiCommit
 	packedProof, err := manager.PrefixProof(ctx, startHeight, endHeight)
 	require.NoError(t, err)
 

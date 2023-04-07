@@ -436,11 +436,11 @@ func (m *MockSpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.Height), args.Error(1)
 }
-func (m *MockSpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
+func (m *MockSpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
-func (m *MockSpecEdge) IsPresumptive(ctx context.Context) (bool, error) {
+func (m *MockSpecEdge) HasRival(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)
 }
@@ -472,7 +472,7 @@ func (m *MockSpecEdge) ConfirmByChildren(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
 }
-func (m *MockSpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
+func (m *MockSpecEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)
 }

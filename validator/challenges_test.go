@@ -27,9 +27,8 @@ import (
 )
 
 var (
-	// TODO: These are brittle and could break if the event sigs change in Solidity.
-	bisectEventSig    = hexutil.MustDecode("0xaab36db1c086a1a8a2a953ec2a3f131e133f7be8e6e1970f8fd79a2ab341c001")
-	leafAddedEventSig = hexutil.MustDecode("0x102ba5fcc71c9f7d7075d3f9cc9cb52fe4feb2cb843bef52f5f9fe9825b539e5")
+	bisectEventSig    = hexutil.MustDecode("0xddd14992ee7cd971b2a5cc510ebc7a33a1a7bd11dd74c3c5a83000328a0d5906")
+	leafAddedEventSig = hexutil.MustDecode("0x7340510d24b7ec9b5c100f5500d93429d80d00d46f0d18e4e85d0c4cc22b9924")
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
@@ -73,11 +72,11 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			bobHeight:   7,
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3 at all subchallenge levels.
-			assertionDivergenceHeight:    3,
+			assertionDivergenceHeight:    4,
 			numBigStepsAtAssertionHeight: 7,
-			bigStepDivergenceHeight:      3,
+			bigStepDivergenceHeight:      4,
 			numSmallStepsAtBigStep:       7,
-			smallStepDivergenceHeight:    3,
+			smallStepDivergenceHeight:    4,
 		}
 		// At each challenge level:
 		// Alice adds a challenge leaf 7, is presumptive.
@@ -89,12 +88,11 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		// Bob bisects from 3 to 2, is presumptive.
 		// Alice merges from 3 to 2.
 		// Both challengers are now at a one-step fork, we now await subchallenge resolution.
-		cfg.expectedLeavesAdded = 6
-		cfg.expectedBisections = 10
+		cfg.expectedLeavesAdded = 10
+		cfg.expectedBisections = 24
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 3")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 	t.Run("two validators opening leaves at height 255", func(t *testing.T) {
@@ -102,18 +100,17 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			currentChainHeight:           255,
 			aliceHeight:                  255,
 			bobHeight:                    255,
-			assertionDivergenceHeight:    3,
+			assertionDivergenceHeight:    4,
 			numBigStepsAtAssertionHeight: 7,
-			bigStepDivergenceHeight:      3,
+			bigStepDivergenceHeight:      4,
 			numSmallStepsAtBigStep:       7,
-			smallStepDivergenceHeight:    3,
+			smallStepDivergenceHeight:    4,
 		}
-		cfg.expectedLeavesAdded = 6
-		cfg.expectedBisections = 20
+		cfg.expectedLeavesAdded = 20
+		cfg.expectedBisections = 44
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
-		AssertLogsContain(t, hook, "Reached one-step-fork at start height 2")
+		AssertLogsContain(t, hook, "Reached one-step-fork at start height 3")
 		AssertLogsContain(t, hook, "Checking one-step-proof against protocol")
 	})
 }
@@ -152,7 +149,7 @@ func prepareHonestStates(
 ) ([]*protocol.ExecutionState, []*big.Int) {
 	t.Helper()
 	// Initialize each validator's associated state roots which diverge
-	genesis, err := chain.AssertionBySequenceNum(ctx, 0)
+	genesis, err := chain.AssertionBySequenceNum(ctx, 1)
 	require.NoError(t, err)
 
 	genesisState := &protocol.ExecutionState{
@@ -358,10 +355,10 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	// Submit leaf creation manually for each validator.
 	latestHonest, err := honestManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	_, err = alice.chain.CreateAssertion(
+	leaf1, err := alice.chain.CreateAssertion(
 		ctx,
 		latestHonest.Height,
-		0,
+		1,
 		latestHonest.PreState,
 		latestHonest.PostState,
 		latestHonest.InboxMaxCount,
@@ -370,53 +367,50 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 
 	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx, 0)
 	require.NoError(t, err)
-	_, err = bob.chain.CreateAssertion(
+	leaf2, err := bob.chain.CreateAssertion(
 		ctx,
 		latestEvil.Height,
-		0,
+		1,
 		latestEvil.PreState,
 		latestEvil.PostState,
 		latestEvil.InboxMaxCount,
 	)
 	require.NoError(t, err)
 
-	genesis, err := alice.chain.AssertionBySequenceNum(ctx, 0)
-	require.NoError(t, err)
-
 	// Honest assertion being added.
-	startCommit := util.HistoryCommitment{
-		Height: 0,
-		Merkle: common.Hash{},
-	}
-	leafAdder := func(endCommit util.HistoryCommitment) protocol.SpecEdge {
-		leaf, err := challengeManager.AddBlockChallengeLevelZeroEdge(
+	leafAdder := func(startCommit, endCommit util.HistoryCommitment, leaf protocol.Assertion) protocol.SpecEdge {
+		edge, err := challengeManager.AddBlockChallengeLevelZeroEdge(
 			ctx,
-			genesis,
+			leaf,
 			startCommit,
 			endCommit,
 		)
 		require.NoError(t, err)
-		return leaf
+		return edge
 	}
 
+	honestStartCommit, err := honestManager.HistoryCommitmentUpTo(ctx, 0)
+	require.NoError(t, err)
 	honestEndCommit, err := honestManager.HistoryCommitmentUpTo(ctx, latestHonest.Height)
 	require.NoError(t, err)
 
 	t.Log("Alice creates level zero block edge")
 
-	honestEdge := leafAdder(honestEndCommit)
+	honestEdge := leafAdder(honestStartCommit, honestEndCommit, leaf1)
 	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
 
-	isPs, err := honestEdge.IsPresumptive(ctx)
+	hasRival, err := honestEdge.HasRival(ctx)
 	require.NoError(t, err)
-	require.Equal(t, true, isPs)
+	require.Equal(t, true, !hasRival)
 
+	evilStartCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, 0)
+	require.NoError(t, err)
 	evilEndCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, uint64(latestEvil.Height))
 	require.NoError(t, err)
 
 	t.Log("Bob creates level zero block edge")
 
-	evilEdge := leafAdder(evilEndCommit)
+	evilEdge := leafAdder(evilStartCommit, evilEndCommit, leaf2)
 	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
 
 	aliceTracker, err := newEdgeTracker(

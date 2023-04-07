@@ -37,16 +37,16 @@ func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.inner.EndHeight.Uint64()), e.inner.EndHistoryRoot
 }
 
-func (e *SpecEdge) PresumptiveTimer(ctx context.Context) (uint64, error) {
-	timer, err := e.manager.caller.GetCurrentPsTimer(&bind.CallOpts{Context: ctx}, e.id)
+func (e *SpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
+	timer, err := e.manager.caller.TimeUnrivaled(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
 		return 0, err
 	}
 	return timer.Uint64(), nil
 }
 
-func (e *SpecEdge) IsPresumptive(ctx context.Context) (bool, error) {
-	return e.manager.caller.IsPresumptive(&bind.CallOpts{Context: ctx}, e.id)
+func (e *SpecEdge) HasRival(ctx context.Context) (bool, error) {
+	return e.manager.caller.HasRival(&bind.CallOpts{Context: ctx}, e.id)
 }
 
 func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
@@ -57,14 +57,14 @@ func (e *SpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 	return protocol.EdgeStatus(edge.Status), nil
 }
 
-func (e *SpecEdge) IsOneStepForkSource(ctx context.Context) (bool, error) {
-	ok, err := e.manager.caller.IsAtOneStepFork(&bind.CallOpts{Context: ctx}, e.id)
+func (e *SpecEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
+	ok, err := e.manager.caller.HasLengthOneRival(&bind.CallOpts{Context: ctx}, e.id)
 	if err != nil {
 		errS := err.Error()
 		switch {
 		case strings.Contains(errS, "not length 1"):
 			return false, nil
-		case strings.Contains(errS, "is presumptive"):
+		case strings.Contains(errS, "is unrivaled"):
 			return false, nil
 		default:
 			return false, err
@@ -117,7 +117,7 @@ func (e *SpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 		ancestors[i] = r
 	}
 	_, err := transact(ctx, e.manager.backend, e.manager.reader, func() (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByTimer(e.manager.txOpts, e.id, ancestors)
+		return e.manager.writer.ConfirmEdgeByTime(e.manager.txOpts, e.id, ancestors)
 	})
 	return err
 }
@@ -176,7 +176,7 @@ func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, er
 		}
 		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
-			return 0, errors.Wrapf(err, "block challenge one step fork source does not exist %#x", e.inner.ClaimEdgeId)
+			return 0, errors.Wrapf(err, "block challenge one step fork source does not exist for rival id %#x", rivalId)
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
 			return 0, errors.New("source edge is none")
