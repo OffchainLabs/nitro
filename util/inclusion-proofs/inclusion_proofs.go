@@ -1,8 +1,7 @@
 package inclusionproofs
 
 import (
-	"math"
-
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
@@ -13,6 +12,82 @@ var (
 	ErrInvalidTree   = errors.New("invalid merkle tree")
 	ErrInvalidLeaves = errors.New("invalid number of leaves for merkle tree")
 )
+
+// FullTree generates a Merkle tree from a list of leaves.
+func FullTree(leaves []common.Hash) ([][]common.Hash, error) {
+	msb, err := prefixproofs.MostSignificantBit(uint64(len(leaves)))
+	if err != nil {
+		return nil, err
+	}
+	lsb, err := prefixproofs.LeastSignificantBit(uint64(len(leaves)))
+	if err != nil {
+		return nil, err
+	}
+	maxLevel := msb + 1
+	if msb == lsb {
+		maxLevel = msb
+	}
+
+	layers := make([][]common.Hash, maxLevel+1)
+	layers[0] = leaves
+	l := uint64(1)
+
+	prevLayer := leaves
+	for len(prevLayer) > 1 {
+		nextLayer := make([]common.Hash, (len(prevLayer)+1)/2)
+		for i := 0; i < len(nextLayer); i++ {
+			if 2*i+1 < len(prevLayer) {
+				nextLayer[i] = crypto.Keccak256Hash(prevLayer[2*i].Bytes(), prevLayer[2*i+1].Bytes())
+			} else {
+				nextLayer[i] = crypto.Keccak256Hash(prevLayer[2*i].Bytes(), (common.Hash{}).Bytes())
+			}
+		}
+		layers[l] = nextLayer
+		prevLayer = nextLayer
+		l++
+	}
+	return layers, nil
+}
+
+// GenerateInclusionProof from a list of Merkle leaves at a specified index.
+func GenerateInclusionProof(leaves []common.Hash, idx uint64) ([]common.Hash, error) {
+	if len(leaves) == 0 {
+		return nil, ErrInvalidLeaves
+	}
+	if idx >= uint64(len(leaves)) {
+		return nil, ErrInvalidLeaves
+	}
+	if len(leaves) == 1 {
+		return make([]common.Hash, 0), nil
+	}
+	rehashed := make([]common.Hash, len(leaves))
+	for i, r := range leaves {
+		rehashed[i] = crypto.Keccak256Hash(r.Bytes())
+	}
+
+	fullT, err := FullTree(rehashed)
+	if err != nil {
+		return nil, err
+	}
+	maxLevel, err := prefixproofs.MostSignificantBit(uint64(len(rehashed)) - 1)
+	if err != nil {
+		return nil, err
+	}
+	proof := make([]common.Hash, maxLevel+1)
+
+	for level := uint64(0); level <= maxLevel; level++ {
+		levelIndex := idx >> level
+		counterpartIndex := levelIndex ^ 1
+		layer := fullT[level]
+		counterpart := common.Hash{}
+		if counterpartIndex <= uint64(len(layer))-1 {
+			counterpart = layer[counterpartIndex]
+		}
+		proof[level] = counterpart
+	}
+
+	return proof, nil
+}
 
 // CalculateRootFromProof calculates a Merkle root from a Merkle proof, index, and leaf.
 func CalculateRootFromProof(proof []common.Hash, index uint64, leaf common.Hash) (common.Hash, error) {
@@ -29,64 +104,4 @@ func CalculateRootFromProof(proof []common.Hash, index uint64, leaf common.Hash)
 		}
 	}
 	return h, nil
-}
-
-// MerkleRoot from a tree.
-func MerkleRoot(tree [][]common.Hash) (common.Hash, error) {
-	if len(tree) == 0 || len(tree[len(tree)-1]) == 0 {
-		return common.Hash{}, ErrInvalidTree
-	}
-	return tree[len(tree)-1][0], nil
-}
-
-// ComputeMerkleTree from a list of hashes. If not a power of two,
-// pads with empty [32]byte{} until the length is a power of two.
-// Creates a tree where the last level is the root.
-// This is inspired by the Sparse Merkle Tree data structure from
-// https://github.com/prysmaticlabs/prysm/tree/develop/container/trie/sparse_merkle.go
-func ComputeMerkleTree(items []common.Hash) [][]common.Hash {
-	leaves := make([]common.Hash, len(items))
-	for i, r := range items {
-		// Rehash to match the Merkle expansion functions.
-		leaves[i] = crypto.Keccak256Hash(r[:])
-	}
-	for !isPowerOfTwo(uint64(len(leaves))) {
-		leaves = append(leaves, common.Hash{})
-	}
-	height := uint64(math.Log2(float64(len(leaves))))
-	layers := make([][]common.Hash, height+1)
-	layers[0] = leaves
-	for i := uint64(0); i < height; i++ {
-		updatedValues := make([]common.Hash, 0)
-		for j := 0; j < len(layers[i]); j += 2 {
-			hashed := crypto.Keccak256Hash(layers[i][j][:], layers[i][j+1][:])
-			updatedValues = append(updatedValues, hashed)
-		}
-		layers[i+1] = updatedValues
-	}
-	return layers
-}
-
-// GenerateMerkleProof for an index in a Merkle tree.
-func GenerateMerkleProof(index uint64, tree [][]common.Hash) ([]common.Hash, error) {
-	if len(tree) == 0 {
-		return nil, ErrInvalidTree
-	}
-	proof := make([]common.Hash, len(tree)-1)
-	leaves := tree[0]
-	if index >= uint64(len(leaves)) {
-		return nil, ErrInvalidLeaves
-	}
-	for i := 0; i < len(tree)-1; i++ {
-		subIndex := (index / (1 << i)) ^ 1
-		proof[i] = tree[i][subIndex]
-	}
-	return proof, nil
-}
-
-func isPowerOfTwo(x uint64) bool {
-	if x == 0 {
-		return false
-	}
-	return x&(x-1) == 0
 }
