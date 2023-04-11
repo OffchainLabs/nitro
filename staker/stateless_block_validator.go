@@ -11,7 +11,6 @@ import (
 
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -193,16 +192,8 @@ func NewStatelessBlockValidator(
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
 ) (*StatelessBlockValidator, error) {
-	var jwt []byte
-	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
-		if err != nil {
-			return nil, err
-		}
-		jwt = jwtHash.Bytes()
-	}
-	valClient := server_api.NewValidationClient(config.URL, jwt)
-	execClient := server_api.NewExecutionClient(config.URL, jwt)
+	valClient := server_api.NewValidationClient(&config.ValidationServer)
+	execClient := server_api.NewExecutionClient(&config.ValidationServer)
 	validator := &StatelessBlockValidator{
 		config:             config,
 		execSpawner:        execClient,

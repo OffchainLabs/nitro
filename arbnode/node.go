@@ -769,7 +769,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReader(inboxReader)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.URL != "" {
+	if config.BlockValidator.ValidationServer.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
