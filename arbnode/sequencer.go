@@ -411,7 +411,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1BlockNumber uint64, l2Timestamp uint64) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -420,14 +420,14 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 			return err
 		}
 	}
-	if options != nil && len(options.KnownAccounts) > 0 {
-		err := options.Check(l1BlockNumber, l2Timestamp, statedb)
+	if options != nil {
+		err := options.Check(l1Info.L1BlockNumber(), header.Time, statedb)
 		if err != nil {
 			conditionalTxRejectedBySequencerCounter.Inc(1)
 			return err
 		}
+		conditionalTxAcceptedBySequencerCounter.Inc(1)
 	}
-	conditionalTxAcceptedBySequencerCounter.Inc(1)
 	return nil
 }
 
@@ -798,14 +798,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	queueItems = s.precheckNonces(queueItems)
 	txes := make([]*types.Transaction, len(queueItems))
 	hooks := s.makeSequencingHooks()
+	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
-		if queueItem.options != nil {
-			if hooks.ConditionalOptionsForTx == nil {
-				hooks.ConditionalOptionsForTx = make(arbos.ConditionalOptionsForTxMap)
-			}
-			hooks.ConditionalOptionsForTx[queueItem.tx.Hash()] = queueItem.options
-		}
+		hooks.ConditionalOptionsForTx[i] = queueItem.options
 	}
 
 	if s.handleInactive(ctx, queueItems) {

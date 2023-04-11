@@ -107,6 +107,7 @@ func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp u
 	currentBlockNumber := hexutil.Uint64(blockNumber)
 	return getBlockTimeLimits(t, currentBlockNumber, futureBlockNumber, past, future)
 }
+
 func getUnfulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
 	future := hexutil.Uint64(timestamp + 30)
 	past := hexutil.Uint64(timestamp - 1)
@@ -401,7 +402,11 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	defer cancel()
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.Sequencer.MaxBlockSpeed = 0
 	nodeConfig.TxPreChecker.Strictness = arbnode.TxPreCheckerStrictnessLikelyCompatible
+	nodeConfig.TxPreChecker.RequiredStateAge = 1
+	nodeConfig.TxPreChecker.RequiredStateMaxBlocks = 2
+
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, nil, nil)
 	defer requireClose(t, l1stack)
 	defer node.StopAndWait()
@@ -430,4 +435,31 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 	testConditionalTxThatShouldFail(t, ctx, 0, l2info, rpcClient, options, -32003)
 	time.Sleep(time.Until(time.Unix(start+1, 0)))
 	testConditionalTxThatShouldSucceed(t, ctx, 1, l2info, rpcClient, options)
+
+	start = time.Now().Unix()
+	if time.Since(time.Unix(start, 0)) > 200*time.Millisecond {
+		start++
+		time.Sleep(time.Until(time.Unix(start, 0)))
+	}
+	tx, err = simple.Increment(&auth)
+	Require(t, err, "failed to call Increment()")
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	currentRootHash = getStorageRootHash(t, node, contractAddress)
+	options = &arbitrum_types.ConditionalOptions{
+		KnownAccounts: map[common.Address]arbitrum_types.RootHashOrSlots{
+			contractAddress: {RootHash: &currentRootHash},
+		},
+	}
+	testConditionalTxThatShouldFail(t, ctx, 2, l2info, rpcClient, options, -32003)
+	tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	testConditionalTxThatShouldFail(t, ctx, 3, l2info, rpcClient, options, -32003)
+	tx = l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	testConditionalTxThatShouldSucceed(t, ctx, 4, l2info, rpcClient, options)
 }

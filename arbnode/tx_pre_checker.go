@@ -35,15 +35,17 @@ const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
 type TxPreCheckerConfig struct {
-	Strictness       uint  `koanf:"strictness" reload:"hot"`
-	RequiredStateAge int64 `koanf:"required-state-age" reload:"hot"`
+	Strictness             uint  `koanf:"strictness" reload:"hot"`
+	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
+	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
 }
 
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
-	Strictness:       TxPreCheckerStrictnessNone,
-	RequiredStateAge: 1,
+	Strictness:             TxPreCheckerStrictnessNone,
+	RequiredStateAge:       1,
+	RequiredStateMaxBlocks: 0,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -51,6 +53,7 @@ func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
 		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, "+
 		"30 = full validation which may reject txs that would succeed")
 	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
+	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
 }
 
 type TxPreChecker struct {
@@ -148,11 +151,11 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if options != nil {
-		l1BlockNumber, err := arbos.Blockhashes().L1BlockNumber()
+		extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 		if err != nil {
-			return errors.Wrap(err, "failed to get l1 block number to precheck conditional tx options")
+			return errors.Wrap(err, "failed to deserialize extra information for current header")
 		}
-		if err := options.PreCheck(l1BlockNumber, header.Time, statedb); err != nil {
+		if err := options.Check(extraInfo.L1BlockNumber, header.Time, statedb); err != nil {
 			conditionalTxRejectedByTxPreCheckerCurrentStateCounter.Inc(1)
 			return err
 		}
@@ -160,20 +163,28 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		if config.RequiredStateAge > 0 {
 			now := time.Now().Unix()
 			oldHeader := header
+			blocksTraversed := uint(0)
 			// find a block that's old enough
-			for now-int64(oldHeader.Time) < config.RequiredStateAge && oldHeader.Number.Uint64() > 0 {
+			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
+				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
+				oldHeader.Number.Uint64() > 0 {
 				previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
 				if previousHeader == nil {
 					break
 				}
 				oldHeader = previousHeader
+				blocksTraversed++
 			}
 			if oldHeader != header {
 				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
 				if err != nil {
 					return errors.Wrap(err, "failed to get old state")
 				}
-				if err := options.CheckOnlyStorage(secondOldStatedb); err != nil {
+				oldExtraInfo, err := types.DeserializeHeaderExtraInformation(oldHeader)
+				if err != nil {
+					return errors.Wrap(err, "failed to deserialize extra information for old header")
+				}
+				if err := options.Check(oldExtraInfo.L1BlockNumber, oldHeader.Time, secondOldStatedb); err != nil {
 					conditionalTxRejectedByTxPreCheckerOldStateCounter.Inc(1)
 					return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")
 				}
