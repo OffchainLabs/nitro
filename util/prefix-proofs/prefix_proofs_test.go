@@ -100,6 +100,59 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
+	ctx := context.Background()
+	hashes := make([]common.Hash, 10)
+	for i := 0; i < len(hashes); i++ {
+		hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
+	}
+	manager, err := statemanager.New(hashes)
+	require.NoError(t, err)
+
+	loCommit, err := manager.HistoryCommitmentUpTo(ctx, 3)
+	require.NoError(t, err)
+	hiCommit, err := manager.HistoryCommitmentUpTo(ctx, 6)
+	require.NoError(t, err)
+	packedProof, err := manager.PrefixProof(ctx, 3, 6)
+	require.NoError(t, err)
+
+	data, err := statemanager.ProofArgs.Unpack(packedProof)
+	require.NoError(t, err)
+	preExpansion := data[0].([][32]byte)
+	proof := data[1].([][32]byte)
+
+	preExpansionHashes := make([]common.Hash, len(preExpansion))
+	for i := 0; i < len(preExpansion); i++ {
+		preExpansionHashes[i] = preExpansion[i]
+	}
+	prefixProof := make([]common.Hash, len(proof))
+	for i := 0; i < len(proof); i++ {
+		prefixProof[i] = proof[i]
+	}
+
+	merkleTreeContract, _ := setupMerkleTreeContract(t)
+	err = merkleTreeContract.VerifyPrefixProof(
+		&bind.CallOpts{},
+		loCommit.Merkle,
+		big.NewInt(4),
+		hiCommit.Merkle,
+		big.NewInt(7),
+		preExpansion,
+		proof,
+	)
+	require.NoError(t, err)
+
+	err = prefixproofs.VerifyPrefixProof(&prefixproofs.VerifyPrefixProofConfig{
+		PreRoot:      loCommit.Merkle,
+		PreSize:      4,
+		PostRoot:     hiCommit.Merkle,
+		PostSize:     7,
+		PreExpansion: preExpansionHashes,
+		PrefixProof:  prefixProof,
+	})
+	require.NoError(t, err)
+}
+
 func TestLeastSignificantBit_GoSolidityEquivalence(t *testing.T) {
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
 	runBitEquivalenceTest(t, merkleTreeContract.LeastSignificantBit, prefixproofs.LeastSignificantBit)
