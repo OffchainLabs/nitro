@@ -9,7 +9,6 @@ import (
 
 var (
 	ErrProofTooLong  = errors.New("merkle proof too long")
-	ErrInvalidTree   = errors.New("invalid merkle tree")
 	ErrInvalidLeaves = errors.New("invalid number of leaves for merkle tree")
 )
 
