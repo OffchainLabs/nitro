@@ -329,6 +329,7 @@ library MerkleTreeLib {
         while (size < postSize) {
             uint256 level = maximumAppendBetween(size, postSize);
 
+            require(proofIndex < proof.length, "Index out of range");
             exp = appendCompleteSubTree(exp, level, proof[proofIndex]);
 
             uint256 numLeaves = 1 << level;
