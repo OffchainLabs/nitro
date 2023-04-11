@@ -2,66 +2,12 @@ package validator
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
-
-// Processes new challenge creation events from the protocol that were not created by self.
-// This will fetch the challenge, its parent assertion, and create a challenge leaf that is
-// relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
-func (v *Validator) onChallengeStarted(
-	ctx context.Context, ev protocol.Challenge,
-) error {
-	challengedAssertion, err := ev.RootAssertion(ctx)
-	if err != nil {
-		return err
-	}
-	levelZeroEdge, err := v.addBlockChallengeLevelZeroEdge(ctx, challengedAssertion.SeqNum())
-	if err != nil {
-		if errors.Is(err, solimpl.ErrAlreadyExists) {
-			// TODO: Should we return error here instead of a log and nil?
-			log.Infof(
-				"Attempted to add a challenge leaf that already exists on challenge with id %#x",
-				ev.Id(),
-			)
-			return nil
-		}
-		return err
-	}
-
-	challengerName := "unknown-name"
-	staker := levelZeroEdge.MiniStaker()
-	if name, ok := v.knownValidatorNames[staker.Unwrap()]; ok {
-		challengerName = name
-	}
-	log.WithFields(logrus.Fields{
-		"name":                 v.name,
-		"challenger":           challengerName,
-		"challengingAssertion": fmt.Sprintf("%d", challengedAssertion.SeqNum()),
-	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
-
-	// Start tracking the challenge.
-	tracker, err := newEdgeTracker(
-		&edgeTrackerConfig{
-			timeRef:          v.timeRef,
-			actEveryNSeconds: v.challengeVertexWakeInterval,
-			chain:            v.chain,
-			stateManager:     v.stateManager,
-			validatorName:    v.name,
-			validatorAddress: v.address,
-		},
-		levelZeroEdge,
-	)
-	if err != nil {
-		return err
-	}
-	go tracker.spawn(ctx)
-	return nil
-}
 
 // Initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
@@ -89,7 +35,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	tracker, err := newEdgeTracker(
 		&edgeTrackerConfig{
 			timeRef:          v.timeRef,
-			actEveryNSeconds: v.challengeVertexWakeInterval,
+			actEveryNSeconds: v.edgeTrackerWakeInterval,
 			chain:            v.chain,
 			stateManager:     v.stateManager,
 			validatorName:    v.name,

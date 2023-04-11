@@ -278,9 +278,8 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		WithName("alice"),
 		WithAddress(aliceAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*100),
+		WithEdgeTrackerWakeInterval(time.Millisecond*100),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
-		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
 	require.NoError(t, err)
 
@@ -303,9 +302,8 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 		WithName("bob"),
 		WithAddress(bobAddr),
 		WithTimeReference(ref),
-		WithChallengeVertexWakeInterval(time.Millisecond*100),
+		WithEdgeTrackerWakeInterval(time.Millisecond*100),
 		WithNewAssertionCheckInterval(time.Millisecond*50),
-		WithNewChallengeCheckInterval(time.Millisecond*50),
 	)
 	require.NoError(t, err)
 
@@ -416,7 +414,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	aliceTracker, err := newEdgeTracker(
 		&edgeTrackerConfig{
 			timeRef:          alice.timeRef,
-			actEveryNSeconds: alice.challengeVertexWakeInterval,
+			actEveryNSeconds: alice.edgeTrackerWakeInterval,
 			chain:            alice.chain,
 			stateManager:     alice.stateManager,
 			validatorName:    alice.name,
@@ -429,7 +427,7 @@ func runChallengeIntegrationTest(t *testing.T, hook *test.Hook, cfg *challengePr
 	bobTracker, err := newEdgeTracker(
 		&edgeTrackerConfig{
 			timeRef:          bob.timeRef,
-			actEveryNSeconds: bob.challengeVertexWakeInterval,
+			actEveryNSeconds: bob.edgeTrackerWakeInterval,
 			chain:            bob.chain,
 			stateManager:     bob.stateManager,
 			validatorName:    bob.name,
