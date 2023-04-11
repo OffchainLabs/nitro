@@ -1221,7 +1221,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BlockValidator != nil {
-		err = n.BlockValidator.Initialize()
+		err = n.BlockValidator.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing block validator: %w", err)
 		}

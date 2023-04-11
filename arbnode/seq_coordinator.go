@@ -117,7 +117,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:            false,
-	RedisUrl:          redisutil.DefaultTestRedisURL,
+	RedisUrl:          "",
 	LockoutDuration:   time.Second * 2,
 	LockoutSpare:      time.Millisecond * 10,
 	SeqNumDuration:    time.Minute * 10,

@@ -174,16 +174,19 @@ type validationEntry struct {
 
 func (v *validationEntry) start() (validator.GoGlobalState, error) {
 	start := v.StartPosition
-	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	return validator.GoGlobalState{
+	globalState := validator.GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  v.PrevBlockHash,
-		SendRoot:   prevExtraInfo.SendRoot,
-	}, nil
+	}
+	if v.PrevBlockHeader != nil {
+		prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
+		if err != nil {
+			return validator.GoGlobalState{}, err
+		}
+		globalState.SendRoot = prevExtraInfo.SendRoot
+	}
+	return globalState, nil
 }
 
 func (v *validationEntry) expectedEnd() (validator.GoGlobalState, error) {
@@ -235,17 +238,20 @@ func newValidationEntry(
 	msg *arbstate.MessageWithMetadata,
 ) (*validationEntry, error) {
 	hasDelayedMsg, delayedMsgNr := usingDelayedMsg(prevHeader, header)
-	return &validationEntry{
-		Stage:           ReadyForRecord,
-		BlockNumber:     header.Number.Uint64(),
-		PrevBlockHash:   prevHeader.Hash(),
-		PrevBlockHeader: prevHeader,
-		BlockHash:       header.Hash(),
-		BlockHeader:     header,
-		HasDelayedMsg:   hasDelayedMsg,
-		DelayedMsgNr:    delayedMsgNr,
-		msg:             msg,
-	}, nil
+	validationEntry := &validationEntry{
+		Stage:         ReadyForRecord,
+		BlockNumber:   header.Number.Uint64(),
+		BlockHash:     header.Hash(),
+		BlockHeader:   header,
+		HasDelayedMsg: hasDelayedMsg,
+		DelayedMsgNr:  delayedMsgNr,
+		msg:           msg,
+	}
+	if prevHeader != nil {
+		validationEntry.PrevBlockHash = prevHeader.Hash()
+		validationEntry.PrevBlockHeader = prevHeader
+	}
+	return validationEntry, nil
 }
 
 func newRecordedValidationEntry(
@@ -496,25 +502,28 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	blockNum := header.Number.Uint64()
 	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
-	prevHeader := v.blockchain.GetHeaderByNumber(blockNum - 1)
-	if prevHeader == nil {
-		return nil, errors.New("prev header not found")
-	}
-	if header.ParentHash != prevHeader.Hash() {
-		return nil, fmt.Errorf("hashes don't match block %d hash %v parent %v prev-found %v",
-			blockNum, header.Hash(), header.ParentHash, prevHeader.Hash())
+	prevHeader := v.blockchain.GetHeader(header.ParentHash, blockNum-1)
+	if prevHeader == nil && blockNum > 0 {
+		return nil, fmt.Errorf("prev header not found for block number %v with hash %s and parent hash %s", blockNum, header.Hash(), header.ParentHash)
 	}
 	msg, err := v.streamer.GetMessage(msgIndex)
 	if err != nil {
 		return nil, err
 	}
-	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
+	var preimages map[common.Hash][]byte
+	var readBatchInfo []validator.BatchInfo
+	if prevHeader != nil {
+		var resHash common.Hash
+		var err error
+		resHash, preimages, readBatchInfo, err = v.RecordBlockCreation(ctx, prevHeader, msg, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get block data to validate: %w", err)
+		}
+		if resHash != header.Hash() {
+			return nil, fmt.Errorf("wrong hash expected %s got %s", header.Hash(), resHash)
+		}
 	}
-	if resHash != header.Hash() {
-		return nil, fmt.Errorf("wrong hash expected %s got %s", header.Hash(), resHash)
-	}
+
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
 		return nil, err
@@ -585,7 +594,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	}
 	defer func() {
 		for _, run := range runs {
-			run.Close()
+			run.Cancel()
 		}
 	}()
 	for _, run := range runs {
@@ -613,7 +622,7 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := v.execSpawner.LatestWasmModuleRoot()
+			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
 			if err != nil {
 				return err
 			}

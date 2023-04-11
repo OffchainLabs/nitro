@@ -37,7 +37,7 @@ var DefaultTestForwarderConfig = ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
 	MaxIdleConnections:    1,
-	RedisUrl:              redisutil.DefaultTestRedisURL,
+	RedisUrl:              "",
 	UpdateInterval:        time.Millisecond * 10,
 	RetryInterval:         time.Millisecond * 3,
 }
@@ -354,7 +354,7 @@ func (f *RedisTxForwarder) Start(ctx context.Context) error {
 	if err := f.StopWaiterSafe.Start(ctx, f); err != nil {
 		return err
 	}
-	if err := f.CallIteratively(f.update); err != nil {
+	if err := f.CallIterativelySafe(f.update); err != nil {
 		return errors.Wrap(err, "failed to start forwarder update thread")
 	}
 	return nil
