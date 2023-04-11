@@ -44,8 +44,8 @@ type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
 	Strictness:             TxPreCheckerStrictnessNone,
-	RequiredStateAge:       1,
-	RequiredStateMaxBlocks: 0,
+	RequiredStateAge:       2,
+	RequiredStateMaxBlocks: 4,
 }
 
 func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
