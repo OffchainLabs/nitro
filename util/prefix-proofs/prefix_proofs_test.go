@@ -31,7 +31,7 @@ func TestRoot(t *testing.T) {
 	t.Run("tree too large", func(t *testing.T) {
 		tree := make([]common.Hash, prefixproofs.MAX_LEVEL+1)
 		_, err := prefixproofs.Root(tree)
-		require.Equal(t, prefixproofs.ErrLevelTooHigh, err)
+		require.Equal(t, prefixproofs.ErrExpansionTooLarge, err)
 	})
 	t.Run("empty tree", func(t *testing.T) {
 		tree := make([]common.Hash, 0)

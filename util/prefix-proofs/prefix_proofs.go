@@ -147,7 +147,7 @@ func MostSignificantBit(x uint64) (uint64, error) {
 // all its subtrees. Returns error for empty tree.
 func Root(me []common.Hash) (common.Hash, error) {
 	if uint64(len(me)) > MAX_LEVEL {
-		return common.Hash{}, ErrLevelTooHigh
+		return common.Hash{}, ErrExpansionTooLarge
 	}
 	if uint64(len(me)) == 0 {
 		return common.Hash{}, ErrRootForEmpty

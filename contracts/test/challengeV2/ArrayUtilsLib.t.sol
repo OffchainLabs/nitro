@@ -92,13 +92,13 @@ contract ArrayUtilsLibTest is Test {
 
     function testSliceOutOfBoundStart() public {
         bytes32[] memory o = random.hashes(5);
-        vm.expectRevert("End not less than length");
+        vm.expectRevert("End not less or equal than length");
         ArrayUtilsLib.slice(o, 5, 6);
     }
 
     function testSliceOutOfBoundEnd() public {
         bytes32[] memory o = random.hashes(5);
-        vm.expectRevert("End not less than length");
+        vm.expectRevert("End not less or equal than length");
         ArrayUtilsLib.slice(o, 3, 6);
     }
 

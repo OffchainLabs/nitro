@@ -27,7 +27,7 @@ library ArrayUtilsLib {
         returns (bytes32[] memory)
     {
         require(startIndex < endIndex, "Start not less than end");
-        require(endIndex <= arr.length, "End not less than length");
+        require(endIndex <= arr.length, "End not less or equal than length");
 
         bytes32[] memory newArr = new bytes32[](endIndex - startIndex);
         for (uint256 i = startIndex; i < endIndex; i++) {
