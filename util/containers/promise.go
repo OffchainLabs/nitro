@@ -11,6 +11,7 @@ type PromiseInterface[R any] interface {
 	ReadyChan() chan struct{}
 	Await(ctx context.Context) (R, error)
 	Current() (R, error) // doesn't wait
+	Cancel()
 }
 
 var ErrNotReady error = errors.New("not ready")
@@ -20,6 +21,7 @@ type Promise[R any] struct {
 	result    R
 	err       error
 	produced  uint32
+	cancel    func()
 }
 
 func (p *Promise[R]) Ready() bool {
@@ -41,6 +43,7 @@ func (p *Promise[R]) Await(ctx context.Context) (R, error) {
 		return p.result, p.err
 	case <-ctx.Done():
 		var empty R
+		p.Cancel()
 		return empty, ctx.Err()
 	}
 }
@@ -51,6 +54,16 @@ func (p *Promise[R]) Current() (R, error) {
 		return empty, ErrNotReady
 	}
 	return p.result, p.err
+}
+
+func (p *Promise[R]) Cancel() {
+	if p.cancel == nil {
+		return
+	}
+	if p.Ready() {
+		return
+	}
+	p.cancel()
 }
 
 func (p *Promise[R]) ProduceErrorSafe(err error) error {
@@ -85,8 +98,21 @@ func (p *Promise[R]) Produce(value R) {
 	}
 }
 
-func NewPromise[R any]() Promise[R] {
+// cancel might be called multiple times while no value or error produced
+// cancel will be called by Await if it's context is done
+func NewPromise[R any](cancel func()) Promise[R] {
 	return Promise[R]{
 		chanReady: make(chan struct{}),
+		cancel:    cancel,
 	}
+}
+
+func NewReadyPromise[R any](val R, err error) PromiseInterface[R] {
+	promise := NewPromise[R](nil)
+	if err == nil {
+		promise.Produce(val)
+	} else {
+		promise.ProduceError(err)
+	}
+	return &promise
 }
