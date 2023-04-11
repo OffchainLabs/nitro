@@ -358,7 +358,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			state := evm.StateDB
 			args = args[2:]
 
-			if callerCtx.readOnly {
+			if callerCtx.readOnly && callerCtx.version >= 11 {
 				return []reflect.Value{reflect.ValueOf(vm.ErrWriteProtection)}
 			}
 
@@ -538,13 +538,14 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
-	eventCtx := func(gasLimit uint64, err error) *Context {
+	eventCtx := func(gasLimit uint64, version uint64, err error) *Context {
 		if err != nil {
 			glog.Error("call to event's GasCost field failed", "err", err)
 		}
 		return &Context{
 			gasSupplied: gasLimit,
 			gasLeft:     gasLimit,
+			version:     version,
 		}
 	}
 
@@ -555,13 +556,22 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
-	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr, maxRefund *big.Int, submissionFeeRefund *big.Int) error {
-		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0))
-		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor, maxRefund, submissionFeeRefund)
+	arbos.EmitReedeemScheduledEvent = func(
+		evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32,
+		donor addr, maxRefund *big.Int, submissionFeeRefund *big.Int,
+	) error {
+		version := arbosState.ArbOSVersion(evm.StateDB)
+		zero := common.Big0
+		cost, err := ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, zero, zero)
+		context := eventCtx(cost, version, err)
+		return ArbRetryableImpl.RedeemScheduled(
+			context, evm, ticketId, retryTxHash, nonce, gas, donor, maxRefund, submissionFeeRefund,
+		)
 	}
-	arbos.EmitReedeemScheduledEvent = emitReedeemScheduled
 	arbos.EmitTicketCreatedEvent = func(evm mech, ticketId bytes32) error {
-		context := eventCtx(ArbRetryableImpl.TicketCreatedGasCost(hash{}))
+		version := arbosState.ArbOSVersion(evm.StateDB)
+		cost, err := ArbRetryableImpl.TicketCreatedGasCost(hash{})
+		context := eventCtx(cost, version, err)
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
@@ -572,7 +582,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbOwnerImpl := &ArbOwner{Address: hex("70")}
 	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error {
-		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
+		version := arbosState.ArbOSVersion(evm.StateDB)
+		cost, err := ArbOwnerImpl.OwnerActsGasCost(method, owner, data)
+		context := eventCtx(cost, version, err)
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
 	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
@@ -654,6 +666,7 @@ func (p *Precompile) Call(
 		gasLeft:     gasSupplied,
 		readOnly:    method.purity <= view,
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+		version:     arbosVersion,
 	}
 
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))

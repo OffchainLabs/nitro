@@ -80,6 +80,7 @@ func (wrapper *OwnerPrecompile) Call(
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
+		version:     arbosState.ArbOSVersion(evm.StateDB),
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	if err != nil {

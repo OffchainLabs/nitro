@@ -32,6 +32,7 @@ type Context struct {
 	txProcessor *arbos.TxProcessor
 	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
+	version     uint64
 	readOnly    bool
 }
 
