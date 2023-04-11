@@ -75,13 +75,11 @@ func (wrapper *OwnerPrecompile) Call(
 	evm *vm.EVM,
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
-	version := arbosState.ArbOSVersion(evm.StateDB)
 
 	burner := &Context{
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
-		version:     version,
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	if err != nil {
@@ -104,6 +102,7 @@ func (wrapper *OwnerPrecompile) Call(
 		return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 	}
 
+	version := arbosState.ArbOSVersion(evm.StateDB)
 	if !readOnly || version < 11 {
 		// log that the owner operation succeeded
 		if err := wrapper.emitSuccess(evm, *(*[4]byte)(input[:4]), caller, input); err != nil {
