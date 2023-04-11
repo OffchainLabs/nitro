@@ -337,8 +337,8 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, skipBlocks u
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 	lastBlock, err := client.BlockNumber(ctx)
 	Require(t, err)
-	if lastBlock < genesis+uint64(txCount) {
-		Fail(t, "internal test error - not enough blocks produced during preparation, want:", genesis+100, "have:", lastBlock)
+	if want := genesis + uint64(txCount); lastBlock < want {
+		Fail(t, "internal test error - not enough blocks produced during preparation, want:", want, "have:", lastBlock)
 	}
 	expectedBalance, err := client.BalanceAt(ctx, GetTestAddressForAccountName(t, "User2"), new(big.Int).SetUint64(lastBlock))
 	Require(t, err)
