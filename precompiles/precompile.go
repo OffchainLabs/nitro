@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -357,6 +357,10 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			evm := args[1].Interface().(*vm.EVM)   //nolint:errcheck
 			state := evm.StateDB
 			args = args[2:]
+
+			if callerCtx.readOnly {
+				return []reflect.Value{reflect.ValueOf(vm.ErrWriteProtection)}
+			}
 
 			emitCost := gascost(args)
 			cost := emitCost[0].Interface().(uint64) //nolint:errcheck

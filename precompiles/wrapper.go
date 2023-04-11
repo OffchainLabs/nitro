@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -102,9 +102,11 @@ func (wrapper *OwnerPrecompile) Call(
 		return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 	}
 
-	// log that the owner operation succeeded
-	if err := wrapper.emitSuccess(evm, *(*[4]byte)(input[:4]), caller, input); err != nil {
-		log.Error("failed to emit OwnerActs event", "err", err)
+	if !readOnly {
+		// log that the owner operation succeeded
+		if err := wrapper.emitSuccess(evm, *(*[4]byte)(input[:4]), caller, input); err != nil {
+			log.Error("failed to emit OwnerActs event", "err", err)
+		}
 	}
 
 	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
