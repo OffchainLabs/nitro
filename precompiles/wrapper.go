@@ -75,7 +75,7 @@ func (wrapper *OwnerPrecompile) Call(
 	evm *vm.EVM,
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
-	version := arbosState.ArbOSVersion(evm.StateDB),
+	version := arbosState.ArbOSVersion(evm.StateDB)
 
 	burner := &Context{
 		gasSupplied: gasSupplied,
