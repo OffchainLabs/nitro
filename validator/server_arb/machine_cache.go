@@ -209,7 +209,7 @@ func (c *MachineCache) populateCache(ctx context.Context) error {
 		if !nextMachine.IsRunning() {
 			break
 		}
-		if nextMachine.GetStepCount() >= c.finalMachineStep {
+		if nextMachine.GetStepCount()+c.machineStepInterval >= c.finalMachineStep {
 			break
 		}
 		if len(c.machines) >= c.config.CachedChallengeMachines {

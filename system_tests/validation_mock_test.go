@@ -120,9 +120,7 @@ func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.Machi
 var mockProof []byte = []byte("friendly jab at competitors")
 
 func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
-	res := containers.NewPromise[[]byte](nil)
-	res.Produce(mockProof)
-	return &res
+	return containers.NewReadyPromise[[]byte](mockProof, nil)
 }
 
 func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}] {

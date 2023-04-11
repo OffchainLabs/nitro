@@ -21,9 +21,9 @@ func (c *ClassA) shortFunc() (uint64, error) {
 	return 42, nil
 }
 
-func (c *ClassA) longFunc(ctx context.Context) (uint64, error) {
+func (c *ClassA) longFunc(ctx context.Context, delay time.Duration) (uint64, error) {
 	select {
-	case <-time.After(time.Millisecond * 200):
+	case <-time.After(delay):
 		return 42, nil
 	case <-ctx.Done():
 		return 0, ctx.Err()
@@ -34,9 +34,9 @@ func (c *ClassA) ShortFunc() containers.PromiseInterface[uint64] {
 	return containers.NewReadyPromise[uint64](c.shortFunc())
 }
 
-func (c *ClassA) LongFunc() containers.PromiseInterface[uint64] {
+func (c *ClassA) LongFunc(delay time.Duration) containers.PromiseInterface[uint64] {
 	return LaunchPromiseThread[uint64](c, func(ctx context.Context) (uint64, error) {
-		return c.longFunc(ctx)
+		return c.longFunc(ctx, delay)
 	})
 }
 
@@ -54,8 +54,8 @@ func (c *Caller) ShortCaller() error {
 	return err
 }
 
-func (c *Caller) LongCaller() error {
-	_, err := c.calee.LongFunc().Await(c.GetContext())
+func (c *Caller) LongCaller(delay time.Duration) error {
+	_, err := c.calee.LongFunc(delay).Await(c.GetContext())
 	return err
 }
 
@@ -71,13 +71,13 @@ func TestStopWaiterPromise(t *testing.T) {
 	caller.Start(ctx)
 
 	Require(t, caller.ShortCaller())
-	Require(t, caller.LongCaller())
+	Require(t, caller.LongCaller(time.Millisecond*200))
 
 	go func() {
 		<-time.After(time.Millisecond * 10)
 		caller.StopAndWait()
 	}()
-	err := caller.LongCaller()
+	err := caller.LongCaller(time.Minute)
 	if err == nil {
 		t.Fatal("longcaller succeeded after caller stop")
 	}
@@ -86,13 +86,13 @@ func TestStopWaiterPromise(t *testing.T) {
 		calee: classA,
 	}
 	callerB.Start(ctx)
-	Require(t, callerB.LongCaller())
+	Require(t, callerB.LongCaller(time.Millisecond*200))
 
 	go func() {
-		<-time.After(time.Millisecond * 100)
+		<-time.After(time.Millisecond * 10)
 		classA.StopAndWait()
 	}()
-	err = callerB.LongCaller()
+	err = callerB.LongCaller(time.Minute)
 	if err == nil {
 		t.Fatal("longcaller succeeded after caller stop")
 	}

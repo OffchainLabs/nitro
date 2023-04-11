@@ -64,7 +64,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 		machineStep := machine.GetStepCount()
 		if position != machineStep {
 			machineRunning := machine.IsRunning()
-			if (machineRunning && position != machineStep) || machineStep > position {
+			if machineRunning || machineStep > position {
 				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
 			}
 
