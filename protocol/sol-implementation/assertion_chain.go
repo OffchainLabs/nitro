@@ -183,24 +183,16 @@ func (ac *AssertionChain) CreateAssertion(
 	return ac.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(assertionCreated.AssertionNum))
 }
 
-func (ac *AssertionChain) GetAssertionId(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.AssertionHash, error) {
+func (ac *AssertionChain) GetAssertionId(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.AssertionId, error) {
 	return ac.userLogic.GetAssertionId(&bind.CallOpts{Context: ctx}, uint64(seqNum))
 }
 
-func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.AssertionSequenceNumber, error) {
+func (ac *AssertionChain) GetAssertionNum(ctx context.Context, assertionHash protocol.AssertionId) (protocol.AssertionSequenceNumber, error) {
 	res, err := ac.userLogic.GetAssertionNum(&bind.CallOpts{Context: ctx}, assertionHash)
 	if err != nil {
 		return 0, err
 	}
 	return protocol.AssertionSequenceNumber(res), nil
-}
-func (ac *AssertionChain) BlockChallenge(_ context.Context, _ protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
-	return nil, errors.New("unimplemented")
-}
-
-// CreateSuccessionChallenge creates a succession challenge
-func (ac *AssertionChain) CreateSuccessionChallenge(_ context.Context, _ protocol.AssertionSequenceNumber) (protocol.Challenge, error) {
-	return nil, errors.New("unimplemented")
 }
 
 // SpecChallengeManager creates a new spec challenge manager
