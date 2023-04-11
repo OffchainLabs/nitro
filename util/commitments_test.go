@@ -14,13 +14,13 @@ func TestHistoryCommitment_LeafProofs(t *testing.T) {
 	for i := 0; i < len(leaves); i++ {
 		leaves[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
-	height := uint64(8)
+	height := uint64(7)
 	history, err := NewHistoryCommitment(height, leaves)
 	require.NoError(t, err)
 	require.Equal(t, history.FirstLeaf, leaves[0])
-	require.Equal(t, history.LastLeaf, leaves[height-1])
+	require.Equal(t, history.LastLeaf, leaves[height])
 
-	computed, err := inclusionproofs.CalculateRootFromProof(history.LastLeafProof, history.Height-1, history.LastLeaf)
+	computed, err := inclusionproofs.CalculateRootFromProof(history.LastLeafProof, history.Height, history.LastLeaf)
 	require.NoError(t, err)
 	require.Equal(t, history.Merkle, computed)
 	computed, err = inclusionproofs.CalculateRootFromProof(history.FirstLeafProof, 0, history.FirstLeaf)

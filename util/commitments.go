@@ -58,6 +58,9 @@ func NewHistoryCommitment(
 	if len(leaves) == 0 {
 		return emptyCommit, errors.New("must commit to at least one leaf")
 	}
+	if height != uint64(len(leaves))-1 {
+		return emptyCommit, errors.New("height must be equal to number of leaves - 1")
+	}
 	firstLeafProof, err := inclusionproofs.GenerateInclusionProof(leaves, 0)
 	if err != nil {
 		return emptyCommit, err
