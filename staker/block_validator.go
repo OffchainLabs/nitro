@@ -438,7 +438,8 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	return v.execSpawner.WriteToFile(input, expOut, moduleRoot)
+	_, err = v.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(v.GetContext())
+	return err
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -766,7 +767,7 @@ func (v *BlockValidator) progressValidated() {
 			}
 		}
 		for _, run := range validationStatus.Runs {
-			run.Close()
+			run.Cancel()
 		}
 		validationStatus.replaceStatus(ValidationSent, Valid)
 		validatorValidValidationsCounter.Inc(1)
@@ -992,12 +993,12 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 }
 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
-func (v *BlockValidator) Initialize() error {
+func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.execSpawner.LatestWasmModuleRoot()
+		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
 		if err != nil {
 			return err
 		}
@@ -1018,7 +1019,7 @@ func (v *BlockValidator) Initialize() error {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
-	err := stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe,
+	err := stopwaiter.CallIterativelyWith[struct{}](v,
 		func(ctx context.Context, unused struct{}) time.Duration {
 			v.sendRecords(ctx)
 			v.sendValidations(ctx)
