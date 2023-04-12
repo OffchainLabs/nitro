@@ -86,14 +86,14 @@ interface ArbOwner {
     // @notice Releases surplus funds from L1PricerFundsPoolAddress for use
     function releaseL1PricerSurplusFunds(uint256 maxWeiToRelease) external returns (uint256);
 
-    // @notice sets the price (in evm gas basis points) of wasm gas
-    function setWasmGasPrice(uint64 price) external;
+    // @notice sets the price (in evm gas basis points) of ink
+    function setInkPrice(uint64 price) external;
 
     // @notice sets the maximum depth (in wasm words) a wasm stack may grow
     function setWasmMaxDepth(uint32 depth) external;
 
-    // @notice sets the cost (in wasm gas) of starting a stylus hostio call
-    function setWasmHostioCost(uint64 cost) external;
+    // @notice sets the cost of starting a stylus hostio call
+    function setWasmHostioInk(uint64 cost) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);

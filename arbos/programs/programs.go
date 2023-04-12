@@ -24,9 +24,9 @@ const MaxWasmSize = 64 * 1024
 type Programs struct {
 	backingStorage  *storage.Storage
 	machineVersions *storage.Storage
-	wasmGasPrice    storage.StorageBackedUBips
+	inkPrice        storage.StorageBackedUBips
 	wasmMaxDepth    storage.StorageBackedUint32
-	wasmHostioCost  storage.StorageBackedUint64
+	wasmHostioInk   storage.StorageBackedUint64
 	version         storage.StorageBackedUint32
 }
 
@@ -34,9 +34,9 @@ var machineVersionsKey = []byte{0}
 
 const (
 	versionOffset uint64 = iota
-	wasmGasPriceOffset
+	inkPriceOffset
 	wasmMaxDepthOffset
-	wasmHostioCostOffset
+	wasmHostioInkOffset
 )
 
 var ProgramNotCompiledError func() error
@@ -44,13 +44,13 @@ var ProgramOutOfDateError func(version uint32) error
 var ProgramUpToDateError func() error
 
 func Initialize(sto *storage.Storage) {
-	wasmGasPrice := sto.OpenStorageBackedBips(wasmGasPriceOffset)
+	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
-	wasmHostioCost := sto.OpenStorageBackedUint32(wasmHostioCostOffset)
+	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
-	_ = wasmGasPrice.Set(1)
+	_ = inkPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
-	_ = wasmHostioCost.Set(0)
+	_ = wasmHostioInk.Set(0)
 	_ = version.Set(1)
 }
 
@@ -58,9 +58,9 @@ func Open(sto *storage.Storage) *Programs {
 	return &Programs{
 		backingStorage:  sto,
 		machineVersions: sto.OpenSubStorage(machineVersionsKey),
-		wasmGasPrice:    sto.OpenStorageBackedUBips(wasmGasPriceOffset),
+		inkPrice:        sto.OpenStorageBackedUBips(inkPriceOffset),
 		wasmMaxDepth:    sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHostioCost:  sto.OpenStorageBackedUint64(wasmHostioCostOffset),
+		wasmHostioInk:   sto.OpenStorageBackedUint64(wasmHostioInkOffset),
 		version:         sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
@@ -69,15 +69,15 @@ func (p Programs) StylusVersion() (uint32, error) {
 	return p.version.Get()
 }
 
-func (p Programs) WasmGasPrice() (arbmath.UBips, error) {
-	return p.wasmGasPrice.Get()
+func (p Programs) InkPrice() (arbmath.UBips, error) {
+	return p.inkPrice.Get()
 }
 
-func (p Programs) SetWasmGasPrice(price arbmath.UBips) error {
+func (p Programs) SetInkPrice(price arbmath.UBips) error {
 	if price == 0 {
-		return errors.New("wasm gas price must be nonzero")
+		return errors.New("ink price must be nonzero")
 	}
-	return p.wasmGasPrice.Set(price)
+	return p.inkPrice.Set(price)
 }
 
 func (p Programs) WasmMaxDepth() (uint32, error) {
@@ -88,12 +88,12 @@ func (p Programs) SetWasmMaxDepth(depth uint32) error {
 	return p.wasmMaxDepth.Set(depth)
 }
 
-func (p Programs) WasmHostioCost() (uint64, error) {
-	return p.wasmHostioCost.Get()
+func (p Programs) WasmHostioInk() (uint64, error) {
+	return p.wasmHostioInk.Get()
 }
 
-func (p Programs) SetWasmHostioCost(cost uint64) error {
-	return p.wasmHostioCost.Set(cost)
+func (p Programs) SetWasmHostioInk(cost uint64) error {
+	return p.wasmHostioInk.Set(cost)
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
@@ -165,11 +165,11 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 }
 
 type goParams struct {
-	version      uint32
-	maxDepth     uint32
-	wasmGasPrice uint64
-	hostioCost   uint64
-	debugMode    uint64
+	version   uint32
+	maxDepth  uint32
+	inkPrice  uint64
+	hostioInk uint64
+	debugMode uint64
 }
 
 func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
@@ -177,19 +177,19 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
-	wasmGasPrice, err := p.WasmGasPrice()
+	inkPrice, err := p.InkPrice()
 	if err != nil {
 		return nil, err
 	}
-	hostioCost, err := p.WasmHostioCost()
+	hostioInk, err := p.WasmHostioInk()
 	if err != nil {
 		return nil, err
 	}
 	config := &goParams{
-		version:      version,
-		maxDepth:     maxDepth,
-		wasmGasPrice: wasmGasPrice.Uint64(),
-		hostioCost:   hostioCost,
+		version:   version,
+		maxDepth:  maxDepth,
+		inkPrice:  inkPrice.Uint64(),
+		hostioInk: hostioInk,
 	}
 	if debug {
 		config.debugMode = 1

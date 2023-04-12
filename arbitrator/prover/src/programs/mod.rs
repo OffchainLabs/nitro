@@ -356,16 +356,16 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 }
 
 pub struct StylusGlobals {
-    pub gas_left: GlobalIndex,
-    pub gas_status: GlobalIndex,
+    pub ink_left: GlobalIndex,
+    pub ink_status: GlobalIndex,
     pub depth_left: GlobalIndex,
 }
 
 impl StylusGlobals {
     pub fn offsets(&self) -> (u64, u64, u64) {
         (
-            self.gas_left.as_u32() as u64,
-            self.gas_status.as_u32() as u64,
+            self.ink_left.as_u32() as u64,
+            self.ink_status.as_u32() as u64,
             self.depth_left.as_u32() as u64,
         )
     }

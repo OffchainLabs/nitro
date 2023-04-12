@@ -3,7 +3,7 @@
 
 use super::{
     config::PricingParams,
-    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
+    meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
     FuncMiddleware, Middleware, ModuleMod,
 };
 use eyre::{bail, Result};
@@ -23,8 +23,8 @@ impl DynamicMeter {
 
     pub fn new(pricing: &PricingParams) -> Self {
         Self {
-            memory_fill: pricing.memory_fill_cost,
-            memory_copy: pricing.memory_copy_cost,
+            memory_fill: pricing.memory_fill_ink,
+            memory_copy: pricing.memory_copy_ink,
             globals: Mutex::new(None),
         }
     }
@@ -34,11 +34,11 @@ impl<M: ModuleMod> Middleware<M> for DynamicMeter {
     type FM<'a> = FuncDynamicMeter;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
-        let gas = module.get_global(STYLUS_GAS_LEFT)?;
-        let status = module.get_global(STYLUS_GAS_STATUS)?;
+        let ink = module.get_global(STYLUS_INK_LEFT)?;
+        let status = module.get_global(STYLUS_INK_STATUS)?;
         let scratch = Self::SCRATCH_GLOBAL;
         let scratch = module.add_global(scratch, Type::I32, GlobalInit::I32Const(0))?;
-        *self.globals.lock() = Some([gas, status, scratch]);
+        *self.globals.lock() = Some([ink, status, scratch]);
         Ok(())
     }
 
@@ -52,7 +52,7 @@ impl<M: ModuleMod> Middleware<M> for DynamicMeter {
     }
 
     fn name(&self) -> &'static str {
-        "dynamic gas meter"
+        "dynamic ink meter"
     }
 }
 
@@ -99,7 +99,7 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
             };
         }
 
-        let [gas, status, scratch] = self.globals.map(|x| x.as_u32());
+        let [ink, status, scratch] = self.globals.map(|x| x.as_u32());
         let if_ty = TypeOrFuncType::Type(WpType::EmptyBlockType);
 
         #[rustfmt::skip]
@@ -107,21 +107,21 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
             [
                 // [user] → move user value to scratch
                 set!(scratch),
-                get!(gas),
-                get!(gas),
+                get!(ink),
+                get!(ink),
                 get!(scratch),
 
-                // [gas gas size] → cost = size * coefficient (can't overflow)
+                // [ink ink size] → cost = size * coefficient (can't overflow)
                 I64ExtendI32U,
                 I64Const { value: coefficient },
                 I64Mul,
 
-                // [gas gas cost] → gas -= cost
+                // [ink ink cost] → ink -= cost
                 I64Sub,
-                set!(gas),
-                get!(gas),
+                set!(ink),
+                get!(ink),
 
-                // [old_gas, new_gas] → (old_gas < new_gas) (overflow detected)
+                // [old_ink, new_ink] → (old_ink < new_ink) (overflow detected)
                 I64LtU,
                 If { ty: if_ty },
                 I32Const { value: 1 },
@@ -129,7 +129,7 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
                 Unreachable,
                 End,
 
-                // [] → resume since user paid for gas
+                // [] → resume since user paid for ink
                 get!(scratch),
             ]
         };
@@ -150,6 +150,6 @@ impl<'a> FuncMiddleware<'a> for FuncDynamicMeter {
     }
 
     fn name(&self) -> &'static str {
-        "dynamic gas meter"
+        "dynamic ink meter"
     }
 }

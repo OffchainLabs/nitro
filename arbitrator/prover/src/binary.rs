@@ -512,7 +512,7 @@ impl<'a> Debug for WasmBinary<'a> {
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
     pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
-        let meter = Meter::new(config.costs, config.start_gas);
+        let meter = Meter::new(config.costs, config.start_ink);
         let dygas = DynamicMeter::new(&config.pricing);
         let depth = DepthChecker::new(config.depth);
         let bound = HeapBound::new(config.heap_bound)?;
@@ -566,11 +566,11 @@ impl<'a> WasmBinary<'a> {
             code.expr = build;
         }
 
-        let [gas_left, gas_status] = meter.globals();
+        let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
         Ok(StylusGlobals {
-            gas_left,
-            gas_status,
+            ink_left,
+            ink_status,
             depth_left,
         })
     }

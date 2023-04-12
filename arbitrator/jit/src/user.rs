@@ -40,10 +40,10 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
 
-    // buy wasm gas. If free, provide a virtually limitless amount
+    // buy ink
     let pricing = config.pricing;
-    let evm_gas = sp.read_go_ptr();
-    let wasm_gas = pricing.evm_to_wasm(sp.read_u64_raw(evm_gas));
+    let gas = sp.read_go_ptr();
+    let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
     // skip the root since we don't use these
     sp.skip_u64();
@@ -54,7 +54,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program {error:?}"),
     };
-    instance.set_gas(wasm_gas);
+    instance.set_ink(ink);
     instance.set_stack(config.depth.max_depth);
 
     let status = match instance.run_main(&calldata, &config) {
@@ -71,11 +71,11 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
             status
         }
     };
-    let wasm_gas = match status {
+    let ink_left = match status {
         UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
-        _ => instance.gas_left().into(),
+        _ => instance.ink_left().into(),
     };
-    sp.write_u64_raw(evm_gas, pricing.wasm_to_evm(wasm_gas));
+    sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left));
 }
 
 /// Reads the length of a rust `Vec`
@@ -97,14 +97,14 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// go side: λ(version, maxDepth u32, wasmGasPrice, hostioCost u64) *StylusConfig
+/// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64) *StylusConfig
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let version = sp.read_u32();
 
     let mut config = StylusConfig::version(version);
     config.depth.max_depth = sp.read_u32();
-    config.pricing.wasm_gas_price = sp.read_u64();
-    config.pricing.hostio_cost = sp.read_u64();
+    config.pricing.ink_price = sp.read_u64();
+    config.pricing.hostio_ink = sp.read_u64();
     sp.write_ptr(heapify(config));
 }

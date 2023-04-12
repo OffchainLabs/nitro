@@ -94,28 +94,28 @@ impl NativeInstance {
                 };
 
                 instance.set_test_evm_api(address, moved_storage.clone(), contracts.clone());
-                instance.set_gas(gas);
+                instance.set_ink(config.pricing.gas_to_ink(gas));
 
                 let outcome = instance.run_main(&input, &config).unwrap();
-                let gas_left: u64 = instance.gas_left().into();
                 let (status, outs) = outcome.into_data();
                 let outs_len = outs.len() as u32;
 
+                let ink_left: u64 = instance.ink_left().into();
+                let gas_left = config.pricing.ink_to_gas(ink_left);
                 *contracts.return_data.lock() = outs;
                 (outs_len, gas - gas_left, status)
             },
         );
         let delegate_call =
-            Box::new(move |_contract, _input, _evm_gas| todo!("delegate call not yet supported"));
+            Box::new(move |_contract, _input, _gas| todo!("delegate call not yet supported"));
         let static_call =
-            Box::new(move |_contract, _input, _evm_gas| todo!("static call not yet supported"));
+            Box::new(move |_contract, _input, _gas| todo!("static call not yet supported"));
         let get_return_data =
             Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
         let create1 =
-            Box::new(move |_code, _endowment, _evm_gas| unimplemented!("create1 not supported"));
-        let create2 = Box::new(move |_code, _endowment, _salt, _evm_gas| {
-            unimplemented!("create2 not supported")
-        });
+            Box::new(move |_code, _endowment, _gas| unimplemented!("create1 not supported"));
+        let create2 =
+            Box::new(move |_code, _endowment, _salt, _gas| unimplemented!("create2 not supported"));
         let emit_log = Box::new(move |_data, _topics| Ok(()));
 
         self.env_mut().set_evm_api(

@@ -30,18 +30,18 @@ impl RunProgram for Machine {
         let args_len = (args.len() as u32).into();
         let push_vec = vec![
             args_len,
-            pricing.wasm_gas_price.into(),
-            pricing.hostio_cost.into(),
-            pricing.memory_fill_cost.into(),
-            pricing.memory_copy_cost.into(),
+            pricing.ink_price.into(),
+            pricing.hostio_ink.into(),
+            pricing.memory_fill_ink.into(),
+            pricing.memory_copy_ink.into(),
         ];
         let args_ptr = call!("user_host", "push_program", push_vec);
         let user_host = self.find_module(USER_HOST)?;
         self.write_memory(user_host, args_ptr, args)?;
 
         let status: u32 = call!("user", STYLUS_ENTRY_POINT, vec![args_len], |error| {
-            if self.gas_left() == MachineMeter::Exhausted {
-                return UserOutcome::OutOfGas;
+            if self.ink_left() == MachineMeter::Exhausted {
+                return UserOutcome::OutOfInk;
             }
             if self.stack_left() == 0 {
                 return UserOutcome::OutOfStack;
@@ -80,8 +80,8 @@ impl RunProgram for NativeInstance {
                 if self.stack_left() == 0 {
                     return Ok(OutOfStack);
                 }
-                if self.gas_left() == MachineMeter::Exhausted {
-                    return Ok(OutOfGas);
+                if self.ink_left() == MachineMeter::Exhausted {
+                    return Ok(OutOfInk);
                 }
 
                 let escape: Escape = match outcome.downcast() {
@@ -89,7 +89,7 @@ impl RunProgram for NativeInstance {
                     Err(error) => return Ok(Failure(eyre!(error).wrap_err("hard user error"))),
                 };
                 return Ok(match escape {
-                    Escape::OutOfGas => OutOfGas,
+                    Escape::OutOfInk => OutOfInk,
                     Escape::Memory(error) => UserOutcome::revert(error.into()),
                     Escape::Internal(error) | Escape::Logical(error) => UserOutcome::revert(error),
                 });

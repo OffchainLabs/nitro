@@ -18,17 +18,17 @@ interface ArbWasm {
     // @return version the stylus version
     function stylusVersion() external view returns (uint32 version);
 
-    // @notice gets the conversion rate between evm and wasm gas
-    // @return price the price (in evm gas basis points) of wasm gas
-    function wasmGasPrice() external view returns (uint64 price);
+    // @notice gets the conversion rate between gas and ink
+    // @return price the price (in evm gas basis points) of ink
+    function inkPrice() external view returns (uint64 price);
 
     // @notice gets the wasm stack size limit
     // @return depth the maximum depth (in wasm words) a wasm stack may grow
     function wasmMaxDepth() external view returns (uint32 depth);
 
     // @notice gets the fixed-cost overhead needed to initiate a hostio call
-    // @return cost the cost (in wasm gas) of starting a stylus hostio call
-    function wasmHostioCost() external view returns (uint64 price);
+    // @return cost the cost (in ink) of starting a stylus hostio call
+    function wasmHostioInk() external view returns (uint64 price);
 
     // @notice gets the stylus version the program was most recently compiled against.
     // @return version the program version (0 for EVM contracts)
