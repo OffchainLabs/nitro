@@ -10,8 +10,8 @@ use wasmparser::Operator;
 #[cfg(feature = "native")]
 use {
     super::{
-        counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover,
-        MiddlewareWrapper,
+        counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
+        meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
     wasmer::{CompilerConfig, Store},
@@ -49,6 +49,10 @@ pub struct PricingParams {
     pub wasm_gas_price: u64,
     /// The amount of wasm gas one pays to do a user_host call
     pub hostio_cost: u64,
+    /// Per-byte `MemoryFill` cost
+    pub memory_fill_cost: u64,
+    /// Per-byte `MemoryCopy` cost
+    pub memory_copy_cost: u64,
 }
 
 impl Default for StylusConfig {
@@ -71,6 +75,8 @@ impl Default for PricingParams {
         Self {
             wasm_gas_price: 1,
             hostio_cost: 0,
+            memory_fill_cost: 0,
+            memory_copy_cost: 0,
         }
     }
 }
@@ -94,6 +100,8 @@ impl StylusConfig {
             1 => {
                 // TODO: settle on reasonable values for the v1 release
                 config.costs = |_| 1;
+                config.pricing.memory_fill_cost = 1;
+                config.pricing.memory_copy_cost = 1;
                 config.heap_bound = Bytes(2 * 1024 * 1024);
                 config.depth.max_depth = 1 * 1024 * 1024;
             }
@@ -114,10 +122,12 @@ impl DepthParams {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
+    pub fn new(wasm_gas_price: u64, hostio_cost: u64, memory_fill: u64, memory_copy: u64) -> Self {
         Self {
             wasm_gas_price,
             hostio_cost,
+            memory_fill_cost: memory_fill,
+            memory_copy_cost: memory_copy,
         }
     }
 
@@ -138,6 +148,7 @@ impl StylusConfig {
         compiler.enable_verifier();
 
         let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_gas));
+        let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
         let depth = MiddlewareWrapper::new(DepthChecker::new(self.depth));
         let bound = MiddlewareWrapper::new(HeapBound::new(self.heap_bound).unwrap()); // checked in new()
         let start = MiddlewareWrapper::new(StartMover::default());
@@ -145,6 +156,7 @@ impl StylusConfig {
         // add the instrumentation in the order of application
         // note: this must be consistent with the prover
         compiler.push_middleware(Arc::new(meter));
+        compiler.push_middleware(Arc::new(dygas));
         compiler.push_middleware(Arc::new(depth));
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));

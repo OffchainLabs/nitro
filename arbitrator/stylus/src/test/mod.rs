@@ -44,6 +44,8 @@ fn uniform_cost_config() -> StylusConfig {
     config.start_gas = 1_000_000;
     config.pricing.wasm_gas_price = 100_00;
     config.pricing.hostio_cost = 100;
+    config.pricing.memory_fill_cost = 1;
+    config.pricing.memory_copy_cost = 1;
     config.costs = |_| 1;
     config
 }

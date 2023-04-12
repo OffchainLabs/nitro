@@ -97,8 +97,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     // buy wasm gas. If free, provide a virtually limitless amount
     let pricing = config.pricing;
     let evm_gas = sp.read_go_ptr();
-    let wasm_gas = pricing
-        .evm_to_wasm(wavm::caller_load64(evm_gas));
+    let wasm_gas = pricing.evm_to_wasm(wavm::caller_load64(evm_gas));
 
     // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();

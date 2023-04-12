@@ -397,6 +397,9 @@ contracts/test/prover/proofs/link.json: $(arbitrator_cases)/link.wasm $(arbitrat
 contracts/test/prover/proofs/dynamic.json: $(patsubst %,$(arbitrator_cases)/%.wasm, dynamic user) $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm
 
+contracts/test/prover/proofs/bulk-memory.json: $(patsubst %,$(arbitrator_cases)/%.wasm, bulk-memory) $(prover_bin)
+	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize --stylus-modules $(arbitrator_cases)/user.wasm -b
+
 contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	$(prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 

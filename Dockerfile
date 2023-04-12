@@ -46,7 +46,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
-COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
@@ -90,7 +90,7 @@ COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/stylus arbitrator/stylus
-COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
 FROM scratch as prover-header-export
@@ -110,7 +110,7 @@ COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
-COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 RUN mkdir arbitrator/prover/src arbitrator/jit/src arbitrator/stylus/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
@@ -141,7 +141,7 @@ COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
 COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
-COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-upstream/ arbitrator/wasm-upstream/
+COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
 COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
 COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
 COPY --from=wasm-libs-builder /workspace/.make/ .make/

@@ -18,26 +18,22 @@ pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 impl<T> OpcodePricer for T where T: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
 pub struct Meter<F: OpcodePricer> {
-    gas_global: Mutex<Option<GlobalIndex>>,
-    status_global: Mutex<Option<GlobalIndex>>,
     costs: F,
     start_gas: u64,
+    globals: Mutex<Option<[GlobalIndex; 2]>>,
 }
 
 impl<F: OpcodePricer> Meter<F> {
     pub fn new(costs: F, start_gas: u64) -> Self {
         Self {
-            gas_global: Mutex::new(None),
-            status_global: Mutex::new(None),
             costs,
             start_gas,
+            globals: Mutex::new(None),
         }
     }
 
-    pub fn globals(&self) -> (GlobalIndex, GlobalIndex) {
-        let gas_left = self.gas_global.lock().unwrap();
-        let status = self.status_global.lock().unwrap();
-        (gas_left, status)
+    pub fn globals(&self) -> [GlobalIndex; 2] {
+        self.globals.lock().expect("missing globals")
     }
 }
 
@@ -53,14 +49,12 @@ where
         let start_status = GlobalInit::I32Const(0);
         let gas = module.add_global(STYLUS_GAS_LEFT, Type::I64, start_gas)?;
         let status = module.add_global(STYLUS_GAS_STATUS, Type::I32, start_status)?;
-        *self.gas_global.lock() = Some(gas);
-        *self.status_global.lock() = Some(status);
+        *self.globals.lock() = Some([gas, status]);
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
-        let gas = self.gas_global.lock().expect("no global");
-        let status = self.status_global.lock().expect("no global");
+        let [gas, status] = self.globals();
         Ok(FuncMeter::new(gas, status, self.costs.clone()))
     }
 
@@ -111,7 +105,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
             let gas = self.gas_global.as_u32();
             let status = self.status_global.as_u32();
 
-            let mut header = vec![
+            let mut header = [
                 // if gas < cost => panic with status = 1
                 GlobalGet { global_index: gas },
                 I64Const { value: cost as i64 },
@@ -154,8 +148,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
 impl<F: OpcodePricer> Debug for Meter<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Meter")
-            .field("gas_global", &self.gas_global)
-            .field("status_global", &self.status_global)
+            .field("globals", &self.globals)
             .field("costs", &"<function>")
             .field("start_gas", &self.start_gas)
             .finish()

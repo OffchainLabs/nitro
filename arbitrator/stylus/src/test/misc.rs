@@ -28,6 +28,7 @@ fn test_bulk_memory() -> Result<()> {
     let mut native = NativeInstance::new_sans_env(instance, store);
     let starter = native.get_start()?;
     starter.call(&mut native.store).unwrap_err();
+    assert_ne!(native.gas_left(), MachineMeter::Exhausted);
 
     let expected = "0000080808050205000002020500020508000000000000000000000000000000";
     let memory = native.exports.get_memory("mem")?;

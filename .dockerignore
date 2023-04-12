@@ -23,6 +23,7 @@ blockscout/**/*
 test-node.bash
 
 # Arbitrator ignores
+arbitrator/tools/module_roots
 
 # Rust outputs
 arbitrator/target/**/*
