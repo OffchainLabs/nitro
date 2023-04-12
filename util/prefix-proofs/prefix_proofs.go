@@ -379,13 +379,6 @@ func GeneratePrefixProof(
 			proof = append(proof, root)
 			leaves = leaves[numLeaves:]
 			height += numLeaves
-		} else {
-			root, err := rootFetcher(leaves, uint64(len(leaves)))
-			if err != nil {
-				return nil, err
-			}
-			proof = append(proof, root)
-			height = postHeight
 		}
 	}
 	return proof, nil
