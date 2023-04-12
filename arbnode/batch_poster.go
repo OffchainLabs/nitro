@@ -463,7 +463,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	}
 	safeDelayedMessagesBig, err := b.bridge.DelayedMessageCount(callOpts)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to get the confirmed delayed message count: %w", err)
 	}
 	if !safeDelayedMessagesBig.IsUint64() {
 		return 0, fmt.Errorf("calling delayedMessageCount() on the bridge returned a non-uint64 result %v", safeDelayedMessagesBig)
