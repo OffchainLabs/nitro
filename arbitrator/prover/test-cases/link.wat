@@ -1,33 +1,35 @@
+;; Copyright 2023, Offchain Labs, Inc.
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
     (import "hostio" "link_module" (func $link (param i32) (result i32)))
     (import "hostio" "unlink_module" (func $unlink (param) (result)))
     (data (i32.const 0x000)
-        "\54\10\ee\94\52\f8\b3\cc\35\d0\eb\f8\7a\00\01\b8\f8\0d\1c\d5\16\d2\06\d6\09\ca\01\03\4e\66\6e\80") ;; block
+        "\f0\61\ee\61\5e\1b\f7\44\7a\00\7d\fa\72\d4\d1\ef\de\2e\e9\53\a5\5f\44\df\3c\0a\b9\91\0b\db\48\6a") ;; block
     (data (i32.const 0x020)
-        "\50\cf\6e\c1\05\84\58\32\ed\6b\ca\47\85\da\3a\74\cf\e0\c4\67\63\47\50\2e\a0\c4\10\1d\c6\75\48\af") ;; call
+        "\90\c1\a8\6b\a2\f5\06\06\93\47\b9\d5\63\88\12\0b\88\1e\e2\92\e8\be\fa\f5\7e\8f\1a\c2\70\9f\0e\d0") ;; call
     (data (i32.const 0x040)
-        "\da\70\31\76\0c\dc\98\a0\9c\c6\fb\5b\47\e6\a7\44\bc\a4\2d\be\03\54\fb\82\e5\0f\87\8f\8f\47\3b\11") ;; indirect
+        "\5e\fa\e0\2f\08\fb\68\60\ef\4e\69\db\7a\c1\e0\1d\09\56\1f\4e\c7\60\55\83\bf\7e\0d\91\02\d0\02\5e") ;; indirect
     (data (i32.const 0x060)
-        "\48\d7\65\6f\2f\0c\27\40\d4\61\2c\30\a1\6c\1d\dc\f4\78\8c\c7\9a\77\c2\9c\ab\b1\2a\6d\c3\43\7c\8c") ;; const
+        "\2e\93\8c\b8\68\90\d3\5e\01\8b\cc\e9\05\5d\dc\5e\69\f3\32\41\7c\43\72\4b\5c\82\48\d6\06\18\a4\3b") ;; const
     (data (i32.const 0x080) 
-        "\fa\85\51\b4\b1\97\e4\85\60\37\71\82\7e\6c\53\1b\1c\a9\5f\37\77\72\f8\be\bb\aa\cf\9c\52\02\6b\45") ;; div
+        "\ad\c9\1c\82\09\d4\c3\12\1a\01\db\5c\38\f3\7a\a5\70\d1\b3\21\39\fc\60\c2\9f\79\a5\23\e0\e4\39\71") ;; div
     (data (i32.const 0x0a0)
-        "\84\10\70\b5\13\fa\91\d3\44\84\24\c9\b1\79\ac\7a\2b\09\56\4d\d1\e6\6d\87\cc\82\85\4c\02\f1\f5\12") ;; globals
+        "\86\91\43\c1\91\b3\ff\f9\37\54\fc\90\9f\bf\29\07\38\ae\fa\be\0e\8c\99\45\68\5c\33\62\07\3f\f1\35") ;; globals
     (data (i32.const 0x0c0)
-        "\98\38\fc\02\31\8b\59\c7\f1\aa\1f\5c\5a\18\e1\f0\89\06\8a\db\40\de\78\b0\da\06\61\83\76\57\a4\dd") ;; if-else
+        "\8f\f3\bc\b4\55\07\17\c8\89\67\85\4a\53\fa\e6\31\b2\56\4e\c6\7e\1c\fd\08\2a\5f\24\c4\03\d2\33\25") ;; if-else
     (data (i32.const 0x0e0)
-        "\aa\ca\6f\03\40\24\26\0c\1f\0b\cb\f2\fc\3c\7d\b1\d4\f3\84\95\b5\fd\d5\0b\d2\ee\2b\df\ba\b0\43\90") ;; locals
+        "\25\52\43\00\80\6c\49\13\98\3d\c1\fb\40\81\32\5b\03\c1\15\30\5d\fd\71\92\0d\fc\91\43\58\0d\5a\2e") ;; locals
     (data (i32.const 0x100)
-        "\0d\f2\3d\0f\a6\d2\02\5a\c1\ae\93\98\f9\f9\7a\68\e8\2f\8c\0d\d2\a9\b6\5e\8a\ac\ad\6b\69\9a\f8\69") ;; loop
+        "\f8\ef\b0\7c\70\6a\e8\d6\b2\a7\a6\50\ad\c1\68\87\32\61\c8\30\f0\c3\ff\33\8d\eb\49\82\1a\9c\5c\54") ;; loop
     (data (i32.const 0x120)
-        "\8c\30\89\ff\89\52\64\e1\92\dd\e0\ff\bd\3d\17\9d\0d\b9\ee\19\d5\29\8b\ee\5b\b7\af\b8\99\5c\9c\8e") ;; math
+        "\63\bd\3f\6b\5f\b5\78\cf\63\36\59\39\4d\b8\ca\50\02\ad\be\d4\62\f2\14\59\e1\6f\7f\16\6d\47\78\87") ;; math
     (data (i32.const 0x140)
-        "\ed\09\f1\c4\ed\66\56\85\cb\ba\66\40\c1\81\ca\5b\5c\68\12\69\c1\9b\0b\5f\9e\b8\8f\d5\53\ec\82\5e") ;; memory
+        "\f6\f0\c3\90\2a\b7\f6\b0\11\d5\9a\86\27\2f\5c\36\dc\8d\82\1a\5c\10\b7\6d\f8\a9\2b\fe\50\d2\9c\65") ;; memory
     (data (i32.const 0x160)
-        "\95\03\fa\9a\18\31\93\40\b7\38\55\41\e5\ce\f1\88\71\21\b2\75\8c\08\68\36\45\51\04\07\c0\04\bd\1f") ;; grow
+        "\45\b5\50\33\31\c7\d7\19\90\8d\97\60\7c\a3\a0\f2\aa\a0\2d\37\fc\d7\bd\3f\dc\78\a5\5f\a4\20\ad\b2") ;; grow
     (data (i32.const 0x180)
-        "\cd\c9\4b\c7\a6\01\b7\d7\47\ab\e4\6e\01\cc\07\b9\db\f9\3b\6e\08\55\14\93\ef\af\1e\ba\be\34\40\b8") ;; return
+        "\d8\ec\96\4c\45\9b\f4\77\97\c3\d4\96\94\34\24\0d\2a\23\72\79\34\6c\ad\20\d2\02\64\c7\6b\4e\a7\40") ;; return
     (func $start (local $counter i32)
 
          ;; add modules

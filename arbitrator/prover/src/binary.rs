@@ -1,5 +1,5 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
     programs::{
@@ -298,7 +298,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
         sign_extension: true,
         reference_types: false,
         multi_value: true,
-        bulk_memory: false,
+        bulk_memory: true, // not all ops supported yet
         module_linking: false,
         simd: false,
         relaxed_simd: false,
@@ -316,14 +316,10 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
-    let sections: Vec<_> = Parser::new(0)
-        .parse_all(input)
-        .into_iter()
-        .collect::<Result<_, _>>()?;
-
     let mut binary = WasmBinary::default();
+    let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
-    for mut section in sections.into_iter() {
+    for mut section in sections {
         use Payload::*;
 
         macro_rules! process {

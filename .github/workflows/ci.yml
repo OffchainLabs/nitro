@@ -56,14 +56,14 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           target: wasm32-unknown-unknown
 
       - name: Install rust wasm32-wasi
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           target: wasm32-wasi
 
       - name: Install rust stable
@@ -71,7 +71,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           override: true
 
       - name: Cache Build Products
