@@ -236,6 +236,8 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 
+	node.DefaultAuthModules = []string{server_api.Namespace}
+
 	configFetcher := func() *valnode.Config { return config }
 	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
 	Require(t, err)
@@ -255,15 +257,15 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.JWTSecret = ""
+	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
 }
 
 func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.URL != "" {
+	if nodeConfig.BlockValidator.ValidationServer.URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig

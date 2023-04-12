@@ -6,6 +6,8 @@ package genericconf
 import (
 	"time"
 
+	"github.com/offchainlabs/nitro/consensus"
+	"github.com/offchainlabs/nitro/execution"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/node"
@@ -166,14 +168,16 @@ func (a AuthRPCConfig) Apply(stackConf *node.Config) {
 	stackConf.AuthVirtualHosts = []string{} // dont allow http access
 	stackConf.JWTSecret = a.JwtSecret
 	// a few settings are not available as stanard config, but we can change the default. sigh..
-	node.DefaultAuthOrigins = a.Origins
-	node.DefaultAuthModules = a.API
+	node.DefaultAuthOrigins = make([]string, len(a.Origins))
+	copy(node.DefaultAuthOrigins, a.Origins)
+	node.DefaultAuthModules = make([]string, len(a.API))
+	copy(node.DefaultAuthModules, a.API)
 }
 
 var AuthRPCConfigDefault = AuthRPCConfig{
 	Addr:      "127.0.0.1",
 	Port:      8549,
-	API:       []string{"validation"},
+	API:       []string{"validation", execution.RPCNamespace, consensus.RPCNamespace},
 	Origins:   []string{"localhost"},
 	JwtSecret: "",
 }

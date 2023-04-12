@@ -74,7 +74,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	execEngine, err := gethexec.NewExecutionEngine(bc)
+	execEngine, err := gethexec.NewExecutionEngine(bc, nil)
 	if err != nil {
 		Fail(t, err)
 	}

@@ -27,10 +27,11 @@ type SyncMonitor struct {
 	config    SyncMonitorConfigFetcher
 }
 
-func NewSyncMonitor(exec *ExecutionEngine, config SyncMonitorConfigFetcher) *SyncMonitor {
+func NewSyncMonitor(exec *ExecutionEngine, config SyncMonitorConfigFetcher, consensus consensus.ConsensusInfo) *SyncMonitor {
 	return &SyncMonitor{
-		exec:   exec,
-		config: config,
+		exec:      exec,
+		config:    config,
+		consensus: consensus,
 	}
 }
 
@@ -100,6 +101,10 @@ func (s *SyncMonitor) Synced() bool {
 	return len(s.SyncProgressMap()) == 0
 }
 
-func (s *SyncMonitor) SetConsensusInfo(consensus consensus.ConsensusInfo) {
+func (s *SyncMonitor) SetConsensusInfo(consensus consensus.ConsensusInfo) error {
+	if s.consensus != nil {
+		return errors.New("trying to set consensus in sync-monitor while already set")
+	}
 	s.consensus = consensus
+	return nil
 }

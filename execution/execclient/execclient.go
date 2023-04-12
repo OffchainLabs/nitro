@@ -2,6 +2,7 @@ package execclient
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -11,129 +12,153 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-type ExecClient struct {
+type Client struct {
 	stopwaiter.StopWaiter
-	client    *rpc.Client
-	url       string
-	jwtSecret []byte
+	client *rpc.Client
+	config *rpcclient.ClientConfig
 }
 
-func NewValidationClient(url string, jwtSecret []byte) *ExecClient {
-	return &ExecClient{
-		url:       url,
-		jwtSecret: jwtSecret,
+func NewClient(config *rpcclient.ClientConfig) *Client {
+	return &Client{
+		config: config,
 	}
 }
 
-func (c *ExecClient) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+func (c *Client) Start(ctx_in context.Context) error {
+	c.StopWaiter.Start(ctx_in, c)
+	ctx := c.GetContext()
+	client, err := rpcclient.CreateRPCClient(ctx, c.config)
+	if err != nil {
+		return err
+	}
+	c.client = client
+	return nil
+}
+
+func convertError(err error) error {
+	if err == nil {
+		return nil
+	}
+	errStr := err.Error()
+	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
+		return execution.ErrRetrySequencer
+	}
+	if strings.Contains(errStr, execution.ErrSequencerInsertLockTaken.Error()) {
+		return execution.ErrSequencerInsertLockTaken
+	}
+	return err
+}
+
+func (c *Client) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return stopwaiter.LaunchPromiseThread[*execution.MessageResult](c, func(ctx context.Context) (*execution.MessageResult, error) {
 		var res execution.MessageResult
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_digestMessage", msg)
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_digestMessage", num, msg)
 		if err != nil {
-			return nil, err
+			return nil, convertError(err)
 		}
 		return &res, nil
 	})
 }
 
-func (c *ExecClient) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+func (c *Client) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_reorg", newMessages, oldMessages)
-		return struct{}{}, err
+		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_reorg", count, newMessages, oldMessages)
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+func (c *Client) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
 	return stopwaiter.LaunchPromiseThread[arbutil.MessageIndex](c, func(ctx context.Context) (arbutil.MessageIndex, error) {
 		var res uint64
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_headMessageNumber")
 		if err != nil {
-			return 0, err
+			return 0, convertError(err)
 		}
 		return arbutil.MessageIndex(res), nil
 	})
 }
 
-func (c *ExecClient) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+func (c *Client) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return stopwaiter.LaunchPromiseThread[*execution.MessageResult](c, func(ctx context.Context) (*execution.MessageResult, error) {
 		var res execution.MessageResult
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_resultAtPos", pos)
 		if err != nil {
-			return nil, err
+			return nil, convertError(err)
 		}
 		return &res, nil
 	})
 }
 
-func (c *ExecClient) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.RecordResult] {
+func (c *Client) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.RecordResult] {
 	return stopwaiter.LaunchPromiseThread[*execution.RecordResult](c, func(ctx context.Context) (*execution.RecordResult, error) {
 		var res execution.RecordResult
-		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", msg)
+		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_recordBlockCreation", pos, msg)
 		if err != nil {
-			return nil, err
+			return nil, convertError(err)
 		}
 		return &res, nil
 	})
 }
 
-func (c *ExecClient) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
+func (c *Client) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
 	c.LaunchThread(func(ctx context.Context) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_markValid", pos, resultHash)
 		if err != nil && ctx.Err() == nil {
-			log.Warn("markValid failed", "err", err)
+			log.Warn("markValid failed", "err", convertError(err))
 		}
 	})
 }
 
-func (c *ExecClient) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
+func (c *Client) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_prepareForRecord", start, end)
-		return struct{}{}, err
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) Pause() containers.PromiseInterface[struct{}] {
+func (c *Client) Pause() containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_seqPause")
-		return struct{}{}, err
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) Activate() containers.PromiseInterface[struct{}] {
+func (c *Client) Activate() containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_seqActivate")
-		return struct{}{}, err
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+func (c *Client) ForwardTo(url string) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_seqForwardTo", url)
-		return struct{}{}, err
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+func (c *Client) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_sequenceDelayedMessage", message, delayedSeqNum)
-		return struct{}{}, err
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) Maintenance() containers.PromiseInterface[struct{}] {
+func (c *Client) Maintenance() containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, execution.RPCNamespace+"_maintenance")
-		return struct{}{}, err
+		return struct{}{}, convertError(err)
 	})
 }
 
-func (c *ExecClient) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+func (c *Client) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread[uint64](c, func(ctx context.Context) (uint64, error) {
 		var res uint64
 		err := c.client.CallContext(ctx, &res, execution.RPCNamespace+"_nextDelayedMessageNumber")
-		return res, err
+		return res, convertError(err)
 	})
 }

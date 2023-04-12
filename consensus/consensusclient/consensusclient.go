@@ -1,4 +1,4 @@
-package consensuscient
+package consensusclient
 
 import (
 	"context"
@@ -9,21 +9,31 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type Client struct {
 	stopwaiter.StopWaiter
-	client    *rpc.Client
-	url       string
-	jwtSecret []byte
+	client *rpc.Client
+	config *rpcclient.ClientConfig
 }
 
-func NewClient(url string, jwtSecret []byte) *Client {
+func NewClient(config *rpcclient.ClientConfig) *Client {
 	return &Client{
-		url:       url,
-		jwtSecret: jwtSecret,
+		config: config,
 	}
+}
+
+func (c *Client) Start(ctx_in context.Context) error {
+	c.StopWaiter.Start(ctx_in, c)
+	ctx := c.GetContext()
+	client, err := rpcclient.CreateRPCClient(ctx, c.config)
+	if err != nil {
+		return err
+	}
+	c.client = client
+	return nil
 }
 
 func (c *Client) FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte] {
@@ -105,7 +115,7 @@ func (c *Client) GetFinalizedMsgCount() containers.PromiseInterface[arbutil.Mess
 
 func (c *Client) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, consensus.RPCNamespace+"_writeMessageFromSequencer")
+		err := c.client.CallContext(ctx, nil, consensus.RPCNamespace+"_writeMessageFromSequencer", pos, msgWithMeta)
 		return struct{}{}, err
 	})
 }

@@ -50,6 +50,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
@@ -272,6 +273,12 @@ func mainImpl() int {
 	if nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret == "self" {
 		nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret = stackConf.JWTSecret
 	}
+	if nodeConfig.Node.ExecutionServer.JWTSecret == "self" {
+		nodeConfig.Node.ExecutionServer.JWTSecret = stackConf.JWTSecret
+	}
+	if nodeConfig.Execution.ConsensesServer.JWTSecret == "self" {
+		nodeConfig.Execution.ConsensesServer.JWTSecret = stackConf.JWTSecret
+	}
 
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
@@ -456,10 +463,11 @@ func mainImpl() int {
 		return 1
 	}
 
+	execClient := execclient.NewClient(&nodeConfig.Node.ExecutionServer)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
-		execNode,
+		execClient,
 		arbDb,
 		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain.Config(),
@@ -506,8 +514,18 @@ func mainImpl() int {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
 		}
 	}
+	err = execNode.Initialize(ctx)
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+	}
 	if err == nil {
 		err = currentNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		}
+	}
+	if err == nil {
+		err = execNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 		}
@@ -530,7 +548,7 @@ func mainImpl() int {
 	close(sigint)
 
 	currentNode.StopAndWait()
-
+	execNode.StopAndWait()
 	return exitCode
 }
 

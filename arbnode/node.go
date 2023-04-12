@@ -29,8 +29,11 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/consensus"
+	consensusapi "github.com/offchainlabs/nitro/consensus/consensusserver"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -40,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -383,6 +387,26 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}, nil
 }
 
+type ConfigConsensusRPC struct {
+	Public        bool `koanf:"public"`
+	Authenticated bool `koanf:"authenticated"`
+}
+
+var DefaultConfigConsensusRPC = ConfigConsensusRPC{
+	Public:        false,
+	Authenticated: true,
+}
+
+var TestConfigConsensusRPC = ConfigConsensusRPC{
+	Public:        true,
+	Authenticated: false,
+}
+
+func ConsensusRPCAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".public", DefaultConfigConsensusRPC.Public, "consensus rpc is public")
+	f.Bool(prefix+".authenticated", DefaultConfigConsensusRPC.Public, "consensus rpc is authenticated")
+}
+
 type Config struct {
 	Sequencer           bool                        `koanf:"sequencer"`
 	L1Reader            headerreader.Config         `koanf:"l1-reader" reload:"hot"`
@@ -397,6 +421,8 @@ type Config struct {
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
+	ExecutionServer     rpcclient.ClientConfig      `koanf:"execution-server"`
+	ConsensusRPC        ConfigConsensusRPC          `koanf:"consensus-rpc"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 }
 
@@ -455,6 +481,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
+	rpcclient.RPCClientAddOptions(prefix+".execution-server", f)
+	ConsensusRPCAddOptions(prefix+".consensus-rpc", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 }
 
@@ -490,6 +518,8 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.ConsensusRPC = TestConfigConsensusRPC
+	config.ExecutionServer = rpcclient.TestClientConfig
 
 	return &config
 }
@@ -503,6 +533,8 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.ConsensusRPC = TestConfigConsensusRPC
+	config.ExecutionServer = rpcclient.TestClientConfig
 
 	return &config
 }
@@ -935,6 +967,14 @@ func CreateNode(
 			Public: false,
 		})
 	}
+	config := configFetcher.Get()
+	apis = append(apis, rpc.API{
+		Namespace:     consensus.RPCNamespace,
+		Version:       "1.0",
+		Service:       consensusapi.NewConsensusAPI(currentNode),
+		Public:        config.ConsensusRPC.Public,
+		Authenticated: config.ConsensusRPC.Authenticated,
+	})
 
 	stack.RegisterAPIs(apis)
 
@@ -942,12 +982,20 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
+	execClient, ok := n.Execution.(*execclient.Client)
 	if !ok {
 		execClient = nil
 	}
-	if execClient != nil {
-		err := execClient.Initialize(ctx)
+	gethExec, ok := n.Execution.(*gethexec.ExecutionNode)
+	if !ok {
+		gethExec = nil
+	}
+	if gethExec != nil {
+		err := gethExec.SetConsensusClient(n)
+		if err != nil {
+			return fmt.Errorf("error setting consensus in execution client: %w", err)
+		}
+		err = gethExec.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
@@ -956,6 +1004,12 @@ func (n *Node) Start(ctx context.Context) error {
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
+	}
+	if gethExec != nil {
+		err := gethExec.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("error starting exec client: %w", err)
+		}
 	}
 	if execClient != nil {
 		execClient.SetConsensusClient(n)
@@ -1061,12 +1115,12 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
+	gethExec, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {
-		execClient = nil
+		gethExec = nil
 	}
-	if execClient != nil {
-		execClient.StopAndWait()
+	if gethExec != nil {
+		gethExec.StopAndWait()
 	}
 	if n.MaintenanceRunner != nil && n.MaintenanceRunner.Started() {
 		n.MaintenanceRunner.StopAndWait()

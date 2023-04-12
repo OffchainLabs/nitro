@@ -84,7 +84,6 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
-	node.DefaultAuthModules = []string{server_api.Namespace}
 	var serverAPI *server_api.ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {

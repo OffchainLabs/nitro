@@ -45,9 +45,10 @@ type ExecutionEngine struct {
 	reorgSequencing bool
 }
 
-func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, consensus consensus.FullConsensusClient) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:               bc,
+		consensus:        consensus,
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
 	}, nil
@@ -73,14 +74,15 @@ func (s *ExecutionEngine) EnableReorgSequencing() {
 	s.reorgSequencing = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(consensus consensus.FullConsensusClient) {
+func (s *ExecutionEngine) SetTransactionStreamer(consensus consensus.FullConsensusClient) error {
 	if s.Started() {
-		panic("trying to set transaction consensus after start")
+		return errors.New("trying to set transaction consensus after start")
 	}
 	if s.consensus != nil {
-		panic("trying to set transaction consensus when already set")
+		return errors.New("trying to set transaction consensus when already set")
 	}
 	s.consensus = consensus
+	return nil
 }
 
 func (s *ExecutionEngine) GetBatchFetcher() consensus.BatchFetcher {
