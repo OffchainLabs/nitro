@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -78,23 +79,27 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 }
 
+type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
+
 type SequencingHooks struct {
-	TxErrors               []error
-	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	TxErrors                []error
+	DiscardInvalidTxsEarly  bool
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 }
 
 func NoopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
 			return nil
 		},
 		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
+		nil,
 	}
 }
 
@@ -192,6 +197,7 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
+		var options *arbitrum_types.ConditionalOptions
 		hooks := NoopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
@@ -213,6 +219,10 @@ func ProduceBlockAdvanced(
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
+				if len(hooks.ConditionalOptionsForTx) > 0 {
+					options = hooks.ConditionalOptionsForTx[0]
+					hooks.ConditionalOptionsForTx = hooks.ConditionalOptionsForTx[1:]
+				}
 			}
 		}
 
@@ -235,7 +245,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
+			if err = hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 

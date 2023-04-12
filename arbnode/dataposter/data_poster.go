@@ -44,12 +44,13 @@ type QueueStorage[Item any] interface {
 }
 
 type DataPosterConfig struct {
-	RedisSigner           signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes      string                     `koanf:"replacement-times"`
-	WaitForL1Finality     bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
-	MaxQueuedTransactions uint64                     `koanf:"max-queued-transactions" reload:"hot"`
-	TargetPriceGwei       float64                    `koanf:"target-price-gwei" reload:"hot"`
-	UrgencyGwei           float64                    `koanf:"urgency-gwei" reload:"hot"`
+	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes       string                     `koanf:"replacement-times"`
+	WaitForL1Finality      bool                       `koanf:"wait-for-l1-finality" reload:"hot"`
+	MaxMempoolTransactions uint64                     `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxQueuedTransactions  uint64                     `koanf:"max-queued-transactions" reload:"hot"`
+	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
+	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -57,27 +58,28 @@ type DataPosterConfigFetcher func() *DataPosterConfig
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", DefaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
-	f.Uint64(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Uint64(prefix+".max-mempool-transactions", DefaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Uint64(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
 	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:      "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	WaitForL1Finality:     true,
-	TargetPriceGwei:       60.,
-	UrgencyGwei:           2.,
-	MaxQueuedTransactions: 64,
+	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	WaitForL1Finality:      true,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
+	MaxMempoolTransactions: 64,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:      "1s,2s,5s,10s,20s,30s,1m,5m",
-	RedisSigner:           signature.TestSimpleHmacConfig,
-	WaitForL1Finality:     false,
-	TargetPriceGwei:       60.,
-	UrgencyGwei:           2.,
-	MaxQueuedTransactions: 64,
+	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
+	RedisSigner:            signature.TestSimpleHmacConfig,
+	WaitForL1Finality:      false,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
+	MaxMempoolTransactions: 64,
 }
 
 // DataPoster must be RLP serializable and deserializable
@@ -163,10 +165,19 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		maxQueueItems := p.config().MaxQueuedTransactions
+		config := p.config()
 		nextNonce := lastQueueItem.Data.Nonce + 1
-		if maxQueueItems > 0 && nextNonce >= p.nonce+maxQueueItems {
-			return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while current nonce is %v would exceed max data poster queue length of %v", nextNonce, p.nonce, maxQueueItems)
+		if config.MaxQueuedTransactions > 0 && nextNonce >= p.nonce+config.MaxQueuedTransactions {
+			return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while current nonce is %v would exceed max data poster queue length of %v", nextNonce, p.nonce, config.MaxQueuedTransactions)
+		}
+		if config.MaxMempoolTransactions > 0 {
+			unconfirmedNonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
+			if err != nil {
+				return 0, emptyMeta, fmt.Errorf("failed to get unconfirmed nonce: %w", err)
+			}
+			if nextNonce >= unconfirmedNonce+config.MaxMempoolTransactions {
+				return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while unconfirmed nonce is %v would exceed max mempool transactions of %v", nextNonce, unconfirmedNonce, config.MaxMempoolTransactions)
+			}
 		}
 		return nextNonce, lastQueueItem.Meta, nil
 	}
@@ -405,7 +416,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		}
 		now := time.Now()
 		nextCheck := now.Add(p.replacementTimes[0])
-		maxTxsToRbf := p.config().MaxQueuedTransactions
+		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
 		}
