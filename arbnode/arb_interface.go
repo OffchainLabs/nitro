@@ -6,12 +6,13 @@ package arbnode
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type TransactionPublisher interface {
-	PublishTransaction(ctx context.Context, tx *types.Transaction) error
+	PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error
 	CheckHealth(ctx context.Context) error
 	Initialize(context.Context) error
 	Start(context.Context) error
@@ -36,8 +37,8 @@ func (a *ArbInterface) Initialize(n *Node) {
 	a.arbNode = n
 }
 
-func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
-	return a.txPublisher.PublishTransaction(ctx, tx)
+func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return a.txPublisher.PublishTransaction(ctx, tx, options)
 }
 
 func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
