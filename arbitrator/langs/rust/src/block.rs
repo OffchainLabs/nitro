@@ -1,18 +1,17 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::Bytes20;
-use crate::Bytes32;
+use {crate::Bytes20, crate::Bytes32};
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub(crate) fn block_basefee(sender: *mut u8);
-    pub(crate) fn block_chainid(sender: *mut u8);
-    pub(crate) fn block_coinbase(sender: *mut u8);
-    pub(crate) fn block_difficulty(sender: *mut u8);
+    pub(crate) fn block_basefee(block: *mut u8);
+    pub(crate) fn block_chainid(block: *mut u8);
+    pub(crate) fn block_coinbase(block: *mut u8);
+    pub(crate) fn block_difficulty(block: *mut u8);
     pub(crate) fn block_gas_limit() -> u64;
-    pub(crate) fn block_number(sender: *mut u8);
-    pub(crate) fn block_timestamp(sender: *mut u8);
+    pub(crate) fn block_number(block: *mut u8);
+    pub(crate) fn block_timestamp(block: *mut u8);
 }
 
 pub fn basefee() -> Bytes32 {

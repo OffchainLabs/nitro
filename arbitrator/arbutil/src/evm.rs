@@ -12,37 +12,37 @@ pub const LOG_DATA_GAS: u64 = 8;
 pub const COPY_WORD_GAS: u64 = 3;
 
 // vm.GasQuickStep (see eips.go)
-pub const BASEFEE_EVM_GAS: u64 = 2;
+pub const BASEFEE_GAS: u64 = 2;
 
 // vm.GasQuickStep (see eips.go)
-pub const CHAINID_EVM_GAS: u64 = 2;
+pub const CHAINID_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const COINBASE_EVM_GAS: u64 = 2;
+pub const COINBASE_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const DIFFICULTY_EVM_GAS: u64 = 2;
+pub const DIFFICULTY_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const GASLIMIT_EVM_GAS: u64 = 2;
+pub const GASLIMIT_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const NUMBER_EVM_GAS: u64 = 2;
+pub const NUMBER_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const TIMESTAMP_EVM_GAS: u64 = 2;
+pub const TIMESTAMP_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const GASLEFT_EVM_GAS: u64 = 2;
+pub const GASLEFT_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const CALLER_EVM_GAS: u64 = 2;
+pub const CALLER_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const CALLVALUE_EVM_GAS: u64 = 2;
+pub const CALLVALUE_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const GASPRICE_EVM_GAS: u64 = 2;
+pub const GASPRICE_GAS: u64 = 2;
 
 // vm.GasQuickStep (see jump_table.go)
-pub const ORIGIN_EVM_GAS: u64 = 2;
+pub const ORIGIN_GAS: u64 = 2;

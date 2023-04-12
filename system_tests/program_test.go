@@ -481,6 +481,54 @@ func TestProgramCreate(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
+func expectU64(t *testing.T, name string, data *[]byte, expected uint64) {
+	dataSize := 8
+	if len(*data) < dataSize {
+		Fail(t, "not enough data left", name, dataSize, len(*data))
+	}
+	value := binary.BigEndian.Uint64((*data)[:dataSize])
+	if value != expected {
+		Fail(t, "mismatch", name, value, expected)
+	}
+	*data = (*data)[dataSize:]
+}
+
+func expectAddress(t *testing.T, name string, data *[]byte, expected common.Address) {
+	dataSize := 20
+	if len(*data) < dataSize {
+		Fail(t, "not enough data left", name, dataSize, len(*data))
+	}
+	value := common.BytesToAddress((*data)[:dataSize])
+	if value != expected {
+		Fail(t, "mismatch", name, value, expected)
+	}
+	*data = (*data)[dataSize:]
+}
+
+func expectBigInt(t *testing.T, name string, data *[]byte, expected *big.Int) {
+	dataSize := 32
+	if len(*data) < dataSize {
+		Fail(t, "not enough data left", name, dataSize, len(*data))
+	}
+	value := new(big.Int).SetBytes((*data)[:dataSize])
+	if !arbmath.BigEquals(value, expected) {
+		Fail(t, "mismatch", name, value, expected)
+	}
+	*data = (*data)[dataSize:]
+}
+
+func expectBigIntGreaterThan(t *testing.T, name string, data *[]byte, expected *big.Int) {
+	dataSize := 32
+	if len(*data) < dataSize {
+		Fail(t, "not enough data left", name, dataSize, len(*data))
+	}
+	value := new(big.Int).SetBytes((*data)[:dataSize])
+	if !arbmath.BigGreaterThan(value, expected) {
+		Fail(t, "mismatch", name, value, expected)
+	}
+	*data = (*data)[dataSize:]
+}
+
 func TestProgramEvmData(t *testing.T) {
 	ctx, _, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
 	defer cleanup()
@@ -496,95 +544,25 @@ func TestProgramEvmData(t *testing.T) {
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
-	expectedLength := 0
-	expectedBaseFee := big.NewInt(100000000)
-	expectedLength += 32
-	expectedChainid, err := l2client.ChainID(ctx)
-	ensure(tx, err)
-	expectedLength += 32
-	expectedCoinbase := common.HexToAddress("0xA4b000000000000000000073657175656e636572")
-	expectedLength += 20
-	expectedDifficulty := big.NewInt(1)
-	expectedLength += 32
-	expectedGasLimit := uint64(1125899906842624)
-	expectedLength += 8
-	expectedBlockNumber := big.NewInt(6)
-	expectedLength += 32
-	expectedMinimumTimestamp := big.NewInt(1680662290)
-	expectedLength += 32
-	expectedSender := testhelpers.RandomAddress()
-	expectedLength += 20
-	expectedValue := big.NewInt(0)
-	expectedLength += 32
-	expectedGasPrice := big.NewInt(0)
-	expectedLength += 32
-	expectedOrigin := expectedSender
-	expectedLength += 20
-
 	opts := bind.CallOpts{
-		From: expectedOrigin,
+		From: testhelpers.RandomAddress(),
 	}
 	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
 	Require(t, err)
-	if len(result) != expectedLength {
-		Fail(t, "unexpected return length: ", expectedLength, len(result))
-	}
-	offset := 0
-	baseFee := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	chainid := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	coinbase := common.BytesToAddress(result[offset : offset+20])
-	offset += 20
-	difficulty := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	gasLimit := binary.BigEndian.Uint64(result[offset : offset+8])
-	offset += 8
-	blockNumber := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	timestamp := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	sender := common.BytesToAddress(result[offset : offset+20])
-	offset += 20
-	value := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	gasPrice := new(big.Int).SetBytes(result[offset : offset+32])
-	offset += 32
-	origin := common.BytesToAddress(result[offset : offset+20])
 
-	if baseFee.Cmp(expectedBaseFee) != 0 {
-		Fail(t, "base fee mismatch", expectedBaseFee, baseFee)
-	}
-	if chainid.Cmp(expectedChainid) != 0 {
-		Fail(t, "chainid mismatch", expectedChainid, chainid)
-	}
-	if coinbase != expectedCoinbase {
-		Fail(t, "coinbase mismatch", expectedCoinbase, coinbase)
-	}
-	if difficulty.Cmp(expectedDifficulty) != 0 {
-		Fail(t, "difficulty mismatch", expectedDifficulty, difficulty)
-	}
-	if gasLimit != expectedGasLimit {
-		Fail(t, "gas limit mismatch", expectedGasLimit, gasLimit)
-	}
-	if blockNumber.Cmp(expectedBlockNumber) != 0 {
-		Fail(t, "block number mismatch", expectedBlockNumber, blockNumber)
-	}
-	if timestamp.Cmp(expectedMinimumTimestamp) < 0 {
-		Fail(t, "timestamp too old", expectedMinimumTimestamp, timestamp)
-	}
-	if sender != expectedSender {
-		Fail(t, "sender mismatch", expectedSender, sender)
-	}
-	if value.Cmp(expectedValue) != 0 {
-		Fail(t, "value mismatch", expectedValue, value)
-	}
-	if gasPrice.Cmp(expectedGasPrice) != 0 {
-		Fail(t, "gas price mismatch", expectedGasPrice, gasPrice)
-	}
-	if origin != expectedOrigin {
-		Fail(t, "origin mismatch: ", expectedOrigin, origin)
-	}
+	expectBigInt(t, "base fee", &result, big.NewInt(100000000))
+	expectedChainid, err := l2client.ChainID(ctx)
+	ensure(tx, err)
+	expectBigInt(t, "chainid", &result, expectedChainid)
+	expectAddress(t, "coinbase", &result, common.HexToAddress("0xA4b000000000000000000073657175656e636572"))
+	expectBigInt(t, "difficulty", &result, big.NewInt(1))
+	expectU64(t, "gas limit", &result, uint64(1125899906842624))
+	expectBigInt(t, "block number", &result, big.NewInt(6))
+	expectBigIntGreaterThan(t, "timestamp", &result, big.NewInt(1680662290))
+	expectAddress(t, "sender", &result, opts.From)
+	expectBigInt(t, "value", &result, big.NewInt(0))
+	expectBigInt(t, "gas price", &result, big.NewInt(0))
+	expectAddress(t, "origin", &result, opts.From)
 
 	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})
 	ensure(tx, l2client.SendTransaction(ctx, tx))
