@@ -94,7 +94,7 @@ impl<'a> FuncMiddleware<'a> for FuncCounter<'a> {
 
         if end {
             let update = |global_index: u32, value: i64| {
-                vec![
+                [
                     GlobalGet { global_index },
                     I64Const { value },
                     I64Add,

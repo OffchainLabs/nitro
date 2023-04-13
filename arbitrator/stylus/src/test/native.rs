@@ -11,7 +11,8 @@ use crate::{
     run::RunProgram,
     test::{
         api::{TestEvmContracts, TestEvmStorage},
-        random_bytes20, random_bytes32,
+        check_instrumentation, new_test_instance, new_test_instance_from_store, new_test_machine,
+        random_bytes20, random_bytes32, uniform_cost_config,
     },
 };
 use arbutil::{crypto, Color};
@@ -29,28 +30,8 @@ use prover::{
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::wasmparser::Operator;
-use wasmer::{
-    imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
-    Store,
-};
+use wasmer::{CompilerConfig, ExportIndex, Imports, Instance, MemoryType, Module, Pages, Store};
 use wasmer_compiler_singlepass::Singlepass;
-
-fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
-    let store = config.store();
-    new_test_instance_from_store(path, store)
-}
-
-fn new_test_instance_from_store(path: &str, mut store: Store) -> Result<NativeInstance> {
-    let wat = std::fs::read(path)?;
-    let module = Module::new(&store, wat)?;
-    let imports = imports! {
-        "test" => {
-            "noop" => Function::new_typed(&mut store, || {}),
-        },
-    };
-    let instance = Instance::new(&mut store, &module, &imports)?;
-    Ok(NativeInstance::new_sans_env(instance, store))
-}
 
 fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     let mut compiler = Singlepass::new();
@@ -75,17 +56,6 @@ fn new_native_with_evm(
     Ok((native, contracts, storage))
 }
 
-fn uniform_cost_config() -> StylusConfig {
-    let mut config = StylusConfig::default();
-    config.debug.count_ops = true;
-    config.debug.debug_funcs = true;
-    config.start_gas = 1_000_000;
-    config.pricing.wasm_gas_price = 100_00;
-    config.pricing.hostio_cost = 100;
-    config.costs = |_| 1;
-    config
-}
-
 fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
     let config = native.env().config.clone();
     match native.run_main(&args, &config)? {
@@ -101,17 +71,6 @@ fn run_machine(machine: &mut Machine, args: &[u8], config: &StylusConfig) -> Res
     }
 }
 
-fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
-    assert_eq!(native.gas_left(), machine.gas_left());
-    assert_eq!(native.stack_left(), machine.stack_left());
-
-    let native_counts = native.operator_counts()?;
-    let machine_counts = machine.operator_counts()?;
-    assert_eq!(native_counts.get(&Operator::Unreachable.into()), None);
-    assert_eq!(native_counts, machine_counts);
-    Ok(())
-}
-
 #[test]
 fn test_gas() -> Result<()> {
     let mut config = StylusConfig::default();
@@ -121,14 +80,14 @@ fn test_gas() -> Result<()> {
     let exports = &instance.exports;
     let add_one = exports.get_typed_function::<i32, i32>(&instance.store, "add_one")?;
 
-    assert_eq!(instance.gas_left(), MachineMeter::Ready(0));
+    assert_eq!(instance.ink_left(), MachineMeter::Ready(0));
 
     macro_rules! exhaust {
-        ($gas:expr) => {
-            instance.set_gas($gas);
-            assert_eq!(instance.gas_left(), MachineMeter::Ready($gas));
+        ($ink:expr) => {
+            instance.set_ink($ink);
+            assert_eq!(instance.ink_left(), MachineMeter::Ready($ink));
             assert!(add_one.call(&mut instance.store, 32).is_err());
-            assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
+            assert_eq!(instance.ink_left(), MachineMeter::Exhausted);
         };
     }
 
@@ -136,15 +95,15 @@ fn test_gas() -> Result<()> {
     exhaust!(50);
     exhaust!(99);
 
-    let mut gas_left = 500;
-    instance.set_gas(gas_left);
-    while gas_left > 0 {
-        assert_eq!(instance.gas_left(), MachineMeter::Ready(gas_left));
+    let mut ink_left = 500;
+    instance.set_ink(ink_left);
+    while ink_left > 0 {
+        assert_eq!(instance.ink_left(), MachineMeter::Ready(ink_left));
         assert_eq!(add_one.call(&mut instance.store, 64)?, 65);
-        gas_left -= 100;
+        ink_left -= 100;
     }
     assert!(add_one.call(&mut instance.store, 32).is_err());
-    assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
+    assert_eq!(instance.ink_left(), MachineMeter::Exhausted);
     Ok(())
 }
 
@@ -235,7 +194,8 @@ fn test_count() -> Result<()> {
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(starter)));
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
 
-    let mut instance = new_test_instance_from_store("tests/clz.wat", Store::new(compiler))?;
+    let mut instance =
+        new_test_instance_from_store("tests/clz.wat", Store::new(compiler), Imports::new())?;
 
     let starter = instance.get_start()?;
     starter.call(&mut instance.store)?;
@@ -259,7 +219,7 @@ fn test_count() -> Result<()> {
 #[test]
 fn test_import_export_safety() -> Result<()> {
     // test wasms
-    //     bad-export.wat   there's a global named `stylus_gas_left`
+    //     bad-export.wat   there's a global named `stylus_ink_left`
     //     bad-export2.wat  there's a func named `stylus_global_with_random_name`
     //     bad-import.wat   there's an import named `stylus_global_with_random_name`
 
@@ -331,7 +291,7 @@ fn test_heap() -> Result<()> {
         config.heap_bound = Pages(bound).into();
 
         let instance = new_test_instance(file, config.clone())?;
-        let machine = super::wavm::new_test_machine(file, config)?;
+        let machine = new_test_machine(file, config)?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;
@@ -435,7 +395,7 @@ fn test_fallible() -> Result<()> {
         err => bail!("expected hard error: {}", err.red()),
     }
 
-    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.ink_left(), machine.ink_left());
     assert_eq!(native.stack_left(), machine.stack_left());
 
     let native_counts = native.operator_counts()?;

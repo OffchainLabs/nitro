@@ -10,34 +10,30 @@ use std::fmt::{Debug, Display};
 use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
-pub const STYLUS_GAS_LEFT: &str = "stylus_gas_left";
-pub const STYLUS_GAS_STATUS: &str = "stylus_gas_status";
+pub const STYLUS_INK_LEFT: &str = "stylus_ink_left";
+pub const STYLUS_INK_STATUS: &str = "stylus_ink_status";
 
 pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
 impl<T> OpcodePricer for T where T: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
 pub struct Meter<F: OpcodePricer> {
-    gas_global: Mutex<Option<GlobalIndex>>,
-    status_global: Mutex<Option<GlobalIndex>>,
     costs: F,
-    start_gas: u64,
+    start_ink: u64,
+    globals: Mutex<Option<[GlobalIndex; 2]>>,
 }
 
 impl<F: OpcodePricer> Meter<F> {
-    pub fn new(costs: F, start_gas: u64) -> Self {
+    pub fn new(costs: F, start_ink: u64) -> Self {
         Self {
-            gas_global: Mutex::new(None),
-            status_global: Mutex::new(None),
             costs,
-            start_gas,
+            start_ink,
+            globals: Mutex::new(None),
         }
     }
 
-    pub fn globals(&self) -> (GlobalIndex, GlobalIndex) {
-        let gas_left = self.gas_global.lock().unwrap();
-        let status = self.status_global.lock().unwrap();
-        (gas_left, status)
+    pub fn globals(&self) -> [GlobalIndex; 2] {
+        self.globals.lock().expect("missing globals")
     }
 }
 
@@ -49,43 +45,41 @@ where
     type FM<'a> = FuncMeter<'a, F>;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
-        let start_gas = GlobalInit::I64Const(self.start_gas as i64);
+        let start_ink = GlobalInit::I64Const(self.start_ink as i64);
         let start_status = GlobalInit::I32Const(0);
-        let gas = module.add_global(STYLUS_GAS_LEFT, Type::I64, start_gas)?;
-        let status = module.add_global(STYLUS_GAS_STATUS, Type::I32, start_status)?;
-        *self.gas_global.lock() = Some(gas);
-        *self.status_global.lock() = Some(status);
+        let ink = module.add_global(STYLUS_INK_LEFT, Type::I64, start_ink)?;
+        let status = module.add_global(STYLUS_INK_STATUS, Type::I32, start_status)?;
+        *self.globals.lock() = Some([ink, status]);
         Ok(())
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
-        let gas = self.gas_global.lock().expect("no global");
-        let status = self.status_global.lock().expect("no global");
-        Ok(FuncMeter::new(gas, status, self.costs.clone()))
+        let [ink, status] = self.globals();
+        Ok(FuncMeter::new(ink, status, self.costs.clone()))
     }
 
     fn name(&self) -> &'static str {
-        "gas meter"
+        "ink meter"
     }
 }
 
 pub struct FuncMeter<'a, F: OpcodePricer> {
-    /// Represents the amount of gas left for consumption
-    gas_global: GlobalIndex,
-    /// Represents whether the machine is out of gas
+    /// Represents the amount of ink left for consumption
+    ink_global: GlobalIndex,
+    /// Represents whether the machine is out of ink
     status_global: GlobalIndex,
     /// Instructions of the current basic block
     block: Vec<Operator<'a>>,
     /// The accumulated cost of the current basic block
     block_cost: u64,
-    /// Associates opcodes to their gas costs
+    /// Associates opcodes to their ink costs
     costs: F,
 }
 
 impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
-    fn new(gas_global: GlobalIndex, status_global: GlobalIndex, costs: F) -> Self {
+    fn new(ink_global: GlobalIndex, status_global: GlobalIndex, costs: F) -> Self {
         Self {
-            gas_global,
+            ink_global,
             status_global,
             block: vec![],
             block_cost: 0,
@@ -108,12 +102,12 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
         self.block.push(op);
 
         if end {
-            let gas = self.gas_global.as_u32();
+            let ink = self.ink_global.as_u32();
             let status = self.status_global.as_u32();
 
-            let mut header = vec![
-                // if gas < cost => panic with status = 1
-                GlobalGet { global_index: gas },
+            let mut header = [
+                // if ink < cost => panic with status = 1
+                GlobalGet { global_index: ink },
                 I64Const { value: cost as i64 },
                 I64LtU,
                 If {
@@ -125,11 +119,11 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
                 },
                 Unreachable,
                 End,
-                // gas -= cost
-                GlobalGet { global_index: gas },
+                // ink -= cost
+                GlobalGet { global_index: ink },
                 I64Const { value: cost as i64 },
                 I64Sub,
-                GlobalSet { global_index: gas },
+                GlobalSet { global_index: ink },
             ];
 
             // include the cost of executing the header
@@ -147,17 +141,16 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
     }
 
     fn name(&self) -> &'static str {
-        "gas meter"
+        "ink meter"
     }
 }
 
 impl<F: OpcodePricer> Debug for Meter<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Meter")
-            .field("gas_global", &self.gas_global)
-            .field("status_global", &self.status_global)
+            .field("globals", &self.globals)
             .field("costs", &"<function>")
-            .field("start_gas", &self.start_gas)
+            .field("start_ink", &self.start_ink)
             .finish()
     }
 }
@@ -165,7 +158,7 @@ impl<F: OpcodePricer> Debug for Meter<F> {
 impl<F: OpcodePricer> Debug for FuncMeter<'_, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FunctionMeter")
-            .field("gas_global", &self.gas_global)
+            .field("ink_global", &self.ink_global)
             .field("status_global", &self.status_global)
             .field("block", &self.block)
             .field("block_cost", &self.block_cost)
@@ -185,7 +178,7 @@ pub enum MachineMeter {
 impl Into<u64> for MachineMeter {
     fn into(self) -> u64 {
         match self {
-            Self::Ready(gas) => gas,
+            Self::Ready(ink) => ink,
             Self::Exhausted => 0,
         }
     }
@@ -194,7 +187,7 @@ impl Into<u64> for MachineMeter {
 impl Display for MachineMeter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Ready(gas) => write!(f, "{gas} gas"),
+            Self::Ready(ink) => write!(f, "{ink} ink"),
             Self::Exhausted => write!(f, "exhausted"),
         }
     }
@@ -202,29 +195,29 @@ impl Display for MachineMeter {
 
 /// Note: implementers may panic if uninstrumented
 pub trait MeteredMachine {
-    fn gas_left(&mut self) -> MachineMeter;
-    fn set_gas(&mut self, gas: u64);
+    fn ink_left(&mut self) -> MachineMeter;
+    fn set_ink(&mut self, ink: u64);
 }
 
 impl MeteredMachine for Machine {
-    fn gas_left(&mut self) -> MachineMeter {
+    fn ink_left(&mut self) -> MachineMeter {
         macro_rules! convert {
             ($global:expr) => {{
                 $global.unwrap().try_into().expect("type mismatch")
             }};
         }
 
-        let gas = || convert!(self.get_global(STYLUS_GAS_LEFT));
-        let status: u32 = convert!(self.get_global(STYLUS_GAS_STATUS));
+        let ink = || convert!(self.get_global(STYLUS_INK_LEFT));
+        let status: u32 = convert!(self.get_global(STYLUS_INK_STATUS));
 
         match status {
-            0 => MachineMeter::Ready(gas()),
+            0 => MachineMeter::Ready(ink()),
             _ => MachineMeter::Exhausted,
         }
     }
 
-    fn set_gas(&mut self, gas: u64) {
-        self.set_global(STYLUS_GAS_LEFT, gas.into()).unwrap();
-        self.set_global(STYLUS_GAS_STATUS, 0_u32.into()).unwrap();
+    fn set_ink(&mut self, ink: u64) {
+        self.set_global(STYLUS_INK_LEFT, ink.into()).unwrap();
+        self.set_global(STYLUS_INK_STATUS, 0_u32.into()).unwrap();
     }
 }

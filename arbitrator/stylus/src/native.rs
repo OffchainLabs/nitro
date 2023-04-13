@@ -12,7 +12,7 @@ use prover::{
     programs::{
         counter::{Counter, CountingMachine, OP_OFFSETS},
         depth::STYLUS_STACK_LEFT,
-        meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
+        meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
         start::STYLUS_START,
     },
@@ -120,14 +120,14 @@ impl NativeInstance {
         let memory = exports.get_memory("memory")?.clone();
 
         let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
-        let gas_left = expect_global(STYLUS_GAS_LEFT);
-        let gas_status = expect_global(STYLUS_GAS_STATUS);
+        let ink_left = expect_global(STYLUS_INK_LEFT);
+        let ink_status = expect_global(STYLUS_INK_STATUS);
 
         let env = func_env.as_mut(&mut store);
         env.memory = Some(memory);
         env.meter = Some(MeterData {
-            gas_left,
-            gas_status,
+            ink_left,
+            ink_status,
             pricing: env.config.pricing,
         });
         Ok(Self::new(instance, store, func_env))
@@ -200,8 +200,8 @@ impl NativeInstance {
                 Failure => Err(error!(error)),
             }
         });
-        let contract_call = Box::new(move |contract, calldata, evm_gas, value| unsafe {
-            let mut call_gas = evm_gas; // becomes the call's cost
+        let contract_call = Box::new(move |contract, calldata, gas, value| unsafe {
+            let mut call_gas = gas; // becomes the call's cost
             let mut return_data_len = 0;
             let api_status = contract_call(
                 id,
@@ -213,8 +213,8 @@ impl NativeInstance {
             );
             (return_data_len, call_gas, api_status.into())
         });
-        let delegate_call = Box::new(move |contract, calldata, evm_gas| unsafe {
-            let mut call_gas = evm_gas; // becomes the call's cost
+        let delegate_call = Box::new(move |contract, calldata, gas| unsafe {
+            let mut call_gas = gas; // becomes the call's cost
             let mut return_data_len = 0;
             let api_status = delegate_call(
                 id,
@@ -225,8 +225,8 @@ impl NativeInstance {
             );
             (return_data_len, call_gas, api_status.into())
         });
-        let static_call = Box::new(move |contract, calldata, evm_gas| unsafe {
-            let mut call_gas = evm_gas; // becomes the call's cost
+        let static_call = Box::new(move |contract, calldata, gas| unsafe {
+            let mut call_gas = gas; // becomes the call's cost
             let mut return_data_len = 0;
             let api_status = static_call(
                 id,
@@ -237,8 +237,8 @@ impl NativeInstance {
             );
             (return_data_len, call_gas, api_status.into())
         });
-        let create1 = Box::new(move |code, endowment, evm_gas| unsafe {
-            let mut call_gas = evm_gas; // becomes the call's cost
+        let create1 = Box::new(move |code, endowment, gas| unsafe {
+            let mut call_gas = gas; // becomes the call's cost
             let mut return_data_len = 0;
             let mut code = RustVec::new(code);
             let api_status = create1(
@@ -255,8 +255,8 @@ impl NativeInstance {
             };
             (result, return_data_len, call_gas)
         });
-        let create2 = Box::new(move |code, endowment, salt, evm_gas| unsafe {
-            let mut call_gas = evm_gas; // becomes the call's cost
+        let create2 = Box::new(move |code, endowment, salt, gas| unsafe {
+            let mut call_gas = gas; // becomes the call's cost
             let mut return_data_len = 0;
             let mut code = RustVec::new(code);
             let api_status = create2(
@@ -323,19 +323,19 @@ impl DerefMut for NativeInstance {
 }
 
 impl MeteredMachine for NativeInstance {
-    fn gas_left(&mut self) -> MachineMeter {
-        let status = self.get_global(STYLUS_GAS_STATUS).unwrap();
-        let mut gas = || self.get_global(STYLUS_GAS_LEFT).unwrap();
+    fn ink_left(&mut self) -> MachineMeter {
+        let status = self.get_global(STYLUS_INK_STATUS).unwrap();
+        let mut ink = || self.get_global(STYLUS_INK_LEFT).unwrap();
 
         match status {
-            0 => MachineMeter::Ready(gas()),
+            0 => MachineMeter::Ready(ink()),
             _ => MachineMeter::Exhausted,
         }
     }
 
-    fn set_gas(&mut self, gas: u64) {
-        self.set_global(STYLUS_GAS_LEFT, gas).unwrap();
-        self.set_global(STYLUS_GAS_STATUS, 0).unwrap();
+    fn set_ink(&mut self, ink: u64) {
+        self.set_global(STYLUS_INK_LEFT, ink).unwrap();
+        self.set_global(STYLUS_INK_STATUS, 0).unwrap();
     }
 }
 

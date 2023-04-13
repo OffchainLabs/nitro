@@ -7,9 +7,9 @@ use std::ops::Deref;
 
 #[link(wasm_import_module = "hostio")]
 extern "C" {
-    fn user_gas_left() -> u64;
-    fn user_gas_status() -> u32;
-    fn user_set_gas(gas: u64, status: u32);
+    fn user_ink_left() -> u64;
+    fn user_ink_status() -> u32;
+    fn user_set_ink(ink: u64, status: u32);
 }
 
 pub(crate) struct Pricing(pub PricingParams);
@@ -24,31 +24,31 @@ impl Deref for Pricing {
 
 impl Pricing {
     pub fn begin(&self) {
-        self.buy_gas(self.hostio_cost)
+        self.buy_ink(self.hostio_ink)
     }
 
-    pub fn buy_gas(&self, gas: u64) {
+    pub fn buy_ink(&self, ink: u64) {
         unsafe {
-            if user_gas_status() != 0 {
-                panic!("out of gas");
+            if user_ink_status() != 0 {
+                panic!("out of ink");
             }
-            let gas_left = user_gas_left();
-            if gas_left < gas {
-                panic!("out of gas");
+            let ink_left = user_ink_left();
+            if ink_left < ink {
+                panic!("out of ink");
             }
-            user_set_gas(gas_left - gas, 0);
+            user_set_ink(ink_left - ink, 0);
         }
     }
 
     #[allow(clippy::inconsistent_digit_grouping)]
-    pub fn buy_evm_gas(&self, evm: u64) {
-        let wasm_gas = evm.saturating_mul(100_00) / self.wasm_gas_price;
-        self.buy_gas(wasm_gas)
+    pub fn buy_gas(&self, gas: u64) {
+        let ink = gas.saturating_mul(100_00) / self.ink_price;
+        self.buy_ink(ink)
     }
 
     pub fn pay_for_evm_copy(&self, bytes: usize) {
         let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let evm_gas = evm_words(bytes as u64).saturating_mul(evm::COPY_WORD_GAS);
-        self.buy_evm_gas(evm_gas)
+        let gas = evm_words(bytes as u64).saturating_mul(evm::COPY_WORD_GAS);
+        self.buy_gas(gas)
     }
 }

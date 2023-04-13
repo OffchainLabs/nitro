@@ -21,10 +21,10 @@ extern "C" {
 // these dynamic hostio methods allow introspection into user modules
 #[link(wasm_import_module = "hostio")]
 extern "C" {
-    fn program_set_gas(module: u32, internals: u32, gas: u64);
+    fn program_set_ink(module: u32, internals: u32, ink: u64);
     fn program_set_stack(module: u32, internals: u32, stack: u32);
-    fn program_gas_left(module: u32, internals: u32) -> u64;
-    fn program_gas_status(module: u32, internals: u32) -> u32;
+    fn program_ink_left(module: u32, internals: u32) -> u64;
+    fn program_ink_status(module: u32, internals: u32) -> u32;
     fn program_stack_left(module: u32, internals: u32) -> u32;
     fn program_call_main(module: u32, main: u32, args_len: usize) -> u32;
 }
@@ -94,11 +94,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = *Box::from_raw(sp.read_ptr_mut());
 
-    // buy wasm gas. If free, provide a virtually limitless amount
+    // buy ink
     let pricing = config.pricing;
-    let evm_gas = sp.read_go_ptr();
-    let wasm_gas = pricing
-        .evm_to_wasm(wavm::caller_load64(evm_gas));
+    let gas = sp.read_go_ptr();
+    let ink = pricing.gas_to_ink(wavm::caller_load64(gas));
 
     // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();
@@ -108,7 +107,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // link the program and ready its instrumentation
     let module = link_module(&MemoryLeaf(module));
-    program_set_gas(module, internals, wasm_gas);
+    program_set_ink(module, internals, ink);
     program_set_stack(module, internals, config.depth.max_depth);
 
     // provide arguments
@@ -121,13 +120,13 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     /// cleans up and writes the output
     macro_rules! finish {
-        ($status:expr, $gas_left:expr) => {
-            finish!($status, std::ptr::null::<u8>(), $gas_left);
+        ($status:expr, $ink_left:expr) => {
+            finish!($status, std::ptr::null::<u8>(), $ink_left);
         };
-        ($status:expr, $outs:expr, $gas_left:expr) => {{
+        ($status:expr, $outs:expr, $ink_left:expr) => {{
             sp.write_u8($status as u8).skip_space();
             sp.write_ptr($outs);
-            wavm::caller_store64(evm_gas, pricing.wasm_to_evm($gas_left));
+            wavm::caller_store64(gas, pricing.ink_to_gas($ink_left));
             unlink_module();
             return;
         }};
@@ -135,16 +134,16 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // check if instrumentation stopped the program
     use UserOutcomeKind::*;
-    if program_gas_status(module, internals) != 0 {
-        finish!(OutOfGas, 0);
+    if program_ink_status(module, internals) != 0 {
+        finish!(OutOfInk, 0);
     }
     if program_stack_left(module, internals) == 0 {
         finish!(OutOfStack, 0);
     }
 
     // the program computed a final result
-    let gas_left = program_gas_left(module, internals);
-    finish!(status, heapify(outs), gas_left)
+    let ink_left = program_ink_left(module, internals);
+    finish!(status, heapify(outs), ink_left)
 }
 
 /// Reads the length of a rust `Vec`
@@ -172,7 +171,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version, maxDepth u32, wasmGasPrice, hostioCost u64) *StylusConfig
+/// Safety: λ(version, maxDepth u32, inkGasPrice, hostioInk u64) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
@@ -182,7 +181,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 
     let mut config = StylusConfig::version(version);
     config.depth.max_depth = sp.read_u32();
-    config.pricing.wasm_gas_price = sp.read_u64();
-    config.pricing.hostio_cost = sp.read_u64();
+    config.pricing.ink_price = sp.read_u64();
+    config.pricing.hostio_ink = sp.read_u64();
     sp.write_ptr(heapify(config));
 }

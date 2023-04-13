@@ -1,10 +1,11 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
     programs::{
-        config::StylusConfig, counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter,
-        start::StartMover, FuncMiddleware, Middleware, StylusGlobals,
+        config::StylusConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware,
+        StylusGlobals,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -298,7 +299,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
         sign_extension: true,
         reference_types: false,
         multi_value: true,
-        bulk_memory: false,
+        bulk_memory: true, // not all ops supported yet
         module_linking: false,
         simd: false,
         relaxed_simd: false,
@@ -316,14 +317,10 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
-    let sections: Vec<_> = Parser::new(0)
-        .parse_all(input)
-        .into_iter()
-        .collect::<Result<_, _>>()?;
-
     let mut binary = WasmBinary::default();
+    let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
-    for mut section in sections.into_iter() {
+    for mut section in sections {
         use Payload::*;
 
         macro_rules! process {
@@ -515,12 +512,14 @@ impl<'a> Debug for WasmBinary<'a> {
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
     pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
-        let meter = Meter::new(config.costs, config.start_gas);
+        let meter = Meter::new(config.costs, config.start_ink);
+        let dygas = DynamicMeter::new(&config.pricing);
         let depth = DepthChecker::new(config.depth);
         let bound = HeapBound::new(config.heap_bound)?;
         let start = StartMover::default();
 
         meter.update_module(self)?;
+        dygas.update_module(self)?;
         depth.update_module(self)?;
         bound.update_module(self)?;
         start.update_module(self)?;
@@ -555,6 +554,7 @@ impl<'a> WasmBinary<'a> {
             // add the instrumentation in the order of application
             // note: this must be consistent with native execution
             apply!(meter);
+            apply!(dygas);
             apply!(depth);
             apply!(bound);
             apply!(start);
@@ -566,11 +566,11 @@ impl<'a> WasmBinary<'a> {
             code.expr = build;
         }
 
-        let (gas_left, gas_status) = meter.globals();
+        let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
         Ok(StylusGlobals {
-            gas_left,
-            gas_status,
+            ink_left,
+            ink_status,
             depth_left,
         })
     }

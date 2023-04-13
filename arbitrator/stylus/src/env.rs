@@ -42,10 +42,10 @@ pub struct WasmEnv {
 
 #[derive(Clone, Debug)]
 pub struct MeterData {
-    /// The amount of wasm gas left
-    pub gas_left: Global,
-    /// Whether the instance has run out of gas
-    pub gas_status: Global,
+    /// The amount of ink left
+    pub ink_left: Global,
+    /// Whether the instance has run out of ink
+    pub ink_status: Global,
     /// The pricing parameters associated with this program's environment
     pub pricing: PricingParams,
 }
@@ -56,14 +56,14 @@ pub type GetBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 /// State store: (key, value) → (cost, error)
 pub type SetBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
 
-/// Contract call: (contract, calldata, evm_gas, value) → (return_data_len, evm_cost, status)
+/// Contract call: (contract, calldata, gas, value) → (return_data_len, gas_cost, status)
 pub type ContractCall =
     Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (u32, u64, UserOutcomeKind) + Send>;
 
-/// Delegate call: (contract, calldata, evm_gas) → (return_data_len, evm_cost, status)
+/// Delegate call: (contract, calldata, gas) → (return_data_len, gas_cost, status)
 pub type DelegateCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
 
-/// Static call: (contract, calldata, evm_gas) → (return_data_len, evm_cost, status)
+/// Static call: (contract, calldata, gas) → (return_data_len, gas_cost, status)
 pub type StaticCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
 
 /// Last call's return data: () → return_data
@@ -72,10 +72,10 @@ pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
 /// Emits a log event: (data, topics) -> error
 pub type EmitLog = Box<dyn Fn(Vec<u8>, usize) -> eyre::Result<()> + Send>;
 
-/// Creates a contract: (code, endowment, evm_gas) -> (address/error, return_data_len, evm_cost)
+/// Creates a contract: (code, endowment, gas) -> (address/error, return_data_len, gas_cost)
 pub type Create1 = Box<dyn Fn(Vec<u8>, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
 
-/// Creates a contract: (code, endowment, salt, evm_gas) -> (address/error, return_data_len, evm_cost)
+/// Creates a contract: (code, endowment, salt, gas) -> (address/error, return_data_len, gas_cost)
 pub type Create2 =
     Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
 
@@ -165,8 +165,8 @@ impl WasmEnv {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         let mut info = HostioInfo { env, memory, store };
-        let cost = info.meter().pricing.hostio_cost;
-        info.buy_gas(cost)?;
+        let cost = info.meter().pricing.hostio_ink;
+        info.buy_ink(cost)?;
         Ok(info)
     }
 }
@@ -182,43 +182,43 @@ impl<'a> HostioInfo<'a> {
         self.meter.as_mut().unwrap()
     }
 
-    pub fn evm_gas_left(&mut self) -> u64 {
-        let wasm_gas = self.gas_left().into();
-        self.meter().pricing.wasm_to_evm(wasm_gas)
+    pub fn gas_left(&mut self) -> u64 {
+        let ink = self.ink_left().into();
+        self.meter().pricing.ink_to_gas(ink)
     }
 
-    pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
-        let MachineMeter::Ready(gas_left) = self.gas_left() else {
-            return Escape::out_of_gas();
+    pub fn buy_ink(&mut self, ink: u64) -> MaybeEscape {
+        let MachineMeter::Ready(ink_left) = self.ink_left() else {
+            return Escape::out_of_ink();
         };
-        if gas_left < gas {
-            return Escape::out_of_gas();
+        if ink_left < ink {
+            return Escape::out_of_ink();
         }
-        self.set_gas(gas_left - gas);
+        self.set_ink(ink_left - ink);
         Ok(())
     }
 
-    pub fn buy_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let wasm_gas = self.meter().pricing.evm_to_wasm(evm);
-        self.buy_gas(wasm_gas)
+    pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
+        let ink = self.meter().pricing.gas_to_ink(gas);
+        self.buy_ink(ink)
     }
 
-    /// Checks if the user has enough evm gas, but doesn't burn any
-    pub fn require_evm_gas(&mut self, evm: u64) -> MaybeEscape {
-        let wasm_gas = self.meter().pricing.evm_to_wasm(evm);
-        let MachineMeter::Ready(gas_left) = self.gas_left() else {
-            return Escape::out_of_gas();
+    /// Checks if the user has enough gas, but doesn't burn any
+    pub fn require_gas(&mut self, gas: u64) -> MaybeEscape {
+        let ink = self.meter().pricing.gas_to_ink(gas);
+        let MachineMeter::Ready(ink_left) = self.ink_left() else {
+            return Escape::out_of_ink();
         };
-        match gas_left < wasm_gas {
-            true => Escape::out_of_gas(),
+        match ink_left < ink {
+            true => Escape::out_of_ink(),
             false => Ok(()),
         }
     }
 
     pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
         let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let evm_gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
-        self.buy_evm_gas(evm_gas)
+        let gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
+        self.buy_gas(gas)
     }
 
     pub fn view(&self) -> MemoryView {
@@ -275,25 +275,25 @@ impl<'a> HostioInfo<'a> {
 }
 
 impl<'a> MeteredMachine for HostioInfo<'a> {
-    fn gas_left(&mut self) -> MachineMeter {
+    fn ink_left(&mut self) -> MachineMeter {
         let store = &mut self.store;
         let meter = self.env.meter.as_ref().unwrap();
-        let status = meter.gas_status.get(store);
+        let status = meter.ink_status.get(store);
         let status = status.try_into().expect("type mismatch");
-        let gas = meter.gas_left.get(store);
-        let gas = gas.try_into().expect("type mismatch");
+        let ink = meter.ink_left.get(store);
+        let ink = ink.try_into().expect("type mismatch");
 
         match status {
-            0_u32 => MachineMeter::Ready(gas),
+            0_u32 => MachineMeter::Ready(ink),
             _ => MachineMeter::Exhausted,
         }
     }
 
-    fn set_gas(&mut self, gas: u64) {
+    fn set_ink(&mut self, ink: u64) {
         let store = &mut self.store;
         let meter = self.env.meter.as_ref().unwrap();
-        meter.gas_left.set(store, gas.into()).unwrap();
-        meter.gas_status.set(store, 0.into()).unwrap();
+        meter.ink_left.set(store, ink.into()).unwrap();
+        meter.ink_status.set(store, 0.into()).unwrap();
     }
 }
 
@@ -324,37 +324,37 @@ impl EvmAPI {
         &mut self,
         contract: Bytes20,
         input: Vec<u8>,
-        evm_gas: u64,
+        gas: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
-        (self.contract_call)(contract, input, evm_gas, value)
+        (self.contract_call)(contract, input, gas, value)
     }
 
     pub fn delegate_call(
         &mut self,
         contract: Bytes20,
         input: Vec<u8>,
-        evm_gas: u64,
+        gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
-        (self.delegate_call)(contract, input, evm_gas)
+        (self.delegate_call)(contract, input, gas)
     }
 
     pub fn static_call(
         &mut self,
         contract: Bytes20,
         input: Vec<u8>,
-        evm_gas: u64,
+        gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
-        (self.static_call)(contract, input, evm_gas)
+        (self.static_call)(contract, input, gas)
     }
 
     pub fn create1(
         &mut self,
         code: Vec<u8>,
         endowment: Bytes32,
-        evm_gas: u64,
+        gas: u64,
     ) -> (eyre::Result<Bytes20>, u32, u64) {
-        (self.create1)(code, endowment, evm_gas)
+        (self.create1)(code, endowment, gas)
     }
 
     pub fn create2(
@@ -362,9 +362,9 @@ impl EvmAPI {
         code: Vec<u8>,
         endowment: Bytes32,
         salt: Bytes32,
-        evm_gas: u64,
+        gas: u64,
     ) -> (eyre::Result<Bytes20>, u32, u64) {
-        (self.create2)(code, endowment, salt, evm_gas)
+        (self.create2)(code, endowment, salt, gas)
     }
 
     pub fn load_return_data(&mut self) -> Vec<u8> {
@@ -386,8 +386,8 @@ pub enum Escape {
     Internal(ErrReport),
     #[error("Logic error: `{0}`")]
     Logical(ErrReport),
-    #[error("out of gas")]
-    OutOfGas,
+    #[error("out of ink")]
+    OutOfInk,
 }
 
 impl Escape {
@@ -399,8 +399,8 @@ impl Escape {
         Err(Self::Logical(eyre!(error)))
     }
 
-    pub fn out_of_gas<T>() -> Result<T, Escape> {
-        Err(Self::OutOfGas)
+    pub fn out_of_ink<T>() -> Result<T, Escape> {
+        Err(Self::OutOfInk)
     }
 }
 

@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{config::DepthParams, FuncMiddleware, Middleware, ModuleMod};
-use crate::{value::FunctionType, Machine};
+use crate::{host::InternalFunc, value::FunctionType, Machine};
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -168,7 +168,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
             bail!("frame too large: {} > {}-word limit", size.red(), limit);
         }
 
-        out.extend(vec![
+        out.extend([
             // if space <= size => panic with depth = 0
             GlobalGet { global_index },
             I32Const { value: size as i32 },
@@ -188,7 +188,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
         ]);
 
         let reclaim = |out: &mut O| {
-            out.extend(vec![
+            out.extend([
                 // space += size
                 GlobalGet { global_index },
                 I32Const { value: size as i32 },
@@ -208,7 +208,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
             if exit {
                 reclaim(out);
             }
-            out.extend(vec![op]);
+            out.extend([op]);
         }
 
         self.done = true;
@@ -325,6 +325,9 @@ impl<'a> FuncDepthChecker<'a> {
                     ins_and_outs!(ty)
                 }
 
+                MemoryFill { .. } => ins_and_outs!(InternalFunc::MemoryFill.ty()),
+                MemoryCopy { .. } => ins_and_outs!(InternalFunc::MemoryCopy.ty()),
+
                 op!(
                     Nop, Unreachable,
                     I32Eqz, I64Eqz, I32Clz, I32Ctz, I32Popcnt, I64Clz, I64Ctz, I64Popcnt,
@@ -391,10 +394,10 @@ impl<'a> FuncDepthChecker<'a> {
 
                 unsupported @ (
                     dot!(
-                        MemoryInit, DataDrop, MemoryCopy, MemoryFill, TableInit, ElemDrop,
+                        MemoryInit, DataDrop, TableInit, ElemDrop,
                         TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                     )
-                ) => bail!("bulk-memory-operations extension not supported {:?}", unsupported),
+                ) => bail!("bulk-memory-operations extension not fully supported {:?}", unsupported),
 
                 unsupported @ (
                     dot!(

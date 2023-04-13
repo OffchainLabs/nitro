@@ -28,7 +28,7 @@ mod benchmarks;
 pub struct GoParams {
     version: u32,
     max_depth: u32,
-    wasm_gas_price: u64,
+    ink_price: u64,
     hostio_cost: u64,
     debug_mode: usize,
 }
@@ -37,8 +37,8 @@ impl GoParams {
     pub fn config(self) -> StylusConfig {
         let mut config = StylusConfig::version(self.version);
         config.depth.max_depth = self.max_depth;
-        config.pricing.wasm_gas_price = self.wasm_gas_price;
-        config.pricing.hostio_cost = self.hostio_cost;
+        config.pricing.ink_price = self.ink_price;
+        config.pricing.hostio_ink = self.hostio_cost;
         config.debug.debug_funcs = self.debug_mode != 0;
         config
     }
@@ -147,7 +147,7 @@ pub struct GoApi {
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
-        evm_gas: *mut u64,
+        gas: *mut u64,
         value: Bytes32,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
@@ -155,21 +155,21 @@ pub struct GoApi {
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
-        evm_gas: *mut u64,
+        gas: *mut u64,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub static_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
-        evm_gas: *mut u64,
+        gas: *mut u64,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub create1: unsafe extern "C" fn(
         id: usize,
         code: *mut RustVec,
         endowment: Bytes32,
-        evm_gas: *mut u64,
+        gas: *mut u64,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub create2: unsafe extern "C" fn(
@@ -177,7 +177,7 @@ pub struct GoApi {
         code: *mut RustVec,
         endowment: Bytes32,
         salt: Bytes32,
-        evm_gas: *mut u64,
+        gas: *mut u64,
         return_data_len: *mut u32,
     ) -> GoApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
@@ -193,13 +193,13 @@ pub unsafe extern "C" fn stylus_call(
     go_api: GoApi,
     evm_data: EvmData,
     output: *mut RustVec,
-    evm_gas: *mut u64,
+    gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
     let config = params.config();
     let pricing = config.pricing;
-    let wasm_gas = pricing.evm_to_wasm(*evm_gas);
+    let ink = pricing.gas_to_ink(*gas);
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn stylus_call(
     };
     instance.set_go_api(go_api);
     instance.set_evm_data(evm_data);
-    instance.set_gas(wasm_gas);
+    instance.set_ink(ink);
 
     let status = match instance.run_main(&calldata, &config) {
         Err(err) | Ok(UserOutcome::Failure(err)) => {
@@ -223,11 +223,11 @@ pub unsafe extern "C" fn stylus_call(
             status
         }
     };
-    let wasm_gas = match status {
+    let ink_left = match status {
         UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
-        _ => instance.gas_left().into(),
+        _ => instance.ink_left().into(),
     };
-    *evm_gas = pricing.wasm_to_evm(wasm_gas);
+    *gas = pricing.ink_to_gas(ink_left);
     status
 }
 

@@ -1,22 +1,29 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::vec_init_then_push)]
+
 use crate::{
+    binary,
     machine::{Function, InboxIdentifier},
     programs::{run::UserOutcomeKind, StylusGlobals},
     value::{ArbValueType, FunctionType, IntegerValType},
-    wavm::{IBinOpType, Instruction, Opcode},
+    wavm::{wasm_to_wavm, IBinOpType, Instruction, Opcode},
 };
 use arbutil::Color;
-use eyre::bail;
+use eyre::{bail, Result};
+use lazy_static::lazy_static;
+use std::{collections::HashMap, path::Path};
 
 /// Represents the internal hostio functions a module may have.
 #[repr(u64)]
-enum InternalFunc {
+pub enum InternalFunc {
     WavmCallerLoad8,
     WavmCallerLoad32,
     WavmCallerStore8,
     WavmCallerStore32,
+    MemoryFill,
+    MemoryCopy,
     UserGasLeft,
     UserGasStatus,
     UserSetGas,
@@ -25,13 +32,29 @@ enum InternalFunc {
 }
 
 impl InternalFunc {
-    fn ty(&self) -> FunctionType {
+    pub fn ty(&self) -> FunctionType {
         use ArbValueType::*;
-        FunctionType::new(vec![I32], vec![I32])
+        use InternalFunc::*;
+        macro_rules! func {
+            ([$($args:expr),*], [$($outs:expr),*]) => {
+                FunctionType::new(vec![$($args),*], vec![$($outs),*])
+            };
+        }
+        match self {
+            WavmCallerLoad8 | WavmCallerLoad32 => func!([I32], [I32]),
+            WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
+            MemoryFill => func!([I32, I32, I32], []),
+            MemoryCopy => func!([I32, I32, I32], []),
+            UserGasLeft => func!([], [I64]),
+            UserGasStatus => func!([], [I32]),
+            UserSetGas => func!([I64, I32], []),
+            UserStackLeft => func!([], [I32]),
+            UserSetStack => func!([I32], []),
+        }
     }
 }
 
-pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
+pub fn get_impl(module: &str, name: &str) -> Result<Function> {
     macro_rules! func {
         () => {
             FunctionType::default()
@@ -63,13 +86,13 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         ("env", "wavm_halt_and_set_finished")      => func!(),
         ("hostio", "link_module")        => func!([I32], [I32]),           // λ(module_hash) -> module
         ("hostio", "unlink_module")      => func!(),                       // λ()
-        ("hostio", "user_gas_left")      => func!([], [I64]),              // λ() -> gas_left
-        ("hostio", "user_gas_status")    => func!([], [I32]),              // λ() -> gas_status
-        ("hostio", "user_set_gas")       => func!([I64, I32]),             // λ(gas_left, gas_status)
-        ("hostio", "program_gas_left")   => func!([I32, I32], [I64]),      // λ(module, internals) -> gas_left
-        ("hostio", "program_gas_status") => func!([I32, I32], [I32]),      // λ(module, internals) -> gas_status
+        ("hostio", "user_ink_left")      => func!([], [I64]),              // λ() -> ink_left
+        ("hostio", "user_ink_status")    => func!([], [I32]),              // λ() -> ink_status
+        ("hostio", "user_set_ink")       => func!([I64, I32]),             // λ(ink_left, ink_status)
+        ("hostio", "program_ink_left")   => func!([I32, I32], [I64]),      // λ(module, internals) -> ink_left
+        ("hostio", "program_ink_status") => func!([I32, I32], [I32]),      // λ(module, internals) -> ink_status
         ("hostio", "program_stack_left") => func!([I32, I32], [I32]),      // λ(module, internals) -> stack_left
-        ("hostio", "program_set_gas")    => func!([I32, I32, I64]),        // λ(module, internals, gas_left)
+        ("hostio", "program_set_ink")    => func!([I32, I32, I64]),        // λ(module, internals, ink_left)
         ("hostio", "program_set_stack")  => func!([I32, I32, I32]),        // λ(module, internals, stack_left)
         ("hostio", "program_call_main")  => func!([I32, I32, I32], [I32]), // λ(module, main, args_len) -> status
         _ => bail!("no such hostio {} in {}", name.red(), module.red()),
@@ -152,16 +175,16 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             ("env", "wavm_halt_and_set_finished") => {
                 opcode!(HaltAndSetFinished);
             }
-            ("hostio", "user_gas_left") => {
-                // λ() -> gas_left
+            ("hostio", "user_ink_left") => {
+                // λ() -> ink_left
                 opcode!(CallerModuleInternalCall, UserGasLeft);
             }
-            ("hostio", "user_gas_status") => {
-                // λ() -> gas_status
+            ("hostio", "user_ink_status") => {
+                // λ() -> ink_status
                 opcode!(CallerModuleInternalCall, UserGasStatus);
             }
-            ("hostio", "user_set_gas") => {
-                // λ(gas_left, gas_status)
+            ("hostio", "user_set_ink") => {
+                // λ(ink_left, ink_status)
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(CallerModuleInternalCall, UserSetGas);
@@ -175,18 +198,18 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
                 // λ()
                 opcode!(UnlinkModule);
             }
-            ("hostio", "program_gas_left") => {
-                // λ(module, internals) -> gas_left
+            ("hostio", "program_ink_left") => {
+                // λ(module, internals) -> ink_left
                 dynamic!(UserGasLeft);
             }
-            ("hostio", "program_gas_status") => {
-                // λ(module, internals) -> gas_status
+            ("hostio", "program_ink_status") => {
+                // λ(module, internals) -> ink_status
                 dynamic!(UserGasStatus);
             }
-            ("hostio", "program_set_gas") => {
-                // λ(module, internals, gas_left)
-                opcode!(LocalGet, 2); // gas_left
-                opcode!(I32Const, 0); // gas_status
+            ("hostio", "program_set_ink") => {
+                // λ(module, internals, ink_left)
+                opcode!(LocalGet, 2); // ink_left
+                opcode!(I32Const, 0); // ink_status
                 dynamic!(UserSetGas);
             }
             ("hostio", "program_stack_left") => {
@@ -222,31 +245,23 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn add_internal_funcs(
-    funcs: &mut Vec<Function>,
-    func_types: &mut Vec<FunctionType>,
-    globals: Option<StylusGlobals>,
-) {
+pub fn new_internal_funcs(globals: Option<StylusGlobals>) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
 
-    fn code_func(code: Vec<Instruction>, ty: FunctionType) -> Function {
+    fn code_func(code: Vec<Instruction>, func: InternalFunc) -> Function {
         let mut wavm = vec![Instruction::simple(InitFrame)];
         wavm.extend(code);
         wavm.push(Instruction::simple(Return));
-        Function::new_from_wavm(wavm, ty, vec![])
+        Function::new_from_wavm(wavm, func.ty(), vec![])
     }
 
-    fn op_func(opcode: Opcode, ty: FunctionType) -> Function {
-        code_func(vec![Instruction::simple(opcode)], ty)
+    fn op_func(opcode: Opcode, func: InternalFunc) -> Function {
+        code_func(vec![Instruction::simple(opcode)], func)
     }
 
-    let mut host = |func: InternalFunc| -> FunctionType {
-        let ty = func.ty();
-        func_types.push(ty.clone());
-        ty
-    };
+    let mut funcs = vec![];
 
     // order matters!
     funcs.push(op_func(
@@ -255,7 +270,7 @@ pub fn add_internal_funcs(
             bytes: 1,
             signed: false,
         },
-        host(WavmCallerLoad8),
+        WavmCallerLoad8,
     ));
     funcs.push(op_func(
         MemoryLoad {
@@ -263,41 +278,71 @@ pub fn add_internal_funcs(
             bytes: 4,
             signed: false,
         },
-        host(WavmCallerLoad32),
+        WavmCallerLoad32,
     ));
-    funcs.push(op_func(
-        MemoryStore { ty: I32, bytes: 1 },
-        host(WavmCallerStore8),
-    ));
+    funcs.push(op_func(MemoryStore { ty: I32, bytes: 1 }, WavmCallerStore8));
     funcs.push(op_func(
         MemoryStore { ty: I32, bytes: 4 },
-        host(WavmCallerStore32),
+        WavmCallerStore32,
     ));
+
+    let [memory_fill, memory_copy] = (*BULK_MEMORY_FUNCS).clone();
+    funcs.push(memory_fill);
+    funcs.push(memory_copy);
 
     if let Some(globals) = globals {
         let (gas, status, depth) = globals.offsets();
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, gas)],
-            host(UserGasLeft),
+            UserGasLeft,
         ));
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, status)],
-            host(UserGasStatus),
+            UserGasStatus,
         ));
         funcs.push(code_func(
             vec![
                 Instruction::with_data(GlobalSet, status),
                 Instruction::with_data(GlobalSet, gas),
             ],
-            host(UserSetGas),
+            UserSetGas,
         ));
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalGet, depth)],
-            host(UserStackLeft),
+            UserStackLeft,
         ));
         funcs.push(code_func(
             vec![Instruction::with_data(GlobalSet, depth)],
-            host(UserSetStack),
+            UserSetStack,
         ));
     }
+
+    funcs
+}
+
+lazy_static! {
+    static ref BULK_MEMORY_FUNCS: [Function; 2] = {
+        let data = include_bytes!("bulk_memory.wat");
+        let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory.wat");
+        let bin = binary::parse(&wasm, Path::new("internal")).expect("failed to parse bulk_memory.wasm");
+        [0, 1].map(|i| {
+            let code = &bin.codes[i];
+            let ty = &bin.types[bin.functions[i] as usize];
+            let func = Function::new(
+                &code.locals,
+                |wasm| wasm_to_wavm(
+                    &code.expr,
+                    wasm,
+                    &HashMap::default(), // impls don't use floating point
+                    &[],                // impls don't make calls
+                    &[ty.clone()],      // only type needed is the func itself
+                    0,                  // -----------------------------------
+                    0,                  // impls don't use other internals
+                ),
+                ty.clone(),
+                &[] // impls don't make calls
+            );
+            func.expect("failed to create bulk memory func")
+        })
+    };
 }

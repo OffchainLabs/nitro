@@ -10,8 +10,8 @@ use wasmparser::Operator;
 #[cfg(feature = "native")]
 use {
     super::{
-        counter::Counter, depth::DepthChecker, heap::HeapBound, meter::Meter, start::StartMover,
-        MiddlewareWrapper,
+        counter::Counter, depth::DepthChecker, dynamic::DynamicMeter, heap::HeapBound,
+        meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
     wasmer::{CompilerConfig, Store},
@@ -30,7 +30,7 @@ pub struct StylusDebugParams {
 pub struct StylusConfig {
     pub version: u32,   // requires recompilation
     pub costs: OpCosts, // requires recompilation
-    pub start_gas: u64,
+    pub start_ink: u64,
     pub heap_bound: Bytes, // requires recompilation
     pub depth: DepthParams,
     pub pricing: PricingParams,
@@ -45,10 +45,14 @@ pub struct DepthParams {
 
 #[derive(Clone, Copy, Debug)]
 pub struct PricingParams {
-    /// The price of wasm gas, measured in bips of an evm gas
-    pub wasm_gas_price: u64,
-    /// The amount of wasm gas one pays to do a user_host call
-    pub hostio_cost: u64,
+    /// The price of ink, measured in bips of an evm gas
+    pub ink_price: u64,
+    /// The amount of ink one pays to do a user_host call
+    pub hostio_ink: u64,
+    /// Per-byte `MemoryFill` cost
+    pub memory_fill_ink: u64,
+    /// Per-byte `MemoryCopy` cost
+    pub memory_copy_ink: u64,
 }
 
 impl Default for StylusConfig {
@@ -57,7 +61,7 @@ impl Default for StylusConfig {
         Self {
             version: 0,
             costs,
-            start_gas: 0,
+            start_ink: 0,
             heap_bound: Bytes(u32::MAX as usize),
             depth: DepthParams::default(),
             pricing: PricingParams::default(),
@@ -69,8 +73,10 @@ impl Default for StylusConfig {
 impl Default for PricingParams {
     fn default() -> Self {
         Self {
-            wasm_gas_price: 1,
-            hostio_cost: 0,
+            ink_price: 1,
+            hostio_ink: 0,
+            memory_fill_ink: 0,
+            memory_copy_ink: 0,
         }
     }
 }
@@ -94,6 +100,8 @@ impl StylusConfig {
             1 => {
                 // TODO: settle on reasonable values for the v1 release
                 config.costs = |_| 1;
+                config.pricing.memory_fill_ink = 1;
+                config.pricing.memory_copy_ink = 1;
                 config.heap_bound = Bytes(2 * 1024 * 1024);
                 config.depth.max_depth = 1 * 1024 * 1024;
             }
@@ -114,19 +122,21 @@ impl DepthParams {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub fn new(wasm_gas_price: u64, hostio_cost: u64) -> Self {
+    pub fn new(ink_price: u64, hostio_ink: u64, memory_fill: u64, memory_copy: u64) -> Self {
         Self {
-            wasm_gas_price,
-            hostio_cost,
+            ink_price,
+            hostio_ink,
+            memory_fill_ink: memory_fill,
+            memory_copy_ink: memory_copy,
         }
     }
 
-    pub fn evm_to_wasm(&self, evm_gas: u64) -> u64 {
-        evm_gas.saturating_mul(100_00) / self.wasm_gas_price
+    pub fn gas_to_ink(&self, gas: u64) -> u64 {
+        gas.saturating_mul(100_00) / self.ink_price
     }
 
-    pub fn wasm_to_evm(&self, wasm_gas: u64) -> u64 {
-        wasm_gas.saturating_mul(self.wasm_gas_price) / 100_00
+    pub fn ink_to_gas(&self, ink: u64) -> u64 {
+        ink.saturating_mul(self.ink_price) / 100_00
     }
 }
 
@@ -137,7 +147,8 @@ impl StylusConfig {
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 
-        let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_gas));
+        let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_ink));
+        let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
         let depth = MiddlewareWrapper::new(DepthChecker::new(self.depth));
         let bound = MiddlewareWrapper::new(HeapBound::new(self.heap_bound).unwrap()); // checked in new()
         let start = MiddlewareWrapper::new(StartMover::default());
@@ -145,6 +156,7 @@ impl StylusConfig {
         // add the instrumentation in the order of application
         // note: this must be consistent with the prover
         compiler.push_middleware(Arc::new(meter));
+        compiler.push_middleware(Arc::new(dygas));
         compiler.push_middleware(Arc::new(depth));
         compiler.push_middleware(Arc::new(bound));
         compiler.push_middleware(Arc::new(start));
@@ -162,7 +174,7 @@ impl Debug for StylusConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StylusConfig")
             .field("costs", &"λ(op) -> u64")
-            .field("start_gas", &self.start_gas)
+            .field("start_ink", &self.start_ink)
             .field("heap_bound", &self.heap_bound)
             .field("depth", &self.depth)
             .field("pricing", &self.pricing)

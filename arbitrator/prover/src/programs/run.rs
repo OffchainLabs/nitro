@@ -8,7 +8,7 @@ pub enum UserOutcome {
     Success(Vec<u8>),
     Revert(Vec<u8>),
     Failure(ErrReport),
-    OutOfGas,
+    OutOfInk,
     OutOfStack,
 }
 
@@ -18,7 +18,7 @@ pub enum UserOutcomeKind {
     Success,
     Revert,
     Failure,
-    OutOfGas,
+    OutOfInk,
     OutOfStack,
 }
 
@@ -47,7 +47,7 @@ impl From<&UserOutcome> for UserOutcomeKind {
             Success(_) => Self::Success,
             Revert(_) => Self::Revert,
             Failure(_) => Self::Failure,
-            OutOfGas => Self::OutOfGas,
+            OutOfInk => Self::OutOfInk,
             OutOfStack => Self::OutOfStack,
         }
     }
@@ -65,7 +65,7 @@ impl Display for UserOutcome {
         match self {
             Success(data) => write!(f, "success {}", hex::encode(data)),
             Failure(err) => write!(f, "failure {:?}", err),
-            OutOfGas => write!(f, "out of gas"),
+            OutOfInk => write!(f, "out of ink"),
             OutOfStack => write!(f, "out of stack"),
             Revert(data) => {
                 let text = String::from_utf8(data.clone()).unwrap_or_else(|_| hex::encode(data));
@@ -83,7 +83,7 @@ impl Display for UserOutcomeKind {
             Success => write!(f, "success ({as_u8})"),
             Revert => write!(f, "revert ({as_u8})"),
             Failure => write!(f, "failure ({as_u8})"),
-            OutOfGas => write!(f, "out of gas ({as_u8})"),
+            OutOfInk => write!(f, "out of ink ({as_u8})"),
             OutOfStack => write!(f, "out of stack ({as_u8})"),
         }
     }

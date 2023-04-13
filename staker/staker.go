@@ -16,10 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -244,7 +244,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
 			} else {
-				validatorGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
+				validatorGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		err = s.updateBlockValidatorModuleRoot(ctx)
@@ -779,5 +779,5 @@ func (s *Staker) updateStakerBalanceMetric(ctx context.Context) {
 		log.Error("error getting staker balance", "txSenderAddress", *txSenderAddress, "err", err)
 		return
 	}
-	stakerBalanceGauge.Update(float64(balance.Int64()) / params.Ether)
+	stakerBalanceGauge.Update(arbmath.BalancePerEther(balance))
 }

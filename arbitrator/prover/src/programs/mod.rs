@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
     binary::{ExportKind, WasmBinary},
@@ -29,6 +29,7 @@ use {
 pub mod config;
 pub mod counter;
 pub mod depth;
+pub mod dynamic;
 pub mod heap;
 pub mod meter;
 pub mod prelude;
@@ -40,6 +41,7 @@ pub const USER_HOST: &str = "user_host";
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
+    fn get_global(&mut self, name: &str) -> Result<GlobalIndex>;
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
     fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>>;
@@ -77,7 +79,7 @@ impl<'a> FuncMiddleware<'a> for DefaultFuncMiddleware {
     where
         O: Extend<Operator<'a>>,
     {
-        out.extend(vec![op]);
+        out.extend([op]);
         Ok(())
     }
 
@@ -169,6 +171,13 @@ impl ModuleMod for ModuleInfo {
         Ok(index)
     }
 
+    fn get_global(&mut self, name: &str) -> Result<GlobalIndex> {
+        let Some(ExportIndex::Global(global)) = self.exports.get(name) else {
+            bail!("missing global {}", name.red())
+        };
+        Ok(*global)
+    }
+
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType> {
         let error = Report::msg(format!("missing signature {}", sig.as_u32().red()));
         let ty = self.signatures.get(sig).cloned().ok_or(error)?;
@@ -256,6 +265,13 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(GlobalIndex::from_u32(index))
     }
 
+    fn get_global(&mut self, name: &str) -> Result<GlobalIndex> {
+        let Some((global, ExportKind::Global)) = self.exports.get(name) else {
+            bail!("missing global {}", name.red())
+        };
+        Ok(GlobalIndex::from_u32(*global))
+    }
+
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType> {
         let index = sig.as_u32() as usize;
         let error = Report::msg(format!("missing signature {}", index.red()));
@@ -340,16 +356,16 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 }
 
 pub struct StylusGlobals {
-    pub gas_left: GlobalIndex,
-    pub gas_status: GlobalIndex,
+    pub ink_left: GlobalIndex,
+    pub ink_status: GlobalIndex,
     pub depth_left: GlobalIndex,
 }
 
 impl StylusGlobals {
     pub fn offsets(&self) -> (u64, u64, u64) {
         (
-            self.gas_left.as_u32() as u64,
-            self.gas_status.as_u32() as u64,
+            self.ink_left.as_u32() as u64,
+            self.ink_status.as_u32() as u64,
             self.depth_left.as_u32() as u64,
         )
     }

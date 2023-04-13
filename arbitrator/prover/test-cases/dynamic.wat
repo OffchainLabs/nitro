@@ -2,12 +2,12 @@
 (module
     (import "hostio" "link_module"        (func $link       (param i32)         (result i32)))
     (import "hostio" "unlink_module"      (func $unlink                                     ))
-    (import "hostio" "program_set_gas"    (func $set_gas    (param i32 i32 i64)             ))
-    (import "hostio" "program_gas_left"   (func $gas_left   (param i32 i32)     (result i64)))
-    (import "hostio" "program_gas_status" (func $gas_status (param i32 i32)     (result i32)))
+    (import "hostio" "program_set_ink"    (func $set_ink    (param i32 i32 i64)             ))
+    (import "hostio" "program_ink_left"   (func $ink_left   (param i32 i32)     (result i64)))
+    (import "hostio" "program_ink_status" (func $ink_status (param i32 i32)     (result i32)))
     (import "hostio" "program_call_main"  (func $user_func  (param i32 i32 i32) (result i32)))
     (data (i32.const 0x0)
-        "\b3\cc\e5\8d\b1\8e\42\ed\12\4a\21\48\e6\ae\3c\1a\81\ee\7d\24\35\b9\17\85\07\23\7a\a5\c3\2c\91\10") ;; user
+        "\8a\df\60\ca\14\1a\80\2a\f2\50\bc\fd\db\10\89\cc\fc\8c\e0\ae\45\59\cc\e7\1e\14\e9\75\10\ab\6b\ed") ;; user
     (func $start (local $user i32) (local $internals i32)
         ;; link in user.wat
         i32.const 0
@@ -22,12 +22,12 @@
         local.get $user
         local.get $internals
         i64.const 1024
-        call $set_gas
+        call $set_ink
 
         ;; get gas
         local.get $user
         local.get $internals
-        call $gas_left
+        call $ink_left
         i64.const 1024
         i64.ne
         (if
@@ -36,7 +36,7 @@
         ;; get gas status
         local.get $user
         local.get $internals
-        call $gas_status
+        call $ink_status
         i32.const 0
         i32.ne
         (if
