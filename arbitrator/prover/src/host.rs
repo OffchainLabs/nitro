@@ -95,14 +95,15 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
         ("hostio", "program_set_ink")    => func!([I32, I32, I64]),        // λ(module, internals, ink_left)
         ("hostio", "program_set_stack")  => func!([I32, I32, I32]),        // λ(module, internals, stack_left)
         ("hostio", "program_call_main")  => func!([I32, I32, I32], [I32]), // λ(module, main, args_len) → status
-        ("console", "log_i32")            => func!([I32]),                 // λ(value)
-        ("console", "log_i64")            => func!([I64]),                 // λ(value)
-        ("console", "log_f32")            => func!([F32]),                 // λ(value)
-        ("console", "log_f64")            => func!([F64]),                 // λ(value)
-        ("console", "tee_i32")            => func!([I32], [I32]),          // λ(value) → value
-        ("console", "tee_i64")            => func!([I64], [I64]),          // λ(value) → value
-        ("console", "tee_f32")            => func!([F32], [F32]),          // λ(value) → value
-        ("console", "tee_f64")            => func!([F64], [F64]),          // λ(value) → value
+        ("console", "log_txt")           => func!([I32, I32]),             // λ(text, len)
+        ("console", "log_i32")           => func!([I32]),                  // λ(value)
+        ("console", "log_i64")           => func!([I64]),                  // λ(value)
+        ("console", "log_f32")           => func!([F32]),                  // λ(value)
+        ("console", "log_f64")           => func!([F64]),                  // λ(value)
+        ("console", "tee_i32")           => func!([I32], [I32]),           // λ(value) → value
+        ("console", "tee_i64")           => func!([I64], [I64]),           // λ(value) → value
+        ("console", "tee_f32")           => func!([F32], [F32]),           // λ(value) → value
+        ("console", "tee_f64")           => func!([F64], [F64]),           // λ(value) → value
         _ => bail!("no such hostio {} in {}", name.red(), module.red()),
     };
 
@@ -243,7 +244,7 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
                 opcode!(CrossModuleDynamicCall); // consumes module and main, passing args_len
                 opcode!(PopErrorGuard);
             }
-            ("console", "log_i32" | "log_i64" | "log_f32" | "log_f64") => {}
+            ("console", "log_i32" | "log_i64" | "log_f32" | "log_f64" | "log_txt") => {}
             ("console", "tee_i32" | "tee_i64" | "tee_f32" | "tee_f64") => {
                 opcode!(LocalGet, 0);
             }

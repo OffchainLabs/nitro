@@ -2417,6 +2417,16 @@ impl Machine {
                 Self::say(value);
                 Ok(())
             }
+            ("console", "log_txt") => {
+                let ptr = pull_arg!(0, I32);
+                let len = pull_arg!(1, I32);
+                let text = read_bytes_segment!(ptr, len);
+                match std::str::from_utf8(text) {
+                    Ok(text) => Self::say(text),
+                    Err(_) => Self::say(hex::encode(text)),
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
