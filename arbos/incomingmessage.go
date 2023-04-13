@@ -88,6 +88,10 @@ func (info *L1Info) Equals(o *L1Info) bool {
 	return info.poster == o.poster && info.l1BlockNumber == o.l1BlockNumber && info.l1Timestamp == o.l1Timestamp
 }
 
+func (info *L1Info) L1BlockNumber() uint64 {
+	return info.l1BlockNumber
+}
+
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 	wr := &bytes.Buffer{}
 	if err := wr.WriteByte(msg.Header.Kind); err != nil {

@@ -70,7 +70,7 @@ func (r *valRun) Close() {}
 
 func NewvalRun(root common.Hash) *valRun {
 	return &valRun{
-		Promise: containers.NewPromise[validator.GoGlobalState](),
+		Promise: containers.NewPromise[validator.GoGlobalState](nil),
 		root:    root,
 	}
 }
@@ -98,8 +98,8 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 	return nil
 }
 
-func (s *ArbitratorSpawner) LatestWasmModuleRoot() (common.Hash, error) {
-	return s.locator.LatestWasmModuleRoot(), nil
+func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
+	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -203,11 +203,14 @@ func (v *ArbitratorSpawner) Room() int {
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
 	outDirPath := filepath.Join(v.locator.RootPath(), v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", input.Id))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
 		return err
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	rootPathAssign := ""
@@ -234,6 +237,9 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 	if err != nil {
 		return err
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	libraries := []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"}
 	for _, module := range libraries {
@@ -248,6 +254,9 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 	}
 
 	for _, msg := range input.BatchInfo {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		sequencerFileName := fmt.Sprintf("sequencer_%d.bin", msg.Number)
 		err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), msg.Data, 0644)
 		if err != nil {
@@ -265,6 +274,9 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 	}
 	defer preimageFile.Close()
 	for _, data := range input.Preimages {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		lenbytes := make([]byte, 8)
 		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
 		_, err := preimageFile.Write(lenbytes)
@@ -283,6 +295,9 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 	}
 
 	if input.HasDelayedMsg {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", input.DelayedMsgNr))
 		if err != nil {
 			return err
@@ -305,7 +320,14 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 	return nil
 }
 
-func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
+func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](v, func(ctx context.Context) (struct{}, error) {
+		err := v.writeToFile(ctx, input, expOut, moduleRoot)
+		return struct{}{}, err
+	})
+}
+
+func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	getMachine := func(ctx context.Context) (MachineInterface, error) {
 		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
@@ -320,7 +342,9 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 		return machine, nil
 	}
 	currentExecConfig := v.config().Execution
-	return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {
+		return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
+	})
 }
 
 func (v *ArbitratorSpawner) Stop() {
