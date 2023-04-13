@@ -49,6 +49,7 @@ while [[ $# -gt 0 ]]; do
                 read -p "are you sure? [y/n]" -n 1 response
                 if [[ $response == "y" ]] || [[ $response == "Y" ]]; then
                     force_init=true
+                    force_build=true
                     echo
                 else
                     exit 0
@@ -62,6 +63,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --build)
             force_build=true
+            shift
+            ;;
+        --no-build)
+            force_build=false
             shift
             ;;
         --validate)
@@ -128,10 +133,6 @@ while [[ $# -gt 0 ]]; do
             exit 0
     esac
 done
-
-if $force_init; then
-  force_build=true
-fi
 
 if $dev_build; then
   if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
@@ -235,6 +236,7 @@ if $force_init; then
 
       echo == Starting geth
       docker-compose up -d geth
+      sleep 3s
 
       echo == Creating prysm genesis
       docker-compose up create_beacon_chain_genesis
@@ -244,6 +246,7 @@ if $force_init; then
       docker-compose up -d prysm_validator
     else
       docker-compose up -d geth
+      sleep 3s
     fi
 
     echo == Funding validator and sequencer
