@@ -60,6 +60,14 @@ impl NativeInstance {
         self.env().config.clone()
     }
 
+    pub fn read_slice(&self, mem: &str, ptr: usize, len: usize) -> Result<Vec<u8>> {
+        let memory = self.exports.get_memory(mem)?;
+        let memory = memory.view(&self.store);
+        let mut data = vec![0; len];
+        memory.read(ptr as u64, &mut data)?;
+        Ok(data)
+    }
+
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
     pub unsafe fn deserialize(module: &[u8], config: StylusConfig) -> Result<Self> {

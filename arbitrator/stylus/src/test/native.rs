@@ -12,7 +12,7 @@ use crate::{
     test::{
         api::{TestEvmContracts, TestEvmStorage},
         check_instrumentation, new_test_instance, new_test_instance_from_store, new_test_machine,
-        random_bytes20, random_bytes32, uniform_cost_config,
+        random_bytes20, random_bytes32, run_machine, run_native, uniform_cost_config,
     },
 };
 use arbutil::{crypto, Color};
@@ -54,21 +54,6 @@ fn new_native_with_evm(
     let mut native = NativeInstance::from_path(file, config)?;
     native.set_test_evm_api(Bytes20::default(), storage.clone(), contracts.clone());
     Ok((native, contracts, storage))
-}
-
-fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
-    let config = native.env().config.clone();
-    match native.run_main(&args, &config)? {
-        UserOutcome::Success(output) => Ok(output),
-        err => bail!("user program failure: {}", err.red()),
-    }
-}
-
-fn run_machine(machine: &mut Machine, args: &[u8], config: &StylusConfig) -> Result<Vec<u8>> {
-    match machine.run_main(&args, &config)? {
-        UserOutcome::Success(output) => Ok(output),
-        err => bail!("user program failure: {}", err.red()),
-    }
 }
 
 #[test]
@@ -291,7 +276,7 @@ fn test_heap() -> Result<()> {
         config.heap_bound = Pages(bound).into();
 
         let instance = new_test_instance(file, config.clone())?;
-        let machine = new_test_machine(file, config)?;
+        let machine = new_test_machine(file, &config)?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;

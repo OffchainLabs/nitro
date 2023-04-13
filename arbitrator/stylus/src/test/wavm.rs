@@ -11,7 +11,7 @@ fn test_ink() -> Result<()> {
     config.costs = super::expensive_add;
     config.start_ink = 10;
 
-    let machine = &mut new_test_machine("tests/add.wat", config)?;
+    let machine = &mut new_test_machine("tests/add.wat", &config)?;
     let call = |mech: &mut Machine, v: u32| mech.call_function("user", "add_one", vec![v.into()]);
 
     assert_eq!(machine.ink_left(), MachineMeter::Ready(10));
@@ -52,7 +52,7 @@ fn test_depth() -> Result<()> {
     let mut config = StylusConfig::default();
     config.depth = DepthParams::new(64, 16);
 
-    let machine = &mut new_test_machine("tests/depth.wat", config)?;
+    let machine = &mut new_test_machine("tests/depth.wat", &config)?;
     let call = |mech: &mut Machine| mech.call_function("user", "recurse", vec![0_u64.into()]);
 
     let program_depth: u32 = machine.get_global("depth")?.try_into()?;
@@ -100,7 +100,7 @@ fn test_start() -> Result<()> {
     }
 
     let config = StylusConfig::default();
-    let mut machine = &mut new_test_machine("tests/start.wat", config)?;
+    let mut machine = &mut new_test_machine("tests/start.wat", &config)?;
     check(machine, 10)?;
 
     let call = |mech: &mut Machine, name: &str| mech.call_function("user", name, vec![]);
