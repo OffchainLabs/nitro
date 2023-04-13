@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -78,23 +79,27 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 }
 
+type ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
+
 type SequencingHooks struct {
-	TxErrors               []error
-	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	TxErrors                []error
+	DiscardInvalidTxsEarly  bool
+	PreTxFilter             func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error
+	PostTxFilter            func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	ConditionalOptionsForTx []*arbitrum_types.ConditionalOptions
 }
 
-func noopSequencingHooks() *SequencingHooks {
+func NoopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, *arbitrum_types.ConditionalOptions, common.Address, *L1Info) error {
 			return nil
 		},
 		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
+		nil,
 	}
 }
 
@@ -131,14 +136,11 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	hooks := noopSequencingHooks()
+	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
-
-// A marker for the sequencer that an ErrGasLimitReached is permanent
-var ErrMaxGasLimitReached = fmt.Errorf("%w", core.ErrGasLimitReached)
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
@@ -174,7 +176,6 @@ func ProduceBlockAdvanced(
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
 	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
-	initialBlockGasLeft := blockGasLeft
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -196,7 +197,8 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
-		hooks := noopSequencingHooks()
+		var options *arbitrum_types.ConditionalOptions
+		hooks := NoopSequencingHooks()
 		isUserTx := false
 		if len(redeems) > 0 {
 			tx = redeems[0]
@@ -217,6 +219,10 @@ func ProduceBlockAdvanced(
 			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
+				if len(hooks.ConditionalOptionsForTx) > 0 {
+					options = hooks.ConditionalOptionsForTx[0]
+					hooks.ConditionalOptionsForTx = hooks.ConditionalOptionsForTx[1:]
+				}
 			}
 		}
 
@@ -239,7 +245,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
+			if err = hooks.PreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
 			}
 
@@ -270,9 +276,6 @@ func ProduceBlockAdvanced(
 			}
 
 			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
-				if computeGas > initialBlockGasLeft {
-					return nil, nil, ErrMaxGasLimitReached
-				}
 				return nil, nil, core.ErrGasLimitReached
 			}
 

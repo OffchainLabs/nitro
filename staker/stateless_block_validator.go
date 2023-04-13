@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_api"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
@@ -24,7 +27,10 @@ import (
 )
 
 type StatelessBlockValidator struct {
-	validationSpawner *validator.ValidationSpawner
+	config *BlockValidatorConfig
+
+	execSpawner        validator.ExecutionSpawner
+	validationSpawners []validator.ValidationSpawner
 
 	inboxReader       InboxReaderInterface
 	inboxTracker      InboxTrackerInterface
@@ -168,16 +174,19 @@ type validationEntry struct {
 
 func (v *validationEntry) start() (validator.GoGlobalState, error) {
 	start := v.StartPosition
-	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
-	return validator.GoGlobalState{
+	globalState := validator.GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  v.PrevBlockHash,
-		SendRoot:   prevExtraInfo.SendRoot,
-	}, nil
+	}
+	if v.PrevBlockHeader != nil {
+		prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
+		if err != nil {
+			return validator.GoGlobalState{}, err
+		}
+		globalState.SendRoot = prevExtraInfo.SendRoot
+	}
+	return globalState, nil
 }
 
 func (v *validationEntry) expectedEnd() (validator.GoGlobalState, error) {
@@ -229,17 +238,20 @@ func newValidationEntry(
 	msg *arbstate.MessageWithMetadata,
 ) (*validationEntry, error) {
 	hasDelayedMsg, delayedMsgNr := usingDelayedMsg(prevHeader, header)
-	return &validationEntry{
-		Stage:           ReadyForRecord,
-		BlockNumber:     header.Number.Uint64(),
-		PrevBlockHash:   prevHeader.Hash(),
-		PrevBlockHeader: prevHeader,
-		BlockHash:       header.Hash(),
-		BlockHeader:     header,
-		HasDelayedMsg:   hasDelayedMsg,
-		DelayedMsgNr:    delayedMsgNr,
-		msg:             msg,
-	}, nil
+	validationEntry := &validationEntry{
+		Stage:         ReadyForRecord,
+		BlockNumber:   header.Number.Uint64(),
+		BlockHash:     header.Hash(),
+		BlockHeader:   header,
+		HasDelayedMsg: hasDelayedMsg,
+		DelayedMsgNr:  delayedMsgNr,
+		msg:           msg,
+	}
+	if prevHeader != nil {
+		validationEntry.PrevBlockHash = prevHeader.Hash()
+		validationEntry.PrevBlockHeader = prevHeader
+	}
+	return validationEntry, nil
 }
 
 func newRecordedValidationEntry(
@@ -261,7 +273,6 @@ func newRecordedValidationEntry(
 }
 
 func NewStatelessBlockValidator(
-	validationSpawner *validator.ValidationSpawner,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -275,30 +286,28 @@ func NewStatelessBlockValidator(
 	if err != nil {
 		return nil, err
 	}
-	validator := &StatelessBlockValidator{
-		validationSpawner: validationSpawner,
-		inboxReader:       inboxReader,
-		inboxTracker:      inbox,
-		streamer:          streamer,
-		blockchain:        blockchain,
-		db:                arbdb,
-		daService:         das,
-		genesisBlockNum:   genesisBlockNum,
-		recordingDatabase: arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
-	}
-	if config.PendingUpgradeModuleRoot != "" {
-		if config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := validationSpawner.LatestWasmModuleRoot()
-			if err != nil {
-				return nil, err
-			}
-			validator.pendingWasmModuleRoot = latest
-		} else {
-			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
-			if (validator.pendingWasmModuleRoot == common.Hash{}) {
-				return nil, errors.New("pending-upgrade-module-root config value illegal")
-			}
+	var jwt []byte
+	if config.JWTSecret != "" {
+		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
+		if err != nil {
+			return nil, err
 		}
+		jwt = jwtHash.Bytes()
+	}
+	valClient := server_api.NewValidationClient(config.URL, jwt)
+	execClient := server_api.NewExecutionClient(config.URL, jwt)
+	validator := &StatelessBlockValidator{
+		config:             config,
+		execSpawner:        execClient,
+		validationSpawners: []validator.ValidationSpawner{valClient},
+		inboxReader:        inboxReader,
+		inboxTracker:       inbox,
+		streamer:           streamer,
+		blockchain:         blockchain,
+		db:                 arbdb,
+		daService:          das,
+		genesisBlockNum:    genesisBlockNum,
+		recordingDatabase:  arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
 	}
 	return validator, nil
 }
@@ -493,25 +502,28 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	blockNum := header.Number.Uint64()
 	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
-	prevHeader := v.blockchain.GetHeaderByNumber(blockNum - 1)
-	if prevHeader == nil {
-		return nil, errors.New("prev header not found")
-	}
-	if header.ParentHash != prevHeader.Hash() {
-		return nil, fmt.Errorf("hashes don't match block %d hash %v parent %v prev-found %v",
-			blockNum, header.Hash(), header.ParentHash, prevHeader.Hash())
+	prevHeader := v.blockchain.GetHeader(header.ParentHash, blockNum-1)
+	if prevHeader == nil && blockNum > 0 {
+		return nil, fmt.Errorf("prev header not found for block number %v with hash %s and parent hash %s", blockNum, header.Hash(), header.ParentHash)
 	}
 	msg, err := v.streamer.GetMessage(msgIndex)
 	if err != nil {
 		return nil, err
 	}
-	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
+	var preimages map[common.Hash][]byte
+	var readBatchInfo []validator.BatchInfo
+	if prevHeader != nil {
+		var resHash common.Hash
+		var err error
+		resHash, preimages, readBatchInfo, err = v.RecordBlockCreation(ctx, prevHeader, msg, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get block data to validate: %w", err)
+		}
+		if resHash != header.Hash() {
+			return nil, fmt.Errorf("wrong hash expected %s got %s", header.Hash(), resHash)
+		}
 	}
-	if resHash != header.Hash() {
-		return nil, fmt.Errorf("wrong hash expected %s got %s", header.Hash(), resHash)
-	}
+
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
 		return nil, err
@@ -552,7 +564,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 }
 
 func (v *StatelessBlockValidator) ValidateBlock(
-	ctx context.Context, header *types.Header, full bool, moduleRoot common.Hash,
+	ctx context.Context, header *types.Header, useExec bool, moduleRoot common.Hash,
 ) (bool, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, header)
 	if err != nil {
@@ -562,26 +574,72 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	var gsEnd validator.GoGlobalState
 	input, err := entry.ToInput()
 	if err != nil {
 		return false, err
 	}
-	if full {
-		gsEnd, err = v.validationSpawner.ExecuteArbitrator(ctx, input, moduleRoot)
+	var spawners []validator.ValidationSpawner
+	if useExec {
+		spawners = append(spawners, v.execSpawner)
 	} else {
-		gsEnd, err = v.validationSpawner.ExecuteJit(ctx, input, moduleRoot)
+		spawners = v.validationSpawners
 	}
-	if err != nil {
-		return false, err
+	if len(spawners) == 0 {
+		return false, errors.New("no validation defined")
 	}
-	return gsEnd == expEnd, nil
+	var runs []validator.ValidationRun
+	for _, spawner := range spawners {
+		run := spawner.Launch(input, moduleRoot)
+		runs = append(runs, run)
+	}
+	defer func() {
+		for _, run := range runs {
+			run.Cancel()
+		}
+	}()
+	for _, run := range runs {
+		gsEnd, err := run.Await(ctx)
+		if err != nil || gsEnd != expEnd {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 	return v.recordingDatabase.ReferenceCount()
 }
 
+func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	err := v.execSpawner.Start(ctx_in)
+	if err != nil {
+		return err
+	}
+	for _, spawner := range v.validationSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
+		}
+	}
+	if v.config.PendingUpgradeModuleRoot != "" {
+		if v.config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
+			if err != nil {
+				return err
+			}
+			v.pendingWasmModuleRoot = latest
+		} else {
+			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
+			if (v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+	}
+	return nil
+}
+
 func (v *StatelessBlockValidator) Stop() {
-	v.validationSpawner.Stop()
+	v.execSpawner.Stop()
+	for _, spawner := range v.validationSpawners {
+		spawner.Stop()
+	}
 }

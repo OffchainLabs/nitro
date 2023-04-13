@@ -20,6 +20,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -35,13 +36,17 @@ import (
 )
 
 var (
-	sequencerBacklogGauge     = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
-	nonceCacheHitCounter      = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
-	nonceCacheMissCounter     = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
-	nonceCacheRejectedCounter = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
-	nonceCacheClearedCounter  = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
-	blockCreationTimer        = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
-	successfulBlocksCounter   = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
+	sequencerBacklogGauge                   = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	nonceCacheHitCounter                    = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
+	nonceCacheMissCounter                   = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
+	nonceCacheRejectedCounter               = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
+	nonceCacheClearedCounter                = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
+	nonceFailureCacheSizeGauge              = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/size", nil)
+	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
+	blockCreationTimer                      = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
+	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
+	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/rejected", nil)
+	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/accepted", nil)
 )
 
 type SequencerConfig struct {
@@ -124,10 +129,12 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type txQueueItem struct {
-	tx             *types.Transaction
-	resultChan     chan<- error
-	returnedResult bool
-	ctx            context.Context
+	tx              *types.Transaction
+	options         *arbitrum_types.ConditionalOptions
+	resultChan      chan<- error
+	returnedResult  bool
+	ctx             context.Context
+	firstAppearance time.Time
 }
 
 func (i *txQueueItem) returnResult(err error) {
@@ -203,7 +210,7 @@ func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uin
 }
 
 func (c *nonceCache) Finalize(block *types.Block) {
-	// Note: we don't use c.Matches here because the header will have changed
+	// Note: we don't use c.matches here because the header will have changed
 	if c.block == block.ParentHash() {
 		c.block = block.Hash()
 		c.dirty = nil
@@ -213,7 +220,7 @@ func (c *nonceCache) Finalize(block *types.Block) {
 }
 
 func (c *nonceCache) Caching() bool {
-	return c.cache != nil
+	return c.cache != nil && c.cache.Size() > 0
 }
 
 func (c *nonceCache) Resize(newSize int) {
@@ -232,9 +239,27 @@ type nonceFailure struct {
 	revived   bool
 }
 
-func onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
-	if !failure.revived {
-		failure.queueItem.returnResult(failure.nonceErr)
+type nonceFailureCache struct {
+	*containers.LruCache[addressAndNonce, *nonceFailure]
+	getExpiry func() time.Duration
+}
+
+func (c nonceFailureCache) Contains(err NonceError) bool {
+	key := addressAndNonce{err.sender, err.txNonce}
+	return c.LruCache.Contains(key)
+}
+
+func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
+	key := addressAndNonce{err.sender, err.txNonce}
+	val := &nonceFailure{
+		queueItem: queueItem,
+		nonceErr:  err,
+		expiry:    queueItem.firstAppearance.Add(c.getExpiry()),
+		revived:   false,
+	}
+	evicted := c.LruCache.Add(key, val)
+	if evicted {
+		nonceFailureCacheOverflowCounter.Inc(1)
 	}
 }
 
@@ -248,7 +273,8 @@ type Sequencer struct {
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
 	nonceCache      *nonceCache
-	nonceFailures   *containers.LruCache[addressAndNonce, *nonceFailure]
+	nonceFailures   *nonceFailureCache
+	onForwarderSet  chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -282,13 +308,45 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
-		nonceFailures:   containers.NewLruCacheWithOnEvict(config.NonceCacheSize, onNonceFailureEvict),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
 		pauseChan:       nil,
+		onForwarderSet:  make(chan struct{}, 1),
 	}
-	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
+	s.nonceFailures = &nonceFailureCache{
+		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
+		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
+	}
+	txStreamer.EnableReorgSequencing()
 	return s, nil
+}
+
+func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
+	if failure.revived {
+		return
+	}
+	queueItem := failure.queueItem
+	err := queueItem.ctx.Err()
+	if err != nil {
+		queueItem.returnResult(err)
+		return
+	}
+	_, forwarder := s.GetPauseAndForwarder()
+	if forwarder != nil {
+		// We might not have gotten the predecessor tx because our forwarder did. Let's try there instead.
+		// We run this in a background goroutine because LRU eviction needs to be quick.
+		// We use an untracked thread for a few reasons:
+		//   - It's guaranteed to run even when stopped (we need to return *some* result).
+		//   - It acquires mutexes and this might need to happen a lot.
+		//   - We don't need the context because queueItem has its own.
+		//   - The RPC handler is on a separate StopWaiter anyways -- we should respect its context.
+		s.LaunchUntrackedThread(func() {
+			err = forwarder.PublishTransaction(queueItem.ctx, queueItem.tx, queueItem.options)
+			queueItem.returnResult(err)
+		})
+	} else {
+		queueItem.returnResult(failure.nonceErr)
+	}
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
@@ -301,13 +359,13 @@ func (s *Sequencer) ctxWithQueueTimeout(inctx context.Context) (context.Context,
 	return context.WithTimeout(inctx, timeout)
 }
 
-func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction) error {
+func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
-		err := forwarder.PublishTransaction(parentCtx, tx)
+		err := forwarder.PublishTransaction(parentCtx, tx, options)
 		if !errors.Is(err, ErrNoSequencer) {
 			return err
 		}
@@ -335,9 +393,11 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
+		options,
 		resultChan,
 		false,
 		ctx,
+		time.Now(),
 	}
 	select {
 	case s.txQueue <- queueItem:
@@ -353,7 +413,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
 	if s.nonceCache.Caching() {
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
@@ -361,6 +421,14 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 			nonceCacheRejectedCounter.Inc(1)
 			return err
 		}
+	}
+	if options != nil {
+		err := options.Check(l1Info.L1BlockNumber(), header.Time, statedb)
+		if err != nil {
+			conditionalTxRejectedBySequencerCounter.Inc(1)
+			return err
+		}
+		conditionalTxAcceptedBySequencerCounter.Inc(1)
 	}
 	return nil
 }
@@ -431,6 +499,13 @@ func (s *Sequencer) ForwardTo(url string) error {
 		close(s.pauseChan)
 		s.pauseChan = nil
 	}
+	if err == nil {
+		// If createBlocks is waiting for a new queue item, notify it that it needs to clear the nonceFailures.
+		select {
+		case s.onForwarderSet <- struct{}{}:
+		default:
+		}
+	}
 	return err
 }
 
@@ -487,14 +562,27 @@ func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem
 		case <-pause:
 		}
 	}
+	publishResults := make(chan *txQueueItem, len(queueItems))
 	for _, item := range queueItems {
-		res := forwarder.PublishTransaction(item.ctx, item.tx)
-		if errors.Is(res, ErrNoSequencer) {
-			s.txRetryQueue.Push(item)
-		} else {
-			item.returnResult(res)
+		item := item
+		go func() {
+			res := forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+			if errors.Is(res, ErrNoSequencer) {
+				publishResults <- &item
+			} else {
+				publishResults <- nil
+				item.returnResult(res)
+			}
+		}()
+	}
+	for range queueItems {
+		remainingItem := <-publishResults
+		if remainingItem != nil {
+			s.txRetryQueue.Push(*remainingItem)
 		}
 	}
+	// Evict any leftover nonce failures, forwarding them
+	s.nonceFailures.Clear()
 	return true
 }
 
@@ -502,14 +590,16 @@ var sequencerInternalError = errors.New("sequencer internal error")
 
 func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
 	return &arbos.SequencingHooks{
-		PreTxFilter:            s.preTxFilter,
-		PostTxFilter:           s.postTxFilter,
-		DiscardInvalidTxsEarly: true,
-		TxErrors:               []error{},
+		PreTxFilter:             s.preTxFilter,
+		PostTxFilter:            s.postTxFilter,
+		DiscardInvalidTxsEarly:  true,
+		TxErrors:                []error{},
+		ConditionalOptionsForTx: nil,
 	}
 }
 
 func (s *Sequencer) expireNonceFailures() *time.Timer {
+	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	for {
 		_, failure, ok := s.nonceFailures.GetOldest()
 		if !ok {
@@ -535,7 +625,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	nextHeaderNumber := arbmath.BigAdd(latestHeader.Number, common.Big1)
 	signer := types.MakeSigner(bc.Config(), nextHeaderNumber)
 	outputQueueItems := make([]txQueueItem, 0, len(queueItems))
-	config := s.config()
 	var nextQueueItem *txQueueItem
 	var queueItemsIdx int
 	pendingNonces := make(map[common.Address]uint64)
@@ -556,13 +645,13 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 			queueItem.returnResult(err)
 			continue
 		}
-		stateNonce, pending := pendingNonces[sender]
+		stateNonce := s.nonceCache.Get(latestHeader, latestState, sender)
+		pendingNonce, pending := pendingNonces[sender]
 		if !pending {
-			stateNonce = s.nonceCache.Get(latestHeader, latestState, sender)
+			pendingNonce = stateNonce
 		}
 		txNonce := tx.Nonce()
-		err = MakeNonceError(sender, txNonce, stateNonce)
-		if err == nil {
+		if txNonce == pendingNonce {
 			pendingNonces[sender] = txNonce + 1
 			nextKey := addressAndNonce{sender, txNonce + 1}
 			revivingFailure, exists := s.nonceFailures.Get(nextKey)
@@ -578,28 +667,38 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 					nextQueueItem = &revivingFailure.queueItem
 				}
 			}
-		} else {
+		} else if txNonce < stateNonce || txNonce > pendingNonce {
+			// It's impossible for this tx to succeed so far,
+			// because its nonce is lower than the state nonce
+			// or higher than the highest tx nonce we've seen.
+			err := MakeNonceError(sender, txNonce, stateNonce)
 			if errors.Is(err, core.ErrNonceTooHigh) {
+				var nonceError NonceError
+				if !errors.As(err, &nonceError) {
+					log.Warn("unreachable nonce error is not nonceError")
+					continue
+				}
 				// Retry this transaction if its predecessor appears
-				key := addressAndNonce{sender, txNonce}
-				exists := s.nonceFailures.Contains(key)
-				if exists {
+				if s.nonceFailures.Contains(nonceError) {
 					queueItem.returnResult(err)
 				} else {
-					s.nonceFailures.Add(key, &nonceFailure{
-						queueItem: queueItem,
-						nonceErr:  err,
-						expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
-						revived:   false,
-					})
+					s.nonceFailures.Add(nonceError, queueItem)
 				}
-			} else {
+				continue
+			} else if err != nil {
+				nonceCacheRejectedCounter.Inc(1)
 				queueItem.returnResult(err)
+				continue
+			} else {
+				log.Warn("unreachable nonce err == nil condition hit in precheckNonces")
 			}
-			continue
 		}
+		// If neither if condition was hit, then txNonce >= stateNonce && txNonce < pendingNonce
+		// This tx might still go through if previous txs fail.
+		// We'll include it in the output queue in case that happens.
 		outputQueueItems = append(outputQueueItems, queueItem)
 	}
+	nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	return outputQueueItems
 }
 
@@ -621,6 +720,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			returnValue = true
 		}
 	}()
+	defer nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 
 	config := s.config()
 
@@ -648,6 +748,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			case <-nextNonceExpiryChan:
 				// No need to stop the previous timer since it already elapsed
 				nextNonceExpiryTimer = s.expireNonceFailures()
+				continue
+			case <-s.onForwarderSet:
+				// Make sure this notification isn't outdated
+				_, forwarder := s.GetPauseAndForwarder()
+				if forwarder != nil {
+					s.nonceFailures.Clear()
+				}
 				continue
 			case <-ctx.Done():
 				return false
@@ -692,8 +799,11 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.nonceCache.BeginNewBlock()
 	queueItems = s.precheckNonces(queueItems)
 	txes := make([]*types.Transaction, len(queueItems))
+	hooks := s.makeSequencingHooks()
+	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
+		hooks.ConditionalOptionsForTx[i] = queueItem.options
 	}
 
 	if s.handleInactive(ctx, queueItems) {
@@ -725,7 +835,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
-	hooks := s.makeSequencingHooks()
 	start := time.Now()
 	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	elapsed := time.Since(start)
@@ -781,7 +890,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
-			if madeBlock && !errors.Is(err, arbos.ErrMaxGasLimitReached) {
+			if madeBlock {
 				// There was already an earlier tx in the block; retry in a fresh block.
 				s.txRetryQueue.Push(queueItem)
 				continue
@@ -793,18 +902,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		var nonceError NonceError
 		if errors.As(err, &nonceError) && nonceError.txNonce > nonceError.stateNonce {
-			// Retry this transaction if we see its predecessor
-			key := addressAndNonce{
-				address: nonceError.sender,
-				nonce:   nonceError.txNonce,
-			}
-			value := &nonceFailure{
-				queueItem: queueItem,
-				nonceErr:  err,
-				expiry:    time.Now().Add(config.NonceFailureCacheExpiry),
-				revived:   false,
-			}
-			s.nonceFailures.Add(key, value)
+			s.nonceFailures.Add(nonceError, queueItem)
 			continue
 		}
 		queueItem.returnResult(err)
@@ -885,6 +983,7 @@ func (s *Sequencer) StopAndWait() {
 	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
 	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
+		var wg sync.WaitGroup
 	emptyqueues:
 		for {
 			var item txQueueItem
@@ -892,6 +991,11 @@ func (s *Sequencer) StopAndWait() {
 			if s.txRetryQueue.Len() > 0 {
 				item = s.txRetryQueue.Pop()
 				source = "retryQueue"
+			} else if s.nonceFailures.Len() > 0 {
+				_, failure, _ := s.nonceFailures.GetOldest()
+				failure.revived = true
+				item = failure.queueItem
+				s.nonceFailures.RemoveOldest()
 			} else {
 				select {
 				case item = <-s.txQueue:
@@ -900,10 +1004,15 @@ func (s *Sequencer) StopAndWait() {
 					break emptyqueues
 				}
 			}
-			err := forwarder.PublishTransaction(item.ctx, item.tx)
-			if err != nil {
-				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
-			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err := forwarder.PublishTransaction(item.ctx, item.tx, item.options)
+				if err != nil {
+					log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
+				}
+			}()
 		}
+		wg.Wait()
 	}
 }

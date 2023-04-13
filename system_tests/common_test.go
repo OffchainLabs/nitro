@@ -6,10 +6,14 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/valnode"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -19,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -43,7 +48,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 type info = *BlockchainTestInfo
@@ -203,6 +207,71 @@ func getTestStackConfig(t *testing.T) *node.Config {
 	return &stackConfig
 }
 
+func createDefaultStackForTest(dataDir string) (*node.Node, error) {
+	stackConf := node.DefaultConfig
+	var err error
+	stackConf.DataDir = dataDir
+	stackConf.HTTPHost = ""
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		return nil, fmt.Errorf("error creating protocol stack: %w", err)
+	}
+	return stack, nil
+}
+
+func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
+	stackConf := node.DefaultConfig
+	stackConf.HTTPPort = 0
+	stackConf.DataDir = ""
+	stackConf.WSHost = "127.0.0.1"
+	stackConf.WSPort = 0
+	stackConf.WSModules = []string{server_api.Namespace}
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
+	stack, err := node.New(&stackConf)
+	Require(t, err)
+
+	configFetcher := func() *valnode.Config { return config }
+	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
+	Require(t, err)
+
+	err = stack.Start()
+	Require(t, err)
+
+	err = valnode.Start(ctx)
+	Require(t, err)
+
+	go func() {
+		<-ctx.Done()
+		stack.Close()
+	}()
+
+	return valnode, stack
+}
+
+func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
+	clientConfig.BlockValidator.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.JWTSecret = ""
+}
+
+func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
+	if !nodeConfig.ValidatorRequired() {
+		return
+	}
+	if nodeConfig.BlockValidator.URL != "" {
+		return
+	}
+	conf := valnode.TestValidationConfig
+	conf.UseJit = useJit
+	_, valStack := createTestValidationNode(t, ctx, &conf)
+	configByValidationNode(t, nodeConfig, valStack)
+}
+
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
@@ -272,7 +341,9 @@ func DeployOnTestL1(
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	config := arbnode.GenerateRollupConfig(false, common.Hash{}, l1info.GetAddress("RollupOwner"), chainId, common.Address{})
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	config := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainId, common.Address{})
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -280,7 +351,6 @@ func DeployOnTestL1(
 		l1info.GetAddress("Sequencer"),
 		0,
 		func() *headerreader.Config { return &headerreader.TestConfig },
-		validator.DefaultNitroMachineConfig,
 		config,
 	)
 	Require(t, err)
@@ -293,11 +363,25 @@ func DeployOnTestL1(
 func createL2BlockChain(
 	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
+	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil)
+}
+
+func createL2BlockChainWithStackConfig(
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, stackConfig *node.Config,
+) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	stack, err := arbnode.CreateDefaultStackForTest(dataDir)
-	Require(t, err)
+	var stack *node.Node
+	var err error
+	if stackConfig == nil {
+		stack, err = createDefaultStackForTest(dataDir)
+		Require(t, err)
+	} else {
+		stack, err = node.New(stackConfig)
+		Require(t, err)
+	}
+
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
 	arbDb, err := stack.OpenDatabase("arbdb", 0, 0, "", false)
@@ -361,11 +445,11 @@ func createTestNodeOnL1WithConfigImpl(
 		chainConfig = params.ArbitrumDevTestChainConfig()
 	}
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChainWithConfig(t, nil, stackConfig)
+	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, "", chainConfig)
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, nil, "", chainConfig, stackConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -380,6 +464,8 @@ func createTestNodeOnL1WithConfigImpl(
 		nodeConfig.Sequencer.Enable = false
 		nodeConfig.DelayedSequencer.Enable = false
 	}
+
+	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	var err error
 	currentNode, err = arbnode.CreateNode(
@@ -407,6 +493,9 @@ func CreateTestL2WithConfig(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	feedErrChan := make(chan error, 10)
+
+	AddDefaultValNode(t, ctx, nodeConfig, true)
+
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
 	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
@@ -476,7 +565,7 @@ func Create2ndNode(
 	} else {
 		nodeConf.DataAvailability = *dasConfig
 	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf, nil)
 }
 
 func Create2ndNodeWithConfig(
@@ -487,6 +576,7 @@ func Create2ndNodeWithConfig(
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
+	stackConfig *node.Config,
 ) (*ethclient.Client, *arbnode.Node) {
 	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
@@ -494,7 +584,11 @@ func Create2ndNodeWithConfig(
 		Fail(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	l2stack, err := arbnode.CreateDefaultStackForTest("")
+
+	if stackConfig == nil {
+		stackConfig = getTestStackConfig(t)
+	}
+	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
 	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
@@ -508,6 +602,8 @@ func Create2ndNodeWithConfig(
 
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
+
+	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
