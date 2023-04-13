@@ -388,11 +388,10 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	return 0, fmt.Errorf("agreed with entire challenge %v (start step count %v and end step count %v)", m.challengeIndex, state.Start.String(), state.End.String())
 }
 
+// Checks if an execution challenge exists on-chain.
+// If it exists on-chain but we don't have a backend for it, it creates the execution challenge backend.
+// If we have a backend for it but it doesn't exist on-chain, it removes the execution challenge backend.
 func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error {
-	if m.executionChallengeBackend != nil {
-		return nil
-	}
-
 	latestConfirmedBlock, err := m.latestConfirmedBlock(ctx)
 	if err != nil {
 		return err
@@ -406,6 +405,10 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		return fmt.Errorf("error getting challenge %v info: %w", m.challengeIndex, err)
 	}
 	if challengeState.Mode != challengeModeExecution {
+		m.executionChallengeBackend = nil
+		return nil
+	}
+	if m.executionChallengeBackend != nil {
 		return nil
 	}
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
@@ -427,7 +430,7 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		return fmt.Errorf("error parsing ExecutionChallengeBegun event of challenge %v: %w", m.challengeIndex, err)
 	}
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
-	return m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
+	return m.createExecutionBackend(ctx, blockNum, tooFar)
 }
 
 func (m *ChallengeManager) IssueOneStepProof(
@@ -453,9 +456,9 @@ func (m *ChallengeManager) IssueOneStepProof(
 	)
 }
 
-func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum uint64, tooFar bool) error {
+func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum int64, tooFar bool) error {
 	// Get the next message and block header, and record the full block creation
-	if m.initialMachineBlockNr == int64(blockNum) && m.executionChallengeBackend != nil {
+	if m.initialMachineBlockNr == blockNum && m.executionChallengeBackend != nil {
 		return nil
 	}
 	m.executionChallengeBackend = nil
@@ -474,7 +477,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input)
+	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return fmt.Errorf("error creating execution backend for block %v: %w", blockNum, err)
 	}
@@ -483,7 +486,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 		return err
 	}
 	m.executionChallengeBackend = backend
-	m.initialMachineBlockNr = int64(blockNum)
+	m.initialMachineBlockNr = blockNum
 	return nil
 }
 
@@ -493,8 +496,11 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, fmt.Errorf("error loading execution challenge: %w", err)
 	}
 	myTurn, err := m.IsMyTurn(ctx)
-	if !myTurn || (err != nil) {
+	if err != nil {
 		return nil, fmt.Errorf("error checking if it's our turn: %w", err)
+	}
+	if !myTurn {
+		return nil, nil
 	}
 	state, err := m.GetChallengeState(ctx)
 	if err != nil {
@@ -536,7 +542,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	if err != nil {
 		return nil, fmt.Errorf("error getting info from block challenge backend: %w", err)
 	}
-	err = m.createExecutionBackend(ctx, uint64(blockNum), tooFar)
+	err = m.createExecutionBackend(ctx, blockNum, tooFar)
 	if err != nil {
 		return nil, fmt.Errorf("error creating execution backend: %w", err)
 	}

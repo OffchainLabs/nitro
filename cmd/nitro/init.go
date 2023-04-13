@@ -136,7 +136,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 					}
 					done := resp.BytesComplete()
 					total := resp.Size()
-					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
+					timeRemaining := time.Second * (time.Duration(total-done) / time.Duration(bps))
 					timeRemaining = timeRemaining.Truncate(time.Millisecond * 10)
 					fmt.Printf("\033[2K\r  transferred %v / %v bytes (%.2f%%) [%.2fMbps, %s remaining]",
 						done,
@@ -406,10 +406,10 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
-		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
+		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, config.Persistent.Ancient, "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -454,7 +454,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, "", "", false)
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 	if err != nil {
 		return chainDb, nil, err
 	}
