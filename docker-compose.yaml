@@ -155,6 +155,7 @@ services:
     ports:
       - "127.0.0.1:8547:8547"
       - "127.0.0.1:8548:8548"
+      - "127.0.0.1:8549:8549"
       - "127.0.0.1:9642:9642"
     volumes:
       - "seqdata:/home/user/.arbitrum/local/nitro"
@@ -228,11 +229,12 @@ services:
     ports:
       - "127.0.0.1:8147:8547"
       - "127.0.0.1:8148:8548"
+      - "127.0.0.1:8149:8149"
     volumes:
       - "poster-data:/home/user/.arbitrum/local/nitro"
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
-    command: --conf.file /config/poster_config.json
+    command: --conf.file /config/poster_config.json --execution.consensus-server.url="ws://127.0.0.1:8149" --node.execution-server.url="ws://127.0.0.1:8149" --auth.port=8149
     depends_on:
       - geth
       - redis

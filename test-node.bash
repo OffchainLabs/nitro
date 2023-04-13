@@ -138,8 +138,10 @@ if $dev_build; then
   if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
     force_build=true
   fi
-  if [[ "$(docker images -q blockscout:latest 2> /dev/null)" == "" ]]; then
-    force_build=true
+  if $blockscout; then
+    if [[ "$(docker images -q blockscout:latest 2> /dev/null)" == "" ]]; then
+        force_build=true
+    fi
   fi
 fi
 
@@ -211,11 +213,16 @@ fi
 
 if $force_init; then
     echo == Removing old data..
-    docker-compose down
+
+    docker-compose down -v
+
     leftoverContainers=`docker container ls -a --filter label=com.docker.compose.project=nitro -q | xargs echo`
     if [ `echo $leftoverContainers | wc -w` -gt 0 ]; then
         docker rm $leftoverContainers
     fi
+
+    docker-compose down -v
+
     docker volume prune -f --filter label=com.docker.compose.project=nitro
 
     echo == Generating l1 keys
