@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::evm;
+use arbutil::{evm, Color};
 use eyre::{eyre, ErrReport};
 use prover::{
     programs::{
@@ -12,6 +12,7 @@ use prover::{
     utils::{Bytes20, Bytes32},
 };
 use std::{
+    fmt::Display,
     io,
     ops::{Deref, DerefMut},
 };
@@ -158,6 +159,10 @@ impl WasmEnv {
         let cost = info.meter().pricing.hostio_ink;
         info.buy_ink(cost)?;
         Ok(info)
+    }
+
+    pub fn say<D: Display>(&self, text: D) {
+        println!("{} {text}", "Stylus says:".yellow());
     }
 }
 

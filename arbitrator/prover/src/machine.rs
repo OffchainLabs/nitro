@@ -1790,8 +1790,8 @@ impl Machine {
                             &hook.1,
                         ) {
                             eprintln!(
-                                "Failed to process host call hook for host call {:?} {:?}: {}",
-                                hook.0, hook.1, err,
+                                "Failed to process host call hook for host call {:?} {:?}: {err}",
+                                hook.0, hook.1,
                             );
                         }
                     }
@@ -2334,11 +2334,7 @@ impl Machine {
         flush_module!();
         if self.is_halted() && !self.stdio_output.is_empty() {
             // If we halted, print out any trailing output that didn't have a newline.
-            println!(
-                "{} {}",
-                "WASM says:".yellow(),
-                String::from_utf8_lossy(&self.stdio_output),
-            );
+            Self::say(String::from_utf8_lossy(&self.stdio_output));
             self.stdio_output.clear();
         }
         Ok(())
@@ -2407,10 +2403,7 @@ impl Machine {
                     stdio_output.extend_from_slice(read_bytes_segment!(data_ptr, data_size));
                 }
                 while let Some(mut idx) = stdio_output.iter().position(|&c| c == b'\n') {
-                    println!(
-                        "\x1b[33mWASM says:\x1b[0m {}",
-                        String::from_utf8_lossy(&stdio_output[..idx]),
-                    );
+                    Self::say(String::from_utf8_lossy(&stdio_output[..idx]));
                     if stdio_output.get(idx + 1) == Some(&b'\r') {
                         idx += 1;
                     }
@@ -2418,8 +2411,28 @@ impl Machine {
                 }
                 Ok(())
             }
+            ("console", "log_i32" | "log_i64" | "log_f32" | "log_f64")
+            | ("console", "tee_i32" | "tee_i64" | "tee_f32" | "tee_f64") => {
+                let value = value_stack.last().ok_or_else(|| eyre!("missing value"))?;
+                Self::say(value);
+                Ok(())
+            }
+            ("console", "log_txt") => {
+                let ptr = pull_arg!(0, I32);
+                let len = pull_arg!(1, I32);
+                let text = read_bytes_segment!(ptr, len);
+                match std::str::from_utf8(text) {
+                    Ok(text) => Self::say(text),
+                    Err(_) => Self::say(hex::encode(text)),
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
+    }
+
+    pub fn say<D: Display>(text: D) {
+        println!("{} {text}", "WASM says:".yellow());
     }
 
     pub fn is_halted(&self) -> bool {

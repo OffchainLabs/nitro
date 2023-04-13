@@ -1,8 +1,9 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::native::NativeInstance;
-use eyre::Result;
+use crate::{native::NativeInstance, run::RunProgram};
+use arbutil::Color;
+use eyre::{bail, Result};
 use prover::{
     machine::GlobalState,
     programs::{counter::CountingMachine, prelude::*},
@@ -71,11 +72,11 @@ fn new_test_instance_from_store(
     Ok(NativeInstance::new_sans_env(instance, store))
 }
 
-pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
+pub fn new_test_machine(path: &str, config: &StylusConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
-    let stylus_data = bin.instrument(&config)?;
+    let stylus_data = bin.instrument(config)?;
 
     let wat = std::fs::read("tests/test.wat")?;
     let wasm = wasmer::wat2wasm(&wat)?;
@@ -92,6 +93,21 @@ pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
         Arc::new(|_, _| panic!("tried to read preimage")),
         Some(stylus_data),
     )
+}
+
+pub fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
+    let config = native.env().config.clone();
+    match native.run_main(&args, &config)? {
+        UserOutcome::Success(output) => Ok(output),
+        err => bail!("user program failure: {}", err.red()),
+    }
+}
+
+pub fn run_machine(machine: &mut Machine, args: &[u8], config: &StylusConfig) -> Result<Vec<u8>> {
+    match machine.run_main(&args, &config)? {
+        UserOutcome::Success(output) => Ok(output),
+        err => bail!("user program failure: {}", err.red()),
+    }
 }
 
 pub fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {

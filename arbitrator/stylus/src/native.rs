@@ -60,6 +60,14 @@ impl NativeInstance {
         self.env().config.clone()
     }
 
+    pub fn read_slice(&self, mem: &str, ptr: usize, len: usize) -> Result<Vec<u8>> {
+        let memory = self.exports.get_memory(mem)?;
+        let memory = memory.view(&self.store);
+        let mut data = vec![0; len];
+        memory.read(ptr as u64, &mut data)?;
+        Ok(data)
+    }
+
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
     pub unsafe fn deserialize(module: &[u8], config: StylusConfig) -> Result<Self> {
@@ -103,7 +111,15 @@ impl NativeInstance {
             },
         };
         if debug_funcs {
-            imports.define("forward", "debug_println", func!(host::debug_println));
+            imports.define("console", "log_txt", func!(host::console_log_text));
+            imports.define("console", "log_i32", func!(host::console_log::<u32>));
+            imports.define("console", "log_i64", func!(host::console_log::<u64>));
+            imports.define("console", "log_f32", func!(host::console_log::<f32>));
+            imports.define("console", "log_f64", func!(host::console_log::<f64>));
+            imports.define("console", "tee_i32", func!(host::console_tee::<u32>));
+            imports.define("console", "tee_i64", func!(host::console_tee::<u64>));
+            imports.define("console", "tee_f32", func!(host::console_tee::<f32>));
+            imports.define("console", "tee_f64", func!(host::console_tee::<f64>));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
@@ -376,6 +392,12 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
         (u64 <- $($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ -> u64 { panic!("incomplete import") })
         };
+        (f32 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> f32 { panic!("incomplete import") })
+        };
+        (f64 <- $($types:tt)+) => {
+            Function::new_typed(&mut store, $($types)+ -> f64 { panic!("incomplete import") })
+        };
         ($($types:tt)+) => {
             Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
         };
@@ -398,7 +420,15 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
         },
     };
     if config.debug.debug_funcs {
-        imports.define("forward", "debug_println", stub!(|_: u32, _: u32|));
+        imports.define("console", "log_txt", stub!(|_: u32, _: u32|));
+        imports.define("console", "log_i32", stub!(|_: u32|));
+        imports.define("console", "log_i64", stub!(|_: u64|));
+        imports.define("console", "log_f32", stub!(|_: f32|));
+        imports.define("console", "log_f64", stub!(|_: f64|));
+        imports.define("console", "tee_i32", stub!(u32 <- |_: u32|));
+        imports.define("console", "tee_i64", stub!(u64 <- |_: u64|));
+        imports.define("console", "tee_f32", stub!(f32 <- |_: f32|));
+        imports.define("console", "tee_f64", stub!(f64 <- |_: f64|));
     }
     Instance::new(&mut store, &module, &imports)?;
 
