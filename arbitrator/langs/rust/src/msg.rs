@@ -21,4 +21,3 @@ pub fn value() -> Bytes32 {
     unsafe { msg_value(data.as_mut_ptr()) };
     Bytes32(data)
 }
-
