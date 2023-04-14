@@ -411,6 +411,9 @@ func (c *Config) Validate() error {
 	if c.L1Reader.Enable && c.Sequencer.Enable && !c.DelayedSequencer.Enable {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
+	if c.DelayedSequencer.Enable && !c.Sequencer.Enable {
+		return errors.New("cannot enable delayed sequencer without enabling sequencer")
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
@@ -722,16 +725,12 @@ func createNodeImpl(
 		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
 
-	if config.DelayedSequencer.Enable != (config.Sequencer.Enable && (l1Reader != nil)) {
-		return nil, errors.New("cannot have delayedsequencer without sequencer or vice versa")
-	}
-
 	if config.SeqCoordinator.Enable {
 		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec.Sequencer, syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
-	} else if config.Sequencer.Enable && (!config.Sequencer.Dangerous.NoCoordinator) {
+	} else if config.Sequencer.Enable && !config.Sequencer.Dangerous.NoCoordinator {
 		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 	}
 	dbs := []ethdb.Database{chainDb, arbDb}
@@ -836,7 +835,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	txStreamer.SetInboxReader(inboxReader)
+	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.URL != "" {
