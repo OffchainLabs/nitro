@@ -37,7 +37,7 @@ blockscout=true
 tokenbridge=true
 consensusclient=false
 redundantsequencers=0
-dev_build=false
+dev_build_nitro=false
 dev_build_blockscout=false
 batchposters=1
 devprivkey=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
@@ -143,7 +143,7 @@ if $force_init; then
   force_build=true
 fi
 
-if $dev_build; then
+if $dev_build_nitro; then
   if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
     force_build=true
   fi
@@ -190,7 +190,7 @@ if $blockscout; then
 fi
 if $force_build; then
   echo == Building..
-  if $dev_build; then
+  if $dev_build_nitro; then
     docker build . -t nitro-node-dev --target nitro-node-dev
   fi
   if $dev_build_blockscout; then
@@ -205,7 +205,7 @@ if $force_build; then
   docker-compose build --no-rm $LOCAL_BUILD_NODES
 fi
 
-if $dev_build; then
+if $dev_build_nitro; then
   docker tag nitro-node-dev:latest nitro-node-dev-testnode
 else
   docker pull $NITRO_NODE_VERSION
