@@ -216,6 +216,35 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return iter.Error()
 }
 
+// deleteFromRange deletes key ranging from startMinKey(inclusive) to endMinKey(exclusive)
+func deleteFromRange(db ethdb.Database, prefix []byte, startMinKey uint64, endMinKey uint64) error {
+	batch := db.NewBatch()
+	startIter := db.NewIterator(prefix, uint64ToKey(startMinKey))
+	endKey := dbKey(prefix, endMinKey)
+	defer startIter.Release()
+	for startIter.Next() {
+		if bytes.Equal(startIter.Key(), endKey) {
+			break
+		}
+		err := batch.Delete(startIter.Key())
+		if err != nil {
+			return err
+		}
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			if err := batch.Write(); err != nil {
+				return err
+			}
+			batch.Reset()
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
 func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) ([]*arbstate.MessageWithMetadata, error) {
