@@ -135,6 +135,7 @@ impl From<GoApiStatus> for UserOutcomeKind {
 
 #[repr(C)]
 pub struct GoApi {
+    pub block_hash: unsafe extern "C" fn(id: usize, block: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub set_bytes32: unsafe extern "C" fn(
         id: usize,

@@ -4,12 +4,15 @@
 #![no_main]
 
 use arbitrum::block;
+use arbitrum::evm;
 use arbitrum::msg;
 use arbitrum::tx;
 
 arbitrum::arbitrum_main!(user_main);
 
 fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+    let block: u64 = 4;
+    let blockhash = evm::blockhash(block.into());
     let basefee = block::basefee();
     let chainid = block::chainid();
     let coinbase = block::coinbase();
@@ -23,6 +26,7 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let origin = tx::origin();
 
     let mut output = vec![];
+    output.extend(blockhash.0);
     output.extend(basefee.0);
     output.extend(chainid.0);
     output.extend(coinbase.0);

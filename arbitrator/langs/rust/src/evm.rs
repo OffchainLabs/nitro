@@ -18,3 +18,14 @@ pub fn log(topics: &[Bytes32], data: &[u8]) -> Result<(), &'static str> {
     unsafe { emit_log(bytes.as_ptr(), bytes.len(), topics.len()) }
     Ok(())
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn evm_blockhash(key: *const u8, dest: *mut u8);
+}
+
+pub fn blockhash(key: Bytes32) -> Bytes32 {
+    let mut data = [0; 32];
+    unsafe { evm_blockhash(key.ptr(), data.as_mut_ptr()) };
+    Bytes32(data)
+}

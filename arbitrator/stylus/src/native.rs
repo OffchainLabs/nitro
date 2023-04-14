@@ -97,6 +97,7 @@ impl NativeInstance {
             "forward" => {
                 "read_args" => func!(host::read_args),
                 "return_data" => func!(host::return_data),
+                "evm_blockhash" => func!(host::evm_blockhash),
                 "account_load_bytes32" => func!(host::account_load_bytes32),
                 "account_store_bytes32" => func!(host::account_store_bytes32),
                 "call_contract" => func!(host::call_contract),
@@ -190,6 +191,7 @@ impl NativeInstance {
             };
         }
 
+        let block_hash = api.block_hash;
         let get_bytes32 = api.get_bytes32;
         let set_bytes32 = api.set_bytes32;
         let contract_call = api.contract_call;
@@ -201,6 +203,11 @@ impl NativeInstance {
         let emit_log = api.emit_log;
         let id = api.id;
 
+        let block_hash = Box::new(move |block| unsafe {
+            let mut cost = 0;
+            let hash = block_hash(id, block, ptr!(cost));
+            (hash, cost)
+        });
         let get_bytes32 = Box::new(move |key| unsafe {
             let mut cost = 0;
             let value = get_bytes32(id, key, ptr!(cost));
@@ -306,6 +313,7 @@ impl NativeInstance {
         });
 
         env.set_evm_api(
+            block_hash,
             get_bytes32,
             set_bytes32,
             contract_call,
@@ -416,6 +424,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
         "forward" => {
             "read_args" => stub!(|_: u32|),
             "return_data" => stub!(|_: u32, _: u32|),
+            "evm_blockhash" => stub!(|_: u32, _: u32|),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
             "account_store_bytes32" => stub!(|_: u32, _: u32|),
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),

@@ -15,6 +15,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
+Bytes32     blockHashWrap(usize api, Bytes32 block, u64 * cost);
 Bytes32     getBytes32Wrap(usize api, Bytes32 key, u64 * cost);
 GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
 GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas, Bytes32 value, u32 * len);
@@ -96,6 +97,12 @@ func callUserWasm(
 	module := db.GetCompiledWasmCode(program, stylusParams.version)
 
 	// closures so Rust can call back into Go
+	blockHash := func(block common.Hash) (common.Hash, uint64) {
+		cost := vm.GasExtStep
+		//#TODO
+		return db.GetState(actingAddress, block), cost
+
+	}
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		if tracingInfo != nil {
 			tracingInfo.RecordStorageGet(key)
@@ -297,7 +304,7 @@ func callUserWasm(
 		goSlice(calldata),
 		stylusParams.encode(),
 		newAPI(
-			getBytes32, setBytes32,
+			blockHash, getBytes32, setBytes32,
 			contractCall, delegateCall, staticCall, create1, create2, getReturnData,
 			emitLog,
 		),
@@ -317,6 +324,14 @@ type apiStatus = C.GoApiStatus
 
 const apiSuccess C.GoApiStatus = C.GoApiStatus_Success
 const apiFailure C.GoApiStatus = C.GoApiStatus_Failure
+
+//export blockHashImpl
+func blockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
+	closure := getAPI(api)
+	value, gas := closure.blockHash(block.toHash())
+	*cost = u64(gas)
+	return hashToBytes32(value)
+}
 
 //export getBytes32Impl
 func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {

@@ -15,6 +15,11 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
+Bytes32 blockHashImpl(usize api, Bytes32 block, u64 * cost);
+Bytes32 blockHashWrap(usize api, Bytes32 block, u64 * cost) {
+    return blockHashImpl(api, block, cost);
+}
+
 Bytes32 getBytes32Impl(usize api, Bytes32 key, u64 * cost);
 Bytes32 getBytes32Wrap(usize api, Bytes32 key, u64 * cost) {
     return getBytes32Impl(api, key, cost);
@@ -73,6 +78,7 @@ import (
 var apiClosures sync.Map
 var apiIds int64 // atomic
 
+type blockHashType func(key common.Hash) (value common.Hash, cost uint64)
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
 type contractCallType func(
@@ -99,6 +105,7 @@ type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics int) error
 
 type apiClosure struct {
+	blockHash     blockHashType
 	getBytes32    getBytes32Type
 	setBytes32    setBytes32Type
 	contractCall  contractCallType
@@ -111,6 +118,7 @@ type apiClosure struct {
 }
 
 func newAPI(
+	blockHash blockHashType,
 	getBytes32 getBytes32Type,
 	setBytes32 setBytes32Type,
 	contractCall contractCallType,
@@ -123,6 +131,7 @@ func newAPI(
 ) C.GoApi {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
+		blockHash:     blockHash,
 		getBytes32:    getBytes32,
 		setBytes32:    setBytes32,
 		contractCall:  contractCall,
@@ -134,6 +143,7 @@ func newAPI(
 		emitLog:       emitLog,
 	})
 	return C.GoApi{
+		block_hash:      (*[0]byte)(C.blockHashWrap),
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
 		contract_call:   (*[0]byte)(C.contractCallWrap),

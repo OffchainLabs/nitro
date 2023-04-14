@@ -19,6 +19,14 @@ pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscap
     Ok(())
 }
 
+pub(crate) fn evm_blockhash(mut env: WasmEnvMut, block: u32, dest: u32) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    let block = env.read_bytes32(block)?;
+    let (hash, gas_cost) = env.evm().block_hash(block);
+    env.write_slice(dest, &hash.0)?;
+    env.buy_gas(gas_cost)
+}
+
 pub(crate) fn account_load_bytes32(mut env: WasmEnvMut, key: u32, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let key = env.read_bytes32(key)?;

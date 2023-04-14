@@ -51,6 +51,9 @@ pub struct MeterData {
     pub pricing: PricingParams,
 }
 
+/// Hash for given block: key → (value, cost)
+pub type BlockHash = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
+
 /// State load: key → (value, cost)
 pub type GetBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 
@@ -81,6 +84,7 @@ pub type Create2 =
     Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
 
 pub struct EvmAPI {
+    block_hash: BlockHash,
     get_bytes32: GetBytes32,
     set_bytes32: SetBytes32,
     contract_call: ContractCall,
@@ -118,6 +122,7 @@ impl WasmEnv {
 
     pub fn set_evm_api(
         &mut self,
+        block_hash: BlockHash,
         get_bytes32: GetBytes32,
         set_bytes32: SetBytes32,
         contract_call: ContractCall,
@@ -129,6 +134,7 @@ impl WasmEnv {
         emit_log: EmitLog,
     ) {
         self.evm = Some(EvmAPI {
+            block_hash,
             get_bytes32,
             set_bytes32,
             contract_call,
@@ -317,6 +323,10 @@ impl<'a> DerefMut for HostioInfo<'a> {
 }
 
 impl EvmAPI {
+    pub fn block_hash(&mut self, key: Bytes32) -> (Bytes32, u64) {
+        (self.block_hash)(key)
+    }
+
     pub fn load_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         (self.get_bytes32)(key)
     }

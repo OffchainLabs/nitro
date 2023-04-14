@@ -547,6 +547,9 @@ func TestProgramEvmData(t *testing.T) {
 		result = result[dataSize:]
 	}
 
+	block, err := l2client.BlockByNumber(ctx, big.NewInt(4))
+	Require(t, err)
+	expectBigInt("blockhash", block.Hash().Big())
 	expectBigInt("base fee", big.NewInt(100000000))
 	expectedChainid, err := l2client.ChainID(ctx)
 	ensure(tx, err)
