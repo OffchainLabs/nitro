@@ -481,54 +481,6 @@ func TestProgramCreate(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
-func expectU64(t *testing.T, name string, data *[]byte, expected uint64) {
-	dataSize := 8
-	if len(*data) < dataSize {
-		Fail(t, "not enough data left", name, dataSize, len(*data))
-	}
-	value := binary.BigEndian.Uint64((*data)[:dataSize])
-	if value != expected {
-		Fail(t, "mismatch", name, value, expected)
-	}
-	*data = (*data)[dataSize:]
-}
-
-func expectAddress(t *testing.T, name string, data *[]byte, expected common.Address) {
-	dataSize := 20
-	if len(*data) < dataSize {
-		Fail(t, "not enough data left", name, dataSize, len(*data))
-	}
-	value := common.BytesToAddress((*data)[:dataSize])
-	if value != expected {
-		Fail(t, "mismatch", name, value, expected)
-	}
-	*data = (*data)[dataSize:]
-}
-
-func expectBigInt(t *testing.T, name string, data *[]byte, expected *big.Int) {
-	dataSize := 32
-	if len(*data) < dataSize {
-		Fail(t, "not enough data left", name, dataSize, len(*data))
-	}
-	value := new(big.Int).SetBytes((*data)[:dataSize])
-	if !arbmath.BigEquals(value, expected) {
-		Fail(t, "mismatch", name, value, expected)
-	}
-	*data = (*data)[dataSize:]
-}
-
-func expectBigIntGreaterThan(t *testing.T, name string, data *[]byte, expected *big.Int) {
-	dataSize := 32
-	if len(*data) < dataSize {
-		Fail(t, "not enough data left", name, dataSize, len(*data))
-	}
-	value := new(big.Int).SetBytes((*data)[:dataSize])
-	if !arbmath.BigGreaterThan(value, expected) {
-		Fail(t, "mismatch", name, value, expected)
-	}
-	*data = (*data)[dataSize:]
-}
-
 func TestProgramEvmData(t *testing.T) {
 	ctx, _, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
 	defer cleanup()
@@ -550,19 +502,64 @@ func TestProgramEvmData(t *testing.T) {
 	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
 	Require(t, err)
 
-	expectBigInt(t, "base fee", &result, big.NewInt(100000000))
+	expectU64 := func(name string, expected uint64) {
+		dataSize := 8
+		if len(result) < dataSize {
+			Fail(t, "not enough data left", name, dataSize, len(result))
+		}
+		value := binary.BigEndian.Uint64(result[:dataSize])
+		if value != expected {
+			Fail(t, "mismatch", name, value, expected)
+		}
+		result = result[dataSize:]
+	}
+	expectAddress := func(name string, expected common.Address) {
+		dataSize := 20
+		if len(result) < dataSize {
+			Fail(t, "not enough data left", name, dataSize, len(result))
+		}
+		value := common.BytesToAddress(result[:dataSize])
+		if value != expected {
+			Fail(t, "mismatch", name, value, expected)
+		}
+		result = result[dataSize:]
+	}
+	expectBigInt := func(name string, expected *big.Int) {
+		dataSize := 32
+		if len(result) < dataSize {
+			Fail(t, "not enough data left", name, dataSize, len(result))
+		}
+		value := new(big.Int).SetBytes(result[:dataSize])
+		if !arbmath.BigEquals(value, expected) {
+			Fail(t, "mismatch", name, value, expected)
+		}
+		result = result[dataSize:]
+	}
+	expectBigIntGreaterThan := func(name string, expected *big.Int) {
+		dataSize := 32
+		if len(result) < dataSize {
+			Fail(t, "not enough data left", name, dataSize, len(result))
+		}
+		value := new(big.Int).SetBytes(result[:dataSize])
+		if !arbmath.BigGreaterThan(value, expected) {
+			Fail(t, "mismatch", name, value, expected)
+		}
+		result = result[dataSize:]
+	}
+
+	expectBigInt("base fee", big.NewInt(100000000))
 	expectedChainid, err := l2client.ChainID(ctx)
 	ensure(tx, err)
-	expectBigInt(t, "chainid", &result, expectedChainid)
-	expectAddress(t, "coinbase", &result, common.HexToAddress("0xA4b000000000000000000073657175656e636572"))
-	expectBigInt(t, "difficulty", &result, big.NewInt(1))
-	expectU64(t, "gas limit", &result, uint64(1125899906842624))
-	expectBigInt(t, "block number", &result, big.NewInt(6))
-	expectBigIntGreaterThan(t, "timestamp", &result, big.NewInt(1680662290))
-	expectAddress(t, "sender", &result, opts.From)
-	expectBigInt(t, "value", &result, big.NewInt(0))
-	expectBigInt(t, "gas price", &result, big.NewInt(0))
-	expectAddress(t, "origin", &result, opts.From)
+	expectBigInt("chainid", expectedChainid)
+	expectAddress("coinbase", common.HexToAddress("0xA4b000000000000000000073657175656e636572"))
+	expectBigInt("difficulty", big.NewInt(1))
+	expectU64("gas limit", uint64(1125899906842624))
+	expectBigInt("block number", big.NewInt(6))
+	expectBigIntGreaterThan("timestamp", big.NewInt(1680662290))
+	expectAddress("sender", opts.From)
+	expectBigInt("value", big.NewInt(0))
+	expectBigInt("gas price", big.NewInt(0))
+	expectAddress("origin", opts.From)
 
 	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})
 	ensure(tx, l2client.SendTransaction(ctx, tx))
