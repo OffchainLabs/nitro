@@ -40,7 +40,7 @@ var DefaultMessagePrunerConfig = MessagePrunerConfig{
 
 func MessagePrunerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultMessagePrunerConfig.Enable, "enable message pruning")
-	f.Duration(prefix+".prune-delay", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
+	f.Duration(prefix+".prune-interval", DefaultMessagePrunerConfig.MessagePruneInterval, "interval for running message pruner")
 }
 
 func NewMessagePruner(transactionStreamer *TransactionStreamer, inboxTracker *InboxTracker, staker *staker.Staker, config MessagePrunerConfigFetcher) *MessagePruner {
