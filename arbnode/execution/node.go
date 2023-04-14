@@ -31,7 +31,7 @@ func CreateExecutionNode(
 	fwConfig *ForwarderConfig,
 	rpcConfig arbitrum.Config,
 	seqConfigFetcher SequencerConfigFetcher,
-	strictnessFetcher func() uint,
+	precheckConfigFetcher TxPreCheckerConfigFetcher,
 ) (*ExecutionNode, error) {
 	execEngine, err := NewExecutionEngine(l2BlockChain)
 	if err != nil {
@@ -59,7 +59,7 @@ func CreateExecutionNode(
 		}
 	}
 
-	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, strictnessFetcher)
+	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, precheckConfigFetcher)
 	arbInterface, err := NewArbInterface(execEngine, txPublisher)
 	if err != nil {
 		return nil, err

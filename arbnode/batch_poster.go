@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -635,7 +635,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster gas refunder balance", "err", err)
 			} else {
-				batchPosterGasRefunderBalance.Update(float64(gasRefunderBalance.Int64()) / params.Ether)
+				batchPosterGasRefunderBalance.Update(arbmath.BalancePerEther(gasRefunderBalance))
 			}
 		}
 		if b.dataPoster.From() != (common.Address{}) {
@@ -643,7 +643,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			if err != nil {
 				log.Warn("error fetching batch poster wallet balance", "err", err)
 			} else {
-				batchPosterWalletBalance.Update(float64(walletBalance.Int64()) / params.Ether)
+				batchPosterWalletBalance.Update(arbmath.BalancePerEther(walletBalance))
 			}
 		}
 		if !b.redisLock.AttemptLock(ctx) {

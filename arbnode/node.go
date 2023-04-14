@@ -384,27 +384,27 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 }
 
 type Config struct {
-	RPC                    arbitrum.Config             `koanf:"rpc"`
-	Sequencer              execution.SequencerConfig   `koanf:"sequencer" reload:"hot"`
-	L1Reader               headerreader.Config         `koanf:"l1-reader" reload:"hot"`
-	InboxReader            InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer       DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster            BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
-	ForwardingTargetImpl   string                      `koanf:"forwarding-target"`
-	Forwarder              execution.ForwarderConfig   `koanf:"forwarder"`
-	TxPreCheckerStrictness uint                        `koanf:"tx-pre-checker-strictness" reload:"hot"`
-	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
-	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
-	Staker                 staker.L1ValidatorConfig    `koanf:"staker"`
-	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
-	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
-	SyncMonitor            SyncMonitorConfig           `koanf:"sync-monitor"`
-	Dangerous              DangerousConfig             `koanf:"dangerous"`
-	Caching                execution.CachingConfig     `koanf:"caching"`
-	Archive                bool                        `koanf:"archive"`
-	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
-	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
-	Maintenance            MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
+	RPC                  arbitrum.Config              `koanf:"rpc"`
+	Sequencer            execution.SequencerConfig    `koanf:"sequencer" reload:"hot"`
+	L1Reader             headerreader.Config          `koanf:"l1-reader" reload:"hot"`
+	InboxReader          InboxReaderConfig            `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer     DelayedSequencerConfig       `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster          BatchPosterConfig            `koanf:"batch-poster" reload:"hot"`
+	ForwardingTargetImpl string                       `koanf:"forwarding-target"`
+	Forwarder            execution.ForwarderConfig    `koanf:"forwarder"`
+	TxPreChecker         execution.TxPreCheckerConfig `koanf:"tx-pre-checker" reload:"hot"`
+	BlockValidator       staker.BlockValidatorConfig  `koanf:"block-validator" reload:"hot"`
+	Feed                 broadcastclient.FeedConfig   `koanf:"feed" reload:"hot"`
+	Staker               staker.L1ValidatorConfig     `koanf:"staker"`
+	SeqCoordinator       SeqCoordinatorConfig         `koanf:"seq-coordinator"`
+	DataAvailability     das.DataAvailabilityConfig   `koanf:"data-availability"`
+	SyncMonitor          SyncMonitorConfig            `koanf:"sync-monitor"`
+	Dangerous            DangerousConfig              `koanf:"dangerous"`
+	Caching              execution.CachingConfig      `koanf:"caching"`
+	Archive              bool                         `koanf:"archive"`
+	TxLookupLimit        uint64                       `koanf:"tx-lookup-limit"`
+	TransactionStreamer  TransactionStreamerConfig    `koanf:"transaction-streamer" reload:"hot"`
+	Maintenance          MaintenanceConfig            `koanf:"maintenance" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -471,10 +471,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	execution.AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
-	txPreCheckerDescription := "how strict to be when checking txs before forwarding them. 0 = accept anything, " +
-		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
-		"30 = full validation which may reject txs that would succeed"
-	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
+	execution.TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
@@ -492,25 +489,25 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 }
 
 var ConfigDefault = Config{
-	RPC:                    arbitrum.DefaultConfig,
-	Sequencer:              execution.DefaultSequencerConfig,
-	L1Reader:               headerreader.DefaultConfig,
-	InboxReader:            DefaultInboxReaderConfig,
-	DelayedSequencer:       DefaultDelayedSequencerConfig,
-	BatchPoster:            DefaultBatchPosterConfig,
-	ForwardingTargetImpl:   "",
-	TxPreCheckerStrictness: execution.TxPreCheckerStrictnessNone,
-	BlockValidator:         staker.DefaultBlockValidatorConfig,
-	Feed:                   broadcastclient.FeedConfigDefault,
-	Staker:                 staker.DefaultL1ValidatorConfig,
-	SeqCoordinator:         DefaultSeqCoordinatorConfig,
-	DataAvailability:       das.DefaultDataAvailabilityConfig,
-	SyncMonitor:            DefaultSyncMonitorConfig,
-	Dangerous:              DefaultDangerousConfig,
-	Archive:                false,
-	TxLookupLimit:          126_230_400, // 1 year at 4 blocks per second
-	Caching:                execution.DefaultCachingConfig,
-	TransactionStreamer:    DefaultTransactionStreamerConfig,
+	RPC:                  arbitrum.DefaultConfig,
+	Sequencer:            execution.DefaultSequencerConfig,
+	L1Reader:             headerreader.DefaultConfig,
+	InboxReader:          DefaultInboxReaderConfig,
+	DelayedSequencer:     DefaultDelayedSequencerConfig,
+	BatchPoster:          DefaultBatchPosterConfig,
+	ForwardingTargetImpl: "",
+	TxPreChecker:         execution.DefaultTxPreCheckerConfig,
+	BlockValidator:       staker.DefaultBlockValidatorConfig,
+	Feed:                 broadcastclient.FeedConfigDefault,
+	Staker:               staker.DefaultL1ValidatorConfig,
+	SeqCoordinator:       DefaultSeqCoordinatorConfig,
+	DataAvailability:     das.DefaultDataAvailabilityConfig,
+	SyncMonitor:          DefaultSyncMonitorConfig,
+	Dangerous:            DefaultDangerousConfig,
+	Archive:              false,
+	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
+	Caching:              execution.DefaultCachingConfig,
+	TransactionStreamer:  DefaultTransactionStreamerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -688,10 +685,10 @@ func createNodeImpl(
 	}
 
 	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
-	txprecheckStrictFetcher := func() uint { return configFetcher.Get().TxPreCheckerStrictness }
+	txprecheckConfigFetcher := func() *execution.TxPreCheckerConfig { return &configFetcher.Get().TxPreChecker }
 	exec, err := execution.CreateExecutionNode(stack, chainDb, l2BlockChain, l1Reader, syncMonitor,
 		config.ForwardingTarget(), &config.Forwarder, config.RPC,
-		sequencerConfigFetcher, txprecheckStrictFetcher)
+		sequencerConfigFetcher, txprecheckConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -845,7 +842,7 @@ func createNodeImpl(
 			txStreamer,
 			l2BlockChain,
 			chainDb,
-			rawdb.NewTable(arbDb, blockValidatorPrefix),
+			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
 			&configFetcher.Get().BlockValidator,
 		)
@@ -1118,7 +1115,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BlockValidator != nil {
-		err = n.BlockValidator.Initialize()
+		err = n.BlockValidator.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing block validator: %w", err)
 		}
