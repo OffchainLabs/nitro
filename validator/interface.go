@@ -18,30 +18,19 @@ type ValidationSpawner interface {
 type ValidationRun interface {
 	containers.PromiseInterface[GoGlobalState]
 	WasmModuleRoot() common.Hash
-	Close()
 }
 
 type ExecutionSpawner interface {
 	ValidationSpawner
-	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) (ExecutionRun, error)
-	LatestWasmModuleRoot() (common.Hash, error)
-	WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) error
+	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
+	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
+	WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}]
 }
 
 type ExecutionRun interface {
-	GetStepAt(uint64) MachineStep
-	GetLastStep() MachineStep
-	GetProofAt(uint64) ProofPromise
-	PrepareRange(uint64, uint64)
-	Close()
-}
-
-type ProofPromise interface {
-	containers.PromiseInterface[[]byte]
-	Close()
-}
-
-type MachineStep interface {
-	containers.PromiseInterface[MachineStepResult]
+	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
+	GetLastStep() containers.PromiseInterface[*MachineStepResult]
+	GetProofAt(uint64) containers.PromiseInterface[[]byte]
+	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]
 	Close()
 }
