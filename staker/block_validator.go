@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -263,6 +264,28 @@ func (v *BlockValidator) recentShutdown() error {
 	return err
 }
 
+func ReadLastValidatedFromDb(db ethdb.Database) (*LastBlockValidatedDbInfo, error) {
+	exists, err := db.Has(lastBlockValidatedInfoKey)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+
+	infoBytes, err := db.Get(lastBlockValidatedInfoKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var info LastBlockValidatedDbInfo
+	err = rlp.DecodeBytes(infoBytes, &info)
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
 // only called by NewBlockValidator
 func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Block) error {
 	v.reorgMutex.Lock()
@@ -298,13 +321,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		return nil
 	}
 
-	infoBytes, err := v.db.Get(lastBlockValidatedInfoKey)
-	if err != nil {
-		return err
-	}
-
-	var info lastBlockValidatedDbInfo
-	err = rlp.DecodeBytes(infoBytes, &info)
+	info, err := ReadLastValidatedFromDb(v.db)
 	if err != nil {
 		return err
 	}
@@ -580,18 +597,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		lastBlockInBatch := arbutil.MessageCountToBlockNumber(msgCountInBatch, v.genesisBlockNum)
 		validatorLastBlockInLastBatchGauge.Update(lastBlockInBatch)
-		validatorPendingValidationsGauge.Inc(1)
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
 			if err != nil && validationCtx.Err() == nil {
+				validationStatus.replaceStatus(Prepared, RecordFailed)
 				log.Error("error preparing validation", "err", err)
 				return
 			}
 			input, err := validationStatus.Entry.ToInput()
 			if err != nil && validationCtx.Err() == nil {
+				validationStatus.replaceStatus(Prepared, RecordFailed)
 				log.Error("error preparing validation", "err", err)
 				return
 			}
@@ -601,6 +619,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 					validationStatus.Runs = append(validationStatus.Runs, run)
 				}
 			}
+			validatorPendingValidationsGauge.Inc(1)
 			replaced := validationStatus.replaceStatus(Prepared, ValidationSent)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set status"))
@@ -694,7 +713,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 }
 
 func (v *BlockValidator) writeLastValidatedToDb(blockNumber uint64, blockHash common.Hash, endPos GlobalStatePosition) error {
-	info := lastBlockValidatedDbInfo{
+	info := LastBlockValidatedDbInfo{
 		BlockNumber:   blockNumber,
 		BlockHash:     blockHash,
 		AfterPosition: endPos,
