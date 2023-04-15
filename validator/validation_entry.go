@@ -19,4 +19,5 @@ type ValidationInput struct {
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
 	StartState    GoGlobalState
+	DebugChain    bool
 }

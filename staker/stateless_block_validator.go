@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/programs"
@@ -166,6 +167,7 @@ type validationEntry struct {
 	HasDelayedMsg   bool
 	DelayedMsgNr    uint64
 	msg             *arbstate.MessageWithMetadata
+	ChainConfig     *params.ChainConfig
 	// Valid since Recorded:
 	Preimages  map[common.Hash][]byte
 	UserWasms  state.UserWasms
@@ -224,6 +226,7 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		DelayedMsg:    e.DelayedMsg,
 		UserWasms:     e.UserWasms,
 		StartState:    startState,
+		DebugChain:    e.ChainConfig.DebugMode(),
 	}, nil
 }
 
@@ -241,6 +244,7 @@ func newValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
 	msg *arbstate.MessageWithMetadata,
+	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
 	hasDelayedMsg, delayedMsgNr := usingDelayedMsg(prevHeader, header)
 	validationEntry := &validationEntry{
@@ -251,6 +255,7 @@ func newValidationEntry(
 		HasDelayedMsg: hasDelayedMsg,
 		DelayedMsgNr:  delayedMsgNr,
 		msg:           msg,
+		ChainConfig:   chainConfig,
 	}
 	if prevHeader != nil {
 		validationEntry.PrevBlockHash = prevHeader.Hash()
@@ -266,8 +271,9 @@ func newRecordedValidationEntry(
 	userWasms state.UserWasms,
 	batchInfos []validator.BatchInfo,
 	delayedMsg []byte,
+	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
-	entry, err := newValidationEntry(prevHeader, header, nil)
+	entry, err := newValidationEntry(prevHeader, header, nil, chainConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -569,11 +575,13 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 			return nil, fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 	}
-	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, userWasms, readBatchInfo, delayed)
+	chainConfig := v.blockchain.Config()
+	entry, err := newRecordedValidationEntry(
+		prevHeader, header, preimages, userWasms, readBatchInfo, delayed, chainConfig,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create validation entry %w", err)
 	}
-
 	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
 		return nil, err

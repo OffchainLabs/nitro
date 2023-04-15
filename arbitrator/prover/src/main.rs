@@ -200,7 +200,8 @@ fn main() -> Result<()> {
     for module in &opts.stylus_modules {
         let error = || format!("failed to read module at {}", module.to_string_lossy());
         let wasm = file_bytes(module).wrap_err_with(error)?;
-        mach.add_program(&wasm, 1, None).wrap_err_with(error)?;
+        mach.add_program(&wasm, 1, true, None)
+            .wrap_err_with(error)?;
     }
 
     if let Some(output_path) = opts.generate_binaries {

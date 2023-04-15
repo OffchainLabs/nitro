@@ -192,15 +192,17 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
     wasm: *const u8,
     wasm_len: u32,
-    root: *const Bytes32,
     version: u32,
+    debug: u32,
+    root: *const Bytes32,
 ) -> *mut libc::c_char {
     let wasm = std::slice::from_raw_parts(wasm, wasm_len as usize);
 
     // provide the opportunity to skip calculating the module root
     let root = (!root.is_null()).then(|| *root);
+    let debug = debug != 0;
 
-    match (*mach).add_program(wasm, version, root) {
+    match (*mach).add_program(wasm, version, debug, root) {
         Ok(_) => std::ptr::null_mut(),
         Err(err) => err_to_c_string(err),
     }

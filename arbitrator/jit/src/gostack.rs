@@ -280,10 +280,10 @@ pub struct TimeoutState {
 
 #[test]
 fn test_sp() -> eyre::Result<()> {
-    use prover::programs::config::StylusConfig;
+    use prover::programs::prelude::CompileConfig;
     use wasmer::{FunctionEnv, MemoryType};
 
-    let mut store = StylusConfig::default().store();
+    let mut store = CompileConfig::default().store();
     let mut env = WasmEnv::default();
     env.memory = Some(Memory::new(&mut store, MemoryType::new(0, None, false))?);
     let env = FunctionEnv::new(&mut store, env);

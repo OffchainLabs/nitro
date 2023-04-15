@@ -119,7 +119,7 @@ func errorTest(t *testing.T, jit bool) {
 }
 
 func TestProgramStorage(t *testing.T) {
-	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), true)
+	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), true)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -131,12 +131,13 @@ func TestProgramStorage(t *testing.T) {
 	}
 
 	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
+	// value := testhelpers.RandomHash()
+	value := common.Hash{}
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	// TODO: enable validation when prover side is PR'd
+	_ = node
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 

@@ -1,9 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::Program;
 use arbutil::evm;
-use prover::programs::config::PricingParams;
-use std::ops::Deref;
 
 #[link(wasm_import_module = "hostio")]
 extern "C" {
@@ -12,21 +11,7 @@ extern "C" {
     fn user_set_ink(ink: u64, status: u32);
 }
 
-pub(crate) struct Pricing(pub PricingParams);
-
-impl Deref for Pricing {
-    type Target = PricingParams;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Pricing {
-    pub fn begin(&self) {
-        self.buy_ink(self.hostio_ink)
-    }
-
+impl Program {
     pub fn buy_ink(&self, ink: u64) {
         unsafe {
             if user_ink_status() != 0 {
@@ -42,7 +27,7 @@ impl Pricing {
 
     #[allow(clippy::inconsistent_digit_grouping)]
     pub fn buy_gas(&self, gas: u64) {
-        let ink = gas.saturating_mul(100_00) / self.ink_price;
+        let ink = gas.saturating_mul(100_00) / self.config.pricing.ink_price;
         self.buy_ink(ink)
     }
 

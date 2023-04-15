@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use super::{
-    config::PricingParams,
+    config::CompilePricingParams,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
     FuncMiddleware, Middleware, ModuleMod,
 };
@@ -21,7 +21,7 @@ pub struct DynamicMeter {
 impl DynamicMeter {
     const SCRATCH_GLOBAL: &str = "stylus_dynamic_scratch_global";
 
-    pub fn new(pricing: &PricingParams) -> Self {
+    pub fn new(pricing: &CompilePricingParams) -> Self {
         Self {
             memory_fill: pricing.memory_fill_ink,
             memory_copy: pricing.memory_copy_ink,

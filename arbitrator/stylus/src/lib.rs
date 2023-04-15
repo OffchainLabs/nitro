@@ -4,7 +4,7 @@
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
 use prover::{
-    programs::prelude::*,
+    programs::{config::GoParams, prelude::*},
     utils::{Bytes20, Bytes32},
 };
 use run::RunProgram;
@@ -23,26 +23,6 @@ mod test;
 
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
-
-#[repr(C)]
-pub struct GoParams {
-    version: u32,
-    max_depth: u32,
-    ink_price: u64,
-    hostio_cost: u64,
-    debug_mode: usize,
-}
-
-impl GoParams {
-    pub fn config(self) -> StylusConfig {
-        let mut config = StylusConfig::version(self.version);
-        config.depth.max_depth = self.max_depth;
-        config.pricing.ink_price = self.ink_price;
-        config.pricing.hostio_ink = self.hostio_cost;
-        config.debug.debug_funcs = self.debug_mode != 0;
-        config
-    }
-}
 
 #[repr(C)]
 pub struct GoSliceData {
@@ -99,11 +79,7 @@ pub unsafe extern "C" fn stylus_compile(
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-
-    let mut config = StylusConfig::version(version);
-    if debug_mode != 0 {
-        config.debug.debug_funcs = true;
-    }
+    let config = CompileConfig::version(version, debug_mode != 0);
 
     match native::module(wasm, config) {
         Ok(module) => {
@@ -197,22 +173,21 @@ pub unsafe extern "C" fn stylus_call(
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let config = params.config();
-    let pricing = config.pricing;
+    let (compile_config, stylus_config) = params.configs();
+    let pricing = stylus_config.pricing;
     let ink = pricing.gas_to_ink(*gas);
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(module, compile_config.clone()) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
     instance.set_go_api(go_api);
     instance.set_evm_data(evm_data);
-    instance.set_ink(ink);
 
-    let status = match instance.run_main(&calldata, &config) {
+    let status = match instance.run_main(&calldata, stylus_config, ink) {
         Err(err) | Ok(UserOutcome::Failure(err)) => {
             output.write_err(err.wrap_err(eyre!("failed to execute program")));
             UserOutcomeKind::Failure

@@ -392,7 +392,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	return nil
 }
 
-func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWasm) error {
+func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWasm, debug bool) error {
 	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
@@ -401,12 +401,17 @@ func (m *ArbitratorMachine) AddUserWasm(call state.WasmCall, wasm *state.UserWas
 	for index, byte := range wasm.NoncanonicalHash.Bytes() {
 		hashBytes[index] = u8(byte)
 	}
+	debugInt := 0
+	if debug {
+		debugInt = 1
+	}
 	err := C.arbitrator_add_user_wasm(
 		m.ptr,
 		(*u8)(arbutil.SliceToPointer(wasm.Wasm)),
 		u32(len(wasm.Wasm)),
-		&C.struct_Bytes32{hashBytes},
 		u32(call.Version),
+		u32(debugInt),
+		&C.struct_Bytes32{hashBytes},
 	)
 	defer C.free(unsafe.Pointer(err))
 	if err != nil {

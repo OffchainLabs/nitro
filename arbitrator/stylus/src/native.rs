@@ -25,7 +25,7 @@ use std::{
 };
 use wasmer::{
     imports, AsStoreMut, Function, FunctionEnv, Global, Instance, Module, Store, TypedFunction,
-    Value,
+    Value, WasmTypeList,
 };
 
 pub struct NativeInstance {
@@ -36,16 +36,15 @@ pub struct NativeInstance {
 
 impl NativeInstance {
     pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv>) -> Self {
-        Self {
+        let mut native = Self {
             instance,
             store,
             env,
+        };
+        if let Some(config) = native.env().config {
+            native.set_stack(config.max_depth);
         }
-    }
-
-    pub fn new_sans_env(instance: Instance, mut store: Store) -> Self {
-        let env = FunctionEnv::new(&mut store, WasmEnv::default());
-        Self::new(instance, store, env)
+        native
     }
 
     pub fn env(&self) -> &WasmEnv {
@@ -57,7 +56,12 @@ impl NativeInstance {
     }
 
     pub fn config(&self) -> StylusConfig {
-        self.env().config.clone()
+        self.env().config.expect("no config")
+    }
+
+    pub fn add_config(&mut self, config: StylusConfig) {
+        self.env_mut().config = Some(config);
+        self.set_stack(config.max_depth);
     }
 
     pub fn read_slice(&self, mem: &str, ptr: usize, len: usize) -> Result<Vec<u8>> {
@@ -70,23 +74,23 @@ impl NativeInstance {
 
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
-    pub unsafe fn deserialize(module: &[u8], config: StylusConfig) -> Result<Self> {
-        let env = WasmEnv::new(config);
-        let store = env.config.store();
+    pub unsafe fn deserialize(module: &[u8], compile: CompileConfig) -> Result<Self> {
+        let env = WasmEnv::new(compile, None);
+        let store = env.compile.store();
         let module = Module::deserialize(&store, module)?;
         Self::from_module(module, store, env)
     }
 
-    pub fn from_path(path: &str, config: &StylusConfig) -> Result<Self> {
-        let env = WasmEnv::new(config.clone());
-        let store = env.config.store();
+    pub fn from_path(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
+        let env = WasmEnv::new(compile.clone(), Some(config));
+        let store = env.compile.store();
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;
         Self::from_module(module, store, env)
     }
 
     fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
-        let debug_funcs = env.config.debug.debug_funcs;
+        let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
             ($func:expr) => {
@@ -134,8 +138,8 @@ impl NativeInstance {
         env.meter = Some(MeterData {
             ink_left,
             ink_status,
-            pricing: env.config.pricing,
         });
+
         Ok(Self::new(instance, store, func_env))
     }
 
@@ -312,6 +316,14 @@ impl NativeInstance {
         let env = self.env.as_mut(&mut self.store);
         env.evm_data = Some(evm_data);
     }
+
+    pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: u64) -> Result<R>
+    where
+        R: WasmTypeList,
+    {
+        self.set_ink(ink);
+        Ok(func.call(&mut self.store)?)
+    }
 }
 
 impl Deref for NativeInstance {
@@ -379,8 +391,8 @@ impl StartlessMachine for NativeInstance {
     }
 }
 
-pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
-    let mut store = config.store();
+pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
+    let mut store = compile.store();
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
         (u8 <- $($types:tt)+) => {
@@ -419,7 +431,7 @@ pub fn module(wasm: &[u8], config: StylusConfig) -> Result<Vec<u8>> {
             "tx_origin" => stub!(|_: u32|),
         },
     };
-    if config.debug.debug_funcs {
+    if compile.debug.debug_funcs {
         imports.define("console", "log_txt", stub!(|_: u32, _: u32|));
         imports.define("console", "log_i32", stub!(|_: u32|));
         imports.define("console", "log_i64", stub!(|_: u64|));

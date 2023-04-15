@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 const MaxWasmSize = 64 * 1024
@@ -169,7 +170,7 @@ type goParams struct {
 	maxDepth  uint32
 	inkPrice  uint64
 	hostioInk uint64
-	debugMode uint64
+	debugMode uint32
 }
 
 func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
@@ -214,6 +215,7 @@ func (status userStatus) output(data []byte) ([]byte, error) {
 	case userRevert:
 		return data, vm.ErrExecutionReverted
 	case userFailure:
+		colors.PrintPink("failure", "err", string(data))
 		return nil, vm.ErrExecutionReverted
 	case userOutOfGas:
 		return nil, vm.ErrOutOfGas

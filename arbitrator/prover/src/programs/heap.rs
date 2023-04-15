@@ -1,9 +1,9 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use super::{DefaultFuncMiddleware, Middleware, ModuleMod};
+use super::{config::CompileMemoryParams, DefaultFuncMiddleware, Middleware, ModuleMod};
 use eyre::Result;
-use wasmer_types::{Bytes, LocalFunctionIndex, Pages};
+use wasmer_types::{LocalFunctionIndex, Pages};
 
 #[derive(Debug)]
 pub struct HeapBound {
@@ -12,9 +12,9 @@ pub struct HeapBound {
 }
 
 impl HeapBound {
-    pub fn new(limit: Bytes) -> Result<Self> {
-        let limit = Pages::try_from(limit)?;
-        Ok(Self { limit })
+    pub fn new(bounds: CompileMemoryParams) -> Self {
+        let limit = bounds.heap_bound;
+        Self { limit }
     }
 }
 

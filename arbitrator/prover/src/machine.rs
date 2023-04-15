@@ -8,7 +8,10 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::StylusConfig, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT, USER_HOST},
+    programs::{
+        config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT,
+        USER_HOST,
+    },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -1035,7 +1038,7 @@ impl Machine {
         )
     }
 
-    pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
+    pub fn from_user_path(path: &Path, config: &CompileConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(config)?;
@@ -1068,10 +1071,11 @@ impl Machine {
         &mut self,
         wasm: &[u8],
         version: u32,
+        debug_chain: bool,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
-        let config = StylusConfig::version(version);
+        let config = CompileConfig::version(version, debug_chain);
         let stylus_data = bin.instrument(&config)?;
 
         let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
@@ -1618,6 +1622,11 @@ impl Machine {
         self.jump_into_func(module, func, args)?;
         self.step_n(Machine::MAX_STEPS)?;
         self.get_final_result()
+    }
+
+    pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: u64) -> Result<Vec<Value>> {
+        self.set_ink(ink);
+        self.call_function("user", func, args)
     }
 
     /// Gets the *last* global with the given name, if one exists

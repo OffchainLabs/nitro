@@ -4,7 +4,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use std::fmt::Debug;
-use wasmer_types::Bytes;
+use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
 
 #[cfg(feature = "native")]
@@ -18,29 +18,14 @@ use {
     wasmer_compiler_singlepass::Singlepass,
 };
 
-pub type OpCosts = fn(&Operator) -> u64;
-
-#[derive(Clone, Default)]
-pub struct StylusDebugParams {
-    pub debug_funcs: bool,
-    pub count_ops: bool,
-}
-
-#[derive(Clone)]
-pub struct StylusConfig {
-    pub version: u32,   // requires recompilation
-    pub costs: OpCosts, // requires recompilation
-    pub start_ink: u64,
-    pub heap_bound: Bytes, // requires recompilation
-    pub depth: DepthParams,
-    pub pricing: PricingParams,
-    pub debug: StylusDebugParams,
-}
-
 #[derive(Clone, Copy, Debug)]
-pub struct DepthParams {
+pub struct StylusConfig {
+    /// Version the program was compiled against
+    pub version: u32,
+    /// The maximum size of the stack, measured in words
     pub max_depth: u32,
-    pub max_frame_size: u32, // requires recompilation
+    /// Pricing parameters supplied at runtime
+    pub pricing: PricingParams,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -49,23 +34,14 @@ pub struct PricingParams {
     pub ink_price: u64,
     /// The amount of ink one pays to do a user_host call
     pub hostio_ink: u64,
-    /// Per-byte `MemoryFill` cost
-    pub memory_fill_ink: u64,
-    /// Per-byte `MemoryCopy` cost
-    pub memory_copy_ink: u64,
 }
 
 impl Default for StylusConfig {
     fn default() -> Self {
-        let costs = |_: &Operator| 0;
         Self {
             version: 0,
-            costs,
-            start_ink: 0,
-            heap_bound: Bytes(u32::MAX as usize),
-            depth: DepthParams::default(),
+            max_depth: u32::MAX,
             pricing: PricingParams::default(),
-            debug: StylusDebugParams::default(),
         }
     }
 }
@@ -75,59 +51,27 @@ impl Default for PricingParams {
         Self {
             ink_price: 1,
             hostio_ink: 0,
-            memory_fill_ink: 0,
-            memory_copy_ink: 0,
-        }
-    }
-}
-
-impl Default for DepthParams {
-    fn default() -> Self {
-        Self {
-            max_depth: u32::MAX,
-            max_frame_size: u32::MAX,
         }
     }
 }
 
 impl StylusConfig {
-    pub fn version(version: u32) -> Self {
-        let mut config = Self::default();
-        config.version = version;
-
-        match version {
-            0 => {}
-            1 => {
-                // TODO: settle on reasonable values for the v1 release
-                config.costs = |_| 1;
-                config.pricing.memory_fill_ink = 1;
-                config.pricing.memory_copy_ink = 1;
-                config.heap_bound = Bytes(2 * 1024 * 1024);
-                config.depth.max_depth = 1 * 1024 * 1024;
-            }
-            _ => panic!("no config exists for Stylus version {version}"),
-        };
-        config
-    }
-}
-
-impl DepthParams {
-    pub fn new(max_depth: u32, max_frame_size: u32) -> Self {
+    pub fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
+        let pricing = PricingParams::new(ink_price, hostio_ink);
         Self {
+            version,
             max_depth,
-            max_frame_size,
+            pricing,
         }
     }
 }
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub fn new(ink_price: u64, hostio_ink: u64, memory_fill: u64, memory_copy: u64) -> Self {
+    pub fn new(ink_price: u64, hostio_ink: u64) -> Self {
         Self {
             ink_price,
             hostio_ink,
-            memory_fill_ink: memory_fill,
-            memory_copy_ink: memory_copy,
         }
     }
 
@@ -140,17 +84,99 @@ impl PricingParams {
     }
 }
 
-impl StylusConfig {
+pub type OpCosts = fn(&Operator) -> u64;
+
+#[derive(Clone, Default)]
+pub struct CompileConfig {
+    /// Version of the compiler to use
+    pub version: u32,
+    /// Pricing parameters used for metering
+    pub pricing: CompilePricingParams,
+    /// Memory bounds
+    pub bounds: CompileMemoryParams,
+    /// Debug parameters for test chains
+    pub debug: CompileDebugParams,
+}
+
+#[derive(Clone, Copy)]
+pub struct CompileMemoryParams {
+    /// The maximum number of pages a program may use
+    pub heap_bound: Pages,
+    /// The maximum size of a stack frame, measured in words
+    pub max_frame_size: u32,
+}
+
+#[derive(Clone)]
+pub struct CompilePricingParams {
+    /// Associates opcodes to their ink costs
+    pub costs: OpCosts,
+    /// Per-byte `MemoryFill` cost
+    pub memory_fill_ink: u64,
+    /// Per-byte `MemoryCopy` cost
+    pub memory_copy_ink: u64,
+}
+
+#[derive(Clone, Default)]
+pub struct CompileDebugParams {
+    /// Allow debug functions
+    pub debug_funcs: bool,
+    /// Add instrumentation to count the number of times each kind of opcode is executed
+    pub count_ops: bool,
+}
+
+impl Default for CompilePricingParams {
+    fn default() -> Self {
+        Self {
+            costs: |_| 0,
+            memory_fill_ink: 0,
+            memory_copy_ink: 0,
+        }
+    }
+}
+
+impl Default for CompileMemoryParams {
+    fn default() -> Self {
+        Self {
+            heap_bound: Pages(u32::MAX / WASM_PAGE_SIZE as u32),
+            max_frame_size: u32::MAX,
+        }
+    }
+}
+
+impl CompileConfig {
+    pub fn version(version: u32, debug_chain: bool) -> Self {
+        let mut config = Self::default();
+        config.version = version;
+        config.debug.debug_funcs = debug_chain;
+
+        match version {
+            0 => {}
+            1 => {
+                // TODO: settle on reasonable values for the v1 release
+                config.bounds.heap_bound = Pages(2);
+                config.bounds.max_frame_size = 1024 * 1024;
+                config.pricing = CompilePricingParams {
+                    costs: |_| 1,
+                    memory_fill_ink: 1,
+                    memory_copy_ink: 1,
+                };
+            }
+            _ => panic!("no config exists for Stylus version {version}"),
+        }
+
+        config
+    }
+
     #[cfg(feature = "native")]
     pub fn store(&self) -> Store {
         let mut compiler = Singlepass::new();
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 
-        let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_ink));
+        let meter = MiddlewareWrapper::new(Meter::new(self.pricing.costs));
         let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
-        let depth = MiddlewareWrapper::new(DepthChecker::new(self.depth));
-        let bound = MiddlewareWrapper::new(HeapBound::new(self.heap_bound).unwrap()); // checked in new()
+        let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
+        let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));
         let start = MiddlewareWrapper::new(StartMover::default());
 
         // add the instrumentation in the order of application
@@ -170,14 +196,24 @@ impl StylusConfig {
     }
 }
 
-impl Debug for StylusConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StylusConfig")
-            .field("costs", &"λ(op) -> u64")
-            .field("start_ink", &self.start_ink)
-            .field("heap_bound", &self.heap_bound)
-            .field("depth", &self.depth)
-            .field("pricing", &self.pricing)
-            .finish()
+#[repr(C)]
+pub struct GoParams {
+    pub version: u32,
+    pub max_depth: u32,
+    pub ink_price: u64,
+    pub hostio_ink: u64,
+    pub debug_mode: u32,
+}
+
+impl GoParams {
+    pub fn configs(self) -> (CompileConfig, StylusConfig) {
+        let stylus_config = StylusConfig::new(
+            self.version,
+            self.max_depth,
+            self.ink_price,
+            self.hostio_ink,
+        );
+        let compile_config = CompileConfig::version(self.version, self.debug_mode != 0);
+        (compile_config, stylus_config)
     }
 }
