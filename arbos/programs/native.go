@@ -41,7 +41,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -71,7 +70,6 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 		db.SetCompiledWasmCode(program, result, version)
 	} else {
 		log.Debug("program failure", "err", err.Error(), "data", string(data), "program", program)
-		colors.PrintPink("ERR: ", err.Error(), " ", string(data))
 	}
 	return err
 }

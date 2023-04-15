@@ -59,11 +59,6 @@ impl NativeInstance {
         self.env().config.expect("no config")
     }
 
-    pub fn add_config(&mut self, config: StylusConfig) {
-        self.env_mut().config = Some(config);
-        self.set_stack(config.max_depth);
-    }
-
     pub fn read_slice(&self, mem: &str, ptr: usize, len: usize) -> Result<Vec<u8>> {
         let memory = self.exports.get_memory(mem)?;
         let memory = memory.view(&self.store);

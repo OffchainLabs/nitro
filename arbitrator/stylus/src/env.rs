@@ -154,14 +154,14 @@ impl WasmEnv {
         self.evm().return_data_len = len;
     }
 
-    pub fn start<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<HostioInfo<'a>, Escape> {
+    pub fn start<'a>(env: &'a mut WasmEnvMut<'_>) -> Result<HostioInfo<'a>, Escape> {
         let mut info = Self::start_free(env);
         let cost = info.config().pricing.hostio_ink;
         info.buy_ink(cost)?;
         Ok(info)
     }
 
-    pub fn start_free<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> HostioInfo<'a> {
+    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_>) -> HostioInfo<'a> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         HostioInfo { env, memory, store }

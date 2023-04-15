@@ -204,7 +204,7 @@ pub(crate) fn console_log_text(mut env: WasmEnvMut, ptr: u32, len: u32) -> Maybe
 
 pub(crate) fn console_log<T: Into<Value>>(mut env: WasmEnvMut, value: T) -> MaybeEscape {
     let env = WasmEnv::start_free(&mut env);
-    env.say(Value::from(value.into()));
+    env.say(value.into());
     Ok(())
 }
 
@@ -213,6 +213,6 @@ pub(crate) fn console_tee<T: Into<Value> + Copy>(
     value: T,
 ) -> Result<T, Escape> {
     let env = WasmEnv::start_free(&mut env);
-    env.say(Value::from(value.into()));
+    env.say(value.into());
     Ok(value)
 }

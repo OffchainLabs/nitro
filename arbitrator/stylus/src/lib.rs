@@ -179,7 +179,7 @@ pub unsafe extern "C" fn stylus_call(
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, compile_config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(module, compile_config) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),

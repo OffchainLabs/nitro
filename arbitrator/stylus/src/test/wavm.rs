@@ -94,7 +94,6 @@ fn test_start() -> Result<()> {
 
     let compile = test_compile_config();
     let mut machine = &mut new_test_machine("tests/start.wat", &compile)?;
-    machine.set_stack(u32::MAX);
     check(machine, 10)?;
 
     let call = |mech: &mut Machine, name: &str| mech.call_function("user", name, vec![]);

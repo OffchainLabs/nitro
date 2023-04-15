@@ -29,7 +29,7 @@ mod native;
 mod wavm;
 
 impl NativeInstance {
-    pub(crate) fn new_test(path: &str, compile: CompileConfig) -> Result<NativeInstance> {
+    fn new_test(path: &str, compile: CompileConfig) -> Result<NativeInstance> {
         let mut store = compile.store();
         let imports = imports! {
             "test" => {
@@ -42,14 +42,14 @@ impl NativeInstance {
         Ok(native)
     }
 
-    pub(crate) fn new_from_store(path: &str, mut store: Store, imports: Imports) -> Result<Self> {
+    fn new_from_store(path: &str, mut store: Store, imports: Imports) -> Result<Self> {
         let wat = std::fs::read(path)?;
         let module = Module::new(&store, wat)?;
         let native = Instance::new(&mut store, &module, &imports)?;
         Ok(Self::new_sans_env(native, store))
     }
 
-    pub(crate) fn new_vanilla(path: &str) -> Result<Self> {
+    fn new_vanilla(path: &str) -> Result<Self> {
         let mut compiler = Singlepass::new();
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
@@ -61,12 +61,12 @@ impl NativeInstance {
         Ok(NativeInstance::new_sans_env(instance, store))
     }
 
-    pub(crate) fn new_sans_env(instance: Instance, mut store: Store) -> Self {
+    fn new_sans_env(instance: Instance, mut store: Store) -> Self {
         let env = FunctionEnv::new(&mut store, WasmEnv::default());
         Self::new(instance, store, env)
     }
 
-    pub(crate) fn new_with_evm(
+    fn new_with_evm(
         file: &str,
         compile: CompileConfig,
         config: StylusConfig,
@@ -110,7 +110,6 @@ fn test_compile_config() -> CompileConfig {
 
 fn uniform_cost_config() -> StylusConfig {
     let mut stylus_config = StylusConfig::default();
-    //config.start_ink = 1_000_000;
     stylus_config.pricing.ink_price = 100_00;
     stylus_config.pricing.hostio_ink = 100;
     stylus_config
@@ -124,7 +123,7 @@ fn test_configs() -> (CompileConfig, StylusConfig, u64) {
     )
 }
 
-pub(crate) fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
+fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
@@ -150,7 +149,7 @@ pub(crate) fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Ma
     Ok(mach)
 }
 
-pub(crate) fn run_native(native: &mut NativeInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
+fn run_native(native: &mut NativeInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
     let config = native.env().config.expect("no config").clone();
     match native.run_main(&args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
@@ -158,7 +157,7 @@ pub(crate) fn run_native(native: &mut NativeInstance, args: &[u8], ink: u64) -> 
     }
 }
 
-pub(crate) fn run_machine(
+fn run_machine(
     machine: &mut Machine,
     args: &[u8],
     config: StylusConfig,
@@ -170,10 +169,7 @@ pub(crate) fn run_machine(
     }
 }
 
-pub(crate) fn check_instrumentation(
-    mut native: NativeInstance,
-    mut machine: Machine,
-) -> Result<()> {
+fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
     assert_eq!(native.ink_left(), machine.ink_left());
     assert_eq!(native.stack_left(), machine.stack_left());
 
