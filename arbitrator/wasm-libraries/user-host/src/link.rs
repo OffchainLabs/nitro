@@ -6,7 +6,10 @@ use arbutil::{heapify, wavm};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::{config::{GoParams, CompileConfig, StylusConfig}, run::UserOutcomeKind},
+    programs::{
+        config::{CompileConfig, GoParams, StylusConfig},
+        run::UserOutcomeKind,
+    },
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
