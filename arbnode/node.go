@@ -948,7 +948,7 @@ func createNodeImpl(
 			txStreamer,
 			l2BlockChain,
 			chainDb,
-			rawdb.NewTable(arbDb, blockValidatorPrefix),
+			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
 			&configFetcher.Get().BlockValidator,
 		)
