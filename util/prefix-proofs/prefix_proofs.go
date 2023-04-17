@@ -342,6 +342,12 @@ func GeneratePrefixProof(
 	leaves []common.Hash,
 	rootFetcher MerkleExpansionRootFetcherFunc,
 ) ([]common.Hash, error) {
+	if prefixHeight == 0 {
+		return nil, errors.Wrap(ErrCannotBeZero, "prefixHeight was 0")
+	}
+	if len(leaves) == 0 {
+		return nil, errors.Wrap(ErrCannotBeZero, "length of leaves was 0")
+	}
 	height := prefixHeight
 	postHeight := height + uint64(len(leaves))
 	proof, _ := prefixExpansion.Compact()
