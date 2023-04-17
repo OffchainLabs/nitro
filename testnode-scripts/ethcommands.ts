@@ -109,7 +109,7 @@ export const createERC20Command = {
         argv.provider
       )
     );
-    const contract = await contractFactory.deploy("AppTestToken", "APP", 1000000000, namedAccount(argv.mintTo).address);
+    const contract = await contractFactory.deploy("AppTestToken", "APP", ethers.utils.parseEther("1000000000"), namedAccount(argv.mintTo).address);
     await contract.deployTransaction.wait();
 
     console.log("Contract deployed at address:", contract.address);
