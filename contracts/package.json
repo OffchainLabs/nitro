@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "4.5.0",
-    "@openzeppelin/contracts-upgradeable": "4.5.2",
+    "@openzeppelin/contracts-upgradeable": "4.8.3",
     "hardhat": "^2.6.6",
     "patch-package": "^6.4.7"
   },
