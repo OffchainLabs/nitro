@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -78,24 +79,33 @@ func (m *MessagePruner) prune(ctx context.Context) {
 	if endBatchCount == 0 {
 		return
 	}
-	if endBatchCount > 1 {
-		err = deleteFromRange(m.inboxTracker.db, sequencerBatchMetaPrefix, 1, endBatchCount-1)
-		if err != nil {
-			log.Error("error deleting batch metadata: %w", err)
-			return
-		}
-	}
 	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(endBatchCount - 1)
 	if err != nil {
 		log.Error("error getting last batch metadata: %w", err)
 		return
 	}
-	err = deleteFromRange(m.transactionStreamer.db, messagePrefix, 1, uint64(endBatchMetadata.MessageCount)-1)
-	if err != nil {
-		log.Error("error deleting last batch messages: %w", err)
+	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, m.inboxTracker.db, m.transactionStreamer.db)
+
+}
+
+func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
+	if endBatchCount > 1 {
+		err := deleteFromRange(inboxTrackerDb, sequencerBatchMetaPrefix, 1, endBatchCount-1)
+		if err != nil {
+			log.Error("error deleting batch metadata: %w", err)
+			return
+		}
 	}
-	err = deleteFromRange(m.inboxTracker.db, rlpDelayedMessagePrefix, 1, endBatchMetadata.DelayedMessageCount-1)
-	if err != nil {
-		log.Error("error deleting last batch delayed messages: %w", err)
+	if endBatchMetadata.MessageCount > 1 {
+		err := deleteFromRange(transactionStreamerDb, messagePrefix, 1, uint64(endBatchMetadata.MessageCount)-1)
+		if err != nil {
+			log.Error("error deleting last batch messages: %w", err)
+		}
+	}
+	if endBatchMetadata.DelayedMessageCount > 1 {
+		err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, 1, endBatchMetadata.DelayedMessageCount-1)
+		if err != nil {
+			log.Error("error deleting last batch delayed messages: %w", err)
+		}
 	}
 }
