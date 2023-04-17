@@ -58,19 +58,20 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --dev)
-            while [[ $# -gt 0 && $1 != -* ]]; do
-                if [[ $1 == "nitro" ]]; then
-                    dev_build_nitro=true
-                elif [[ $1 == "blockscout" ]]; then
-                    dev_build_blockscout=true
-                fi
-                shift
-            done
-            if [[ $dev_build_nitro == false ]] && [[ $dev_build_blockscout == false ]]; then
+            shift
+            if [[ $# -eq 0 || $1 == -* ]]; then
+                # If no argument after --dev, set both flags to true
                 dev_build_nitro=true
                 dev_build_blockscout=true
-                shift
-                shift
+            else
+                while [[ $# -gt 0 && $1 != -* ]]; do
+                    if [[ $1 == "nitro" ]]; then
+                        dev_build_nitro=true
+                    elif [[ $1 == "blockscout" ]]; then
+                        dev_build_blockscout=true
+                    fi
+                    shift
+                done
             fi
             ;;
         --build)
