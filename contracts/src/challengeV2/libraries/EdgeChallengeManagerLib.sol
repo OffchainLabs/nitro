@@ -420,7 +420,7 @@ library EdgeChallengeManagerLib {
     }
 
     /// @notice Confirm an edge by executing a one step proof
-    /// @dev    One step proofs can only be executed against edges that are rivaled, length one and of type SmallStep
+    /// @dev    One step proofs can only be executed against edges that have length one and of type SmallStep
     /// @param store                        The edge store containing all edges and rival data
     /// @param edgeId                       The id of the edge to confirm
     /// @param oneStepProofEntry            The one step proof contract
@@ -438,9 +438,9 @@ library EdgeChallengeManagerLib {
         require(store.edges[edgeId].exists(), "Edge does not exist");
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
 
-        // edge must have rivals, be length one and be of type SmallStep
+        // edge must be length one and be of type SmallStep
         require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
-        require(hasLengthOneRival(store, edgeId), "Edge does not have single step rival");
+        require(store.edges[edgeId].length() == 1, "Edge does not have single step");
 
         // the state in the onestep data must be committed to by the startHistoryRoot
         require(

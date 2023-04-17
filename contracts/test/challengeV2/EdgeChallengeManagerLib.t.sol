@@ -1363,12 +1363,8 @@ contract EdgeChallengeManagerLibTest is Test {
         confirmByOneStep(3, "Edge is not a small step");
     }
 
-    function testConfirmByOneStepNoRival() public {
-        confirmByOneStep(4, "Edge does not have single step rival");
-    }
-
     function testConfirmByOneStepNotLengthOne() public {
-        confirmByOneStep(5, "Edge does not have single step rival");
+        confirmByOneStep(5, "Edge does not have single step");
     }
 
     function testConfirmByOneStepBadStartProof() public {
