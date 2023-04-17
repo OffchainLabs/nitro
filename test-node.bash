@@ -58,9 +58,6 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --dev)
-            dev_build_nitro=true
-            dev_build_blockscout=true
-            shift
             while [[ $# -gt 0 && $1 != -* ]]; do
                 if [[ $1 == "nitro" ]]; then
                     dev_build_nitro=true
@@ -69,6 +66,10 @@ while [[ $# -gt 0 ]]; do
                 fi
                 shift
             done
+            if [[ $dev_build_nitro == false ]] && [[ $dev_build_blockscout == false ]]; then
+                dev_build_nitro=true
+                dev_build_blockscout=true
+            fi
             ;;
         --build)
             force_build=true
