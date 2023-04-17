@@ -132,9 +132,11 @@ library ChallengeManagerLib {
         bytes32 challengeId = vertices[vId].challengeId;
         require(challenges[challengeId].winningClaim == 0, "Winner already declared");
 
-        bytes32 predecessorId = vertices[vId].predecessorId;
-        require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
-        require(vertices[predecessorId].psId != vId, "Cannot bisect presumptive successor");
+        {
+            bytes32 predecessorId = vertices[vId].predecessorId;
+            require(vertices[predecessorId].exists(), "Predecessor vertex does not exist");
+            require(vertices[predecessorId].psId != vId, "Cannot bisect presumptive successor");
+        }
 
         uint256 bHeight = ChallengeManagerLib.bisectionHeight(vertices, vId);
         (bytes32[] memory preExpansion, bytes32[] memory proof) = abi.decode(prefixProof, (bytes32[], bytes32[]));

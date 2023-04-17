@@ -33,7 +33,7 @@ struct AssertionNode {
     // HN: TODO: Add new fields below
     uint64 secondChildBlock;
     // HN: TODO: Adding these for simplier getter, but these should be proved from the hashes
-    uint256 height; // in stateHash
+    uint256 height; // in stateHash // TODO: This can be removed as block edge height is constant
     uint256 inboxMsgCountSeen; // in stateHash
     bool isFirstChild; // in assertionHash
     // HN: TODO: Pick block or timestamp

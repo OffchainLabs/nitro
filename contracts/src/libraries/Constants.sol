@@ -14,3 +14,10 @@ uint256 constant ETH_POS_BLOCK_TIME = 12;
 
 address constant UNISWAP_L1_TIMELOCK = 0x1a9C8182C09F50C8318d769245beA52c32BE35BC;
 address constant UNISWAP_L2_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
+
+// TODO: These are temporary values, and should be updated to the correct value
+// TODO: Make this too large will cause the foundry test to fail generating random proofs
+// TODO: Also some tests are hardcoded to only work with these values for now
+uint256 constant LAYERZERO_BLOCKEDGE_HEIGHT = 2 ** 5;
+uint256 constant LAYERZERO_BIGSTEPEDGE_HEIGHT = 2 ** 5;
+uint256 constant LAYERZERO_SMALLSTEPEDGE_HEIGHT = 2 ** 5;

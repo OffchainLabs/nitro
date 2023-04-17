@@ -693,7 +693,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
     }
 
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
-        revert("DEPRECATED");
+        if(getAssertionStorage(getAssertionNum(assertionId)).secondChildBlock > 0){
+            return assertionId;
+        } else {
+            return bytes32(0);
+        }
     }
 
     // HN: TODO: use block or timestamp?
@@ -707,6 +711,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable, IAssertionChai
 
     function isFirstChild(bytes32 assertionId) external view returns (bool){
         return getAssertionStorage(getAssertionNum(assertionId)).isFirstChild;
+    }
+
+    function isPending(bytes32 assertionId) external view returns (bool){
+        return getAssertionNum(assertionId) >= _firstUnresolvedAssertion;
     }
 
     // HN: TODO: decide to keep using index or hash

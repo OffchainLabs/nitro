@@ -4,6 +4,7 @@ pragma solidity ^0.8.17;
 import "./libraries/UintUtilsLib.sol";
 import "./DataEntities.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
+import "../libraries/Constants.sol";
 
 interface IEdgeChallengeManager {
     // Checks if an edge by ID exists.
@@ -90,7 +91,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     using ChallengeEdgeLib for ChallengeEdge;
 
     event Bisected(bytes32 bisectedEdgeId);
-    event LevelZeroEdgeAdded(bytes32 edgeId);
+    event LayerZeroEdgeAdded(bytes32 edgeId);
 
     EdgeStore internal store;
 
@@ -123,33 +124,121 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
     function createLayerZeroEdge(
         CreateEdgeArgs memory args,
-        bytes calldata, // CHRIS: TODO: not yet implemented
-        bytes calldata
+        bytes calldata prefixProof,
+        bytes calldata proof
     ) external payable returns (bytes32) {
         bytes32 originId;
+        require(args.startHeight == 0, "Start height is not 0");
         if (args.edgeType == EdgeType.Block) {
-            // CHRIS: TODO: check that the assertion chain is in a fork
-
-            // challenge id is the assertion which is the root of challenge
+            // origin id is the assertion which is the root of challenge
             originId = assertionChain.getPredecessorId(args.claimId);
-            // CHRIS: TODO: add a check that there is a fork in the assertion chain
-        } else if (args.edgeType == EdgeType.BigStep) {
-            require(store.get(args.claimId).eType == EdgeType.Block, "Claim challenge type is not Block");
+            // HN: TODO: check if prev is rejected
+            require(assertionChain.isPending(args.claimId), "Claim assertion is not pending");
+            require(assertionChain.getSuccessionChallenge(originId) != 0, "Assertion is not in a fork");
 
-            originId = store.get(args.claimId).mutualId();
-            require(store.hasRival(args.claimId), "Claim does not have rival");
-        } else if (args.edgeType == EdgeType.SmallStep) {
-            require(store.get(args.claimId).eType == EdgeType.BigStep, "Claim challenge type is not BigStep");
+            require(args.endHeight == LAYERZERO_BLOCKEDGE_HEIGHT, "Invalid block edge end height");
 
-            originId = store.get(args.claimId).mutualId();
-            require(store.hasRival(args.claimId), "Claim does not have rival");
+            // check that the start history root is the hash of the previous assertion
+            require(args.startHistoryRoot == keccak256(abi.encodePacked(assertionChain.getStateHash(originId))), "Start history root does not match previous assertion");
+
+            // check that the end history root is consistent with the claim
+            require(proof.length > 0, "Block edge specific proof is empty");
+            (bytes32[] memory inclusionProof) = abi.decode(proof, (bytes32[]));
+            require(
+                MerkleTreeLib.verifyInclusionProof(
+                    args.endHistoryRoot,
+                    assertionChain.getStateHash(args.claimId),
+                    LAYERZERO_BLOCKEDGE_HEIGHT,
+                    inclusionProof
+                ),
+                "End history root does not include claim"
+            );          
+
+            // HN: TODO: do we want to enforce this here? if no block edge is created the rollup cannot confirm by timer on its own
+            // HN: TODO: spec said 2 challenge period, should we change it to 1?
+            // check if the top level challenge has reached the end time
+            require(block.timestamp - assertionChain.getFirstChildCreationTime(originId) < 2 * challengePeriodSec, "Challenge period has expired");
         } else {
-            revert("Unexpected challenge type");
+            // common logics for sub-challenges with a higher level claim
+            ChallengeEdge storage claimEdge = store.get(args.claimId);
+            // origin id is the mutual id of the claim
+            originId = claimEdge.mutualId();
+            require(claimEdge.status == EdgeStatus.Pending, "Claim is not pending");
+            require(store.hasLengthOneRival(args.claimId), "Claim does not have length 1 rival");
+
+            // check that the start history root match the mutual startHistoryRoot
+            require(args.startHistoryRoot == claimEdge.startHistoryRoot, "Start history root does not match mutual startHistoryRoot");
+
+            require(proof.length > 0, "Edge type specific proof is empty");
+            (bytes32 endState, bytes32[] memory claimInclusionProof, bytes32[] memory edgeInclusionProof) = abi.decode(proof, (bytes32, bytes32[], bytes32[]));
+
+            // if endState is consistent with the claim and endHistoryRoot, then endHistoryRoot is consistent with the claim
+            // check the endState is consistent with the claim
+            require(
+                MerkleTreeLib.verifyInclusionProof(
+                    claimEdge.endHistoryRoot,
+                    endState,
+                    1,
+                    claimInclusionProof
+                ),
+                "End state does not consistent with the claim"
+            );
+            // we check the endState is consistent with the endHistoryRoot within the below block
+
+            ChallengeEdge storage topLevelEdge;
+            if (args.edgeType == EdgeType.BigStep) {
+                require(claimEdge.eType == EdgeType.Block, "Claim challenge type is not Block");
+                require(args.endHeight == LAYERZERO_BIGSTEPEDGE_HEIGHT, "Invalid bigstep edge end height");
+
+                // check the endState is consistent with the endHistoryRoot
+                require(
+                    MerkleTreeLib.verifyInclusionProof(
+                        args.endHistoryRoot,
+                        endState,
+                        LAYERZERO_BIGSTEPEDGE_HEIGHT,
+                        edgeInclusionProof
+                    ),
+                    "End state does not consistent with endHistoryRoot"
+                );
+
+                topLevelEdge = claimEdge;
+            } else if (args.edgeType == EdgeType.SmallStep) {
+                require(claimEdge.eType == EdgeType.BigStep, "Claim challenge type is not BigStep");
+                require(args.endHeight == LAYERZERO_SMALLSTEPEDGE_HEIGHT, "Invalid smallstep edge end height");
+
+                // check the endState is consistent with the endHistoryRoot
+                require(
+                    MerkleTreeLib.verifyInclusionProof(
+                        args.endHistoryRoot,
+                        endState,
+                        LAYERZERO_SMALLSTEPEDGE_HEIGHT,
+                        edgeInclusionProof
+                    ),
+                    "End state does not consistent with endHistoryRoot"
+                );
+
+                // origin of the smallstep edge is the mutual id of block edge
+                // TODO: make a getter in EdgeChallengeManagerLib instead of reading store.firstRivals directly
+                topLevelEdge = store.get(store.firstRivals[claimEdge.originId]);
+            } else {
+                revert("Unexpected challenge type");
+            }
+
+            // check if the top level challenge has reached the end time
+            require(block.timestamp - topLevelEdge.createdWhen < challengePeriodSec, "Challenge period has expired");
+        }
+
+        // prove that the start root is a prefix of the end root
+        {
+            require(prefixProof.length > 0, "Prefix proof is empty");
+            (bytes32[] memory preExpansion, bytes32[] memory preProof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
+            MerkleTreeLib.verifyPrefixProof(
+                args.startHistoryRoot, args.startHeight + 1, args.endHistoryRoot, args.endHeight + 1, preExpansion, preProof
+            );
         }
 
         // CHRIS: TODO: sub challenge specific checks, also start and end consistency checks, and claim consistency checks
         // CHRIS: TODO: check the ministake was provided
-        // CHRIS: TODO: also prove that the the start root is a prefix of the end root
         // CHRIS: TODO: we had inclusion proofs before?
 
         // CHRIS: TODO: currently the claim id is not part of the edge id hash, this means that two edges with the same id cannot have a different claim id
@@ -169,7 +258,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
         store.add(ce);
 
-        emit LevelZeroEdgeAdded(ce.idMem());
+        emit LayerZeroEdgeAdded(ce.idMem());
 
         return ce.idMem();
     }

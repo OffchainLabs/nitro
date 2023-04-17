@@ -109,6 +109,11 @@ contract AssertionChain is IAssertionChain {
         return assertions[assertionId].isFirstChild;
     }
 
+    function isPending(bytes32 assertionId) external view returns (bool) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].status == Status.Pending;
+    }
+
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256) {
         require(assertionExists(assertionId), "Assertion does not exist");
         return assertions[assertionId].firstChildCreationTime;

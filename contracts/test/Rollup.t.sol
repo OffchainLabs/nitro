@@ -347,8 +347,7 @@ contract RollupTest is Test {
     }
 
     function testSuccessCreateChallenge() public returns(bytes32) {
-        (,ExecutionState memory afterState,,uint256 genesisInboxCount) = testSuccessCreateSecondChild();
-        vm.prank(validator1);
+        (,,,uint256 genesisInboxCount) = testSuccessCreateSecondChild();
 
         bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(1));
         bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(2));
@@ -356,9 +355,8 @@ contract RollupTest is Test {
         bytes32[] memory states0 = new bytes32[](1);
         states0[0] = h0;
 
-        bytes32[] memory states = fillStatesInBetween(h0, h1, 9);
-        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, 9));
-
+        bytes32[] memory states = fillStatesInBetween(h0, h1, LAYERZERO_BLOCKEDGE_HEIGHT + 1);
+        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, LAYERZERO_BLOCKEDGE_HEIGHT + 1));
 
         bytes32 e1Id = challengeManager.createLayerZeroEdge{value: 1}(
             CreateEdgeArgs({
@@ -366,14 +364,42 @@ contract RollupTest is Test {
                 startHistoryRoot: MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states0, 0, 1)),
                 startHeight: 0,
                 endHistoryRoot: root,
-                endHeight: 8,
+                endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
                 claimId: userRollup.getAssertionId(2)
             }),
-            "",
-            ""
+            abi.encode(ProofUtils.expansionFromLeaves(states, 0, 1), ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))),
+            abi.encode(ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1))
         );
 
         return e1Id;
+    }
+
+    function testSuccessCreate2Edge() public returns(bytes32, bytes32) {
+        bytes32 e1Id = testSuccessCreateChallenge();
+
+        bytes32 h0 = userRollup.getStateHash(userRollup.getAssertionId(1));
+        bytes32 h1 = userRollup.getStateHash(userRollup.getAssertionId(3));
+
+        bytes32[] memory states0 = new bytes32[](1);
+        states0[0] = h0;
+
+        bytes32[] memory states = fillStatesInBetween(h0, h1, LAYERZERO_BLOCKEDGE_HEIGHT + 1);
+        bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, LAYERZERO_BLOCKEDGE_HEIGHT + 1));
+
+        bytes32 e2Id = challengeManager.createLayerZeroEdge{value: 1}(
+            CreateEdgeArgs({
+                edgeType: EdgeType.Block,
+                startHistoryRoot: MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states0, 0, 1)),
+                startHeight: 0,
+                endHistoryRoot: root,
+                endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
+                claimId: userRollup.getAssertionId(3)
+            }),
+            abi.encode(ProofUtils.expansionFromLeaves(states, 0, 1), ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))),
+            abi.encode(ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1))
+        );
+
+        return (e1Id, e2Id);
     }
 
     function fillStatesInBetween(bytes32 start, bytes32 end, uint256 totalCount) internal returns(bytes32[] memory) {

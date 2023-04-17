@@ -12,7 +12,9 @@ struct MockAssertion {
     bytes32 stateHash;
     bytes32 successionChallenge;
     uint256 firstChildCreationTime;
+    uint256 secondChildCreationTime;
     bool isFirstChild;
+    bool isPending;
 }
 
 contract MockAssertionChain is IAssertionChain {
@@ -44,7 +46,11 @@ contract MockAssertionChain is IAssertionChain {
 
     function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32) {
         require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].successionChallenge;
+        if(assertions[assertionId].secondChildCreationTime > 0){
+            return assertionId;
+        } else {
+            return bytes32(0);
+        }
     }
 
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256) {
@@ -57,12 +63,25 @@ contract MockAssertionChain is IAssertionChain {
         return assertions[assertionId].isFirstChild;
     }
 
+    function isPending(bytes32 assertionId) external view returns (bool) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].isPending;
+    }
+
     function calculateAssertionId(bytes32 predecessorId, uint256 height, bytes32 stateHash)
         public
         pure
         returns (bytes32)
     {
         return keccak256(abi.encodePacked(predecessorId, height, stateHash));
+    }
+
+    function childCreated(bytes32 assertionId) internal {
+        if (assertions[assertionId].firstChildCreationTime == 0) {
+            assertions[assertionId].firstChildCreationTime = block.timestamp;
+        } else if (assertions[assertionId].secondChildCreationTime == 0) {
+            assertions[assertionId].secondChildCreationTime = block.timestamp;
+        }
     }
 
     function addAssertionUnsafe(
@@ -80,8 +99,11 @@ contract MockAssertionChain is IAssertionChain {
             stateHash: stateHash,
             successionChallenge: successionChallenge,
             firstChildCreationTime: 0,
-            isFirstChild: assertions[predecessorId].firstChildCreationTime != 0
+            secondChildCreationTime: 0,
+            isFirstChild: assertions[predecessorId].firstChildCreationTime != 0,
+            isPending: true
         });
+        childCreated(predecessorId);
         return assertionId;
     }
 
