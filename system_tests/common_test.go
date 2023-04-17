@@ -282,6 +282,7 @@ func DeployOnTestL1(
 		func() *headerreader.Config { return &headerreader.TestConfig },
 		validator.DefaultNitroMachineConfig,
 		config,
+		common.Address{},
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)

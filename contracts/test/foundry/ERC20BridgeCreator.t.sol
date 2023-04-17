@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import "./util/TestUtil.sol";
 import "../../src/rollup/ERC20BridgeCreator.sol";
 import "../../src/bridge/ISequencerInbox.sol";
+import "../../src/bridge/AbsInbox.sol";
 
 contract ERC20BridgeCreatorTest is Test {
     ERC20BridgeCreator public creator;
@@ -61,16 +62,20 @@ contract ERC20BridgeCreatorTest is Test {
         timeVars.delayBlocks;
 
         (
-            ERC20Bridge bridge,
+            IBridge bridge,
             SequencerInbox seqInbox,
-            ERC20Inbox inbox,
-            RollupEventInbox eventInbox,
+            IInbox inbox,
+            IRollupEventInbox eventInbox,
             Outbox outbox
         ) = creator.createBridge(proxyAdmin, rollup, nativeToken, timeVars);
 
         // bridge
         assertEq(address(bridge.rollup()), rollup, "Invalid rollup ref");
-        assertEq(address(bridge.nativeToken()), nativeToken, "Invalid nativeToken ref");
+        assertEq(
+            address(IERC20Bridge(address(bridge)).nativeToken()),
+            nativeToken,
+            "Invalid nativeToken ref"
+        );
         assertEq(bridge.activeOutbox(), address(0), "Invalid activeOutbox ref");
 
         // seqInbox
@@ -91,7 +96,7 @@ contract ERC20BridgeCreatorTest is Test {
         assertEq(address(inbox.bridge()), address(bridge), "Invalid bridge ref");
         assertEq(address(inbox.sequencerInbox()), address(seqInbox), "Invalid seqInbox ref");
         assertEq(inbox.allowListEnabled(), false, "Invalid allowListEnabled");
-        assertEq(inbox.paused(), false, "Invalid paused status");
+        assertEq(AbsInbox(address(inbox)).paused(), false, "Invalid paused status");
 
         // rollup event inbox
         assertEq(address(eventInbox.bridge()), address(bridge), "Invalid bridge ref");

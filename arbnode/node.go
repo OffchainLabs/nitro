@@ -59,6 +59,7 @@ type RollupAddresses struct {
 	Inbox                  common.Address `json:"inbox"`
 	SequencerInbox         common.Address `json:"sequencer-inbox"`
 	Rollup                 common.Address `json:"rollup"`
+	NativeERC20Token       common.Address `json:"native-erc20-token"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
 	DeployedAt             uint64         `json:"deployed-at"`
@@ -69,6 +70,7 @@ type RollupAddressesConfig struct {
 	Inbox                  string `koanf:"inbox"`
 	SequencerInbox         string `koanf:"sequencer-inbox"`
 	Rollup                 string `koanf:"rollup"`
+	NativeERC20Token       string `koanf:"native-erc20-token"`
 	ValidatorUtils         string `koanf:"validator-utils"`
 	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
 	DeployedAt             uint64 `koanf:"deployed-at"`
@@ -81,6 +83,7 @@ func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".inbox", "", "the inbox contract address")
 	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
 	f.String(prefix+".rollup", "", "the rollup contract address")
+	f.String(prefix+".native-erc20-token", "", "address of ERC20 token which is used as native L2 currency")
 	f.String(prefix+".validator-utils", "", "the validator utils contract address")
 	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
 	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
@@ -95,6 +98,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		c.Inbox,
 		c.SequencerInbox,
 		c.Rollup,
+		c.NativeERC20Token,
 		c.ValidatorUtils,
 		c.ValidatorWalletCreator,
 	}
@@ -103,6 +107,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		&a.Inbox,
 		&a.SequencerInbox,
 		&a.Rollup,
+		&a.NativeERC20Token,
 		&a.ValidatorUtils,
 		&a.ValidatorWalletCreator,
 	}
@@ -111,6 +116,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		"Inbox",
 		"SequencerInbox",
 		"Rollup",
+		"NativeERC20Token",
 		"ValidatorUtils",
 		"ValidatorWalletCreator",
 	}
@@ -189,6 +195,19 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return bridgeCreatorAddr, nil
 }
 
+func deployERC20BridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, error) {
+	client := l1Reader.Client()
+
+	bridgeCreatorAddr, tx, _, err := rollupgen.DeployERC20BridgeCreator(auth, client)
+
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("erc20 bridge creator deploy error: %w", err)
+	}
+
+	return bridgeCreatorAddr, nil
+}
+
 func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
 	client := l1Reader.Client()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
@@ -230,45 +249,85 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
-	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, err
-	}
-
+func deployRollupDependencies(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, common.Address, common.Address, common.Address, common.Address, common.Address, error) {
 	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, err
+		return common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
+		return common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
 	}
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
+	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: %w", err)
+	}
+
+	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
+	}
+
+	return ospEntryAddr, challengeManagerAddr, rollupAdminLogic, rollupUserLogic, validatorUtils, validatorWalletCreator, nil
+}
+
+func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
+	ospEntryAddr, challengeManagerAddr, rollupAdminLogic, rollupUserLogic, validatorUtils, validatorWalletCreator, err := deployRollupDependencies(ctx, l1Reader, auth)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	}
+	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	}
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
-	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, l1Reader.Client())
+	tx, err = rollupCreator.SetTemplates(
+		auth,
+		bridgeCreator,
+		ospEntryAddr,
+		challengeManagerAddr,
+		rollupAdminLogic,
+		rollupUserLogic,
+		validatorUtils,
+		validatorWalletCreator,
+	)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
 	}
 
-	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, l1Reader.Client())
+	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
+}
+
+func deployERC20RollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, nativeERC20Token common.Address) (*rollupgen.ERC20RollupCreator, common.Address, common.Address, common.Address, error) {
+	ospEntryAddr, challengeManagerAddr, rollupAdminLogic, rollupUserLogic, validatorUtils, validatorWalletCreator, err := deployRollupDependencies(ctx, l1Reader, auth)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	}
+	bridgeCreator, err := deployERC20BridgeCreator(ctx, l1Reader, auth)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
+	}
+	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployERC20RollupCreator(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
 	tx, err = rollupCreator.SetTemplates(
@@ -314,7 +373,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, machineConfig validator.NitroMachineConfig, config rollupgen.Config, nativeERC20Token common.Address) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -327,34 +386,83 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		}
 	}
 
-	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
-	if err != nil {
-		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
+	var validatorUtils, validatorWalletCreator, bridgeAddr, inboxAddr, sequencerInboxAddr, rollupAddr common.Address
+	var tx *types.Transaction
+	var deployedAt uint64
+
+	if nativeERC20Token == (common.Address{}) {
+		/// deploy standard Eth rollup
+		rollupCreator, rollupCreatorAddress, _validatorUtils, _validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+		if err != nil {
+			return nil, fmt.Errorf("error deploying rollup creator: %w", err)
+		}
+		validatorUtils, validatorWalletCreator = _validatorUtils, _validatorWalletCreator
+
+		nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
+		if err != nil {
+			return nil, fmt.Errorf("error getting pending nonce: %w", err)
+		}
+
+		expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
+		tx, err := rollupCreator.CreateRollup(
+			deployAuth,
+			config,
+			expectedRollupAddr,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
+		}
+
+		receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+		if err != nil {
+			return nil, fmt.Errorf("error executing create rollup tx: %w", err)
+		}
+		deployedAt = receipt.BlockNumber.Uint64()
+
+		info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing rollup created log: %w", err)
+		}
+
+		bridgeAddr, inboxAddr, sequencerInboxAddr, rollupAddr = info.Bridge, info.InboxAddress, info.SequencerInbox, info.RollupAddress
+	} else {
+		/// deploy ERC20 rollup
+		rollupCreator, rollupCreatorAddress, _validatorUtils, _validatorWalletCreator, err := deployERC20RollupCreator(ctx, l1Reader, deployAuth, nativeERC20Token)
+		if err != nil {
+			return nil, fmt.Errorf("error deploying rollup creator: %w", err)
+		}
+		validatorUtils, validatorWalletCreator = _validatorUtils, _validatorWalletCreator
+
+		nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
+		if err != nil {
+			return nil, fmt.Errorf("error getting pending nonce: %w", err)
+		}
+
+		expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
+		tx, err := rollupCreator.CreateRollup(
+			deployAuth,
+			config,
+			expectedRollupAddr,
+			nativeERC20Token,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error submitting create erc20 rollup tx: %w", err)
+		}
+
+		receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+		if err != nil {
+			return nil, fmt.Errorf("error executing create rollup tx: %w", err)
+		}
+
+		info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing rollup created log: %w", err)
+		}
+
+		bridgeAddr, inboxAddr, sequencerInboxAddr, rollupAddr = info.Bridge, info.InboxAddress, info.SequencerInbox, info.RollupAddress
 	}
 
-	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
-	if err != nil {
-		return nil, fmt.Errorf("error getting pending nonce: %w", err)
-	}
-	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
-	tx, err := rollupCreator.CreateRollup(
-		deployAuth,
-		config,
-		expectedRollupAddr,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
-	}
-	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
-	if err != nil {
-		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
-	}
-	info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
-	if err != nil {
-		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
-	}
-
-	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
+	sequencerInbox, err := bridgegen.NewSequencerInbox(sequencerInboxAddr, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
 	}
@@ -375,7 +483,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		allowValidators = append(allowValidators, true)
 	}
 	if len(validatorAddrs) > 0 {
-		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+		rollup, err := rollupgen.NewRollupAdminLogic(rollupAddr, l1client)
 		if err != nil {
 			return nil, fmt.Errorf("error getting rollup admin: %w", err)
 		}
@@ -387,13 +495,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}
 
 	return &RollupAddresses{
-		Bridge:                 info.Bridge,
-		Inbox:                  info.InboxAddress,
-		SequencerInbox:         info.SequencerInbox,
-		DeployedAt:             receipt.BlockNumber.Uint64(),
-		Rollup:                 info.RollupAddress,
+		Bridge:                 bridgeAddr,
+		Inbox:                  inboxAddr,
+		SequencerInbox:         sequencerInboxAddr,
+		DeployedAt:             deployedAt,
+		Rollup:                 rollupAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
+		NativeERC20Token:       nativeERC20Token,
 	}, nil
 }
 

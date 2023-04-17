@@ -36,6 +36,7 @@ func main() {
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
 	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
 	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
+	nativeERC20TokenAddressString := flag.String("nativeERC20TokenAddress", "", "address of ERC20 token which is used as native L2 currency")
 	loserEscrowAddressString := flag.String("loserEscrowAddress", "", "the address which half of challenge loser's funds accumulate at")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
@@ -101,6 +102,7 @@ func main() {
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
 
+	nativeERC20Token := common.HexToAddress(*nativeERC20TokenAddressString)
 	deployPtr, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -110,6 +112,7 @@ func main() {
 		func() *headerreader.Config { return &headerReaderConfig },
 		machineConfig,
 		arbnode.GenerateRollupConfig(*prod, common.HexToHash(*wasmmoduleroot), ownerAddress, l2ChainId, loserEscrowAddress),
+		nativeERC20Token,
 	)
 	if err != nil {
 		flag.Usage()

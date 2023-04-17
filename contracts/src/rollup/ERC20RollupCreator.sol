@@ -5,9 +5,9 @@
 pragma solidity ^0.8.0;
 
 import "./AbsRollupCreator.sol";
-import "./BridgeCreator.sol";
+import "./ERC20BridgeCreator.sol";
 
-contract RollupCreator is AbsRollupCreator, IEthRollupCreator {
+contract ERC20RollupCreator is AbsRollupCreator, IERC20RollupCreator {
     constructor() AbsRollupCreator() {}
 
     // After this setup:
@@ -15,19 +15,19 @@ contract RollupCreator is AbsRollupCreator, IEthRollupCreator {
     // RollupOwner should be the owner of Rollup's ProxyAdmin
     // RollupOwner should be the owner of Rollup
     // Bridge should have a single inbox and outbox
-    function createRollup(Config memory config, address expectedRollupAddr)
-        external
-        override
-        returns (address)
-    {
-        return _createRollup(config, expectedRollupAddr, address(0));
+    function createRollup(
+        Config memory config,
+        address expectedRollupAddr,
+        address nativeToken
+    ) external override returns (address) {
+        return _createRollup(config, expectedRollupAddr, nativeToken);
     }
 
     function _createBridge(
         address adminProxy,
         address rollup,
         ISequencerInbox.MaxTimeVariation memory maxTimeVariation,
-        address
+        address nativeToken
     )
         internal
         override
@@ -40,9 +40,10 @@ contract RollupCreator is AbsRollupCreator, IEthRollupCreator {
         )
     {
         return
-            BridgeCreator(address(bridgeCreator)).createBridge(
+            ERC20BridgeCreator(address(bridgeCreator)).createBridge(
                 adminProxy,
                 rollup,
+                nativeToken,
                 maxTimeVariation
             );
     }

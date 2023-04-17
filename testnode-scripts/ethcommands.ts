@@ -1,7 +1,9 @@
 import { runStress } from "./stress";
-import { ethers } from "ethers";
+import { ContractFactory, ethers, Wallet } from "ethers";
 import * as consts from "./consts";
 import { namedAccount, namedAddress } from "./accounts";
+import * as ERC20PresetFixedSupplyArtifact from "@openzeppelin/contracts/build/contracts/ERC20PresetFixedSupply.json";
+
 import * as fs from "fs";
 const path = require("path");
 
@@ -75,6 +77,44 @@ export const bridgeFundsCommand = {
         await sleep(100)
       }
     }
+  },
+};
+
+
+export const createERC20Command = {
+  command: "create-erc20",
+  describe: "creates simple ERC20 on L1",
+  builder: {
+    deployerKey: {
+      string: true,
+      describe: "account (see general help)",
+      default: "funnel",
+    },
+    mintTo: {
+      string: true,
+      describe: "account (see general help)",
+      default: "funnel",
+    },
+  },
+  handler: async (argv: any) => {
+    console.log("create-erc20");
+
+    argv.provider = new ethers.providers.WebSocketProvider(argv.l1url);
+
+    const contractFactory = new ContractFactory(
+      ERC20PresetFixedSupplyArtifact.abi,
+      ERC20PresetFixedSupplyArtifact.bytecode,
+      new Wallet(
+        argv.deployerKey,
+        argv.provider
+      )
+    );
+    const contract = await contractFactory.deploy("AppTestToken", "APP", 1000000000, namedAccount(argv.mintTo).address);
+    await contract.deployTransaction.wait();
+
+    console.log("Contract deployed at address:", contract.address);
+
+    argv.provider.destroy();
   },
 };
 

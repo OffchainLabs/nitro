@@ -4,7 +4,8 @@
       "module": "CommonJS",
       "strict": true,
       "esModuleInterop": true,
-      "moduleResolution": "node"
+      "moduleResolution": "node",
+      "resolveJsonModule": true
     },
     "files": ["index.ts"]
   }

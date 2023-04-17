@@ -30,6 +30,13 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup nodejs
+        uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+          cache: "yarn"
+          cache-dependency-path: "**/yarn.lock"
+
       - name: Install Ubuntu dependencies
         run: |
           sudo add-apt-repository -y ppa:ethereum/ethereum
