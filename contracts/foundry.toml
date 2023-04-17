@@ -1,0 +1,14 @@
+[profile.default]
+src = 'src'
+out = 'out'
+libs = ['node_modules', 'lib']
+test = 'test/foundry'
+cache_path  = 'forge-cache'
+optimizer = true
+optimizer_runs = 20000
+via_ir = false
+
+[fmt]
+number_underscore = 'thousands'
+line_length = 100
+# See more config options https://github.com/foundry-rs/foundry/tree/master/config

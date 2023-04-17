@@ -8,8 +8,9 @@ import "./InboxStub.sol";
 import {BadSequencerMessageNumber} from "../libraries/Error.sol";
 
 import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 
-contract BridgeStub is IBridge {
+contract BridgeStub is IBridge, IEthBridge {
     struct InOutInfo {
         uint256 index;
         bool allowed;

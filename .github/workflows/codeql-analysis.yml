@@ -12,13 +12,14 @@
 name: "CodeQL"
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "master" ]
-  schedule:
-    - cron: '18 21 * * 5'
+  workflow_dispatch:
+    push:
+      branches: [ "master" ]
+    pull_request:
+      # The branches below must be a subset of the branches above
+      branches: [ "master" ]
+    schedule:
+      - cron: '18 21 * * 5'
 
 jobs:
   analyze:
@@ -74,7 +75,7 @@ jobs:
       id: install-rust
       with:
         profile: minimal
-        toolchain: stable
+        toolchain: "1.66.1"
         override: true
 
     - name: Cache Rust Build Products

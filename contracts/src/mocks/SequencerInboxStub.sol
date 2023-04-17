@@ -5,6 +5,7 @@
 pragma solidity ^0.8.0;
 
 import "../bridge/SequencerInbox.sol";
+import "../bridge/IEthBridge.sol";
 import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 
 contract SequencerInboxStub is SequencerInbox {
@@ -21,7 +22,7 @@ contract SequencerInboxStub is SequencerInbox {
 
     function addInitMessage(uint256 chainId) external {
         bytes memory initMsg = abi.encodePacked(chainId);
-        uint256 num = bridge.enqueueDelayedMessage(
+        uint256 num = IEthBridge(address(bridge)).enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),
             keccak256(initMsg)
