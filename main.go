@@ -5,9 +5,12 @@ import (
 	"math/big"
 
 	"encoding/binary"
+	"math"
+	"time"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
-	"github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	chalTesting "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -16,8 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"math"
-	"time"
 )
 
 var (

@@ -75,7 +75,7 @@ func TestFSM_OpenClose(t *testing.T) {
 	fsm, err := NewFsm(startState, transitions)
 	require.NoError(t, err)
 
-	t.Run("assert state state", func(t *testing.T) {
+	t.Run("assert state", func(t *testing.T) {
 		curr := fsm.Current()
 		require.Equal(t, uint8(doorStateClosed), uint8(curr.State))
 	})

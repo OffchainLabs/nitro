@@ -71,7 +71,7 @@ import "./UintUtilsLib.sol";
 ///
 ///         Tree operations
 ///         --------------------------------------------------------------------------------------------
-///         Binary trees are modified by adding or subtracting complete subtrees, however this libary
+///         Binary trees are modified by adding or subtracting complete subtrees, however this library
 ///         supports additive only trees since we dont have a specific use for subtraction at the moment.
 ///         We call adding a complete subtree to an existing tree "appending", appending has the following
 ///         rules:
@@ -139,7 +139,7 @@ library MerkleTreeLib {
     /// @notice Append a complete subtree to an existing tree
     /// @dev    See above description of trees for rules on how appending can occur.
     ///         Briefly, appending works like binary addition only that the value being added be an
-    ///         exact power of two (complete), and must equal to or less than the least signficant bit
+    ///         exact power of two (complete), and must equal to or less than the least significant bit
     ///         in the existing tree.
     ///         If the me is empty, will just append directly.
     /// @param me           The merkle expansion to append a complete sub tree to

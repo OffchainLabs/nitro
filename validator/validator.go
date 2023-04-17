@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
+	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"

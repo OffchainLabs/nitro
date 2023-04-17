@@ -68,7 +68,7 @@
 //
 // Tree operations
 // --------------------------------------------------------------------------------------------
-// Binary trees are modified by adding or subtracting complete subtrees, however this libary
+// Binary trees are modified by adding or subtracting complete subtrees, however this library
 // supports additive only trees since we dont have a specific use for subtraction at the moment.
 // We call adding a complete subtree to an existing tree "appending", appending has the following
 // rules:
@@ -95,6 +95,8 @@
 //
 // root of ABCD =hash(AB, CD)
 // --------------------------------------------------------------------------------------------
+//
+//nolint:dupword
 package prefixproofs
 
 import (
@@ -194,7 +196,7 @@ func TreeSize(me []common.Hash) uint64 {
 // Append a complete subtree to an existing tree
 // See above description of trees for rules on how appending can occur.
 // Briefly, appending works like binary addition only that the value being added be an
-// exact power of two (complete), and must equal to or less than the least signficant bit
+// exact power of two (complete), and must equal to or less than the least significant bit
 // in the existing tree.
 // If the me is empty, will just append directly.
 func AppendCompleteSubTree(

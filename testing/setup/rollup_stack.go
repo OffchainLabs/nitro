@@ -114,7 +114,6 @@ func CreateTwoValidatorFork(
 			state.GlobalState.BlockHash = blockHash
 			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
 		}
-
 	}
 
 	height += 1
