@@ -69,6 +69,7 @@ while [[ $# -gt 0 ]]; do
             if [[ $dev_build_nitro == false ]] && [[ $dev_build_blockscout == false ]]; then
                 dev_build_nitro=true
                 dev_build_blockscout=true
+                shift
             fi
             ;;
         --build)
