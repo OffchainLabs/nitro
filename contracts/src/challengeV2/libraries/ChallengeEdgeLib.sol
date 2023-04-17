@@ -48,7 +48,7 @@ struct ChallengeEdge {
     uint256 endHeight;
     /// @notice Edges can be bisected into two children. If this edge has been bisected the id of the
     ///         lower child is populated here, until that time this value is 0. The lower child has startHistoryRoot and startHeight
-    ///         equal to this edge, but endHistoryRoot and endHeight equal to some prefix of the endHistory of this edge
+    ///         equal to this edge, but endHistoryRoot and endHeight equal to some prefix of the endHistoryRoot of this edge
     bytes32 lowerChildId;
     /// @notice Edges can be bisected into two children. If this edge has been bisected the id of the
     ///         upper child is populated here, until that time this value is 0. The upper child has startHistoryRoot and startHeight
