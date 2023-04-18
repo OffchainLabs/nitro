@@ -98,10 +98,30 @@ func callUserWasm(
 
 	// closures so Rust can call back into Go
 	blockHash := func(block common.Hash) (common.Hash, uint64) {
-		cost := vm.GasExtStep
-		//#TODO
-		return db.GetState(actingAddress, block), cost
+		numBig := block.Big()
+		if !numBig.IsUint64() {
+			return common.Hash{}, 0
+		}
+		num64 := numBig.Uint64()
+		upper, err := interpreter.Evm().ProcessingHook.L1BlockNumber(interpreter.Evm().Context)
+		if err != nil {
+			return common.Hash{}, 0
+		}
+		var lower uint64
+		if upper < 257 {
+			lower = 0
+		} else {
+			lower = upper - 256
+		}
+		if num64 >= lower && num64 < upper {
+			h, err := interpreter.Evm().ProcessingHook.L1BlockHash(interpreter.Evm().Context, num64)
+			if err != nil {
+				return common.Hash{}, 0
+			}
+			return h, vm.GasExtStep
+		}
 
+		return common.Hash{}, 0
 	}
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		if tracingInfo != nil {
