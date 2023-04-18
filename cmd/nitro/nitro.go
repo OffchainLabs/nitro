@@ -629,6 +629,10 @@ func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
 }
 
+func (c *NodeConfig) GetReloadInterval() time.Duration {
+	return c.Conf.ReloadInterval
+}
+
 type RpcLogger struct{}
 
 func (l RpcLogger) OnRequest(request interface{}) rpc.ResultHook {

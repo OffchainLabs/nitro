@@ -101,7 +101,7 @@ func (c *LiveConfig[T]) SetOnReloadHook(hook OnReloadHook[T]) {
 	c.onReloadHook = hook
 }
 
-func NewLiveNodeConfig[T ConfigConstrain[T]](args []string, config T, pathResolver func(string) string) *LiveConfig[T] {
+func NewLiveConfig[T ConfigConstrain[T]](args []string, config T, pathResolver func(string) string) *LiveConfig[T] {
 	return &LiveConfig[T]{
 		args:         args,
 		config:       config,

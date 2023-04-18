@@ -130,7 +130,7 @@ func mainImpl() int {
 
 	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
 
-	liveNodeConfig := nodehelpers.NewLiveNodeConfig[*NodeConfig](args, nodeConfig, stackConf.ResolvePath)
+	liveNodeConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, nodeConfig, stackConf.ResolvePath)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
 		dataDir := newCfg.Persistent.Chain
 		return nodehelpers.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(dataDir))
