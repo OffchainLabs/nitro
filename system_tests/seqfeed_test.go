@@ -104,7 +104,6 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
 	defer nodeC.StopAndWait()
-	StartWatchChanErr(t, ctx, feedErrChan, nodeC)
 
 	l2info1.GenerateAccount("User2")
 

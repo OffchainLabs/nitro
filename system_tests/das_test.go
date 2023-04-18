@@ -26,9 +26,11 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -140,9 +142,14 @@ func TestDASRekey(t *testing.T) {
 		execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 		Require(t, err)
 
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+		execClient := execclient.NewClient(&rpcclient.TestClientConfig, l2stackA)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
+		Require(t, execA.Initialize(ctx))
 		Require(t, nodeA.Start(ctx))
+		Require(t, execA.Start(ctx))
+		addExecNode(l2stackA.WSEndpoint(), execA)
+		defer rmExecNode(t, l2stackA.WSEndpoint(), execA)
 		l2clientA := ClientForStack(t, l2stackA)
 
 		l1NodeConfigB.BlockValidator.Enable = false
@@ -155,6 +162,7 @@ func TestDASRekey(t *testing.T) {
 
 		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
+		execA.StopAndWait()
 		nodeA.StopAndWait()
 		nodeB.StopAndWait()
 	}
@@ -186,9 +194,14 @@ func TestDASRekey(t *testing.T) {
 	Require(t, err)
 
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	execClient := execclient.NewClient(&rpcclient.TestClientConfig, l2stackA)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
+	Require(t, execA.Initialize(ctx))
 	Require(t, nodeA.Start(ctx))
+	Require(t, execA.Start(ctx))
+	addExecNode(l2stackA.WSEndpoint(), execA)
+	defer rmExecNode(t, l2stackA.WSEndpoint(), execA)
 	l2clientA := ClientForStack(t, l2stackA)
 
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
@@ -317,9 +330,15 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
+	execclient := execclient.NewClient(&rpcclient.TestClientConfig, l2stackA)
+
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execclient, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
 	Require(t, err)
+	Require(t, execA.Initialize(ctx))
 	Require(t, nodeA.Start(ctx))
+	Require(t, execA.Start(ctx))
+	addExecNode(l2stackA.WSEndpoint(), execA)
+	defer rmExecNode(t, l2stackA.WSEndpoint(), execA)
 	l2clientA := ClientForStack(t, l2stackA)
 
 	// Create node to sync from chain

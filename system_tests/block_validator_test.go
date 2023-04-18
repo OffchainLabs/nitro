@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 )
 
 func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops int, expensiveTx bool, arbitrator bool) {
@@ -135,10 +134,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 	if !nodeB.BlockValidator.WaitForPos(t, ctx, arbutil.MessageIndex(lastBlock.NumberU64()), timeout) {
 		Fail(t, "did not validate all blocks")
 	}
-	gethExec, ok := nodeB.Execution.(*gethexec.ExecutionNode)
-	if !ok {
-		t.Fail()
-	}
+	gethExec := getExecNode(t, nodeB)
 	gethExec.Recorder.TrimAllPrepared(t)
 	finalRefCount := gethExec.Recorder.RecordingDBReferenceCount()
 	lastBlockNow, err := l2clientB.BlockByNumber(ctx, nil)

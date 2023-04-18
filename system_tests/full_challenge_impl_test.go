@@ -27,11 +27,13 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/execclient"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -227,7 +229,10 @@ func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chai
 	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChain(t, l2info, "", chainConfig)
 	execNode, err := gethexec.CreateExecutionNode(stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
 	Require(t, err)
-	consensusNode, err := arbnode.CreateNode(ctx, stack, execNode, l2ArbDb, conf, chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
+
+	execclient := execclient.NewClient(&rpcclient.TestClientConfig, stack)
+
+	consensusNode, err := arbnode.CreateNode(ctx, stack, execclient, l2ArbDb, conf, chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
 	Require(t, err)
 
 	return consensusNode, execNode
@@ -279,16 +284,20 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2Info := NewArbTestInfo(t, chainConfig.ChainID)
 	asserterL2, asserterExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, asserterL2Info, asserterRollupAddresses, nil, nil, fatalErrChan)
+	Require(t, asserterExec.Initialize(ctx))
 	err := asserterL2.Start(ctx)
 	Require(t, err)
+	Require(t, asserterExec.Start(ctx))
 
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerL2Info := NewArbTestInfo(t, chainConfig.ChainID)
 	challengerL2, challengerExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, challengerL2Info, &challengerRollupAddresses, nil, nil, fatalErrChan)
+	Require(t, challengerExec.Initialize(ctx))
 	err = challengerL2.Start(ctx)
 	Require(t, err)
+	Require(t, challengerExec.Start(ctx))
 
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
