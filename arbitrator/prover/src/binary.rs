@@ -3,7 +3,7 @@
 
 use crate::{
     programs::{
-        config::StylusConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
         heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware,
         StylusGlobals,
     },
@@ -511,11 +511,11 @@ impl<'a> Debug for WasmBinary<'a> {
 
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
-    pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
-        let meter = Meter::new(config.costs, config.start_ink);
-        let dygas = DynamicMeter::new(&config.pricing);
-        let depth = DepthChecker::new(config.depth);
-        let bound = HeapBound::new(config.heap_bound)?;
+    pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusGlobals> {
+        let meter = Meter::new(compile.pricing.costs);
+        let dygas = DynamicMeter::new(&compile.pricing);
+        let depth = DepthChecker::new(compile.bounds);
+        let bound = HeapBound::new(compile.bounds);
         let start = StartMover::default();
 
         meter.update_module(self)?;
@@ -524,7 +524,7 @@ impl<'a> WasmBinary<'a> {
         bound.update_module(self)?;
         start.update_module(self)?;
 
-        let count = config.debug.count_ops.then(Counter::new);
+        let count = compile.debug.count_ops.then(Counter::new);
         if let Some(count) = &count {
             count.update_module(self)?;
         }

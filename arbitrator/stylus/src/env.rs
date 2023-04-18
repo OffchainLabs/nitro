@@ -7,6 +7,7 @@ use prover::{
     programs::{
         config::{PricingParams, StylusConfig},
         meter::{MachineMeter, MeteredMachine},
+        prelude::CompileConfig,
         run::UserOutcomeKind,
     },
     utils::{Bytes20, Bytes32},
@@ -37,8 +38,10 @@ pub struct WasmEnv {
     pub evm: Option<EvmAPI>,
     /// Mechanism for reading EVM context data
     pub evm_data: Option<EvmData>,
-    /// The instance's config
-    pub config: StylusConfig,
+    /// The compile time config
+    pub compile: CompileConfig,
+    /// The runtime config
+    pub config: Option<StylusConfig>,
 }
 
 #[derive(Clone, Debug)]
@@ -47,8 +50,6 @@ pub struct MeterData {
     pub ink_left: Global,
     /// Whether the instance has run out of ink
     pub ink_status: Global,
-    /// The pricing parameters associated with this program's environment
-    pub pricing: PricingParams,
 }
 
 /// Hash for given block: key → (value, cost)
@@ -113,8 +114,9 @@ pub struct EvmData {
 }
 
 impl WasmEnv {
-    pub fn new(config: StylusConfig) -> Self {
+    pub fn new(compile: CompileConfig, config: Option<StylusConfig>) -> Self {
         Self {
+            compile,
             config,
             ..Default::default()
         }
@@ -168,13 +170,17 @@ impl WasmEnv {
         self.evm().return_data_len = len;
     }
 
-    pub fn start<'a, 'b>(env: &'a mut WasmEnvMut<'b>) -> Result<HostioInfo<'a>, Escape> {
-        let (env, store) = env.data_and_store_mut();
-        let memory = env.memory.clone().unwrap();
-        let mut info = HostioInfo { env, memory, store };
-        let cost = info.meter().pricing.hostio_ink;
+    pub fn start<'a>(env: &'a mut WasmEnvMut<'_>) -> Result<HostioInfo<'a>, Escape> {
+        let mut info = Self::start_free(env);
+        let cost = info.config().pricing.hostio_ink;
         info.buy_ink(cost)?;
         Ok(info)
+    }
+
+    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_>) -> HostioInfo<'a> {
+        let (env, store) = env.data_and_store_mut();
+        let memory = env.memory.clone().unwrap();
+        HostioInfo { env, memory, store }
     }
 
     pub fn say<D: Display>(&self, text: D) {
@@ -189,13 +195,17 @@ pub struct HostioInfo<'a> {
 }
 
 impl<'a> HostioInfo<'a> {
-    pub fn meter(&mut self) -> &mut MeterData {
-        self.meter.as_mut().unwrap()
+    pub fn config(&self) -> StylusConfig {
+        self.config.expect("no config")
+    }
+
+    pub fn pricing(&self) -> PricingParams {
+        self.config().pricing
     }
 
     pub fn gas_left(&mut self) -> u64 {
         let ink = self.ink_left().into();
-        self.meter().pricing.ink_to_gas(ink)
+        self.pricing().ink_to_gas(ink)
     }
 
     pub fn buy_ink(&mut self, ink: u64) -> MaybeEscape {
@@ -210,13 +220,13 @@ impl<'a> HostioInfo<'a> {
     }
 
     pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
-        let ink = self.meter().pricing.gas_to_ink(gas);
+        let ink = self.pricing().gas_to_ink(gas);
         self.buy_ink(ink)
     }
 
     /// Checks if the user has enough gas, but doesn't burn any
     pub fn require_gas(&mut self, gas: u64) -> MaybeEscape {
-        let ink = self.meter().pricing.gas_to_ink(gas);
+        let ink = self.pricing().gas_to_ink(gas);
         let MachineMeter::Ready(ink_left) = self.ink_left() else {
             return Escape::out_of_ink();
         };

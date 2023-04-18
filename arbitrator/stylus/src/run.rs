@@ -7,13 +7,11 @@ use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};
 
 pub trait RunProgram {
-    fn run_main(&mut self, args: &[u8], config: &StylusConfig) -> Result<UserOutcome>;
+    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome>;
 }
 
 impl RunProgram for Machine {
-    fn run_main(&mut self, args: &[u8], config: &StylusConfig) -> Result<UserOutcome> {
-        let pricing = &config.pricing;
-
+    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
         macro_rules! call {
             ($module:expr, $func:expr, $args:expr) => {
                 call!($module, $func, $args, |error| UserOutcome::Failure(error))
@@ -30,14 +28,17 @@ impl RunProgram for Machine {
         let args_len = (args.len() as u32).into();
         let push_vec = vec![
             args_len,
-            pricing.ink_price.into(),
-            pricing.hostio_ink.into(),
-            pricing.memory_fill_ink.into(),
-            pricing.memory_copy_ink.into(),
+            config.version.into(),
+            config.max_depth.into(),
+            config.pricing.ink_price.into(),
+            config.pricing.hostio_ink.into(),
         ];
         let args_ptr = call!("user_host", "push_program", push_vec);
         let user_host = self.find_module(USER_HOST)?;
         self.write_memory(user_host, args_ptr, args)?;
+
+        self.set_ink(ink);
+        self.set_stack(config.max_depth);
 
         let status: u32 = call!("user", STYLUS_ENTRY_POINT, vec![args_len], |error| {
             if self.ink_left() == MachineMeter::Exhausted {
@@ -64,13 +65,17 @@ impl RunProgram for Machine {
 }
 
 impl RunProgram for NativeInstance {
-    fn run_main(&mut self, args: &[u8], _config: &StylusConfig) -> Result<UserOutcome> {
+    fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
         use UserOutcome::*;
+
+        self.set_ink(ink);
+        self.set_stack(config.max_depth);
 
         let store = &mut self.store;
         let mut env = self.env.as_mut(store);
         env.args = args.to_owned();
         env.outs.clear();
+        env.config = Some(config);
 
         let exports = &self.instance.exports;
         let main = exports.get_typed_function::<u32, u32>(store, STYLUS_ENTRY_POINT)?;

@@ -11,8 +11,8 @@ use crate::{
     run::RunProgram,
     test::{
         api::{TestEvmContracts, TestEvmStorage},
-        check_instrumentation, new_test_instance, new_test_instance_from_store, new_test_machine,
-        random_bytes20, random_bytes32, run_machine, run_native, uniform_cost_config,
+        check_instrumentation, new_test_machine, random_bytes20, random_bytes32, random_ink,
+        run_machine, run_native, test_compile_config, test_configs,
     },
 };
 use arbutil::{crypto, Color};
@@ -30,49 +30,24 @@ use prover::{
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::wasmparser::Operator;
-use wasmer::{CompilerConfig, ExportIndex, Imports, Instance, MemoryType, Module, Pages, Store};
+use wasmer::{CompilerConfig, ExportIndex, Imports, MemoryType, Pages, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
-fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
-    let mut compiler = Singlepass::new();
-    compiler.canonicalize_nans(true);
-    compiler.enable_verifier();
-
-    let mut store = Store::new(compiler);
-    let wat = std::fs::read(path)?;
-    let module = Module::new(&store, wat)?;
-    let instance = Instance::new(&mut store, &module, &Imports::new())?;
-    Ok(NativeInstance::new_sans_env(instance, store))
-}
-
-fn new_native_with_evm(
-    file: &str,
-    config: &StylusConfig,
-) -> Result<(NativeInstance, TestEvmContracts, TestEvmStorage)> {
-    let storage = TestEvmStorage::default();
-    let contracts = TestEvmContracts::new(config);
-    let mut native = NativeInstance::from_path(file, config)?;
-    native.set_test_evm_api(Bytes20::default(), storage.clone(), contracts.clone());
-    Ok((native, contracts, storage))
-}
-
 #[test]
-fn test_gas() -> Result<()> {
-    let mut config = StylusConfig::default();
-    config.costs = super::expensive_add;
+fn test_ink() -> Result<()> {
+    let mut compile = test_compile_config();
+    compile.pricing.costs = super::expensive_add;
 
-    let mut instance = new_test_instance("tests/add.wat", config)?;
-    let exports = &instance.exports;
-    let add_one = exports.get_typed_function::<i32, i32>(&instance.store, "add_one")?;
-
-    assert_eq!(instance.ink_left(), MachineMeter::Ready(0));
+    let mut native = NativeInstance::new_test("tests/add.wat", compile)?;
+    let exports = &native.exports;
+    let add_one = exports.get_typed_function::<i32, i32>(&native.store, "add_one")?;
 
     macro_rules! exhaust {
         ($ink:expr) => {
-            instance.set_ink($ink);
-            assert_eq!(instance.ink_left(), MachineMeter::Ready($ink));
-            assert!(add_one.call(&mut instance.store, 32).is_err());
-            assert_eq!(instance.ink_left(), MachineMeter::Exhausted);
+            native.set_ink($ink);
+            assert_eq!(native.ink_left(), MachineMeter::Ready($ink));
+            assert!(add_one.call(&mut native.store, 32).is_err());
+            assert_eq!(native.ink_left(), MachineMeter::Exhausted);
         };
     }
 
@@ -81,14 +56,14 @@ fn test_gas() -> Result<()> {
     exhaust!(99);
 
     let mut ink_left = 500;
-    instance.set_ink(ink_left);
+    native.set_ink(ink_left);
     while ink_left > 0 {
-        assert_eq!(instance.ink_left(), MachineMeter::Ready(ink_left));
-        assert_eq!(add_one.call(&mut instance.store, 64)?, 65);
+        assert_eq!(native.ink_left(), MachineMeter::Ready(ink_left));
+        assert_eq!(add_one.call(&mut native.store, 64)?, 65);
         ink_left -= 100;
     }
-    assert!(add_one.call(&mut instance.store, 32).is_err());
-    assert_eq!(instance.ink_left(), MachineMeter::Exhausted);
+    assert!(add_one.call(&mut native.store, 32).is_err());
+    assert_eq!(native.ink_left(), MachineMeter::Exhausted);
     Ok(())
 }
 
@@ -100,26 +75,22 @@ fn test_depth() -> Result<()> {
     //    the `recurse` function has 1 parameter and 2 locals
     //    comments show that the max depth is 3 words
 
-    let mut config = StylusConfig::default();
-    config.depth = DepthParams::new(64, 16);
+    let mut native = NativeInstance::new_test("tests/depth.wat", test_compile_config())?;
+    let exports = &native.exports;
+    let recurse = exports.get_typed_function::<i64, ()>(&native.store, "recurse")?;
 
-    let mut instance = new_test_instance("tests/depth.wat", config)?;
-    let exports = &instance.exports;
-    let recurse = exports.get_typed_function::<i64, ()>(&instance.store, "recurse")?;
-
-    let program_depth: u32 = instance.get_global("depth")?;
+    let program_depth: u32 = native.get_global("depth")?;
     assert_eq!(program_depth, 0);
-    assert_eq!(instance.stack_left(), 64);
 
     let mut check = |space: u32, expected: u32| -> Result<()> {
-        instance.set_global("depth", 0)?;
-        instance.set_stack(space);
-        assert_eq!(instance.stack_left(), space);
+        native.set_global("depth", 0)?;
+        native.set_stack(space);
+        assert_eq!(native.stack_left(), space);
 
-        assert!(recurse.call(&mut instance.store, 0).is_err());
-        assert_eq!(instance.stack_left(), 0);
+        assert!(recurse.call(&mut native.store, 0).is_err());
+        assert_eq!(native.stack_left(), 0);
 
-        let program_depth: u32 = instance.get_global("depth")?;
+        let program_depth: u32 = native.get_global("depth")?;
         assert_eq!(program_depth, expected);
         Ok(())
     };
@@ -145,26 +116,26 @@ fn test_start() -> Result<()> {
     //     the `start` function increments `status`
     //     by the spec, `start` must run at initialization
 
-    fn check(instance: &mut NativeInstance, value: i32) -> Result<()> {
-        let status: i32 = instance.get_global("status")?;
+    fn check(native: &mut NativeInstance, value: i32) -> Result<()> {
+        let status: i32 = native.get_global("status")?;
         assert_eq!(status, value);
         Ok(())
     }
 
-    let mut instance = new_vanilla_instance("tests/start.wat")?;
-    check(&mut instance, 11)?;
+    let mut native = NativeInstance::new_vanilla("tests/start.wat")?;
+    check(&mut native, 11)?;
 
-    let config = StylusConfig::default();
-    let mut instance = new_test_instance("tests/start.wat", config)?;
-    check(&mut instance, 10)?;
+    let mut native = NativeInstance::new_test("tests/start.wat", test_compile_config())?;
+    check(&mut native, 10)?;
 
-    let exports = &instance.exports;
-    let move_me = exports.get_typed_function::<(), ()>(&instance.store, "move_me")?;
-    let starter = instance.get_start()?;
+    let exports = &native.exports;
+    let move_me = exports.get_typed_function::<(), ()>(&native.store, "move_me")?;
+    let starter = native.get_start()?;
+    let ink = random_ink(100_000);
 
-    move_me.call(&mut instance.store)?;
-    starter.call(&mut instance.store)?;
-    check(&mut instance, 12)?;
+    native.call_func(move_me, ink)?;
+    native.call_func(starter, ink)?;
+    check(&mut native, 12)?;
     Ok(())
 }
 
@@ -180,7 +151,7 @@ fn test_count() -> Result<()> {
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
 
     let mut instance =
-        new_test_instance_from_store("tests/clz.wat", Store::new(compiler), Imports::new())?;
+        NativeInstance::new_from_store("tests/clz.wat", Store::new(compiler), Imports::new())?;
 
     let starter = instance.get_start()?;
     starter.call(&mut instance.store)?;
@@ -210,8 +181,8 @@ fn test_import_export_safety() -> Result<()> {
 
     fn check(path: &str, both: bool) -> Result<()> {
         if both {
-            let config = StylusConfig::default();
-            assert!(new_test_instance(path, config).is_err());
+            let compile = test_compile_config();
+            assert!(NativeInstance::new_test(path, compile).is_err());
         }
         let path = &Path::new(path);
         let wat = std::fs::read(path)?;
@@ -238,9 +209,8 @@ fn test_module_mod() -> Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
     let binary = binary::parse(&wasm, Path::new(file))?;
 
-    let config = StylusConfig::default();
-    let instance = new_test_instance(file, config)?;
-    let module = instance.module().info();
+    let native = NativeInstance::new_test(file, test_compile_config())?;
+    let module = native.module().info();
 
     assert_eq!(module.all_functions()?, binary.all_functions()?);
     assert_eq!(module.all_signatures()?, binary.all_signatures()?);
@@ -266,17 +236,17 @@ fn test_heap() -> Result<()> {
     //     memory.wat   there's a 2-page memory with an upper limit of 4
     //     memory2.wat  there's a 2-page memory with no upper limit
 
-    let mut config = StylusConfig::default();
-    config.heap_bound = Pages(1).into();
-    assert!(new_test_instance("tests/memory.wat", config.clone()).is_err());
-    assert!(new_test_instance("tests/memory2.wat", config).is_err());
+    let mut compile = CompileConfig::default();
+    compile.bounds.heap_bound = Pages(1).into();
+    assert!(NativeInstance::new_test("tests/memory.wat", compile.clone()).is_err());
+    assert!(NativeInstance::new_test("tests/memory2.wat", compile).is_err());
 
     let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
-        let mut config = StylusConfig::default();
-        config.heap_bound = Pages(bound).into();
+        let mut compile = CompileConfig::default();
+        compile.bounds.heap_bound = Pages(bound).into();
 
-        let instance = new_test_instance(file, config.clone())?;
-        let machine = new_test_machine(file, &config)?;
+        let instance = NativeInstance::new_test(file, compile.clone())?;
+        let machine = new_test_machine(file, &compile)?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;
@@ -305,17 +275,17 @@ fn test_rust() -> Result<()> {
     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
     let preimage = preimage.as_bytes().to_vec();
     let hash = hex::encode(crypto::keccak(&preimage));
+    let (compile, config, ink) = test_configs();
 
     let mut args = vec![0x01];
     args.extend(preimage);
 
-    let config = uniform_cost_config();
-    let mut native = NativeInstance::from_path(filename, &config)?;
-    let output = run_native(&mut native, &args)?;
+    let mut native = NativeInstance::from_path(filename, &compile, config)?;
+    let output = run_native(&mut native, &args, ink)?;
     assert_eq!(hex::encode(output), hash);
 
-    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = run_machine(&mut machine, &args, &config)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), hash);
 
     check_instrumentation(native, machine)
@@ -328,24 +298,24 @@ fn test_c() -> Result<()> {
     //     the output is whether the hash was valid
 
     let filename = "tests/siphash/siphash.wasm";
+    let (compile, config, ink) = test_configs();
 
     let text: Vec<u8> = (0..63).collect();
     let key: Vec<u8> = (0..16).collect();
     let key: [u8; 16] = key.try_into().unwrap();
     let hash = crypto::siphash(&text, &key);
 
-    let config = uniform_cost_config();
     let mut args = hash.to_le_bytes().to_vec();
     args.extend(key);
     args.extend(text);
     let args_string = hex::encode(&args);
 
-    let mut native = NativeInstance::from_path(filename, &config)?;
-    let output = run_native(&mut native, &args)?;
+    let mut native = NativeInstance::from_path(filename, &compile, config)?;
+    let output = run_native(&mut native, &args, ink)?;
     assert_eq!(hex::encode(output), args_string);
 
-    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    let output = run_machine(&mut machine, &args, &config)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), args_string);
 
     check_instrumentation(native, machine)
@@ -358,34 +328,33 @@ fn test_fallible() -> Result<()> {
     //     an empty input induces a panic
 
     let filename = "tests/fallible/target/wasm32-unknown-unknown/release/fallible.wasm";
-    let config = uniform_cost_config();
+    let (compile, config, ink) = test_configs();
 
-    let mut native = NativeInstance::from_path(filename, &config)?;
-    match native.run_main(&[0x00], &config)? {
+    let mut native = NativeInstance::from_path(filename, &compile, config)?;
+    match native.run_main(&[0x00], config, ink)? {
         UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
         err => bail!("expected hard error: {}", err.red()),
     }
-    match native.run_main(&[], &config)? {
-        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
-        err => bail!("expected hard error: {}", err.red()),
-    }
-
-    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
-    match machine.run_main(&[0x00], &config)? {
-        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
-        err => bail!("expected hard error: {}", err.red()),
-    }
-    match machine.run_main(&[], &config)? {
+    match native.run_main(&[], config, ink)? {
         UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
         err => bail!("expected hard error: {}", err.red()),
     }
 
-    assert_eq!(native.ink_left(), machine.ink_left());
-    assert_eq!(native.stack_left(), machine.stack_left());
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    match machine.run_main(&[0x00], config, ink)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+    match machine.run_main(&[], config, ink)? {
+        UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
+        err => bail!("expected hard error: {}", err.red()),
+    }
 
     let native_counts = native.operator_counts()?;
     let machine_counts = machine.operator_counts()?;
     assert_eq!(native_counts, machine_counts);
+    assert_eq!(native.ink_left(), machine.ink_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
     Ok(())
 }
 
@@ -396,7 +365,7 @@ fn test_storage() -> Result<()> {
     //     all other inputs induce a storage write
 
     let filename = "tests/storage/target/wasm32-unknown-unknown/release/storage.wasm";
-    let config = uniform_cost_config();
+    let (compile, config, ink) = test_configs();
 
     let key = crypto::keccak(filename.as_bytes());
     let value = crypto::keccak("value".as_bytes());
@@ -406,18 +375,18 @@ fn test_storage() -> Result<()> {
     args.extend(value);
 
     let address = Bytes20::default();
-    let mut native = NativeInstance::from_path(filename, &config)?;
+    let mut native = NativeInstance::from_path(filename, &compile, config)?;
     let api = native.set_test_evm_api(
         address,
         TestEvmStorage::default(),
-        TestEvmContracts::new(&config),
+        TestEvmContracts::new(compile, config),
     );
 
-    run_native(&mut native, &args)?;
+    run_native(&mut native, &args, ink)?;
     assert_eq!(api.get_bytes32(address, Bytes32(key)), Some(Bytes32(value)));
 
     args[0] = 0x00; // load the value
-    let output = run_native(&mut native, &args)?;
+    let output = run_native(&mut native, &args, ink)?;
     assert_eq!(output, value);
     Ok(())
 }
@@ -487,13 +456,14 @@ fn test_calls() -> Result<()> {
     println!("ARGS {}", hex::encode(&args));
 
     let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";
-    let config = uniform_cost_config();
+    let (compile, config, ink) = test_configs();
 
-    let (mut native, mut contracts, storage) = new_native_with_evm(&filename, &config)?;
+    let (mut native, mut contracts, storage) =
+        NativeInstance::new_with_evm(&filename, compile, config)?;
     contracts.insert(calls_addr, "multicall")?;
     contracts.insert(store_addr, "storage")?;
 
-    run_native(&mut native, &args)?;
+    run_native(&mut native, &args, ink)?;
 
     for (key, value) in slots {
         assert_eq!(storage.get_bytes32(store_addr, key), Some(value));

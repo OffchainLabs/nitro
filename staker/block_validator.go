@@ -374,7 +374,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 }
 
 func (v *BlockValidator) newValidationStatus(prevHeader, header *types.Header, msg *arbstate.MessageWithMetadata) (*validationStatus, error) {
-	entry, err := newValidationEntry(prevHeader, header, msg)
+	entry, err := newValidationEntry(prevHeader, header, msg, v.blockchain.Config())
 	if err != nil {
 		return nil, err
 	}

@@ -133,7 +133,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 		}
 	}
 	for call, wasm := range entry.UserWasms {
-		err = mach.AddUserWasm(call, wasm)
+		err = mach.AddUserWasm(call, wasm, entry.DebugChain)
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",

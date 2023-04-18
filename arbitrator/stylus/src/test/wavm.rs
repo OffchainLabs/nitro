@@ -1,20 +1,17 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::test::new_test_machine;
+use crate::test::{new_test_machine, test_compile_config};
 use eyre::Result;
 use prover::{programs::prelude::*, Machine};
 
 #[test]
 fn test_ink() -> Result<()> {
-    let mut config = StylusConfig::default();
-    config.costs = super::expensive_add;
-    config.start_ink = 10;
+    let mut compile = test_compile_config();
+    compile.pricing.costs = super::expensive_add;
 
-    let machine = &mut new_test_machine("tests/add.wat", &config)?;
+    let machine = &mut new_test_machine("tests/add.wat", &compile)?;
     let call = |mech: &mut Machine, v: u32| mech.call_function("user", "add_one", vec![v.into()]);
-
-    assert_eq!(machine.ink_left(), MachineMeter::Ready(10));
 
     macro_rules! exhaust {
         ($ink:expr) => {
@@ -49,15 +46,11 @@ fn test_depth() -> Result<()> {
     //    the `recurse` function has 1 parameter and 2 locals
     //    comments show that the max depth is 3 words
 
-    let mut config = StylusConfig::default();
-    config.depth = DepthParams::new(64, 16);
-
-    let machine = &mut new_test_machine("tests/depth.wat", &config)?;
+    let machine = &mut new_test_machine("tests/depth.wat", &test_compile_config())?;
     let call = |mech: &mut Machine| mech.call_function("user", "recurse", vec![0_u64.into()]);
 
     let program_depth: u32 = machine.get_global("depth")?.try_into()?;
     assert_eq!(program_depth, 0);
-    assert_eq!(machine.stack_left(), 64);
 
     let mut check = |space: u32, expected: u32| -> Result<()> {
         machine.set_global("depth", 0_u32.into())?;
@@ -99,8 +92,8 @@ fn test_start() -> Result<()> {
         Ok(())
     }
 
-    let config = StylusConfig::default();
-    let mut machine = &mut new_test_machine("tests/start.wat", &config)?;
+    let compile = test_compile_config();
+    let mut machine = &mut new_test_machine("tests/start.wat", &compile)?;
     check(machine, 10)?;
 
     let call = |mech: &mut Machine, name: &str| mech.call_function("user", name, vec![]);

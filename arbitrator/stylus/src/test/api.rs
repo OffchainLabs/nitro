@@ -19,22 +19,24 @@ use std::{collections::HashMap, sync::Arc};
 pub(crate) struct TestEvmContracts {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
     return_data: Arc<Mutex<Vec<u8>>>,
+    compile: CompileConfig,
     config: StylusConfig,
 }
 
 impl TestEvmContracts {
-    pub fn new(config: &StylusConfig) -> Self {
+    pub fn new(compile: CompileConfig, config: StylusConfig) -> Self {
         Self {
             contracts: Arc::new(Mutex::new(HashMap::new())),
             return_data: Arc::new(Mutex::new(vec![])),
-            config: config.clone(),
+            compile,
+            config,
         }
     }
 
     pub fn insert(&mut self, address: Bytes20, name: &str) -> Result<()> {
         let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
         let wasm = std::fs::read(file)?;
-        let module = native::module(&wasm, self.config.clone())?;
+        let module = native::module(&wasm, self.compile.clone())?;
         self.contracts.lock().insert(address, module);
         Ok(())
     }
@@ -103,22 +105,23 @@ impl NativeInstance {
             move |address: Bytes20, input: Vec<u8>, gas, _value| unsafe {
                 // this call function is for testing purposes only and deviates from onchain behavior
                 let contracts = moved_contracts.clone();
-                let config = contracts.config.clone();
+                let compile = contracts.compile.clone();
+                let config = contracts.config;
                 *contracts.return_data.lock() = vec![];
 
-                let mut instance = match contracts.contracts.lock().get(&address) {
-                    Some(module) => NativeInstance::deserialize(module, config.clone()).unwrap(),
+                let mut native = match contracts.contracts.lock().get(&address) {
+                    Some(module) => NativeInstance::deserialize(module, compile.clone()).unwrap(),
                     None => panic!("No contract at address {}", address.red()),
                 };
 
-                instance.set_test_evm_api(address, moved_storage.clone(), contracts.clone());
-                instance.set_ink(config.pricing.gas_to_ink(gas));
+                native.set_test_evm_api(address, moved_storage.clone(), contracts.clone());
+                let ink = config.pricing.gas_to_ink(gas);
 
-                let outcome = instance.run_main(&input, &config).unwrap();
+                let outcome = native.run_main(&input, config, ink).unwrap();
                 let (status, outs) = outcome.into_data();
                 let outs_len = outs.len() as u32;
 
-                let ink_left: u64 = instance.ink_left().into();
+                let ink_left: u64 = native.ink_left().into();
                 let gas_left = config.pricing.ink_to_gas(ink_left);
                 *contracts.return_data.lock() = outs;
                 (outs_len, gas - gas_left, status)
