@@ -185,15 +185,18 @@ func NodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L2Config struct {
-	ChainId uint64 `koanf:"chain-id"`
+	ChainId          uint64   `koanf:"chain-id"`
+	ChainConfigFiles []string `koanf:"chain-config-files"`
 }
 
 var L2ConfigDefault = L2Config{
-	ChainId: 0,
+	ChainId:          0,
+	ChainConfigFiles: []string{},
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainId, "L2 chain ID")
+	f.StringSlice(prefix+".chain-config-files", L2ConfigDefault.ChainConfigFiles, "L2 chain config json files")
 }
 
 func ParseRelay(_ context.Context, args []string) (*Config, error) {

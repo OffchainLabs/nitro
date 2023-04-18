@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
+	encoding_json "encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,7 +25,9 @@ import (
 	"time"
 
 	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
+	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -720,46 +723,13 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	chainFound := false
 	l2ChainId := k.Int64("l2.chain-id")
-	if l1ChainId.Uint64() == 1 { // mainnet
-		switch l2ChainId {
-		case 0:
-			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
-		case 42161:
-			if err := applyArbitrumOneParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		case 42170:
-			if err := applyArbitrumNovaParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		}
-	} else if l1ChainId.Uint64() == 4 {
-		switch l2ChainId {
-		case 0:
-			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
-		case 421611:
-			if err := applyArbitrumRollupRinkebyTestnetParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		}
-	} else if l1ChainId.Uint64() == 5 {
-		switch l2ChainId {
-		case 0:
-			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
-		case 421613:
-			if err := applyArbitrumRollupGoerliTestnetParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		case 421703:
-			if err := applyArbitrumAnytrustGoerliTestnetParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		}
+	if l2ChainId == 0 {
+		return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+	}
+	l2ChainConfigFiles := k.Strings("l2.chain-config-files")
+	chainFound, err = applyChainParameters(k, uint64(l2ChainId), l1ChainId.Uint64(), l2ChainConfigFiles)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
 	}
 
 	err = confighelpers.ApplyOverrides(f, k)
@@ -788,7 +758,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Persistent.Chain == "" {
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
-			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d.  Change L1, update L2 chain id, or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId)
+			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d, L2ChainConfigFiles: %s.  Change L1, update L2 chain id, modify --l2.chain-config-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId, l2ChainConfigFiles)
 		}
 		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
@@ -811,79 +781,36 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyArbitrumOneParameters(k *koanf.Koanf) error {
-	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "arb1",
-		"node.forwarding-target":             "https://arb1-sequencer.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
-		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
-		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
-		"l1.rollup.rollup":                   "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
-		"l1.rollup.sequencer-inbox":          "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
-		"l1.rollup.validator-utils":          "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
-		"l1.rollup.validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
-		"l1.rollup.deployed-at":              15411056,
-		"l2.chain-id":                        42161,
-	}, "."), nil)
+type ChainParameters struct {
+	ChainName     string                    `json:"chain-name"`
+	ParentChainId uint64                    `json:"parent-chain-id"`
+	ChainConfig   *encoding_json.RawMessage `json:"chain-config"`
 }
 
-func applyArbitrumNovaParameters(k *koanf.Koanf) error {
-	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                                       "nova",
-		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
-		"node.feed.input.url":                                    "wss://nova.arbitrum.io/feed",
-		"node.data-availability.enable":                          true,
-		"node.data-availability.rest-aggregator.enable":          true,
-		"node.data-availability.rest-aggregator.online-url-list": "https://nova.arbitrum.io/das-servers",
-		"l1.rollup.bridge":                                       "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
-		"l1.rollup.inbox":                                        "0xc4448b71118c9071bcb9734a0eac55d18a153949",
-		"l1.rollup.rollup":                                       "0xfb209827c58283535b744575e11953dcc4bead88",
-		"l1.rollup.sequencer-inbox":                              "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
-		"l1.rollup.validator-utils":                              "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
-		"l1.rollup.validator-wallet-creator":                     "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
-		"l1.rollup.deployed-at":                                  15016829,
-		"l2.chain-id":                                            42170,
-		"init.empty":                                             true,
-	}, "."), nil)
-}
-
-func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
-	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "goerli-rollup",
-		"node.forwarding-target":             "https://goerli-rollup.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://goerli-rollup.arbitrum.io/feed",
-		"l1.rollup.bridge":                   "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
-		"l1.rollup.inbox":                    "0x6bebc4925716945d46f0ec336d5c2564f419682c",
-		"l1.rollup.rollup":                   "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
-		"l1.rollup.sequencer-inbox":          "0x0484a87b144745a2e5b7c359552119b6ea2917a9",
-		"l1.rollup.validator-utils":          "0x344f651fe566a02db939c8657427deb5524ea78e",
-		"l1.rollup.validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
-		"l1.rollup.deployed-at":              7217526,
-		"l2.chain-id":                        421613,
-		"init.empty":                         true,
-	}, "."), nil)
-}
-
-func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
-	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "rinkeby-nitro",
-		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
-		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
-		"l1.rollup.inbox":                    "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
-		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
-		"l1.rollup.sequencer-inbox":          "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
-		"l1.rollup.validator-utils":          "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
-		"l1.rollup.validator-wallet-creator": "0x237b8965cebe27108bc1d6b71575c3b070050f7a",
-		"l1.rollup.deployed-at":              11088567,
-		"l2.chain-id":                        421611,
-	}, "."), nil)
-}
-
-func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
-	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain": "goerli-anytrust",
-	}, "."), nil)
+func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainConfigFiles []string) (bool, error) {
+	for _, l2ChainConfigFile := range l2ChainConfigFiles {
+		chainsParametersBytes, err := os.ReadFile(l2ChainConfigFile)
+		if err != nil {
+			return false, err
+		}
+		var chainParameters map[uint64]ChainParameters
+		err = encoding_json.Unmarshal(chainsParametersBytes, &chainParameters)
+		if err != nil {
+			return false, err
+		}
+		if _, ok := chainParameters[chainId]; !ok {
+			continue
+		}
+		if chainParameters[chainId].ParentChainId != l1ChainId {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainParameters[chainId].ParentChainId, l2ChainConfigFile, chainId, l1ChainId)
+		}
+		err = k.Load(rawbytes.Provider(*chainParameters[chainId].ChainConfig), json.Parser())
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
