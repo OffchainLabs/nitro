@@ -1012,7 +1012,6 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if execClient != nil {
-		execClient.SetConsensusClient(n)
 		err := execClient.Start(ctx)
 		if err != nil {
 			return fmt.Errorf("error starting exec client: %w", err)
