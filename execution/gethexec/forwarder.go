@@ -35,7 +35,7 @@ var DefaultTestForwarderConfig = ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
 	MaxIdleConnections:    1,
-	RedisUrl:              redisutil.DefaultTestRedisURL,
+	RedisUrl:              "",
 	UpdateInterval:        time.Millisecond * 10,
 	RetryInterval:         time.Millisecond * 3,
 }
