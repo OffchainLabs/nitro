@@ -133,7 +133,7 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 }
 
 func (s *ExecutionEngine) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise[arbutil.MessageIndex](s.BlockNumberToMessageIndex(s.bc.CurrentBlock().Header().Number.Uint64()))
+	return containers.NewReadyPromise[arbutil.MessageIndex](s.BlockNumberToMessageIndex(s.bc.CurrentHeader().Number.Uint64()))
 }
 
 func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
@@ -395,7 +395,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIn
 
 // must hold createBlockMutex
 func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
-	currentHeader := s.bc.CurrentBlock().Header()
+	currentHeader := s.bc.CurrentHeader()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current header")
 	}
