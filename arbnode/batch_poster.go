@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
@@ -385,7 +385,7 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 	return success, err
 }
 
-func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
+func (s *batchSegments) AddMessage(msg *arbostypes.MessageWithMetadata) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -559,7 +559,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			haveUsefulMessage = true
 			break
 		}
-		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
+		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
 			haveUsefulMessage = true
 		}
 		b.building.msgCount++
