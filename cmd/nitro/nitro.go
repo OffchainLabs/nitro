@@ -726,8 +726,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if l2ChainId == 0 {
 		return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 	}
-	l2ChainConfigFiles := k.Strings("l2.chain-config-files")
-	chainFound, err = applyChainParameters(k, uint64(l2ChainId), l1ChainId.Uint64(), l2ChainConfigFiles)
+	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
+	chainFound, err = applyChainParameters(k, uint64(l2ChainId), l1ChainId.Uint64(), l2ChainInfoFiles)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -758,7 +758,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Persistent.Chain == "" {
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
-			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d, L2ChainConfigFiles: %s.  Change L1, update L2 chain id, modify --l2.chain-config-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId, l2ChainConfigFiles)
+			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d, L2ChainInfoFiles: %s.  Change L1, update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId, l2ChainInfoFiles)
 		}
 		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
@@ -781,30 +781,30 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-type ChainParameters struct {
-	ChainName     string                    `json:"chain-name"`
-	ParentChainId uint64                    `json:"parent-chain-id"`
-	ChainConfig   *encoding_json.RawMessage `json:"chain-config"`
+type ChainsInfo struct {
+	ChainName       string                    `json:"chain-name"`
+	ParentChainId   uint64                    `json:"parent-chain-id"`
+	ChainParameters *encoding_json.RawMessage `json:"chain-parameters"`
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainConfigFiles []string) (bool, error) {
-	for _, l2ChainConfigFile := range l2ChainConfigFiles {
-		chainsParametersBytes, err := os.ReadFile(l2ChainConfigFile)
+func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
+	for _, l2ChainInfoFile := range l2ChainInfoFiles {
+		chainsParametersBytes, err := os.ReadFile(l2ChainInfoFile)
 		if err != nil {
 			return false, err
 		}
-		var chainParameters map[uint64]ChainParameters
-		err = encoding_json.Unmarshal(chainsParametersBytes, &chainParameters)
+		var chainsInfo map[uint64]ChainsInfo
+		err = encoding_json.Unmarshal(chainsParametersBytes, &chainsInfo)
 		if err != nil {
 			return false, err
 		}
-		if _, ok := chainParameters[chainId]; !ok {
+		if _, ok := chainsInfo[chainId]; !ok {
 			continue
 		}
-		if chainParameters[chainId].ParentChainId != l1ChainId {
-			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainParameters[chainId].ParentChainId, l2ChainConfigFile, chainId, l1ChainId)
+		if chainsInfo[chainId].ParentChainId != l1ChainId {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainsInfo[chainId].ParentChainId, l2ChainInfoFile, chainId, l1ChainId)
 		}
-		err = k.Load(rawbytes.Provider(*chainParameters[chainId].ChainConfig), json.Parser())
+		err = k.Load(rawbytes.Provider(*chainsInfo[chainId].ChainParameters), json.Parser())
 		if err != nil {
 			return false, err
 		}

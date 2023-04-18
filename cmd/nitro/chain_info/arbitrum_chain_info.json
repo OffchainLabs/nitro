@@ -2,7 +2,7 @@
   "42161" : {
     "chain-name" : "arb1",
     "parent-chain-id" : 1,
-    "chain-config": {
+    "chain-parameters": {
       "persistent" : {
         "chain": "arb1"
       },
@@ -33,7 +33,7 @@
   "42170" : {
     "chain-name" : "nova",
     "parent-chain-id" : 1,
-    "chain-config": {
+    "chain-parameters": {
       "persistent" : {
         "chain": "nova"
       },
@@ -74,7 +74,7 @@
   "421611" : {
     "chain-name" : "rinkeby-nitro",
     "parent-chain-id" : 4,
-    "chain-config": {
+    "chain-parameters": {
       "persistent" : {
         "chain": "rinkeby-nitro"
       },
@@ -105,7 +105,7 @@
   "421613" : {
     "chain-name" : "goerli-rollup",
     "parent-chain-id" : 5,
-    "chain-config": {
+    "chain-parameters": {
       "persistent" : {
         "chain": "goerli-rollup"
       },
@@ -139,7 +139,7 @@
   "421703" : {
     "chain-name" : "goerli-anytrust",
     "parent-chain-id" : 5,
-    "chain-config": {
+    "chain-parameters": {
       "persistent" : {
         "chain": "goerli-anytrust"
       }
