@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"

@@ -15,7 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -25,7 +26,7 @@ type DelayedSequencer struct {
 	l1Reader                 *headerreader.HeaderReader
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
-	txStreamer               *TransactionStreamer
+	exec                     *execution.ExecutionEngine
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock uint64
 	mutex                    sync.Mutex
@@ -62,13 +63,13 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	UseMergeFinality:    true,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec *execution.ExecutionEngine, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	d := &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
 		coordinator: coordinator,
-		txStreamer:  txStreamer,
+		exec:        exec,
 		config:      config,
 	}
 	if coordinator != nil {
@@ -78,15 +79,7 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReade
 }
 
 func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
-	pos, err := d.txStreamer.GetMessageCount()
-	if err != nil || pos == 0 {
-		return 0, err
-	}
-	lastMsg, err := d.txStreamer.GetMessage(pos - 1)
-	if err != nil {
-		return 0, err
-	}
-	return lastMsg.DelayedMessagesRead, nil
+	return d.exec.NextDelayedMessageNumber()
 }
 
 func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
@@ -145,7 +138,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	// Retrieve all finalized delayed messages
 	pos := startPos
 	var lastDelayedAcc common.Hash
-	var messages []*arbos.L1IncomingMessage
+	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
 		msg, acc, err := d.inbox.GetDelayedMessageAndAccumulator(pos)
 		if err != nil {
@@ -181,10 +174,11 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			// Probably a reorg that hasn't been picked up by the inbox reader
 			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
-
-		err = d.txStreamer.SequenceDelayedMessages(ctx, messages, startPos)
-		if err != nil {
-			return err
+		for i, msg := range messages {
+			err = d.exec.SequenceDelayedMessage(msg, startPos+uint64(i))
+			if err != nil {
+				return err
+			}
 		}
 		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
 	}
