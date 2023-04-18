@@ -25,7 +25,6 @@ type RecordResult struct {
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
-var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {

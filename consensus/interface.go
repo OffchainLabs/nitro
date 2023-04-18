@@ -1,12 +1,16 @@
 package consensus
 
 import (
+	"errors"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
 const RPCNamespace = "nitroconsensus"
+
+var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {

@@ -239,7 +239,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 		s.createBlocksMutex.Lock()
 		block, err := s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
 		s.createBlocksMutex.Unlock()
-		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
+		if !errors.Is(err, consensus.ErrSequencerInsertLockTaken) {
 			return block, err
 		}
 		<-time.After(time.Millisecond * 100)
@@ -329,7 +329,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingM
 			s.createBlocksMutex.Lock()
 			err := s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
 			s.createBlocksMutex.Unlock()
-			if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
+			if !errors.Is(err, consensus.ErrSequencerInsertLockTaken) {
 				return struct{}{}, err
 			}
 			<-time.After(time.Millisecond * 100)

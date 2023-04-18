@@ -170,7 +170,7 @@ func CreateExecutionNode(
 	var consensusClient *consensusclient.Client
 
 	if config.ConsensesServer.URL != "" {
-		consensusClient = consensusclient.NewClient(&config.ConsensesServer)
+		consensusClient = consensusclient.NewClient(&config.ConsensesServer, stack)
 	}
 
 	var consensusInterface consensus.FullConsensusClient

@@ -59,7 +59,7 @@ func (c *ExecAPI) SeqActivate(ctx context.Context) error {
 	return err
 }
 
-func (c *ExecAPI) ForwardTo(ctx context.Context, url string) error {
+func (c *ExecAPI) SeqForwardTo(ctx context.Context, url string) error {
 	_, err := c.exec.ForwardTo(url).Await(ctx)
 	return err
 }

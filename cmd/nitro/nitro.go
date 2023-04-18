@@ -270,16 +270,6 @@ func mainImpl() int {
 		stackConf.JWTSecret = fileName
 	}
 
-	if nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret == "self" {
-		nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret = stackConf.JWTSecret
-	}
-	if nodeConfig.Node.ExecutionServer.JWTSecret == "self" {
-		nodeConfig.Node.ExecutionServer.JWTSecret = stackConf.JWTSecret
-	}
-	if nodeConfig.Execution.ConsensesServer.JWTSecret == "self" {
-		nodeConfig.Execution.ConsensesServer.JWTSecret = stackConf.JWTSecret
-	}
-
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
@@ -463,7 +453,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	execClient := execclient.NewClient(&nodeConfig.Node.ExecutionServer)
+	execClient := execclient.NewClient(&nodeConfig.Node.ExecutionServer, stack)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,

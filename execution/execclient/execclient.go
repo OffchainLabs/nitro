@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -20,18 +21,20 @@ type Client struct {
 	stopwaiter.StopWaiter
 	client *rpc.Client
 	config *rpcclient.ClientConfig
+	stack  *node.Node
 }
 
-func NewClient(config *rpcclient.ClientConfig) *Client {
+func NewClient(config *rpcclient.ClientConfig, stack *node.Node) *Client {
 	return &Client{
 		config: config,
+		stack:  stack,
 	}
 }
 
 func (c *Client) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	client, err := rpcclient.CreateRPCClient(ctx, c.config)
+	client, err := rpcclient.CreateRPCClient(ctx, c.config, c.stack)
 	if err != nil {
 		return err
 	}
@@ -46,9 +49,6 @@ func convertError(err error) error {
 	errStr := err.Error()
 	if strings.Contains(errStr, execution.ErrRetrySequencer.Error()) {
 		return execution.ErrRetrySequencer
-	}
-	if strings.Contains(errStr, execution.ErrSequencerInsertLockTaken.Error()) {
-		return execution.ErrSequencerInsertLockTaken
 	}
 	return err
 }

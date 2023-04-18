@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/consensus"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -786,7 +787,7 @@ func (s *TransactionStreamer) writeMessageFromSequencer(pos arbutil.MessageIndex
 		return err
 	}
 	if !s.insertionMutex.TryLock() {
-		return execution.ErrSequencerInsertLockTaken
+		return consensus.ErrSequencerInsertLockTaken
 	}
 	defer s.insertionMutex.Unlock()
 
