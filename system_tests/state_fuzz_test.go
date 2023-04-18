@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -93,15 +94,15 @@ func (b *inboxBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	if seqNum >= uint64(len(b.delayedMessages)) {
 		return nil, errors.New("delayed inbox message out of bounds")
 	}
-	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
 	if err != nil {
 		// The bridge won't generate an invalid L1 message,
 		// so here we substitute it with a less invalid one for fuzzing.
-		msg = &arbos.TestIncomingMessageWithRequestId
+		msg = &arbostypes.TestIncomingMessageWithRequestId
 	}
 	return msg, nil
 }

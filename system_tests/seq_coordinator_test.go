@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
@@ -68,11 +68,11 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 	trySequencing := func(nodeNum int) bool {
 		node := nodes[nodeNum]
-		curMsgs, err := node.TxStreamer.GetMessageCountSync()
+		curMsgs, err := node.TxStreamer.GetMessageCountSync(t)
 		Require(t, err)
-		emptyMessage := arbstate.MessageWithMetadata{
-			Message: &arbos.L1IncomingMessage{
-				Header: &arbos.L1IncomingMessageHeader{
+		emptyMessage := arbostypes.MessageWithMetadata{
+			Message: &arbostypes.L1IncomingMessage{
+				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        0,
 					Poster:      common.Address{},
 					BlockNumber: 0,
@@ -85,11 +85,11 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			DelayedMessagesRead: 1,
 		}
 		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
-		if errors.Is(err, arbnode.ErrRetrySequencer) {
+		if errors.Is(err, execution.ErrRetrySequencer) {
 			return false
 		}
 		Require(t, err)
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{emptyMessage}))
+		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadata{emptyMessage}))
 		return true
 	}
 
@@ -119,7 +119,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 				continue
 			}
 			for attempts := 1; ; attempts++ {
-				msgCount, err := currentNode.TxStreamer.GetMessageCountSync()
+				msgCount, err := currentNode.TxStreamer.GetMessageCountSync(t)
 				Require(t, err)
 				if msgCount >= msgNum {
 					break
@@ -144,7 +144,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	}
 
 	nodeForwardTarget := func(nodeNum int) int {
-		fwTarget := nodes[nodeNum].TxPublisher.(*arbnode.TxPreChecker).TransactionPublisher.(*arbnode.Sequencer).ForwardTarget()
+		fwTarget := nodes[nodeNum].Execution.TxPublisher.(*execution.TxPreChecker).TransactionPublisher.(*execution.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}
