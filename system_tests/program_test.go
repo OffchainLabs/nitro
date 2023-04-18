@@ -547,12 +547,14 @@ func TestProgramEvmData(t *testing.T) {
 		result = result[dataSize:]
 	}
 
-	expectedHash := new(big.Int)
-	expectedHash.SetString("88380104C7132464D7FDC735DF32EBD023A4A0CA477379EE10A938BD70C04486", 16)
+	expectedHash, success := new(big.Int).SetString("88380104C7132464D7FDC735DF32EBD023A4A0CA477379EE10A938BD70C04486", 16)
+	if !success {
+		Fail(t, "expectedHash not formatted correctly")
+	}
 	expectBigInt("blockhash", expectedHash)
 	expectBigInt("base fee", big.NewInt(100000000))
 	expectedChainid, err := l2client.ChainID(ctx)
-	ensure(tx, err)
+	Require(t, err)
 	expectBigInt("chainid", expectedChainid)
 	expectAddress("coinbase", common.HexToAddress("0xA4b000000000000000000073657175656e636572"))
 	expectBigInt("difficulty", big.NewInt(1))
