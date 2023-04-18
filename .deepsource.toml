@@ -4,9 +4,6 @@ version = 1
 name = "shell"
 
 [[analyzers]]
-name = "javascript"
-
-[[analyzers]]
 name = "go"
 
   [analyzers.meta]
