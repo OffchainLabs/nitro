@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -21,12 +22,14 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	config *rpcclient.ClientConfig
 	client *rpc.Client
+	stack  *node.Node
 	name   string
 }
 
-func NewValidationClient(config *rpcclient.ClientConfig) *ValidationClient {
+func NewValidationClient(config *rpcclient.ClientConfig, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
 		config: config,
+		stack:  stack,
 	}
 }
 
@@ -44,7 +47,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	client, err := rpcclient.CreateRPCClient(ctx, c.config)
+	client, err := rpcclient.CreateRPCClient(ctx, c.config, c.stack)
 	if err != nil {
 		return err
 	}
@@ -89,9 +92,9 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(config *rpcclient.ClientConfig) *ExecutionClient {
+func NewExecutionClient(config *rpcclient.ClientConfig, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
-		ValidationClient: *NewValidationClient(config),
+		ValidationClient: *NewValidationClient(config, stack),
 	}
 }
 

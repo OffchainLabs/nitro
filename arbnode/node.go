@@ -810,6 +810,7 @@ func createNodeImpl(
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&configFetcher.Get().BlockValidator,
+			stack,
 		)
 	} else {
 		err = errors.New("no validator url specified")

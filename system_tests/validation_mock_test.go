@@ -190,9 +190,9 @@ func TestValidationServerAPI(t *testing.T) {
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
 	rpcConfig := rpcclient.ClientConfig{
-		URL: validationDefault.WSEndpoint(),
+		URL: "auto",
 	}
-	client := server_api.NewExecutionClient(&rpcConfig)
+	client := server_api.NewExecutionClient(&rpcConfig, validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -260,15 +260,12 @@ func TestExecutionKeepAlive(t *testing.T) {
 	shortTimeoutConfig.ExecRunTimeout = time.Second
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	rpcConfig := rpcclient.ClientConfig{
-		URL: validationDefault.WSEndpoint(),
+		URL: "auto",
 	}
-	clientDefault := server_api.NewExecutionClient(&rpcConfig)
+	clientDefault := server_api.NewExecutionClient(&rpcConfig, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	rpcConfigShort := rpcclient.ClientConfig{
-		URL: validationShortTO.WSEndpoint(),
-	}
-	clientShortTO := server_api.NewExecutionClient(&rpcConfigShort)
+	clientShortTO := server_api.NewExecutionClient(&rpcConfig, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 

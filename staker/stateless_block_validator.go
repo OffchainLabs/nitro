@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/pkg/errors"
@@ -191,9 +192,10 @@ func NewStatelessBlockValidator(
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
+	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	valClient := server_api.NewValidationClient(&config.ValidationServer)
-	execClient := server_api.NewExecutionClient(&config.ValidationServer)
+	valClient := server_api.NewValidationClient(&config.ValidationServer, stack)
+	execClient := server_api.NewExecutionClient(&config.ValidationServer, stack)
 	validator := &StatelessBlockValidator{
 		config:             config,
 		execSpawner:        execClient,

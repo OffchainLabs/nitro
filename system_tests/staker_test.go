@@ -135,7 +135,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
-	blockValidatorConfig.ValidationServer.URL = valStack.WSEndpoint()
 
 	statelessA, err := staker.NewStatelessBlockValidator(
 		l2nodeA.InboxReader,
@@ -145,6 +144,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.ArbDB,
 		nil,
 		&blockValidatorConfig,
+		valStack,
 	)
 	Require(t, err)
 	err = statelessA.Start(ctx)
@@ -177,6 +177,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.ArbDB,
 		nil,
 		&blockValidatorConfig,
+		valStack,
 	)
 	Require(t, err)
 	err = statelessB.Start(ctx)
