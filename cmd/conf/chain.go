@@ -38,17 +38,21 @@ func (c *L1Config) ResolveDirectoryNames(chain string) {
 }
 
 type L2Config struct {
-	ChainID   uint64                   `koanf:"chain-id"`
-	DevWallet genericconf.WalletConfig `koanf:"dev-wallet"`
+	ChainID        uint64                   `koanf:"chain-id"`
+	ChainInfoFiles []string                 `koanf:"chain-info-files"`
+	DevWallet      genericconf.WalletConfig `koanf:"dev-wallet"`
 }
 
 var L2ConfigDefault = L2Config{
-	ChainID:   0,
-	DevWallet: genericconf.WalletConfigDefault,
+	ChainID:        0,
+	ChainInfoFiles: []string{},
+	DevWallet:      genericconf.WalletConfigDefault,
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
+	f.StringSlice(prefix+".chain-info-files", L2ConfigDefault.ChainInfoFiles, "L2 chain info json files")
+
 	// Dev wallet does not exist unless specified
 	genericconf.WalletConfigAddOptions(prefix+".dev-wallet", f, "")
 }

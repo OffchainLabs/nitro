@@ -519,7 +519,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr)
+		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr, config.L2.ChainInfoFiles)
 		if err != nil {
 			return chainDb, nil, err
 		}

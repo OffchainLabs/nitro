@@ -50,6 +50,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -781,20 +782,14 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-type ChainsInfo struct {
-	ChainName       string                    `json:"chain-name"`
-	ParentChainId   uint64                    `json:"parent-chain-id"`
-	ChainParameters *encoding_json.RawMessage `json:"chain-parameters"`
-}
-
 func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
 	for _, l2ChainInfoFile := range l2ChainInfoFiles {
-		chainsParametersBytes, err := os.ReadFile(l2ChainInfoFile)
+		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
 		if err != nil {
 			return false, err
 		}
-		var chainsInfo map[uint64]ChainsInfo
-		err = encoding_json.Unmarshal(chainsParametersBytes, &chainsInfo)
+		var chainsInfo map[uint64]arbos.ChainInfo
+		err = encoding_json.Unmarshal(chainsInfoBytes, &chainsInfo)
 		if err != nil {
 			return false, err
 		}
