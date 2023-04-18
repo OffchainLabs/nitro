@@ -114,7 +114,6 @@ library EdgeChallengeManagerLib {
             edge.eType, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight
         );
         bytes32 firstRival = store.firstRivals[mutualId];
-        bool hasRivalVal = false;
 
         // the first time we add a mutual id we store a magic string hash against it
         // We do this to distinguish from there being no edges
@@ -125,7 +124,6 @@ library EdgeChallengeManagerLib {
             store.firstRivals[mutualId] = UNRIVALED;
         } else if (firstRival == UNRIVALED) {
             store.firstRivals[mutualId] = eId;
-            hasRivalVal = true;
         } else {
             // after we've stored the first rival we dont need to keep a record of any
             // other rival edges - they will all have a zero time unrivaled
@@ -135,16 +133,11 @@ library EdgeChallengeManagerLib {
             eId,
             mutualId,
             edge.originId,
-            hasRivalVal,
+            firstRival != 0,
             store.edges[eId].length(),
             edge.eType,
             edge.staker != address(0)
         );
-    }
-
-    /// @dev    Determines if the rival val is currently rivaled
-    function hasRivalVal(bytes32 rivalVal) private pure returns (bool) {
-        return rivalVal != UNRIVALED;
     }
 
     /// @notice Does this edge currently have one or more rivals
@@ -162,7 +155,7 @@ library EdgeChallengeManagerLib {
         require(firstRival != 0, "Empty first rival");
 
         // can only have no rival if the firstRival is the UNRIVALED magic hash
-        return hasRivalVal(firstRival);
+        return firstRival != UNRIVALED;
     }
 
     /// @notice Is the edge a single step in length, and does it have at least one rival.
