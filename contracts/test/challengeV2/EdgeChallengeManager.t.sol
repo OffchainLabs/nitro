@@ -1386,4 +1386,95 @@ contract EdgeChallengeManagerTest is Test {
             ei.challengeManager.getEdge(allWinners[17].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed"
         );
     }
+
+    function testGetPrevAssertionId() public {
+        EdgeInitData memory ei = deployAndInit();
+
+        (
+            bytes32[] memory blockStates1,
+            bytes32[] memory blockStates2,
+            BisectionChildren[6] memory blockEdges1,
+            BisectionChildren[6] memory blockEdges2
+        ) = createEdgesAndBisectToFork(
+            CreateEdgesBisectArgs(
+                ei.challengeManager,
+                EdgeType.Block,
+                ei.a1,
+                ei.a2,
+                StateToolsLib.hash(ei.a1State),
+                StateToolsLib.hash(ei.a2State),
+                false,
+                new bytes32[](0),
+                new bytes32[](0)
+            )
+        );
+
+        (
+            bytes32[] memory bigStepStates1,
+            bytes32[] memory bigStepStates2,
+            BisectionChildren[6] memory bigStepEdges1,
+            BisectionChildren[6] memory bigStepEdges2
+        ) = createEdgesAndBisectToFork(
+            CreateEdgesBisectArgs(
+                ei.challengeManager,
+                EdgeType.BigStep,
+                blockEdges1[0].lowerChildId,
+                blockEdges2[0].lowerChildId,
+                blockStates1[1],
+                blockStates2[1],
+                false,
+                ArrayUtilsLib.slice(blockStates1, 0, 2),
+                ArrayUtilsLib.slice(blockStates2, 0, 2)
+            )
+        );
+
+        (
+            bytes32[] memory smallStepStates1,
+            ,
+            BisectionChildren[6] memory smallStepEdges1,
+            BisectionChildren[6] memory smallStepEdges2
+        ) = createEdgesAndBisectToFork(
+            CreateEdgesBisectArgs(
+                ei.challengeManager,
+                EdgeType.SmallStep,
+                bigStepEdges1[0].lowerChildId,
+                bigStepEdges2[0].lowerChildId,
+                bigStepStates1[1],
+                bigStepStates2[1],
+                false,
+                ArrayUtilsLib.slice(bigStepStates1, 0, 2),
+                ArrayUtilsLib.slice(bigStepStates2, 0, 2)
+            )
+        );
+
+        for (uint256 i = 0; i < smallStepEdges1.length; i++) {
+            bytes32 childId = smallStepEdges1[i].lowerChildId;
+            assertEq(ei.challengeManager.getPrevAssertionId(childId), ei.genesis);
+        }
+
+        for (uint256 i = 0; i < smallStepEdges2.length; i++) {
+            bytes32 childId = smallStepEdges2[i].lowerChildId;
+            assertEq(ei.challengeManager.getPrevAssertionId(childId), ei.genesis);
+        }
+
+        for (uint256 i = 0; i < bigStepEdges1.length; i++) {
+            bytes32 childId = bigStepEdges1[i].lowerChildId;
+            assertEq(ei.challengeManager.getPrevAssertionId(childId), ei.genesis);
+        }
+
+        for (uint256 i = 0; i < bigStepEdges2.length; i++) {
+            bytes32 childId = bigStepEdges2[i].lowerChildId;
+            assertEq(ei.challengeManager.getPrevAssertionId(childId), ei.genesis);
+        }
+
+        for (uint256 i = 0; i < blockEdges1.length; i++) {
+            bytes32 childId = blockEdges1[i].lowerChildId;
+            assertEq(ei.challengeManager.getPrevAssertionId(childId), ei.genesis);
+        }
+
+        for (uint256 i = 0; i < blockEdges2.length; i++) {
+            bytes32 childId = blockEdges2[i].lowerChildId;
+            assertEq(ei.challengeManager.getPrevAssertionId(childId), ei.genesis);
+        }
+    }
 }

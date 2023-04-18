@@ -140,6 +140,27 @@ library EdgeChallengeManagerLib {
         );
     }
 
+    /// @notice From any given edge, get the id of the previous assertion
+    /// @param edgeId   The edge to get the prev assertion Id
+    function getPrevAssertionId(EdgeStore storage store, bytes32 edgeId) internal view returns (bytes32) {
+        ChallengeEdge storage edge = get(store, edgeId);
+
+        if (edge.eType == EdgeType.SmallStep) {
+            bytes32 bigStepEdgeId = store.firstRivals[edge.originId];
+            edge = get(store, bigStepEdgeId);
+        }
+
+        if (edge.eType == EdgeType.BigStep) {
+            bytes32 blockEdgeId = store.firstRivals[edge.originId];
+            edge = get(store, blockEdgeId);
+        }
+
+        // Sanity Check: should never be hit for validly constructed edges
+        require(edge.eType == EdgeType.Block, "Edge not block type after traversal");
+
+        return edge.originId;
+    }
+
     /// @notice Does this edge currently have one or more rivals
     ///         Rival edges share the same startHeight, startHistoryCommitment and the same endHeight,
     ///         but they have a different endHistoryRoot. Rival edges have the same mutualId

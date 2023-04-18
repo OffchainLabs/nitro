@@ -290,6 +290,10 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     ///////////////////////////////////////////////
     ///////////// VIEW FUNCS ///////////////
 
+    function getPrevAssertionId(bytes32 edgeId) public view returns (bytes32) {
+        return store.getPrevAssertionId(edgeId);
+    }
+
     function hasRival(bytes32 edgeId) public view returns (bool) {
         return store.hasRival(edgeId);
     }
