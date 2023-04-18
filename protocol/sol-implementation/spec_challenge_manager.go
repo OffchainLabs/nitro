@@ -167,54 +167,62 @@ func (e *SpecEdge) MutualId(ctx context.Context) (protocol.MutualId, error) {
 // For example, if two validators open a subchallenge S at edge A in a BlockChallenge, the TopLevelClaimHeight of S is the height of A.
 // If two validators open a subchallenge S' at edge B in BigStepChallenge, the TopLevelClaimHeight
 // is the height of A.
-func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (protocol.Height, error) {
+func (e *SpecEdge) TopLevelClaimHeight(ctx context.Context) (*protocol.OriginHeights, error) {
 	switch e.GetType() {
 	case protocol.BigStepChallengeEdge:
 		rivalId, err := e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, e.inner.OriginId)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
-			return 0, errors.Wrapf(err, "block challenge one step fork source does not exist for rival id %#x", rivalId)
+			return nil, errors.Wrapf(err, "block challenge one step fork source does not exist for rival id %#x", rivalId)
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
-			return 0, errors.New("source edge is none")
+			return nil, errors.New("source edge is none")
 		}
 		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
-		return startHeight, nil
+		return &protocol.OriginHeights{
+			BlockChallengeOriginHeight: startHeight,
+		}, nil
 	case protocol.SmallStepChallengeEdge:
 		rivalId, err := e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, e.inner.OriginId)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		bigStepChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
-			return 0, errors.Wrap(err, "big step challenge one step fork source does not exist")
+			return nil, errors.Wrap(err, "big step challenge one step fork source does not exist")
 		}
 		if bigStepChallengeOneStepForkSource.IsNone() {
-			return 0, errors.New("source edge is none")
+			return nil, errors.New("source edge is none")
 		}
 		bigStepEdge, ok := bigStepChallengeOneStepForkSource.Unwrap().(*SpecEdge)
 		if !ok {
-			return 0, errors.New("not *SpecEdge")
+			return nil, errors.New("not *SpecEdge")
 		}
 		rivalId, err = e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, bigStepEdge.inner.OriginId)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		blockChallengeOneStepForkSource, err := e.manager.GetEdge(ctx, rivalId)
 		if err != nil {
-			return 0, errors.Wrap(err, "block challenge one step fork source does not exist")
+			return nil, errors.Wrap(err, "block challenge one step fork source does not exist")
 		}
 		if blockChallengeOneStepForkSource.IsNone() {
-			return 0, errors.New("source edge is none")
+			return nil, errors.New("source edge is none")
 		}
-		startHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
-		return startHeight, nil
+		bigStepStartHeight, _ := bigStepEdge.StartCommitment()
+		blockChallengeStartHeight, _ := blockChallengeOneStepForkSource.Unwrap().StartCommitment()
+		return &protocol.OriginHeights{
+			BlockChallengeOriginHeight:   blockChallengeStartHeight,
+			BigStepChallengeOriginHeight: bigStepStartHeight,
+		}, nil
 	default:
 		startHeight, _ := e.StartCommitment()
-		return startHeight, nil
+		return &protocol.OriginHeights{
+			BlockChallengeOriginHeight: startHeight,
+		}, nil
 	}
 }
 

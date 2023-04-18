@@ -19,8 +19,9 @@ type EngineAtBlock interface {
 	NumBigSteps() uint64
 	StateAfterSmallSteps(n uint64) (IntermediateStateIterator, error)
 	StateAfterBigSteps(n uint64) (IntermediateStateIterator, error)
-	FirstState() common.Hash
-	LastState() common.Hash
+	StartingAssertionStateHash() common.Hash
+	EndingAssertionStateHash() common.Hash
+	FirstMachineState() IntermediateStateIterator
 	Serialize() []byte
 }
 
@@ -28,7 +29,7 @@ type EngineAtBlock interface {
 // states using an execution engine at a specific L2 block height.
 type IntermediateStateIterator interface {
 	Engine() EngineAtBlock
-	NextState() (IntermediateStateIterator, error)
+	NextMachineState() (IntermediateStateIterator, error)
 	CurrentStepNum() uint64
 	Hash() common.Hash
 	IsStopped() bool
@@ -54,43 +55,40 @@ func DefaultMachineConfig() *MachineConfig {
 // Engine can provide an execution engine for a specific pre-state of an L2 block,
 // giving access to a state iterator to advance opcode-by-opcode and fetch one-step-proofs.
 type Engine struct {
-	machineCfg     *MachineConfig
-	numSteps       uint64
-	startStateRoot common.Hash
-	endStateRoot   common.Hash
+	machineCfg                 *MachineConfig
+	numSteps                   uint64
+	startingAssertionStateHash common.Hash
+	endingAssertionStateHash   common.Hash
 }
 
 // NewExecutionEngine constructs an engine at a specific block number when given
 // a pre and post-state for L2.
 func NewExecutionEngine(
 	machineCfg *MachineConfig,
-	assertionStateRoots []common.Hash,
+	startAssertionStateHash,
+	endAssertionStateHash common.Hash,
 ) (*Engine, error) {
-	if len(assertionStateRoots) == 0 {
-		return nil, errors.New("need a list of assertion state roots")
-	}
-	numSteps := machineCfg.MaxInstructionsPerBlock * uint64(len(assertionStateRoots))
 	return &Engine{
-		machineCfg:     machineCfg,
-		numSteps:       numSteps,
-		startStateRoot: assertionStateRoots[0],
-		endStateRoot:   assertionStateRoots[len(assertionStateRoots)-1],
+		machineCfg:                 machineCfg,
+		numSteps:                   machineCfg.MaxInstructionsPerBlock,
+		startingAssertionStateHash: startAssertionStateHash,
+		endingAssertionStateHash:   endAssertionStateHash,
 	}, nil
 }
 
-func (engine *Engine) FirstState() common.Hash {
-	return engine.startStateRoot
+func (engine *Engine) StartingAssertionStateHash() common.Hash {
+	return engine.startingAssertionStateHash
 }
 
-func (engine *Engine) LastState() common.Hash {
-	return engine.endStateRoot
+func (engine *Engine) EndingAssertionStateHash() common.Hash {
+	return engine.endingAssertionStateHash
 }
 
 // Serialize an execution engine.
 func (engine *Engine) Serialize() []byte {
 	var ret []byte
-	ret = append(ret, engine.startStateRoot.Bytes()...)
-	ret = append(ret, engine.endStateRoot.Bytes()...)
+	ret = append(ret, engine.startingAssertionStateHash.Bytes()...)
+	ret = append(ret, engine.endingAssertionStateHash.Bytes()...)
 	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)
 	return ret
 }
@@ -101,7 +99,7 @@ func (engine *Engine) Serialize() []byte {
 // the start state root and num steps in the machine serialization we achieve that.
 func (engine *Engine) SerializeForHash() []byte {
 	var ret []byte
-	ret = append(ret, engine.startStateRoot.Bytes()...)
+	ret = append(ret, engine.startingAssertionStateHash.Bytes()...)
 	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)
 	return ret
 }
@@ -111,9 +109,9 @@ func deserializeExecutionEngine(buf []byte) (*Engine, error) {
 		return nil, errors.New("deserialization error")
 	}
 	return &Engine{
-		startStateRoot: common.BytesToHash(buf[:32]),
-		endStateRoot:   common.BytesToHash(buf[32:64]),
-		numSteps:       binary.BigEndian.Uint64(buf[64:]),
+		startingAssertionStateHash: common.BytesToHash(buf[:32]),
+		endingAssertionStateHash:   common.BytesToHash(buf[32:64]),
+		numSteps:                   binary.BigEndian.Uint64(buf[64:]),
 	}, nil
 }
 
@@ -159,6 +157,13 @@ func (engine *Engine) StateAfterSmallSteps(num uint64) (IntermediateStateIterato
 	}, nil
 }
 
+func (engine *Engine) FirstMachineState() IntermediateStateIterator {
+	return &ExecutionState{
+		engine:  engine,
+		stepNum: 0,
+	}
+}
+
 // ExecutionState represents execution of opcodes within an L2 block, which is able
 // to provide the hash the intermediate machine state as well as retrieve the next state.
 type ExecutionState struct {
@@ -184,16 +189,13 @@ func (execState *ExecutionState) CurrentStepNum() uint64 {
 // has finished, or otherwise the intermediary state root defined by hashing the
 // internal hash with the step number.
 func (execState *ExecutionState) Hash() common.Hash {
-	if execState.IsStopped() {
-		return execState.engine.endStateRoot
-	}
 	// This is the intermediary state root after executing N steps with the engine.
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64(execState.engine.internalHash().Bytes(), execState.stepNum))
 }
 
 // NextState fetches the state at the next step of execution. If the machine is stopped,
 // it will return an error.
-func (execState *ExecutionState) NextState() (IntermediateStateIterator, error) {
+func (execState *ExecutionState) NextMachineState() (IntermediateStateIterator, error) {
 	if execState.IsStopped() {
 		return nil, ErrOutOfBounds
 	}
@@ -230,7 +232,7 @@ func VerifyOneStepProof(beforeStateRoot common.Hash, claimedAfterStateRoot commo
 	if beforeState.Hash() != beforeStateRoot {
 		return false
 	}
-	afterState, err := beforeState.NextState()
+	afterState, err := beforeState.NextMachineState()
 	if err != nil {
 		return false
 	}

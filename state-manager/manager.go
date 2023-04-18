@@ -35,46 +35,82 @@ type AssertionToCreate struct {
 }
 
 type Manager interface {
+	// Produces the latest assertion data to post to L1 from the local state manager's
+	// perspective based on a parent assertion height.
 	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
-	HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool
-	HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error)
+	// Checks if a state commitment corresponds to data the state manager has locally.
+	HasStateCommitment(ctx context.Context, blockChallengeCommitment util.StateCommitment) bool
+	// Produces a block challenge history commitment up to and including a certain height.
+	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error)
+	// Produces a big step history commitment for all big steps within block
+	// challenge heights H to H+1.
 	BigStepLeafCommitment(
 		ctx context.Context,
-		fromAssertionHeight,
-		toAssertionHeight uint64,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight uint64,
 	) (util.HistoryCommitment, error)
+	// Produces a big step history commitment from big step 0 to N within block
+	// challenge heights A and B where B = A + 1.
 	BigStepCommitmentUpTo(
 		ctx context.Context,
-		fromAssertionHeight,
-		toAssertionHeight,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
 		toBigStep uint64,
 	) (util.HistoryCommitment, error)
+	// Produces a small step history commitment for all small steps between
+	// big steps S to S+1 within block challenge heights H to H+1.
 	SmallStepLeafCommitment(
 		ctx context.Context,
-		fromAssertionHeight,
-		toAssertionHeight uint64,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep uint64,
 	) (util.HistoryCommitment, error)
+	// Produces a small step history commitment from small step 0 to N between
+	// big steps S to S+1 within block challenge heights H to H+1.
 	SmallStepCommitmentUpTo(
 		ctx context.Context,
-		fromAssertionHeight,
-		toAssertionHeight,
-		toStep uint64,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep,
+		toSmallStep uint64,
 	) (util.HistoryCommitment, error)
-	PrefixProof(ctx context.Context, from, to uint64) ([]byte, error)
+	// Produces a prefix proof in a block challenge from height A to B.
+	PrefixProof(
+		ctx context.Context,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight uint64,
+	) ([]byte, error)
+	// Produces a big step prefix proof from height A to B for heights H to H+1
+	// within a block challenge.
 	BigStepPrefixProof(
 		ctx context.Context,
-		fromAssertionHeight,
-		toAssertionHeight,
-		lo,
-		hi uint64,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep uint64,
 	) ([]byte, error)
+	// Produces a small step prefix proof from height A to B for big step S to S+1 and
+	// block challenge height heights H to H+1.
 	SmallStepPrefixProof(
 		ctx context.Context,
 		fromAssertionHeight,
 		toAssertionHeight,
-		lo,
-		hi uint64,
+		fromBigStep,
+		toBigStep,
+		fromSmallStep,
+		toSmallStep uint64,
 	) ([]byte, error)
+	OneStepProofData(
+		ctx context.Context,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep,
+		fromSmallStep,
+		toSmallStep uint64,
+	) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error)
 }
 
 // Simulated defines a very naive state manager that is initialized from a list of predetermined
@@ -87,6 +123,7 @@ type Simulated struct {
 	numOpcodesPerBigStep      uint64
 	bigStepDivergenceHeight   uint64
 	smallStepDivergenceHeight uint64
+	malicious                 bool
 }
 
 // New simulated manager from a list of predefined state roots, useful for tests and simulations.
@@ -124,6 +161,12 @@ func WithBigStepStateDivergenceHeight(divergenceHeight uint64) Opt {
 func WithSmallStepStateDivergenceHeight(divergenceHeight uint64) Opt {
 	return func(s *Simulated) {
 		s.smallStepDivergenceHeight = divergenceHeight
+	}
+}
+
+func WithMaliciousIntent() Opt {
+	return func(s *Simulated) {
+		s.malicious = true
 	}
 }
 
@@ -194,34 +237,21 @@ func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.Stat
 	return s.stateRoots[commitment.Height] == commitment.StateRoot
 }
 
-// HistoryCommitmentUpTo gets the history commitment for the merkle expansion up to a height.
-func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error) {
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
-	size := height + 1
+	size := blockChallengeHeight + 1
 	return util.NewHistoryCommitment(
-		height,
+		blockChallengeHeight,
 		s.stateRoots[:size],
 	)
 }
 
-// BigStepLeafCommitment produces a big step history commitment which includes
-// a Merkleization of the N big-steps in between assertions A and B. This function
-// is called when a validator is preparing a subchallenge on assertions A and B that
-// are one-step away from each other. It will then load up the big steps
-// between those two heights and produce a commitment.
 func (s *Simulated) BigStepLeafCommitment(
 	ctx context.Context,
 	fromAssertionHeight,
 	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
-	if fromAssertionHeight+1 != toAssertionHeight {
-		return util.HistoryCommitment{}, fmt.Errorf(
-			"from height %d is not one-step away from to height %d",
-			fromAssertionHeight,
-			toAssertionHeight,
-		)
-	}
 	// Number of big steps between assertion heights A and B will be
 	// fixed in this simulated state manager. It is simply the max number of opcodes
 	// per block divided by the size of a big step.
@@ -234,58 +264,11 @@ func (s *Simulated) BigStepLeafCommitment(
 	)
 }
 
-func (s *Simulated) setupEngine(fromHeight, toHeight uint64) (*execution.Engine, error) {
-	machineCfg := execution.DefaultMachineConfig()
-	if s.maxWavmOpcodes > 0 {
-		machineCfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
-	}
-	if s.numOpcodesPerBigStep > 0 {
-		machineCfg.BigStepSize = s.numOpcodesPerBigStep
-	}
-	return execution.NewExecutionEngine(
-		machineCfg,
-		s.stateRoots[fromHeight:toHeight+1],
-	)
-}
-
-// BigStepCommitmentUpTo creates a history commitment up to a big step.
 func (s *Simulated) BigStepCommitmentUpTo(
 	ctx context.Context,
 	fromAssertionHeight,
 	toAssertionHeight,
 	toBigStep uint64,
-) (util.HistoryCommitment, error) {
-	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	if engine.NumBigSteps() < toBigStep {
-		return util.HistoryCommitment{}, errors.New("not enough big steps")
-	}
-	leaves, err := s.intermediateLeavesFromEngineSteps(
-		toBigStep,
-		fromAssertionHeight,
-		toAssertionHeight,
-		protocol.BigStepChallengeEdge,
-		s.bigStepDivergenceHeight,
-		engine,
-		engine.StateAfterBigSteps,
-	)
-	if err != nil {
-		return util.HistoryCommitment{}, err
-	}
-	return util.NewHistoryCommitment(toBigStep, leaves)
-}
-
-// SmallStepLeafCommitment produces a small step history commitment which includes
-// a Merkleization of the N WAVM opcodes in between big steps A and B. This function
-// is called when a validator is preparing a subchallenge on big-steps A and B that
-// are one-step away from each other. It will then load up the WAVM opcodes
-// between those two values and produce a commitment.
-func (s *Simulated) SmallStepLeafCommitment(
-	ctx context.Context,
-	fromAssertionHeight,
-	toAssertionHeight uint64,
 ) (util.HistoryCommitment, error) {
 	if fromAssertionHeight+1 != toAssertionHeight {
 		return util.HistoryCommitment{}, fmt.Errorf(
@@ -294,62 +277,42 @@ func (s *Simulated) SmallStepLeafCommitment(
 			toAssertionHeight,
 		)
 	}
-	return s.SmallStepCommitmentUpTo(
-		ctx,
-		fromAssertionHeight,
-		toAssertionHeight,
-		s.numOpcodesPerBigStep,
-	)
-}
-
-// SmallStepCommitmentUpTo creates a history commitment up to a program counter (step).
-func (s *Simulated) SmallStepCommitmentUpTo(
-	ctx context.Context,
-	fromAssertionHeight,
-	toAssertionHeight,
-	toPc uint64,
-) (util.HistoryCommitment, error) {
-	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
+	engine, err := s.setupEngine(fromAssertionHeight)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	if engine.NumOpcodes() < toPc {
-		return util.HistoryCommitment{}, errors.New("not enough small steps")
+	if engine.NumBigSteps() < toBigStep {
+		return util.HistoryCommitment{}, errors.New("not enough big steps")
 	}
-	leaves, err := s.intermediateLeavesFromEngineSteps(
-		toPc,
+	leaves, err := s.intermediateBigStepLeaves(
 		fromAssertionHeight,
 		toAssertionHeight,
-		protocol.SmallStepChallengeEdge,
-		s.smallStepDivergenceHeight,
+		0, // from big step.
+		toBigStep,
 		engine,
-		engine.StateAfterSmallSteps,
 	)
 	if err != nil {
 		return util.HistoryCommitment{}, err
 	}
-	return util.NewHistoryCommitment(toPc, leaves)
+	return util.NewHistoryCommitment(toBigStep, leaves)
 }
 
-// Generates the intermediate machine hashes up to a certain step from a given engine.
-func (s *Simulated) intermediateLeavesFromEngineSteps(
-	toStep,
-	fromAssertionHeight,
-	toAssertionHeight uint64,
-	chalType protocol.EdgeType,
-	divergenceHeight uint64,
+func (s *Simulated) intermediateBigStepLeaves(
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	toBigStep uint64,
 	engine execution.EngineAtBlock,
-	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
 ) ([]common.Hash, error) {
 	leaves := make([]common.Hash, 0)
-	leaves = append(leaves, engine.FirstState())
+	leaves = append(leaves, engine.FirstMachineState().Hash())
 	// Up to and including the specified step.
-	for i := uint64(0); i < toStep; i++ {
-		start, err := stepperFn(i)
+	for i := fromBigStep; i < toBigStep; i++ {
+		start, err := engine.StateAfterBigSteps(i)
 		if err != nil {
 			return nil, err
 		}
-		intermediateState, err := start.NextState()
+		intermediateState, err := start.NextMachineState()
 		if err != nil {
 			return nil, err
 		}
@@ -357,104 +320,227 @@ func (s *Simulated) intermediateLeavesFromEngineSteps(
 
 		// For testing purposes, if we want to diverge from the honest
 		// hashes starting at a specified hash.
-		if divergenceHeight == 0 || i+1 < divergenceHeight {
+		if s.bigStepDivergenceHeight == 0 || i+1 < s.bigStepDivergenceHeight {
 			hash = intermediateState.Hash()
 		} else {
-			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromAssertionHeight, toAssertionHeight, chalType)))
+			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromBlockChallengeHeight, toBlockChallengeHeight, protocol.BigStepChallengeEdge)))
 		}
 		leaves = append(leaves, hash)
 	}
 	return leaves, nil
 }
 
-// BigStepPrefixProof for a big step subchallenge from assertion N to N+1 from a height lo to hi.
-func (s *Simulated) BigStepPrefixProof(
+func (s *Simulated) SmallStepLeafCommitment(
 	ctx context.Context,
 	fromAssertionHeight,
 	toAssertionHeight,
-	lo,
-	hi uint64,
-) ([]byte, error) {
-	if fromAssertionHeight+1 != toAssertionHeight {
-		return nil, fmt.Errorf(
-			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
-			fromAssertionHeight,
-			toAssertionHeight,
-		)
-	}
-	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
-	if err != nil {
-		return nil, err
-	}
-	if engine.NumOpcodes() < hi {
-		return nil, err
-	}
-	return s.subchallengePrefixProof(
-		engine,
+	fromBigStep,
+	toBigStep uint64,
+) (util.HistoryCommitment, error) {
+	return s.SmallStepCommitmentUpTo(
+		ctx,
 		fromAssertionHeight,
 		toAssertionHeight,
-		protocol.BigStepChallengeEdge,
-		s.bigStepDivergenceHeight,
-		lo,
-		hi,
-		engine.StateAfterBigSteps,
+		fromBigStep,
+		toBigStep,
+		s.numOpcodesPerBigStep-1,
 	)
 }
 
-// SmallStepPrefixProof for a small step subchallenge from assertion N to N+1 from a height lo to hi.
-func (s *Simulated) SmallStepPrefixProof(
+func (s *Simulated) SmallStepCommitmentUpTo(
 	ctx context.Context,
-	fromAssertionHeight,
-	toAssertionHeight,
-	lo,
-	hi uint64,
-) ([]byte, error) {
-	if fromAssertionHeight+1 != toAssertionHeight {
-		return nil, fmt.Errorf(
-			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
-			fromAssertionHeight,
-			toAssertionHeight,
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	toBigStep,
+	toSmallStep uint64,
+) (util.HistoryCommitment, error) {
+	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
+		return util.HistoryCommitment{}, fmt.Errorf(
+			"from height %d is not one-step away from to height %d",
+			fromBlockChallengeHeight,
+			toBlockChallengeHeight,
 		)
 	}
-	engine, err := s.setupEngine(fromAssertionHeight, toAssertionHeight)
+	if fromBigStep+1 != toBigStep {
+		return util.HistoryCommitment{}, fmt.Errorf(
+			"from height %d is not one-step away from to height %d",
+			fromBigStep,
+			toBigStep,
+		)
+	}
+	engine, err := s.setupEngine(fromBlockChallengeHeight)
 	if err != nil {
-		return nil, err
+		return util.HistoryCommitment{}, err
 	}
-	if engine.NumOpcodes() < hi {
-		return nil, err
+	if engine.NumOpcodes() < toSmallStep {
+		return util.HistoryCommitment{}, fmt.Errorf("not enough small steps: %d < %d", engine.NumOpcodes(), toSmallStep)
 	}
-	return s.subchallengePrefixProof(
+
+	fromSmall := (fromBigStep * s.numOpcodesPerBigStep)
+	toSmall := fromSmall + toSmallStep
+	leaves, err := s.intermediateSmallStepLeaves(
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromSmall,
+		toSmall,
 		engine,
-		fromAssertionHeight,
-		toAssertionHeight,
-		protocol.SmallStepChallengeEdge,
-		s.smallStepDivergenceHeight,
-		lo,
-		hi,
-		engine.StateAfterSmallSteps,
 	)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return util.NewHistoryCommitment(toSmallStep, leaves)
 }
 
-func (s *Simulated) subchallengePrefixProof(
+func (s *Simulated) intermediateSmallStepLeaves(
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromSmallStep,
+	toSmallStep uint64,
 	engine execution.EngineAtBlock,
-	fromAssertionHeight,
-	toAssertionHeight uint64,
-	challengeType protocol.EdgeType,
-	divergenceHeight uint64,
-	lo,
-	hi uint64,
-	stepperFn func(n uint64) (execution.IntermediateStateIterator, error),
-) ([]byte, error) {
+) ([]common.Hash, error) {
+	leaves := make([]common.Hash, 0)
+	leaves = append(leaves, engine.FirstMachineState().Hash())
+	// Up to and including the specified step.
+	divergingAt := fromSmallStep + s.smallStepDivergenceHeight
+	for i := fromSmallStep; i < toSmallStep; i++ {
+		start, err := engine.StateAfterSmallSteps(i)
+		if err != nil {
+			return nil, err
+		}
+		intermediateState, err := start.NextMachineState()
+		if err != nil {
+			return nil, err
+		}
+		var hash common.Hash
+
+		// For testing purposes, if we want to diverge from the honest
+		// hashes starting at a specified hash.
+		if s.smallStepDivergenceHeight == 0 || i+1 < divergingAt {
+			hash = intermediateState.Hash()
+		} else {
+			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromBlockChallengeHeight, toBlockChallengeHeight, protocol.SmallStepChallengeEdge)))
+		}
+		leaves = append(leaves, hash)
+	}
+	return leaves, nil
+}
+
+func (s *Simulated) OneStepProofData(
+	ctx context.Context,
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	toBigStep,
+	fromSmallStep,
+	toSmallStep uint64,
+) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
+	startCommit, commitErr := s.SmallStepCommitmentUpTo(
+		ctx,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep,
+		fromSmallStep,
+	)
+	if commitErr != nil {
+		err = commitErr
+		return
+	}
+	endCommit, commitErr := s.SmallStepCommitmentUpTo(
+		ctx,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep,
+		toSmallStep,
+	)
+	if commitErr != nil {
+		err = commitErr
+		return
+	}
+	data = &protocol.OneStepData{
+		BridgeAddr:           common.Address{},
+		MaxInboxMessagesRead: 2,
+		MachineStep:          fromSmallStep,
+		BeforeHash:           startCommit.LastLeaf,
+		Proof:                make([]byte, 0),
+	}
+	if !s.malicious {
+		// Only honest validators can produce a valid one step proof.
+		data.Proof = endCommit.LastLeaf[:]
+	}
+	startLeafInclusionProof = startCommit.LastLeafProof
+	endLeafInclusionProof = endCommit.LastLeafProof
+	return
+}
+
+func (s *Simulated) PrefixProof(_ context.Context, lo, hi uint64) ([]byte, error) {
 	loSize := lo + 1
 	hiSize := hi + 1
-	prefixLeaves, err := s.intermediateLeavesFromEngineSteps(
-		hiSize,
-		fromAssertionHeight,
-		toAssertionHeight,
-		challengeType,
-		divergenceHeight,
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[:loSize])
+	if err != nil {
+		return nil, err
+	}
+	prefixProof, err := prefixproofs.GeneratePrefixProof(
+		loSize,
+		prefixExpansion,
+		s.stateRoots[loSize:hiSize],
+		prefixproofs.RootFetcherFromExpansion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
+	onlyProof := prefixProof[numRead:]
+	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+}
+
+func (s *Simulated) BigStepPrefixProof(
+	_ context.Context,
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	toBigStep uint64,
+) ([]byte, error) {
+	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
+		return nil, fmt.Errorf(
+			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
+			fromBlockChallengeHeight,
+			toBlockChallengeHeight,
+		)
+	}
+	engine, err := s.setupEngine(fromBlockChallengeHeight)
+	if err != nil {
+		return nil, err
+	}
+	if engine.NumBigSteps() < toBigStep {
+		return nil, errors.New("wrong number of big steps")
+	}
+	return s.bigStepPrefixProofCalculation(
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		toBigStep,
 		engine,
-		stepperFn,
+	)
+}
+
+func (s *Simulated) bigStepPrefixProofCalculation(
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	toBigStep uint64,
+	engine execution.EngineAtBlock,
+) ([]byte, error) {
+	loSize := fromBigStep + 1
+	hiSize := toBigStep + 1
+	prefixLeaves, err := s.intermediateBigStepLeaves(
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		0,
+		toBigStep,
+		engine,
 	)
 	if err != nil {
 		return nil, err
@@ -477,19 +563,91 @@ func (s *Simulated) subchallengePrefixProof(
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
 }
 
-// PrefixProof generates a proof of a merkle expansion from genesis to a low point to a slice of state roots
-// from a low point to a high point specified as arguments.
-func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
-	loSize := lo + 1
-	hiSize := hi + 1
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[:loSize])
+func (s *Simulated) SmallStepPrefixProof(
+	_ context.Context,
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	toBigStep,
+	fromSmallStep,
+	toSmallStep uint64,
+) ([]byte, error) {
+	if fromBlockChallengeHeight+1 != toBlockChallengeHeight {
+		return nil, fmt.Errorf(
+			"fromAssertionHeight=%d is not 1 height apart from toAssertionHeight=%d",
+			fromBlockChallengeHeight,
+			toBlockChallengeHeight,
+		)
+	}
+	if fromBigStep+1 != toBigStep {
+		return nil, fmt.Errorf(
+			"fromBigStep=%d is not 1 height apart from toBigStep=%d",
+			fromBigStep,
+			toBigStep,
+		)
+	}
+	engine, err := s.setupEngine(fromBlockChallengeHeight)
+	if err != nil {
+		return nil, err
+	}
+	if engine.NumOpcodes() < toSmallStep {
+		return nil, errors.New("wrong number of opcodes")
+	}
+	return s.smallStepPrefixProofCalculation(
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromBigStep,
+		fromSmallStep,
+		toSmallStep,
+		engine,
+	)
+}
+
+func (s *Simulated) setupEngine(fromHeight uint64) (*execution.Engine, error) {
+	machineCfg := execution.DefaultMachineConfig()
+	if s.maxWavmOpcodes > 0 {
+		machineCfg.MaxInstructionsPerBlock = s.maxWavmOpcodes
+	}
+	if s.numOpcodesPerBigStep > 0 {
+		machineCfg.BigStepSize = s.numOpcodesPerBigStep
+	}
+	return execution.NewExecutionEngine(
+		machineCfg,
+		s.stateRoots[fromHeight],
+		s.stateRoots[fromHeight+1],
+	)
+}
+
+func (s *Simulated) smallStepPrefixProofCalculation(
+	fromBlockChallengeHeight,
+	toBlockChallengeHeight,
+	fromBigStep,
+	fromSmallStep,
+	toSmallStep uint64,
+	engine execution.EngineAtBlock,
+) ([]byte, error) {
+	fromSmall := (fromBigStep * s.numOpcodesPerBigStep)
+	toSmall := fromSmall + toSmallStep
+	prefixLeaves, err := s.intermediateSmallStepLeaves(
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		fromSmall,
+		toSmall,
+		engine,
+	)
+	if err != nil {
+		return nil, err
+	}
+	loSize := fromSmallStep + 1
+	hiSize := toSmallStep + 1
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(prefixLeaves[:loSize])
 	if err != nil {
 		return nil, err
 	}
 	prefixProof, err := prefixproofs.GeneratePrefixProof(
 		loSize,
 		prefixExpansion,
-		s.stateRoots[loSize:hiSize],
+		prefixLeaves[loSize:hiSize],
 		prefixproofs.RootFetcherFromExpansion,
 	)
 	if err != nil {

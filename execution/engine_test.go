@@ -23,7 +23,7 @@ func TestWorstCaseBigStepBisections(t *testing.T) {
 			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
 		)
 	}
-	engine99, err := NewExecutionEngine(DefaultMachineConfig(), hashes[98:100])
+	engine99, err := NewExecutionEngine(DefaultMachineConfig(), hashes[98], hashes[100])
 	require.NoError(t, err)
 	numSteps := engine99.NumOpcodes()
 	numBigSteps := engine99.NumBigSteps()
@@ -39,7 +39,7 @@ func TestWorstCaseBigStepBisections(t *testing.T) {
 		totalBisections++
 	}
 	t.Logf("Total bisections: %d", totalBisections)
-	require.Equal(t, 23, totalBisections)
+	require.Equal(t, 22, totalBisections)
 }
 
 func TestExecutionEngine(t *testing.T) {
@@ -52,7 +52,7 @@ func TestExecutionEngine(t *testing.T) {
 			crypto.Keccak256Hash(hashes[len(hashes)-1].Bytes()),
 		)
 	}
-	engine99, err := NewExecutionEngine(DefaultMachineConfig(), hashes[98:100])
+	engine99, err := NewExecutionEngine(DefaultMachineConfig(), hashes[98], hashes[100])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestExecutionEngine(t *testing.T) {
 	for i := uint64(0); i < 10; i++ {
 		thisState, err := engine99.StateAfterSmallSteps(i)
 		require.NoError(t, err)
-		nextState, err := thisState.NextState()
+		nextState, err := thisState.NextMachineState()
 		require.NoError(t, err)
 		nextDirect, err := engine99.StateAfterSmallSteps(i + 1)
 		require.NoError(t, err)

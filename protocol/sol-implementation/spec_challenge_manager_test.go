@@ -780,7 +780,7 @@ func TestEdgeChallengeManager(t *testing.T) {
 	}
 
 	honestSmallStepCommit, err := honestStateManager.SmallStepCommitmentUpTo(
-		ctx, 0 /* from assertion */, 1 /* to assertion */, 1, /* to pc */
+		ctx, 0 /* from assertion */, 1 /* to assertion */, 0 /* from big step */, 1 /* to big step */, 1, /* to pc */
 	)
 	require.NoError(t, err)
 
@@ -794,7 +794,7 @@ func TestEdgeChallengeManager(t *testing.T) {
 	t.Log("Alice is presumptive")
 
 	evilSmallStepCommit, err := evilStateManager.SmallStepCommitmentUpTo(
-		ctx, 0 /* from assertion */, 1 /* to assertion */, 1, /* to pc */
+		ctx, 0 /* from assertion */, 1 /* to assertion */, 0 /* from big step */, 1 /* to big step */, 1, /* to pc */
 	)
 	require.NoError(t, err)
 
