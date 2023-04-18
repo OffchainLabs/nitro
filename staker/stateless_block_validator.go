@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/pkg/errors"
 )
@@ -60,7 +61,7 @@ type InboxTrackerInterface interface {
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum arbutil.MessageIndex) (*arbstate.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
 	GetGenesisBlockNumber() (uint64, error)
 	PauseReorgs()
 	ResumeReorgs()
@@ -162,7 +163,7 @@ type validationEntry struct {
 	BlockHeader     *types.Header
 	HasDelayedMsg   bool
 	DelayedMsgNr    uint64
-	msg             *arbstate.MessageWithMetadata
+	msg             *arbostypes.MessageWithMetadata
 	// Valid since Recorded:
 	Preimages  map[common.Hash][]byte
 	BatchInfo  []validator.BatchInfo
@@ -235,7 +236,7 @@ func usingDelayedMsg(prevHeader *types.Header, header *types.Header) (bool, uint
 func newValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
-	msg *arbstate.MessageWithMetadata,
+	msg *arbostypes.MessageWithMetadata,
 ) (*validationEntry, error) {
 	hasDelayedMsg, delayedMsgNr := usingDelayedMsg(prevHeader, header)
 	validationEntry := &validationEntry{
@@ -344,7 +345,7 @@ func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
 func (v *StatelessBlockValidator) RecordBlockCreation(
 	ctx context.Context,
 	prevHeader *types.Header,
-	msg *arbstate.MessageWithMetadata,
+	msg *arbostypes.MessageWithMetadata,
 	keepReference bool,
 ) (common.Hash, map[common.Hash][]byte, []validator.BatchInfo, error) {
 

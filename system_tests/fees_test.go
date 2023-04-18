@@ -37,7 +37,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
-	version := l2node.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
+	version := l2node.Execution.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account

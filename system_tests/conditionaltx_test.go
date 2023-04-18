@@ -21,12 +21,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
 func getStorageRootHash(t *testing.T, node *arbnode.Node, address common.Address) common.Hash {
 	t.Helper()
-	statedb, err := node.Backend.ArbInterface().BlockChain().State()
+	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
 	trie := statedb.StorageTrie(address)
 	return trie.Hash()
@@ -34,7 +35,7 @@ func getStorageRootHash(t *testing.T, node *arbnode.Node, address common.Address
 
 func getStorageSlotValue(t *testing.T, node *arbnode.Node, address common.Address) map[common.Hash]common.Hash {
 	t.Helper()
-	statedb, err := node.Backend.ArbInterface().BlockChain().State()
+	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
 	slotValue := make(map[common.Hash]common.Hash)
 	Require(t, err)
@@ -365,7 +366,7 @@ func TestSendRawTransactionConditionalMultiRoutine(t *testing.T) {
 	}
 	cancelCtxWithTimeout()
 	wg.Wait()
-	bc := node.Backend.ArbInterface().BlockChain()
+	bc := node.Execution.Backend.ArbInterface().BlockChain()
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 
 	var receipts types.Receipts
@@ -403,7 +404,7 @@ func TestSendRawTransactionConditionalPreCheck(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.Sequencer.MaxBlockSpeed = 0
-	nodeConfig.TxPreChecker.Strictness = arbnode.TxPreCheckerStrictnessLikelyCompatible
+	nodeConfig.TxPreChecker.Strictness = execution.TxPreCheckerStrictnessLikelyCompatible
 	nodeConfig.TxPreChecker.RequiredStateAge = 1
 	nodeConfig.TxPreChecker.RequiredStateMaxBlocks = 2
 
