@@ -316,7 +316,17 @@ func (v *BlockValidator) checkValidatedGSCaughUp(ctx context.Context) (bool, err
 		return true, nil
 	}
 	if v.lastValidGS.Batch == 0 {
-		return false, errors.New("lastValid not initialized. cannot validate genesis")
+		genesis, err := v.streamer.ResultAtCount(1)
+		if err != nil {
+			log.Warn("blockValidator: failed reading genesis", "err", err)
+			return false, nil
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
 	}
 	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
 	if err != nil {
@@ -883,20 +893,6 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
 	// genesis block is impossible to validate unless genesis state is empty
-	v.reorgMutex.Lock()
-	defer v.reorgMutex.Unlock()
-	if v.lastValidGS.Batch == 0 {
-		genesis, err := v.streamer.ResultAtCount(1)
-		if err != nil {
-			return err
-		}
-		v.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	return nil
 }
