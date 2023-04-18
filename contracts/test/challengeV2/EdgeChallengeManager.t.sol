@@ -232,7 +232,7 @@ contract EdgeChallengeManagerTest is Test {
 
         (bytes32[] memory states, bytes32[] memory exp) = appendRandomStatesBetween(genesisStates(), StateToolsLib.hash(ei.a1State), height1);
 
-        vm.expectRevert("End history root does not include claim");
+        vm.expectRevert("Invalid inclusion proof");
         bytes32 edgeId = ei.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
                 edgeType: EdgeType.Block,
@@ -650,7 +650,7 @@ contract EdgeChallengeManagerTest is Test {
         bytes32[] memory claimInclusionProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(ArrayUtilsLib.slice(states1, 0, 2)), 1);
         bytes32[] memory edgeInclusionProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(bigStepStates), bigStepStates.length - 1);
 
-        vm.expectRevert("End state does not consistent with the claim");
+        vm.expectRevert("Invalid inclusion proof");
         ei.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
                 edgeType: EdgeType.BigStep,
@@ -687,7 +687,7 @@ contract EdgeChallengeManagerTest is Test {
         bytes32[] memory claimInclusionProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(ArrayUtilsLib.slice(states1, 0, 2)), 1);
         bytes32[] memory edgeInclusionProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(bigStepStates), bigStepStates.length - 1);
 
-        vm.expectRevert("End state does not consistent with endHistoryRoot");
+        vm.expectRevert("Invalid inclusion proof");
         ei.challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
                 edgeType: EdgeType.BigStep,

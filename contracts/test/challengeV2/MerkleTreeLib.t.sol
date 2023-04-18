@@ -606,8 +606,7 @@ contract MerkleTreeLibTest is Test {
         proof[2] = hashTogether(hashTogether(re[0], re[1]), hashTogether(re[2], re[3]));
         proof[3] = hashTogether(hashTogether(hashTogether(re[8], re[9]), hashTogether(re[10], 0)), 0);
 
-        bool r = MerkleTreeLib.verifyInclusionProof(MerkleTreeLib.root(me), leaves[index], index, proof);
-        assertTrue(r, "Invalid root");
+        MerkleTreeLib.verifyInclusionProof(MerkleTreeLib.root(me), leaves[index], index, proof);
     }
 
     function verifyInclusion(uint256 index, uint256 treeSize) internal {
@@ -616,8 +615,7 @@ contract MerkleTreeLibTest is Test {
         bytes32[] memory me = ProofUtils.expansionFromLeaves(leaves, 0, leaves.length);
         bytes32[] memory proof = ProofUtils.generateInclusionProof(re, index);
 
-        bool v2 = MerkleTreeLib.verifyInclusionProof(MerkleTreeLib.root(me), leaves[index], index, proof);
-        assertTrue(v2, "Invalid root");
+        MerkleTreeLib.verifyInclusionProof(MerkleTreeLib.root(me), leaves[index], index, proof);
     }
 
     function testProveInclusion() public {

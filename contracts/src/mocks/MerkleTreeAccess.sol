@@ -47,8 +47,7 @@ contract MerkleTreeAccess {
     function verifyInclusionProof(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
         external
         pure
-        returns (bool)
     {
-        return MerkleTreeLib.verifyInclusionProof(rootHash, leaf, index, proof);
+        MerkleTreeLib.verifyInclusionProof(rootHash, leaf, index, proof);
     }
 }

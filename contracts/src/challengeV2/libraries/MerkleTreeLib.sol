@@ -356,9 +356,8 @@ library MerkleTreeLib {
     function verifyInclusionProof(bytes32 rootHash, bytes32 leaf, uint256 index, bytes32[] memory proof)
         internal
         pure
-        returns (bool)
     {
         bytes32 calculatedRoot = MerkleLib.calculateRoot(proof, index, keccak256(abi.encodePacked(leaf)));
-        return rootHash == calculatedRoot;
+        require(rootHash == calculatedRoot, "Invalid inclusion proof");
     }
 }

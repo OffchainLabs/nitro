@@ -1368,14 +1368,14 @@ contract EdgeChallengeManagerLibTest is Test {
     }
 
     function testConfirmByOneStepBadStartProof() public {
-        confirmByOneStep(6, "Before state not in history");
+        confirmByOneStep(6, "Invalid inclusion proof");
     }
 
     function testConfirmByOneStepBadAfterProof() public {
-        confirmByOneStep(7, "After state not in history");
+        confirmByOneStep(7, "Invalid inclusion proof");
     }
 
     function testConfirmByOneStepBadOneStepReturn() public {
-        confirmByOneStep(8, "After state not in history");
+        confirmByOneStep(8, "Invalid inclusion proof");
     }
 }
