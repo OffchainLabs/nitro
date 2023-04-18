@@ -1,5 +1,5 @@
 ;; Copyright 2022-2023, Offchain Labs, Inc.
-;; For license information, see https://github.com/nitro/blob/master/LICENSE
+;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
     (import "user_host" "arbitrator_forward__read_args" (func $read_args (param i32)))

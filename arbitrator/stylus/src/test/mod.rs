@@ -1,7 +1,12 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{native::NativeInstance, run::RunProgram};
+use crate::{
+    env::WasmEnv,
+    native::NativeInstance,
+    run::RunProgram,
+    test::api::{TestEvmContracts, TestEvmStorage},
+};
 use arbutil::Color;
 use eyre::{bail, Result};
 use prover::{
@@ -12,18 +17,77 @@ use prover::{
 };
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
-use wasmer::{imports, wasmparser::Operator, Function, Imports, Instance, Module, Store};
+use wasmer::{
+    imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
+    Module, Store,
+};
+use wasmer_compiler_singlepass::Singlepass;
 
 mod api;
 mod misc;
 mod native;
 mod wavm;
 
+impl NativeInstance {
+    fn new_test(path: &str, compile: CompileConfig) -> Result<NativeInstance> {
+        let mut store = compile.store();
+        let imports = imports! {
+            "test" => {
+                "noop" => Function::new_typed(&mut store, || {}),
+            },
+        };
+        let mut native = Self::new_from_store(path, store, imports)?;
+        native.set_ink(u64::MAX);
+        native.set_stack(u32::MAX);
+        Ok(native)
+    }
+
+    fn new_from_store(path: &str, mut store: Store, imports: Imports) -> Result<Self> {
+        let wat = std::fs::read(path)?;
+        let module = Module::new(&store, wat)?;
+        let native = Instance::new(&mut store, &module, &imports)?;
+        Ok(Self::new_sans_env(native, store))
+    }
+
+    fn new_vanilla(path: &str) -> Result<Self> {
+        let mut compiler = Singlepass::new();
+        compiler.canonicalize_nans(true);
+        compiler.enable_verifier();
+
+        let mut store = Store::new(compiler);
+        let wat = std::fs::read(path)?;
+        let module = Module::new(&store, wat)?;
+        let instance = Instance::new(&mut store, &module, &Imports::new())?;
+        Ok(NativeInstance::new_sans_env(instance, store))
+    }
+
+    fn new_sans_env(instance: Instance, mut store: Store) -> Self {
+        let env = FunctionEnv::new(&mut store, WasmEnv::default());
+        Self::new(instance, store, env)
+    }
+
+    fn new_with_evm(
+        file: &str,
+        compile: CompileConfig,
+        config: StylusConfig,
+    ) -> Result<(NativeInstance, TestEvmContracts, TestEvmStorage)> {
+        let storage = TestEvmStorage::default();
+        let contracts = TestEvmContracts::new(compile.clone(), config);
+        let mut native = NativeInstance::from_path(file, &compile, config)?;
+        native.set_test_evm_api(Bytes20::default(), storage.clone(), contracts.clone());
+        Ok((native, contracts, storage))
+    }
+}
+
 fn expensive_add(op: &Operator) -> u64 {
     match op {
         Operator::I32Add => 100,
         _ => 0,
     }
+}
+
+pub fn random_ink(min: u64) -> u64 {
+    rand::thread_rng().gen_range(min..=u64::MAX)
 }
 
 pub fn random_bytes20() -> Bytes20 {
@@ -38,51 +102,38 @@ fn random_bytes32() -> Bytes32 {
     data.into()
 }
 
+fn test_compile_config() -> CompileConfig {
+    let mut compile_config = CompileConfig::version(0, true);
+    compile_config.debug.count_ops = true;
+    compile_config
+}
+
 fn uniform_cost_config() -> StylusConfig {
-    let mut config = StylusConfig::default();
-    config.debug.count_ops = true;
-    config.debug.debug_funcs = true;
-    config.start_ink = 1_000_000;
-    config.pricing.ink_price = 100_00;
-    config.pricing.hostio_ink = 100;
-    config.pricing.memory_fill_ink = 1;
-    config.pricing.memory_copy_ink = 1;
-    config.costs = |_| 1;
-    config
+    let mut stylus_config = StylusConfig::default();
+    stylus_config.pricing.ink_price = 100_00;
+    stylus_config.pricing.hostio_ink = 100;
+    stylus_config
 }
 
-fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
-    let mut store = config.store();
-    let imports = imports! {
-        "test" => {
-            "noop" => Function::new_typed(&mut store, || {}),
-        },
-    };
-    new_test_instance_from_store(path, store, imports)
+fn test_configs() -> (CompileConfig, StylusConfig, u64) {
+    (
+        test_compile_config(),
+        uniform_cost_config(),
+        random_ink(1_000_000),
+    )
 }
 
-fn new_test_instance_from_store(
-    path: &str,
-    mut store: Store,
-    imports: Imports,
-) -> Result<NativeInstance> {
-    let wat = std::fs::read(path)?;
-    let module = Module::new(&store, wat)?;
-    let instance = Instance::new(&mut store, &module, &imports)?;
-    Ok(NativeInstance::new_sans_env(instance, store))
-}
-
-pub fn new_test_machine(path: &str, config: &StylusConfig) -> Result<Machine> {
+fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
-    let stylus_data = bin.instrument(config)?;
+    let stylus_data = bin.instrument(compile)?;
 
     let wat = std::fs::read("tests/test.wat")?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let lib = prover::binary::parse(&wasm, Path::new("test"))?;
 
-    Machine::from_binaries(
+    let mut mach = Machine::from_binaries(
         &[lib],
         bin,
         false,
@@ -92,25 +143,33 @@ pub fn new_test_machine(path: &str, config: &StylusConfig) -> Result<Machine> {
         HashMap::default(),
         Arc::new(|_, _| panic!("tried to read preimage")),
         Some(stylus_data),
-    )
+    )?;
+    mach.set_ink(u64::MAX);
+    mach.set_stack(u32::MAX);
+    Ok(mach)
 }
 
-pub fn run_native(native: &mut NativeInstance, args: &[u8]) -> Result<Vec<u8>> {
-    let config = native.env().config.clone();
-    match native.run_main(&args, &config)? {
+fn run_native(native: &mut NativeInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
+    let config = native.env().config.expect("no config").clone();
+    match native.run_main(&args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
         err => bail!("user program failure: {}", err.red()),
     }
 }
 
-pub fn run_machine(machine: &mut Machine, args: &[u8], config: &StylusConfig) -> Result<Vec<u8>> {
-    match machine.run_main(&args, &config)? {
+fn run_machine(
+    machine: &mut Machine,
+    args: &[u8],
+    config: StylusConfig,
+    ink: u64,
+) -> Result<Vec<u8>> {
+    match machine.run_main(&args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
         err => bail!("user program failure: {}", err.red()),
     }
 }
 
-pub fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
+fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
     assert_eq!(native.ink_left(), machine.ink_left());
     assert_eq!(native.stack_left(), machine.stack_left());
 

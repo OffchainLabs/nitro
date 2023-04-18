@@ -6,7 +6,10 @@ use arbutil::{heapify, wavm};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::{config::StylusConfig, run::UserOutcomeKind},
+    programs::{
+        config::{CompileConfig, GoParams, StylusConfig},
+        run::UserOutcomeKind,
+    },
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -33,15 +36,14 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, version u32) (machine *Machine, err *Vec<u8>)
+/// Safety: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
-    let config = StylusConfig::version(sp.read_u32());
-    sp.skip_space();
+    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
@@ -56,7 +58,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         Ok(bin) => bin,
         Err(err) => error!("failed to parse user program", err),
     };
-    let stylus_data = match bin.instrument(&config) {
+    let stylus_data = match bin.instrument(&compile) {
         Ok(stylus_data) => stylus_data,
         Err(err) => error!("failed to instrument user program", err),
     };
@@ -92,7 +94,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let mut sp = GoStack::new(sp);
     let machine: Machine = *Box::from_raw(sp.read_ptr_mut());
     let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = *Box::from_raw(sp.read_ptr_mut());
+    let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
 
     // buy ink
     let pricing = config.pricing;
@@ -101,18 +103,18 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // compute the module root, or accept one from the caller
     let root = sp.read_go_ptr();
-    let root = (root != 0).then(|| wavm::read_bytes32(root as u64));
+    let root = (root != 0).then(|| wavm::read_bytes32(root));
     let module = root.unwrap_or_else(|| machine.main_module_hash().0);
     let (main, internals) = machine.program_info();
 
     // link the program and ready its instrumentation
     let module = link_module(&MemoryLeaf(module));
     program_set_ink(module, internals, ink);
-    program_set_stack(module, internals, config.depth.max_depth);
+    program_set_stack(module, internals, config.max_depth);
 
     // provide arguments
     let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, config.pricing));
+    PROGRAMS.push(Program::new(calldata, config));
 
     // call the program
     let status = program_call_main(module, main, args_len);
@@ -171,17 +173,18 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVe
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// Safety: λ(version, maxDepth u32, inkGasPrice, hostioInk u64) *StylusConfig
+/// Safety: λ(version, maxDepth u32, inkGasPrice, hostioInk u64, debugMode u32) *StylusConfig
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let version = sp.read_u32();
-
-    let mut config = StylusConfig::version(version);
-    config.depth.max_depth = sp.read_u32();
-    config.pricing.ink_price = sp.read_u64();
-    config.pricing.hostio_ink = sp.read_u64();
-    sp.write_ptr(heapify(config));
+    let params = GoParams {
+        version: sp.read_u32(),
+        max_depth: sp.read_u32(),
+        ink_price: sp.read_u64(),
+        hostio_ink: sp.read_u64(),
+        debug_mode: sp.read_u32(),
+    };
+    sp.skip_space().write_ptr(heapify(params.configs().1));
 }

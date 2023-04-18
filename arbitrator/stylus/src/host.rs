@@ -50,7 +50,7 @@ pub(crate) fn call_contract(
     env.pay_for_evm_copy(calldata_len.into())?;
     ink = ink.min(env.ink_left().into()); // provide no more than what the user has
 
-    let gas = env.meter().pricing.ink_to_gas(ink);
+    let gas = env.pricing().ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
     let value = env.read_bytes32(value)?;
@@ -74,7 +74,7 @@ pub(crate) fn delegate_call_contract(
     env.pay_for_evm_copy(calldata_len.into())?;
     ink = ink.min(env.ink_left().into()); // provide no more than what the user has
 
-    let gas = env.meter().pricing.ink_to_gas(ink);
+    let gas = env.pricing().ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
 
@@ -97,7 +97,7 @@ pub(crate) fn static_call_contract(
     env.pay_for_evm_copy(calldata_len.into())?;
     ink = ink.min(env.ink_left().into()); // provide no more than what the user has
 
-    let gas = env.meter().pricing.ink_to_gas(ink);
+    let gas = env.pricing().ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
 
@@ -196,15 +196,15 @@ pub(crate) fn tx_origin(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
 }
 
 pub(crate) fn console_log_text(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscape {
-    let env = WasmEnv::start(&mut env)?;
+    let env = WasmEnv::start_free(&mut env);
     let text = env.read_slice(ptr, len)?;
     env.say(String::from_utf8_lossy(&text));
     Ok(())
 }
 
 pub(crate) fn console_log<T: Into<Value>>(mut env: WasmEnvMut, value: T) -> MaybeEscape {
-    let env = WasmEnv::start(&mut env)?;
-    env.say(Value::from(value.into()));
+    let env = WasmEnv::start_free(&mut env);
+    env.say(value.into());
     Ok(())
 }
 
@@ -212,7 +212,7 @@ pub(crate) fn console_tee<T: Into<Value> + Copy>(
     mut env: WasmEnvMut,
     value: T,
 ) -> Result<T, Escape> {
-    let env = WasmEnv::start(&mut env)?;
-    env.say(Value::from(value.into()));
+    let env = WasmEnv::start_free(&mut env);
+    env.say(value.into());
     Ok(value)
 }

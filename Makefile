@@ -90,12 +90,13 @@ wasm32_unknown = target/wasm32-unknown-unknown/release
 
 stylus_dir = arbitrator/stylus
 stylus_test_dir = arbitrator/stylus/tests
+stylus_cargo = arbitrator/stylus/tests/.cargo/config.toml
 
 stylus_lang_rust = $(wildcard arbitrator/langs/rust/src/*.rs arbitrator/langs/rust/*.toml)
 stylus_lang_c    = $(wildcard arbitrator/langs/c/*.c arbitrator/langs/c/*.h)
 
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
-get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_lang_rust)
+get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)
 get_stylus_test_c    = $(wildcard $(stylus_test_dir)/$(1)/*.c $(stylus_test_dir)/$(1)/*.h) $(stylus_lang_c)
 stylus_test_keccak_wasm     = $(call get_stylus_test_wasm,keccak)
 stylus_test_keccak_src      = $(call get_stylus_test_rust,keccak)
@@ -335,35 +336,35 @@ $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
 
 $(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_fallible_wasm): $(stylus_test_fallible_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_storage_wasm): $(stylus_test_storage_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_multicall_wasm): $(stylus_test_multicall_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_log_wasm): $(stylus_test_log_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_evm-data_wasm): $(stylus_test_evm-data_src)
-	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_siphash_wasm): $(stylus_test_siphash_src)

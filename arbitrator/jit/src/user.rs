@@ -4,7 +4,7 @@
 use crate::{gostack::GoStack, machine::WasmEnvMut};
 use arbutil::heapify;
 use eyre::eyre;
-use prover::programs::prelude::*;
+use prover::programs::{config::GoParams, prelude::*};
 use std::mem;
 use stylus::{
     native::{self, NativeInstance},
@@ -12,14 +12,13 @@ use stylus::{
 };
 
 /// Compiles and instruments user wasm.
-/// go side: λ(wasm []byte, version u32) (machine *Machine, err *Vec<u8>)
+/// go side: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
-    let config = StylusConfig::version(sp.read_u32());
-    sp.skip_space();
+    let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
 
-    match native::module(&wasm, config) {
+    match native::module(&wasm, compile) {
         Ok(module) => {
             sp.write_ptr(heapify(module));
             sp.write_nullptr();
@@ -33,15 +32,15 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 }
 
 /// Links and executes a user wasm.
-/// go side: λ(mach *Machine, data []byte, params *StylusConfig, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
+/// go side: λ(mach *Machine, data []byte, params *Configs, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
 pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let module: Vec<u8> = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
     let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
+    let configs: (CompileConfig, StylusConfig) = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
 
     // buy ink
-    let pricing = config.pricing;
+    let pricing = configs.1.pricing;
     let gas = sp.read_go_ptr();
     let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
@@ -49,15 +48,13 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
     sp.skip_u64();
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(&module, config.clone()) };
+    let instance = unsafe { NativeInstance::deserialize(&module, configs.0.clone()) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program {error:?}"),
     };
-    instance.set_ink(ink);
-    instance.set_stack(config.depth.max_depth);
 
-    let status = match instance.run_main(&calldata, &config) {
+    let status = match instance.run_main(&calldata, configs.1, ink) {
         Err(err) | Ok(UserOutcome::Failure(err)) => {
             let outs = format!("{:?}", err.wrap_err(eyre!("failed to execute program")));
             sp.write_u8(UserOutcomeKind::Failure as u8).skip_space();
@@ -97,14 +94,15 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates a `StylusConfig` from its component parts.
-/// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64) *StylusConfig
+/// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let version = sp.read_u32();
-
-    let mut config = StylusConfig::version(version);
-    config.depth.max_depth = sp.read_u32();
-    config.pricing.ink_price = sp.read_u64();
-    config.pricing.hostio_ink = sp.read_u64();
-    sp.write_ptr(heapify(config));
+    let params = GoParams {
+        version: sp.read_u32(),
+        max_depth: sp.read_u32(),
+        ink_price: sp.read_u64(),
+        hostio_ink: sp.read_u64(),
+        debug_mode: sp.read_u32(),
+    };
+    sp.skip_space().write_ptr(heapify(params.configs()));
 }

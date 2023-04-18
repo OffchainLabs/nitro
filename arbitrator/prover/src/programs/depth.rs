@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{config::DepthParams, FuncMiddleware, Middleware, ModuleMod};
+use super::{config::CompileMemoryParams, FuncMiddleware, Middleware, ModuleMod};
 use crate::{host::InternalFunc, value::FunctionType, Machine};
 
 use arbutil::Color;
@@ -26,8 +26,6 @@ pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 pub struct DepthChecker {
     /// The amount of stack space left
     pub global: Mutex<Option<GlobalIndex>>,
-    /// The maximum size of the stack, measured in words
-    limit: u32,
     /// The maximum size of a stack frame, measured in words
     frame_limit: u32,
     /// The function types of the module being instrumented
@@ -37,10 +35,9 @@ pub struct DepthChecker {
 }
 
 impl DepthChecker {
-    pub fn new(params: DepthParams) -> Self {
+    pub fn new(params: CompileMemoryParams) -> Self {
         Self {
             global: Mutex::new(None),
-            limit: params.max_depth,
             frame_limit: params.max_frame_size,
             funcs: Mutex::new(Arc::new(HashMap::default())),
             sigs: Mutex::new(Arc::new(HashMap::default())),
@@ -56,7 +53,7 @@ impl<M: ModuleMod> Middleware<M> for DepthChecker {
     type FM<'a> = FuncDepthChecker<'a>;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
-        let limit = GlobalInit::I32Const(self.limit as i32);
+        let limit = GlobalInit::I32Const(0);
         let space = module.add_global(STYLUS_STACK_LEFT, Type::I32, limit)?;
         *self.global.lock() = Some(space);
         *self.funcs.lock() = Arc::new(module.all_functions()?);

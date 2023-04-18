@@ -33,6 +33,7 @@ type ValidationInputJson struct {
 	UserWasms     map[string]UserWasmJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
+	DebugChain    bool
 }
 
 func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
@@ -44,6 +45,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 		StartState:    entry.StartState,
 		PreimagesB64:  make(map[string]string),
 		UserWasms:     make(map[string]UserWasmJson),
+		DebugChain:    entry.DebugChain,
 	}
 	for hash, data := range entry.Preimages {
 		encHash := base64.StdEncoding.EncodeToString(hash.Bytes())
@@ -76,6 +78,7 @@ func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationI
 		StartState:    entry.StartState,
 		Preimages:     make(map[common.Hash][]byte),
 		UserWasms:     make(state.UserWasms),
+		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {

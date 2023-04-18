@@ -19,17 +19,13 @@ impl<T> OpcodePricer for T where T: Fn(&Operator) -> u64 + Send + Sync + Clone {
 
 pub struct Meter<F: OpcodePricer> {
     costs: F,
-    start_ink: u64,
     globals: Mutex<Option<[GlobalIndex; 2]>>,
 }
 
 impl<F: OpcodePricer> Meter<F> {
-    pub fn new(costs: F, start_ink: u64) -> Self {
-        Self {
-            costs,
-            start_ink,
-            globals: Mutex::new(None),
-        }
+    pub fn new(costs: F) -> Self {
+        let globals = Mutex::new(None);
+        Self { costs, globals }
     }
 
     pub fn globals(&self) -> [GlobalIndex; 2] {
@@ -45,9 +41,8 @@ where
     type FM<'a> = FuncMeter<'a, F>;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
-        let start_ink = GlobalInit::I64Const(self.start_ink as i64);
         let start_status = GlobalInit::I32Const(0);
-        let ink = module.add_global(STYLUS_INK_LEFT, Type::I64, start_ink)?;
+        let ink = module.add_global(STYLUS_INK_LEFT, Type::I64, GlobalInit::I64Const(0))?;
         let status = module.add_global(STYLUS_INK_STATUS, Type::I32, start_status)?;
         *self.globals.lock() = Some([ink, status]);
         Ok(())
@@ -150,7 +145,6 @@ impl<F: OpcodePricer> Debug for Meter<F> {
         f.debug_struct("Meter")
             .field("globals", &self.globals)
             .field("costs", &"<function>")
-            .field("start_ink", &self.start_ink)
             .finish()
     }
 }

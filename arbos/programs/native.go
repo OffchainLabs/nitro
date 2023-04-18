@@ -64,9 +64,12 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 		usize(debugMode),
 		output,
 	))
-	result, err := status.output(output.intoBytes())
+	data := output.intoBytes()
+	result, err := status.output(data)
 	if err == nil {
 		db.SetCompiledWasmCode(program, result, version)
+	} else {
+		log.Debug("program failure", "err", err.Error(), "data", string(data), "program", program)
 	}
 	return err
 }
@@ -484,10 +487,10 @@ func goSlice(slice []byte) C.GoSliceData {
 
 func (params *goParams) encode() C.GoParams {
 	return C.GoParams{
-		version:     u32(params.version),
-		max_depth:   u32(params.maxDepth),
-		ink_price:   u64(params.inkPrice),
-		hostio_cost: u64(params.hostioInk),
-		debug_mode:  usize(params.debugMode),
+		version:    u32(params.version),
+		max_depth:  u32(params.maxDepth),
+		ink_price:  u64(params.inkPrice),
+		hostio_ink: u64(params.hostioInk),
+		debug_mode: u32(params.debugMode),
 	}
 }

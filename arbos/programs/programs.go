@@ -169,7 +169,7 @@ type goParams struct {
 	maxDepth  uint32
 	inkPrice  uint64
 	hostioInk uint64
-	debugMode uint64
+	debugMode uint32
 }
 
 func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
