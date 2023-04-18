@@ -296,7 +296,8 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
 	headerchan, unsubscribe := s.Subscribe(true)
 	defer unsubscribe()
-	ctx, cancel := context.WithTimeout(ctxIn, s.config().TxTimeout)
+	ctx, cancel := context.WithTimeout(ctxIn, s.config().TxTimeout*5)
+	log.Warn("bridge creation timeout", "timeout", s.config().TxTimeout*5)
 	defer cancel()
 	txHash := tx.Hash()
 	for {
