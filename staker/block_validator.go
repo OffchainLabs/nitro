@@ -15,6 +15,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -258,8 +259,8 @@ func nonBlockingTriger(channel chan struct{}) {
 }
 
 // called from NewBlockValidator, doesn't need to catch locks
-func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
-	exists, err := v.db.Has(lastGlobalStateValidatedInfoKey)
+func ReadLastValidatedInfo(db ethdb.Database) (*GlobalStateValidatedInfo, error) {
+	exists, err := db.Has(lastGlobalStateValidatedInfoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +268,7 @@ func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, err
 	if !exists {
 		return nil, nil
 	}
-	gsBytes, err := v.db.Get(lastGlobalStateValidatedInfoKey)
+	gsBytes, err := db.Get(lastGlobalStateValidatedInfoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +277,10 @@ func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, err
 		return nil, err
 	}
 	return &validated, nil
+}
+
+func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
+	return ReadLastValidatedInfo(v.db)
 }
 
 var ErrGlobalStateNotInChain = errors.New("globalstate not in chain")
@@ -388,7 +393,8 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	return v.execSpawner.WriteToFile(input, validationEntry.End, moduleRoot)
+	_, err = v.execSpawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
+	return err
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -534,7 +540,7 @@ func (v *BlockValidator) sendNextRecordPrepare() error {
 	if v.prepared >= nextPrepared {
 		return nil
 	}
-	nextPromise := containers.NewPromise[arbutil.MessageIndex]()
+	nextPromise := containers.NewPromise[arbutil.MessageIndex](nil)
 	v.LaunchThread(func(ctx context.Context) {
 		err := v.recorder.PrepareForRecord(ctx, v.prepared, nextPrepared-1)
 		if err != nil {
@@ -844,12 +850,12 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 }
 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
-func (v *BlockValidator) Initialize() error {
+func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.execSpawner.LatestWasmModuleRoot()
+		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
 		if err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 	"sync"
@@ -61,6 +62,7 @@ type TransactionStreamer struct {
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
+	delayedBridge   *DelayedBridge
 }
 
 type TransactionStreamerConfig struct {
@@ -72,9 +74,15 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
+	MaxBroadcastQueueSize:   1024,
+	MaxReorgResequenceDepth: 1024,
+	ExecuteMessageLoopDelay: time.Millisecond * 100,
+}
+
+var TestTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcastQueueSize:   10_000,
 	MaxReorgResequenceDepth: 128 * 1024,
-	ExecuteMessageLoopDelay: time.Millisecond * 100,
+	ExecuteMessageLoopDelay: time.Millisecond,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -117,7 +125,6 @@ func uint64ToKey(x uint64) []byte {
 	return data
 }
 
-// TODO: this is needed only for block validator
 func (s *TransactionStreamer) SetBlockValidator(validator *staker.BlockValidator) {
 	if s.Started() {
 		panic("trying to set coordinator after start")
@@ -138,14 +145,15 @@ func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
 	s.coordinator = coordinator
 }
 
-func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
+func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedBridge *DelayedBridge) {
 	if s.Started() {
 		panic("trying to set inbox reader after start")
 	}
-	if s.inboxReader != nil {
+	if s.inboxReader != nil || s.delayedBridge != nil {
 		panic("trying to set inbox reader when already set")
 	}
 	s.inboxReader = inboxReader
+	s.delayedBridge = delayedBridge
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
@@ -245,32 +253,38 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 				// This is the wrong position for the delayed message
 				continue
 			}
-			lastDelayedSeqNum++
-
 			if s.inboxReader != nil {
-				// Verify that the delayed message we're re-sequencing matches what we have after the reorg
-				haveDelayedMessage, err := s.inboxReader.tracker.GetDelayedMessage(delayedSeqNum)
+				// this is a delayed message. Should be resequenced if all 3 agree:
+				// oldMessage, accumulator stored in tracker, and the message re-read from l1
+				expectedAcc, err := s.inboxReader.tracker.GetDelayedAcc(delayedSeqNum)
 				if err != nil {
 					if !strings.Contains(err.Error(), "not found") {
-						log.Error("failed to lookup delayed message to re-sequence", "id", header.RequestId, "err", err)
+						log.Error("reorg-resequence: failed to read expected accumulator", "err", err)
 					}
 					continue
 				}
-				haveDelayedMessageBytes, err := haveDelayedMessage.Serialize()
+				msgBlockNum := new(big.Int).SetUint64(oldMessage.Message.Header.BlockNumber)
+				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.GetContext(), msgBlockNum, msgBlockNum, nil)
 				if err != nil {
-					log.Error("failed to serialize new delayed message from database", "err", err)
+					log.Error("reorg-resequence: failed to serialize old delayed message from database", "err", err)
 					continue
 				}
-				oldDelayedMessageBytes, err := oldMessage.Message.Serialize()
-				if err != nil {
-					log.Error("failed to serialize old delayed message from database", "err", err)
-					continue
+				messageFound := false
+			delayedInBlockLoop:
+				for _, delayedFound := range delayedInBlock {
+					if delayedFound.Message.Header.RequestId.Big().Uint64() != delayedSeqNum {
+						continue delayedInBlockLoop
+					}
+					if expectedAcc == delayedFound.AfterInboxAcc() && delayedFound.Message.Equals(oldMessage.Message) {
+						messageFound = true
+					}
+					break delayedInBlockLoop
 				}
-				if !bytes.Equal(haveDelayedMessageBytes, oldDelayedMessageBytes) {
-					// This delayed message is different, so we'll save re-sequencing it for the real delayed sequencer later
+				if !messageFound {
 					continue
 				}
 			}
+			lastDelayedSeqNum++
 		}
 
 		oldMessages = append(oldMessages, oldMessage)
@@ -859,8 +873,8 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	return s.exec.ResultAtPos(count - 1)
 }
 
-// return value: true if should be called again
-func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution.ExecutionClient) bool {
+// return value: true if should be called again immediately
+func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
 	if ctx.Err() != nil {
 		return false
 	}

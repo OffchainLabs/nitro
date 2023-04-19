@@ -58,7 +58,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 	if err := ret.stopWaiter.Start(ctx, ret); err != nil {
 		return nil, err
 	}
-	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
+	err = ret.stopWaiter.LaunchThreadSafe(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		defer func() {

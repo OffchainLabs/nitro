@@ -13,8 +13,14 @@ contract Simple {
     event CounterEvent(uint64 count);
     event RedeemedEvent(address caller, address redeemer);
     event NullEvent();
+    event LogAndIncrementCalled(uint256 expected, uint256 have);
 
     function increment() external {
+        counter++;
+    }
+
+    function logAndIncrement(uint256 expected) external {
+        emit LogAndIncrementCalled(expected, counter);
         counter++;
     }
 

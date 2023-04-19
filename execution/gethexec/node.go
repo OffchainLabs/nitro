@@ -35,16 +35,16 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	L1Reader               headerreader.Config `koanf:"l1-reader" reload:"hot"`
-	Sequencer              SequencerConfig     `koanf:"sequencer" reload:"hot"`
-	TxPreCheckerStrictness uint                `koanf:"tx-pre-checker-strictness" reload:"hot"`
-	Forwarder              ForwarderConfig     `koanf:"forwarder"`
-	ForwardingTargetImpl   string              `koanf:"forwarding-target"`
-	Caching                CachingConfig       `koanf:"caching"`
-	RPC                    arbitrum.Config     `koanf:"rpc"`
-	Archive                bool                `koanf:"archive"`
-	TxLookupLimit          uint64              `koanf:"tx-lookup-limit"`
-	Dangerous              DangerousConfig     `koanf:"dangerous"`
+	L1Reader             headerreader.Config `koanf:"l1-reader" reload:"hot"`
+	Sequencer            SequencerConfig     `koanf:"sequencer" reload:"hot"`
+	TxPreChecker         TxPreCheckerConfig  `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder            ForwarderConfig     `koanf:"forwarder"`
+	ForwardingTargetImpl string              `koanf:"forwarding-target"`
+	Caching              CachingConfig       `koanf:"caching"`
+	RPC                  arbitrum.Config     `koanf:"rpc"`
+	Archive              bool                `koanf:"archive"`
+	TxLookupLimit        uint64              `koanf:"tx-lookup-limit"`
+	Dangerous            DangerousConfig     `koanf:"dangerous"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -59,6 +59,9 @@ func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
+	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -67,10 +70,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
-	txPreCheckerDescription := "how strict to be when checking txs before forwarding them. 0 = accept anything, " +
-		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
-		"30 = full validation which may reject txs that would succeed"
-	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
+	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 
@@ -80,13 +80,13 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var ConfigDefault = Config{
-	RPC:                    arbitrum.DefaultConfig,
-	Sequencer:              DefaultSequencerConfig,
-	ForwardingTargetImpl:   "",
-	TxPreCheckerStrictness: TxPreCheckerStrictnessNone,
-	Archive:                false,
-	TxLookupLimit:          126_230_400, // 1 year at 4 blocks per second
-	Caching:                DefaultCachingConfig,
+	RPC:                  arbitrum.DefaultConfig,
+	Sequencer:            DefaultSequencerConfig,
+	ForwardingTargetImpl: "",
+	TxPreChecker:         DefaultTxPreCheckerConfig,
+	Archive:              false,
+	TxLookupLimit:        126_230_400, // 1 year at 4 blocks per second
+	Caching:              DefaultCachingConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -160,8 +160,9 @@ func CreateExecutionNode(
 		}
 	}
 
-	strictnessFetcher := func() uint { return configFetcher().TxPreCheckerStrictness }
-	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, strictnessFetcher)
+	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher().TxPreChecker }
+
+	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
 	arbInterface, err := NewArbInterface(execEngine, txPublisher)
 	if err != nil {
 		return nil, err

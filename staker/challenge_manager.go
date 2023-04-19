@@ -384,11 +384,10 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	return 0, fmt.Errorf("agreed with entire challenge %v (start step count %v and end step count %v)", m.challengeIndex, state.Start.String(), state.End.String())
 }
 
+// Checks if an execution challenge exists on-chain.
+// If it exists on-chain but we don't have a backend for it, it creates the execution challenge backend.
+// If we have a backend for it but it doesn't exist on-chain, it removes the execution challenge backend.
 func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error {
-	if m.executionChallengeBackend != nil {
-		return nil
-	}
-
 	latestConfirmedBlock, err := m.latestConfirmedBlock(ctx)
 	if err != nil {
 		return err
@@ -402,6 +401,10 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		return fmt.Errorf("error getting challenge %v info: %w", m.challengeIndex, err)
 	}
 	if challengeState.Mode != challengeModeExecution {
+		m.executionChallengeBackend = nil
+		return nil
+	}
+	if m.executionChallengeBackend != nil {
 		return nil
 	}
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
@@ -469,7 +472,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, initialCo
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input)
+	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
 	}
@@ -488,8 +491,11 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, fmt.Errorf("error loading execution challenge: %w", err)
 	}
 	myTurn, err := m.IsMyTurn(ctx)
-	if !myTurn || (err != nil) {
+	if err != nil {
 		return nil, fmt.Errorf("error checking if it's our turn: %w", err)
+	}
+	if !myTurn {
+		return nil, nil
 	}
 	state, err := m.GetChallengeState(ctx)
 	if err != nil {
