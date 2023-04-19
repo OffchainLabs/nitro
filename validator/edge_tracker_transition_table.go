@@ -56,6 +56,7 @@ func newEdgeTrackerFsm(
 			Typ: edgeAwaitSubchallengeResolution{},
 			From: []edgeTrackerState{
 				edgeAtOneStepFork,
+				edgeAtOneStepProof,
 				edgeAddingSubchallengeLeaf,
 				edgeBisecting,
 				edgeAwaitingSubchallenge,

@@ -29,6 +29,7 @@ type moduleInfo struct {
 func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
 	abi, err := json.Marshal(artifact.Abi)
 	if err != nil {
+		// skipcq: RVV-A0003
 		log.Fatal(err)
 	}
 	m.contractNames = append(m.contractNames, artifact.ContractName)
@@ -44,6 +45,7 @@ func (m *moduleInfo) exportABIs(dest string) {
 		// #nosec G306
 		err := os.WriteFile(path, []byte(abi), 0o644)
 		if err != nil {
+			// skipcq: RVV-A0003
 			log.Fatal(err)
 		}
 	}

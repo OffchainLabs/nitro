@@ -30,6 +30,7 @@ type Assertion interface {
 	SeqNum() AssertionSequenceNumber
 	PrevSeqNum() (AssertionSequenceNumber, error)
 	StateHash() (common.Hash, error)
+	InboxMsgCountSeen() (uint64, error)
 }
 
 // AssertionChain can manage assertions in the protocol and retrieve
@@ -112,11 +113,8 @@ type ClaimId common.Hash
 
 // OneStepData used for confirming edges by one step proofs.
 type OneStepData struct {
-	BridgeAddr           common.Address
-	MaxInboxMessagesRead uint64
-	MachineStep          uint64
-	BeforeHash           common.Hash
-	Proof                []byte
+	BeforeHash common.Hash
+	Proof      []byte
 }
 
 // SpecChallengeManager implements the research specification.
@@ -143,6 +141,7 @@ type SpecChallengeManager interface {
 		assertion Assertion,
 		startCommit util.HistoryCommitment,
 		endCommit util.HistoryCommitment,
+		startEndPrefixProof []byte,
 	) (SpecEdge, error)
 	// Adds a level-zero edge to subchallenge given a source edge and history commitments.
 	AddSubChallengeLevelZeroEdge(
@@ -150,12 +149,27 @@ type SpecChallengeManager interface {
 		challengedEdge SpecEdge,
 		startCommit util.HistoryCommitment,
 		endCommit util.HistoryCommitment,
+		startParentInclusionProof []common.Hash,
+		endParentInclusionProof []common.Hash,
+		startEndPrefixProof []byte,
 	) (SpecEdge, error)
+	ConfirmEdgeByOneStepProof(
+		ctx context.Context,
+		tentativeWinnerId EdgeId,
+		oneStepData *OneStepData,
+		preHistoryInclusionProof []common.Hash,
+		postHistoryInclusionProof []common.Hash,
+	) error
 }
 
 // Height if defined as the height of a history commitment in the specification.
 // Heights are 0-indexed.
 type Height uint64
+
+// Also copied in contracts/src/libraries/Constants.sol
+const LayerZeroBlockEdgeHeight = 1 << 5
+const LayerZeroBigStepEdgeHeight = 1 << 5
+const LayerZeroSmallStepEdgeHeight = 1 << 5
 
 // EdgeStatus of an edge in the protocol.
 type EdgeStatus uint8
@@ -205,4 +219,5 @@ type SpecEdge interface {
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
 	TopLevelClaimHeight(ctx context.Context) (*OriginHeights, error)
+	// The ending batch count of the corresponding top-level claim
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/execution"
@@ -42,6 +43,8 @@ type Manager interface {
 	HasStateCommitment(ctx context.Context, blockChallengeCommitment util.StateCommitment) bool
 	// Produces a block challenge history commitment up to and including a certain height.
 	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error)
+	// Produces a block challenge history commitment in a certain inclusive block range, but padding states with duplicates after the first state with a batch count of at least the specified max.
+	HistoryCommitmentUpToBatch(ctx context.Context, blockStart, blockEnd, batchCount uint64) (util.HistoryCommitment, error)
 	// Produces a big step history commitment for all big steps within block
 	// challenge heights H to H+1.
 	BigStepLeafCommitment(
@@ -81,6 +84,14 @@ type Manager interface {
 		ctx context.Context,
 		fromBlockChallengeHeight,
 		toBlockChallengeHeight uint64,
+	) ([]byte, error)
+	// Produces a prefix proof in a block challenge from height A to B, but padding states with duplicates after the first state with a batch count of at least the specified max.
+	PrefixProofUpToBatch(
+		ctx context.Context,
+		startHeight,
+		fromBlockChallengeHeight,
+		toBlockChallengeHeight,
+		batchCount uint64,
 	) ([]byte, error)
 	// Produces a big step prefix proof from height A to B for heights H to H+1
 	// within a block challenge.
@@ -158,6 +169,11 @@ func WithBigStepStateDivergenceHeight(divergenceHeight uint64) Opt {
 	}
 }
 
+// The divergence height is relative to the last non-diverging big step.
+// E.g. if the big step divergence is set to 2, there are 32 small steps per big steps,
+// and the small step divergence is set to 10, then small steps would start diverging at step 42.
+// That's because we need to make a divergence before big step 2, but after big step 1.
+// We put the divergence 10 small steps into that big step block, as specified by this parameter.
 func WithSmallStepStateDivergenceHeight(divergenceHeight uint64) Opt {
 	return func(s *Simulated) {
 		s.smallStepDivergenceHeight = divergenceHeight
@@ -190,8 +206,16 @@ func NewWithAssertionStates(
 		)
 	}
 	stateRoots := make([]common.Hash, len(assertionChainExecutionStates))
+	var lastBatch uint64 = math.MaxUint64
+	var lastPosInBatch uint64 = math.MaxUint64
 	for i := 0; i < len(stateRoots); i++ {
-		stateRoots[i] = protocol.ComputeStateHash(assertionChainExecutionStates[i], big.NewInt(2))
+		state := assertionChainExecutionStates[i]
+		if state.GlobalState.Batch == lastBatch && state.GlobalState.PosInBatch == lastPosInBatch {
+			return nil, fmt.Errorf("execution states %v and %v have the same batch %v and position in batch %v", i-1, i, lastBatch, lastPosInBatch)
+		}
+		lastBatch = state.GlobalState.Batch
+		lastPosInBatch = state.GlobalState.PosInBatch
+		stateRoots[i] = protocol.ComputeStateHash(state, inboxMaxCounts[i])
 	}
 	s := &Simulated{
 		stateRoots:      stateRoots,
@@ -207,7 +231,7 @@ func NewWithAssertionStates(
 // LatestAssertionCreationData gets the state commitment corresponding to the last, local state root the manager has
 // and a pre-state based on a height of the previous assertion the validator should build upon.
 func (s *Simulated) LatestAssertionCreationData(
-	ctx context.Context,
+	_ context.Context,
 	prevHeight uint64,
 ) (*AssertionToCreate, error) {
 	if len(s.executionStates) == 0 {
@@ -224,26 +248,71 @@ func (s *Simulated) LatestAssertionCreationData(
 	return &AssertionToCreate{
 		PreState:      s.executionStates[prevHeight],
 		PostState:     lastState,
-		InboxMaxCount: big.NewInt(1),
+		InboxMaxCount: big.NewInt(1), // TODO: this should be s.inboxMaxCounts[len(s.inboxMaxCounts)-1] but that breaks other stuff
 		Height:        uint64(len(s.stateRoots)) - 1,
 	}, nil
 }
 
 // HasStateCommitment checks if a state commitment is found in our local list of state roots.
-func (s *Simulated) HasStateCommitment(ctx context.Context, commitment util.StateCommitment) bool {
+func (s *Simulated) HasStateCommitment(_ context.Context, commitment util.StateCommitment) bool {
 	if commitment.Height >= uint64(len(s.stateRoots)) {
 		return false
 	}
 	return s.stateRoots[commitment.Height] == commitment.StateRoot
 }
 
-func (s *Simulated) HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error) {
+func (s *Simulated) HistoryCommitmentUpTo(_ context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error) {
 	// The size is the number of elements being committed to. For example, if the height is 7, there will
 	// be 8 elements being committed to from [0, 7] inclusive.
 	size := blockChallengeHeight + 1
 	return util.NewHistoryCommitment(
 		blockChallengeHeight,
 		s.stateRoots[:size],
+	)
+}
+
+func (s *Simulated) statesUpTo(blockStart, blockEnd, nextBatchCount uint64) ([]common.Hash, error) {
+	if blockEnd < blockStart {
+		return nil, fmt.Errorf("end block %v is less than start block %v", blockEnd, blockStart)
+	}
+	// The size is the number of elements being committed to. For example, if the height is 7, there will
+	// be 8 elements being committed to from [0, 7] inclusive.
+	desiredStatesLen := int(blockEnd - blockStart + 1)
+	var states []common.Hash
+	var lastState common.Hash
+	for i := blockStart; i <= blockEnd; i++ {
+		if i >= uint64(len(s.stateRoots)) {
+			break
+		}
+		state := s.stateRoots[i]
+		states = append(states, state)
+		lastState = state
+		if len(s.executionStates) == 0 {
+			// should only happen in tests
+			continue
+		}
+		gs := s.executionStates[i].GlobalState
+		if gs.Batch >= nextBatchCount {
+			if gs.Batch > nextBatchCount || gs.PosInBatch > 0 {
+				return nil, fmt.Errorf("overran next batch count %v with global state batch %v position %v", nextBatchCount, gs.Batch, gs.PosInBatch)
+			}
+			break
+		}
+	}
+	for len(states) < desiredStatesLen {
+		states = append(states, lastState)
+	}
+	return states, nil
+}
+
+func (s *Simulated) HistoryCommitmentUpToBatch(_ context.Context, blockStart, blockEnd, nextBatchCount uint64) (util.HistoryCommitment, error) {
+	states, err := s.statesUpTo(blockStart, blockEnd, nextBatchCount)
+	if err != nil {
+		return util.HistoryCommitment{}, err
+	}
+	return util.NewHistoryCommitment(
+		blockEnd-blockStart,
+		states,
 	)
 }
 
@@ -265,7 +334,7 @@ func (s *Simulated) BigStepLeafCommitment(
 }
 
 func (s *Simulated) BigStepCommitmentUpTo(
-	ctx context.Context,
+	_ context.Context,
 	fromAssertionHeight,
 	toAssertionHeight,
 	toBigStep uint64,
@@ -297,6 +366,14 @@ func (s *Simulated) BigStepCommitmentUpTo(
 	return util.NewHistoryCommitment(toBigStep, leaves)
 }
 
+func (s *Simulated) bigStepShouldDiverge(step uint64) bool {
+	// Diverge if:
+	return s.bigStepDivergenceHeight != 0 && // diverging is enabled, and
+		step >= s.bigStepDivergenceHeight && // we're past the divergence point, and
+		step != 0 && // we're not at the beginning of a block (otherwise the block->big step subchallenge wouldn't work), and
+		step != s.maxWavmOpcodes/s.numOpcodesPerBigStep // we're not at the end of a block (for the same reason)
+}
+
 func (s *Simulated) intermediateBigStepLeaves(
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight,
@@ -305,14 +382,9 @@ func (s *Simulated) intermediateBigStepLeaves(
 	engine execution.EngineAtBlock,
 ) ([]common.Hash, error) {
 	leaves := make([]common.Hash, 0)
-	leaves = append(leaves, engine.FirstMachineState().Hash())
 	// Up to and including the specified step.
-	for i := fromBigStep; i < toBigStep; i++ {
+	for i := fromBigStep; i <= toBigStep; i++ {
 		start, err := engine.StateAfterBigSteps(i)
-		if err != nil {
-			return nil, err
-		}
-		intermediateState, err := start.NextMachineState()
 		if err != nil {
 			return nil, err
 		}
@@ -320,10 +392,10 @@ func (s *Simulated) intermediateBigStepLeaves(
 
 		// For testing purposes, if we want to diverge from the honest
 		// hashes starting at a specified hash.
-		if s.bigStepDivergenceHeight == 0 || i+1 < s.bigStepDivergenceHeight {
-			hash = intermediateState.Hash()
+		if s.bigStepShouldDiverge(i) {
+			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d", i*s.numOpcodesPerBigStep, fromBlockChallengeHeight, toBlockChallengeHeight)))
 		} else {
-			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromBlockChallengeHeight, toBlockChallengeHeight, protocol.BigStepChallengeEdge)))
+			hash = start.Hash()
 		}
 		leaves = append(leaves, hash)
 	}
@@ -343,12 +415,12 @@ func (s *Simulated) SmallStepLeafCommitment(
 		toAssertionHeight,
 		fromBigStep,
 		toBigStep,
-		s.numOpcodesPerBigStep-1,
+		s.numOpcodesPerBigStep,
 	)
 }
 
 func (s *Simulated) SmallStepCommitmentUpTo(
-	ctx context.Context,
+	_ context.Context,
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight,
 	fromBigStep,
@@ -400,15 +472,13 @@ func (s *Simulated) intermediateSmallStepLeaves(
 	engine execution.EngineAtBlock,
 ) ([]common.Hash, error) {
 	leaves := make([]common.Hash, 0)
-	leaves = append(leaves, engine.FirstMachineState().Hash())
 	// Up to and including the specified step.
-	divergingAt := fromSmallStep + s.smallStepDivergenceHeight
-	for i := fromSmallStep; i < toSmallStep; i++ {
+	var divergeAt uint64
+	if s.bigStepDivergenceHeight > 0 {
+		divergeAt = s.numOpcodesPerBigStep*(s.bigStepDivergenceHeight-1) + s.smallStepDivergenceHeight
+	}
+	for i := fromSmallStep; i <= toSmallStep; i++ {
 		start, err := engine.StateAfterSmallSteps(i)
-		if err != nil {
-			return nil, err
-		}
-		intermediateState, err := start.NextMachineState()
 		if err != nil {
 			return nil, err
 		}
@@ -416,10 +486,17 @@ func (s *Simulated) intermediateSmallStepLeaves(
 
 		// For testing purposes, if we want to diverge from the honest
 		// hashes starting at a specified hash.
-		if s.smallStepDivergenceHeight == 0 || i+1 < divergingAt {
-			hash = intermediateState.Hash()
+		var shouldDiverge bool
+		if i%s.numOpcodesPerBigStep == 0 {
+			// If we're at a big step point, maintain compatibility so big step -> small step subchallenges work
+			shouldDiverge = s.bigStepShouldDiverge(i / s.numOpcodesPerBigStep)
 		} else {
-			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d:%d", i, fromBlockChallengeHeight, toBlockChallengeHeight, protocol.SmallStepChallengeEdge)))
+			shouldDiverge = divergeAt != 0 && i >= divergeAt
+		}
+		if shouldDiverge {
+			hash = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d:%d:%d", i, fromBlockChallengeHeight, toBlockChallengeHeight)))
+		} else {
+			hash = start.Hash()
 		}
 		leaves = append(leaves, hash)
 	}
@@ -460,11 +537,8 @@ func (s *Simulated) OneStepProofData(
 		return
 	}
 	data = &protocol.OneStepData{
-		BridgeAddr:           common.Address{},
-		MaxInboxMessagesRead: 2,
-		MachineStep:          fromSmallStep,
-		BeforeHash:           startCommit.LastLeaf,
-		Proof:                make([]byte, 0),
+		BeforeHash: startCommit.LastLeaf,
+		Proof:      make([]byte, 0),
 	}
 	if !s.malicious {
 		// Only honest validators can produce a valid one step proof.
@@ -475,17 +549,21 @@ func (s *Simulated) OneStepProofData(
 	return
 }
 
-func (s *Simulated) PrefixProof(_ context.Context, lo, hi uint64) ([]byte, error) {
-	loSize := lo + 1
-	hiSize := hi + 1
-	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(s.stateRoots[:loSize])
+func (s *Simulated) prefixProofImpl(_ context.Context, start, lo, hi, batchCount uint64) ([]byte, error) {
+	states, err := s.statesUpTo(start, hi, batchCount)
+	if err != nil {
+		return nil, err
+	}
+	loSize := lo + 1 - start
+	hiSize := hi + 1 - start
+	prefixExpansion, err := prefixproofs.ExpansionFromLeaves(states[:loSize])
 	if err != nil {
 		return nil, err
 	}
 	prefixProof, err := prefixproofs.GeneratePrefixProof(
 		loSize,
 		prefixExpansion,
-		s.stateRoots[loSize:hiSize],
+		states[loSize:hiSize],
 		prefixproofs.RootFetcherFromExpansion,
 	)
 	if err != nil {
@@ -494,6 +572,14 @@ func (s *Simulated) PrefixProof(_ context.Context, lo, hi uint64) ([]byte, error
 	_, numRead := prefixproofs.MerkleExpansionFromCompact(prefixProof, loSize)
 	onlyProof := prefixProof[numRead:]
 	return ProofArgs.Pack(&prefixExpansion, &onlyProof)
+}
+
+func (s *Simulated) PrefixProof(ctx context.Context, lo, hi uint64) ([]byte, error) {
+	return s.prefixProofImpl(ctx, 0, lo, hi, math.MaxUint64)
+}
+
+func (s *Simulated) PrefixProofUpToBatch(ctx context.Context, start, lo, hi, batchCount uint64) ([]byte, error) {
+	return s.prefixProofImpl(ctx, start, lo, hi, batchCount)
 }
 
 func (s *Simulated) BigStepPrefixProof(

@@ -13,6 +13,7 @@ import "../bridge/IBridge.sol";
 struct ExecutionContext {
     uint256 maxInboxMessagesRead;
     IBridge bridge;
+    bytes32 initialWasmModuleRoot;
 }
 
 abstract contract IOneStepProver {

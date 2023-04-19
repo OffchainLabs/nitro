@@ -42,7 +42,7 @@ interface IAssertionChain {
 }
 
 // CHRIS: TODO: move this to data entities?
-struct OneStepData {
+struct OldOneStepData {
     ExecutionContext execCtx;
     uint256 machineStep;
     bytes32 beforeHash;

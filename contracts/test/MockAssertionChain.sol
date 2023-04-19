@@ -4,6 +4,7 @@ pragma solidity ^0.8.17;
 import "forge-std/Test.sol";
 import {IAssertionChain} from "../src/challengeV2/DataEntities.sol";
 import { IEdgeChallengeManager } from "../src/challengeV2/EdgeChallengeManager.sol";
+import "../src/bridge/IBridge.sol";
 
 struct MockAssertion {
     bytes32 predecessorId;
@@ -19,6 +20,7 @@ struct MockAssertion {
 
 contract MockAssertionChain is IAssertionChain {
     mapping(bytes32 => MockAssertion) assertions;
+    IBridge public bridge; // TODO: set bridge in this mock
 
     function assertionExists(bytes32 assertionId) public view returns (bool) {
         return assertions[assertionId].stateHash != 0;
@@ -56,6 +58,11 @@ contract MockAssertionChain is IAssertionChain {
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256) {
         require(assertionExists(assertionId), "Assertion does not exist");
         return assertions[assertionId].firstChildCreationTime;
+    }
+
+    function getWasmModuleRoot(bytes32 assertionId) external view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return bytes32(0); // TODO: Set to proper value in this mock
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool) {

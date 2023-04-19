@@ -6,8 +6,9 @@ pragma solidity ^0.8.0;
 
 import "./Assertion.sol";
 import "./RollupLib.sol";
+import "../challengeV2/DataEntities.sol";
 
-interface IRollupCore {
+interface IRollupCore is IAssertionChain {
     struct Staker {
         uint256 amountStaked;
         uint64 index;

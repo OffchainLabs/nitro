@@ -119,6 +119,11 @@ contract AssertionChain is IAssertionChain {
         return assertions[assertionId].firstChildCreationTime;
     }
 
+    function getWasmModuleRoot(bytes32 assertionId) external view returns (bytes32) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return bytes32(0);  // TODO: Set to proper value in this mock
+    }
+
     function createNewAssertion(
         bytes32 stateHash,
         uint256 height,

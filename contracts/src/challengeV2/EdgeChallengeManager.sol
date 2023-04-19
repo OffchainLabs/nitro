@@ -86,7 +86,7 @@ interface IEdgeChallengeManager {
 struct CreateEdgeArgs {
     EdgeType edgeType;
     bytes32 startHistoryRoot;
-    uint256 startHeight;
+    uint256 startHeight; // TODO: This isn't necessary because it's always 0. Do we want it?
     bytes32 endHistoryRoot;
     uint256 endHeight;
     bytes32 claimId;
@@ -195,28 +195,27 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
             require(claimEdge.status == EdgeStatus.Pending, "Claim is not pending");
             require(store.hasLengthOneRival(args.claimId), "Claim does not have length 1 rival");
 
-            // check that the start history root match the mutual startHistoryRoot
-            require(
-                args.startHistoryRoot == claimEdge.startHistoryRoot,
-                "Start history root does not match mutual startHistoryRoot"
-            );
-
             require(proof.length > 0, "Edge type specific proof is empty");
-            (
-                bytes32 endState,
-                bytes32[] memory claimInclusionProof,
-                bytes32[] memory edgeInclusionProof
-            ) = abi.decode(proof, (bytes32, bytes32[], bytes32[]));
+            (bytes32 startState, bytes32 endState, bytes32[] memory claimStartInclusionProof, bytes32[] memory claimEndInclusionProof, bytes32[] memory edgeInclusionProof) =
+                abi.decode(proof, (bytes32, bytes32, bytes32[], bytes32[], bytes32[]));
 
-            // if endState is consistent with the claim and endHistoryRoot, then endHistoryRoot is consistent with the claim
-            // check the endState is consistent with the claim
+            // if the start and end states are consistent with both the claim the roots in the arguments, then the roots in the arguments are consistent with the claim
+            // check the states are consistent with the claims
+            MerkleTreeLib.verifyInclusionProof(
+                claimEdge.startHistoryRoot,
+                startState,
+                claimEdge.startHeight,
+                claimStartInclusionProof
+            );
             MerkleTreeLib.verifyInclusionProof(
                 claimEdge.endHistoryRoot,
                 endState,
-                1,
-                claimInclusionProof
+                claimEdge.endHeight,
+                claimEndInclusionProof
             );
-            // we check the endState is consistent with the endHistoryRoot within the below block
+            // check that the start state is consistent with the root in the argument
+            require(args.startHistoryRoot == keccak256(abi.encodePacked(startState)), "Start history root does not match mutual startHistoryRoot");
+            // we check that the end state is consistent with the roots in the arguments below
 
             ChallengeEdge storage topLevelEdge;
             if (args.edgeType == EdgeType.BigStep) {
@@ -325,12 +324,15 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public {
+        bytes32 prevAssertionId = store.getPrevAssertionId(edgeId);
+        ExecutionContext memory execCtx = ExecutionContext({
+            maxInboxMessagesRead: assertionChain.getInboxMsgCountSeen(prevAssertionId),
+            bridge: assertionChain.bridge(),
+            initialWasmModuleRoot: assertionChain.getWasmModuleRoot(prevAssertionId)
+        });
+
         store.confirmEdgeByOneStepProof(
-            edgeId,
-            oneStepProofEntry,
-            oneStepData,
-            beforeHistoryInclusionProof,
-            afterHistoryInclusionProof
+            edgeId, oneStepProofEntry, oneStepData, execCtx, beforeHistoryInclusionProof, afterHistoryInclusionProof
         );
     }
 

@@ -5,13 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"math/big"
+	"testing"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
+	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"testing"
 )
 
 var _ = Manager(&Simulated{})
@@ -41,7 +42,8 @@ func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing
 		toAssertionHeight,
 	)
 	require.NoError(t, err)
-	require.NotEqual(t, hashes[0], bigStep.FirstLeaf)
+	require.Equal(t, hashes[0], bigStep.FirstLeaf)
+	require.NotEqual(t, bigStep.FirstLeaf, bigStep.LastLeaf)
 
 	fromBigStep := uint64(0)
 	toBigStep := fromBigStep + 1
@@ -54,7 +56,7 @@ func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing
 	)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), bigStep.Height)
-	require.Equal(t, uint64(7), smallStep.Height)
+	require.Equal(t, uint64(8), smallStep.Height)
 	require.Equal(t, bigStep.FirstLeaf, smallStep.FirstLeaf)
 }
 
@@ -491,10 +493,15 @@ func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.
 		}
 		state := &protocol.ExecutionState{
 			GlobalState: protocol.GoGlobalState{
-				BlockHash: blockHash,
-				Batch:     1,
+				BlockHash:  blockHash,
+				Batch:      0,
+				PosInBatch: i,
 			},
 			MachineStatus: protocol.MachineStatusFinished,
+		}
+		if i+1 == numStates {
+			state.GlobalState.Batch = 1
+			state.GlobalState.PosInBatch = 0
 		}
 		states[i] = state
 		roots[i] = protocol.ComputeStateHash(state, big.NewInt(1))

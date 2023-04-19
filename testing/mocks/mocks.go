@@ -20,11 +20,12 @@ var (
 )
 
 type MockAssertion struct {
-	Prev           util.Option[*MockAssertion]
-	MockHeight     uint64
-	MockSeqNum     protocol.AssertionSequenceNumber
-	MockPrevSeqNum protocol.AssertionSequenceNumber
-	MockStateHash  common.Hash
+	Prev                  util.Option[*MockAssertion]
+	MockHeight            uint64
+	MockSeqNum            protocol.AssertionSequenceNumber
+	MockPrevSeqNum        protocol.AssertionSequenceNumber
+	MockStateHash         common.Hash
+	MockInboxMsgCountSeen uint64
 }
 
 func (m *MockAssertion) Height() (uint64, error) {
@@ -43,6 +44,10 @@ func (m *MockAssertion) StateHash() (common.Hash, error) {
 	return m.MockStateHash, nil
 }
 
+func (m *MockAssertion) InboxMsgCountSeen() (uint64, error) {
+	return m.MockInboxMsgCountSeen, nil
+}
+
 type MockStateManager struct {
 	mock.Mock
 }
@@ -57,8 +62,18 @@ func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uin
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
+func (m *MockStateManager) HistoryCommitmentUpToBatch(ctx context.Context, startBlock, endBlock, batchCount uint64) (util.HistoryCommitment, error) {
+	args := m.Called(ctx, startBlock, endBlock, batchCount)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+}
+
 func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]byte, error) {
 	args := m.Called(ctx, from, to)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockStateManager) PrefixProofUpToBatch(ctx context.Context, start, from, to, batchCount uint64) ([]byte, error) {
+	args := m.Called(ctx, start, from, to, batchCount)
 	return args.Get(0).([]byte), args.Error(1)
 }
 
@@ -213,8 +228,9 @@ func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	assertion protocol.Assertion,
 	startCommit util.HistoryCommitment,
 	endCommit util.HistoryCommitment,
+	startEndPrefixProof []byte,
 ) (protocol.SpecEdge, error) {
-	args := m.Called(ctx, assertion, startCommit, endCommit)
+	args := m.Called(ctx, assertion, startCommit, endCommit, startEndPrefixProof)
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 
@@ -223,8 +239,11 @@ func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	challengedEdge protocol.SpecEdge,
 	startCommit util.HistoryCommitment,
 	endCommit util.HistoryCommitment,
+	startParentInclusionProof []common.Hash,
+	endParentInclusionProof []common.Hash,
+	startEndPrefixProof []byte,
 ) (protocol.SpecEdge, error) {
-	args := m.Called(ctx, challengedEdge, startCommit, endCommit)
+	args := m.Called(ctx, challengedEdge, startCommit, endCommit, startParentInclusionProof, endParentInclusionProof, startEndPrefixProof)
 	return args.Get(0).(protocol.SpecEdge), args.Error(1)
 }
 func (m *MockSpecChallengeManager) ConfirmEdgeByOneStepProof(

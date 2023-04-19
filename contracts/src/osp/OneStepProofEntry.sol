@@ -13,6 +13,7 @@ import "./IOneStepProofEntry.sol";
 contract OneStepProofEntry is IOneStepProofEntry {
     using MerkleProofLib for MerkleProof;
     using MachineLib for Machine;
+    using GlobalStateLib for GlobalState;
 
     IOneStepProver public prover0;
     IOneStepProver public proverMem;
@@ -29,6 +30,36 @@ contract OneStepProofEntry is IOneStepProofEntry {
         proverMem = proverMem_;
         proverMath = proverMath_;
         proverHostIo = proverHostIo_;
+    }
+
+    // Copied from OldChallengeLib.sol
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot)
+        internal
+        pure
+        returns (bytes32)
+    {
+        // Start the value stack with the function call ABI for the entrypoint
+        Value[] memory startingValues = new Value[](3);
+        startingValues[0] = ValueLib.newRefNull();
+        startingValues[1] = ValueLib.newI32(0);
+        startingValues[2] = ValueLib.newI32(0);
+        ValueArray memory valuesArray = ValueArray({inner: startingValues});
+        ValueStack memory values = ValueStack({proved: valuesArray, remainingHash: 0});
+        ValueStack memory internalStack;
+        StackFrameWindow memory frameStack;
+
+        Machine memory mach = Machine({
+            status: MachineStatus.RUNNING,
+            valueStack: values,
+            internalStack: internalStack,
+            frameStack: frameStack,
+            globalStateHash: globalStateHash,
+            moduleIdx: 0,
+            functionIdx: 0,
+            functionPc: 0,
+            modulesRoot: wasmModuleRoot
+        });
+        return mach.hash();
     }
 
     function proveOneStep(
@@ -49,6 +80,13 @@ contract OneStepProofEntry is IOneStepProofEntry {
             if (mach.status != MachineStatus.RUNNING) {
                 // Machine is halted.
                 // WARNING: at this point, most machine fields are unconstrained.
+                GlobalState memory globalState;
+                (globalState, offset) = Deserialize.globalState(proof, offset);
+                require(globalState.hash() == mach.globalStateHash, "BAD_GLOBAL_STATE");
+                if (mach.status == MachineStatus.FINISHED && machineStep == 0 && globalState.getInboxPosition() < execCtx.maxInboxMessagesRead) {
+                    // Kickstart the machine
+                    return getStartMachineHash(mach.globalStateHash, execCtx.initialWasmModuleRoot);
+                }
                 return mach.hash();
             }
 

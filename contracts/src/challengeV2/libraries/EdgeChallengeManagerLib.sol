@@ -19,10 +19,6 @@ struct EdgeStore {
 
 /// @notice Input data to a one step proof
 struct OneStepData {
-    /// @notice The one step proof execution context
-    ExecutionContext execCtx;
-    /// @notice The machine counter of the state that's being executed from
-    uint256 machineStep;
     /// @notice The hash of the state that's being executed from
     bytes32 beforeHash;
     /// @notice Proof data to accompany the execution context
@@ -446,6 +442,7 @@ library EdgeChallengeManagerLib {
         bytes32 edgeId,
         IOneStepProofEntry oneStepProofEntry,
         OneStepData memory oneStepData,
+        ExecutionContext memory execCtx,
         bytes32[] memory beforeHistoryInclusionProof,
         bytes32[] memory afterHistoryInclusionProof
     ) internal {
@@ -456,22 +453,24 @@ library EdgeChallengeManagerLib {
         require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
         require(store.edges[edgeId].length() == 1, "Edge does not have single step");
 
+        uint256 machineStep = get(store, edgeId).startHeight;
+
         // the state in the onestep data must be committed to by the startHistoryRoot
         MerkleTreeLib.verifyInclusionProof(
             store.edges[edgeId].startHistoryRoot,
             oneStepData.beforeHash,
-            oneStepData.machineStep,
+            machineStep,
             beforeHistoryInclusionProof
         );
 
         // execute the single step to produce the after state
         bytes32 afterHash = oneStepProofEntry.proveOneStep(
-            oneStepData.execCtx, oneStepData.machineStep, oneStepData.beforeHash, oneStepData.proof
+            execCtx, machineStep, oneStepData.beforeHash, oneStepData.proof
         );
 
         // check that the after state was indeed committed to by the endHistoryRoot
         MerkleTreeLib.verifyInclusionProof(
-            store.edges[edgeId].endHistoryRoot, afterHash, oneStepData.machineStep + 1, afterHistoryInclusionProof
+            store.edges[edgeId].endHistoryRoot, afterHash, machineStep + 1, afterHistoryInclusionProof
         );
 
         store.edges[edgeId].setConfirmed();

@@ -30,7 +30,7 @@ func NewSimulatedManagerBackend(stateRoots []common.Hash) (*SimulatedManagerBack
 }
 
 // GetMerkleRoot gets merkle root from start to end state passed as arguments from our local list of state roots.
-func (s *SimulatedManagerBackend) GetMerkleRoot(ctx context.Context, start uint64, end uint64) (common.Hash, error) {
+func (s *SimulatedManagerBackend) GetMerkleRoot(_ context.Context, start uint64, end uint64) (common.Hash, error) {
 	if start >= uint64(len(s.stateRoots)) || end >= uint64(len(s.stateRoots)) || start > end {
 		return common.Hash{}, errors.New("commitment height out of range")
 	}
@@ -42,7 +42,7 @@ func (s *SimulatedManagerBackend) GetMerkleRoot(ctx context.Context, start uint6
 }
 
 // GetStateRoot gets the state root at a specified height from our local list of state roots.
-func (s *SimulatedManagerBackend) GetStateRoot(ctx context.Context, height uint64) (common.Hash, error) {
+func (s *SimulatedManagerBackend) GetStateRoot(_ context.Context, height uint64) (common.Hash, error) {
 	if height >= uint64(len(s.stateRoots)) {
 		return common.Hash{}, errors.New("commitment height out of range")
 	}
@@ -50,6 +50,6 @@ func (s *SimulatedManagerBackend) GetStateRoot(ctx context.Context, height uint6
 }
 
 // GetLatestStateHeight gets the state height corresponding to the last, our local list of state root has.
-func (s *SimulatedManagerBackend) GetLatestStateHeight(ctx context.Context) (uint64, error) {
+func (s *SimulatedManagerBackend) GetLatestStateHeight(_ context.Context) (uint64, error) {
 	return uint64(len(s.stateRoots) - 1), nil
 }

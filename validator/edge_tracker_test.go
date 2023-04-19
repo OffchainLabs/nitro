@@ -58,10 +58,13 @@ func Test_act(t *testing.T) {
 			nil,
 		)
 		tkr, err := newEdgeTracker(
+			ctx,
 			&edgeTrackerConfig{
 				chain: p,
 			},
 			edge,
+			0,
+			1,
 		)
 		require.NoError(t, err)
 		err = tkr.act(ctx)
@@ -108,10 +111,13 @@ func Test_act(t *testing.T) {
 		)
 
 		tkr, err := newEdgeTracker(
+			ctx,
 			&edgeTrackerConfig{
 				chain: p,
 			},
 			edge,
+			0,
+			1,
 		)
 		require.NoError(t, err)
 		err = tkr.act(ctx)
@@ -120,7 +126,7 @@ func Test_act(t *testing.T) {
 	})
 	t.Run("bisects", func(t *testing.T) {
 		hook := test.NewGlobal()
-		tkr, _ := setupNonPSTracker(t, ctx)
+		tkr, _ := setupNonPSTracker(ctx, t)
 		err := tkr.act(ctx)
 		require.NoError(t, err)
 		require.Equal(t, int(edgeBisecting), int(tkr.fsm.Current().State))
@@ -130,14 +136,14 @@ func Test_act(t *testing.T) {
 	})
 }
 
-func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTracker) {
+func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgeTracker, *edgeTracker) {
 	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
 		DivergeHeight: 0,
 		NumBlocks:     7,
 	})
 	require.NoError(t, err)
 
-	honestManager, err := statemanager.New(createdData.HonestValidatorStateRoots)
+	honestManager, err := statemanager.NewWithAssertionStates(createdData.HonestValidatorStates, createdData.HonestValidatorInboxCounts)
 	require.NoError(t, err)
 
 	honestValidator, err := New(
@@ -150,7 +156,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 	)
 	require.NoError(t, err)
 
-	evilManager, err := statemanager.New(createdData.EvilValidatorStateRoots)
+	evilManager, err := statemanager.NewWithAssertionStates(createdData.EvilValidatorStates, createdData.EvilValidatorInboxCounts)
 	require.NoError(t, err)
 
 	evilValidator, err := New(
@@ -178,6 +184,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 	require.NoError(t, err)
 	require.Equal(t, false, !hasRival)
 	tracker1, err := newEdgeTracker(
+		ctx,
 		&edgeTrackerConfig{
 			timeRef:          util.NewArtificialTimeReference(),
 			chain:            honestValidator.chain,
@@ -186,10 +193,13 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 			validatorAddress: honestValidator.address,
 		},
 		honestEdge,
+		0,
+		1,
 	)
 	require.NoError(t, err)
 
 	tracker2, err := newEdgeTracker(
+		ctx,
 		&edgeTrackerConfig{
 			timeRef:          util.NewArtificialTimeReference(),
 			chain:            evilValidator.chain,
@@ -198,6 +208,8 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) (*edgeTracker, *edgeTr
 			validatorAddress: evilValidator.address,
 		},
 		evilEdge,
+		0,
+		1,
 	)
 	require.NoError(t, err)
 	require.NoError(t, err)

@@ -11,7 +11,7 @@ go_library(
         "//protocol/sol-implementation",
         "//solgen/go/bridgegen",
         "//solgen/go/challengeV2gen",
-        "//solgen/go/ospgen",
+        "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",
         "//testing",
         "//util",

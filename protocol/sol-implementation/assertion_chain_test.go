@@ -226,5 +226,5 @@ func TestChallengePeriodSeconds(t *testing.T) {
 
 	chalPeriod, err := manager.ChallengePeriodSeconds(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 100*time.Second, chalPeriod)
+	require.Equal(t, 200*time.Second, chalPeriod)
 }

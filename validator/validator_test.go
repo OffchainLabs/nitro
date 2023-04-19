@@ -52,12 +52,12 @@ func Test_onLeafCreation(t *testing.T) {
 		logsHook := test.NewGlobal()
 		ctx := context.Background()
 		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-			NumBlocks:     100,
+			NumBlocks:     20,
 			DivergeHeight: 10,
 		})
 		require.NoError(t, err)
 
-		manager, err := statemanager.New(createdData.HonestValidatorStateRoots)
+		manager, err := statemanager.NewWithAssertionStates(createdData.HonestValidatorStates, createdData.HonestValidatorInboxCounts)
 		require.NoError(t, err)
 
 		validator, err := New(

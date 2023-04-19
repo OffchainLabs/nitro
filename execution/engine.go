@@ -189,6 +189,12 @@ func (execState *ExecutionState) CurrentStepNum() uint64 {
 // has finished, or otherwise the intermediary state root defined by hashing the
 // internal hash with the step number.
 func (execState *ExecutionState) Hash() common.Hash {
+	if execState.stepNum == 0 || execState.engine.startingAssertionStateHash == execState.engine.endingAssertionStateHash {
+		return execState.engine.startingAssertionStateHash
+	}
+	if execState.stepNum >= execState.engine.numSteps {
+		return execState.engine.endingAssertionStateHash
+	}
 	// This is the intermediary state root after executing N steps with the engine.
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64(execState.engine.internalHash().Bytes(), execState.stepNum))
 }

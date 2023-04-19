@@ -10,8 +10,7 @@ type edgeTrackerState uint8
 
 const (
 	// Start state of 0 can never happen to avoid silly mistakes with default Go values.
-	// nolint:unused
-	edgeInvalid edgeTrackerState = iota
+	_ edgeTrackerState = iota
 	// The start state of the tracker.
 	edgeStarted
 	// The edge being tracked is presumptive.
@@ -87,52 +86,52 @@ type edgeBisect struct{}
 // Tracker will attempt to confirm a challenge winner.
 type edgeConfirm struct{}
 
-func (_ edgeBackToStart) String() string {
+func (edgeBackToStart) String() string {
 	return "back_to_start"
 }
-func (_ edgeMarkPresumptive) String() string {
+func (edgeMarkPresumptive) String() string {
 	return "mark_presumptive"
 }
-func (_ edgeHandleOneStepFork) String() string {
+func (edgeHandleOneStepFork) String() string {
 	return "check_one_step_fork"
 }
-func (_ edgeHandleOneStepProof) String() string {
+func (edgeHandleOneStepProof) String() string {
 	return "check_one_step_proof"
 }
-func (_ edgeOpenSubchallengeLeaf) String() string {
+func (edgeOpenSubchallengeLeaf) String() string {
 	return "open_subchallenge_leaf"
 }
-func (_ edgeAwaitSubchallengeResolution) String() string {
+func (edgeAwaitSubchallengeResolution) String() string {
 	return "await_subchallenge_resolution"
 }
-func (_ edgeBisect) String() string {
+func (edgeBisect) String() string {
 	return "bisect"
 }
-func (_ edgeConfirm) String() string {
+func (edgeConfirm) String() string {
 	return "confirm"
 }
 
-func (_ edgeBackToStart) isEdgeTrackerAction() bool {
+func (edgeBackToStart) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeMarkPresumptive) isEdgeTrackerAction() bool {
+func (edgeMarkPresumptive) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeHandleOneStepFork) isEdgeTrackerAction() bool {
+func (edgeHandleOneStepFork) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeHandleOneStepProof) isEdgeTrackerAction() bool {
+func (edgeHandleOneStepProof) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeOpenSubchallengeLeaf) isEdgeTrackerAction() bool {
+func (edgeOpenSubchallengeLeaf) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeAwaitSubchallengeResolution) isEdgeTrackerAction() bool {
+func (edgeAwaitSubchallengeResolution) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeBisect) isEdgeTrackerAction() bool {
+func (edgeBisect) isEdgeTrackerAction() bool {
 	return true
 }
-func (_ edgeConfirm) isEdgeTrackerAction() bool {
+func (edgeConfirm) isEdgeTrackerAction() bool {
 	return true
 }

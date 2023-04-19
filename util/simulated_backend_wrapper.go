@@ -13,10 +13,10 @@ type SimulatedBackendWrapper struct {
 	*backends.SimulatedBackend
 }
 
-func (s SimulatedBackendWrapper) TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error) {
+func (s SimulatedBackendWrapper) TransactionSender(_ context.Context, _ *types.Transaction, _ common.Hash, _ uint) (common.Address, error) {
 	return common.Address{}, nil
 }
 
-func (s SimulatedBackendWrapper) BlockNumber(ctx context.Context) (uint64, error) {
+func (s SimulatedBackendWrapper) BlockNumber(_ context.Context) (uint64, error) {
 	return 0, nil
 }

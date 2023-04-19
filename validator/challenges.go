@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
@@ -14,6 +15,18 @@ import (
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.Assertion) error {
 	assertionPrevSeqNum, err := assertion.PrevSeqNum()
+	if err != nil {
+		return err
+	}
+	assertionPrev, err := v.chain.AssertionBySequenceNum(ctx, assertionPrevSeqNum)
+	if err != nil {
+		return err
+	}
+	assertionPrevHeight, err := assertionPrev.Height()
+	if err != nil {
+		return err
+	}
+	assertionPrevMsgCountSeen, err := assertionPrev.InboxMsgCountSeen()
 	if err != nil {
 		return err
 	}
@@ -33,6 +46,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 
 	// Start tracking the challenge.
 	tracker, err := newEdgeTracker(
+		ctx,
 		&edgeTrackerConfig{
 			timeRef:          v.timeRef,
 			actEveryNSeconds: v.edgeTrackerWakeInterval,
@@ -42,6 +56,8 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 			validatorAddress: v.address,
 		},
 		levelZeroEdge,
+		assertionPrevHeight,
+		assertionPrevMsgCountSeen,
 	)
 	if err != nil {
 		return err
@@ -78,15 +94,33 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, err
 	}
-	assertionHeight, err := assertion.Height()
+	inboxMaxCount, err := prevAssertion.InboxMsgCountSeen()
 	if err != nil {
 		return nil, err
 	}
-	startCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, prevHeight)
+	startCommit, err := v.stateManager.HistoryCommitmentUpToBatch(ctx, prevHeight, prevHeight, inboxMaxCount)
 	if err != nil {
 		return nil, err
 	}
-	endCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertionHeight)
+	prevStateHash, err := prevAssertion.StateHash()
+	if err != nil {
+		return nil, err
+	}
+	if startCommit.FirstLeaf != prevStateHash {
+		return nil, fmt.Errorf("start state at height %v has hash %v locally but %v in assertion", prevHeight, startCommit.FirstLeaf, prevStateHash)
+	}
+	endCommit, err := v.stateManager.HistoryCommitmentUpToBatch(ctx, prevHeight, prevHeight+protocol.LayerZeroBlockEdgeHeight, inboxMaxCount)
+	if err != nil {
+		return nil, err
+	}
+	endStateHash, err := assertion.StateHash()
+	if err != nil {
+		return nil, err
+	}
+	if endCommit.LastLeaf != endStateHash {
+		return nil, fmt.Errorf("end state has hash %v locally but %v in assertion", endCommit.LastLeaf, endStateHash)
+	}
+	startEndPrefixProof, err := v.stateManager.PrefixProofUpToBatch(ctx, prevHeight, prevHeight, prevHeight+protocol.LayerZeroBlockEdgeHeight, inboxMaxCount)
 	if err != nil {
 		return nil, err
 	}
@@ -94,5 +128,5 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, err
 	}
-	return manager.AddBlockChallengeLevelZeroEdge(ctx, assertion, startCommit, endCommit)
+	return manager.AddBlockChallengeLevelZeroEdge(ctx, assertion, startCommit, endCommit, startEndPrefixProof)
 }

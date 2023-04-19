@@ -67,7 +67,7 @@ type AssertionChain struct {
 // NewAssertionChain instantiates an assertion chain
 // instance from a chain backend and provided options.
 func NewAssertionChain(
-	ctx context.Context,
+	_ context.Context,
 	rollupAddr common.Address,
 	txOpts *bind.TransactOpts,
 	backend ChainBackend,
@@ -306,7 +306,7 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 // an optional transaction receipt. It returns an error if the
 // transaction had a failed status on-chain, or if the execution of the callback
 // failed directly.
-func transact(ctx context.Context, backend ChainBackend, l1Reader *headerreader.HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
+func transact(ctx context.Context, backend ChainBackend, _ *headerreader.HeaderReader, fn func() (*types.Transaction, error)) (*types.Receipt, error) {
 	tx, err := fn()
 	if err != nil {
 		return nil, err

@@ -65,9 +65,7 @@ func (d doorState) String() string {
 
 // Creates a simple test where we have a door open/closed state machine.
 func TestFSM_OpenClose(t *testing.T) {
-	//nolint:all
-	var startState doorState
-	startState = doorStateClosed
+	var startState doorState = doorStateClosed
 	transitions := []*FsmEvent[doorEvent, doorState]{
 		{Typ: Open{}, From: []doorState{doorStateClosed}, To: doorStateOpened},
 		{Typ: Close{}, From: []doorState{doorStateOpened}, To: doorStateClosed},
@@ -113,9 +111,7 @@ func TestFSM_OpenClose(t *testing.T) {
 
 // Checks if our FSM can correctly track state transitions when configured to do so.
 func TestFSM_TrackTransitions(t *testing.T) {
-	//nolint:all
-	var startState doorState
-	startState = doorStateClosed
+	var startState doorState = doorStateClosed
 	transitions := []*FsmEvent[doorEvent, doorState]{
 		{Typ: Open{}, From: []doorState{doorStateClosed}, To: doorStateOpened},
 		{Typ: Close{}, From: []doorState{doorStateOpened}, To: doorStateClosed},
@@ -195,36 +191,34 @@ type Cool struct {
 	Temp float64
 }
 
-func (_ On) isHvacEvent() bool {
+func (On) isHvacEvent() bool {
 	return true
 }
-func (_ Off) isHvacEvent() bool {
+func (Off) isHvacEvent() bool {
 	return true
 }
-func (_ Heat) isHvacEvent() bool {
+func (Heat) isHvacEvent() bool {
 	return true
 }
-func (_ Cool) isHvacEvent() bool {
+func (Cool) isHvacEvent() bool {
 	return true
 }
-func (_ On) String() string {
+func (On) String() string {
 	return "turn_on"
 }
-func (_ Off) String() string {
+func (Off) String() string {
 	return "turn_off"
 }
-func (_ Heat) String() string {
+func (Heat) String() string {
 	return "heat"
 }
-func (_ Cool) String() string {
+func (Cool) String() string {
 	return "cool"
 }
 
 // Tests a more complex fsm that describes an HVAC system which includes cycles.
 func TestFSM_ComplexWithCycles(t *testing.T) {
-	//nolint:all
-	var startState hvacState
-	startState = hvacOff
+	var startState hvacState = hvacOff
 	transitions := []*FsmEvent[hvacEvent, hvacState]{
 		{Typ: On{}, From: []hvacState{hvacOff}, To: hvacOn},
 		{Typ: Off{}, From: []hvacState{hvacOn, hvacHeating, hvacCooling}, To: hvacOff},

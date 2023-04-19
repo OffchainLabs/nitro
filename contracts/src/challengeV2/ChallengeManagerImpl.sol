@@ -188,7 +188,7 @@ library ChallengeManagerLib {
         mapping(bytes32 => Challenge) storage challenges,
         IOneStepProofEntry oneStepProofEntry,
         bytes32 winnerVId,
-        OneStepData calldata oneStepData,
+        OldOneStepData calldata oneStepData,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) internal view returns (bytes32) {
@@ -439,7 +439,7 @@ contract ChallengeManagerImpl is IChallengeManager {
 
     function executeOneStep(
         bytes32 winnerVId,
-        OneStepData calldata oneStepData,
+        OldOneStepData calldata oneStepData,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public returns (bytes32) {
