@@ -23,6 +23,8 @@ func NoopOnReloadHook[T ConfigConstrain[T]](_ T, _ T) error {
 	return nil
 }
 
+type ConfigParseFunction[T ConfigConstrain[T]] func(context.Context, []string) (T, error)
+
 type LiveConfig[T ConfigConstrain[T]] struct {
 	stopwaiter.StopWaiter
 
@@ -31,6 +33,7 @@ type LiveConfig[T ConfigConstrain[T]] struct {
 	config       T
 	pathResolver func(string) string
 	onReloadHook OnReloadHook[T]
+	parse        ConfigParseFunction[T]
 }
 
 func (c *LiveConfig[T]) Get() T {
@@ -54,7 +57,7 @@ func (c *LiveConfig[T]) Set(config T) error {
 	return nil
 }
 
-func (c *LiveConfig[T]) Start(ctxIn context.Context, parse func(context.Context, []string) (T, error)) {
+func (c *LiveConfig[T]) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn, c)
 
 	sigusr1 := make(chan os.Signal, 1)
@@ -82,7 +85,7 @@ func (c *LiveConfig[T]) Start(ctxIn context.Context, parse func(context.Context,
 				case <-timer.C:
 				}
 			}
-			nodeConfig, err := parse(ctx, c.args)
+			nodeConfig, err := c.parse(ctx, c.args)
 			if err != nil {
 				log.Error("error parsing live config", "error", err.Error())
 				continue
@@ -101,11 +104,12 @@ func (c *LiveConfig[T]) SetOnReloadHook(hook OnReloadHook[T]) {
 	c.onReloadHook = hook
 }
 
-func NewLiveConfig[T ConfigConstrain[T]](args []string, config T, pathResolver func(string) string) *LiveConfig[T] {
+func NewLiveConfig[T ConfigConstrain[T]](args []string, config T, pathResolver func(string) string, parse ConfigParseFunction[T]) *LiveConfig[T] {
 	return &LiveConfig[T]{
 		args:         args,
 		config:       config,
 		pathResolver: pathResolver,
 		onReloadHook: NoopOnReloadHook[T],
+		parse:        parse,
 	}
 }

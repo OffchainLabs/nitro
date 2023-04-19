@@ -105,7 +105,10 @@ func TestLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := nodehelpers.NewLiveConfig(args, config, func(path string) string { return path })
+	liveConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
+		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
+		return nodeConfig, err
+	})
 
 	// check updating the config
 	update := config.ShallowClone()
@@ -128,10 +131,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	}
 
 	// starting the LiveConfig after testing LiveConfig.set to avoid race condition in the test
-	liveConfig.Start(ctx, func(ctx context.Context, args []string) (*NodeConfig, error) {
-		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
-		return nodeConfig, err
-	})
+	liveConfig.Start(ctx)
 
 	// reload config
 	expected = config.ShallowClone()
@@ -186,11 +186,11 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path })
-	liveConfig.Start(ctx, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
+	liveConfig.Start(ctx)
 
 	// test if periodic reload works
 	expected := config.ShallowClone()

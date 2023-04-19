@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io/fs"
-	"net/http"
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
@@ -130,8 +129,8 @@ func mainImpl() int {
 
 	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
 
-	liveNodeConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, nodeConfig, stackConf.ResolvePath)
-	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+	liveNodeConfig := nodehelpers.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, stackConf.ResolvePath, ParseNode)
+	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
 		dataDir := newCfg.Persistent.Chain
 		return nodehelpers.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(dataDir))
 	})
@@ -141,17 +140,13 @@ func mainImpl() int {
 		log.Crit("failed to initialize geth stack", "err", err)
 	}
 
-	//if nodeConfig.Init.ThenQuit {
-	//	return 0
-	//}
-
 	if nodeConfig.Metrics {
 		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
 			if nodeConfig.MetricsServer.Pprof {
-				startPprof(address)
+				nodehelpers.StartPprof(address)
 			} else {
 				exp.Setup(address)
 			}
@@ -181,7 +176,7 @@ func mainImpl() int {
 		}
 	}
 
-	liveNodeConfig.Start(ctx, ParseNode)
+	liveNodeConfig.Start(ctx)
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -204,7 +199,7 @@ func mainImpl() int {
 	return exitCode
 }
 
-type NodeConfig struct {
+type ValidationNodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
@@ -221,7 +216,7 @@ type NodeConfig struct {
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
-var NodeConfigDefault = NodeConfig{
+var NodeConfigDefault = ValidationNodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
@@ -250,7 +245,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 }
 
-func (c *NodeConfig) ResolveDirectoryNames() error {
+func (c *ValidationNodeConfig) ResolveDirectoryNames() error {
 	err := c.Persistent.ResolveDirectoryNames()
 	if err != nil {
 		return err
@@ -259,13 +254,13 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	return nil
 }
 
-func (c *NodeConfig) ShallowClone() *NodeConfig {
-	config := &NodeConfig{}
+func (c *ValidationNodeConfig) ShallowClone() *ValidationNodeConfig {
+	config := &ValidationNodeConfig{}
 	*config = *c
 	return config
 }
 
-func (c *NodeConfig) CanReload(new *NodeConfig) error {
+func (c *ValidationNodeConfig) CanReload(new *ValidationNodeConfig) error {
 	var check func(node, other reflect.Value, path string)
 	var err error
 
@@ -297,36 +292,16 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	return err
 }
 
-func (c *NodeConfig) Validate() error {
-	return c.Node.Validate()
-}
-
-func (c *NodeConfig) GetReloadInterval() time.Duration {
+func (c *ValidationNodeConfig) GetReloadInterval() time.Duration {
 	return c.Conf.ReloadInterval
 }
 
-type RpcLogger struct{}
-
-func (l RpcLogger) OnRequest(request interface{}) rpc.ResultHook {
-	log.Trace("sending L1 RPC request", "request", request)
-	return RpcResultLogger{request}
+func (c *ValidationNodeConfig) Validate() error {
+	// TODO
+	return nil
 }
 
-type RpcResultLogger struct {
-	request interface{}
-}
-
-func (l RpcResultLogger) OnResult(response interface{}, err error) {
-	if err != nil {
-		// The request might not've been logged if the log level is debug not trace, so we log it again here
-		log.Info("received error response from L1 RPC", "request", l.request, "response", response, "err", err)
-	} else {
-		// The request was already logged and can be cross-referenced by JSON-RPC id
-		log.Trace("received response from L1 RPC", "response", response)
-	}
-}
-
-func ParseNode(ctx context.Context, args []string) (*NodeConfig, error) {
+func ParseNode(ctx context.Context, args []string) (*ValidationNodeConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
@@ -341,7 +316,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, error) {
 		return nil, err
 	}
 
-	var nodeConfig NodeConfig
+	var nodeConfig ValidationNodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, err
 	}
@@ -366,16 +341,4 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, error) {
 		return nil, err
 	}
 	return &nodeConfig, nil
-}
-
-func startPprof(address string) {
-	exp.Exp(metrics.DefaultRegistry)
-	log.Info("Starting metrics server with pprof", "addr", fmt.Sprintf("http://%s/debug/metrics", address))
-	log.Info("Pprof endpoint", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
-	go func() {
-		// #nosec G114
-		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
-			log.Error("Failure in running pprof server", "err", err)
-		}
-	}()
 }
