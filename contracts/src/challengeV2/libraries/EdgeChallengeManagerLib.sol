@@ -457,16 +457,12 @@ library EdgeChallengeManagerLib {
 
         // the state in the onestep data must be committed to by the startHistoryRoot
         MerkleTreeLib.verifyInclusionProof(
-            store.edges[edgeId].startHistoryRoot,
-            oneStepData.beforeHash,
-            machineStep,
-            beforeHistoryInclusionProof
+            store.edges[edgeId].startHistoryRoot, oneStepData.beforeHash, machineStep, beforeHistoryInclusionProof
         );
 
         // execute the single step to produce the after state
-        bytes32 afterHash = oneStepProofEntry.proveOneStep(
-            execCtx, machineStep, oneStepData.beforeHash, oneStepData.proof
-        );
+        bytes32 afterHash =
+            oneStepProofEntry.proveOneStep(execCtx, machineStep, oneStepData.beforeHash, oneStepData.proof);
 
         // check that the after state was indeed committed to by the endHistoryRoot
         MerkleTreeLib.verifyInclusionProof(

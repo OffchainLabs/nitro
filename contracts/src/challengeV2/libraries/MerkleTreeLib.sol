@@ -52,7 +52,7 @@ import "./UintUtilsLib.sol";
 ///         The merkle expansion of a tree consisting of a single size 2 complete subtree is a vector
 ///         of size 2, with the zeroth index value being 0, and the 1st index value being the root of the size
 ///         2 subtree. The zero in the zeroth index indicated that there is not a size 1 subtree in the tree's
-///         composition. If a tree has a size 2 subtree in its composition its root will be present in the 
+///         composition. If a tree has a size 2 subtree in its composition its root will be present in the
 ///         1st index.
 ///
 ///         ME Example 3
@@ -61,12 +61,12 @@ import "./UintUtilsLib.sol";
 ///           /  \
 ///          A    B    C
 ///
-///         ME of the composed ABC tree = (C, AB), root=hash(AB, hash(C, 0)). 
-///         When a tree is not itself a complete subtree, but rather a composition, zeros are added when 
-///         calculating the root. To do this hash the first complete sub tree with zero, and from there 
+///         ME of the composed ABC tree = (C, AB), root=hash(AB, hash(C, 0)).
+///         When a tree is not itself a complete subtree, but rather a composition, zeros are added when
+///         calculating the root. To do this hash the first complete sub tree with zero, and from there
 ///         cumulatively hash the merkle expansion.
-///         The merkle expansion of this composed tree is a vector of size two. Since it has a size one tree in 
-///         its composition the root of that goes in the zeroth index of the expansion - C, and since it has a 
+///         The merkle expansion of this composed tree is a vector of size two. Since it has a size one tree in
+///         its composition the root of that goes in the zeroth index of the expansion - C, and since it has a
 ///         size two tree in its composition the root of that goes in the 1st index, to give (C, AB).
 ///
 ///         Tree operations
@@ -91,7 +91,7 @@ import "./UintUtilsLib.sol";
 ///           /  \         +       =    /  \   /  \
 ///          A    B    C       D       A    B C    D
 ///
-///         ME of ABCD = (0, AB) + (C) + (D) 
+///         ME of ABCD = (0, AB) + (C) + (D)
 ///                    = (C, AB) + (D)
 ///                    = (0, 0, ABCD)
 ///         root of ABCD =hash(AB, CD)
