@@ -238,7 +238,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.streamer.ExpectChosenSequencer()
+		chosenErr := s.consensus.ExpectChosenSequencer()
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
