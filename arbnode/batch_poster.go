@@ -243,7 +243,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog ui
 		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
 	}
 	if backlog > 40 {
-		recompressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
+		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
 	}
 	if backlog > 60 {
 		compressionLevel = arbmath.MinInt(compressionLevel, 4)
