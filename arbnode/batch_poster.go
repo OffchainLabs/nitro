@@ -116,7 +116,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	BatchPollDelay:                     time.Second * 10,
 	PostingErrorDelay:                  time.Second * 10,
 	MaxBatchPostInterval:               time.Hour,
-	CompressionLevel:                   brotli.DefaultCompression,
+	CompressionLevel:                   brotli.BestCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
