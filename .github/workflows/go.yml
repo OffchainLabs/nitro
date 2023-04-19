@@ -58,18 +58,34 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
     steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Setup node/yarn
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: 'yarn'
+          cache-dependency-path: '**/contracts/yarn.lock'
+
+      - name: Install
+        run: cd contracts && yarn install
+
+      - name: Build contracts
+        run: yarn --cwd contracts build
+      
       - name: Set up Go 1.x
         uses: actions/setup-go@v3
         with:
           go-version: 1.19
         id: go
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v2
-
       - name: Get dependencies
         run: |
           go get -v -t -d ./...
+      
+      - name: AbiGen
+        run: go run ./solgen/main.go
 
       - name: Build
         run: go build -v ./...
@@ -104,9 +120,6 @@ jobs:
         with:
           submodules: recursive
 
-      # - name: Change directory to contracts
-      #   run: cd contracts
-      
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
