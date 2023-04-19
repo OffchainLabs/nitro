@@ -3,7 +3,6 @@ package arbtest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -68,29 +67,19 @@ func (s *mockSpawner) Name() string                { return "mock" }
 func (s *mockSpawner) Room() int                   { return 4 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	promise := containers.NewPromise[validator.ExecutionRun](nil)
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
-	if wasmModuleRoot != mockWasmModuleRoot {
-		promise.ProduceError(errors.New("unsupported root"))
-		return &promise
-	}
-	promise.Produce(&mockExecRun{
+	return containers.NewReadyPromise[validator.ExecutionRun](&mockExecRun{
 		startState: input.StartState,
 		endState:   globalstateFromTestPreimages(input.Preimages),
-	})
-	return &promise
+	}, nil)
 }
 
 func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	promise := containers.NewPromise[common.Hash](nil)
-	promise.Produce(mockWasmModuleRoot)
-	return &promise
+	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoot, nil)
 }
 
 func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	promise := containers.NewPromise[struct{}](nil)
-	promise.Produce(struct{}{})
-	return &promise
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 type mockValRun struct {
@@ -108,7 +97,6 @@ type mockExecRun struct {
 }
 
 func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
-	res := containers.NewPromise[*validator.MachineStepResult](nil)
 	status := validator.MachineStatusRunning
 	resState := r.startState
 	if position >= mockExecLastPos {
@@ -116,13 +104,12 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 		status = validator.MachineStatusFinished
 		resState = r.endState
 	}
-	res.Produce(&validator.MachineStepResult{
+	return containers.NewReadyPromise[*validator.MachineStepResult](&validator.MachineStepResult{
 		Hash:        crypto.Keccak256Hash(new(big.Int).SetUint64(position).Bytes()),
 		Position:    position,
 		Status:      status,
 		GlobalState: resState,
-	})
-	return &res
+	}, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
@@ -132,13 +119,14 @@ func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.Machi
 var mockProof []byte = []byte("friendly jab at competitors")
 
 func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
-	res := containers.NewPromise[[]byte](nil)
-	res.Produce(mockProof)
-	return &res
+	return containers.NewReadyPromise[[]byte](mockProof, nil)
 }
 
-func (r *mockExecRun) PrepareRange(uint64, uint64) {}
-func (r *mockExecRun) Close()                      {}
+func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+}
+
+func (r *mockExecRun) Close() {}
 
 func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
 	stackConf := node.DefaultConfig

@@ -161,8 +161,8 @@ func (a *ExecServerAPI) PrepareRange(ctx context.Context, execid uint64, start, 
 	if err != nil {
 		return err
 	}
-	run.PrepareRange(start, end)
-	return nil
+	_, err = run.PrepareRange(start, end).Await(ctx)
+	return err
 }
 
 func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error {

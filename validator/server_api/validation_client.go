@@ -123,7 +123,7 @@ type ExecutionClientRun struct {
 func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
 	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
-		err := c.client.CallContext(c.GetContext(), &res, Namespace+"_latestWasmModuleRoot")
+		err := c.client.CallContext(ctx, &res, Namespace+"_latestWasmModuleRoot")
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -182,12 +182,13 @@ func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[*validato
 	return r.GetStepAt(^uint64(0))
 }
 
-func (r *ExecutionClientRun) PrepareRange(start, end uint64) {
-	r.LaunchUntrackedThread(func() {
-		err := r.client.client.CallContext(r.client.GetContext(), nil, Namespace+"_prepareRange", r.id, start, end)
-		if err != nil {
+func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](r, func(ctx context.Context) (struct{}, error) {
+		err := r.client.client.CallContext(ctx, nil, Namespace+"_prepareRange", r.id, start, end)
+		if err != nil && ctx.Err() == nil {
 			log.Warn("prepare execution got error", "err", err)
 		}
+		return struct{}{}, err
 	})
 }
 

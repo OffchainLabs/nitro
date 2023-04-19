@@ -6,12 +6,13 @@ package gethexec
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type TransactionPublisher interface {
-	PublishTransaction(ctx context.Context, tx *types.Transaction) error
+	PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error
 	CheckHealth(ctx context.Context) error
 	Initialize(context.Context) error
 	Start(context.Context) error
@@ -36,8 +37,8 @@ func (a *ArbInterface) Initialize(node *ExecutionNode) {
 	a.node = node
 }
 
-func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
-	return a.txPublisher.PublishTransaction(ctx, tx)
+func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return a.txPublisher.PublishTransaction(ctx, tx, options)
 }
 
 // might be used before Initialize
