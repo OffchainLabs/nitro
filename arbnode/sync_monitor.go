@@ -70,6 +70,13 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		syncing = true
 		builtMessageCount = 0
 	} else {
+		blockNum, err := s.txStreamer.exec.MessageCountToBlockNumber(builtMessageCount)
+		if err != nil {
+			res["blockBuiltErr"] = err
+			syncing = true
+		} else {
+			res["blockNum"] = blockNum
+		}
 		builtMessageCount++
 		res["messageOfLastBlock"] = builtMessageCount
 	}

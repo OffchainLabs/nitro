@@ -51,7 +51,7 @@ func globalstateToTestPreimages(gs validator.GoGlobalState) map[common.Hash][]by
 
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	run := &mockValRun{
-		Promise: containers.NewPromise[validator.GoGlobalState](),
+		Promise: containers.NewPromise[validator.GoGlobalState](nil),
 		root:    moduleRoot,
 	}
 	run.Produce(globalstateFromTestPreimages(entry.Preimages))
@@ -60,22 +60,25 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 
 var mockWasmModuleRoot common.Hash = common.HexToHash("0xa5a5a5")
 
-func (s *mockSpawner) Start(context.Context) error                { return nil }
-func (s *mockSpawner) Stop()                                      {}
-func (s *mockSpawner) Name() string                               { return "mock" }
-func (s *mockSpawner) Room() int                                  { return 4 }
-func (s *mockSpawner) LatestWasmModuleRoot() (common.Hash, error) { return mockWasmModuleRoot, nil }
+func (s *mockSpawner) Start(context.Context) error { return nil }
+func (s *mockSpawner) Stop()                       {}
+func (s *mockSpawner) Name() string                { return "mock" }
+func (s *mockSpawner) Room() int                   { return 4 }
 
-func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) (validator.ExecutionRun, error) {
+func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
-	return &mockExecRun{
+	return containers.NewReadyPromise[validator.ExecutionRun](&mockExecRun{
 		startState: input.StartState,
 		endState:   globalstateFromTestPreimages(input.Preimages),
-	}, nil
+	}, nil)
 }
 
-func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	return nil
+func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
+	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoot, nil)
+}
+
+func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 type mockValRun struct {
@@ -93,10 +96,7 @@ type mockExecRun struct {
 	endState   validator.GoGlobalState
 }
 
-func (r *mockExecRun) GetStepAt(position uint64) validator.MachineStep {
-	res := &mockMachineStep{
-		Promise: containers.NewPromise[validator.MachineStepResult](),
-	}
+func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	status := validator.MachineStatusRunning
 	resState := r.startState
 	if position >= mockExecLastPos {
@@ -104,43 +104,29 @@ func (r *mockExecRun) GetStepAt(position uint64) validator.MachineStep {
 		status = validator.MachineStatusFinished
 		resState = r.endState
 	}
-	res.Produce(validator.MachineStepResult{
+	return containers.NewReadyPromise[*validator.MachineStepResult](&validator.MachineStepResult{
 		Hash:        crypto.Keccak256Hash(new(big.Int).SetUint64(position).Bytes()),
 		Position:    position,
 		Status:      status,
 		GlobalState: resState,
-	})
-	return res
+	}, nil)
 }
 
-func (r *mockExecRun) GetLastStep() validator.MachineStep {
+func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
 
 var mockProof []byte = []byte("friendly jab at competitors")
 
-func (r *mockExecRun) GetProofAt(uint64) validator.ProofPromise {
-	res := &mockMachineProof{
-		Promise: containers.NewPromise[[]byte](),
-	}
-	res.Produce(mockProof)
-	return res
+func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
+	return containers.NewReadyPromise[[]byte](mockProof, nil)
 }
 
-func (r *mockExecRun) PrepareRange(uint64, uint64) {}
-func (r *mockExecRun) Close()                      {}
-
-type mockMachineProof struct {
-	containers.Promise[[]byte]
+func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
-func (p *mockMachineProof) Close() {}
-
-type mockMachineStep struct {
-	containers.Promise[validator.MachineStepResult]
-}
-
-func (s *mockMachineStep) Close() {}
+func (r *mockExecRun) Close() {}
 
 func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
 	stackConf := node.DefaultConfig
@@ -195,7 +181,7 @@ func TestValidationServerAPI(t *testing.T) {
 	err := client.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := client.LatestWasmModuleRoot()
+	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
 	Require(t, err)
 
 	if wasmRoot != mockWasmModuleRoot {
@@ -228,7 +214,7 @@ func TestValidationServerAPI(t *testing.T) {
 	if res != endState {
 		t.Error("unexpected mock validation run")
 	}
-	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput)
+	execRun, err := client.CreateExecutionRun(wasmRoot, &valInput).Await(ctx)
 	Require(t, err)
 	step0 := execRun.GetStepAt(0)
 	step0Res, err := step0.Await(ctx)
@@ -266,13 +252,13 @@ func TestExecutionKeepAlive(t *testing.T) {
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
-	wasmRoot, err := clientDefault.LatestWasmModuleRoot()
+	wasmRoot, err := clientDefault.LatestWasmModuleRoot().Await(ctx)
 	Require(t, err)
 
 	valInput := validator.ValidationInput{}
-	runDefault, err := clientDefault.CreateExecutionRun(wasmRoot, &valInput)
+	runDefault, err := clientDefault.CreateExecutionRun(wasmRoot, &valInput).Await(ctx)
 	Require(t, err)
-	runShortTO, err := clientShortTO.CreateExecutionRun(wasmRoot, &valInput)
+	runShortTO, err := clientShortTO.CreateExecutionRun(wasmRoot, &valInput).Await(ctx)
 	Require(t, err)
 	<-time.After(time.Second * 10)
 	stepDefault := runDefault.GetStepAt(0)
