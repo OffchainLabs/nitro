@@ -31,6 +31,6 @@ type ExecutionRun interface {
 	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
-	PrepareRange(uint64, uint64)
+	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]
 	Close()
 }

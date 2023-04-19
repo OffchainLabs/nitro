@@ -97,14 +97,16 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 		return errors.New("cannot reorg out genesis")
 	}
 	s.createBlocksMutex.Lock()
-	successful := false
+	resequencing := false
 	defer func() {
-		if !successful {
+		// if we are resequencing old messages - don't release the lock
+		// lock will be relesed by thread listening to resequenceChan
+		if !resequencing {
 			s.createBlocksMutex.Unlock()
 		}
 	}()
 	blockNum := s.MessageIndexToBlockNumber(count - 1)
-	// We can safely cast blockNum to a uint64 as we checked count == 0 above
+	// We can safely cast blockNum to a uint64 as it comes from MessageCountToBlockNumber
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		log.Warn("reorg target block not found", "block", blockNum)
@@ -124,8 +126,10 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 	if s.recorder != nil {
 		s.recorder.ReorgTo(targetBlock.Header())
 	}
-	s.resequenceChan <- oldMessages
-	successful = true
+	if len(oldMessages) > 0 {
+		s.resequenceChan <- oldMessages
+		resequencing = true
+	}
 	return nil
 }
 
@@ -202,7 +206,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
 				continue
 			}
-			err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
+			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			}
@@ -230,17 +234,43 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 	}
 }
 
-func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+func (s *ExecutionEngine) sequencerWrapper(ctx context.Context, sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
+	attempts := 0
 	for {
-		hooks.TxErrors = nil
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		s.createBlocksMutex.Lock()
-		block, err := s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
+		block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
 			return block, err
 		}
+		// We got SequencerInsertLockTaken
+		// option 1: there was a race, we are no longer main sequencer
+		_, chosenErr := s.consensus.ExpectChosenSequencer().Await(ctx)
+		if chosenErr != nil {
+			return nil, chosenErr
+		}
+		// option 2: we are in a test without very orderly sequencer coordination
+		if !s.bc.Config().ArbitrumChainParams.AllowDebugPrecompiles {
+			// option 3: something weird. send warning
+			log.Warn("sequence transactions: insert lock takent", "attempts", attempts)
+		}
+		// options 2/3 fail after too many attempts
+		attempts++
+		if attempts > 20 {
+			return nil, err
+		}
 		<-time.After(time.Millisecond * 100)
 	}
+}
+
+func (s *ExecutionEngine) SequenceTransactions(ctx context.Context, header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+	return s.sequencerWrapper(ctx, func() (*types.Block, error) {
+		hooks.TxErrors = nil
+		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
+	})
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
@@ -322,30 +352,25 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](&s.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
-		for {
-			s.createBlocksMutex.Lock()
-			err := s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
-			s.createBlocksMutex.Unlock()
-			if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
-				return struct{}{}, err
-			}
-			<-time.After(time.Millisecond * 100)
-		}
+		_, err := s.sequencerWrapper(ctx, func() (*types.Block, error) {
+			return s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+		})
+		return struct{}{}, err
 	})
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
 	currentHeader := s.bc.CurrentBlock().Header()
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
 	lastMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if expectedDelayed != delayedSeqNum {
-		return fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedSeqNum, expectedDelayed)
+		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedSeqNum, expectedDelayed)
 	}
 
 	messageWithMeta := arbostypes.MessageWithMetadata{
@@ -355,23 +380,23 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	_, err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta).Await(s.GetContext())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Info("ExecutionEngine: Added DelayedMessages", "pos", lastMsg+1, "delayed", delayedSeqNum, "block-header", block.Header())
 
-	return nil
+	return block, nil
 }
 
 func (s *ExecutionEngine) GetGenesisBlockNumber() uint64 {
@@ -460,7 +485,7 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) containers.Promi
 func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return stopwaiter.LaunchPromiseThread[*execution.MessageResult](&s.StopWaiterSafe, func(ctx context.Context) (*execution.MessageResult, error) {
 		if !s.createBlocksMutex.TryLock() {
-			return nil, errors.New("mutex held")
+			return nil, errors.New("createBlock mutex held")
 		}
 		defer s.createBlocksMutex.Unlock()
 		err := s.digestMessageWithBlockMutex(num, msg)

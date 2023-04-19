@@ -15,6 +15,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -245,8 +246,8 @@ func nonBlockingTriger(channel chan struct{}) {
 }
 
 // called from NewBlockValidator, doesn't need to catch locks
-func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
-	exists, err := v.db.Has(lastGlobalStateValidatedInfoKey)
+func ReadLastValidatedInfo(db ethdb.Database) (*GlobalStateValidatedInfo, error) {
+	exists, err := db.Has(lastGlobalStateValidatedInfoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +255,7 @@ func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, err
 	if !exists {
 		return nil, nil
 	}
-	gsBytes, err := v.db.Get(lastGlobalStateValidatedInfoKey)
+	gsBytes, err := db.Get(lastGlobalStateValidatedInfoKey)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +264,10 @@ func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, err
 		return nil, err
 	}
 	return &validated, nil
+}
+
+func (v *BlockValidator) ReadLastValidatedInfo() (*GlobalStateValidatedInfo, error) {
+	return ReadLastValidatedInfo(v.db)
 }
 
 var ErrGlobalStateNotInChain = errors.New("globalstate not in chain")
@@ -319,7 +324,17 @@ func (v *BlockValidator) checkValidatedGSCaughUp(ctx context.Context) (bool, err
 		return true, nil
 	}
 	if v.lastValidGS.Batch == 0 {
-		return false, errors.New("lastValid not initialized. cannot validate genesis")
+		genesis, err := v.streamer.ResultAtCount(1)
+		if err != nil {
+			log.Warn("error reading genesis from streamer", "err", err)
+			return false, nil
+		}
+		v.lastValidGS = validator.GoGlobalState{
+			BlockHash:  genesis.BlockHash,
+			SendRoot:   genesis.SendRoot,
+			Batch:      1,
+			PosInBatch: 0,
+		}
 	}
 	caughtUp, count, err := GlobalStateToMsgCount(v.inboxTracker, v.streamer, v.lastValidGS)
 	if err != nil {
@@ -885,21 +900,6 @@ func (v *BlockValidator) LaunchWorkthreadsWhenCaughtUp(ctx context.Context) {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
-	// genesis block is impossible to validate unless genesis state is empty
-	v.reorgMutex.Lock()
-	defer v.reorgMutex.Unlock()
-	if v.lastValidGS.Batch == 0 {
-		genesis, err := v.streamer.ResultAtCount(1)
-		if err != nil {
-			return err
-		}
-		v.lastValidGS = validator.GoGlobalState{
-			BlockHash:  genesis.BlockHash,
-			SendRoot:   genesis.SendRoot,
-			Batch:      1,
-			PosInBatch: 0,
-		}
-	}
 	v.LaunchThread(v.LaunchWorkthreadsWhenCaughtUp)
 	return nil
 }

@@ -41,8 +41,11 @@ func (e *executionRun) Close() {
 	})
 }
 
-func (e *executionRun) PrepareRange(start uint64, end uint64) {
-	e.cache.SetRange(e.GetContext(), start, end)
+func (e *executionRun) PrepareRange(start uint64, end uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](e, func(ctx context.Context) (struct{}, error) {
+		err := e.cache.SetRange(ctx, start, end)
+		return struct{}{}, err
+	})
 }
 
 func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
@@ -61,7 +64,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 		machineStep := machine.GetStepCount()
 		if position != machineStep {
 			machineRunning := machine.IsRunning()
-			if (machineRunning && position != machineStep) || machineStep > position {
+			if machineRunning || machineStep > position {
 				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
 			}
 

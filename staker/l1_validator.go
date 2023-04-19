@@ -195,7 +195,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 type createNodeAction struct {
 	assertion         *Assertion
 	prevInboxMaxCount *big.Int
-	hash              [32]byte
+	hash              common.Hash
 }
 
 type existingNodeAction struct {
@@ -207,7 +207,7 @@ type nodeAction interface{}
 
 type OurStakerInfo struct {
 	LatestStakedNode     uint64
-	LatestStakedNodeHash [32]byte
+	LatestStakedNodeHash common.Hash
 	CanProgress          bool
 	StakeExists          bool
 	*StakerInfo
