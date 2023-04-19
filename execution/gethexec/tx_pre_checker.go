@@ -6,35 +6,69 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 )
 
-type TxPreChecker struct {
-	TransactionPublisher
-	bc            *core.BlockChain
-	getStrictness func() uint
-}
-
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, getStrictness func() uint) *TxPreChecker {
-	return &TxPreChecker{
-		TransactionPublisher: publisher,
-		bc:                   bc,
-		getStrictness:        getStrictness,
-	}
-}
+var (
+	conditionalTxRejectedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/accepted", nil)
+	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/accepted", nil)
+)
 
 const TxPreCheckerStrictnessNone uint = 0
 const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
+
+type TxPreCheckerConfig struct {
+	Strictness             uint  `koanf:"strictness" reload:"hot"`
+	RequiredStateAge       int64 `koanf:"required-state-age" reload:"hot"`
+	RequiredStateMaxBlocks uint  `koanf:"required-state-max-blocks" reload:"hot"`
+}
+
+type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
+
+var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
+	Strictness:             TxPreCheckerStrictnessNone,
+	RequiredStateAge:       2,
+	RequiredStateMaxBlocks: 4,
+}
+
+func TxPreCheckerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Uint(prefix+".strictness", DefaultTxPreCheckerConfig.Strictness, "how strict to be when checking txs before forwarding them. 0 = accept anything, "+
+		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, "+
+		"30 = full validation which may reject txs that would succeed")
+	f.Int64(prefix+".required-state-age", DefaultTxPreCheckerConfig.RequiredStateAge, "how long ago should the storage conditions from eth_SendRawTransactionConditional be true, 0 = don't check old state")
+	f.Uint(prefix+".required-state-max-blocks", DefaultTxPreCheckerConfig.RequiredStateMaxBlocks, "maximum number of blocks to look back while looking for the <required-state-age> seconds old state, 0 = don't limit the search")
+}
+
+type TxPreChecker struct {
+	TransactionPublisher
+	bc     *core.BlockChain
+	config TxPreCheckerConfigFetcher
+}
+
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, config TxPreCheckerConfigFetcher) *TxPreChecker {
+	return &TxPreChecker{
+		TransactionPublisher: publisher,
+		bc:                   bc,
+		config:               config,
+	}
+}
 
 type NonceError struct {
 	sender     common.Address
@@ -76,8 +110,8 @@ func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) er
 	}
 }
 
-func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, strictness uint) error {
-	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
+func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, config *TxPreCheckerConfig) error {
+	if config.Strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
 	}
 	if tx.Gas() < params.TxGas {
@@ -88,7 +122,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 		return err
 	}
 	baseFee := header.BaseFee
-	if strictness < TxPreCheckerStrictnessLikelyCompatible {
+	if config.Strictness < TxPreCheckerStrictnessLikelyCompatible {
 		baseFee, err = arbos.L2PricingState().MinBaseFeeWei()
 		if err != nil {
 			return err
@@ -108,7 +142,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if tx.Gas() < intrinsic {
 		return core.ErrIntrinsicGas
 	}
-	if strictness < TxPreCheckerStrictnessLikelyCompatible {
+	if config.Strictness < TxPreCheckerStrictnessLikelyCompatible {
 		return nil
 	}
 	balance := statedb.GetBalance(sender)
@@ -116,7 +150,49 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	if arbmath.BigLessThan(balance, cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
-	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
+	if options != nil {
+		extraInfo, err := types.DeserializeHeaderExtraInformation(header)
+		if err != nil {
+			return errors.Wrap(err, "failed to deserialize extra information for current header")
+		}
+		if err := options.Check(extraInfo.L1BlockNumber, header.Time, statedb); err != nil {
+			conditionalTxRejectedByTxPreCheckerCurrentStateCounter.Inc(1)
+			return err
+		}
+		conditionalTxAcceptedByTxPreCheckerCurrentStateCounter.Inc(1)
+		if config.RequiredStateAge > 0 {
+			now := time.Now().Unix()
+			oldHeader := header
+			blocksTraversed := uint(0)
+			// find a block that's old enough
+			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
+				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
+				oldHeader.Number.Uint64() > 0 {
+				previousHeader := bc.GetHeader(oldHeader.ParentHash, oldHeader.Number.Uint64()-1)
+				if previousHeader == nil {
+					break
+				}
+				oldHeader = previousHeader
+				blocksTraversed++
+			}
+			if oldHeader != header {
+				secondOldStatedb, err := bc.StateAt(oldHeader.Root)
+				if err != nil {
+					return errors.Wrap(err, "failed to get old state")
+				}
+				oldExtraInfo, err := types.DeserializeHeaderExtraInformation(oldHeader)
+				if err != nil {
+					return errors.Wrap(err, "failed to deserialize extra information for old header")
+				}
+				if err := options.Check(oldExtraInfo.L1BlockNumber, oldHeader.Time, secondOldStatedb); err != nil {
+					conditionalTxRejectedByTxPreCheckerOldStateCounter.Inc(1)
+					return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")
+				}
+			}
+			conditionalTxAcceptedByTxPreCheckerOldStateCounter.Inc(1)
+		}
+	}
+	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
@@ -127,7 +203,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	return nil
 }
 
-func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	block := c.bc.CurrentBlock()
 	statedb, err := c.bc.StateAt(block.Root())
 	if err != nil {
@@ -137,9 +213,9 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc.Config(), block.Header(), statedb, arbos, tx, c.getStrictness())
+	err = PreCheckTx(c.bc, c.bc.Config(), block.Header(), statedb, arbos, tx, options, c.config())
 	if err != nil {
 		return err
 	}
-	return c.TransactionPublisher.PublishTransaction(ctx, tx)
+	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }

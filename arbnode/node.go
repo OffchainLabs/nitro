@@ -403,6 +403,9 @@ func (c *Config) Validate() error {
 	if c.L1Reader.Enable && c.Sequencer && !c.DelayedSequencer.Enable {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
+	if c.DelayedSequencer.Enable && !c.Sequencer {
+		return errors.New("cannot enable delayed sequencer without enabling sequencer")
+	}
 	if err := c.Maintenance.Validate(); err != nil {
 		return err
 	}
@@ -468,6 +471,7 @@ var ConfigDefault = Config{
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
 	SyncMonitor:         DefaultSyncMonitorConfig,
+	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 }
 
@@ -502,6 +506,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
 }
@@ -661,7 +666,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	} else if config.Sequencer && (!config.Dangerous.NoCoordinator) {
+	} else if config.Sequencer && !config.Dangerous.NoCoordinator {
 		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 	}
 	dbs := []ethdb.Database{arbDb}
@@ -765,7 +770,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	txStreamer.SetInboxReader(inboxReader)
+	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.URL != "" {
@@ -774,7 +779,7 @@ func createNodeImpl(
 			inboxTracker,
 			txStreamer,
 			exec,
-			rawdb.NewTable(arbDb, blockValidatorPrefix),
+			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
 			&configFetcher.Get().BlockValidator,
 		)
@@ -1019,7 +1024,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BlockValidator != nil {
-		err = n.BlockValidator.Initialize()
+		err = n.BlockValidator.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing block validator: %w", err)
 		}
