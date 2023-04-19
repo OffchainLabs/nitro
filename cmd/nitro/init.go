@@ -304,19 +304,23 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		}
 
 		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
-		lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
+		lastValidated, err := staker.ReadLastValidatedInfo(validatorDb)
 		if err != nil {
 			return nil, err
 		}
 		if lastValidated != nil {
-			lastValidatedHeader := rawdb.ReadHeader(chainDb, lastValidated.BlockHash, lastValidated.BlockNumber)
+			var lastValidatedHeader *types.Header
+			headerNum := rawdb.ReadHeaderNumber(chainDb, lastValidated.GlobalState.BlockHash)
+			if headerNum != nil {
+				lastValidatedHeader = rawdb.ReadHeader(chainDb, lastValidated.GlobalState.BlockHash, *headerNum)
+			}
 			if lastValidatedHeader != nil {
 				err = roots.addHeader(lastValidatedHeader, false)
 				if err != nil {
 					return nil, err
 				}
 			} else {
-				log.Warn("missing latest validated block", "number", lastValidated.BlockNumber, "hash", lastValidated.BlockHash)
+				log.Warn("missing latest validated block", "hash", lastValidated.GlobalState.BlockHash)
 			}
 		}
 	} else if initConfig.Prune == "full" {
