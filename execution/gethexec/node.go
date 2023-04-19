@@ -116,6 +116,7 @@ type ExecutionNode struct {
 	Sequencer     *Sequencer // either nil or same as TxPublisher
 	TxPublisher   TransactionPublisher
 	ConfigFetcher ConfigFetcher
+	L1Reader      *headerreader.HeaderReader
 }
 
 func CreateExecutionNode(
@@ -219,6 +220,7 @@ func CreateExecutionNode(
 		sequencer,
 		txPublisher,
 		configFetcher,
+		l1Reader,
 	}, nil
 
 }
@@ -251,10 +253,9 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
-	// TODO after separation
-	// if n.L1Reader != nil {
-	// 	n.L1Reader.Start(ctx)
-	// }
+	if n.L1Reader != nil {
+		n.L1Reader.Start(ctx)
+	}
 	return nil
 }
 
@@ -265,10 +266,9 @@ func (n *ExecutionNode) StopAndWait() {
 		n.TxPublisher.StopAndWait()
 	}
 	n.Recorder.OrderlyShutdown()
-	// TODO after separation
-	// if n.L1Reader != nil && n.L1Reader.Started() {
-	// 	n.L1Reader.StopAndWait()
-	// }
+	if n.L1Reader != nil && n.L1Reader.Started() {
+		n.L1Reader.StopAndWait()
+	}
 	if n.ExecEngine.Started() {
 		n.ExecEngine.StopAndWait()
 	}
