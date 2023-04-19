@@ -12,49 +12,9 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/IInbox.sol";
+import "./Assertion.sol";
 import "./IRollupEventInbox.sol";
-import "./IRollupLogic.sol";
 import "../challengeV2/EdgeChallengeManager.sol";
-
-struct ExecutionState {
-    GlobalState globalState;
-    MachineStatus machineStatus;
-}
-
-struct AssertionInputs {
-    ExecutionState beforeState;
-    ExecutionState afterState;
-    uint64 numBlocks;
-}
-
-struct Config {
-    uint64 confirmPeriodBlocks;
-    uint64 extraChallengeTimeBlocks;
-    address stakeToken;
-    uint256 baseStake;
-    bytes32 wasmModuleRoot;
-    address owner;
-    address loserStakeEscrow;
-    uint256 chainId;
-    uint64 genesisBlockNum;
-    uint256 challengePeriodSeconds;
-    uint256 miniStakeValue;
-    ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
-}
-
-struct ContractDependencies {
-    IBridge bridge;
-    ISequencerInbox sequencerInbox;
-    IInbox inbox;
-    IOutbox outbox;
-    IRollupEventInbox rollupEventInbox;
-    IEdgeChallengeManager challengeManager;
-    IRollupAdmin rollupAdminLogic;
-    IRollupUser rollupUserLogic;
-    // misc contracts that are useful when interacting with the rollup
-    address validatorUtils;
-    address validatorWalletCreator;
-}
 
 library RollupLib {
     using GlobalStateLib for GlobalState;

@@ -4,7 +4,8 @@
 
 pragma solidity ^0.8.0;
 
-import {IRollupAdmin, IRollupUser} from "./IRollupLogic.sol";
+import "./IRollupAdmin.sol";
+import "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";

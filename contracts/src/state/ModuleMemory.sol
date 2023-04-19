@@ -6,18 +6,13 @@ pragma solidity ^0.8.0;
 
 import "./MerkleProof.sol";
 import "./Deserialize.sol";
-
-struct ModuleMemory {
-    uint64 size;
-    uint64 maxSize;
-    bytes32 merkleRoot;
-}
+import "./ModuleMemoryCompact.sol";
 
 library ModuleMemoryLib {
     using MerkleProofLib for MerkleProof;
 
     function hash(ModuleMemory memory mem) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked("Memory:", mem.size, mem.maxSize, mem.merkleRoot));
+        return ModuleMemoryCompactLib.hash(mem);
     }
 
     function proveLeaf(

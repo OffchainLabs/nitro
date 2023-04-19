@@ -8,6 +8,7 @@ pragma experimental ABIEncoderV2;
 
 import "../rollup/IRollupCore.sol";
 import "../challenge/IOldChallengeManager.sol";
+import "./IRollupLogic.sol";
 
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 

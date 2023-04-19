@@ -7,6 +7,7 @@ pragma solidity ^0.8.0;
 import "../state/Value.sol";
 import "../state/Machine.sol";
 import "../state/Deserialize.sol";
+import "../state/ModuleMemory.sol";
 import "./IOneStepProver.sol";
 import "../bridge/Messages.sol";
 import "../bridge/IBridge.sol";

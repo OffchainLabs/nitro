@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IRollupUser} from "./IRollupLogic.sol";
 import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
+import "./IRollupLogic.sol";
 import {ETH_POS_BLOCK_TIME} from "../libraries/Constants.sol";
 
 abstract contract AbsRollupUserLogic is

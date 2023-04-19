@@ -4,12 +4,12 @@ pragma solidity ^0.8.17;
 import "forge-std/Test.sol";
 import "../../src/state/GlobalState.sol";
 import "../../src/state/Machine.sol";
+import "../../src/rollup/RollupLib.sol";
 import "./Utils.sol";
 
 struct State {
-    GlobalState gs;
+    ExecutionState es;
     uint256 inboxMsgCountMax;
-    MachineStatus ms;
 }
 
 library StateToolsLib {
@@ -23,13 +23,12 @@ library StateToolsLib {
         uint64[2] memory u64Vals = [uint64(inboxMsgCountProcessed), uint64(uint256(rand.hash()))];
 
         GlobalState memory gs = GlobalState({bytes32Vals: bytes32Vals, u64Vals: u64Vals});
+        ExecutionState memory es = ExecutionState({globalState: gs, machineStatus: ms});
 
-        return State({gs: gs, inboxMsgCountMax: inboxMsgCountProcessed + 3, ms: ms});
+        return State({es: es, inboxMsgCountMax: inboxMsgCountProcessed + 3});
     }
 
     function hash(State memory s) internal pure returns (bytes32) {
-        // CHRIS: TODO: for some reason importing the RollupLib causes compilation failure - perhaps circular
-        // CHRIS: TODO: we should transition to the rollup lib when this is fixed though
-        return keccak256(abi.encodePacked(s.gs.hash(), s.inboxMsgCountMax, s.ms));
+        return RollupLib.stateHashMem(s.es, s.inboxMsgCountMax);
     }
 }

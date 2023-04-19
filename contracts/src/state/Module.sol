@@ -4,7 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-import "./ModuleMemory.sol";
+import "./ModuleMemoryCompact.sol";
 
 struct Module {
     bytes32 globalsMerkleRoot;
@@ -15,7 +15,7 @@ struct Module {
 }
 
 library ModuleLib {
-    using ModuleMemoryLib for ModuleMemory;
+    using ModuleMemoryCompactLib for ModuleMemory;
 
     function hash(Module memory mod) internal pure returns (bytes32) {
         return

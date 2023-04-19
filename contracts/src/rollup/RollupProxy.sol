@@ -5,7 +5,8 @@
 pragma solidity ^0.8.0;
 
 import "../libraries/AdminFallbackProxy.sol";
-import "./IRollupLogic.sol";
+import "./IRollupAdmin.sol";
+import "./Config.sol";
 
 contract RollupProxy is AdminFallbackProxy {
     constructor(Config memory config, ContractDependencies memory connectedContracts)

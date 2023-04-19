@@ -10,7 +10,7 @@ import "./Machine.sol";
 import "./Instructions.sol";
 import "./StackFrame.sol";
 import "./MerkleProof.sol";
-import "./ModuleMemory.sol";
+import "./ModuleMemoryCompact.sol";
 import "./Module.sol";
 import "./GlobalState.sol";
 
