@@ -63,6 +63,7 @@ type BatchPoster struct {
 	dataPoster   *dataposter.DataPoster[batchPosterPosition]
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
+	backlog      uint64    // An estimate of the number of unposted batches
 }
 
 type BatchPosterConfig struct {
@@ -119,7 +120,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	PostingErrorDelay:                  time.Second * 10,
 	MaxBatchPostDelay:                  time.Hour,
 	WaitForMaxBatchPostDelay:           false,
-	CompressionLevel:                   brotli.DefaultCompression,
+	CompressionLevel:                   brotli.BestCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
@@ -221,7 +222,7 @@ type batchSegments struct {
 	blockNum              uint64
 	delayedMsg            uint64
 	sizeLimit             int
-	compressionLevel      int
+	recompressionLevel    int
 	newUncompressedSize   int
 	totalUncompressedSize int
 	lastCompressedSize    int
@@ -235,24 +236,44 @@ type buildingBatch struct {
 	msgCount      arbutil.MessageIndex
 }
 
-func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
+func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
 	if config.MaxBatchSize <= 40 {
 		panic("MaxBatchSize too small")
 	}
+	compressionLevel := config.CompressionLevel
+	recompressionLevel := config.CompressionLevel
+	if backlog > 20 {
+		compressionLevel = arbmath.MinInt(compressionLevel, brotli.DefaultCompression)
+	}
+	if backlog > 40 {
+		recompressionLevel = arbmath.MinInt(recompressionLevel, brotli.DefaultCompression)
+	}
+	if backlog > 60 {
+		compressionLevel = arbmath.MinInt(compressionLevel, 4)
+	}
+	if recompressionLevel < compressionLevel {
+		// This should never be possible
+		log.Warn(
+			"somehow the recompression level was lower than the compression level",
+			"recompressionLevel", recompressionLevel,
+			"compressionLevel", compressionLevel,
+		)
+		recompressionLevel = compressionLevel
+	}
 	return &batchSegments{
-		compressedBuffer: compressedBuffer,
-		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),
-		sizeLimit:        config.MaxBatchSize - 40, // TODO
-		compressionLevel: config.CompressionLevel,
-		rawSegments:      make([][]byte, 0, 128),
-		delayedMsg:       firstDelayed,
+		compressedBuffer:   compressedBuffer,
+		compressedWriter:   brotli.NewWriterLevel(compressedBuffer, compressionLevel),
+		sizeLimit:          config.MaxBatchSize - 40, // TODO
+		recompressionLevel: recompressionLevel,
+		rawSegments:        make([][]byte, 0, 128),
+		delayedMsg:         firstDelayed,
 	}
 }
 
 func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
-	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.compressionLevel)
+	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.recompressionLevel)
 	s.newUncompressedSize = 0
 	s.totalUncompressedSize = 0
 	for _, segment := range s.rawSegments {
@@ -522,7 +543,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
-			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config()),
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.backlog),
 			msgCount:      batchPosition.MessageCount,
 			startMsgCount: batchPosition.MessageCount,
 		}
@@ -626,6 +647,23 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"current delayed", b.building.segments.delayedMsg,
 		"total segments", len(b.building.segments.rawSegments),
 	)
+	postedMessages := b.building.msgCount - batchPosition.MessageCount
+	unpostedMessages := msgCount - b.building.msgCount
+	b.backlog = uint64(unpostedMessages) / uint64(postedMessages)
+	if b.backlog > 10 {
+		logLevel := log.Warn
+		if b.backlog > 30 {
+			logLevel = log.Error
+		}
+		logLevel(
+			"a large batch posting backlog exists",
+			"currentPosition", b.building.msgCount,
+			"messageCount", msgCount,
+			"lastPostedMessages", postedMessages,
+			"unpostedMessages", unpostedMessages,
+			"batchBacklogEstimate", b.backlog,
+		)
+	}
 	b.building = nil
 	return true, nil
 }
