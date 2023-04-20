@@ -557,9 +557,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			b.building = nil
 			return false, fmt.Errorf("error adding message to batch: %w", err)
 		}
-		if !success && !config.WaitForMaxBatchPostDelay {
+		if !success {
 			// this batch is full
-			forcePostBatch = true
+			if !config.WaitForMaxBatchPostDelay {
+				forcePostBatch = true
+			}
 			haveUsefulMessage = true
 			break
 		}
