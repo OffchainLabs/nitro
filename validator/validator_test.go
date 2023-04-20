@@ -68,6 +68,8 @@ func Test_onLeafCreation(t *testing.T) {
 			createdData.Addrs.Rollup,
 		)
 		require.NoError(t, err)
+		validator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
+		validator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
 
 		err = validator.onLeafCreated(ctx, createdData.Leaf1)
 		require.NoError(t, err)

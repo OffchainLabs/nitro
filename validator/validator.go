@@ -299,12 +299,6 @@ func (v *Validator) onLeafCreated(
 		"stateHash": fmt.Sprintf("%#x", assertionStateHash),
 		"height":    assertionHeight,
 	}).Info("New assertion appended to protocol")
-	// Detect if there is a fork, then decide if we want to challenge.
-	// We check if the parent assertion has > 1 child.
-	v.assertionsLock.Lock()
-	// Keep track of the created assertion locally.
-	v.assertions[assertion.SeqNum()] = assertion
-	v.assertionsLock.Unlock()
 
 	// Keep track of assertions by parent state root to more easily detect forks.
 	assertionPrevSeqNum, err := assertion.PrevSeqNum()
