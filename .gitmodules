@@ -17,4 +17,4 @@
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
 [submodule "go-ethereum/"]
-	branch = merge-v1.11.2
+	branch = Shanghai
