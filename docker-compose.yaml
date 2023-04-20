@@ -234,7 +234,7 @@ services:
       - "poster-data:/home/user/.arbitrum/local/nitro"
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
-    command: --conf.file /config/poster_config.json --execution.consensus-server.url="ws://127.0.0.1:8149" --node.execution-server.url="ws://127.0.0.1:8149" --auth.port=8149
+    command: --conf.file /config/poster_config.json
     depends_on:
       - geth
       - redis
