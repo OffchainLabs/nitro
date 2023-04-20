@@ -99,9 +99,9 @@ contract AssertionChain is IAssertionChain {
         return assertions[assertionId].stateHash;
     }
 
-    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32) {
+    function hasSibling(bytes32 assertionId) external view returns (bool) {
         require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].successionChallenge;
+        return assertions[getPredecessorId(assertionId)].secondChildCreationTime != 0;
     }
 
     function isFirstChild(bytes32 assertionId) external view returns (bool) {

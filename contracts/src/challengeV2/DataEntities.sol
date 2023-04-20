@@ -11,7 +11,7 @@ interface IAssertionChain {
     function getHeight(bytes32 assertionId) external view returns (uint256);
     function getInboxMsgCountSeen(bytes32 assertionId) external view returns (uint256);
     function getStateHash(bytes32 assertionId) external view returns (bytes32);
-    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32);
+    function hasSibling(bytes32 assertionId) external view returns (bool);
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256);
     function getWasmModuleRoot(bytes32 assertionId) external view returns (bytes32);
     function isFirstChild(bytes32 assertionId) external view returns (bool);

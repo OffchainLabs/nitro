@@ -361,8 +361,6 @@ contract RollupTest is Test {
         bytes32 e1Id = challengeManager.createLayerZeroEdge{value: 1}(
             CreateEdgeArgs({
                 edgeType: EdgeType.Block,
-                startHistoryRoot: MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states0, 0, 1)),
-                startHeight: 0,
                 endHistoryRoot: root,
                 endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
                 claimId: userRollup.getAssertionId(2)
@@ -389,8 +387,6 @@ contract RollupTest is Test {
         bytes32 e2Id = challengeManager.createLayerZeroEdge{value: 1}(
             CreateEdgeArgs({
                 edgeType: EdgeType.Block,
-                startHistoryRoot: MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states0, 0, 1)),
-                startHeight: 0,
                 endHistoryRoot: root,
                 endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
                 claimId: userRollup.getAssertionId(3)

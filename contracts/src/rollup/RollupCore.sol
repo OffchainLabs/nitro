@@ -692,12 +692,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         return getAssertionStorage(getAssertionNum(assertionId)).stateHash;
     }
 
-    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32){
-        if(getAssertionStorage(getAssertionNum(assertionId)).secondChildBlock > 0){
-            return assertionId;
-        } else {
-            return bytes32(0);
-        }
+    function hasSibling(bytes32 assertionId) external view returns (bool) {
+        return getAssertionStorage(
+            getAssertionStorage(getAssertionNum(assertionId)).prevNum
+        ).secondChildBlock != 0;
     }
 
     // HN: TODO: use block or timestamp?

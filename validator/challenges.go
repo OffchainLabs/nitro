@@ -107,9 +107,19 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 		return nil, err
 	}
 	if startCommit.FirstLeaf != prevStateHash {
-		return nil, fmt.Errorf("start state at height %v has hash %v locally but %v in assertion", prevHeight, startCommit.FirstLeaf, prevStateHash)
+		return nil, fmt.Errorf(
+			"start state at height %v has hash %v locally but %v in assertion",
+			prevHeight,
+			startCommit.FirstLeaf,
+			prevStateHash,
+		)
 	}
-	endCommit, err := v.stateManager.HistoryCommitmentUpToBatch(ctx, prevHeight, prevHeight+protocol.LayerZeroBlockEdgeHeight, inboxMaxCount)
+	endCommit, err := v.stateManager.HistoryCommitmentUpToBatch(
+		ctx,
+		prevHeight,
+		prevHeight+protocol.LevelZeroBlockEdgeHeight,
+		inboxMaxCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +130,13 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 	if endCommit.LastLeaf != endStateHash {
 		return nil, fmt.Errorf("end state has hash %v locally but %v in assertion", endCommit.LastLeaf, endStateHash)
 	}
-	startEndPrefixProof, err := v.stateManager.PrefixProofUpToBatch(ctx, prevHeight, prevHeight, prevHeight+protocol.LayerZeroBlockEdgeHeight, inboxMaxCount)
+	startEndPrefixProof, err := v.stateManager.PrefixProofUpToBatch(
+		ctx,
+		prevHeight,
+		prevHeight,
+		prevHeight+protocol.LevelZeroBlockEdgeHeight,
+		inboxMaxCount,
+	)
 	if err != nil {
 		return nil, err
 	}

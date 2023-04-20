@@ -102,7 +102,7 @@ library BlockLeafAdder {
             // check that the predecessor of this claim has registered this contract as it's succession challenge
             bytes32 predecessorId = assertionChain.getPredecessorId(leafLibArgs.leafData.claimId);
             require(
-                assertionChain.getSuccessionChallenge(predecessorId) == leafLibArgs.leafData.challengeId,
+                assertionChain.hasSibling(leafLibArgs.leafData.claimId),
                 "Claim predecessor not linked to this challenge"
             );
 

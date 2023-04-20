@@ -226,7 +226,7 @@ func (m *MockSpecChallengeManager) CalculateEdgeId(
 func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
 	assertion protocol.Assertion,
-	startCommit util.HistoryCommitment,
+	startCommit,
 	endCommit util.HistoryCommitment,
 	startEndPrefixProof []byte,
 ) (protocol.SpecEdge, error) {
@@ -237,7 +237,7 @@ func (m *MockSpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 func (m *MockSpecChallengeManager) AddSubChallengeLevelZeroEdge(
 	ctx context.Context,
 	challengedEdge protocol.SpecEdge,
-	startCommit util.HistoryCommitment,
+	startCommit,
 	endCommit util.HistoryCommitment,
 	startParentInclusionProof []common.Hash,
 	endParentInclusionProof []common.Hash,

@@ -139,7 +139,7 @@ type SpecChallengeManager interface {
 	AddBlockChallengeLevelZeroEdge(
 		ctx context.Context,
 		assertion Assertion,
-		startCommit util.HistoryCommitment,
+		startCommit,
 		endCommit util.HistoryCommitment,
 		startEndPrefixProof []byte,
 	) (SpecEdge, error)
@@ -147,7 +147,7 @@ type SpecChallengeManager interface {
 	AddSubChallengeLevelZeroEdge(
 		ctx context.Context,
 		challengedEdge SpecEdge,
-		startCommit util.HistoryCommitment,
+		startCommit,
 		endCommit util.HistoryCommitment,
 		startParentInclusionProof []common.Hash,
 		endParentInclusionProof []common.Hash,
@@ -167,9 +167,9 @@ type SpecChallengeManager interface {
 type Height uint64
 
 // Also copied in contracts/src/libraries/Constants.sol
-const LayerZeroBlockEdgeHeight = 1 << 5
-const LayerZeroBigStepEdgeHeight = 1 << 5
-const LayerZeroSmallStepEdgeHeight = 1 << 5
+const LevelZeroBlockEdgeHeight = 1 << 5
+const LevelZeroBigStepEdgeHeight = 1 << 5
+const LevelZeroSmallStepEdgeHeight = 1 << 5
 
 // EdgeStatus of an edge in the protocol.
 type EdgeStatus uint8
@@ -219,5 +219,4 @@ type SpecEdge interface {
 	// The history commitment for the top-level edge the current edge's challenge is made upon.
 	// This is used at subchallenge creation boundaries.
 	TopLevelClaimHeight(ctx context.Context) (*OriginHeights, error)
-	// The ending batch count of the corresponding top-level claim
 }

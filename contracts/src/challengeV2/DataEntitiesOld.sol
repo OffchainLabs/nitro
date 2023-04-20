@@ -34,7 +34,7 @@ interface IAssertionChain {
 
     function getStateHash(bytes32 assertionId) external view returns (bytes32);
 
-    function getSuccessionChallenge(bytes32 assertionId) external view returns (bytes32);
+    function hasSibling(bytes32 assertionId) external view returns (bool);
 
     function getFirstChildCreationTime(bytes32 assertionId) external view returns (uint256);
 

@@ -83,7 +83,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		AssertLogsContain(t, hook, "Succeeded one-step-proof for edge and confirmed it as winner")
 	})
 	t.Run("two validators opening leaves at height 31", func(t *testing.T) {
-		// TODO: we would use a larger height here but we're limited by protocol.LayerZeroBlockEdgeHeight
+		// TODO: we would use a larger height here but we're limited by protocol.LevelZeroBlockEdgeHeight
 		cfg := &challengeProtocolTestConfig{
 			aliceHeight:               31,
 			bobHeight:                 31,
@@ -99,7 +99,7 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		AssertLogsContain(t, hook, "Succeeded one-step-proof for edge and confirmed it as winner")
 	})
 	t.Run("two validators disagreeing on the number of blocks", func(t *testing.T) {
-		// TODO: we would use a larger height here but we're limited by protocol.LayerZeroBlockEdgeHeight
+		// TODO: we would use a larger height here but we're limited by protocol.LevelZeroBlockEdgeHeight
 		cfg := &challengeProtocolTestConfig{
 			aliceHeight:               7,
 			bobHeight:                 8,
@@ -269,8 +269,8 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 	honestManager, err := statemanager.NewWithAssertionStates(
 		honestStates,
 		honestInboxCounts,
-		statemanager.WithNumOpcodesPerBigStep(protocol.LayerZeroSmallStepEdgeHeight),
-		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LayerZeroBigStepEdgeHeight*protocol.LayerZeroSmallStepEdgeHeight),
+		statemanager.WithNumOpcodesPerBigStep(protocol.LevelZeroSmallStepEdgeHeight),
+		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LevelZeroBigStepEdgeHeight*protocol.LevelZeroSmallStepEdgeHeight),
 	)
 	require.NoError(t, err)
 	aliceAddr := accs[1].AccountAddr
@@ -291,8 +291,8 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 	maliciousManager, err := statemanager.NewWithAssertionStates(
 		maliciousStates,
 		maliciousInboxCounts,
-		statemanager.WithNumOpcodesPerBigStep(protocol.LayerZeroSmallStepEdgeHeight),
-		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LayerZeroBigStepEdgeHeight*protocol.LayerZeroSmallStepEdgeHeight),
+		statemanager.WithNumOpcodesPerBigStep(protocol.LevelZeroSmallStepEdgeHeight),
+		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LevelZeroBigStepEdgeHeight*protocol.LevelZeroSmallStepEdgeHeight),
 		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
 		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
 	)
@@ -407,9 +407,9 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 
 	honestStartCommit, err := honestManager.HistoryCommitmentUpTo(ctx, 0)
 	require.NoError(t, err)
-	honestEndCommit, err := honestManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LayerZeroBlockEdgeHeight, 1)
+	honestEndCommit, err := honestManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
-	honestPrefixProof, err := honestManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LayerZeroBlockEdgeHeight, 1)
+	honestPrefixProof, err := honestManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
 
 	t.Log("Alice creates level zero block edge")
@@ -423,9 +423,9 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 
 	evilStartCommit, err := maliciousManager.HistoryCommitmentUpTo(ctx, 0)
 	require.NoError(t, err)
-	evilEndCommit, err := maliciousManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LayerZeroBlockEdgeHeight, 1)
+	evilEndCommit, err := maliciousManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
-	evilPrefixProof, err := maliciousManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LayerZeroBlockEdgeHeight, 1)
+	evilPrefixProof, err := maliciousManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
 
 	t.Log("Bob creates level zero block edge")
