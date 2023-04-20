@@ -31,7 +31,7 @@ var (
 // DeserializeMetaData contains all meta data concerning the Deserialize contract.
 var DeserializeMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220c742fd22464cc67917ef91118da5a69428175f6e9216044e88def83a21380cdd64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212200e05d60fe4911a95063e45ec5fdd8a1209ff37d8dac9c15d2a5deb561fb8400a64736f6c63430008110033",
 }
 
 // DeserializeABI is the input ABI used to generate the binding from.
@@ -723,7 +723,7 @@ func (_MachineLib *MachineLibTransactorRaw) Transact(opts *bind.TransactOpts, me
 // MerkleProofLibMetaData contains all meta data concerning the MerkleProofLib contract.
 var MerkleProofLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220d16e826db828dbad6e1fe9cceef74033d849aabfede0ed3b49ad8180f3a4e36964736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220b3c9a6b93d80b64558a6cb7f674060006742f491827313179285419b85fcb63e64736f6c63430008110033",
 }
 
 // MerkleProofLibABI is the input ABI used to generate the binding from.
@@ -896,7 +896,7 @@ func (_MerkleProofLib *MerkleProofLibTransactorRaw) Transact(opts *bind.Transact
 // ModuleLibMetaData contains all meta data concerning the ModuleLib contract.
 var ModuleLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212209bf648696e0ff7c9cb41b533697ecfad938fa2400a7bd27dd9c9560faf4ec8e164736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220b0e674215d8ada005f48203aab3c3577ae137b9c218fcaf411014222e3701d4164736f6c63430008110033",
 }
 
 // ModuleLibABI is the input ABI used to generate the binding from.
@@ -1066,10 +1066,183 @@ func (_ModuleLib *ModuleLibTransactorRaw) Transact(opts *bind.TransactOpts, meth
 	return _ModuleLib.Contract.contract.Transact(opts, method, params...)
 }
 
+// ModuleMemoryCompactLibMetaData contains all meta data concerning the ModuleMemoryCompactLib contract.
+var ModuleMemoryCompactLibMetaData = &bind.MetaData{
+	ABI: "[]",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220f5e07a7fb3622b70c2b011dbf1d1b2b2c96786ff9b5fcf277c9179354b0e4bf964736f6c63430008110033",
+}
+
+// ModuleMemoryCompactLibABI is the input ABI used to generate the binding from.
+// Deprecated: Use ModuleMemoryCompactLibMetaData.ABI instead.
+var ModuleMemoryCompactLibABI = ModuleMemoryCompactLibMetaData.ABI
+
+// ModuleMemoryCompactLibBin is the compiled bytecode used for deploying new contracts.
+// Deprecated: Use ModuleMemoryCompactLibMetaData.Bin instead.
+var ModuleMemoryCompactLibBin = ModuleMemoryCompactLibMetaData.Bin
+
+// DeployModuleMemoryCompactLib deploys a new Ethereum contract, binding an instance of ModuleMemoryCompactLib to it.
+func DeployModuleMemoryCompactLib(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *ModuleMemoryCompactLib, error) {
+	parsed, err := ModuleMemoryCompactLibMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	if parsed == nil {
+		return common.Address{}, nil, nil, errors.New("GetABI returned nil")
+	}
+
+	address, tx, contract, err := bind.DeployContract(auth, *parsed, common.FromHex(ModuleMemoryCompactLibBin), backend)
+	if err != nil {
+		return common.Address{}, nil, nil, err
+	}
+	return address, tx, &ModuleMemoryCompactLib{ModuleMemoryCompactLibCaller: ModuleMemoryCompactLibCaller{contract: contract}, ModuleMemoryCompactLibTransactor: ModuleMemoryCompactLibTransactor{contract: contract}, ModuleMemoryCompactLibFilterer: ModuleMemoryCompactLibFilterer{contract: contract}}, nil
+}
+
+// ModuleMemoryCompactLib is an auto generated Go binding around an Ethereum contract.
+type ModuleMemoryCompactLib struct {
+	ModuleMemoryCompactLibCaller     // Read-only binding to the contract
+	ModuleMemoryCompactLibTransactor // Write-only binding to the contract
+	ModuleMemoryCompactLibFilterer   // Log filterer for contract events
+}
+
+// ModuleMemoryCompactLibCaller is an auto generated read-only Go binding around an Ethereum contract.
+type ModuleMemoryCompactLibCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ModuleMemoryCompactLibTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type ModuleMemoryCompactLibTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ModuleMemoryCompactLibFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type ModuleMemoryCompactLibFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ModuleMemoryCompactLibSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type ModuleMemoryCompactLibSession struct {
+	Contract     *ModuleMemoryCompactLib // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts           // Call options to use throughout this session
+	TransactOpts bind.TransactOpts       // Transaction auth options to use throughout this session
+}
+
+// ModuleMemoryCompactLibCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type ModuleMemoryCompactLibCallerSession struct {
+	Contract *ModuleMemoryCompactLibCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts                 // Call options to use throughout this session
+}
+
+// ModuleMemoryCompactLibTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type ModuleMemoryCompactLibTransactorSession struct {
+	Contract     *ModuleMemoryCompactLibTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts                 // Transaction auth options to use throughout this session
+}
+
+// ModuleMemoryCompactLibRaw is an auto generated low-level Go binding around an Ethereum contract.
+type ModuleMemoryCompactLibRaw struct {
+	Contract *ModuleMemoryCompactLib // Generic contract binding to access the raw methods on
+}
+
+// ModuleMemoryCompactLibCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type ModuleMemoryCompactLibCallerRaw struct {
+	Contract *ModuleMemoryCompactLibCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// ModuleMemoryCompactLibTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type ModuleMemoryCompactLibTransactorRaw struct {
+	Contract *ModuleMemoryCompactLibTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewModuleMemoryCompactLib creates a new instance of ModuleMemoryCompactLib, bound to a specific deployed contract.
+func NewModuleMemoryCompactLib(address common.Address, backend bind.ContractBackend) (*ModuleMemoryCompactLib, error) {
+	contract, err := bindModuleMemoryCompactLib(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleMemoryCompactLib{ModuleMemoryCompactLibCaller: ModuleMemoryCompactLibCaller{contract: contract}, ModuleMemoryCompactLibTransactor: ModuleMemoryCompactLibTransactor{contract: contract}, ModuleMemoryCompactLibFilterer: ModuleMemoryCompactLibFilterer{contract: contract}}, nil
+}
+
+// NewModuleMemoryCompactLibCaller creates a new read-only instance of ModuleMemoryCompactLib, bound to a specific deployed contract.
+func NewModuleMemoryCompactLibCaller(address common.Address, caller bind.ContractCaller) (*ModuleMemoryCompactLibCaller, error) {
+	contract, err := bindModuleMemoryCompactLib(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleMemoryCompactLibCaller{contract: contract}, nil
+}
+
+// NewModuleMemoryCompactLibTransactor creates a new write-only instance of ModuleMemoryCompactLib, bound to a specific deployed contract.
+func NewModuleMemoryCompactLibTransactor(address common.Address, transactor bind.ContractTransactor) (*ModuleMemoryCompactLibTransactor, error) {
+	contract, err := bindModuleMemoryCompactLib(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleMemoryCompactLibTransactor{contract: contract}, nil
+}
+
+// NewModuleMemoryCompactLibFilterer creates a new log filterer instance of ModuleMemoryCompactLib, bound to a specific deployed contract.
+func NewModuleMemoryCompactLibFilterer(address common.Address, filterer bind.ContractFilterer) (*ModuleMemoryCompactLibFilterer, error) {
+	contract, err := bindModuleMemoryCompactLib(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &ModuleMemoryCompactLibFilterer{contract: contract}, nil
+}
+
+// bindModuleMemoryCompactLib binds a generic wrapper to an already deployed contract.
+func bindModuleMemoryCompactLib(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := abi.JSON(strings.NewReader(ModuleMemoryCompactLibABI))
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ModuleMemoryCompactLib.Contract.ModuleMemoryCompactLibCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ModuleMemoryCompactLib.Contract.ModuleMemoryCompactLibTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ModuleMemoryCompactLib.Contract.ModuleMemoryCompactLibTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ModuleMemoryCompactLib.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ModuleMemoryCompactLib.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ModuleMemoryCompactLib *ModuleMemoryCompactLibTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ModuleMemoryCompactLib.Contract.contract.Transact(opts, method, params...)
+}
+
 // ModuleMemoryLibMetaData contains all meta data concerning the ModuleMemoryLib contract.
 var ModuleMemoryLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220074274134c6b9dbcd63f123d02d04ee14fb46b5227a0d095e10378b686de2c4464736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220fdde86a3f9764d87c9bc9342a3762b17a0642f9d1908c7db3090c256a522458764736f6c63430008110033",
 }
 
 // ModuleMemoryLibABI is the input ABI used to generate the binding from.
