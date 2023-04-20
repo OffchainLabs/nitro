@@ -183,7 +183,7 @@ func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 }
 
 // The caller must hold the createBlocksMutex
-func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.MessageWithMetadata) {
+func (s *ExecutionEngine) resequenceReorgedMessages(ctx context.Context, messages []*arbostypes.MessageWithMetadata) {
 	if !s.reorgSequencing {
 		return
 	}
@@ -209,7 +209,9 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
 				continue
 			}
-			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
+			_, err := s.sequencerWrapper(ctx, func(ctx context.Context) (*types.Block, error) {
+				return s.sequenceDelayedMessageWithBlockMutex(ctx, msg.Message, delayedSeqNum)
+			})
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			}
@@ -237,15 +239,13 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 	}
 }
 
-func (s *ExecutionEngine) sequencerWrapper(ctx context.Context, sequencerFunc func() (*types.Block, error)) (*types.Block, error) {
+func (s *ExecutionEngine) sequencerWrapper(ctx context.Context, sequencerFunc func(ctx context.Context) (*types.Block, error)) (*types.Block, error) {
 	attempts := 0
 	for {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		s.createBlocksMutex.Lock()
-		block, err := sequencerFunc()
-		s.createBlocksMutex.Unlock()
+		block, err := sequencerFunc(ctx)
 		if !errors.Is(err, consensus.ErrSequencerInsertLockTaken) {
 			return block, err
 		}
@@ -270,7 +270,9 @@ func (s *ExecutionEngine) sequencerWrapper(ctx context.Context, sequencerFunc fu
 }
 
 func (s *ExecutionEngine) SequenceTransactions(ctx context.Context, header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
-	return s.sequencerWrapper(ctx, func() (*types.Block, error) {
+	return s.sequencerWrapper(ctx, func(ctx context.Context) (*types.Block, error) {
+		s.createBlocksMutex.Lock()
+		defer s.createBlocksMutex.Unlock()
 		hooks.TxErrors = nil
 		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
 	})
@@ -355,14 +357,16 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 
 func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](&s.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
-		_, err := s.sequencerWrapper(ctx, func() (*types.Block, error) {
-			return s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+		_, err := s.sequencerWrapper(ctx, func(ctx context.Context) (*types.Block, error) {
+			s.createBlocksMutex.Lock()
+			defer s.createBlocksMutex.Unlock()
+			return s.sequenceDelayedMessageWithBlockMutex(ctx, message, delayedSeqNum)
 		})
 		return struct{}{}, err
 	})
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(ctx context.Context, message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
 	currentHeader := s.bc.CurrentBlock().Header()
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
@@ -575,7 +579,8 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			case <-ctx.Done():
 				return
 			case resequence := <-s.resequenceChan:
-				s.resequenceReorgedMessages(resequence)
+				<-time.After(time.Millisecond * 100) // give consensus time to finish it's reorg
+				s.resequenceReorgedMessages(ctx, resequence)
 				s.createBlocksMutex.Unlock()
 			}
 		}
