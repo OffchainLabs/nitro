@@ -53,5 +53,9 @@ func CreateRPCClient(ctx context.Context, config *ClientConfig, stack *node.Node
 		return nil, err
 	}
 	jwt := jwtHash.Bytes()
-	return rpc.DialWebsocketJWT(ctx, url, "", jwt)
+	client, err := rpc.DialWebsocketJWT(ctx, url, "", jwt)
+	if err != nil {
+		return nil, fmt.Errorf("%w: url: %s jwtPath: %s", err, url, jwtPath)
+	}
+	return client, nil
 }
