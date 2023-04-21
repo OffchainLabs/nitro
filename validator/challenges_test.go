@@ -1,15 +1,14 @@
 package validator
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"math"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
-
-	"bytes"
-	"sync"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
@@ -474,7 +473,7 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 }
 
 func evilHashesForUints(lo, hi uint64) []common.Hash {
-	ret := []common.Hash{}
+	var ret []common.Hash
 	for i := lo; i < hi; i++ {
 		ret = append(ret, hashForUint(math.MaxUint64-i))
 	}
@@ -482,7 +481,7 @@ func evilHashesForUints(lo, hi uint64) []common.Hash {
 }
 
 func honestHashesForUints(lo, hi uint64) []common.Hash {
-	ret := []common.Hash{}
+	var ret []common.Hash
 	for i := lo; i < hi; i++ {
 		ret = append(ret, hashForUint(i))
 	}
