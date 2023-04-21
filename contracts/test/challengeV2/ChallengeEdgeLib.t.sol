@@ -60,8 +60,8 @@ contract ChallengeEdgeLibTest is Test {
         assertEq(e.endHistoryRoot, endRoot, "End root");
         assertEq(e.lowerChildId, 0, "Lower child");
         assertEq(e.upperChildId, 0, "Upper child");
-        assertEq(e.createdWhen, block.timestamp, "Block timestamp");
-        assertEq(e.createdWhen, 1, "Block timestamp 1");
+        assertEq(e.createdAtBlock, block.number, "Block number");
+        assertEq(e.createdAtBlock, 1, "Block number 1");
         assertEq(e.claimId, claimId, "Claim id");
         assertEq(e.staker, staker, "Staker");
         assertTrue(e.status == EdgeStatus.Pending, "Status");
@@ -92,8 +92,8 @@ contract ChallengeEdgeLibTest is Test {
         assertEq(e.endHistoryRoot, endRoot, "End root");
         assertEq(e.lowerChildId, 0, "Lower child");
         assertEq(e.upperChildId, 0, "Upper child");
-        assertEq(e.createdWhen, block.timestamp, "Block timestamp");
-        assertEq(e.createdWhen, 1, "Block timestamp 1");
+        assertEq(e.createdAtBlock, block.number, "Block number");
+        assertEq(e.createdAtBlock, 1, "Block number 1");
         assertEq(e.claimId, 0, "Claim id");
         assertEq(e.staker, address(0), "Staker");
         assertTrue(e.status == EdgeStatus.Pending, "Status");

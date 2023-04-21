@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
+import "../rollup/Assertion.sol";
 import "./libraries/UintUtilsLib.sol";
 import "./DataEntities.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
@@ -12,7 +13,7 @@ interface IEdgeChallengeManager {
 
     function initialize(
         IAssertionChain _assertionChain,
-        uint256 _challengePeriodSec,
+        uint256 _challengePeriodBlocks,
         IOneStepProofEntry _oneStepProofEntry
     ) external;
 
@@ -95,23 +96,23 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
 
     EdgeStore internal store;
 
-    uint256 public challengePeriodSec;
+    uint256 public challengePeriodBlock;
     IAssertionChain internal assertionChain;
     IOneStepProofEntry oneStepProofEntry;
 
-    constructor(IAssertionChain _assertionChain, uint256 _challengePeriodSec, IOneStepProofEntry _oneStepProofEntry) {
+    constructor(IAssertionChain _assertionChain, uint256 _challengePeriodBlocks, IOneStepProofEntry _oneStepProofEntry) {
         // HN: TODO: remove constructor?
-        initialize(_assertionChain, _challengePeriodSec, _oneStepProofEntry);
+        initialize(_assertionChain, _challengePeriodBlocks, _oneStepProofEntry);
     }
 
     function initialize(
         IAssertionChain _assertionChain,
-        uint256 _challengePeriodSec,
+        uint256 _challengePeriodBlocks,
         IOneStepProofEntry _oneStepProofEntry
     ) public {
         require(address(assertionChain) == address(0), "ALREADY_INIT");
         assertionChain = _assertionChain;
-        challengePeriodSec = _challengePeriodSec;
+        challengePeriodBlock = _challengePeriodBlocks;
         oneStepProofEntry = _oneStepProofEntry;
     }
 
@@ -139,7 +140,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     }
 
     function confirmEdgeByTime(bytes32 edgeId, bytes32[] memory ancestorEdges) public {
-        store.confirmEdgeByTime(edgeId, ancestorEdges, challengePeriodSec);
+        store.confirmEdgeByTime(edgeId, ancestorEdges, challengePeriodBlock);
     }
 
     function confirmEdgeByOneStepProof(
@@ -150,9 +151,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager {
     ) public {
         bytes32 prevAssertionId = store.getPrevAssertionId(edgeId);
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: assertionChain.getInboxMsgCountSeen(prevAssertionId),
+            maxInboxMessagesRead: assertionChain.proveInboxMsgCountSeen(prevAssertionId, oneStepData.inboxMsgCountSeen, oneStepData.inboxMsgCountSeenProof),
             bridge: assertionChain.bridge(),
-            initialWasmModuleRoot: assertionChain.getWasmModuleRoot(prevAssertionId)
+            initialWasmModuleRoot: assertionChain.proveWasmModuleRoot(prevAssertionId, oneStepData.wasmModuleRoot, oneStepData.wasmModuleRootProof)
         });
 
         store.confirmEdgeByOneStepProof(

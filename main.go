@@ -24,8 +24,6 @@ import (
 var (
 	// The chain id for the backend.
 	chainId = big.NewInt(1337)
-	// The number of seconds in a challenge period.
-	challengePeriodSeconds = big.NewInt(100)
 	// The size of a mini stake that is posted when creating leaf edges in
 	// challenges (clarify if gwei?).
 	miniStakeSize = big.NewInt(1)
@@ -206,7 +204,6 @@ func deployStack(
 		rollupOwner.AccountAddr,
 		chainId,
 		loserStakeEscrow,
-		challengePeriodSeconds,
 		miniStakeSize,
 	)
 	return setup.DeployFullRollupStack(

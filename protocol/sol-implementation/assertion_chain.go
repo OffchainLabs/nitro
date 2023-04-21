@@ -10,17 +10,17 @@ import (
 	"math/big"
 	"strings"
 
+	"encoding/binary"
+
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
-
-	"github.com/offchainlabs/nitro/util/headerreader"
-
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-
-	"github.com/ethereum/go-ethereum"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
 )
 
@@ -62,6 +62,7 @@ type AssertionChain struct {
 	userLogic    *rollupgen.RollupUserLogic
 	txOpts       *bind.TransactOpts
 	headerReader *headerreader.HeaderReader
+	rollupAddr   common.Address
 }
 
 // NewAssertionChain instantiates an assertion chain
@@ -77,6 +78,7 @@ func NewAssertionChain(
 		backend:      backend,
 		txOpts:       txOpts,
 		headerReader: headerReader,
+		rollupAddr:   rollupAddr,
 	}
 	coreBinding, err := rollupgen.NewRollupCore(
 		rollupAddr, chain.backend,
@@ -101,6 +103,10 @@ func (ac *AssertionChain) NumAssertions(ctx context.Context) (uint64, error) {
 
 // AssertionBySequenceNum --
 func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum protocol.AssertionSequenceNumber) (protocol.Assertion, error) {
+	genesis, err := ac.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, uint64(1))
+	if err != nil {
+		return nil, err
+	}
 	res, err := ac.userLogic.GetAssertion(&bind.CallOpts{Context: ctx}, uint64(seqNum))
 	if err != nil {
 		return nil, err
@@ -116,7 +122,7 @@ func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum pro
 		id:    uint64(seqNum),
 		chain: ac,
 		StateCommitment: util.StateCommitment{
-			Height:    res.Height.Uint64(),
+			Height:    res.CreatedAtBlock - genesis.CreatedAtBlock,
 			StateRoot: res.StateHash,
 		},
 	}, nil
@@ -134,23 +140,10 @@ func (ac *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Asserti
 // and a commitment to a post-state.
 func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
-	height uint64,
-	prevAssertionId protocol.AssertionSequenceNumber,
 	prevAssertionState *protocol.ExecutionState,
 	postState *protocol.ExecutionState,
 	prevInboxMaxCount *big.Int,
 ) (protocol.Assertion, error) {
-	prev, err := ac.AssertionBySequenceNum(ctx, prevAssertionId)
-	if err != nil {
-		return nil, errors.Wrapf(err, "could not get prev assertion with id: %d", prevAssertionId)
-	}
-	prevHeight, err := prev.Height()
-	if err != nil {
-		return nil, err
-	}
-	if prevHeight >= height {
-		return nil, errors.Wrapf(ErrInvalidHeight, "prev height %d was >= incoming %d", prevHeight, height)
-	}
 	stake, err := ac.userLogic.CurrentRequiredStake(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get current required stake")
@@ -164,13 +157,12 @@ func (ac *AssertionChain) CreateAssertion(
 			rollupgen.AssertionInputs{
 				BeforeState: prevAssertionState.AsSolidityStruct(),
 				AfterState:  postState.AsSolidityStruct(),
-				NumBlocks:   height - prevHeight,
 			},
-			common.Hash{}, // Expected hash. TODO: Is this fine as empty?
+			common.Hash{}, // Expected hash. TODO(RJ): Is this fine as empty?
 			prevInboxMaxCount,
 		)
 	})
-	if createErr := handleCreateAssertionError(err, height, postState.GlobalState.BlockHash); createErr != nil {
+	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {
 		return nil, createErr
 	}
 	if len(receipt.Logs) == 0 {
@@ -271,7 +263,72 @@ func (ac *AssertionChain) Reject(ctx context.Context, staker common.Address) err
 	}
 }
 
-func handleCreateAssertionError(err error, height uint64, blockHash common.Hash) error {
+func (a *AssertionChain) GenesisAssertionHashes(ctx context.Context) (executionHash, assertionHash, wasmModuleRoot common.Hash, err error) {
+	return a.rollup.GenesisAssertionHashes(&bind.CallOpts{Context: ctx})
+}
+
+// ReadAssertionCreationInfo for an assertion sequence number by looking up its creation
+// event from the rollup contracts.
+func (a *AssertionChain) ReadAssertionCreationInfo(
+	ctx context.Context, seqNum protocol.AssertionSequenceNumber,
+) (*protocol.AssertionCreatedInfo, error) {
+	if seqNum == protocol.GenesisAssertionSeqNum {
+		executionHash, assertionHash, wasmModuleRoot, err := a.rollup.GenesisAssertionHashes(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return nil, err
+		}
+		return &protocol.AssertionCreatedInfo{
+			ParentAssertionHash: common.Hash{},
+			BeforeState:         rollupgen.ExecutionState{},
+			AfterState:          rollupgen.ExecutionState{},
+			InboxMaxCount:       big.NewInt(1),
+			AfterInboxBatchAcc:  common.Hash{},
+			ExecutionHash:       executionHash,
+			AssertionHash:       assertionHash,
+			WasmModuleRoot:      wasmModuleRoot,
+		}, nil
+	}
+	node, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, uint64(seqNum))
+	if err != nil {
+		return nil, err
+	}
+	topic := common.BytesToHash(hexutil.MustDecode("0xc9cc7aa3617dc3853c50ebf6703ec797191654dcc781255bed2057dce23b0e33"))
+	var numberAsHash common.Hash
+	binary.BigEndian.PutUint64(numberAsHash[(32-8):], uint64(seqNum))
+	var query = ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
+		ToBlock:   new(big.Int).SetUint64(node.CreatedAtBlock),
+		Addresses: []common.Address{a.rollupAddr},
+		Topics:    [][]common.Hash{{topic}, {numberAsHash}},
+	}
+	logs, err := a.backend.FilterLogs(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, errors.New("")
+	}
+	if len(logs) > 1 {
+		return nil, errors.New("found multiple instances of requested node")
+	}
+	ethLog := logs[0]
+	parsedLog, err := a.rollup.ParseAssertionCreated(ethLog)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.AssertionCreatedInfo{
+		ParentAssertionHash: parsedLog.ParentAssertionHash,
+		BeforeState:         parsedLog.Assertion.BeforeState,
+		AfterState:          parsedLog.Assertion.AfterState,
+		InboxMaxCount:       parsedLog.InboxMaxCount,
+		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
+		ExecutionHash:       parsedLog.ExecutionHash,
+		AssertionHash:       parsedLog.AssertionHash,
+		WasmModuleRoot:      parsedLog.WasmModuleRoot,
+	}, nil
+}
+
+func handleCreateAssertionError(err error, blockHash common.Hash) error {
 	if err == nil {
 		return nil
 	}
@@ -280,16 +337,8 @@ func handleCreateAssertionError(err error, height uint64, blockHash common.Hash)
 	case strings.Contains(errS, "Assertion already exists"):
 		return errors.Wrapf(
 			ErrAlreadyExists,
-			"commit block hash %#x and height %d",
+			"commit block hash %#x",
 			blockHash,
-			height,
-		)
-	case strings.Contains(errS, "Height not greater than predecessor"):
-		return errors.Wrapf(
-			ErrInvalidHeight,
-			"commit block hash %#x and height %d",
-			blockHash,
-			height,
 		)
 	case strings.Contains(errS, "Previous assertion does not exist"):
 		return ErrPrevDoesNotExist

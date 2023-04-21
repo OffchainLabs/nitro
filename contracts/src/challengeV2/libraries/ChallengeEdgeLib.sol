@@ -54,8 +54,8 @@ struct ChallengeEdge {
     ///         upper child is populated here, until that time this value is 0. The upper child has startHistoryRoot and startHeight
     ///         equal to some prefix of the endHistoryRoot of this edge, and endHistoryRoot and endHeight equal to this edge
     bytes32 upperChildId;
-    /// @notice The block timestamp when this edge was created
-    uint256 createdWhen;
+    /// @notice The block number when this edge was created
+    uint256 createdAtBlock;
     /// @notice The edge or assertion in the upper level that this edge claims to be true.
     ///         Only populated on zero layer edges
     bytes32 claimId;
@@ -110,7 +110,7 @@ library ChallengeEdgeLib {
             endHistoryRoot: endHistoryRoot,
             lowerChildId: 0,
             upperChildId: 0,
-            createdWhen: block.timestamp,
+            createdAtBlock: block.number,
             claimId: claimId,
             staker: staker,
             status: EdgeStatus.Pending,
@@ -138,7 +138,7 @@ library ChallengeEdgeLib {
             endHistoryRoot: endHistoryRoot,
             lowerChildId: 0,
             upperChildId: 0,
-            createdWhen: block.timestamp,
+            createdAtBlock: block.number,
             claimId: 0,
             staker: address(0),
             status: EdgeStatus.Pending,
@@ -203,8 +203,8 @@ library ChallengeEdgeLib {
 
     /// @notice Does this edge exist in storage
     function exists(ChallengeEdge storage edge) internal view returns (bool) {
-        // All edges have a createdWhen time
-        return edge.createdWhen != 0;
+        // All edges have a createdAtBlock number
+        return edge.createdAtBlock != 0;
     }
 
     /// @notice The length of this edge - difference between the start and end heights

@@ -225,9 +225,6 @@ abstract contract AbsRollupUserLogic is
                 "WRONG_INBOX_POS"
             );
 
-            // Minimum size requirement: any assertion must contain at least one block
-            require(assertion.numBlocks > 0, "EMPTY_ASSERTION");
-
             // The rollup cannot advance normally from an errored state
             require(
                 assertion.beforeState.machineStatus == MachineStatus.FINISHED,

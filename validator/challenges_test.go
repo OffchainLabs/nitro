@@ -355,40 +355,43 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 		}
 	}()
 
+	genesis, err := alice.chain.AssertionBySequenceNum(ctx, protocol.GenesisAssertionSeqNum)
+	require.NoError(t, err)
+	genesisStateHash, err := genesis.StateHash()
+	require.NoError(t, err)
+
 	// Submit leaf creation manually for each validator.
-	latestHonest, err := honestManager.LatestAssertionCreationData(ctx, 0)
+	genesisState, err := honestManager.AssertionExecutionState(ctx, genesisStateHash)
+	require.NoError(t, err)
+	latestHonest, err := honestManager.LatestAssertionCreationData(ctx)
 	require.NoError(t, err)
 	inboxMaxCount := big.NewInt(2)
 	// TODO: this field is broken :/ see the comment in LatestAssertionCreationData
 	//assert.Equal(t, latestHonest.InboxMaxCount, inboxSize, "honest assertion has an incorrect InboxMaxCount")
 	leaf1, err := alice.chain.CreateAssertion(
 		ctx,
-		latestHonest.Height,
-		1,
-		latestHonest.PreState,
-		latestHonest.PostState,
+		genesisState,
+		latestHonest.State,
 		latestHonest.InboxMaxCount,
 	)
 	require.NoError(t, err)
 	leaf1State, err := leaf1.StateHash()
 	require.NoError(t, err)
-	expectedLeaf1State := protocol.ComputeStateHash(latestHonest.PostState, inboxMaxCount)
+	expectedLeaf1State := protocol.ComputeStateHash(latestHonest.State, inboxMaxCount)
 	assert.Equal(t, leaf1State, expectedLeaf1State, "created honest leaf1 with an unexpected state hash")
 
-	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx, 0)
+	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx)
 	require.NoError(t, err)
 	leaf2, err := bob.chain.CreateAssertion(
 		ctx,
-		latestEvil.Height,
-		1,
-		latestEvil.PreState,
-		latestEvil.PostState,
+		genesisState,
+		latestEvil.State,
 		latestEvil.InboxMaxCount,
 	)
 	require.NoError(t, err)
 	leaf2State, err := leaf2.StateHash()
 	require.NoError(t, err)
-	expectedLeaf2State := protocol.ComputeStateHash(latestEvil.PostState, inboxMaxCount)
+	expectedLeaf2State := protocol.ComputeStateHash(latestEvil.State, inboxMaxCount)
 	assert.Equal(t, leaf2State, expectedLeaf2State, "created evil leaf2 with an unexpected state hash")
 
 	// Honest assertion being added.

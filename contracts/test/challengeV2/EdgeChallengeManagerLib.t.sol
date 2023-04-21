@@ -278,7 +278,7 @@ contract EdgeChallengeManagerLibTest is Test {
         (ChallengeEdge memory edge1,) = twoRivals();
 
         store.add(edge1);
-        vm.warp(block.timestamp + 3);
+        vm.roll(block.number + 3);
 
         assertEq(store.timeUnrivaled(edge1.idMem()), 3, "Time unrivaled");
     }
@@ -286,7 +286,7 @@ contract EdgeChallengeManagerLibTest is Test {
     function testTimeUnrivaledNotExist() public {
         (ChallengeEdge memory edge1,) = twoRivals();
 
-        vm.warp(block.timestamp + 3);
+        vm.roll(block.number + 3);
 
         bytes32 id1 = edge1.idMem();
         vm.expectRevert("Edge does not exist");
@@ -300,25 +300,25 @@ contract EdgeChallengeManagerLibTest is Test {
             ChallengeEdgeLib.newChildEdge(originId, startRoot, 3, rand.hash(), 9, EdgeType.Block);
 
         store.add(edge1);
-        vm.warp(block.timestamp + 4);
+        vm.roll(block.number + 4);
 
         ChallengeEdge memory edge2 =
             ChallengeEdgeLib.newChildEdge(originId, startRoot, 3, rand.hash(), 9, EdgeType.Block);
 
         store.add(edge2);
-        vm.warp(block.timestamp + 5);
+        vm.roll(block.number + 5);
 
         ChallengeEdge memory edge3 =
             ChallengeEdgeLib.newChildEdge(originId, startRoot, 3, rand.hash(), 9, EdgeType.Block);
         store.add(edge3);
 
-        vm.warp(block.timestamp + 6);
+        vm.roll(block.number + 6);
 
         ChallengeEdge memory edge4 =
             ChallengeEdgeLib.newChildEdge(originId, rand.hash(), 3, rand.hash(), 9, EdgeType.Block);
         store.add(edge4);
 
-        vm.warp(block.timestamp + 7);
+        vm.roll(block.number + 7);
 
         assertEq(store.timeUnrivaled(edge1.idMem()), 4, "Time unrivaled 1");
         assertEq(store.timeUnrivaled(edge2.idMem()), 0, "Time unrivaled 2");
@@ -1150,7 +1150,7 @@ contract EdgeChallengeManagerLibTest is Test {
         BArgs memory pc = addParentsAndChildren(2, 5, 8);
         (, bytes32 bisectionRoot, bytes memory bisectionProof) = bisectArgs(pc.states1, 4, 8);
         (bytes32 lowerChildId148,) = store.bisectEdge(pc.upperChildId1, bisectionRoot, bisectionProof);
-        vm.warp(block.timestamp + timeAfterParent1);
+        vm.roll(block.number + timeAfterParent1);
 
         bytes32 upperChildId146;
         {
@@ -1160,7 +1160,7 @@ contract EdgeChallengeManagerLibTest is Test {
             (, bytes32 bisectionRoot3, bytes memory bisectionProof3) = bisectArgs(pc.states1, 4, 6);
             (, bytes32 upperChildId146X) = store.bisectEdge(lowerChildId148, bisectionRoot3, bisectionProof3);
             upperChildId146 = upperChildId146X;
-            vm.warp(block.timestamp + timeAfterParent2);
+            vm.roll(block.number + timeAfterParent2);
 
             (, bytes32 bisectionRoot4, bytes memory bisectionProof4) = bisectArgs(pc.states2, 4, 6);
             store.bisectEdge(lowerChildId248, bisectionRoot4, bisectionProof4);
@@ -1181,7 +1181,7 @@ contract EdgeChallengeManagerLibTest is Test {
         }
         bytes32 bsId = bigStepZero.idMem();
 
-        vm.warp(block.timestamp + timeAfterZeroLayer);
+        vm.roll(block.number + timeAfterZeroLayer);
 
         bytes32[] memory ancestorIds = new bytes32[](3);
         ancestorIds[0] = upperChildId146;
@@ -1309,9 +1309,14 @@ contract EdgeChallengeManagerLibTest is Test {
         if (flag != 4) {
             a.add(e2);
         }
-
-        OneStepData memory d =
-            OneStepData({beforeHash: states1[startHeight], proof: abi.encodePacked(states1[startHeight + 1])});
+        OneStepData memory d = OneStepData({
+            inboxMsgCountSeen: 7,
+            inboxMsgCountSeenProof: "",
+            wasmModuleRoot: bytes32(0),
+            wasmModuleRootProof: "",
+            beforeHash: states1[startHeight],
+            proof: abi.encodePacked(states1[startHeight + 1])
+        });
         ExecutionContext memory e =
             ExecutionContext({maxInboxMessagesRead: 0, bridge: IBridge(address(0)), initialWasmModuleRoot: bytes32(0)});
         bytes32[] memory beforeProof = ProofUtils.generateInclusionProof(

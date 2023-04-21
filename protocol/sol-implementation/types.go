@@ -2,7 +2,6 @@ package solimpl
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
@@ -24,11 +23,15 @@ type Assertion struct {
 }
 
 func (a *Assertion) Height() (uint64, error) {
+	genesis, err := a.chain.rollup.GetAssertion(&bind.CallOpts{}, uint64(1))
+	if err != nil {
+		return 0, err
+	}
 	inner, err := a.inner()
 	if err != nil {
 		return 0, err
 	}
-	return inner.Height.Uint64(), nil
+	return inner.CreatedAtBlock - genesis.CreatedAtBlock, nil
 }
 
 func (a *Assertion) SeqNum() protocol.AssertionSequenceNumber {
@@ -52,17 +55,6 @@ func (a *Assertion) StateHash() (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	return inner.StateHash, nil
-}
-
-func (a *Assertion) InboxMsgCountSeen() (uint64, error) {
-	inner, err := a.inner()
-	if err != nil {
-		return 0, err
-	}
-	if !inner.InboxMsgCountSeen.IsUint64() {
-		return 0, fmt.Errorf("assertion %v inbox msg count %v is not a uint64", a.id, inner.InboxMsgCountSeen)
-	}
-	return inner.InboxMsgCountSeen.Uint64(), nil
 }
 
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {

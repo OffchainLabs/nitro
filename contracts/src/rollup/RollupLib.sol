@@ -58,7 +58,8 @@ library RollupLib {
         globalStates[0] = assertion.beforeState.globalState;
         globalStates[1] = assertion.afterState.globalState;
         // TODO: benchmark how much this abstraction adds of gas overhead
-        return executionHash(statuses, globalStates, assertion.numBlocks);
+        return executionHash(statuses, globalStates, 0); // hardcoded numBlocks to 0 
+        // TODO: remove numBlocks from executionHash as it is now a constant
     }
 
     function executionHash(
@@ -70,14 +71,6 @@ library RollupLib {
         segments[0] = OldChallengeLib.blockStateHash(statuses[0], globalStates[0].hash());
         segments[1] = OldChallengeLib.blockStateHash(statuses[1], globalStates[1].hash());
         return OldChallengeLib.hashChallengeState(0, numBlocks, segments);
-    }
-
-    function challengeRootHash(
-        bytes32 execution,
-        uint256 proposedTime,
-        bytes32 wasmModuleRoot
-    ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(execution, proposedTime, wasmModuleRoot));
     }
 
     function confirmHash(AssertionInputs memory assertion) internal pure returns (bytes32) {
@@ -92,19 +85,17 @@ library RollupLib {
         return keccak256(abi.encodePacked(blockHash, sendRoot));
     }
 
-    // HN: TODO: any reason to include hasSibling in assertion hash?
     function assertionHash(
-        // bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,
         bytes32 inboxAcc,
         bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
+        // we can no longer have `hasSibling` in the assertion hash as it would allow identical assertions
         // uint8 hasSiblingInt = hasSibling ? 1 : 0;
         return
             keccak256(
                 abi.encodePacked(
-                    // hasSiblingInt,
                     lastHash,
                     assertionExecHash,
                     inboxAcc,

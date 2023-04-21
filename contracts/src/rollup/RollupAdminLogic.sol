@@ -76,22 +76,32 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
     function createInitialAssertion() private view returns (AssertionNode memory) {
         GlobalState memory emptyGlobalState;
+        ExecutionState memory emptyExecutionState = ExecutionState(
+            emptyGlobalState, 
+            MachineStatus.FINISHED
+        );
         bytes32 state = RollupLib.stateHashMem(
-            ExecutionState(emptyGlobalState, MachineStatus.FINISHED),
+            emptyExecutionState,
             1 // inboxMaxCount - force the first assertion to read a message
         );
+        bytes32 executionHash = RollupLib.executionHash(AssertionInputs({
+            beforeState: emptyExecutionState,
+            afterState: emptyExecutionState
+        }));
+        bytes32 genesisHash = RollupLib.assertionHash({
+            lastHash: bytes32(0),
+            assertionExecHash: executionHash,
+            inboxAcc: bytes32(0),
+            wasmModuleRoot: wasmModuleRoot
+        });
         return
             AssertionNodeLib.createAssertion(
                 state,
-                0, // challenge hash (not challengeable)
                 0, // confirm data
                 0, // prev assertion
                 uint64(block.number), // deadline block (not challengeable)
-                GENESIS_HASH, // initial assertion has a assertion hash of 0
-                0, // initial assertion has a height of 0
-                1, // initial assertion has a inboxMsgCountSeen of 1, since we want the next assertion to consume one message
-                true, // initial assertion is first child
-                wasmModuleRoot
+                genesisHash, // initial assertion has a assertion hash of 0
+                true // initial assertion is first child
             );
     }
 

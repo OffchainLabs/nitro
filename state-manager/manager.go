@@ -29,22 +29,28 @@ var (
 // AssertionToCreate defines a struct that can provide local state data and historical
 // Merkle commitments to L2 state for the validator.
 type AssertionToCreate struct {
-	PreState      *protocol.ExecutionState
-	PostState     *protocol.ExecutionState
+	State         *protocol.ExecutionState
 	InboxMaxCount *big.Int
-	Height        uint64
 }
 
 type Manager interface {
 	// Produces the latest assertion data to post to L1 from the local state manager's
 	// perspective based on a parent assertion height.
-	LatestAssertionCreationData(ctx context.Context, prevHeight uint64) (*AssertionToCreate, error)
+	LatestAssertionCreationData(ctx context.Context) (*AssertionToCreate, error)
+	AssertionExecutionState(ctx context.Context, assertionStateHash common.Hash) (*protocol.ExecutionState, error)
 	// Checks if a state commitment corresponds to data the state manager has locally.
 	HasStateCommitment(ctx context.Context, blockChallengeCommitment util.StateCommitment) bool
 	// Produces a block challenge history commitment up to and including a certain height.
 	HistoryCommitmentUpTo(ctx context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error)
-	// Produces a block challenge history commitment in a certain inclusive block range, but padding states with duplicates after the first state with a batch count of at least the specified max.
-	HistoryCommitmentUpToBatch(ctx context.Context, blockStart, blockEnd, batchCount uint64) (util.HistoryCommitment, error)
+	// Produces a block challenge history commitment in a certain inclusive block range,
+	// but padding states with duplicates after the first state with a
+	// batch count of at least the specified max.
+	HistoryCommitmentUpToBatch(
+		ctx context.Context,
+		blockStart,
+		blockEnd,
+		batchCount uint64,
+	) (util.HistoryCommitment, error)
 	// Produces a big step history commitment for all big steps within block
 	// challenge heights H to H+1.
 	BigStepLeafCommitment(
@@ -115,6 +121,8 @@ type Manager interface {
 	) ([]byte, error)
 	OneStepProofData(
 		ctx context.Context,
+		parentAssertionStateHash common.Hash,
+		assertionCreationInfo *protocol.AssertionCreatedInfo,
 		fromBlockChallengeHeight,
 		toBlockChallengeHeight,
 		fromBigStep,
@@ -230,35 +238,22 @@ func NewWithAssertionStates(
 
 // LatestAssertionCreationData gets the state commitment corresponding to the last, local state root the manager has
 // and a pre-state based on a height of the previous assertion the validator should build upon.
-func (s *Simulated) LatestAssertionCreationData(
-	_ context.Context,
-	prevHeight uint64,
-) (*AssertionToCreate, error) {
-	if len(s.executionStates) == 0 {
-		return nil, errors.New("no local execution states")
-	}
-	if prevHeight >= uint64(len(s.stateRoots)) {
-		return nil, fmt.Errorf(
-			"prev height %d cannot be >= %d state roots",
-			prevHeight,
-			len(s.stateRoots),
-		)
-	}
+func (s *Simulated) LatestAssertionCreationData(_ context.Context) (*AssertionToCreate, error) {
 	lastState := s.executionStates[len(s.executionStates)-1]
 	return &AssertionToCreate{
-		PreState:      s.executionStates[prevHeight],
-		PostState:     lastState,
+		State:         lastState,
 		InboxMaxCount: big.NewInt(1), // TODO: this should be s.inboxMaxCounts[len(s.inboxMaxCounts)-1] but that breaks other stuff
-		Height:        uint64(len(s.stateRoots)) - 1,
 	}, nil
 }
 
 // HasStateCommitment checks if a state commitment is found in our local list of state roots.
 func (s *Simulated) HasStateCommitment(_ context.Context, commitment util.StateCommitment) bool {
-	if commitment.Height >= uint64(len(s.stateRoots)) {
-		return false
+	for _, r := range s.stateRoots {
+		if r == commitment.StateRoot {
+			return true
+		}
 	}
-	return s.stateRoots[commitment.Height] == commitment.StateRoot
+	return false
 }
 
 func (s *Simulated) HistoryCommitmentUpTo(_ context.Context, blockChallengeHeight uint64) (util.HistoryCommitment, error) {
@@ -503,8 +498,79 @@ func (s *Simulated) intermediateSmallStepLeaves(
 	return leaves, nil
 }
 
+// Like abi.NewType but panics if it fails for use in constants
+func newStaticType(t string, internalType string, components []abi.ArgumentMarshaling) abi.Type {
+	ty, err := abi.NewType(t, internalType, components)
+	if err != nil {
+		panic(err)
+	}
+	return ty
+}
+
+func (s *Simulated) AssertionExecutionState(
+	_ context.Context,
+	assertionStateHash common.Hash,
+) (*protocol.ExecutionState, error) {
+	var stateRootIndex int
+	var found bool
+	for i, r := range s.stateRoots {
+		if r == assertionStateHash {
+			stateRootIndex = i
+			found = true
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("assertion state hash %#x not found locally", assertionStateHash)
+	}
+	return s.executionStates[stateRootIndex], nil
+}
+
+var bytes32Type = newStaticType("bytes32", "", nil)
+var uint64Type = newStaticType("uint64", "", nil)
+var uint8Type = newStaticType("uint8", "", nil)
+
+var WasmModuleProofAbi = abi.Arguments{
+	{
+		Name: "lastHash",
+		Type: bytes32Type,
+	},
+	{
+		Name: "assertionExecHash",
+		Type: bytes32Type,
+	},
+	{
+		Name: "inboxAcc",
+		Type: bytes32Type,
+	},
+}
+
+var ExecutionStateAbi = abi.Arguments{
+	{
+		Name: "b1",
+		Type: bytes32Type,
+	},
+	{
+		Name: "b2",
+		Type: bytes32Type,
+	},
+	{
+		Name: "u1",
+		Type: uint64Type,
+	},
+	{
+		Name: "u2",
+		Type: uint64Type,
+	},
+	{
+		Name: "status",
+		Type: uint8Type,
+	},
+}
+
 func (s *Simulated) OneStepProofData(
 	ctx context.Context,
+	assertionStateHash common.Hash,
+	assertionCreationInfo *protocol.AssertionCreatedInfo,
 	fromBlockChallengeHeight,
 	toBlockChallengeHeight,
 	fromBigStep,
@@ -512,6 +578,33 @@ func (s *Simulated) OneStepProofData(
 	fromSmallStep,
 	toSmallStep uint64,
 ) (data *protocol.OneStepData, startLeafInclusionProof, endLeafInclusionProof []common.Hash, err error) {
+	assertionExecutionState, getErr := s.AssertionExecutionState(ctx, assertionStateHash)
+	if getErr != nil {
+		err = getErr
+		return
+	}
+	execState := assertionExecutionState.AsSolidityStruct()
+	inboxMaxCountProof, packErr := ExecutionStateAbi.Pack(
+		execState.GlobalState.Bytes32Vals[0],
+		execState.GlobalState.Bytes32Vals[1],
+		execState.GlobalState.U64Vals[0],
+		execState.GlobalState.U64Vals[1],
+		execState.MachineStatus,
+	)
+	if packErr != nil {
+		err = packErr
+		return
+	}
+
+	wasmModuleRootProof, packErr := WasmModuleProofAbi.Pack(
+		assertionCreationInfo.ParentAssertionHash,
+		assertionCreationInfo.ExecutionHash,
+		assertionCreationInfo.AfterInboxBatchAcc,
+	)
+	if packErr != nil {
+		err = packErr
+		return
+	}
 	startCommit, commitErr := s.SmallStepCommitmentUpTo(
 		ctx,
 		fromBlockChallengeHeight,
@@ -537,8 +630,12 @@ func (s *Simulated) OneStepProofData(
 		return
 	}
 	data = &protocol.OneStepData{
-		BeforeHash: startCommit.LastLeaf,
-		Proof:      make([]byte, 0),
+		BeforeHash:             startCommit.LastLeaf,
+		Proof:                  make([]byte, 0),
+		InboxMsgCountSeen:      assertionCreationInfo.InboxMaxCount,
+		InboxMsgCountSeenProof: inboxMaxCountProof,
+		WasmModuleRoot:         assertionCreationInfo.WasmModuleRoot,
+		WasmModuleRootProof:    wasmModuleRootProof,
 	}
 	if !s.malicious {
 		// Only honest validators can produce a valid one step proof.

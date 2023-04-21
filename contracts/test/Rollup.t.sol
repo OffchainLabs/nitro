@@ -63,7 +63,7 @@ contract RollupTest is Test {
         );
         EdgeChallengeManager edgeChallengeManager = new EdgeChallengeManager({
             _assertionChain: IAssertionChain(address(0)),
-            _challengePeriodSec: 0,
+            _challengePeriodBlocks: 0,
             _oneStepProofEntry: IOneStepProofEntry(address(0))
         });
         BridgeCreator bridgeCreator = new BridgeCreator();
@@ -97,7 +97,6 @@ contract RollupTest is Test {
             wasmModuleRoot: WASM_MODULE_ROOT,
             loserStakeEscrow: address(0),
             genesisBlockNum: 0,
-            challengePeriodSeconds: 100,
             miniStakeValue: 1
         });
 
@@ -172,8 +171,7 @@ contract RollupTest is Test {
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState,
-                numBlocks: 8
+                afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1
@@ -187,8 +185,7 @@ contract RollupTest is Test {
         userRollup.stakeOnNewAssertion({
             assertion: AssertionInputs({
                 beforeState: afterState,
-                afterState: afterState2,
-                numBlocks: 8
+                afterState: afterState2
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: inboxcount
@@ -210,8 +207,7 @@ contract RollupTest is Test {
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState,
-                numBlocks: 8
+                afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1
@@ -222,8 +218,7 @@ contract RollupTest is Test {
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState,
-                numBlocks: 8
+                afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1
@@ -245,8 +240,7 @@ contract RollupTest is Test {
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState,
-                numBlocks: 8
+                afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1
@@ -259,8 +253,7 @@ contract RollupTest is Test {
         userRollup.stakeOnNewAssertion({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState,
-                numBlocks: 8
+                afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1
@@ -293,8 +286,7 @@ contract RollupTest is Test {
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState,
-                numBlocks: 8
+                afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1
@@ -311,8 +303,7 @@ contract RollupTest is Test {
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
-                afterState: afterState2,
-                numBlocks: 8
+                afterState: afterState2
             }),
             expectedAssertionHash: bytes32(0),
             prevAssertionInboxMaxCount: 1

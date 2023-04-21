@@ -22,11 +22,11 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	if err != nil {
 		return err
 	}
-	assertionPrevHeight, err := assertionPrev.Height()
+	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, assertionPrevSeqNum)
 	if err != nil {
 		return err
 	}
-	assertionPrevMsgCountSeen, err := assertionPrev.InboxMsgCountSeen()
+	assertionPrevHeight, err := assertionPrev.Height()
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 		},
 		levelZeroEdge,
 		assertionPrevHeight,
-		assertionPrevMsgCountSeen,
+		prevCreationInfo.InboxMaxCount.Uint64(),
 	)
 	if err != nil {
 		return err
@@ -90,15 +90,11 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, err
 	}
-	prevHeight, err := prevAssertion.Height()
+	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, prevAssertionSeqNum)
 	if err != nil {
 		return nil, err
 	}
-	inboxMaxCount, err := prevAssertion.InboxMsgCountSeen()
-	if err != nil {
-		return nil, err
-	}
-	startCommit, err := v.stateManager.HistoryCommitmentUpToBatch(ctx, prevHeight, prevHeight, inboxMaxCount)
+	startCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -108,17 +104,16 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 	}
 	if startCommit.FirstLeaf != prevStateHash {
 		return nil, fmt.Errorf(
-			"start state at height %v has hash %v locally but %v in assertion",
-			prevHeight,
+			"start state has hash %v locally but %v in assertion",
 			startCommit.FirstLeaf,
 			prevStateHash,
 		)
 	}
 	endCommit, err := v.stateManager.HistoryCommitmentUpToBatch(
 		ctx,
-		prevHeight,
-		prevHeight+protocol.LevelZeroBlockEdgeHeight,
-		inboxMaxCount,
+		0,
+		protocol.LevelZeroBlockEdgeHeight,
+		prevCreationInfo.InboxMaxCount.Uint64(),
 	)
 	if err != nil {
 		return nil, err
@@ -132,10 +127,10 @@ func (v *Validator) addBlockChallengeLevelZeroEdge(
 	}
 	startEndPrefixProof, err := v.stateManager.PrefixProofUpToBatch(
 		ctx,
-		prevHeight,
-		prevHeight,
-		prevHeight+protocol.LevelZeroBlockEdgeHeight,
-		inboxMaxCount,
+		0,
+		0,
+		protocol.LevelZeroBlockEdgeHeight,
+		prevCreationInfo.InboxMaxCount.Uint64(),
 	)
 	if err != nil {
 		return nil, err

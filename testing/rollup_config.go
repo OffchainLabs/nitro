@@ -13,7 +13,6 @@ func GenerateRollupConfig(
 	rollupOwner common.Address,
 	chainId *big.Int,
 	loserStakeEscrow common.Address,
-	challengePeriodSeconds *big.Int,
 	miniStakeValue *big.Int,
 ) rollupgen.Config {
 	var confirmPeriod uint64
@@ -23,7 +22,6 @@ func GenerateRollupConfig(
 		confirmPeriod = 20
 	}
 	return rollupgen.Config{
-		ChallengePeriodSeconds:   challengePeriodSeconds,
 		MiniStakeValue:           miniStakeValue,
 		ConfirmPeriodBlocks:      confirmPeriod,
 		ExtraChallengeTimeBlocks: 200,

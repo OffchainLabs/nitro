@@ -10,8 +10,6 @@ import "../state/Machine.sol";
 struct AssertionNode {
     // Hash of the state of the chain as of this assertion
     bytes32 stateHash;
-    // Hash of the data that can be challenged
-    bytes32 challengeHash;
     // Hash of the data that will be committed if this assertion is confirmed
     bytes32 confirmData;
     // Index of the assertion previous to this one
@@ -26,22 +24,15 @@ struct AssertionNode {
     uint64 childStakerCount;
     // This value starts at zero and is set to a value when the first child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
     uint64 firstChildBlock;
-    // The number of the latest child of this assertion to be created
-    // HN: TODO: do we need this with the new assertion protocol?
-    // uint64 latestChildNumber;
+    uint256 firstChildTime; // TODO: remove this after migrating to use block instead of timestamp
+    // This value starts at zero and is set to a value when the second child is created. After that it is constant until the assertion is destroyed or the owner destroys pending assertions
+    uint64 secondChildBlock;
     // The block number when this assertion was created
     uint64 createdAtBlock;
     // A hash of all the data needed to determine this assertion's validity, to protect against reorgs
     bytes32 assertionHash;
-    // HN: TODO: Add new fields below
-    uint64 secondChildBlock;
-    // HN: TODO: Adding these for simplier getter, but these should be proved from the hashes
-    uint256 height; // in stateHash // TODO: This can be removed as block edge height is constant
-    uint256 inboxMsgCountSeen; // in stateHash
-    bool isFirstChild; // in assertionHash
-    // HN: TODO: Pick block or timestamp
-    uint256 firstChildTime;
-    bytes32 wasmModuleRoot;
+
+    bool isFirstChild; // no longer in assertionHash
 }
 
 struct ExecutionState {
@@ -52,7 +43,6 @@ struct ExecutionState {
 struct AssertionInputs {
     ExecutionState beforeState;
     ExecutionState afterState;
-    uint64 numBlocks;
 }
 
 /**
@@ -62,7 +52,6 @@ library AssertionNodeLib {
     /**
      * @notice Initialize a Assertion
      * @param _stateHash Initial value of stateHash
-     * @param _challengeHash Initial value of challengeHash
      * @param _confirmData Initial value of confirmData
      * @param _prevNum Initial value of prevNum
      * @param _deadlineBlock Initial value of deadlineBlock
@@ -70,29 +59,21 @@ library AssertionNodeLib {
      */
     function createAssertion(
         bytes32 _stateHash,
-        bytes32 _challengeHash,
         bytes32 _confirmData,
         uint64 _prevNum,
         uint64 _deadlineBlock,
         bytes32 _assertionHash,
-        uint256 _height,
-        uint256 _inboxMsgCountSeen,
-        bool _isFirstChild,
-        bytes32 _wasmModuleRoot
+        bool _isFirstChild
     ) internal view returns (AssertionNode memory) {
         AssertionNode memory assertion;
         assertion.stateHash = _stateHash;
-        assertion.challengeHash = _challengeHash;
         assertion.confirmData = _confirmData;
         assertion.prevNum = _prevNum;
         assertion.deadlineBlock = _deadlineBlock;
         assertion.noChildConfirmedBeforeBlock = _deadlineBlock;
         assertion.createdAtBlock = uint64(block.number);
         assertion.assertionHash = _assertionHash;
-        assertion.height = _height;
-        assertion.inboxMsgCountSeen = _inboxMsgCountSeen;
         assertion.isFirstChild = _isFirstChild;
-        assertion.wasmModuleRoot = _wasmModuleRoot;
         return assertion;
     }
 

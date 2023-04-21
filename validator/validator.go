@@ -189,20 +189,22 @@ func (v *Validator) postLatestAssertion(ctx context.Context) (protocol.Assertion
 	if err != nil {
 		return nil, err
 	}
-	parentAssertionHeight, err := parentAssertion.Height()
+	parentAssertionStateHash, err := parentAssertion.StateHash()
 	if err != nil {
 		return nil, err
 	}
-	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx, parentAssertionHeight)
+	parentAssertionState, err := v.stateManager.AssertionExecutionState(ctx, parentAssertionStateHash)
+	if err != nil {
+		return nil, err
+	}
+	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx)
 	if err != nil {
 		return nil, err
 	}
 	assertion, err := v.chain.CreateAssertion(
 		ctx,
-		assertionToCreate.Height,
-		parentAssertionSeq,
-		assertionToCreate.PreState,
-		assertionToCreate.PostState,
+		parentAssertionState,
+		assertionToCreate.State,
 		assertionToCreate.InboxMaxCount,
 	)
 	switch {
@@ -211,23 +213,13 @@ func (v *Validator) postLatestAssertion(ctx context.Context) (protocol.Assertion
 	case err != nil:
 		return nil, err
 	}
-	parentAssertionStateHash, err := parentAssertion.StateHash()
-	if err != nil {
-		return nil, err
-	}
 	assertionState, err := assertion.StateHash()
-	if err != nil {
-		return nil, err
-	}
-	assertionHeight, err := assertion.Height()
 	if err != nil {
 		return nil, err
 	}
 	logFields := logrus.Fields{
 		"name":               v.name,
-		"parentHeight":       parentAssertionHeight,
 		"parentStateHash":    util.Trunc(parentAssertionStateHash.Bytes()),
-		"assertionHeight":    assertionHeight,
 		"assertionStateHash": util.Trunc(assertionState.Bytes()),
 	}
 	log.WithFields(logFields).Info("Submitted latest L2 state claim as an assertion to L1")
@@ -263,16 +255,11 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 		if !ok {
 			continue
 		}
-		height, err := a.Height()
-		if err != nil {
-			return 0, err
-		}
 		stateHash, err := a.StateHash()
 		if err != nil {
 			return 0, err
 		}
 		if v.stateManager.HasStateCommitment(ctx, util.StateCommitment{
-			Height:    height,
 			StateRoot: stateHash,
 		}) {
 			return a.SeqNum(), nil
@@ -290,14 +277,9 @@ func (v *Validator) onLeafCreated(
 	if err != nil {
 		return err
 	}
-	assertionHeight, err := assertion.Height()
-	if err != nil {
-		return err
-	}
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateHash": fmt.Sprintf("%#x", assertionStateHash),
-		"height":    assertionHeight,
 	}).Info("New assertion appended to protocol")
 
 	// Keep track of assertions by parent state root to more easily detect forks.

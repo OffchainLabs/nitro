@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
@@ -36,6 +35,10 @@ func (e *SpecEdge) StartCommitment() (protocol.Height, common.Hash) {
 
 func (e *SpecEdge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.inner.EndHeight.Uint64()), e.inner.EndHistoryRoot
+}
+
+func (e *SpecEdge) PrevAssertionId(ctx context.Context) (protocol.AssertionId, error) {
+	return e.manager.caller.GetPrevAssertionId(&bind.CallOpts{Context: ctx}, e.id)
 }
 
 func (e *SpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
@@ -269,15 +272,15 @@ func (cm *SpecChallengeManager) Address() common.Address {
 	return cm.addr
 }
 
-// Duration of the challenge period.
-func (cm *SpecChallengeManager) ChallengePeriodSeconds(
+// Duration of the challenge period in blocks.
+func (cm *SpecChallengeManager) ChallengePeriodBlocks(
 	ctx context.Context,
-) (time.Duration, error) {
-	res, err := cm.caller.ChallengePeriodSec(&bind.CallOpts{Context: ctx})
+) (uint64, error) {
+	res, err := cm.caller.ChallengePeriodBlock(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return time.Second, err
+		return 0, err
 	}
-	return time.Second * time.Duration(res.Uint64()), nil
+	return res.Uint64(), nil
 }
 
 // Gets an edge by its hash.
@@ -350,8 +353,12 @@ func (cm *SpecChallengeManager) ConfirmEdgeByOneStepProof(
 				cm.assertionChain.txOpts,
 				tentativeWinnerId,
 				challengeV2gen.OneStepData{
-					BeforeHash: oneStepData.BeforeHash,
-					Proof:      oneStepData.Proof,
+					InboxMsgCountSeen:      oneStepData.InboxMsgCountSeen,
+					InboxMsgCountSeenProof: oneStepData.InboxMsgCountSeenProof,
+					WasmModuleRoot:         oneStepData.WasmModuleRoot,
+					WasmModuleRootProof:    oneStepData.WasmModuleRootProof,
+					BeforeHash:             oneStepData.BeforeHash,
+					Proof:                  oneStepData.Proof,
 				},
 				pre,
 				post,
