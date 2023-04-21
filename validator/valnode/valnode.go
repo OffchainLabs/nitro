@@ -28,7 +28,6 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Config struct {
-	Enable     bool                               `koanf:"enable"`
 	UseJit     bool                               `koanf:"use-jit"`
 	ApiAuth    bool                               `koanf:"api-auth"`
 	ApiPublic  bool                               `koanf:"api-public"`
@@ -40,7 +39,6 @@ type Config struct {
 type ValidationConfigFetcher func() *Config
 
 var DefaultValidationConfig = Config{
-	Enable:     true,
 	UseJit:     true,
 	Jit:        server_jit.DefaultJitSpawnerConfig,
 	ApiAuth:    true,
@@ -59,7 +57,6 @@ var TestValidationConfig = Config{
 }
 
 func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultValidationConfig.UseJit, "enable validation node")
 	f.Bool(prefix+".use-jit", DefaultValidationConfig.UseJit, "use jit for validation")
 	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is an authenticated API")
 	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is a public API")

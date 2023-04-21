@@ -342,7 +342,9 @@ func mainImpl() int {
 	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
-	if nodeConfig.Validation.Enable {
+
+	selfAuthURL := fmt.Sprintf("ws://%s:%d", stackConf.AuthAddr, stackConf.AuthPort)
+	if nodeConfig.Node.BlockValidator.Enable && nodeConfig.Node.BlockValidator.URL == selfAuthURL {
 		valNode, err = valnode.CreateValidationNode(
 			func() *valnode.Config { return &liveNodeConfig.Get().Validation },
 			stack,
