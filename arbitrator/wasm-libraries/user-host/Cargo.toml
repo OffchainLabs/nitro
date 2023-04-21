@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
 go-abi = { path = "../go-abi" }
+go-stub = { path = "../go-stub" }
 prover = { path = "../../prover/", default-features = false }
 eyre = "0.6.5"
 fnv = "1.0.7"

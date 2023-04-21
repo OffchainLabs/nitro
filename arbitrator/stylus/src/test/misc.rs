@@ -70,7 +70,7 @@ fn test_console() -> Result<()> {
     let filename = "tests/console.wat";
     let (compile, config, ink) = test_configs();
 
-    let mut native = NativeInstance::from_path(filename, &compile, config)?;
+    let mut native = NativeInstance::new_linked(filename, &compile, config)?;
     let starter = native.get_start()?;
     native.call_func(starter, ink)?;
 

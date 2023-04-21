@@ -1,9 +1,10 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+mod pending;
 mod value;
 
-use crate::value::*;
+use crate::{value::*, pending::PENDING_EVENT};
 use arbutil::wavm;
 use fnv::FnvHashSet as HashSet;
 use go_abi::*;
@@ -337,165 +338,134 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
 }
 
 /// Safety: λ(v value, method string, args []value) (value, bool)
-unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
+    let mut sp = GoStack::new(sp);
     let object = interpret_value(sp.read_u64());
     let method_name = sp.read_js_string();
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = read_value_slice(args_ptr, args_len);
+    let name = String::from_utf8_lossy(&method_name);
+    let pool = DynamicObjectPool::singleton();
+    use InterpValue::*;
 
-    if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
-        let id = args.get(0).ok_or_else(|| {
-            format!(
-                "Go attempting to call Go._makeFuncWrapper with bad args {:?}",
-                args,
-            )
-        })?;
-        let ref_id =
-            DynamicObjectPool::singleton().insert(DynamicObject::FunctionWrapper(*id, object));
-        Ok(GoValue::Function(ref_id))
-    } else if object == InterpValue::Ref(FS_ID) && &method_name == b"write" {
-        let args_len = std::cmp::min(6, args.len());
-        if let &[InterpValue::Number(fd), InterpValue::Ref(buf_id), InterpValue::Number(offset), InterpValue::Number(length), InterpValue::Ref(NULL_ID), InterpValue::Ref(callback_id)] =
-            &args.as_slice()[..args_len]
-        {
-            let object_pool = DynamicObjectPool::singleton();
-            let buf = match object_pool.get(buf_id) {
-                Some(DynamicObject::Uint8Array(x)) => x,
-                x => {
-                    return Err(format!(
-                        "Go attempting to call fs.write with bad buffer {:?}",
-                        x,
-                    ))
-                }
-            };
-            let (func_id, this) = match object_pool.get(callback_id) {
-                Some(DynamicObject::FunctionWrapper(f, t)) => (f, t),
-                x => {
-                    return Err(format!(
-                        "Go attempting to call fs.write with bad buffer {:?}",
-                        x,
-                    ))
-                }
-            };
-            let mut offset = offset as usize;
-            let mut length = length as usize;
-            if offset > buf.len() {
-                eprintln!(
-                    "Go attempting to call fs.write with offset {} >= buf.len() {}",
-                    offset,
-                    buf.len(),
-                );
-                offset = buf.len();
-            }
-            if offset + length > buf.len() {
-                eprintln!(
-                    "Go attempting to call fs.write with offset {} + length {} >= buf.len() {}",
-                    offset,
-                    length,
-                    buf.len(),
-                );
-                length = buf.len() - offset;
-            }
-
-            if fd == 1. {
-                let stdout = std::io::stdout();
-                let mut stdout = stdout.lock();
-                stdout.write_all(&buf[offset..(offset + length)]).unwrap();
-            } else if fd == 2. {
-                let stderr = std::io::stderr();
-                let mut stderr = stderr.lock();
-                stderr.write_all(&buf[offset..(offset + length)]).unwrap();
-            } else {
-                eprintln!("Go attempting to write to unknown FD {}", fd);
-            }
-
-            PENDING_EVENT = Some(PendingEvent {
-                id: *func_id,
-                this: *this,
-                args: vec![
-                    GoValue::Null,                  // no error
-                    GoValue::Number(length as f64), // amount written
-                ],
-            });
-
-            sp.resume();
-            Ok(GoValue::Null)
-        } else {
-            Err(format!(
-                "Go attempting to call fs.write with bad args {:?}",
-                args
-            ))
-        }
-    } else if object == InterpValue::Ref(CRYPTO_ID) && &method_name == b"getRandomValues" {
-        let id = match args.get(0) {
-            Some(InterpValue::Ref(x)) => *x,
-            _ => {
-                return Err(format!(
-                    "Go attempting to call crypto.getRandomValues with bad args {:?}",
-                    args,
-                ));
-            }
-        };
-        match DynamicObjectPool::singleton().get_mut(id) {
-            Some(DynamicObject::Uint8Array(buf)) => {
-                get_rng().fill_bytes(buf.as_mut_slice());
-            }
-            Some(x) => {
-                return Err(format!(
-                    "Go attempting to call crypto.getRandomValues on bad object {:?}",
-                    x,
-                ));
-            }
-            None => {
-                return Err(format!(
-                    "Go attempting to call crypto.getRandomValues on unknown reference {}",
-                    id,
-                ));
-            }
-        }
-        Ok(GoValue::Undefined)
-    } else if let InterpValue::Ref(obj_id) = object {
-        let val = DynamicObjectPool::singleton().get(obj_id);
-        if let Some(DynamicObject::Date) = val {
-            if &method_name == b"getTimezoneOffset" {
-                return Ok(GoValue::Number(0.0));
-            } else {
-                return Err(format!(
-                    "Go attempting to call unknown method {} for date object",
-                    String::from_utf8_lossy(&method_name),
-                ));
-            }
-        } else {
-            return Err(format!(
-                "Go attempting to call method {} for unknown object - id {}",
-                String::from_utf8_lossy(&method_name),
-                obj_id,
-            ));
-        }
-    } else {
-        Err(format!(
-            "Go attempting to call unknown method {:?} . {}",
-            object,
-            String::from_utf8_lossy(&method_name),
-        ))
-    }
-}
-
-/// Safety: λ(v value, method string, args []value) (value, bool)
-#[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
-    let mut sp = GoStack::new(sp);
-    match value_call_impl(&mut sp) {
-        Ok(val) => {
-            sp.write_u64(val.encode());
-            sp.write_u8(1);
-        }
-        Err(err) => {
-            eprintln!("{}", err);
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
             sp.write_u64(GoValue::Null.encode());
-            sp.write_u8(0);
-        }
+            sp.write_u8(1);
+            return
+        }};
     }
+
+    let value = match (object, method_name.as_slice()) {
+        (Ref(GO_ID), b"_makeFuncWrapper") => {
+            let Some(arg) = args.get(0) else {
+                fail!("Go trying to call Go._makeFuncWrapper with bad args {args:?}")
+            };
+            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*arg, object));
+            GoValue::Function(ref_id)
+        }
+        (Ref(STYLUS_ID), b"setCallbacks") => {
+            let mut ids = vec![];
+            for arg in args {
+                let Ref(id) = arg else {
+                    fail!("Stylus callback not a function {arg:?}")
+                };
+                ids.push(GoValue::Number(id as f64));
+            }
+            let value = pool.insert(DynamicObject::ValueArray(ids));
+            GoValue::Object(value)
+        }
+        (Ref(FS_ID), b"write") => {
+            // ignore any args after the 6th, and slice no more than than the number of args we have
+            let args_len = std::cmp::min(6, args.len());
+
+            match &args.as_slice()[..args_len] {
+                &[Number(fd), Ref(buf_id), Number(offset), Number(length), Ref(NULL_ID), Ref(callback_id)] =>
+                {
+                    let buf = match pool.get(buf_id) {
+                        Some(DynamicObject::Uint8Array(x)) => x,
+                        x => fail!("Go trying to call fs.write with bad buffer {x:?}"),
+                    };
+                    let (func_id, this) = match pool.get(callback_id) {
+                        Some(DynamicObject::FunctionWrapper(f, t)) => (f, t),
+                        x => fail!("Go trying to call fs.write with bad buffer {x:?}"),
+                    };
+
+                    let mut offset = offset as usize;
+                    let mut length = length as usize;
+                    if offset > buf.len() {
+                        eprintln!(
+                            "Go trying to call fs.write with offset {offset} >= buf.len() {length}"
+                        );
+                        offset = buf.len();
+                    }
+                    if offset + length > buf.len() {
+                        eprintln!(
+                            "Go trying to call fs.write with offset {offset} + length {length} >= buf.len() {}",
+                            buf.len(),
+                        );
+                        length = buf.len() - offset;
+                    }
+                    if fd == 1. {
+                        let stdout = std::io::stdout();
+                        let mut stdout = stdout.lock();
+                        stdout.write_all(&buf[offset..(offset + length)]).unwrap();
+                    } else if fd == 2. {
+                        let stderr = std::io::stderr();
+                        let mut stderr = stderr.lock();
+                        stderr.write_all(&buf[offset..(offset + length)]).unwrap();
+                    } else {
+                        eprintln!("Go trying to write to unknown FD {}", fd);
+                    }
+
+                    pending::set_event(
+                        *func_id,
+                        *this,
+                        vec![
+                            GoValue::Null,                  // no error
+                            GoValue::Number(length as f64), // amount written
+                        ],
+                    );
+                    sp.resume();
+                    GoValue::Null
+                }
+                _ => fail!("Go trying to call fs.write with bad args {args:?}"),
+            }
+        }
+        (Ref(CRYPTO_ID), b"getRandomValues") => {
+            let name = "crypto.getRandomValues";
+
+            let id = match args.get(0) {
+                Some(Ref(x)) => x,
+                _ => fail!("Go trying to call {name} with bad args {args:?}"),
+            };
+
+            let buf = match pool.get_mut(*id) {
+                Some(DynamicObject::Uint8Array(buf)) => buf,
+                Some(x) => fail!("Go trying to call {name} on bad object {x:?}"),
+                None => fail!("Go trying to call {name} on unknown reference {id}"),
+            };
+
+            get_rng().fill_bytes(buf.as_mut_slice());
+            GoValue::Undefined
+        }
+        (Ref(obj_id), _) => {
+            let value = match pool.get(obj_id) {
+                Some(value) => value,
+                None => fail!("Go trying to call method {name} for unknown object - id {obj_id}"),
+            };
+            match value {
+                DynamicObject::Date => GoValue::Number(0.0),
+                _ => fail!("Go trying to call unknown method {name} for date object"),
+            }
+        }
+        _ => fail!("Go trying to call unknown method {object:?} . {name}"),
+    };
+    
+    sp.write_u64(value.encode());
+    sp.write_u8(1);
 }
 
 /// Safety: λ(v value, field string, x value)

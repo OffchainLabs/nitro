@@ -192,10 +192,11 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			surplus, err := arbGasInfo.GetL1PricingSurplus(callOpts)
 			Require(t, err)
 
-			colors.PrintGrey("ArbOS updated its L1 estimate")
-			colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
-			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
-			colors.PrintGrey("    Surplus ", surplus)
+			// Uncomment for model updates
+			// colors.PrintGrey("ArbOS updated its L1 estimate")
+			// colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
+			// colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
+			// colors.PrintGrey("    Surplus ", surplus)
 			fmt.Fprintf(
 				f, "%v, %v, %v, %v, %v, %v\n", i, l1Header.BaseFee, lastEstimate,
 				estimatedL1FeePerUnit, actualL1FeePerUnit, surplus,

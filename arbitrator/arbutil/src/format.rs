@@ -33,3 +33,7 @@ where
     let items: Vec<_> = items.into_iter().map(|x| format!("{x}")).collect();
     items.join(&", ".grey())
 }
+
+pub fn hex_fmt<T: AsRef<[u8]>>(data: T, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    f.write_str(&hex::encode(data))
+}

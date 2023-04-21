@@ -4,6 +4,7 @@
 use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
 use arbutil::operator::OperatorInfo;
+use derivative::Derivative;
 use eyre::Result;
 use parking_lot::Mutex;
 use std::fmt::{Debug, Display};
@@ -17,7 +18,10 @@ pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
 impl<T> OpcodePricer for T where T: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Meter<F: OpcodePricer> {
+    #[derivative(Debug = "ignore")]
     costs: F,
     globals: Mutex<Option<[GlobalIndex; 2]>>,
 }
@@ -58,6 +62,8 @@ where
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct FuncMeter<'a, F: OpcodePricer> {
     /// Represents the amount of ink left for consumption
     ink_global: GlobalIndex,
@@ -68,6 +74,7 @@ pub struct FuncMeter<'a, F: OpcodePricer> {
     /// The accumulated cost of the current basic block
     block_cost: u64,
     /// Associates opcodes to their ink costs
+    #[derivative(Debug = "ignore")]
     costs: F,
 }
 
@@ -137,27 +144,6 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
 
     fn name(&self) -> &'static str {
         "ink meter"
-    }
-}
-
-impl<F: OpcodePricer> Debug for Meter<F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Meter")
-            .field("globals", &self.globals)
-            .field("costs", &"<function>")
-            .finish()
-    }
-}
-
-impl<F: OpcodePricer> Debug for FuncMeter<'_, F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FunctionMeter")
-            .field("ink_global", &self.ink_global)
-            .field("status_global", &self.status_global)
-            .field("block", &self.block)
-            .field("block_cost", &self.block_cost)
-            .field("costs", &"<function>")
-            .finish()
     }
 }
 

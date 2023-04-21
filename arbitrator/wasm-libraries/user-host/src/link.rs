@@ -5,9 +5,10 @@ use crate::{Program, PROGRAMS};
 use arbutil::{heapify, wavm};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
+use go_stub;
 use prover::{
     programs::{
-        config::{CompileConfig, GoParams, StylusConfig},
+        config::{CompileConfig, EvmData, GoParams, StylusConfig},
         run::UserOutcomeKind,
     },
     Machine,
@@ -86,15 +87,31 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 }
 
 /// Links and executes a user wasm.
-/// Safety: λ(mach *Machine, data []byte, params *StylusConfig, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
+/// λ(mach *Machine, data []byte, params *Config, api *GoApi, evmData *EvmData, gas *u64, root *[32]byte)
+///     -> (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let machine: Machine = *Box::from_raw(sp.read_ptr_mut());
+    macro_rules! unbox {
+        () => {
+            *Box::from_raw(sp.read_ptr_mut())
+        };
+    }
+    let machine: Machine = unbox!();
     let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
+    let config: StylusConfig = unbox!();
+    let api = sp.read_go_ptr();
+    let data: EvmData = unbox!();
+    
+    let get_bytes32 = wavm::caller_load32(api + 0);
+    let set_bytes32 = wavm::caller_load32(api + 8);
+    let api = wavm::caller_load32(api + 16);
+
+    println!("Fields: {} {} {}", get_bytes32, set_bytes32, api);
+
+    //go_stub::set_pending_event(id, this, args);
 
     // buy ink
     let pricing = config.pricing;
@@ -187,4 +204,14 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
         debug_mode: sp.read_u32(),
     };
     sp.skip_space().write_ptr(heapify(params.configs().1));
+}
+
+/// Creates an `EvmData` from its component parts.
+/// Safety: λ(origin u32) *EvmData
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let origin = wavm::read_bytes20(sp.read_go_ptr());
+    let evm_data = EvmData::new(origin.into());
+    sp.write_ptr(heapify(evm_data));
 }

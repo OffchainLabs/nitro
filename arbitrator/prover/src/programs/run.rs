@@ -4,6 +4,7 @@
 use eyre::ErrReport;
 use std::fmt::Display;
 
+#[derive(Debug)]
 pub enum UserOutcome {
     Success(Vec<u8>),
     Revert(Vec<u8>),
@@ -55,7 +56,13 @@ impl From<&UserOutcome> for UserOutcomeKind {
 
 impl From<&UserOutcome> for u8 {
     fn from(value: &UserOutcome) -> Self {
-        UserOutcomeKind::from(value) as u8
+        UserOutcomeKind::from(value).into()
+    }
+}
+
+impl From<UserOutcomeKind> for u8 {
+    fn from(value: UserOutcomeKind) -> Self {
+        value as u8
     }
 }
 

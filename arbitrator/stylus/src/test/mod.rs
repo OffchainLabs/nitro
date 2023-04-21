@@ -2,10 +2,11 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    env::WasmEnv,
+    api::EvmApi,
+    env::{EvmData, WasmEnv},
     native::NativeInstance,
     run::RunProgram,
-    test::api::{TestEvmContracts, TestEvmStorage},
+    test::api::TestEvmApi,
 };
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -28,8 +29,10 @@ mod misc;
 mod native;
 mod wavm;
 
-impl NativeInstance {
-    fn new_test(path: &str, compile: CompileConfig) -> Result<NativeInstance> {
+type TestInstance = NativeInstance<TestEvmApi>;
+
+impl TestInstance {
+    fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
         let mut store = compile.store();
         let imports = imports! {
             "test" => {
@@ -58,25 +61,30 @@ impl NativeInstance {
         let wat = std::fs::read(path)?;
         let module = Module::new(&store, wat)?;
         let instance = Instance::new(&mut store, &module, &Imports::new())?;
-        Ok(NativeInstance::new_sans_env(instance, store))
+        Ok(Self::new_sans_env(instance, store))
     }
 
     fn new_sans_env(instance: Instance, mut store: Store) -> Self {
-        let env = FunctionEnv::new(&mut store, WasmEnv::default());
+        let compile = CompileConfig::default();
+        let (evm, evm_data) = TestEvmApi::new();
+        let env = FunctionEnv::new(&mut store, WasmEnv::new(compile, None, evm, evm_data));
         Self::new(instance, store, env)
     }
 
-    fn new_with_evm(
+    fn new_linked(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
+        let (evm, evm_data) = TestEvmApi::new();
+        Self::from_path(path, evm, evm_data, &compile, config)
+    }
+
+    /*fn new_with_evm(
         file: &str,
         compile: CompileConfig,
         config: StylusConfig,
-    ) -> Result<(NativeInstance, TestEvmContracts, TestEvmStorage)> {
-        let storage = TestEvmStorage::default();
-        let contracts = TestEvmContracts::new(compile.clone(), config);
-        let mut native = NativeInstance::from_path(file, &compile, config)?;
-        native.set_test_evm_api(Bytes20::default(), storage.clone(), contracts.clone());
+    ) -> Result<(Self, TestEvmContracts, TestEvmStorage)> {
+        let (evm, evm_data) = TestEvmApi::new();
+        let mut native = Self::from_path(file, evm, evm_data, &compile, config)?;
         Ok((native, contracts, storage))
-    }
+    }*/
 }
 
 fn expensive_add(op: &Operator) -> u64 {
@@ -149,7 +157,7 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
     Ok(mach)
 }
 
-fn run_native(native: &mut NativeInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
+fn run_native(native: &mut TestInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
     let config = native.env().config.expect("no config").clone();
     match native.run_main(&args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
@@ -169,7 +177,7 @@ fn run_machine(
     }
 }
 
-fn check_instrumentation(mut native: NativeInstance, mut machine: Machine) -> Result<()> {
+fn check_instrumentation(mut native: TestInstance, mut machine: Machine) -> Result<()> {
     assert_eq!(native.ink_left(), machine.ink_left());
     assert_eq!(native.stack_left(), machine.stack_left());
 

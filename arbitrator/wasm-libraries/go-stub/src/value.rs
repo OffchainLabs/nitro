@@ -1,12 +1,14 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::pending::{PendingEvent, PENDING_EVENT};
 use fnv::FnvHashMap as HashMap;
 
 pub const ZERO_ID: u32 = 1;
 pub const NULL_ID: u32 = 2;
 pub const GLOBAL_ID: u32 = 5;
 pub const GO_ID: u32 = 6;
+pub const STYLUS_ID: u32 = 7;
 
 pub const OBJECT_ID: u32 = 100;
 pub const ARRAY_ID: u32 = 101;
@@ -77,13 +79,6 @@ impl GoValue {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PendingEvent {
-    pub id: InterpValue,
-    pub this: InterpValue,
-    pub args: Vec<GoValue>,
-}
-
 #[derive(Debug, Clone)]
 pub enum DynamicObject {
     Uint8Array(Vec<u8>),
@@ -132,76 +127,55 @@ impl DynamicObjectPool {
     }
 }
 
-pub static mut PENDING_EVENT: Option<PendingEvent> = None;
-
 pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
-    if source == GLOBAL_ID {
-        if field == b"Object" {
-            return GoValue::Function(OBJECT_ID);
-        } else if field == b"Array" {
-            return GoValue::Function(ARRAY_ID);
-        } else if field == b"process" {
-            return GoValue::Object(PROCESS_ID);
-        } else if field == b"fs" {
-            return GoValue::Object(FS_ID);
-        } else if field == b"Uint8Array" {
-            return GoValue::Function(UINT8_ARRAY_ID);
-        } else if field == b"crypto" {
-            return GoValue::Object(CRYPTO_ID);
-        } else if field == b"Date" {
-            return GoValue::Object(DATE_ID);
-        } else if field == b"fetch" {
-            // Triggers a code path in Go for a fake network implementation
-            return GoValue::Undefined;
-        }
-    } else if source == FS_ID {
-        if field == b"constants" {
-            return GoValue::Object(FS_CONSTANTS_ID);
-        }
-    } else if source == FS_CONSTANTS_ID {
-        if matches!(
-            field,
-            b"O_WRONLY" | b"O_RDWR" | b"O_CREAT" | b"O_TRUNC" | b"O_APPEND" | b"O_EXCL"
-        ) {
-            return GoValue::Number(-1.);
-        }
-    } else if source == GO_ID {
-        if field == b"_pendingEvent" {
-            if let Some(event) = &PENDING_EVENT {
-                let id = DynamicObjectPool::singleton()
-                    .insert(DynamicObject::PendingEvent(event.clone()));
-                return GoValue::Object(id);
-            } else {
-                return GoValue::Null;
+    use DynamicObject::*;
+    let pool = DynamicObjectPool::singleton();
+
+    if let Some(source) = pool.get(source) {
+        return match (source, field) {
+            (PendingEvent(event), b"id" | b"this") => event.id.assume_num_or_object(),
+            (PendingEvent(event), b"args") => {
+                let args = ValueArray(event.args.clone());
+                let id = pool.insert(args);
+                GoValue::Object(id)
             }
-        }
+            _ => {
+                let field = String::from_utf8_lossy(field);
+                eprintln!(
+                    "Go trying to access unimplemented unknown JS value {source:?} field {field}",
+                );
+                GoValue::Undefined
+            }
+        };
     }
 
-    if let Some(source) = DynamicObjectPool::singleton().get(source).cloned() {
-        if let DynamicObject::PendingEvent(event) = &source {
-            if field == b"id" {
-                return event.id.assume_num_or_object();
-            } else if field == b"this" {
-                return event.this.assume_num_or_object();
-            } else if field == b"args" {
-                let id = DynamicObjectPool::singleton()
-                    .insert(DynamicObject::ValueArray(event.args.clone()));
-                return GoValue::Object(id);
+    match (source, field) {
+        (GLOBAL_ID, b"stylus") => GoValue::Object(STYLUS_ID),
+        (GLOBAL_ID, b"Object") => GoValue::Function(OBJECT_ID),
+        (GLOBAL_ID, b"Array") => GoValue::Function(ARRAY_ID),
+        (GLOBAL_ID, b"process") => GoValue::Object(PROCESS_ID),
+        (GLOBAL_ID, b"fs") => GoValue::Object(FS_ID),
+        (GLOBAL_ID, b"Uint8Array") => GoValue::Function(UINT8_ARRAY_ID),
+        (GLOBAL_ID, b"crypto") => GoValue::Object(CRYPTO_ID),
+        (GLOBAL_ID, b"Date") => GoValue::Object(DATE_ID),
+        (GLOBAL_ID, b"fetch") => GoValue::Undefined, // Triggers a code path in Go for a fake network impl
+        (FS_ID, b"constants") => GoValue::Object(FS_CONSTANTS_ID),
+        (
+            FS_CONSTANTS_ID,
+            b"O_WRONLY" | b"O_RDWR" | b"O_CREAT" | b"O_TRUNC" | b"O_APPEND" | b"O_EXCL",
+        ) => GoValue::Number(-1.),
+        (GO_ID, b"_pendingEvent") => match &PENDING_EVENT {
+            Some(event) => {
+                let event = PendingEvent(event.clone());
+                let id = pool.insert(event);
+                GoValue::Object(id)
             }
+            None => GoValue::Null,
+        },
+        _ => {
+            let field = String::from_utf8_lossy(field);
+            eprintln!("Go trying to access unimplemented unknown JS value {source} field {field}");
+            GoValue::Undefined
         }
-
-        eprintln!(
-            "Go attempting to access unimplemented unknown JS value {:?} field {}",
-            source,
-            String::from_utf8_lossy(field),
-        );
-        GoValue::Undefined
-    } else {
-        eprintln!(
-            "Go attempting to access unimplemented unknown JS value {} field {}",
-            source,
-            String::from_utf8_lossy(field),
-        );
-        GoValue::Undefined
     }
 }

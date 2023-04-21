@@ -3,9 +3,12 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
+use derivative::Derivative;
 use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
+
+use crate::utils::Bytes20;
 
 #[cfg(feature = "native")]
 use {
@@ -86,7 +89,7 @@ impl PricingParams {
 
 pub type OpCosts = fn(&Operator) -> u64;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CompileConfig {
     /// Version of the compiler to use
     pub version: u32,
@@ -98,7 +101,7 @@ pub struct CompileConfig {
     pub debug: CompileDebugParams,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CompileMemoryParams {
     /// The maximum number of pages a program may use
     pub heap_bound: Pages,
@@ -106,9 +109,11 @@ pub struct CompileMemoryParams {
     pub max_frame_size: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct CompilePricingParams {
     /// Associates opcodes to their ink costs
+    #[derivative(Debug = "ignore")]
     pub costs: OpCosts,
     /// Per-byte `MemoryFill` cost
     pub memory_fill_ink: u64,
@@ -116,7 +121,7 @@ pub struct CompilePricingParams {
     pub memory_copy_ink: u64,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CompileDebugParams {
     /// Allow debug functions
     pub debug_funcs: bool,
@@ -215,5 +220,21 @@ impl GoParams {
         );
         let compile_config = CompileConfig::version(self.version, self.debug_mode != 0);
         (compile_config, stylus_config)
+    }
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct EvmData {
+    pub origin: Bytes20,
+    pub return_data_len: u32,
+}
+
+impl EvmData {
+    pub fn new(origin: Bytes20) -> Self {
+        Self {
+            origin,
+            return_data_len: 0,
+        }
     }
 }

@@ -33,6 +33,10 @@ impl Program {
         program.buy_ink(program.config.pricing.hostio_ink);
         program
     }
+
+    pub fn start_free() -> &'static mut Self {
+        unsafe { PROGRAMS.last_mut().expect("no program") }
+    }
 }
 
 #[no_mangle]

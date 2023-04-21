@@ -6,16 +6,17 @@ use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
 };
 
-use arbutil::Color;
+use arbutil::{Color, DebugColor};
 use rand::RngCore;
 use wasmer::AsStoreMut;
 
-use std::{collections::BTreeMap, io::Write};
+use std::{collections::BTreeMap, io::Write, result};
 
 const ZERO_ID: u32 = 1;
 const NULL_ID: u32 = 2;
 const GLOBAL_ID: u32 = 5;
 const GO_ID: u32 = 6;
+pub const STYLUS_ID: u32 = 7;
 
 const OBJECT_ID: u32 = 100;
 const ARRAY_ID: u32 = 101;
@@ -24,27 +25,48 @@ const FS_ID: u32 = 103;
 const UINT8_ARRAY_ID: u32 = 104;
 const CRYPTO_ID: u32 = 105;
 const DATE_ID: u32 = 106;
+const CONSOLE_ID: u32 = 107;
 
 const FS_CONSTANTS_ID: u32 = 200;
 
 const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
+fn standard_id_name(id: u32) -> Option<&'static str> {
+    Some(match id {
+        STYLUS_ID => "stylus",
+        OBJECT_ID => "Object",
+        ARRAY_ID => "Array",
+        PROCESS_ID => "process",
+        FS_ID => "fs",
+        CRYPTO_ID => "crypto",
+        DATE_ID => "Date",
+        CONSOLE_ID => "console",
+        _ => return None,
+    })
+}
+
 #[derive(Default)]
 pub struct JsRuntimeState {
     /// A collection of js objects
-    pool: DynamicObjectPool,
+    pub pool: DynamicObjectPool,
     /// The event Go will execute next
     pub pending_event: Option<PendingEvent>,
 }
 
+impl JsRuntimeState {
+    pub fn set_pending_event(&mut self, id: JsValue, this: JsValue, args: Vec<GoValue>) {
+        self.pending_event = Some(PendingEvent { id, this, args });
+    }
+}
+
 #[derive(Clone, Default, Debug)]
-struct DynamicObjectPool {
+pub struct DynamicObjectPool {
     objects: BTreeMap<u32, DynamicObject>,
     free_ids: Vec<u32>,
 }
 
 impl DynamicObjectPool {
-    fn insert(&mut self, object: DynamicObject) -> u32 {
+    pub fn insert(&mut self, object: DynamicObject) -> u32 {
         let id = self
             .free_ids
             .pop()
@@ -53,7 +75,7 @@ impl DynamicObjectPool {
         id
     }
 
-    fn get(&self, id: u32) -> Option<&DynamicObject> {
+    pub fn get(&self, id: u32) -> Option<&DynamicObject> {
         self.objects.get(&id)
     }
 
@@ -61,7 +83,7 @@ impl DynamicObjectPool {
         self.objects.get_mut(&id)
     }
 
-    fn remove(&mut self, id: u32) -> Option<DynamicObject> {
+    pub fn remove(&mut self, id: u32) -> Option<DynamicObject> {
         let res = self.objects.remove(&id);
         if res.is_some() {
             self.free_ids.push(id);
@@ -71,9 +93,10 @@ impl DynamicObjectPool {
 }
 
 #[derive(Debug, Clone)]
-enum DynamicObject {
+pub enum DynamicObject {
     Uint8Array(Vec<u8>),
-    FunctionWrapper(JsValue, JsValue),
+    GoString(Vec<u8>),
+    FunctionWrapper(JsValue),
     PendingEvent(PendingEvent),
     ValueArray(Vec<GoValue>),
     Date,
@@ -135,7 +158,7 @@ pub enum GoValue {
 }
 
 impl GoValue {
-    fn encode(self) -> u64 {
+    pub fn encode(self) -> u64 {
         let (ty, id): (u32, u32) = match self {
             GoValue::Undefined => return 0,
             GoValue::Number(mut f) => {
@@ -167,7 +190,8 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
 
     if let Some(source) = env.js_state.pool.get(source) {
         return match (source, field) {
-            (PendingEvent(event), b"id" | b"this") => event.id.assume_num_or_object(),
+            (PendingEvent(event), b"id") => event.id.assume_num_or_object(),
+            (PendingEvent(event), b"this") => event.this.assume_num_or_object(),
             (PendingEvent(event), b"args") => {
                 let args = ValueArray(event.args.clone());
                 let id = env.js_state.pool.insert(args);
@@ -175,16 +199,14 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
             }
             _ => {
                 let field = String::from_utf8_lossy(field);
-                eprintln!(
-                    "Go trying to access unimplemented unknown JS value {:?} field {field}",
-                    source
-                );
+                eprintln!("Go trying to access unimplemented JS value {source:?} field {field}",);
                 GoValue::Undefined
             }
         };
     }
 
     match (source, field) {
+        (GLOBAL_ID, b"stylus") => GoValue::Object(STYLUS_ID),
         (GLOBAL_ID, b"Object") => GoValue::Function(OBJECT_ID),
         (GLOBAL_ID, b"Array") => GoValue::Function(ARRAY_ID),
         (GLOBAL_ID, b"process") => GoValue::Object(PROCESS_ID),
@@ -192,6 +214,7 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
         (GLOBAL_ID, b"Uint8Array") => GoValue::Function(UINT8_ARRAY_ID),
         (GLOBAL_ID, b"crypto") => GoValue::Object(CRYPTO_ID),
         (GLOBAL_ID, b"Date") => GoValue::Object(DATE_ID),
+        (GLOBAL_ID, b"console") => GoValue::Object(CONSOLE_ID),
         (GLOBAL_ID, b"fetch") => GoValue::Undefined, // Triggers a code path in Go for a fake network impl
         (FS_ID, b"constants") => GoValue::Object(FS_CONSTANTS_ID),
         (
@@ -262,7 +285,7 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
         return;
     }
     if let Ref(id) = source {
-        let source = env.js_state.pool.get(id);
+        let source = env.js_state.pool.get_mut(id);
         if let Some(DynamicObject::PendingEvent(_)) = source {
             if field == b"result" {
                 return;
@@ -270,10 +293,7 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
         }
     }
     let field = String::from_utf8_lossy(&field);
-    eprintln!(
-        "Go attempted to set unsupported value {:?} field {field} to {:?}",
-        source, new_value,
-    );
+    eprintln!("Go attempted to set unsupported value {source:?} field {field} to {new_value:?}");
 }
 
 /// go side: λ(v value, i int) value
@@ -290,42 +310,50 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
 
     let source = match JsValue::new(sp.read_u64()) {
         JsValue::Ref(x) => env.js_state.pool.get(x),
-        val => fail!("Go attempted to index into {:?}", val),
+        val => fail!("Go attempted to index into {val:?}"),
     };
     let index = match u32::try_from(sp.read_u64()) {
         Ok(index) => index as usize,
-        Err(err) => fail!("{:?}", err),
+        Err(err) => fail!("{err:?}"),
     };
     let value = match source {
         Some(DynamicObject::Uint8Array(x)) => x.get(index).map(|x| GoValue::Number(*x as f64)),
         Some(DynamicObject::ValueArray(x)) => x.get(index).cloned(),
-        _ => fail!("Go attempted to index into unsupported value {:?}", source),
+        _ => fail!("Go attempted to index into unsupported value {source:?}"),
     };
     let Some(value) = value else {
-        fail!("Go indexing out of bounds into {:?} index {index}", source)
+        fail!("Go indexing out of bounds into {source:?} index {index}")
     };
     sp.write_u64(value.encode());
 }
 
+/// go side: λ(array value, i int, v value)
+pub fn js_value_set_index(mut env: WasmEnvMut, sp: u32) {
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+
+    /*let source = match JsValue::new(sp.read_u64()) {
+            JsValue::Ref(x) => env.js_state.pool.get(x),
+            val => fail!("Go attempted to index into {val:?}"),
+        };
+        let index = match u32::try_from(sp.read_u64()) {
+            Ok(index) => index as usize,
+            Err(err) => fail!("{err:?}"),
+    };*/
+    todo!()
+}
+
 /// go side: λ(v value, method string, args []value) (value, bool)
 pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let Some(resume) = env.data().exports.resume.clone() else {
-        return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
-    };
-    let Some(get_stack_pointer) = env.data().exports.get_stack_pointer.clone() else {
-        return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
-    };
-    let mut sp = GoStack::simple(sp, &env);
-    let data = env.data_mut();
-    let rng = &mut data.go_state.rng;
-    let pool = &mut data.js_state.pool;
-    use JsValue::*;
+    let (mut sp, env, mut store) = GoStack::new_with_store(sp, &mut env);
+    let rng = &mut env.go_state.rng;
+    let pool = &mut env.js_state.pool;
 
     let object = JsValue::new(sp.read_u64());
     let method_name = sp.read_js_string();
     let (args_ptr, args_len) = sp.read_go_slice();
     let args = sp.read_value_slice(args_ptr, args_len);
     let name = String::from_utf8_lossy(&method_name);
+    use JsValue::*;
 
     macro_rules! fail {
         ($text:expr $(,$args:expr)*) => {{
@@ -338,15 +366,23 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     let value = match (object, method_name.as_slice()) {
         (Ref(GO_ID), b"_makeFuncWrapper") => {
-            let arg = match args.get(0) {
-                Some(arg) => arg,
-                None => fail!(
-                    "Go trying to call Go._makeFuncWrapper with bad args {:?}",
-                    args
-                ),
+            let Some(arg) = args.get(0) else {
+                fail!("Go trying to call Go._makeFuncWrapper with bad args {args:?}")
             };
-            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*arg, object));
+            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*arg));
+            println!("Wrapping func object {}", ref_id.pink());
             GoValue::Function(ref_id)
+        }
+        (Ref(STYLUS_ID), b"setCallbacks") => {
+            let mut ids = vec![];
+            for arg in args {
+                let Ref(id) = arg else {
+                    fail!("Stylus callback not a function {arg:?}")
+                };
+                ids.push(GoValue::Number(id as f64));
+            }
+            let value = pool.insert(DynamicObject::ValueArray(ids));
+            GoValue::Object(value)
         }
         (Ref(FS_ID), b"write") => {
             // ignore any args after the 6th, and slice no more than than the number of args we have
@@ -357,11 +393,11 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                 {
                     let buf = match pool.get(buf_id) {
                         Some(DynamicObject::Uint8Array(x)) => x,
-                        x => fail!("Go trying to call fs.write with bad buffer {:?}", x),
+                        x => fail!("Go trying to call fs.write with bad buffer {x:?}"),
                     };
-                    let (func_id, this) = match pool.get(callback_id) {
-                        Some(DynamicObject::FunctionWrapper(f, t)) => (f, t),
-                        x => fail!("Go trying to call fs.write with bad buffer {:?}", x),
+                    let &func_id = match pool.get(callback_id) {
+                        Some(DynamicObject::FunctionWrapper(func_id)) => func_id,
+                        x => fail!("Go trying to call fs.write with bad buffer {x:?}"),
                     };
 
                     let mut offset = offset as usize;
@@ -388,32 +424,23 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                         let mut stderr = stderr.lock();
                         stderr.write_all(&buf[offset..(offset + length)]).unwrap();
                     } else {
-                        eprintln!("Go trying to write to unknown FD {}", fd);
+                        eprintln!("Go trying to write to unknown FD {fd}");
                     }
 
-                    data.js_state.pending_event = Some(PendingEvent {
-                        id: *func_id,
-                        this: *this,
-                        args: vec![
+                    env.js_state.set_pending_event(
+                        func_id,
+                        object,
+                        vec![
                             GoValue::Null,                  // no error
                             GoValue::Number(length as f64), // amount written
                         ],
-                    });
+                    );
 
-                    // save our progress from the stack pointer
-                    let saved = sp.save_offset();
-
-                    // recursively call into wasmer
-                    let mut store = env.as_store_mut();
-                    resume.call(&mut store)?;
-
-                    // the stack pointer has changed, so we'll need to write our return results elsewhere
-                    let pointer = get_stack_pointer.call(&mut store)? as u32;
-                    sp.write_u64_raw(pointer + saved, GoValue::Null.encode());
-                    sp.write_u8_raw(pointer + saved + 8, 1);
-                    return Ok(());
+                    // SAFETY: only sp is live after this
+                    unsafe { sp.resume(env, &mut store)? };
+                    GoValue::Null
                 }
-                _ => fail!("Go trying to call fs.write with bad args {:?}", args),
+                _ => fail!("Go trying to call fs.write with bad args {args:?}"),
             }
         }
         (Ref(CRYPTO_ID), b"getRandomValues") => {
@@ -421,29 +448,51 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
             let id = match args.get(0) {
                 Some(Ref(x)) => x,
-                _ => fail!("Go trying to call {name} with bad args {:?}", args),
+                _ => fail!("Go trying to call {name} with bad args {args:?}"),
             };
 
             let buf = match pool.get_mut(*id) {
                 Some(DynamicObject::Uint8Array(buf)) => buf,
-                Some(x) => fail!("Go trying to call {name} on bad object {:?}", x),
+                Some(x) => fail!("Go trying to call {name} on bad object {x:?}"),
                 None => fail!("Go trying to call {name} on unknown reference {id}"),
             };
 
             rng.fill_bytes(buf.as_mut_slice());
             GoValue::Undefined
         }
+        (Ref(CONSOLE_ID), b"error") => {
+            print!("{}", "console error:".red());
+            for arg in args {
+                match arg {
+                    JsValue::Undefined => print!(" undefined"),
+                    JsValue::Number(x) => print!(" num {x}"),
+                    JsValue::Ref(id) => match pool.get(id) {
+                        Some(DynamicObject::GoString(data)) => {
+                            print!(" {}", String::from_utf8_lossy(&data))
+                        }
+                        Some(DynamicObject::Uint8Array(data)) => {
+                            print!(" 0x{}", hex::encode(data))
+                        }
+                        Some(other) => print!(" {other:?}"),
+                        None => print!(" unknown"),
+                    },
+                }
+            }
+            println!("");
+            GoValue::Undefined
+        }
         (Ref(obj_id), _) => {
+            let obj_name = standard_id_name(obj_id).unwrap_or("unknown object").red();
             let value = match pool.get(obj_id) {
                 Some(value) => value,
-                None => fail!("Go trying to call method {name} for unknown object - id {obj_id}"),
+                None => fail!("Go trying to call method {name} for {obj_name} - id {obj_id}"),
             };
             match value {
                 DynamicObject::Date => GoValue::Number(0.0),
                 _ => fail!("Go trying to call unknown method {name} for date object"),
             }
         }
-        _ => fail!("Go trying to call unknown method {:?} . {name}", object),
+        _ => fail!("Go trying to call unknown method {object:?} . {name}"),
     };
 
     sp.write_u64(value.encode());
@@ -456,32 +505,45 @@ pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
     let pool = &mut env.js_state.pool;
 
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
+            sp.write_u64(GoValue::Null.encode());
+            sp.write_u8(0);
+            return
+        }};
+    }
+
     let class = sp.read_u32();
     let (args_ptr, args_len) = sp.skip_space().read_go_slice();
     let args = sp.read_value_slice(args_ptr, args_len);
-    match class {
+    let value = match class {
         UINT8_ARRAY_ID => match args.get(0) {
-            Some(JsValue::Number(size)) => {
-                let id = pool.insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
-                sp.write_u64(GoValue::Object(id).encode());
-                sp.write_u8(1);
-                return;
-            }
-            _ => eprintln!(
-                "Go attempted to construct Uint8Array with bad args: {:?}",
-                args,
-            ),
+            Some(JsValue::Number(size)) => DynamicObject::Uint8Array(vec![0; *size as usize]),
+            _ => fail!("Go attempted to construct Uint8Array with bad args: {args:?}"),
         },
-        DATE_ID => {
-            let id = pool.insert(DynamicObject::Date);
-            sp.write_u64(GoValue::Object(id).encode());
-            sp.write_u8(1);
-            return;
+        DATE_ID => DynamicObject::Date,
+        ARRAY_ID => {
+            // Note: assumes values are only numbers and objects
+            let values = args
+                .into_iter()
+                .map(JsValue::assume_num_or_object)
+                .collect();
+            DynamicObject::ValueArray(values)
         }
-        _ => eprintln!("Go trying to construct unimplemented JS value {class}"),
-    }
-    sp.write_u64(GoValue::Null.encode());
-    sp.write_u8(0);
+        _ => fail!("Go trying to construct unimplemented JS value {class}"),
+    };
+    let id = pool.insert(value);
+    sp.write_u64(GoValue::Object(id).encode());
+    sp.write_u8(1);
+}
+
+/// go side: λ(v string) value
+pub fn js_string_val(mut env: WasmEnvMut, sp: u32) {
+    let (mut sp, env) = GoStack::new(sp, &mut env);
+    let data = sp.read_js_string();
+    let id = env.js_state.pool.insert(DynamicObject::GoString(data));
+    sp.write_u64(GoValue::Object(id).encode());
 }
 
 /// go side: λ(v value) int
@@ -585,8 +647,6 @@ macro_rules! reject {
 }
 
 reject!(
-    js_string_val,
-    js_value_set_index,
     js_value_prepare_string,
     js_value_load_string,
     js_value_delete,

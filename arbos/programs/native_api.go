@@ -61,78 +61,8 @@ GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
 }
 */
 import "C"
-import (
-	"math/big"
-	"sync"
-	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
-)
-
-var apiClosures sync.Map
-var apiIds int64 // atomic
-
-type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
-type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
-type contractCallType func(
-	contract common.Address, calldata []byte, gas uint64, value *big.Int) (
-	retdata_len uint32, cost uint64, err error,
-)
-type delegateCallType func(
-	contract common.Address, calldata []byte, gas uint64) (
-	retdata_len uint32, cost uint64, err error,
-)
-type staticCallType func(
-	contract common.Address, calldata []byte, gas uint64) (
-	retdata_len uint32, cost uint64, err error,
-)
-type create1Type func(
-	code []byte, endowment *big.Int, gas uint64) (
-	addr common.Address, retdata_len uint32, cost uint64, err error,
-)
-type create2Type func(
-	code []byte, salt, endowment *big.Int, gas uint64) (
-	addr common.Address, retdata_len uint32, cost uint64, err error,
-)
-type getReturnDataType func() []byte
-type emitLogType func(data []byte, topics int) error
-
-type apiClosure struct {
-	getBytes32    getBytes32Type
-	setBytes32    setBytes32Type
-	contractCall  contractCallType
-	delegateCall  delegateCallType
-	staticCall    staticCallType
-	create1       create1Type
-	create2       create2Type
-	getReturnData getReturnDataType
-	emitLog       emitLogType
-}
-
-func newAPI(
-	getBytes32 getBytes32Type,
-	setBytes32 setBytes32Type,
-	contractCall contractCallType,
-	delegateCall delegateCallType,
-	staticCall staticCallType,
-	create1 create1Type,
-	create2 create2Type,
-	getReturnData getReturnDataType,
-	emitLog emitLogType,
-) C.GoApi {
-	id := atomic.AddInt64(&apiIds, 1)
-	apiClosures.Store(id, apiClosure{
-		getBytes32:    getBytes32,
-		setBytes32:    setBytes32,
-		contractCall:  contractCall,
-		delegateCall:  delegateCall,
-		staticCall:    staticCall,
-		create1:       create1,
-		create2:       create2,
-		getReturnData: getReturnData,
-		emitLog:       emitLog,
-	})
+func wrapGoApi(id usize) (C.GoApi, usize) {
 	return C.GoApi{
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
@@ -143,18 +73,6 @@ func newAPI(
 		create2:         (*[0]byte)(C.create2Wrap),
 		get_return_data: (*[0]byte)(C.getReturnDataWrap),
 		emit_log:        (*[0]byte)(C.emitLogWrap),
-		id:              u64(id),
-	}
-}
-
-func getAPI(api usize) *apiClosure {
-	any, ok := apiClosures.Load(int64(api))
-	if !ok {
-		log.Crit("failed to load stylus Go API", "id", api)
-	}
-	closures, ok := any.(apiClosure)
-	if !ok {
-		log.Crit("wrong type for stylus Go API", "id", api)
-	}
-	return &closures
+		id:              usize(id),
+	}, id
 }

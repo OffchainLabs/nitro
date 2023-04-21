@@ -118,8 +118,16 @@ func errorTest(t *testing.T, jit bool) {
 	validateBlocks(t, 7, ctx, node, l2client)
 }
 
-func TestProgramStorage(t *testing.T) {
-	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), true)
+func TestProgramStorageJIT(t *testing.T) {
+	storageTest(t, true)
+}
+
+func TestProgramStorageArb(t *testing.T) {
+	storageTest(t, false)
+}
+
+func storageTest(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -136,8 +144,8 @@ func TestProgramStorage(t *testing.T) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	_ = node
+	// validateBlocks(t, 2, ctx, node, l2client)
 }
 
 func TestProgramCalls(t *testing.T) {

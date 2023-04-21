@@ -2,7 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{GetBytes32, SetBytes32},
+    api::EvmApi,
+    env::EvmData,
     native::{self, NativeInstance},
     run::RunProgram,
 };
@@ -15,7 +16,7 @@ use prover::{
 };
 use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone)]
+/*#[derive(Clone)]
 pub(crate) struct TestEvmContracts {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
     return_data: Arc<Mutex<Vec<u8>>>,
@@ -40,38 +41,91 @@ impl TestEvmContracts {
         self.contracts.lock().insert(address, module);
         Ok(())
     }
+}*/
+
+#[derive(Default)]
+pub(crate) struct TestEvmApi {
+    storage: HashMap<Bytes20, HashMap<Bytes32, Bytes32>>,
+    program: Bytes20,
+    return_data: Vec<u8>,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct TestEvmStorage(Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>);
-
-impl TestEvmStorage {
-    pub fn get_bytes32(&self, program: Bytes20, key: Bytes32) -> Option<Bytes32> {
-        self.0.lock().entry(program).or_default().get(&key).cloned()
-    }
-
-    pub fn set_bytes32(&mut self, program: Bytes20, key: Bytes32, value: Bytes32) {
-        self.0.lock().entry(program).or_default().insert(key, value);
-    }
-
-    pub fn getter(&self, program: Bytes20) -> GetBytes32 {
-        let storage = self.clone();
-        Box::new(move |key| {
-            let value = storage.get_bytes32(program, key).unwrap().to_owned();
-            (value, 2100)
-        })
-    }
-
-    pub fn setter(&self, program: Bytes20) -> SetBytes32 {
-        let mut storage = self.clone();
-        Box::new(move |key, value| {
-            drop(storage.set_bytes32(program, key, value));
-            Ok(22100)
-        })
+impl TestEvmApi {
+    pub fn new() -> (TestEvmApi, EvmData) {
+        (Self::default(), EvmData::default())
     }
 }
 
-impl NativeInstance {
+impl EvmApi for TestEvmApi {
+    fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
+        let storage = self.storage.get_mut(&self.program).unwrap();
+        let value = storage.get(&key).unwrap().to_owned();
+        (value, 2100)
+    }
+
+    fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
+        let storage = self.storage.get_mut(&self.program).unwrap();
+        let value = storage.insert(key, value);
+        Ok(22100)
+    }
+
+    fn contract_call(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        gas: u64,
+        value: Bytes32,
+    ) -> (u32, u64, UserOutcomeKind) {
+        todo!()
+    }
+
+    fn delegate_call(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        gas: u64,
+    ) -> (u32, u64, UserOutcomeKind) {
+        todo!("delegate call not yet supported")
+    }
+
+    fn static_call(
+        &mut self,
+        contract: Bytes20,
+        input: Vec<u8>,
+        gas: u64,
+    ) -> (u32, u64, UserOutcomeKind) {
+        todo!("static call not yet supported")
+    }
+
+    fn create1(
+        &mut self,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        gas: u64,
+    ) -> (Result<Bytes20>, u32, u64) {
+        unimplemented!("create1 not supported")
+    }
+
+    fn create2(
+        &mut self,
+        code: Vec<u8>,
+        endowment: Bytes32,
+        salt: Bytes32,
+        gas: u64,
+    ) -> (Result<Bytes20>, u32, u64) {
+        unimplemented!("create2 not supported")
+    }
+
+    fn load_return_data(&mut self) -> Vec<u8> {
+        self.return_data.clone()
+    }
+
+    fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> Result<()> {
+        Ok(()) // pretend a log was emitted
+    }
+}
+
+/*impl NativeInstance<TestEvmApi> {
     pub(crate) fn set_test_evm_api(
         &mut self,
         address: Bytes20,
@@ -109,29 +163,7 @@ impl NativeInstance {
                 (outs_len, gas - gas_left, status)
             },
         );
-        let delegate_call =
-            Box::new(move |_contract, _input, _gas| todo!("delegate call not yet supported"));
-        let static_call =
-            Box::new(move |_contract, _input, _gas| todo!("static call not yet supported"));
-        let get_return_data =
-            Box::new(move || -> Vec<u8> { contracts.clone().return_data.lock().clone() });
-        let create1 =
-            Box::new(move |_code, _endowment, _gas| unimplemented!("create1 not supported"));
-        let create2 =
-            Box::new(move |_code, _endowment, _salt, _gas| unimplemented!("create2 not supported"));
-        let emit_log = Box::new(move |_data, _topics| Ok(()));
-
-        self.env_mut().set_evm_api(
-            get_bytes32,
-            set_bytes32,
-            contract_call,
-            delegate_call,
-            static_call,
-            create1,
-            create2,
-            get_return_data,
-            emit_log,
-        );
         storage
     }
 }
+*/

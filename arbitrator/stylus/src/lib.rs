@@ -1,18 +1,19 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use crate::api::GoApi;
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::{
-    programs::{config::GoParams, prelude::*},
-    utils::{Bytes20, Bytes32},
+use prover::programs::{
+    config::{EvmData, GoParams},
+    prelude::*,
 };
 use run::RunProgram;
 use std::mem;
 
-use crate::env::EvmData;
-pub use prover;
+pub use {crate::api::EvmApi, prover};
 
+mod api;
 mod env;
 pub mod host;
 pub mod native;
@@ -93,74 +94,6 @@ pub unsafe extern "C" fn stylus_compile(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum GoApiStatus {
-    Success,
-    Failure,
-}
-
-impl From<GoApiStatus> for UserOutcomeKind {
-    fn from(value: GoApiStatus) -> Self {
-        match value {
-            GoApiStatus::Success => UserOutcomeKind::Success,
-            GoApiStatus::Failure => UserOutcomeKind::Revert,
-        }
-    }
-}
-
-#[repr(C)]
-pub struct GoApi {
-    pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
-    pub set_bytes32: unsafe extern "C" fn(
-        id: usize,
-        key: Bytes32,
-        value: Bytes32,
-        evm_cost: *mut u64,
-        error: *mut RustVec,
-    ) -> GoApiStatus,
-    pub contract_call: unsafe extern "C" fn(
-        id: usize,
-        contract: Bytes20,
-        calldata: *mut RustVec,
-        gas: *mut u64,
-        value: Bytes32,
-        return_data_len: *mut u32,
-    ) -> GoApiStatus,
-    pub delegate_call: unsafe extern "C" fn(
-        id: usize,
-        contract: Bytes20,
-        calldata: *mut RustVec,
-        gas: *mut u64,
-        return_data_len: *mut u32,
-    ) -> GoApiStatus,
-    pub static_call: unsafe extern "C" fn(
-        id: usize,
-        contract: Bytes20,
-        calldata: *mut RustVec,
-        gas: *mut u64,
-        return_data_len: *mut u32,
-    ) -> GoApiStatus,
-    pub create1: unsafe extern "C" fn(
-        id: usize,
-        code: *mut RustVec,
-        endowment: Bytes32,
-        gas: *mut u64,
-        return_data_len: *mut u32,
-    ) -> GoApiStatus,
-    pub create2: unsafe extern "C" fn(
-        id: usize,
-        code: *mut RustVec,
-        endowment: Bytes32,
-        salt: Bytes32,
-        gas: *mut u64,
-        return_data_len: *mut u32,
-    ) -> GoApiStatus,
-    pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
-    pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: usize) -> GoApiStatus,
-    pub id: usize,
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
@@ -179,13 +112,11 @@ pub unsafe extern "C" fn stylus_call(
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, compile_config) };
+    let instance = unsafe { NativeInstance::deserialize(module, compile_config, go_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
-    instance.set_go_api(go_api);
-    instance.set_evm_data(evm_data);
 
     let status = match instance.run_main(&calldata, stylus_config, ink) {
         Err(err) | Ok(UserOutcome::Failure(err)) => {

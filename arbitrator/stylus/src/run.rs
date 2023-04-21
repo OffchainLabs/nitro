@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::api::EvmApi;
 use crate::{env::Escape, native::NativeInstance};
 use eyre::{ensure, eyre, Result};
 use prover::machine::Machine;
@@ -64,7 +65,7 @@ impl RunProgram for Machine {
     }
 }
 
-impl RunProgram for NativeInstance {
+impl<E: EvmApi> RunProgram for NativeInstance<E> {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
         use UserOutcome::*;
 

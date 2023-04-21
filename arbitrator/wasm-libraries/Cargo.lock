@@ -26,6 +26,7 @@ dependencies = [
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "sha3 0.10.6",
  "siphasher",
  "wasmparser",
@@ -228,6 +229,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7618812407e9402654622dd402b0a89dff9ba93badd6540781526117b92aab7e"
 dependencies = [
  "darling_core 0.14.2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
  "quote",
  "syn",
 ]
@@ -657,6 +669,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "bincode",
+ "derivative",
  "digest 0.9.0",
  "eyre",
  "fnv",
@@ -1012,6 +1025,7 @@ dependencies = [
  "eyre",
  "fnv",
  "go-abi",
+ "go-stub",
  "hex",
  "prover",
 ]

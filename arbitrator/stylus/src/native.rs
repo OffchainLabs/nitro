@@ -1,22 +1,20 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::env::EvmData;
 use crate::{
+    api::EvmApi,
     env::{MeterData, WasmEnv},
-    host, GoApi, GoApiStatus, RustVec,
+    host,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
-use prover::{
-    programs::{
-        counter::{Counter, CountingMachine, OP_OFFSETS},
-        depth::STYLUS_STACK_LEFT,
-        meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
-        prelude::*,
-        start::STYLUS_START,
-    },
-    utils::Bytes20,
+use prover::programs::{
+    config::EvmData,
+    counter::{Counter, CountingMachine, OP_OFFSETS},
+    depth::STYLUS_STACK_LEFT,
+    meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
+    prelude::*,
+    start::STYLUS_START,
 };
 use std::{
     collections::BTreeMap,
@@ -28,14 +26,14 @@ use wasmer::{
     Value, WasmTypeList,
 };
 
-pub struct NativeInstance {
+pub struct NativeInstance<E: EvmApi> {
     pub instance: Instance,
     pub store: Store,
-    pub env: FunctionEnv<WasmEnv>,
+    pub env: FunctionEnv<WasmEnv<E>>,
 }
 
-impl NativeInstance {
-    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv>) -> Self {
+impl<E: EvmApi> NativeInstance<E> {
+    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv<E>>) -> Self {
         let mut native = Self {
             instance,
             store,
@@ -47,11 +45,11 @@ impl NativeInstance {
         native
     }
 
-    pub fn env(&self) -> &WasmEnv {
+    pub fn env(&self) -> &WasmEnv<E> {
         self.env.as_ref(&self.store)
     }
 
-    pub fn env_mut(&mut self) -> &mut WasmEnv {
+    pub fn env_mut(&mut self) -> &mut WasmEnv<E> {
         self.env.as_mut(&mut self.store)
     }
 
@@ -69,22 +67,33 @@ impl NativeInstance {
 
     /// Creates a `NativeInstance` from a serialized module
     /// Safety: module bytes must represent a module
-    pub unsafe fn deserialize(module: &[u8], compile: CompileConfig) -> Result<Self> {
-        let env = WasmEnv::new(compile, None);
+    pub unsafe fn deserialize(
+        module: &[u8],
+        compile: CompileConfig,
+        evm: E,
+        evm_data: EvmData,
+    ) -> Result<Self> {
+        let env = WasmEnv::new(compile, None, evm, evm_data);
         let store = env.compile.store();
         let module = Module::deserialize(&store, module)?;
         Self::from_module(module, store, env)
     }
 
-    pub fn from_path(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
-        let env = WasmEnv::new(compile.clone(), Some(config));
+    pub fn from_path(
+        path: &str,
+        evm: E,
+        evm_data: EvmData,
+        compile: &CompileConfig,
+        config: StylusConfig,
+    ) -> Result<Self> {
+        let env = WasmEnv::new(compile.clone(), Some(config), evm, evm_data);
         let store = env.compile.store();
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;
         Self::from_module(module, store, env)
     }
 
-    fn from_module(module: Module, mut store: Store, env: WasmEnv) -> Result<Self> {
+    fn from_module(module: Module, mut store: Store, env: WasmEnv<E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
@@ -111,14 +120,14 @@ impl NativeInstance {
         };
         if debug_funcs {
             imports.define("console", "log_txt", func!(host::console_log_text));
-            imports.define("console", "log_i32", func!(host::console_log::<u32>));
-            imports.define("console", "log_i64", func!(host::console_log::<u64>));
-            imports.define("console", "log_f32", func!(host::console_log::<f32>));
-            imports.define("console", "log_f64", func!(host::console_log::<f64>));
-            imports.define("console", "tee_i32", func!(host::console_tee::<u32>));
-            imports.define("console", "tee_i64", func!(host::console_tee::<u64>));
-            imports.define("console", "tee_f32", func!(host::console_tee::<f32>));
-            imports.define("console", "tee_f64", func!(host::console_tee::<f64>));
+            imports.define("console", "log_i32", func!(host::console_log::<E, u32>));
+            imports.define("console", "log_i64", func!(host::console_log::<E, u64>));
+            imports.define("console", "log_f32", func!(host::console_log::<E, f32>));
+            imports.define("console", "log_f64", func!(host::console_log::<E, f64>));
+            imports.define("console", "tee_i32", func!(host::console_tee::<E, u32>));
+            imports.define("console", "tee_i64", func!(host::console_tee::<E, u64>));
+            imports.define("console", "tee_f32", func!(host::console_tee::<E, f32>));
+            imports.define("console", "tee_f64", func!(host::console_tee::<E, f64>));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
         let exports = &instance.exports;
@@ -164,154 +173,6 @@ impl NativeInstance {
         global.set(store, value.into()).map_err(ErrReport::msg)
     }
 
-    pub fn set_go_api(&mut self, api: GoApi) {
-        let env = self.env.as_mut(&mut self.store);
-        use GoApiStatus::*;
-
-        macro_rules! ptr {
-            ($expr:expr) => {
-                &mut $expr as *mut _
-            };
-        }
-        macro_rules! error {
-            ($data:expr) => {
-                ErrReport::msg(String::from_utf8_lossy(&$data).to_string())
-            };
-        }
-
-        let get_bytes32 = api.get_bytes32;
-        let set_bytes32 = api.set_bytes32;
-        let contract_call = api.contract_call;
-        let delegate_call = api.delegate_call;
-        let static_call = api.static_call;
-        let create1 = api.create1;
-        let create2 = api.create2;
-        let get_return_data = api.get_return_data;
-        let emit_log = api.emit_log;
-        let id = api.id;
-
-        let get_bytes32 = Box::new(move |key| unsafe {
-            let mut cost = 0;
-            let value = get_bytes32(id, key, ptr!(cost));
-            (value, cost)
-        });
-        let set_bytes32 = Box::new(move |key, value| unsafe {
-            let mut error = RustVec::new(vec![]);
-            let mut cost = 0;
-            let api_status = set_bytes32(id, key, value, ptr!(cost), ptr!(error));
-            let error = error.into_vec(); // done here to always drop
-            match api_status {
-                Success => Ok(cost),
-                Failure => Err(error!(error)),
-            }
-        });
-        let contract_call = Box::new(move |contract, calldata, gas, value| unsafe {
-            let mut call_gas = gas; // becomes the call's cost
-            let mut return_data_len = 0;
-            let api_status = contract_call(
-                id,
-                contract,
-                ptr!(RustVec::new(calldata)),
-                ptr!(call_gas),
-                value,
-                ptr!(return_data_len),
-            );
-            (return_data_len, call_gas, api_status.into())
-        });
-        let delegate_call = Box::new(move |contract, calldata, gas| unsafe {
-            let mut call_gas = gas; // becomes the call's cost
-            let mut return_data_len = 0;
-            let api_status = delegate_call(
-                id,
-                contract,
-                ptr!(RustVec::new(calldata)),
-                ptr!(call_gas),
-                ptr!(return_data_len),
-            );
-            (return_data_len, call_gas, api_status.into())
-        });
-        let static_call = Box::new(move |contract, calldata, gas| unsafe {
-            let mut call_gas = gas; // becomes the call's cost
-            let mut return_data_len = 0;
-            let api_status = static_call(
-                id,
-                contract,
-                ptr!(RustVec::new(calldata)),
-                ptr!(call_gas),
-                ptr!(return_data_len),
-            );
-            (return_data_len, call_gas, api_status.into())
-        });
-        let create1 = Box::new(move |code, endowment, gas| unsafe {
-            let mut call_gas = gas; // becomes the call's cost
-            let mut return_data_len = 0;
-            let mut code = RustVec::new(code);
-            let api_status = create1(
-                id,
-                ptr!(code),
-                endowment,
-                ptr!(call_gas),
-                ptr!(return_data_len),
-            );
-            let output = code.into_vec();
-            let result = match api_status {
-                Success => Ok(Bytes20::try_from(output).unwrap()),
-                Failure => Err(error!(output)),
-            };
-            (result, return_data_len, call_gas)
-        });
-        let create2 = Box::new(move |code, endowment, salt, gas| unsafe {
-            let mut call_gas = gas; // becomes the call's cost
-            let mut return_data_len = 0;
-            let mut code = RustVec::new(code);
-            let api_status = create2(
-                id,
-                ptr!(code),
-                endowment,
-                salt,
-                ptr!(call_gas),
-                ptr!(return_data_len),
-            );
-            let output = code.into_vec();
-            let result = match api_status {
-                Success => Ok(Bytes20::try_from(output).unwrap()),
-                Failure => Err(error!(output)),
-            };
-            (result, return_data_len, call_gas)
-        });
-        let get_return_data = Box::new(move || unsafe {
-            let mut data = RustVec::new(vec![]);
-            get_return_data(id, ptr!(data));
-            data.into_vec()
-        });
-        let emit_log = Box::new(move |data, topics| unsafe {
-            let mut data = RustVec::new(data);
-            let api_status = emit_log(id, ptr!(data), topics);
-            let error = data.into_vec(); // done here to always drop
-            match api_status {
-                Success => Ok(()),
-                Failure => Err(error!(error)),
-            }
-        });
-
-        env.set_evm_api(
-            get_bytes32,
-            set_bytes32,
-            contract_call,
-            delegate_call,
-            static_call,
-            create1,
-            create2,
-            get_return_data,
-            emit_log,
-        )
-    }
-
-    pub fn set_evm_data(&mut self, evm_data: EvmData) {
-        let env = self.env.as_mut(&mut self.store);
-        env.evm_data = Some(evm_data);
-    }
-
     pub fn call_func<R>(&mut self, func: TypedFunction<(), R>, ink: u64) -> Result<R>
     where
         R: WasmTypeList,
@@ -321,7 +182,7 @@ impl NativeInstance {
     }
 }
 
-impl Deref for NativeInstance {
+impl<E: EvmApi> Deref for NativeInstance<E> {
     type Target = Instance;
 
     fn deref(&self) -> &Self::Target {
@@ -329,13 +190,13 @@ impl Deref for NativeInstance {
     }
 }
 
-impl DerefMut for NativeInstance {
+impl<E: EvmApi> DerefMut for NativeInstance<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.instance
     }
 }
 
-impl MeteredMachine for NativeInstance {
+impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
     fn ink_left(&mut self) -> MachineMeter {
         let status = self.get_global(STYLUS_INK_STATUS).unwrap();
         let mut ink = || self.get_global(STYLUS_INK_LEFT).unwrap();
@@ -352,7 +213,7 @@ impl MeteredMachine for NativeInstance {
     }
 }
 
-impl CountingMachine for NativeInstance {
+impl<E: EvmApi> CountingMachine for NativeInstance<E> {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();
 
@@ -366,7 +227,7 @@ impl CountingMachine for NativeInstance {
     }
 }
 
-impl DepthCheckedMachine for NativeInstance {
+impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
     fn stack_left(&mut self) -> u32 {
         self.get_global(STYLUS_STACK_LEFT).unwrap()
     }
@@ -376,7 +237,7 @@ impl DepthCheckedMachine for NativeInstance {
     }
 }
 
-impl StartlessMachine for NativeInstance {
+impl<E: EvmApi> StartlessMachine for NativeInstance<E> {
     fn get_start(&self) -> Result<TypedFunction<(), ()>> {
         let store = &self.store;
         let exports = &self.instance.exports;

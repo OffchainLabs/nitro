@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hex = "0.4.3"
 sha3 = "0.10.5"
 siphasher = "0.3.10"
 wasmparser = "0.83"
