@@ -1,17 +1,18 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package execution
 
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type TransactionPublisher interface {
-	PublishTransaction(ctx context.Context, tx *types.Transaction) error
+	PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error
 	CheckHealth(ctx context.Context) error
 	Initialize(context.Context) error
 	Start(context.Context) error
@@ -20,32 +21,28 @@ type TransactionPublisher interface {
 }
 
 type ArbInterface struct {
-	txStreamer  *TransactionStreamer
+	exec        *ExecutionEngine
 	txPublisher TransactionPublisher
-	arbNode     *Node
+	arbNode     interface{}
 }
 
-func NewArbInterface(txStreamer *TransactionStreamer, txPublisher TransactionPublisher) (*ArbInterface, error) {
+func NewArbInterface(exec *ExecutionEngine, txPublisher TransactionPublisher) (*ArbInterface, error) {
 	return &ArbInterface{
-		txStreamer:  txStreamer,
+		exec:        exec,
 		txPublisher: txPublisher,
 	}, nil
 }
 
-func (a *ArbInterface) Initialize(n *Node) {
-	a.arbNode = n
+func (a *ArbInterface) Initialize(arbnode interface{}) {
+	a.arbNode = arbnode
 }
 
-func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
-	return a.txPublisher.PublishTransaction(ctx, tx)
-}
-
-func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
-	return a.txStreamer
+func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return a.txPublisher.PublishTransaction(ctx, tx, options)
 }
 
 func (a *ArbInterface) BlockChain() *core.BlockChain {
-	return a.txStreamer.bc
+	return a.exec.bc
 }
 
 func (a *ArbInterface) ArbNode() interface{} {
