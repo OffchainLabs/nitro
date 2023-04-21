@@ -187,7 +187,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
-func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -196,11 +196,19 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	if err != nil {
 		return nil, nil, err
 	}
+	hugeTipIncrease := false
 	if lastTipCap != nil {
 		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTipCap, minRbfIncrease))
+		// hugeTipIncrease is true if the new tip cap is at least 10x the last tip cap
+		hugeTipIncrease = arbmath.BigDiv(newTipCap, lastTipCap).Cmp(big.NewInt(10)) >= 0
 	}
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
 	newFeeCap.Add(newFeeCap, newTipCap)
+	if lastFeeCap != nil && hugeTipIncrease {
+		log.Warn("data poster recommending huge tip increase", "lastTipCap", lastTipCap, "newTipCap", newTipCap)
+		// If we're trying to drastically increase the tip, make sure we increase the fee cap by minRbfIncrease.
+		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastFeeCap, minRbfIncrease))
+	}
 
 	elapsed := time.Since(dataCreatedAt)
 	config := p.config()
@@ -248,7 +256,7 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, gasLimit, nil, dataCreatedAt, 0)
+	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, gasLimit, nil, nil, dataCreatedAt, 0)
 	if err != nil {
 		return err
 	}
@@ -297,7 +305,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 			log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 			err = nil
 		} else {
-			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap())
+			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap())
 			return err
 		}
 	} else {
@@ -310,7 +318,7 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta], backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
@@ -318,6 +326,14 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.GasFeeCap, minRbfIncrease)
 	newTx := *prevTx
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
+		log.Debug(
+			"no need to replace by fee transaction",
+			"nonce", prevTx.Data.Nonce,
+			"lastFeeCap", prevTx.Data.GasFeeCap,
+			"recommendedFeeCap", newFeeCap,
+			"lastTipCap", prevTx.Data.GasTipCap,
+			"recommendedTipCap", newTipCap,
+		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
 		return p.sendTx(ctx, prevTx, &newTx)
 	}
@@ -387,16 +403,16 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 		delete(p.errorCount, nonce)
 		return
 	}
+	logLevel := log.Error
 	if errors.Is(err, ErrStorageRace) {
 		p.errorCount[nonce]++
 		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
-			log.Debug(msg, "err", err, "nonce", nonce)
-			return
+			logLevel = log.Debug
 		}
 	} else {
 		delete(p.errorCount, nonce)
 	}
-	log.Error(msg, "err", err, "nonce", nonce)
+	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.Data.GasFeeCap, "tipCap", tx.Data.GasTipCap)
 }
 
 const minWait = time.Second * 10
