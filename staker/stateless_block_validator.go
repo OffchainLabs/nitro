@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -20,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -282,21 +282,14 @@ func NewStatelessBlockValidator(
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
+	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
 		return nil, err
 	}
-	var jwt []byte
-	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
-		if err != nil {
-			return nil, err
-		}
-		jwt = jwtHash.Bytes()
-	}
-	valClient := server_api.NewValidationClient(config.URL, jwt)
-	execClient := server_api.NewExecutionClient(config.URL, jwt)
+	valClient := server_api.NewValidationClient(&config.ValidationServer, stack)
+	execClient := server_api.NewExecutionClient(&config.ValidationServer, stack)
 	validator := &StatelessBlockValidator{
 		config:             config,
 		execSpawner:        execClient,

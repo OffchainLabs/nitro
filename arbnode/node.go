@@ -828,7 +828,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.URL != "" {
+	if config.BlockValidator.ValidationServer.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
@@ -838,6 +838,7 @@ func createNodeImpl(
 			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
 			&configFetcher.Get().BlockValidator,
+			stack,
 		)
 	} else {
 		err = errors.New("no validator url specified")

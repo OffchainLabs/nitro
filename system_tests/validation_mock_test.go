@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -178,7 +179,10 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	validationDefault := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(validationDefault.WSEndpoint(), nil)
+	rpcConfig := rpcclient.ClientConfig{
+		URL: "auto",
+	}
+	client := server_api.NewExecutionClient(&rpcConfig, validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -245,11 +249,13 @@ func TestExecutionKeepAlive(t *testing.T) {
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
 	shortTimeoutConfig.ExecRunTimeout = time.Second
 	validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
-
-	clientDefault := server_api.NewExecutionClient(validationDefault.WSEndpoint(), nil)
+	rpcConfig := rpcclient.ClientConfig{
+		URL: "auto",
+	}
+	clientDefault := server_api.NewExecutionClient(&rpcConfig, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	clientShortTO := server_api.NewExecutionClient(validationShortTO.WSEndpoint(), nil)
+	clientShortTO := server_api.NewExecutionClient(&rpcConfig, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 

@@ -280,15 +280,15 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.JWTSecret = ""
+	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
 }
 
 func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.URL != "" {
+	if nodeConfig.BlockValidator.ValidationServer.URL != "auto" {
 		return
 	}
 	conf := valnode.TestValidationConfig

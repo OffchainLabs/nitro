@@ -269,8 +269,8 @@ func mainImpl() int {
 		stackConf.JWTSecret = fileName
 	}
 
-	if nodeConfig.Node.BlockValidator.JWTSecret == "self" {
-		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
+	if nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret == "self" {
+		nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret = stackConf.JWTSecret
 	}
 
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
