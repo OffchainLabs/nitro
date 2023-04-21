@@ -212,7 +212,7 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	if lastTipCap != nil {
 		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTipCap, minRbfIncrease))
 		// hugeTipIncrease is true if the new tip cap is at least 10x the last tip cap
-		hugeTipIncrease = arbmath.BigDiv(newTipCap, lastTipCap).Cmp(big.NewInt(10)) >= 0
+		hugeTipIncrease = lastTipCap.Sign() == 0 || arbmath.BigDiv(newTipCap, lastTipCap).Cmp(big.NewInt(10)) >= 0
 	}
 
 	newFeeCap.Add(newFeeCap, newTipCap)
