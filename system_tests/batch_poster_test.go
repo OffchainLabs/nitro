@@ -6,10 +6,12 @@ package arbtest
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
@@ -18,11 +20,22 @@ import (
 )
 
 func TestBatchPosterParallel(t *testing.T) {
+	testBatchPosterParallel(t, false)
+}
+
+func TestRedisBatchPosterParallel(t *testing.T) {
+	testBatchPosterParallel(t, true)
+}
+
+func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	redisUrl := redisutil.GetTestRedisURL(t)
+	var redisUrl string
+	if useRedis {
+		redisUrl = redisutil.CreateTestRedis(ctx, t)
+	}
 	parallelBatchPosters := 1
 	if redisUrl != "" {
 		client, err := redisutil.RedisClientFromURL(redisUrl)
@@ -150,5 +163,48 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	Require(t, err)
 	if receiptA.BlockHash != receiptB.BlockHash {
 		Fail(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
+	}
+}
+
+func TestBatchPosterKeepsUp(t *testing.T) {
+	t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	conf := arbnode.ConfigDefaultL1Test()
+	conf.BatchPoster.CompressionLevel = brotli.BestCompression
+	conf.BatchPoster.MaxBatchPostDelay = time.Hour
+	conf.RPC.RPCTxFeeCap = 1000.
+	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	defer requireClose(t, l1stack)
+	defer nodeA.StopAndWait()
+	l2info.GasPrice = big.NewInt(100e9)
+
+	go func() {
+		data := make([]byte, 90000)
+		_, err := rand.Read(data)
+		Require(t, err)
+		for {
+			gas := l2info.TransferGas + 20000*uint64(len(data))
+			tx := l2info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
+			err = l2clientA.SendTransaction(ctx, tx)
+			Require(t, err)
+			_, err := EnsureTxSucceeded(ctx, l2clientA, tx)
+			Require(t, err)
+		}
+	}()
+
+	start := time.Now()
+	for {
+		time.Sleep(time.Second)
+		batches, err := nodeA.InboxTracker.GetBatchCount()
+		Require(t, err)
+		postedMessages, err := nodeA.InboxTracker.GetBatchMessageCount(batches - 1)
+		Require(t, err)
+		haveMessages, err := nodeA.TxStreamer.GetMessageCount()
+		Require(t, err)
+		duration := time.Since(start)
+		fmt.Printf("batches posted: %v over %v (%.2f batches/second)\n", batches, duration, float64(batches)/(float64(duration)/float64(time.Second)))
+		fmt.Printf("backlog: %v message\n", haveMessages-postedMessages)
 	}
 }

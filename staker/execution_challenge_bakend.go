@@ -23,8 +23,8 @@ func NewExecutionChallengeBackend(executionRun validator.ExecutionRun) (*Executi
 }
 
 func (b *ExecutionChallengeBackend) SetRange(ctx context.Context, start uint64, end uint64) error {
-	b.exec.PrepareRange(start, end)
-	return nil
+	_, err := b.exec.PrepareRange(start, end).Await(ctx)
+	return err
 }
 
 func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error) {

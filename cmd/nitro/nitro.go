@@ -16,6 +16,7 @@ import (
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -45,6 +46,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -251,6 +253,10 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
 		}
+		err = os.MkdirAll(filepath.Dir(fileName), 0755)
+		if err != nil {
+			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
+		}
 		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
 		if errors.Is(err, fs.ErrExist) {
 			log.Info("using existing jwt file", "fileName", fileName)
@@ -380,7 +386,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
 	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
 		// Calling Stop on the blockchain multiple times does nothing
@@ -476,7 +482,7 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), currentNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, currentNode.Execution.Backend.APIBackend(), currentNode.Execution.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}

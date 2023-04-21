@@ -199,7 +199,7 @@ function writeConfigs(argv: any) {
             "batch-poster": {
                 "enable": false,
                 "redis-url": argv.redisUrl,
-                "max-interval": "30s",
+                "max-delay": "30s",
                 "data-poster": {
                     "redis-signer": {
                       "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
