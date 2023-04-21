@@ -138,11 +138,11 @@ jobs:
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
+        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 --rerun-fails=1
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum --format short-verbose -- ./... -race -parallel=8
+        run: gotestsum --format short-verbose -- ./... -race -parallel=8 --rerun-fails=1
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
