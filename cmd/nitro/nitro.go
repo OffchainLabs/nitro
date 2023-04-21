@@ -641,6 +641,8 @@ type RpcResultLogger struct {
 	request interface{}
 }
 
+const maxRequestLogLength int = 2048
+
 func (l RpcResultLogger) OnResult(response interface{}, err error) {
 	if err != nil {
 		logger := log.Info
@@ -648,7 +650,13 @@ func (l RpcResultLogger) OnResult(response interface{}, err error) {
 			logger = log.Trace
 		}
 		// The request might not've been logged if the log level is debug not trace, so we log it again here
-		logger("received error response from L1 RPC", "request", l.request, "response", response, "err", err)
+		request := fmt.Sprintf("%+v", l.request)
+		if len(request) > maxRequestLogLength {
+			prefix := request[:maxRequestLogLength/2]
+			postfix := request[len(request)-maxRequestLogLength/2:]
+			request = fmt.Sprintf("%v...%v", prefix, postfix)
+		}
+		logger("received error response from L1 RPC", "request", request, "response", response, "err", err)
 	} else {
 		// The request was already logged and can be cross-referenced by JSON-RPC id
 		log.Trace("received response from L1 RPC", "response", response)
