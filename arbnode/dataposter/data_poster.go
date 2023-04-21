@@ -51,6 +51,8 @@ type DataPosterConfig struct {
 	MaxQueuedTransactions  uint64                     `koanf:"max-queued-transactions" reload:"hot"`
 	TargetPriceGwei        float64                    `koanf:"target-price-gwei" reload:"hot"`
 	UrgencyGwei            float64                    `koanf:"urgency-gwei" reload:"hot"`
+	MinFeeCapGwei          float64                    `koanf:"min-fee-cap-gwei" reload:"hot"`
+	MinTipCapGwei          float64                    `koanf:"min-tip-cap-gwei" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -62,6 +64,8 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
 	f.Float64(prefix+".target-price-gwei", DefaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", DefaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
+	f.Float64(prefix+".min-fee-cap-gwei", DefaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
+	f.Float64(prefix+".min-tip-cap-gwei", DefaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
@@ -71,6 +75,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
+	MinTipCapGwei:          0.05,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
@@ -80,6 +85,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 64,
+	MinTipCapGwei:          0.05,
 }
 
 // DataPoster must be RLP serializable and deserializable
@@ -188,21 +194,27 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
 func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, backlogOfBatches uint64) (*big.Int, *big.Int, error) {
+	config := p.config()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
+	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
+
 	newTipCap, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(config.MinTipCapGwei*params.GWei))
+
 	hugeTipIncrease := false
 	if lastTipCap != nil {
 		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTipCap, minRbfIncrease))
 		// hugeTipIncrease is true if the new tip cap is at least 10x the last tip cap
 		hugeTipIncrease = arbmath.BigDiv(newTipCap, lastTipCap).Cmp(big.NewInt(10)) >= 0
 	}
-	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
+
 	newFeeCap.Add(newFeeCap, newTipCap)
 	if lastFeeCap != nil && hugeTipIncrease {
 		log.Warn("data poster recommending huge tip increase", "lastTipCap", lastTipCap, "newTipCap", newTipCap)
@@ -211,7 +223,6 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, gasLimit uint64
 	}
 
 	elapsed := time.Since(dataCreatedAt)
-	config := p.config()
 	// MaxFeeCap = (BacklogOfBatches^2 * UrgencyGWei^2 + TargetPriceGWei) * GWei
 	maxFeeCap :=
 		arbmath.FloatToBig(
