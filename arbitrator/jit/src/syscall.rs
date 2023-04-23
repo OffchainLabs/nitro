@@ -8,9 +8,8 @@ use crate::{
 
 use arbutil::{Color, DebugColor};
 use rand::RngCore;
-use wasmer::AsStoreMut;
 
-use std::{collections::BTreeMap, io::Write, result};
+use std::{collections::BTreeMap, io::Write};
 
 const ZERO_ID: u32 = 1;
 const NULL_ID: u32 = 2;
@@ -51,11 +50,23 @@ pub struct JsRuntimeState {
     pub pool: DynamicObjectPool,
     /// The event Go will execute next
     pub pending_event: Option<PendingEvent>,
+    /// The stylus return result
+    pub stylus_result: Option<JsValue>,
 }
 
 impl JsRuntimeState {
-    pub fn set_pending_event(&mut self, id: JsValue, this: JsValue, args: Vec<GoValue>) {
+    pub fn set_pending_event(&mut self, id: u32, this: JsValue, args: Vec<GoValue>) {
+        let id = JsValue::Number(id as f64);
         self.pending_event = Some(PendingEvent { id, this, args });
+    }
+
+    fn free(&mut self, value: GoValue) {
+        use GoValue::*;
+        match value {
+            Object(id) => drop(self.pool.remove(id)),
+            Undefined | Null | Number(_) => {}
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -96,7 +107,7 @@ impl DynamicObjectPool {
 pub enum DynamicObject {
     Uint8Array(Vec<u8>),
     GoString(Vec<u8>),
-    FunctionWrapper(JsValue),
+    FunctionWrapper(u32), // the func_id
     PendingEvent(PendingEvent),
     ValueArray(Vec<GoValue>),
     Date,
@@ -183,12 +194,20 @@ impl GoValue {
         assert!(ty != 0 || id != 0, "GoValue must not be empty");
         f64::NAN.to_bits() | (u64::from(ty) << 32) | u64::from(id)
     }
+
+    pub fn assume_id(self) -> Result<u32, Escape> {
+        match self {
+            GoValue::Object(id) => Ok(id),
+            x => Escape::failure(format!("not an id: {}", x.debug_red())),
+        }
+    }
 }
 
 fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
     use DynamicObject::*;
+    let js = &mut env.js_state;
 
-    if let Some(source) = env.js_state.pool.get(source) {
+    if let Some(source) = js.pool.get(source) {
         return match (source, field) {
             (PendingEvent(event), b"id") => event.id.assume_num_or_object(),
             (PendingEvent(event), b"this") => event.this.assume_num_or_object(),
@@ -206,7 +225,6 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
     }
 
     match (source, field) {
-        (GLOBAL_ID, b"stylus") => GoValue::Object(STYLUS_ID),
         (GLOBAL_ID, b"Object") => GoValue::Function(OBJECT_ID),
         (GLOBAL_ID, b"Array") => GoValue::Function(ARRAY_ID),
         (GLOBAL_ID, b"process") => GoValue::Object(PROCESS_ID),
@@ -221,12 +239,17 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
             FS_CONSTANTS_ID,
             b"O_WRONLY" | b"O_RDWR" | b"O_CREAT" | b"O_TRUNC" | b"O_APPEND" | b"O_EXCL",
         ) => GoValue::Number(-1.),
-        (GO_ID, b"_pendingEvent") => match &mut env.js_state.pending_event {
+        (GO_ID, b"_pendingEvent") => match &mut js.pending_event {
             Some(event) => {
                 let event = PendingEvent(event.clone());
-                let id = env.js_state.pool.insert(event);
+                let id = js.pool.insert(event);
                 GoValue::Object(id)
             }
+            None => GoValue::Null,
+        },
+        (GLOBAL_ID, b"stylus") => GoValue::Object(STYLUS_ID),
+        (STYLUS_ID, b"result") => match &mut js.stylus_result {
+            Some(value) => value.assume_num_or_object(), // TODO: reference count
             None => GoValue::Null,
         },
         _ => {
@@ -284,6 +307,14 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
         env.js_state.pending_event = None;
         return;
     }
+    match (source, field.as_slice()) {
+        (Ref(STYLUS_ID), b"result") => {
+            env.js_state.stylus_result = Some(new_value);
+            return;
+        }
+        _ => {}
+    }
+
     if let Ref(id) = source {
         let source = env.js_state.pool.get_mut(id);
         if let Some(DynamicObject::PendingEvent(_)) = source {
@@ -292,7 +323,7 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
             }
         }
     }
-    let field = String::from_utf8_lossy(&field);
+    let field = String::from_utf8_lossy(&field).red();
     eprintln!("Go attempted to set unsupported value {source:?} field {field} to {new_value:?}");
 }
 
@@ -312,10 +343,7 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
         JsValue::Ref(x) => env.js_state.pool.get(x),
         val => fail!("Go attempted to index into {val:?}"),
     };
-    let index = match u32::try_from(sp.read_u64()) {
-        Ok(index) => index as usize,
-        Err(err) => fail!("{err:?}"),
-    };
+    let index = sp.read_go_ptr() as usize;
     let value = match source {
         Some(DynamicObject::Uint8Array(x)) => x.get(index).map(|x| GoValue::Number(*x as f64)),
         Some(DynamicObject::ValueArray(x)) => x.get(index).cloned(),
@@ -331,15 +359,30 @@ pub fn js_value_index(mut env: WasmEnvMut, sp: u32) {
 pub fn js_value_set_index(mut env: WasmEnvMut, sp: u32) {
     let (mut sp, env) = GoStack::new(sp, &mut env);
 
-    /*let source = match JsValue::new(sp.read_u64()) {
-            JsValue::Ref(x) => env.js_state.pool.get(x),
-            val => fail!("Go attempted to index into {val:?}"),
-        };
-        let index = match u32::try_from(sp.read_u64()) {
-            Ok(index) => index as usize,
-            Err(err) => fail!("{err:?}"),
-    };*/
-    todo!()
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
+            return
+        }};
+    }
+
+    let source = match JsValue::new(sp.read_u64()) {
+        JsValue::Ref(x) => env.js_state.pool.get_mut(x),
+        val => fail!("Go attempted to index into {val:?}"),
+    };
+    let index = sp.read_go_ptr() as usize;
+    let value = JsValue::new(sp.read_u64()).assume_num_or_object();
+
+    match source {
+        Some(DynamicObject::ValueArray(vec)) => {
+            if index >= vec.len() {
+                vec.resize(index + 1, GoValue::Undefined);
+            }
+            let prior = std::mem::replace(&mut vec[index], value);
+            env.js_state.free(prior);
+        }
+        _ => fail!("Go attempted to index into unsupported value {source:?} {index}"),
+    }
 }
 
 /// go side: λ(v value, method string, args []value) (value, bool)
@@ -366,10 +409,10 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     let value = match (object, method_name.as_slice()) {
         (Ref(GO_ID), b"_makeFuncWrapper") => {
-            let Some(arg) = args.get(0) else {
+            let Some(JsValue::Number(func_id)) = args.get(0) else {
                 fail!("Go trying to call Go._makeFuncWrapper with bad args {args:?}")
             };
-            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*arg));
+            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*func_id as u32));
             println!("Wrapping func object {}", ref_id.pink());
             GoValue::Function(ref_id)
         }

@@ -3,7 +3,6 @@
 
 use crate::{
     api::EvmApi,
-    env::EvmData,
     native::{self, NativeInstance},
     run::RunProgram,
 };
@@ -11,7 +10,7 @@ use arbutil::Color;
 use eyre::Result;
 use parking_lot::Mutex;
 use prover::{
-    programs::prelude::*,
+    programs::{config::EvmData, prelude::*},
     utils::{Bytes20, Bytes32},
 };
 use std::{collections::HashMap, sync::Arc};

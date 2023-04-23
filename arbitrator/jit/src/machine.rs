@@ -179,7 +179,7 @@ impl Escape {
         Err(Self::HostIO(message.as_ref().to_string()))
     }
 
-    pub fn failure<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+    pub fn failure<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::Failure(message.as_ref().to_string()))
     }
 }

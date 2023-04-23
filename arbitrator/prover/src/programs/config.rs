@@ -17,7 +17,7 @@ use {
         meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
-    wasmer::{CompilerConfig, Store},
+    wasmer::{Cranelift, CraneliftOptLevel, Store},
     wasmer_compiler_singlepass::Singlepass,
 };
 
@@ -127,6 +127,8 @@ pub struct CompileDebugParams {
     pub debug_funcs: bool,
     /// Add instrumentation to count the number of times each kind of opcode is executed
     pub count_ops: bool,
+    /// Whether to use the Cranelift compiler
+    pub cranelift: bool,
 }
 
 impl Default for CompilePricingParams {
@@ -174,7 +176,14 @@ impl CompileConfig {
 
     #[cfg(feature = "native")]
     pub fn store(&self) -> Store {
-        let mut compiler = Singlepass::new();
+        let mut compiler: Box<dyn wasmer::CompilerConfig> = match self.debug.cranelift {
+            true => {
+                let mut compiler = Cranelift::new();
+                compiler.opt_level(CraneliftOptLevel::Speed);
+                Box::new(compiler)
+            }
+            false => Box::new(Singlepass::new()),
+        };
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 

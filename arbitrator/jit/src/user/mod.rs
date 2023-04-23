@@ -3,35 +3,21 @@
 
 use crate::{
     gostack::GoStack,
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{Escape, MaybeEscape, WasmEnvMut},
     syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
-    user::evm::{EvmMsg, JitApi},
+    user::evm::{ApiValue, EvmMsg, JitApi},
 };
 use arbutil::{heapify, Color, DebugColor};
-use eyre::{bail, eyre, Result};
-use parking_lot::Mutex;
-use prover::{
-    programs::{
-        config::{EvmData, GoParams},
-        prelude::*,
-    },
-    utils::{Bytes20, Bytes32},
+use eyre::eyre;
+use prover::programs::{
+    config::{EvmData, GoParams},
+    prelude::*,
 };
-use std::{
-    mem,
-    sync::{
-        mpsc::{self, Sender, SyncSender},
-        Arc,
-    },
-    thread,
-    time::Duration,
-};
+use std::{mem, sync::mpsc, thread, time::Duration};
 use stylus::{
     native::{self, NativeInstance},
     run::RunProgram,
-    EvmApi,
 };
-use wasmer::{FunctionEnv, FunctionEnvMut, StoreMut};
 
 mod evm;
 
@@ -127,14 +113,30 @@ pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                 }
                 println!("Ready with objects {}", object_ids.debug_pink());
 
-                let Some(DynamicObject::FunctionWrapper(func)) = js.pool.get(func) else {
+                let Some(DynamicObject::FunctionWrapper(func)) = js.pool.get(func).cloned() else {
                     return Escape::hostio(format!("missing func {}", func.red()))
                 };
 
-                js.set_pending_event(*func, JsValue::Ref(STYLUS_ID), objects);
+                js.set_pending_event(func, JsValue::Ref(STYLUS_ID), objects);
                 unsafe { sp.resume(env, &mut store)? };
 
-                let outs = vec![];
+                let js = &mut env.js_state;
+                let Some(JsValue::Ref(output)) = js.stylus_result.take() else {
+                    return Escape::hostio(format!("no return value for func {}", func.red()))
+                };
+                let Some(DynamicObject::ValueArray(output)) = js.pool.remove(output) else {
+                    return Escape::hostio(format!("bad return value for func {}", func.red()))
+                };
+
+                let mut outs = vec![];
+                for out in output {
+                    let id = out.assume_id()?;
+                    let Some(DynamicObject::Uint8Array(x)) = js.pool.remove(id) else {
+                        return Escape::hostio(format!("bad inner return value for func {}", func.red()))
+                    };
+                    outs.push(ApiValue(x));
+                }
+
                 println!("Resumed with results {}", outs.debug_pink());
                 for id in object_ids {
                     env.js_state.pool.remove(id);

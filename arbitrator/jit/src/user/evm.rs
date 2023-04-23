@@ -1,15 +1,14 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::syscall::{DynamicObject, GoValue, JsValue};
 use arbutil::Color;
-use eyre::{bail, eyre, Result};
+use eyre::{bail, Result};
 use prover::{
     programs::run::UserOutcomeKind,
     utils::{Bytes20, Bytes32},
 };
 use std::{
-    mem,
+    fmt::Debug,
     sync::mpsc::{self, SyncSender},
 };
 use stylus::EvmApi;
@@ -25,7 +24,7 @@ pub(super) enum EvmMsg {
     Done,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct ApiValue(pub Vec<u8>);
 
 #[derive(Debug)]
@@ -33,6 +32,7 @@ enum ApiValueKind {
     U64(u64),
     Bytes32(Bytes32),
     String(String),
+    Nil,
 }
 
 impl ApiValueKind {
@@ -41,6 +41,7 @@ impl ApiValueKind {
             ApiValueKind::U64(_) => 0,
             ApiValueKind::Bytes32(_) => 1,
             ApiValueKind::String(_) => 2,
+            ApiValueKind::Nil => 3,
         }
     }
 }
@@ -53,6 +54,7 @@ impl From<ApiValue> for ApiValueKind {
             0 => ApiValueKind::U64(u64::from_be_bytes(data.try_into().unwrap())),
             1 => ApiValueKind::Bytes32(data.try_into().unwrap()),
             2 => ApiValueKind::String(String::from_utf8(data.to_vec()).unwrap()),
+            3 => ApiValueKind::Nil,
             _ => unreachable!(),
         }
     }
@@ -66,6 +68,7 @@ impl From<ApiValueKind> for ApiValue {
             U64(x) => x.to_be_bytes().to_vec(),
             Bytes32(x) => x.0.as_ref().to_vec(),
             String(x) => x.as_bytes().to_vec(),
+            Nil => vec![],
         });
         Self(data)
     }
@@ -100,13 +103,6 @@ impl ApiValueKind {
     fn assert_bytes32(self) -> Bytes32 {
         match self {
             ApiValueKind::Bytes32(value) => value,
-            x => panic!("wrong type {x:?}"),
-        }
-    }
-
-    fn assert_string(self) -> String {
-        match self {
-            ApiValueKind::String(value) => value,
             x => panic!("wrong type {x:?}"),
         }
     }
@@ -161,47 +157,47 @@ impl EvmApi for JitApi {
 
     fn contract_call(
         &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
-        value: Bytes32,
+        _contract: Bytes20,
+        _input: Vec<u8>,
+        _gas: u64,
+        _value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!()
     }
 
     fn delegate_call(
         &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
+        _contract: Bytes20,
+        _input: Vec<u8>,
+        _gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!()
     }
 
     fn static_call(
         &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
+        _contract: Bytes20,
+        _input: Vec<u8>,
+        _gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!()
     }
 
     fn create1(
         &mut self,
-        code: Vec<u8>,
-        endowment: Bytes32,
-        gas: u64,
+        _code: Vec<u8>,
+        _endowment: Bytes32,
+        _gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
         todo!()
     }
 
     fn create2(
         &mut self,
-        code: Vec<u8>,
-        endowment: Bytes32,
-        salt: Bytes32,
-        gas: u64,
+        _code: Vec<u8>,
+        _endowment: Bytes32,
+        _salt: Bytes32,
+        _gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
         todo!()
     }
@@ -210,7 +206,7 @@ impl EvmApi for JitApi {
         todo!()
     }
 
-    fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> Result<()> {
+    fn emit_log(&mut self, _data: Vec<u8>, _topics: usize) -> Result<()> {
         todo!()
     }
 }

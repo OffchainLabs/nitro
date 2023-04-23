@@ -2,17 +2,13 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    api::EvmApi,
-    env::{EvmData, WasmEnv},
-    native::NativeInstance,
-    run::RunProgram,
-    test::api::TestEvmApi,
+    api::EvmApi, env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi,
 };
 use arbutil::Color;
 use eyre::{bail, Result};
 use prover::{
     machine::GlobalState,
-    programs::{counter::CountingMachine, prelude::*},
+    programs::{config::EvmData, counter::CountingMachine, prelude::*},
     utils::{Bytes20, Bytes32},
     Machine,
 };

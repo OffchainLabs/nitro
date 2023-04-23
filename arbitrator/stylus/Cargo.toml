@@ -21,6 +21,9 @@ fnv = "1.0.7"
 sha3 = "0.10.5"
 hex = "0.4.3"
 
+[dev-dependencies]
+p256 = { version = "0.13.2", default_features = false, features = ["ecdsa"] }
+
 [features]
 default = ["singlepass_rayon"]
 llvm = ["dep:wasmer-compiler-llvm"]

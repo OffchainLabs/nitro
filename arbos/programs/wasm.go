@@ -103,6 +103,7 @@ func (m *rustMachine) call(
 ) ([]byte, error) {
 	status, output := callUserWasmRustImpl(m, calldata, params.encode(), api.funcs, evmData.encode(), gas, root)
 	result := output.intoSlice()
+	println("STATUS", status, common.Bytes2Hex(result))
 	return status.output(result)
 }
 

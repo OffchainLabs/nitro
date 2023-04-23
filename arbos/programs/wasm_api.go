@@ -23,51 +23,77 @@ func wrapGoApi(id usize) (*apiWrapper, usize) {
 	println("Wrap", id)
 
 	closures := getApi(id)
+	global := js.Global()
+	uint8Array := global.Get("Uint8Array")
 
-	toAny := func(data []byte) []interface{} {
-		cast := []interface{}{}
-		for _, b := range data {
-			cast = append(cast, b)
+	assert := func(cond bool) {
+		if !cond {
+			panic("assertion failed")
 		}
-		return cast
+	}
+
+	const (
+		preU64 = iota
+		preBytes32
+		preString
+		preNil
+	)
+
+	jsHash := func(value js.Value) common.Hash {
+		hash := common.Hash{}
+		assert(value.Index(0).Int() == preBytes32)
+		for i := 0; i < 32; i++ {
+			hash[i] = byte(value.Index(i + 1).Int())
+		}
+		return hash
+	}
+
+	toJs := func(prefix u8, data []byte) js.Value {
+		value := append([]byte{prefix}, data...)
+		array := uint8Array.New(len(value))
+		js.CopyBytesToJS(array, value)
+		return array
 	}
 	array := func(results ...any) js.Value {
 		array := make([]interface{}, 0)
-		for _, value := range results {
-			switch value := value.(type) {
-			case common.Hash:
-				array = append(array, toAny(value[:]))
+		for _, result := range results {
+			var value js.Value
+			switch result := result.(type) {
 			case uint64:
-				array = append(array, toAny(arbmath.UintToBytes(value)))
+				value = toJs(preU64, arbmath.UintToBytes(result))
+			case common.Hash:
+				value = toJs(preBytes32, result[:])
 			case error:
-				if value == nil {
-					array = append(array, nil)
+				if result == nil {
+					value = toJs(preNil, []byte{})
 				} else {
-					array = append(array, toAny([]byte(value.Error())))
+					value = toJs(preString, []byte(result.Error()))
 				}
 			case nil:
-				array = append(array, nil)
+				value = toJs(preNil, []byte{})
 			default:
 				panic("Unable to coerce value")
 			}
+			array = append(array, value)
 		}
 		return js.ValueOf(array)
 	}
 
 	getBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		colors.PrintPink("Go: getBytes32 with ", len(args), " args ", args)
 		key := jsHash(args[0])
 		value, cost := closures.getBytes32(key)
 		stylus.Set("result", array(value, cost))
 		return nil
 	})
 	setBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		println("Go: setBytes32 with ", len(args), " args ", args)
 		key := jsHash(args[0])
 		value := jsHash(args[1])
 		cost, err := closures.setBytes32(key, value)
-		stylus.Set("result", array(cost, err))
-		println("Go: done with setBytes32!")
+		if err != nil {
+			stylus.Set("result", array(err))
+		} else {
+			stylus.Set("result", array(cost))
+		}
 		return nil
 	})
 
@@ -89,12 +115,4 @@ func (api *apiWrapper) drop() {
 	println("wasm_api: Dropping Funcs")
 	api.getBytes32.Release()
 	api.setBytes32.Release()
-}
-
-func jsHash(value js.Value) common.Hash {
-	hash := common.Hash{}
-	for i := 0; i < 32; i++ {
-		hash[i] = byte(value.Index(i).Int())
-	}
-	return hash
 }

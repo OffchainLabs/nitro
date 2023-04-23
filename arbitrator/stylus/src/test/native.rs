@@ -13,8 +13,12 @@ use crate::{
         run_machine, run_native, test_compile_config, test_configs, TestInstance,
     },
 };
-use arbutil::{crypto, Color};
+use arbutil::{crypto, format, Color};
 use eyre::{bail, Result};
+use p256::ecdsa::{
+    signature::{Signer, Verifier},
+    Signature, SigningKey, VerifyingKey,
+};
 use prover::{
     binary,
     programs::{
@@ -26,7 +30,7 @@ use prover::{
     utils::{Bytes20, Bytes32},
     Machine,
 };
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 use wasmer::wasmparser::Operator;
 use wasmer::{CompilerConfig, ExportIndex, Imports, MemoryType, Pages, Store};
 use wasmer_compiler_singlepass::Singlepass;
@@ -279,7 +283,9 @@ fn test_rust() -> Result<()> {
     args.extend(preimage);
 
     let mut native = TestInstance::new_linked(filename, &compile, config)?;
+    let start = Instant::now();
     let output = run_native(&mut native, &args, ink)?;
+    println!("Exec {}", format::time(start.elapsed()));
     assert_eq!(hex::encode(output), hash);
 
     /*let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
@@ -318,6 +324,37 @@ fn test_c() -> Result<()> {
     assert_eq!(hex::encode(output), args_string);
 
     check_instrumentation(native, machine)*/
+    Ok(())
+}
+
+#[test]
+fn test_secp256r1() -> Result<()> {
+    // in secp256r1.c
+    //     -
+
+    let filename = "tests/p256/p256.wasm";
+    let (mut compile, config, ink) = test_configs();
+    compile.debug.count_ops = false;
+    compile.debug.cranelift = true;
+
+    let x = hex::decode("5616ab0df85ac89cc853b84e53cab535224a7dbc39270276dda800853ee8ae9b")?;
+    let y = hex::decode("68b95359704f87e023424d5d842f0821d88ce01fb6a81a6a1c878a81130c6168")?;
+    let r = hex::decode("6c98b6809f6e2c7395c6c9f18a302821c5f60369d3abd192e9e5c4f607d518d3")?;
+    let s = hex::decode("4a9d74a0f44c61031330a7e3f27908f5c589fe6427db7c3f3f7409559e500c3c")?;
+
+    let mut args = vec![0x04];
+    args.extend(x);
+    args.extend(y);
+    args.extend(r);
+    args.extend(s);
+    args.extend(b"hi\n"); // message
+
+    let mut native = TestInstance::new_linked(filename, &compile, config)?;
+
+    let start = Instant::now();
+    run_native(&mut native, &args, ink)?;
+    println!("Exec {}", format::time(start.elapsed()));
+
     Ok(())
 }
 
