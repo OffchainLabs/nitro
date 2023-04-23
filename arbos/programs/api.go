@@ -6,8 +6,6 @@ package programs
 import (
 	"errors"
 	"math/big"
-	"sync"
-	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,9 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
-
-var apiClosures sync.Map
-var apiIds uintptr // atomic
 
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
@@ -47,7 +42,7 @@ type create2Type func(
 type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics int) error
 
-type apiClosure struct {
+type goClosures struct {
 	getBytes32    getBytes32Type
 	setBytes32    setBytes32Type
 	contractCall  contractCallType
@@ -59,11 +54,11 @@ type apiClosure struct {
 	emitLog       emitLogType
 }
 
-func newApi(
+func newApiClosures(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
-) usize {
+) *goClosures {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
 	readOnly := interpreter.ReadOnly()
@@ -253,8 +248,7 @@ func newApi(
 		return nil
 	}
 
-	id := atomic.AddUintptr(&apiIds, 1)
-	apiClosures.Store(id, apiClosure{
+	return &goClosures{
 		getBytes32:    getBytes32,
 		setBytes32:    setBytes32,
 		contractCall:  contractCall,
@@ -264,22 +258,5 @@ func newApi(
 		create2:       create2,
 		getReturnData: getReturnData,
 		emitLog:       emitLog,
-	})
-	return usize(id)
-}
-
-func getApi(api usize) *apiClosure {
-	any, ok := apiClosures.Load(uintptr(api))
-	if !ok {
-		log.Crit("failed to load stylus Go API", "id", api)
 	}
-	closures, ok := any.(apiClosure)
-	if !ok {
-		log.Crit("wrong type for stylus Go API", "id", api)
-	}
-	return &closures
-}
-
-func dropApi(api usize) {
-	apiClosures.Delete(api)
 }

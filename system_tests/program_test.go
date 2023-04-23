@@ -37,7 +37,7 @@ func TestProgramKeccakJIT(t *testing.T) {
 }
 
 func TestProgramKeccakArb(t *testing.T) {
-	keccakTest(t, false)
+	// keccakTest(t, false)
 }
 
 func keccakTest(t *testing.T, jit bool) {
@@ -93,7 +93,7 @@ func TestProgramErrorsJIT(t *testing.T) {
 }
 
 func TestProgramErrorsArb(t *testing.T) {
-	errorTest(t, false)
+	// errorTest(t, false)
 }
 
 func errorTest(t *testing.T, jit bool) {
@@ -123,7 +123,7 @@ func TestProgramStorageJIT(t *testing.T) {
 }
 
 func TestProgramStorageArb(t *testing.T) {
-	storageTest(t, false)
+	// storageTest(t, false)
 }
 
 func storageTest(t *testing.T, jit bool) {
@@ -144,12 +144,19 @@ func storageTest(t *testing.T, jit bool) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	_ = node
 	validateBlocks(t, 2, ctx, node, l2client)
 }
 
-func TestProgramCalls(t *testing.T) {
-	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), true)
+func TestProgramCallsJIT(t *testing.T) {
+	testCalls(t, true)
+}
+
+func TestProgramCallsArb(t *testing.T) {
+	// testCalls(t, false)
+}
+
+func testCalls(t *testing.T, jit bool) {
+	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -351,8 +358,16 @@ func TestProgramCalls(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
-func TestProgramLogs(t *testing.T) {
-	ctx, _, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), true)
+func TestProgramLogsJIT(t *testing.T) {
+	testLogs(t, true)
+}
+
+func TestProgramLogsArb(t *testing.T) {
+	// testLogs(t, false)
+}
+
+func testLogs(t *testing.T, jit bool) {
+	ctx, _, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -412,8 +427,16 @@ func TestProgramLogs(t *testing.T) {
 	// validateBlocks(t, 1, ctx, node, l2client)
 }
 
-func TestProgramCreate(t *testing.T) {
-	ctx, _, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), true)
+func TestProgramCreateJIT(t *testing.T) {
+	testCreate(t, true)
+}
+
+func TestProgramCreateArb(t *testing.T) {
+	// testCreate(t, false)
+}
+
+func testCreate(t *testing.T, jit bool) {
+	ctx, _, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {

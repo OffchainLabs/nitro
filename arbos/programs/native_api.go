@@ -61,8 +61,27 @@ GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
 }
 */
 import "C"
+import (
+	"sync"
+	"sync/atomic"
 
-func wrapGoApi(id usize) (C.GoApi, usize) {
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/util"
+)
+
+var apiClosures sync.Map
+var apiIds uintptr // atomic
+
+func newApi(
+	interpreter *vm.EVMInterpreter,
+	tracingInfo *util.TracingInfo,
+	scope *vm.ScopeContext,
+) (C.GoApi, usize) {
+	closures := newApiClosures(interpreter, tracingInfo, scope)
+	apiId := atomic.AddUintptr(&apiIds, 1)
+	apiClosures.Store(apiId, closures)
+	id := usize(apiId)
 	return C.GoApi{
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
@@ -73,6 +92,22 @@ func wrapGoApi(id usize) (C.GoApi, usize) {
 		create2:         (*[0]byte)(C.create2Wrap),
 		get_return_data: (*[0]byte)(C.getReturnDataWrap),
 		emit_log:        (*[0]byte)(C.emitLogWrap),
-		id:              usize(id),
+		id:              id,
 	}, id
+}
+
+func getApi(id usize) *goClosures {
+	any, ok := apiClosures.Load(uintptr(id))
+	if !ok {
+		log.Crit("failed to load stylus Go API", "id", id)
+	}
+	closures, ok := any.(*goClosures)
+	if !ok {
+		log.Crit("wrong type for stylus Go API", "id", id)
+	}
+	return closures
+}
+
+func dropApi(id usize) {
+	apiClosures.Delete(uintptr(id))
 }

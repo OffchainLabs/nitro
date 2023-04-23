@@ -84,7 +84,7 @@ func callUserWasm(
 	}
 	module := db.GetCompiledWasmCode(program, stylusParams.version)
 
-	api, id := wrapGoApi(newApi(interpreter, tracingInfo, scope))
+	api, id := newApi(interpreter, tracingInfo, scope)
 	defer dropApi(id)
 
 	output := &rustVec{}
@@ -112,17 +112,17 @@ const apiFailure C.GoApiStatus = C.GoApiStatus_Failure
 
 //export getBytes32Impl
 func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
-	closure := getApi(api)
-	value, gas := closure.getBytes32(key.toHash())
+	closures := getApi(api)
+	value, gas := closures.getBytes32(key.toHash())
 	*cost = u64(gas)
 	return hashToBytes32(value)
 }
 
 //export setBytes32Impl
 func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) apiStatus {
-	closure := getApi(api)
+	closures := getApi(api)
 
-	gas, err := closure.setBytes32(key.toHash(), value.toHash())
+	gas, err := closures.setBytes32(key.toHash(), value.toHash())
 	if err != nil {
 		errVec.setString(err.Error())
 		return apiFailure
@@ -133,10 +133,10 @@ func setBytes32Impl(api usize, key, value bytes32, cost *u64, errVec *rustVec) a
 
 //export contractCallImpl
 func contractCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, value bytes32, len *u32) apiStatus {
-	closure := getApi(api)
+	closures := getApi(api)
 	defer data.drop()
 
-	ret_len, cost, err := closure.contractCall(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
+	ret_len, cost, err := closures.contractCall(contract.toAddress(), data.read(), uint64(*evmGas), value.toBig())
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
 	if err != nil {
@@ -147,10 +147,10 @@ func contractCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, v
 
 //export delegateCallImpl
 func delegateCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len *u32) apiStatus {
-	closure := getApi(api)
+	closures := getApi(api)
 	defer data.drop()
 
-	ret_len, cost, err := closure.delegateCall(contract.toAddress(), data.read(), uint64(*evmGas))
+	ret_len, cost, err := closures.delegateCall(contract.toAddress(), data.read(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
 	if err != nil {
@@ -161,10 +161,10 @@ func delegateCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, l
 
 //export staticCallImpl
 func staticCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len *u32) apiStatus {
-	closure := getApi(api)
+	closures := getApi(api)
 	defer data.drop()
 
-	ret_len, cost, err := closure.staticCall(contract.toAddress(), data.read(), uint64(*evmGas))
+	ret_len, cost, err := closures.staticCall(contract.toAddress(), data.read(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
 	if err != nil {
@@ -175,8 +175,8 @@ func staticCallImpl(api usize, contract bytes20, data *rustVec, evmGas *u64, len
 
 //export create1Impl
 func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *u32) apiStatus {
-	closure := getApi(api)
-	addr, ret_len, cost, err := closure.create1(code.read(), endowment.toBig(), uint64(*evmGas))
+	closures := getApi(api)
+	addr, ret_len, cost, err := closures.create1(code.read(), endowment.toBig(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
 	if err != nil {
@@ -189,8 +189,8 @@ func create1Impl(api usize, code *rustVec, endowment bytes32, evmGas *u64, len *
 
 //export create2Impl
 func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64, len *u32) apiStatus {
-	closure := getApi(api)
-	addr, ret_len, cost, err := closure.create2(code.read(), endowment.toBig(), salt.toBig(), uint64(*evmGas))
+	closures := getApi(api)
+	addr, ret_len, cost, err := closures.create2(code.read(), endowment.toBig(), salt.toBig(), uint64(*evmGas))
 	*evmGas = u64(cost) // evmGas becomes the call's cost
 	*len = u32(ret_len)
 	if err != nil {
@@ -203,15 +203,15 @@ func create2Impl(api usize, code *rustVec, endowment, salt bytes32, evmGas *u64,
 
 //export getReturnDataImpl
 func getReturnDataImpl(api usize, output *rustVec) {
-	closure := getApi(api)
-	return_data := closure.getReturnData()
+	closures := getApi(api)
+	return_data := closures.getReturnData()
 	output.setBytes(return_data)
 }
 
 //export emitLogImpl
 func emitLogImpl(api usize, data *rustVec, topics usize) apiStatus {
-	closure := getApi(api)
-	err := closure.emitLog(data.read(), int(topics))
+	closures := getApi(api)
+	err := closures.emitLog(data.read(), int(topics))
 	if err != nil {
 		data.setString(err.Error())
 		return apiFailure

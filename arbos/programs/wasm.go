@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 //go:build js
 // +build js
@@ -77,12 +77,21 @@ func callUserWasm(
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 
-	api, id := wrapGoApi(newApi(interpreter, tracingInfo, scope))
-	defer dropApi(id)
+	root := db.NoncanonicalProgramHash(program, params.version)
+	api := newApi(interpreter, tracingInfo, scope)
 	defer api.drop()
 
-	root := db.NoncanonicalProgramHash(program, params.version)
-	return machine.call(calldata, params, api, evmData, &scope.Contract.Gas, &root)
+	status, output := callUserWasmRustImpl(
+		machine,
+		calldata,
+		params.encode(),
+		api.funcs,
+		evmData.encode(),
+		&scope.Contract.Gas,
+		&root,
+	)
+	result := output.intoSlice()
+	return status.output(result)
 }
 
 func compileMachine(db vm.StateDB, program addr, wasm []byte, version, debugMode u32) (*rustMachine, error) {
@@ -91,20 +100,6 @@ func compileMachine(db vm.StateDB, program addr, wasm []byte, version, debugMode
 		return nil, errors.New(string(err.intoSlice()))
 	}
 	return machine, nil
-}
-
-func (m *rustMachine) call(
-	calldata []byte,
-	params *goParams,
-	api *apiWrapper,
-	evmData *evmData,
-	gas *u64,
-	root *hash,
-) ([]byte, error) {
-	status, output := callUserWasmRustImpl(m, calldata, params.encode(), api.funcs, evmData.encode(), gas, root)
-	result := output.intoSlice()
-	println("STATUS", status, common.Bytes2Hex(result))
-	return status.output(result)
 }
 
 func (vec *rustVec) intoSlice() []byte {

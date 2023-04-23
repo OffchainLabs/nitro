@@ -1,5 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 //go:build js
 // +build js
@@ -8,8 +8,9 @@ package programs
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 	"syscall/js"
 )
 
@@ -19,10 +20,12 @@ type apiWrapper struct {
 	funcs      []byte
 }
 
-func wrapGoApi(id usize) (*apiWrapper, usize) {
-	println("Wrap", id)
-
-	closures := getApi(id)
+func newApi(
+	interpreter *vm.EVMInterpreter,
+	tracingInfo *util.TracingInfo,
+	scope *vm.ScopeContext,
+) *apiWrapper {
+	closures := newApiClosures(interpreter, tracingInfo, scope)
 	global := js.Global()
 	uint8Array := global.Get("Uint8Array")
 
@@ -102,17 +105,14 @@ func wrapGoApi(id usize) (*apiWrapper, usize) {
 	for i := 0; i < funcs.Length(); i++ {
 		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
 	}
-
-	api := &apiWrapper{
+	return &apiWrapper{
 		getBytes32: getBytes32,
 		setBytes32: setBytes32,
 		funcs:      ids,
 	}
-	return api, id
 }
 
 func (api *apiWrapper) drop() {
-	println("wasm_api: Dropping Funcs")
 	api.getBytes32.Release()
 	api.setBytes32.Release()
 }
