@@ -11,7 +11,10 @@ use prover::programs::{
 use run::RunProgram;
 use std::mem;
 
-pub use {crate::api::EvmApi, prover};
+pub use {
+    crate::api::{EvmApi, EvmApiMethod, EvmApiStatus},
+    prover,
+};
 
 mod api;
 mod env;

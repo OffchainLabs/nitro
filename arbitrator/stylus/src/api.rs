@@ -11,16 +11,25 @@ use crate::RustVec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum GoApiStatus {
+pub enum EvmApiStatus {
     Success,
     Failure,
 }
 
-impl From<GoApiStatus> for UserOutcomeKind {
-    fn from(value: GoApiStatus) -> Self {
+impl From<EvmApiStatus> for UserOutcomeKind {
+    fn from(value: EvmApiStatus) -> Self {
         match value {
-            GoApiStatus::Success => UserOutcomeKind::Success,
-            GoApiStatus::Failure => UserOutcomeKind::Revert,
+            EvmApiStatus::Success => UserOutcomeKind::Success,
+            EvmApiStatus::Failure => UserOutcomeKind::Revert,
+        }
+    }
+}
+
+impl From<u8> for EvmApiStatus {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Success,
+            _ => Self::Failure,
         }
     }
 }
@@ -34,7 +43,7 @@ pub struct GoApi {
         value: Bytes32,
         evm_cost: *mut u64,
         error: *mut RustVec,
-    ) -> GoApiStatus,
+    ) -> EvmApiStatus,
     pub contract_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
@@ -42,28 +51,28 @@ pub struct GoApi {
         gas: *mut u64,
         value: Bytes32,
         return_data_len: *mut u32,
-    ) -> GoApiStatus,
+    ) -> EvmApiStatus,
     pub delegate_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
         gas: *mut u64,
         return_data_len: *mut u32,
-    ) -> GoApiStatus,
+    ) -> EvmApiStatus,
     pub static_call: unsafe extern "C" fn(
         id: usize,
         contract: Bytes20,
         calldata: *mut RustVec,
         gas: *mut u64,
         return_data_len: *mut u32,
-    ) -> GoApiStatus,
+    ) -> EvmApiStatus,
     pub create1: unsafe extern "C" fn(
         id: usize,
         code: *mut RustVec,
         endowment: Bytes32,
         gas: *mut u64,
         return_data_len: *mut u32,
-    ) -> GoApiStatus,
+    ) -> EvmApiStatus,
     pub create2: unsafe extern "C" fn(
         id: usize,
         code: *mut RustVec,
@@ -71,10 +80,24 @@ pub struct GoApi {
         salt: Bytes32,
         gas: *mut u64,
         return_data_len: *mut u32,
-    ) -> GoApiStatus,
+    ) -> EvmApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
-    pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: usize) -> GoApiStatus,
+    pub emit_log:
+        unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: usize) -> EvmApiStatus,
     pub id: usize,
+}
+
+#[repr(usize)]
+pub enum EvmApiMethod {
+    GetBytes32,
+    SetBytes32,
+    ContractCall,
+    DelegateCall,
+    StaticCall,
+    Create1,
+    Create2,
+    GetReturnData,
+    EmitLog,
 }
 
 pub trait EvmApi: Send + 'static {
@@ -112,7 +135,7 @@ pub trait EvmApi: Send + 'static {
         salt: Bytes32,
         gas: u64,
     ) -> (eyre::Result<Bytes20>, u32, u64);
-    fn load_return_data(&mut self) -> Vec<u8>;
+    fn get_return_data(&mut self) -> Vec<u8>;
     fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> Result<()>;
 }
 
@@ -150,8 +173,8 @@ impl EvmApi for GoApi {
         let api_status = call!(self, set_bytes32, key, value, ptr!(cost), ptr!(error));
         let error = into_vec!(error); // done here to always drop
         match api_status {
-            GoApiStatus::Success => Ok(cost),
-            GoApiStatus::Failure => Err(error!(error)),
+            EvmApiStatus::Success => Ok(cost),
+            EvmApiStatus::Failure => Err(error!(error)),
         }
     }
 
@@ -233,8 +256,8 @@ impl EvmApi for GoApi {
         );
         let output = into_vec!(code);
         let result = match api_status {
-            GoApiStatus::Success => Ok(Bytes20::try_from(output).unwrap()),
-            GoApiStatus::Failure => Err(error!(output)),
+            EvmApiStatus::Success => Ok(Bytes20::try_from(output).unwrap()),
+            EvmApiStatus::Failure => Err(error!(output)),
         };
         (result, return_data_len, call_gas)
     }
@@ -260,13 +283,13 @@ impl EvmApi for GoApi {
         );
         let output = into_vec!(code);
         let result = match api_status {
-            GoApiStatus::Success => Ok(Bytes20::try_from(output).unwrap()),
-            GoApiStatus::Failure => Err(error!(output)),
+            EvmApiStatus::Success => Ok(Bytes20::try_from(output).unwrap()),
+            EvmApiStatus::Failure => Err(error!(output)),
         };
         (result, return_data_len, call_gas)
     }
 
-    fn load_return_data(&mut self) -> Vec<u8> {
+    fn get_return_data(&mut self) -> Vec<u8> {
         let mut data = RustVec::new(vec![]);
         call!(self, get_return_data, ptr!(data));
         into_vec!(data)
@@ -277,8 +300,8 @@ impl EvmApi for GoApi {
         let api_status = call!(self, emit_log, ptr!(data), topics);
         let error = into_vec!(data); // done here to always drop
         match api_status {
-            GoApiStatus::Success => Ok(()),
-            GoApiStatus::Failure => Err(error!(error)),
+            EvmApiStatus::Success => Ok(()),
+            EvmApiStatus::Failure => Err(error!(error)),
         }
     }
 }

@@ -115,7 +115,7 @@ impl EvmApi for TestEvmApi {
         unimplemented!("create2 not supported")
     }
 
-    fn load_return_data(&mut self) -> Vec<u8> {
+    fn get_return_data(&mut self) -> Vec<u8> {
         self.return_data.clone()
     }
 

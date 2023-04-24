@@ -15,9 +15,16 @@ import (
 )
 
 type apiWrapper struct {
-	getBytes32 js.Func
-	setBytes32 js.Func
-	funcs      []byte
+	getBytes32    js.Func
+	setBytes32    js.Func
+	contractCall  js.Func
+	delegateCall  js.Func
+	staticCall    js.Func
+	create1       js.Func
+	create2       js.Func
+	getReturnData js.Func
+	emitLog       js.Func
+	funcs         []byte
 }
 
 func newApi(
@@ -36,9 +43,13 @@ func newApi(
 	}
 
 	const (
-		preU64 = iota
+		preU32 = iota
+		preU64
+		preBytes
+		preBytes20
 		preBytes32
 		preString
+		preStatus
 		preNil
 	)
 
@@ -99,20 +110,58 @@ func newApi(
 		}
 		return nil
 	})
+	contractCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
+	delegateCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
+	staticCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
+	create1 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
+	create2 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
+	getReturnData := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
+	emitLog := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		return nil
+	})
 
-	ids := make([]byte, 0, 4*2)
-	funcs := js.Global().Get("stylus").Call("setCallbacks", getBytes32, setBytes32)
+	ids := make([]byte, 0, 10*2)
+	funcs := js.Global().Get("stylus").Call("setCallbacks",
+		getBytes32, setBytes32, contractCall, delegateCall, staticCall,
+		create1, create2, getReturnData, emitLog,
+	)
 	for i := 0; i < funcs.Length(); i++ {
 		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
 	}
 	return &apiWrapper{
-		getBytes32: getBytes32,
-		setBytes32: setBytes32,
-		funcs:      ids,
+		getBytes32:    getBytes32,
+		setBytes32:    setBytes32,
+		contractCall:  contractCall,
+		delegateCall:  delegateCall,
+		staticCall:    staticCall,
+		create1:       create1,
+		create2:       create2,
+		getReturnData: getReturnData,
+		emitLog:       emitLog,
+		funcs:         ids,
 	}
 }
 
 func (api *apiWrapper) drop() {
 	api.getBytes32.Release()
 	api.setBytes32.Release()
+	api.contractCall.Release()
+	api.delegateCall.Release()
+	api.staticCall.Release()
+	api.create1.Release()
+	api.create2.Release()
+	api.getReturnData.Release()
+	api.emitLog.Release()
 }

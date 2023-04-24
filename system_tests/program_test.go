@@ -367,7 +367,7 @@ func TestProgramLogsArb(t *testing.T) {
 }
 
 func testLogs(t *testing.T, jit bool) {
-	ctx, _, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), jit)
+	ctx, node, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -423,8 +423,7 @@ func testLogs(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 2, ctx, node, l2client)
 }
 
 func TestProgramCreateJIT(t *testing.T) {

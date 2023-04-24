@@ -172,7 +172,7 @@ pub(crate) fn read_return_data<E: EvmApi>(mut env: WasmEnvMut<E>, dest: u32) -> 
     let len = env.evm_data.return_data_len;
     env.pay_for_evm_copy(len.into())?;
 
-    let data = env.evm.load_return_data();
+    let data = env.evm.get_return_data();
     env.write_slice(dest, &data)?;
     assert_eq!(data.len(), len as usize);
     Ok(())

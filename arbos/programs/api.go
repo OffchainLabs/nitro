@@ -81,7 +81,6 @@ func newApiClosures(
 			return 0, vm.ErrWriteProtection
 		}
 		cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
-		println("COST: ", cost, key.Hex(), value.Hex())
 		db.SetState(actingAddress, key, value)
 		return cost, nil
 	}
