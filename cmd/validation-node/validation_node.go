@@ -176,7 +176,7 @@ func mainImpl() int {
 	}
 	err = stack.Start()
 	if err != nil {
-		fatalErrChan <- fmt.Errorf("error starting stack", "err", err)
+		fatalErrChan <- errors.Wrap(err, "error starting stack")
 	}
 	defer stack.Close()
 
