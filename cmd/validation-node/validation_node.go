@@ -47,11 +47,11 @@ var DefaultStackConfig = node.Config{
 	AuthAddr:            node.DefaultAuthHost,
 	AuthPort:            node.DefaultAuthPort,
 	AuthVirtualHosts:    node.DefaultAuthVhosts,
-	HTTPModules:         []string{"net", "web3"},
+	HTTPModules:         []string{""},
 	HTTPVirtualHosts:    []string{"localhost"},
 	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
 	WSPort:              node.DefaultWSPort,
-	WSModules:           []string{"net", "web3"},
+	WSModules:           []string{"validation"},
 	GraphQLVirtualHosts: []string{"localhost"},
 	P2P: p2p.Config{
 		ListenAddr: ":30303",
@@ -75,12 +75,12 @@ func mainImpl() int {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 	stackConf := DefaultStackConfig
-	stackConf.DataDir = "" // ephemeral - needs to be set after jwtsecret filename resolving
+	stackConf.DataDir = "" // ephemeral
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.AuthRPC.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
-	nodeConfig.GraphQL.Apply(&stackConf)
+	nodeConfig.GraphQL.Apply(&stackConf) // TODO is GraphQL config needed here?
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
@@ -165,18 +165,23 @@ func mainImpl() int {
 		fatalErrChan,
 	)
 	if err != nil {
-		valNode = nil
-		log.Warn("couldn't init validation node", "err", err)
+		log.Error("couldn't init validation node", "err", err)
+		return 1
 	}
 
-	if valNode != nil {
-		err = valNode.Start(ctx)
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
-		}
+	err = valNode.Start(ctx)
+	if err != nil {
+		log.Error("error starting validator node", "err", err)
+		return 1
 	}
+	err = stack.Start()
+	if err != nil {
+		fatalErrChan <- fmt.Errorf("error starting stack", "err", err)
+	}
+	defer stack.Close()
 
 	liveNodeConfig.Start(ctx)
+	defer liveNodeConfig.StopAndWait()
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -193,8 +198,6 @@ func mainImpl() int {
 
 	// cause future ctrl+c's to panic
 	close(sigint)
-
-	liveNodeConfig.StopAndWait()
 
 	return exitCode
 }
