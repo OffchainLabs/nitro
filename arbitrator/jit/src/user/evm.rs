@@ -24,7 +24,7 @@ pub(super) enum EvmMsg {
     Done,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(super) struct ApiValue(pub Vec<u8>);
 
 type Bytes = Vec<u8>;
@@ -39,6 +39,14 @@ enum ApiValueKind {
     String(String),
     Status(EvmApiStatus),
     Nil,
+}
+
+impl Debug for ApiValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = &self.0;
+        f.write_fmt(format_args!("{}_", data[0]))?;
+        f.write_str(&hex::encode(&data[1..]))
+    }
 }
 
 impl ApiValueKind {
@@ -92,15 +100,15 @@ impl From<ApiValueKind> for ApiValue {
     }
 }
 
-impl From<u64> for ApiValue {
-    fn from(value: u64) -> Self {
-        ApiValueKind::U64(value).into()
+impl From<u32> for ApiValue {
+    fn from(value: u32) -> Self {
+        ApiValueKind::U32(value).into()
     }
 }
 
-impl From<usize> for ApiValue {
-    fn from(value: usize) -> Self {
-        ApiValueKind::U64(value as u64).into()
+impl From<u64> for ApiValue {
+    fn from(value: u64) -> Self {
+        ApiValueKind::U64(value).into()
     }
 }
 
@@ -264,7 +272,7 @@ impl EvmApi for JitApi {
         salt: Bytes32,
         gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
-        let [result, len, cost] = call!(self, 3, Create1, code, endowment, salt, gas);
+        let [result, len, cost] = call!(self, 3, Create2, code, endowment, salt, gas);
         let result = match result {
             ApiValueKind::Bytes20(account) => Ok(account),
             ApiValueKind::String(err) => Err(eyre!(err)),
@@ -278,8 +286,8 @@ impl EvmApi for JitApi {
         data.assert_bytes()
     }
 
-    fn emit_log(&mut self, data: Bytes, topics: usize) -> Result<()> {
-        let [out] = call!(self, 1, GetBytes32, data, topics);
+    fn emit_log(&mut self, data: Bytes, topics: u32) -> Result<()> {
+        let [out] = call!(self, 1, EmitLog, data, topics);
         match out {
             ApiValueKind::Nil => Ok(()),
             ApiValueKind::String(err) => bail!(err),

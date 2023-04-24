@@ -435,7 +435,7 @@ func TestProgramCreateArb(t *testing.T) {
 }
 
 func testCreate(t *testing.T, jit bool) {
-	ctx, _, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), jit)
+	ctx, node, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -506,8 +506,7 @@ func testCreate(t *testing.T, jit bool) {
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, ctx, node, l2client)
 }
 
 func TestProgramEvmData(t *testing.T) {

@@ -7,10 +7,12 @@
 package programs
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"math/big"
 	"syscall/js"
 )
 
@@ -36,12 +38,6 @@ func newApi(
 	global := js.Global()
 	uint8Array := global.Get("Uint8Array")
 
-	assert := func(cond bool) {
-		if !cond {
-			panic("assertion failed")
-		}
-	}
-
 	const (
 		preU32 = iota
 		preU64
@@ -53,13 +49,32 @@ func newApi(
 		preNil
 	)
 
-	jsHash := func(value js.Value) common.Hash {
-		hash := common.Hash{}
-		assert(value.Index(0).Int() == preBytes32)
-		for i := 0; i < 32; i++ {
-			hash[i] = byte(value.Index(i + 1).Int())
+	jsRead := func(value js.Value, kind u8) []u8 {
+		length := value.Length()
+		data := make([]u8, length)
+		js.CopyBytesToGo(data, value)
+		if data[0] != kind {
+			panic(fmt.Sprintf("not a %v", kind))
 		}
-		return hash
+		return data[1:]
+	}
+	jsU32 := func(value js.Value) u32 {
+		return arbmath.BytesToUint32(jsRead(value, preU32))
+	}
+	jsU64 := func(value js.Value) u64 {
+		return arbmath.BytesToUint(jsRead(value, preU64))
+	}
+	jsBytes := func(value js.Value) []u8 {
+		return jsRead(value, preBytes)
+	}
+	jsAddress := func(value js.Value) common.Address {
+		return common.BytesToAddress(jsRead(value, preBytes20))
+	}
+	jsHash := func(value js.Value) common.Hash {
+		return common.BytesToHash(jsRead(value, preBytes32))
+	}
+	jsBig := func(value js.Value) *big.Int {
+		return jsHash(value).Big()
 	}
 
 	toJs := func(prefix u8, data []byte) js.Value {
@@ -73,8 +88,14 @@ func newApi(
 		for _, result := range results {
 			var value js.Value
 			switch result := result.(type) {
+			case uint32:
+				value = toJs(preU32, arbmath.Uint32ToBytes(result))
 			case uint64:
 				value = toJs(preU64, arbmath.UintToBytes(result))
+			case []u8:
+				value = toJs(preBytes, result[:])
+			case common.Address:
+				value = toJs(preBytes20, result[:])
 			case common.Hash:
 				value = toJs(preBytes32, result[:])
 			case error:
@@ -92,44 +113,74 @@ func newApi(
 		}
 		return js.ValueOf(array)
 	}
+	maybe := func(value interface{}, err error) interface{} {
+		if err != nil {
+			return err
+		}
+		return value
+	}
+	result := func(stylus js.Value, outs ...any) any {
+		stylus.Set("result", array(outs...))
+		return nil
+	}
 
 	getBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		key := jsHash(args[0])
 		value, cost := closures.getBytes32(key)
-		stylus.Set("result", array(value, cost))
-		return nil
+		return result(stylus, value, cost)
 	})
 	setBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		key := jsHash(args[0])
 		value := jsHash(args[1])
 		cost, err := closures.setBytes32(key, value)
-		if err != nil {
-			stylus.Set("result", array(err))
-		} else {
-			stylus.Set("result", array(cost))
-		}
-		return nil
+		return result(stylus, maybe(cost, err))
 	})
 	contractCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		contract := jsAddress(args[0])
+		input := jsBytes(args[1])
+		gas := jsU64(args[2])
+		value := jsBig(args[3])
+		len, cost, status := closures.contractCall(contract, input, gas, value)
+		return result(stylus, len, cost, status)
 	})
 	delegateCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		contract := jsAddress(args[0])
+		input := jsBytes(args[1])
+		gas := jsU64(args[2])
+		len, cost, status := closures.delegateCall(contract, input, gas)
+		return result(stylus, len, cost, status)
 	})
 	staticCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		contract := jsAddress(args[0])
+		input := jsBytes(args[1])
+		gas := jsU64(args[2])
+		len, cost, status := closures.staticCall(contract, input, gas)
+		return result(stylus, len, cost, status)
 	})
 	create1 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		code := jsBytes(args[0])
+		endowment := jsBig(args[1])
+		gas := jsU64(args[2])
+		addr, len, cost, err := closures.create1(code, endowment, gas)
+		return result(stylus, maybe(addr, err), len, cost)
 	})
 	create2 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		code := jsBytes(args[0])
+		endowment := jsBig(args[1])
+		salt := jsBig(args[2])
+		gas := jsU64(args[3])
+		addr, len, cost, err := closures.create2(code, endowment, salt, gas)
+		return result(stylus, maybe(addr, err), len, cost)
 	})
 	getReturnData := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		data := closures.getReturnData()
+		return result(stylus, data)
 	})
 	emitLog := js.FuncOf(func(stylus js.Value, args []js.Value) any {
-		return nil
+		data := jsBytes(args[0])
+		topics := jsU32(args[1])
+		err := closures.emitLog(data, topics)
+		return result(stylus, err)
 	})
 
 	ids := make([]byte, 0, 10*2)

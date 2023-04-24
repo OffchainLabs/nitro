@@ -40,7 +40,7 @@ type create2Type func(
 	addr common.Address, retdata_len uint32, cost uint64, err error,
 )
 type getReturnDataType func() []byte
-type emitLogType func(data []byte, topics int) error
+type emitLogType func(data []byte, topics uint32) error
 
 type goClosures struct {
 	getBytes32    getBytes32Type
@@ -228,12 +228,12 @@ func newApiClosures(
 		}
 		return data
 	}
-	emitLog := func(data []byte, topics int) error {
+	emitLog := func(data []byte, topics uint32) error {
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
 		hashes := make([]common.Hash, topics)
-		for i := 0; i < topics; i++ {
+		for i := uint32(0); i < topics; i++ {
 			hashes[i] = common.BytesToHash(data[:(i+1)*32])
 		}
 		event := &types.Log{

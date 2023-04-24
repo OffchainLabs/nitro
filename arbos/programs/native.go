@@ -14,16 +14,6 @@ package programs
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
-
-Bytes32     getBytes32Wrap(usize api, Bytes32 key, u64 * cost);
-GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
-GoApiStatus contractCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas, Bytes32 value, u32 * len);
-GoApiStatus delegateCallWrap(usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
-GoApiStatus staticCallWrap  (usize api, Bytes20 contract, RustVec * data, u64 * gas,                u32 * len);
-GoApiStatus create1Wrap(usize api, RustVec * code, Bytes32 endowment,               u64 * gas, u32 * len);
-GoApiStatus create2Wrap(usize api, RustVec * code, Bytes32 endowment, Bytes32 salt, u64 * gas, u32 * len);
-void        getReturnDataWrap(usize api, RustVec * data);
-GoApiStatus emitLogWrap(usize api, RustVec * data, usize topics);
 */
 import "C"
 import (
@@ -105,10 +95,10 @@ func callUserWasm(
 	return data, err
 }
 
-type apiStatus = C.GoApiStatus
+type apiStatus = C.EvmApiStatus
 
-const apiSuccess C.GoApiStatus = C.GoApiStatus_Success
-const apiFailure C.GoApiStatus = C.GoApiStatus_Failure
+const apiSuccess C.EvmApiStatus = C.EvmApiStatus_Success
+const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 
 //export getBytes32Impl
 func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
@@ -209,9 +199,9 @@ func getReturnDataImpl(api usize, output *rustVec) {
 }
 
 //export emitLogImpl
-func emitLogImpl(api usize, data *rustVec, topics usize) apiStatus {
+func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
 	closures := getApi(api)
-	err := closures.emitLog(data.read(), int(topics))
+	err := closures.emitLog(data.read(), uint32(topics))
 	if err != nil {
 		data.setString(err.Error())
 		return apiFailure

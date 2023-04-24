@@ -82,8 +82,7 @@ pub struct GoApi {
         return_data_len: *mut u32,
     ) -> EvmApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
-    pub emit_log:
-        unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: usize) -> EvmApiStatus,
+    pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: u32) -> EvmApiStatus,
     pub id: usize,
 }
 
@@ -136,7 +135,7 @@ pub trait EvmApi: Send + 'static {
         gas: u64,
     ) -> (eyre::Result<Bytes20>, u32, u64);
     fn get_return_data(&mut self) -> Vec<u8>;
-    fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> Result<()>;
+    fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()>;
 }
 
 macro_rules! ptr {
@@ -295,7 +294,7 @@ impl EvmApi for GoApi {
         into_vec!(data)
     }
 
-    fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> Result<()> {
+    fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
         let mut data = RustVec::new(data);
         let api_status = call!(self, emit_log, ptr!(data), topics);
         let error = into_vec!(data); // done here to always drop

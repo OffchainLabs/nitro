@@ -200,7 +200,7 @@ pub(crate) fn emit_log<E: EvmApi>(
     env.buy_gas((length - topics * 32) * evm::LOG_DATA_GAS)?;
 
     let data = env.read_slice(data, len)?;
-    env.evm.emit_log(data, topics as usize)?;
+    env.evm.emit_log(data, topics as u32)?;
     Ok(())
 }
 
