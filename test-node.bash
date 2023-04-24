@@ -146,8 +146,8 @@ if $dev_build; then
   fi
 fi
 
-NODES="sequencer"
-INITIAL_SEQ_NODES="sequencer"
+NODES="validation-node sequencer"
+INITIAL_SEQ_NODES="validation-node sequencer"
 
 if [ $redundantsequencers -gt 0 ]; then
     NODES="$NODES sequencer_b"

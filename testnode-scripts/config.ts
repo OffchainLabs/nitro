@@ -205,7 +205,11 @@ function writeConfigs(argv: any) {
                     },
                     "wait-for-l1-finality": false
                 }
-            }
+            },
+			"block-validator": {
+				"url": argv.validationNodeUrl,
+				"jwtsecret": "",
+			}
         },
         "init": {
             "dev-init": "true"
@@ -221,6 +225,9 @@ function writeConfigs(argv: any) {
             "vhosts": "*",
             "corsdomain": "*"
         },
+		"auth": {
+			"addr": "",
+		},
     }
 
 
@@ -248,6 +255,49 @@ function writeConfigs(argv: any) {
     posterConfig.node["seq-coordinator"].enable = true
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
+
+    let validationNodeConfig = JSON.parse(JSON.stringify({
+        "node": {
+            "staker": {
+                "dangerous": {
+                    "without-block-validator": false
+                },
+                "disable-challenge": false,
+                "enable": false,
+                "staker-interval": "10s",
+                "make-assertion-interval": "10s",
+                "strategy": "MakeNodes",
+            },
+            "sequencer": {
+                "enable": false
+            },
+            "delayed-sequencer": {
+                "enable": false
+            },
+            "seq-coordinator": {
+                "enable": false,
+            },
+            "batch-poster": {
+                "enable": false,
+            },
+        },
+        "persistent": {
+	        "chain": "local"
+        },
+        "ws": {
+            "addr": "0.0.0.0",
+			"api": "validation",
+        },
+        "http": {
+            "addr": "",
+        },
+		"validation": {
+			"api-auth": false,
+			"api-public": true,
+		},
+		"log-level": 4,
+	}))
+    fs.writeFileSync(path.join(consts.configpath, "validation_node_config.json"), JSON.stringify(validationNodeConfig))
 }
 
 export const writeConfigCommand = {
