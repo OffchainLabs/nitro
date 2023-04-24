@@ -488,9 +488,6 @@ func deployChallengeFactory(
 	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
 		auth,
 		backend,
-		assertionChainAddr,
-		big.NewInt(10), // TODO: Challenge period length.
-		ospEntryAddr,
 	)
 	if err != nil {
 		return common.Address{}, common.Address{}, err
@@ -626,4 +623,3 @@ func SetupAccounts(numAccounts uint64) ([]*TestAccount, *backends.SimulatedBacke
 	backend := backends.NewSimulatedBackend(genesis, gasLimit)
 	return accs, backend, nil
 }
-

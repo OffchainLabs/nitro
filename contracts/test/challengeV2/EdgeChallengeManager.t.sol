@@ -5,6 +5,8 @@ import "forge-std/Test.sol";
 import "./Utils.sol";
 import "../MockAssertionChain.sol";
 import "../../src/challengeV2/EdgeChallengeManager.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "./StateTools.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
@@ -22,10 +24,8 @@ contract EdgeChallengeManagerTest is Test {
     bytes32 genesisBlockHash = rand.hash();
     State genesisState = StateToolsLib.randomState(rand, 4, genesisBlockHash, MachineStatus.FINISHED);
     bytes32 genesisStateHash = StateToolsLib.hash(genesisState);
-    bytes32 genesisExecutionHash = RollupLib.executionHash(AssertionInputs({
-        beforeState: genesisState.es,
-        afterState: genesisState.es
-    }));
+    bytes32 genesisExecutionHash =
+        RollupLib.executionHash(AssertionInputs({beforeState: genesisState.es, afterState: genesisState.es}));
 
     function genesisStates() internal view returns (bytes32[] memory) {
         bytes32[] memory genStates = new bytes32[](1);
@@ -59,10 +59,20 @@ contract EdgeChallengeManagerTest is Test {
 
     function deploy() internal returns (MockAssertionChain, EdgeChallengeManager, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
-        EdgeChallengeManager challengeManager =
-            new EdgeChallengeManager(assertionChain, challengePeriodBlock, new MockOneStepProofEntry());
+        EdgeChallengeManager challengeManagerTemplate = new EdgeChallengeManager();
+        EdgeChallengeManager challengeManager = EdgeChallengeManager(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(challengeManagerTemplate),
+                    address(new ProxyAdmin()),
+                    ""
+                )
+            )
+        );
+        challengeManager.initialize(assertionChain, challengePeriodBlock, new MockOneStepProofEntry());
 
-        bytes32 genesis = assertionChain.addAssertionUnsafe(0, genesisHeight, inboxMsgCountGenesis, genesisState, genesisState, 0);
+        bytes32 genesis =
+            assertionChain.addAssertionUnsafe(0, genesisHeight, inboxMsgCountGenesis, genesisState, genesisState, 0);
         return (assertionChain, challengeManager, genesis);
     }
 
@@ -79,10 +89,12 @@ contract EdgeChallengeManagerTest is Test {
     function deployAndInit() internal returns (EdgeInitData memory) {
         (MockAssertionChain assertionChain, EdgeChallengeManager challengeManager, bytes32 genesis) = deploy();
 
-        State memory a1State =
-            StateToolsLib.randomState(rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h1, MachineStatus.FINISHED);
-        State memory a2State =
-            StateToolsLib.randomState(rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h2, MachineStatus.FINISHED);
+        State memory a1State = StateToolsLib.randomState(
+            rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h1, MachineStatus.FINISHED
+        );
+        State memory a2State = StateToolsLib.randomState(
+            rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h2, MachineStatus.FINISHED
+        );
 
         // add one since heights are zero indexed in the history states
         bytes32 a1 = assertionChain.addAssertion(
@@ -106,8 +118,9 @@ contract EdgeChallengeManagerTest is Test {
     function testRevertBlockNoFork() public {
         (MockAssertionChain assertionChain, EdgeChallengeManager challengeManager, bytes32 genesis) = deploy();
 
-        State memory a1State =
-            StateToolsLib.randomState(rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h1, MachineStatus.FINISHED);
+        State memory a1State = StateToolsLib.randomState(
+            rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h1, MachineStatus.FINISHED
+        );
 
         bytes32 a1 = assertionChain.addAssertion(
             genesis, genesisHeight + height1, inboxMsgCountAssertion, genesisState, a1State, 0
@@ -1289,7 +1302,9 @@ contract EdgeChallengeManagerTest is Test {
                 inboxMsgCountSeen: 7,
                 inboxMsgCountSeenProof: abi.encode(genesisState.es),
                 wasmModuleRoot: bytes32(0),
-                wasmModuleRootProof: abi.encode(bytes32(0), genesisExecutionHash, keccak256(abi.encode(genesisState.es.globalState.u64Vals[0]))),
+                wasmModuleRootProof: abi.encode(
+                    bytes32(0), genesisExecutionHash, keccak256(abi.encode(genesisState.es.globalState.u64Vals[0]))
+                    ),
                 beforeHash: firstStates[0],
                 proof: abi.encodePacked(firstStates[1])
             }),

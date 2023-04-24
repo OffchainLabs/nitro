@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/sirupsen/logrus/hooks/test"
@@ -26,8 +25,8 @@ import (
 )
 
 var (
-	bisectEventSig    = hexutil.MustDecode("0xddd14992ee7cd971b2a5cc510ebc7a33a1a7bd11dd74c3c5a83000328a0d5906")
-	leafAddedEventSig = hexutil.MustDecode("0x7340510d24b7ec9b5c100f5500d93429d80d00d46f0d18e4e85d0c4cc22b9924")
+	bisectEventSig = crypto.Keccak256Hash([]byte("EdgeBisected(bytes32,bytes32,bytes32,bool)"))
+	addedEventSig  = crypto.Keccak256Hash([]byte("EdgeAdded(bytes32,bytes32,bytes32,bytes32,uint256,uint8,bool,bool)"))
 )
 
 func TestChallengeProtocol_AliceAndBob(t *testing.T) {
@@ -74,8 +73,8 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			bigStepDivergenceHeight:   4,
 			smallStepDivergenceHeight: 4,
 		}
-		cfg.expectedLeavesAdded = 30
-		cfg.expectedBisections = 60
+		cfg.expectedLeavesAdded = 60
+		cfg.expectedBisections = 30
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at start height 3")
@@ -90,8 +89,8 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			bigStepDivergenceHeight:   4,
 			smallStepDivergenceHeight: 4,
 		}
-		cfg.expectedLeavesAdded = 30
-		cfg.expectedBisections = 60
+		cfg.expectedLeavesAdded = 60
+		cfg.expectedBisections = 30
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at start height 3")
@@ -106,8 +105,8 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 			bigStepDivergenceHeight:   4,
 			smallStepDivergenceHeight: 4,
 		}
-		cfg.expectedLeavesAdded = 30
-		cfg.expectedBisections = 60
+		cfg.expectedLeavesAdded = 60
+		cfg.expectedBisections = 30
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
 		AssertLogsContain(t, hook, "Reached one-step-fork at start height 3")
@@ -345,9 +344,9 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 				}
 				topic := vLog.Topics[0]
 				switch {
-				case bytes.Equal(topic[:], leafAddedEventSig):
+				case bytes.Equal(topic[:], addedEventSig.Bytes()):
 					totalLeavesAdded++
-				case bytes.Equal(topic[:], bisectEventSig):
+				case bytes.Equal(topic[:], bisectEventSig.Bytes()):
 					totalBisections++
 				default:
 				}

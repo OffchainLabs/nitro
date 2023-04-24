@@ -18,6 +18,9 @@ import "../src/osp/OneStepProofEntry.sol";
 import "../src/challengeV2/EdgeChallengeManager.sol";
 import "./challengeV2/Utils.sol";
 
+import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+
 contract RollupTest is Test {
     address constant owner = address(1337);
     address constant sequencer = address(7331);
@@ -61,11 +64,7 @@ contract RollupTest is Test {
             oneStepProverMath,
             oneStepProverHostIo
         );
-        EdgeChallengeManager edgeChallengeManager = new EdgeChallengeManager({
-            _assertionChain: IAssertionChain(address(0)),
-            _challengePeriodBlocks: 0,
-            _oneStepProofEntry: IOneStepProofEntry(address(0))
-        });
+        EdgeChallengeManager edgeChallengeManager = new EdgeChallengeManager();
         BridgeCreator bridgeCreator = new BridgeCreator();
         RollupCreator rollupCreator = new RollupCreator();
         RollupAdminLogic rollupAdminLogicImpl = new RollupAdminLogic();
