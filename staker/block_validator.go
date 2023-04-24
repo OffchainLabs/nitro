@@ -467,6 +467,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			room = here
 		}
 	}
+	log.Debug("block_validator: sendValidations", "room", room, "nextToValidate", v.nextBlockToValidate)
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		if room <= 0 {
 			return
@@ -479,6 +480,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				return
 			}
 			if batchCount <= v.globalPosNextSend.BatchNumber {
+				log.Debug("block_validator: waiting for batches", "batchCount", batchCount, "next send", v.globalPosNextSend.BatchNumber)
 				return
 			}
 		}
@@ -518,10 +520,12 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Info("Inbox caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
 		}
 		v.blockMutex.Unlock()
+		curBlock := v.nextBlockToValidate
 		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
 		entry, found := v.validations.Load(v.nextBlockToValidate)
 		if !found {
+			log.Debug("block_validator: sendValidations no entry for next", "nextMsg", nextMsg)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)
@@ -530,6 +534,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		if validationStatus.getStatus() < Prepared {
+			log.Debug("block_validator: next not prepared", "curBlock", curBlock, "status", validationStatus.getStatus())
 			return
 		}
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
@@ -558,6 +563,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
+			log.Debug("block_validator: addSeqMsg", "curBlock", curBlock)
 			validationStatus.Cancel = cancel
 			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
 			if err != nil && validationCtx.Err() == nil {
@@ -570,7 +576,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				return
 			}
 			for _, moduleRoot := range wasmRoots {
-				for _, spawner := range v.validationSpawners {
+				for i, spawner := range v.validationSpawners {
+					log.Debug("block_validator: launched", "curBlock", curBlock, "wasm", moduleRoot, "spawner", i)
 					run := spawner.Launch(input, moduleRoot)
 					validationStatus.Runs = append(validationStatus.Runs, run)
 				}
@@ -579,6 +586,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set status"))
 			}
+			log.Debug("block_validator: sent", "curBlock", curBlock)
 		})
 		room--
 		v.nextBlockToValidate++
@@ -592,6 +600,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 	nextRecord := v.nextBlockToValidate
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		if nextRecord >= v.nextBlockToValidate+v.config().PrerecordedBlocks {
+			log.Debug("block_validator: nextRecord too far", "nextRecord", nextRecord)
 			return
 		}
 		entry, found := v.validations.Load(nextRecord)
@@ -599,6 +608,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 			header := v.blockchain.GetHeaderByNumber(nextRecord)
 			if header == nil {
 				// This block hasn't been created yet.
+				log.Debug("block_validator: nextRecord not created", "nextRecord", nextRecord)
 				return
 			}
 			prevHeader := v.blockchain.GetHeaderByHash(header.ParentHash)
@@ -633,6 +643,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		currentStatus := validationStatus.getStatus()
 		if currentStatus == RecordFailed {
 			// retry
+			log.Warn("block_validator: record failed", "nextRecord", nextRecord)
 			v.validations.Delete(nextRecord)
 			v.triggerSendValidations()
 			return
@@ -654,6 +665,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 				}
 				v.lastHeaderForPrepareState = prevHeader
 			}
+			log.Warn("block_validator: sent record", "nextRecord", nextRecord)
 			err := v.sendRecord(validationStatus, true)
 			if err != nil {
 				log.Error("error trying to send preimage recording", "err", err)
@@ -688,6 +700,7 @@ func (v *BlockValidator) progressValidated() {
 		checkingBlock := v.lastBlockValidated + 1
 		entry, found := v.validations.Load(checkingBlock)
 		if !found {
+			log.Debug("block_validator: progess not found block", "nextMsg", checkingBlock)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)
@@ -696,6 +709,7 @@ func (v *BlockValidator) progressValidated() {
 			return
 		}
 		if validationStatus.getStatus() < ValidationSent {
+			log.Debug("block_validator: progess not ready", "nextMsg", checkingBlock)
 			return
 		}
 		validationEntry := validationStatus.Entry
