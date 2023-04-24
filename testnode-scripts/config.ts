@@ -225,9 +225,6 @@ function writeConfigs(argv: any) {
             "vhosts": "*",
             "corsdomain": "*"
         },
-		"auth": {
-			"addr": "",
-		},
     }
 
 
@@ -295,7 +292,6 @@ function writeConfigs(argv: any) {
 			"api-auth": false,
 			"api-public": true,
 		},
-		"log-level": 4,
 	}))
     fs.writeFileSync(path.join(consts.configpath, "validation_node_config.json"), JSON.stringify(validationNodeConfig))
 }
