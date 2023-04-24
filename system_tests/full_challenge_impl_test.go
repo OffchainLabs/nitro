@@ -301,8 +301,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
 		Fail(t, "asserter and challenger have different genesis hashes")
 	}
-	asserterLatestBlock := asserterL2.Execution.ArbInterface.BlockChain().CurrentBlock()
-	challengerLatestBlock := challengerL2.Execution.ArbInterface.BlockChain().CurrentBlock()
+	asserterLatestBlock := asserterL2.Execution.ArbInterface.BlockChain().CurrentHeader()
+	challengerLatestBlock := challengerL2.Execution.ArbInterface.BlockChain().CurrentHeader()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
 		Fail(t, "asserter and challenger have the same end block")
 	}
@@ -317,7 +317,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		Batch:      2,
 		PosInBatch: 0,
 	}
-	numBlocks := asserterLatestBlock.NumberU64() - asserterGenesis.NumberU64()
+	numBlocks := asserterLatestBlock.Number.Uint64() - asserterGenesis.NumberU64()
 
 	resultReceiver, challengeManagerAddr := CreateChallenge(
 		t,

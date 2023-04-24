@@ -132,7 +132,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 }
 
 func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
-	msgCount, err := s.BlockNumberToMessageCount(s.bc.CurrentBlock().Header().Number.Uint64())
+	msgCount, err := s.BlockNumberToMessageCount(s.bc.CurrentHeader().Number.Uint64())
 	if err != nil {
 		return 0, err
 	}
@@ -188,7 +188,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 	}
 
 	log.Info("Trying to resequence messages", "number", len(messages))
-	lastBlockHeader := s.bc.CurrentBlock().Header()
+	lastBlockHeader := s.bc.CurrentHeader()
 	if lastBlockHeader == nil {
 		log.Error("block header not found during resequence")
 		return
@@ -275,7 +275,7 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
-	lastBlockHeader := s.bc.CurrentBlock().Header()
+	lastBlockHeader := s.bc.CurrentHeader()
 	if lastBlockHeader == nil {
 		return nil, errors.New("current block header not found")
 	}
@@ -363,7 +363,7 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingM
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
-	currentHeader := s.bc.CurrentBlock().Header()
+	currentHeader := s.bc.CurrentHeader()
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
@@ -424,7 +424,7 @@ func (s *ExecutionEngine) MessageCountToBlockNumber(messageNum arbutil.MessageIn
 
 // must hold createBlockMutex
 func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
-	currentHeader := s.bc.CurrentBlock().Header()
+	currentHeader := s.bc.CurrentHeader()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current header")
 	}
