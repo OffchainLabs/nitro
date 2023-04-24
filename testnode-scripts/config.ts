@@ -202,7 +202,8 @@ function writeConfigs(argv: any) {
                 "data-poster": {
                     "redis-signer": {
                       "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                    }
+                    },
+                    "wait-for-l1-finality": false
                 }
             }
         },

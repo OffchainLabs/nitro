@@ -72,10 +72,6 @@ while [[ $# -gt 0 ]]; do
             blockscout=true
             shift
             ;;
-        --no-blockscout)
-            blockscout=false
-            shift
-            ;;
         --no-tokenbridge)
             tokenbridge=false
             shift
@@ -124,7 +120,7 @@ while [[ $# -gt 0 ]]; do
             echo --batchposters:    batch posters [0-3]
             echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
-            echo --no-blockscout:   don\'t build or launch blockscout
+            echo --blockscout:      build or launch blockscout
             echo --no-tokenbridge:  don\'t build or launch tokenbridge
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
