@@ -275,7 +275,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
-			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after block -1 expected global state") {
+			if strings.Contains(err.Error(), "agreed with entire challenge") || strings.Contains(err.Error(), "after msg 0 expected global state") {
 				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
