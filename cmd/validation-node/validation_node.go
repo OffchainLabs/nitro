@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -204,7 +203,6 @@ func mainImpl() int {
 
 type ValidationNodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
@@ -233,7 +231,6 @@ var NodeConfigDefault = ValidationNodeConfig{
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
-	arbnode.ConfigAddOptions("node", f, true, true)
 	valnode.ValidationConfigAddOptions("validation", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
