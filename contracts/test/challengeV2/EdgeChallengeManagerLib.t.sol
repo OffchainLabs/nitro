@@ -1112,17 +1112,26 @@ contract EdgeChallengeManagerLibTest is Test {
         uint256 timeAfterParent1,
         uint256 timeAfterParent2,
         uint256 timeAfterZeroLayer,
+        uint256 claimedAssertionBlocks,
         string memory revertArg
     ) internal {
         BArgs memory pc = addParentsAndChildren(2, 5, 8);
-        (, bytes32 bisectionRoot, bytes memory bisectionProof) = bisectArgs(pc.states1, 4, 8);
-        (bytes32 lowerChildId148,,) = store.bisectEdge(pc.upperChildId1, bisectionRoot, bisectionProof);
+        bytes32 lowerChildId148;
+        {
+            (, bytes32 bisectionRoot, bytes memory bisectionProof) = bisectArgs(pc.states1, 4, 8);
+            (bytes32 lowerChildId148X,,) = store.bisectEdge(pc.upperChildId1, bisectionRoot, bisectionProof);
+            lowerChildId148 = lowerChildId148X;
+        }
         vm.roll(block.number + timeAfterParent1);
 
         bytes32 upperChildId146;
         {
-            (, bytes32 bisectionRoot2, bytes memory bisectionProof2) = bisectArgs(pc.states2, 4, 8);
-            (bytes32 lowerChildId248,,) = store.bisectEdge(pc.upperChildId2, bisectionRoot2, bisectionProof2);
+            bytes32 lowerChildId248;
+            {
+                (, bytes32 bisectionRoot2, bytes memory bisectionProof2) = bisectArgs(pc.states2, 4, 8);
+                (bytes32 lowerChildId248X,,) = store.bisectEdge(pc.upperChildId2, bisectionRoot2, bisectionProof2);
+                lowerChildId248 = lowerChildId248X;
+            }
 
             (, bytes32 bisectionRoot3, bytes memory bisectionProof3) = bisectArgs(pc.states1, 4, 6);
             (,, EdgeAddedData memory upperChildId146Data) =
@@ -1179,60 +1188,58 @@ contract EdgeChallengeManagerLibTest is Test {
         if (bytes(revertArg).length != 0) {
             vm.expectRevert(bytes(revertArg));
         }
-        uint256 totalTime = store.confirmEdgeByTime(bsId, ancestorIds, challengePeriodSec);
+        uint256 totalTime = store.confirmEdgeByTime(bsId, ancestorIds, claimedAssertionBlocks, challengePeriodSec);
 
         assertTrue(store.edges[bsId].status == EdgeStatus.Confirmed, "Edge confirmed");
-        assertEq(totalTime, timeAfterParent1 + timeAfterParent2 + timeAfterZeroLayer, "Invalid total time");
+        assertEq(
+            totalTime,
+            timeAfterParent1 + timeAfterParent2 + timeAfterZeroLayer + claimedAssertionBlocks,
+            "Invalid total time"
+        );
     }
 
     function testConfirmByTimeGrandParent() public {
-        claimWithMixedAncestors(10, 11, 0, 0, "");
+        claimWithMixedAncestors(10, 11, 0, 0, 0, "");
     }
 
     function testConfirmByTimeParent() public {
-        claimWithMixedAncestors(10, 0, 11, 0, "");
+        claimWithMixedAncestors(10, 0, 11, 0, 0, "");
     }
 
     function testConfirmByTimeSelf() public {
-        claimWithMixedAncestors(10, 0, 0, 11, "");
+        claimWithMixedAncestors(10, 0, 0, 11, 0, "");
+    }
+
+    function testConfirmByTimeAssertion() public {
+        claimWithMixedAncestors(10, 0, 0, 0, 11, "");
     }
 
     function testConfirmByTimeCombined() public {
-        claimWithMixedAncestors(10, 5, 6, 0, "");
+        claimWithMixedAncestors(10, 5, 6, 0, 0, "");
     }
 
     function testConfirmByTimeCombinedClaimAll() public {
-        claimWithMixedAncestors(10, 3, 5, 3, "");
+        claimWithMixedAncestors(10, 3, 3, 3, 3, "");
     }
 
     function testConfirmByTimeNoTime() public {
-        claimWithMixedAncestors(10, 1, 1, 1, "Total time unrivaled not greater than confirmation threshold");
+        claimWithMixedAncestors(10, 1, 1, 1, 1, "Total time unrivaled not greater than confirmation threshold");
     }
 
     function testConfirmByTimeBrokenAncestor() public {
-        claimWithMixedAncestors(10, 137, 1, 1, "Current is not a child of ancestor");
+        claimWithMixedAncestors(10, 137, 1, 1, 1, "Current is not a child of ancestor");
     }
 
     function testConfirmByTimeBrokenClaim() public {
-        claimWithMixedAncestors(10, 138, 1, 1, "Current is not a child of ancestor");
+        claimWithMixedAncestors(10, 138, 1, 1, 1, "Current is not a child of ancestor");
     }
 
     function testConfirmByTimeEdgeNotExist() public {
-        claimWithMixedAncestors(10, 139, 1, 1, "Edge does not exist");
+        claimWithMixedAncestors(10, 139, 1, 1, 1, "Edge does not exist");
     }
 
     function testConfirmByTimeEdgeNotPending() public {
-        claimWithMixedAncestors(10, 140, 1, 1, "Edge not pending");
-    }
-
-    function confirmByOneStep(ChallengeEdge memory edge) internal {
-        bytes32 edgeId = edge.idMem();
-        bytes32 mutualId = ChallengeEdgeLib.mutualIdComponent(
-            edge.eType, edge.originId, edge.startHeight, edge.startHistoryRoot, edge.endHeight
-        );
-        // CHRIS: TODO: check return args instead
-        // vm.expectEmit(true, true, true, true);
-        // emit EdgeChallengeManagerLib.EdgeConfirmedByOneStepProof(edgeId, mutualId);
+        claimWithMixedAncestors(10, 140, 1, 1, 1, "Edge not pending");
     }
 
     function confirmByOneStep(uint256 flag, string memory revertArg) internal {
@@ -1306,8 +1313,6 @@ contract EdgeChallengeManagerLibTest is Test {
 
         if (bytes(revertArg).length != 0) {
             vm.expectRevert(bytes(revertArg));
-        } else {
-            confirmByOneStep(e1);
         }
         a.confirmEdgeByOneStepProof(eid, entry, d, e, beforeProof, afterProof);
 
@@ -1352,5 +1357,19 @@ contract EdgeChallengeManagerLibTest is Test {
 
     function testConfirmByOneStepBadOneStepReturn() public {
         confirmByOneStep(8, "Invalid inclusion proof");
+    }
+
+    function testPowerOfTwo() public {
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(0), false);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(1), true);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(2), true);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(3), false);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(4), true);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(5), false);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(6), false);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(7), false);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(8), true);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(2**17), true);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(1 << 255), true);
     }
 }

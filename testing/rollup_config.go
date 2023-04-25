@@ -3,6 +3,7 @@ package challenge_testing
 import (
 	"math/big"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -21,6 +22,7 @@ func GenerateRollupConfig(
 	} else {
 		confirmPeriod = 20
 	}
+
 	return rollupgen.Config{
 		MiniStakeValue:           miniStakeValue,
 		ConfirmPeriodBlocks:      confirmPeriod,
@@ -37,5 +39,8 @@ func GenerateRollupConfig(
 			DelaySeconds:  big.NewInt(60 * 60 * 24),
 			FutureSeconds: big.NewInt(60 * 60),
 		},
+		LayerZeroBlockEdgeHeight:     big.NewInt(protocol.LevelZeroBlockEdgeHeight),
+		LayerZeroBigStepEdgeHeight:   big.NewInt(protocol.LevelZeroBigStepEdgeHeight),
+		LayerZeroSmallStepEdgeHeight: big.NewInt(protocol.LevelZeroSmallStepEdgeHeight),
 	}
 }

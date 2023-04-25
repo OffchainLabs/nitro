@@ -63,6 +63,11 @@ contract MockAssertionChain is IAssertionChain {
         require(assertionExists(assertionId), "Assertion does not exist");
         return assertions[assertionId].firstChildCreationBlock;
     }
+    
+    function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
+        require(assertionExists(assertionId), "Assertion does not exist");
+        return assertions[assertionId].secondChildCreationBlock;
+    }
 
     function proveWasmModuleRoot(bytes32 assertionId, bytes32 root, bytes memory proof) external view returns (bytes32){
         (bytes32 lastHash, bytes32 assertionExecHash, bytes32 inboxAcc) = abi.decode(proof, (bytes32, bytes32, bytes32));

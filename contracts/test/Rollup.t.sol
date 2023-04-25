@@ -36,6 +36,8 @@ contract RollupTest is Test {
     bytes32 constant FIRST_ASSERTION_BLOCKHASH = keccak256("FIRST_ASSERTION_BLOCKHASH");
     bytes32 constant FIRST_ASSERTION_SENDROOT = keccak256("FIRST_ASSERTION_SENDROOT");
 
+    uint256 constant LAYERZERO_BLOCKEDGE_HEIGHT = 2 ** 5;
+
     RollupProxy rollup;
     RollupUserLogic userRollup;
     RollupAdminLogic adminRollup;
@@ -96,7 +98,10 @@ contract RollupTest is Test {
             wasmModuleRoot: WASM_MODULE_ROOT,
             loserStakeEscrow: address(0),
             genesisBlockNum: 0,
-            miniStakeValue: 1
+            miniStakeValue: 1,
+            layerZeroBlockEdgeHeight: 2**5,
+            layerZeroBigStepEdgeHeight: 2**5,
+            layerZeroSmallStepEdgeHeight: 2**5
         });
 
         address expectedRollupAddr = address(

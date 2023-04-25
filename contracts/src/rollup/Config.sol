@@ -26,6 +26,9 @@ struct Config {
     uint64 genesisBlockNum;
     uint256 miniStakeValue;
     ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
+    uint256 layerZeroBlockEdgeHeight;
+    uint256 layerZeroBigStepEdgeHeight;
+    uint256 layerZeroSmallStepEdgeHeight;
 }
 
 struct ContractDependencies {

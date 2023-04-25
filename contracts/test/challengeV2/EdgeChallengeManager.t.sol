@@ -69,7 +69,9 @@ contract EdgeChallengeManagerTest is Test {
                 )
             )
         );
-        challengeManager.initialize(assertionChain, challengePeriodBlock, new MockOneStepProofEntry());
+        challengeManager.initialize(
+            assertionChain, challengePeriodBlock, new MockOneStepProofEntry(), 2 ** 5, 2 ** 5, 2 ** 5
+        );
 
         bytes32 genesis =
             assertionChain.addAssertionUnsafe(0, genesisHeight, inboxMsgCountGenesis, genesisState, genesisState, 0);
@@ -989,8 +991,12 @@ contract EdgeChallengeManagerTest is Test {
         );
 
         vm.roll(challengePeriodBlock + 5);
+        bytes32[] memory ancestors = new bytes32[](edges1.length);
+        for (uint256 i = 0; i < edges1.length; i++) {
+            ancestors[i] = edges1[i].lowerChildId;
+        }
 
-        ei.challengeManager.confirmEdgeByTime(edge1BigStepId, new bytes32[](0));
+        ei.challengeManager.confirmEdgeByTime(edge1BigStepId, ancestors);
 
         ei.challengeManager.confirmEdgeByClaim(edges1[0].lowerChildId, edge1BigStepId);
         ei.challengeManager.confirmEdgeByTime(edges1[0].upperChildId, getAncestorsAbove(toDynamic(edges1), 0));

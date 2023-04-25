@@ -16,6 +16,7 @@ interface IAssertionChain {
     function getStateHash(bytes32 assertionId) external view returns (bytes32);
     function hasSibling(bytes32 assertionId) external view returns (bool);
     function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256);
+    function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256);
     function proveWasmModuleRoot(bytes32 assertionId, bytes32 root, bytes memory proof)
         external
         view

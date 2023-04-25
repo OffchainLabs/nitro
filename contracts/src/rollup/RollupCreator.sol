@@ -101,7 +101,10 @@ contract RollupCreator is Ownable {
         challengeManager.initialize({
             _assertionChain: IAssertionChain(expectedRollupAddr),
             _challengePeriodBlocks: config.confirmPeriodBlocks,
-            _oneStepProofEntry: osp
+            _oneStepProofEntry: osp,
+            layerZeroBlockEdgeHeight: config.layerZeroBlockEdgeHeight,
+            layerZeroBigStepEdgeHeight: config.layerZeroBigStepEdgeHeight,
+            layerZeroSmallStepEdgeHeight: config.layerZeroSmallStepEdgeHeight
         });
         // oldChallengeManager.initialize(
         //     IOldChallengeResultReceiver(expectedRollupAddr),
