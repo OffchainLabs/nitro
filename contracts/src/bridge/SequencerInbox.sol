@@ -33,6 +33,10 @@ import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
+interface IDataHashesReader {
+    function getDataHashes() external view returns (bytes memory);
+}
+
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
  * @notice Contains the inbox accumulator which is the ordering of all data and transactions to be processed by the rollup.
@@ -399,6 +403,56 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             // this is the same event used by Inbox.sol after including a message to the delayed message accumulator
             emit InboxMessageDelivered(msgNum, spendingReportMsg);
         }
+    }
+
+    function addSequencerL2BatchWithBlobs(
+        uint256 sequenceNumber,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    ) external override refundsGas(gasRefunder) {
+        if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
+        (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
+        bytes memory data = bytes.concat(
+            DATA_AUTHENTICATED_FLAG,
+            IDataHashesReader(0xB1c65720831A5c4d1000756060EAd6190fB55055).getDataHashes()
+        );
+        bytes32 dataHash = keccak256(bytes.concat(header, data));
+        uint256 seqMessageIndex;
+        {
+            // Reformat the stack to prevent "Stack too deep"
+            uint256 sequenceNumber_ = sequenceNumber;
+            TimeBounds memory timeBounds_ = timeBounds;
+            bytes32 dataHash_ = dataHash;
+            uint256 afterDelayedMessagesRead_ = afterDelayedMessagesRead;
+            uint256 prevMessageCount_ = prevMessageCount;
+            uint256 newMessageCount_ = newMessageCount;
+            // we set the calldata length posted to 0 here since the caller isn't the origin
+            // of the tx, so they might have not paid tx input cost for the calldata
+            bytes32 beforeAcc;
+            bytes32 delayedAcc;
+            bytes32 afterAcc;
+            (seqMessageIndex, beforeAcc, delayedAcc, afterAcc) = addSequencerL2BatchImpl(
+                dataHash_,
+                afterDelayedMessagesRead_,
+                0,
+                prevMessageCount_,
+                newMessageCount_
+            );
+            if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
+                revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
+            emit SequencerBatchDelivered(
+                seqMessageIndex,
+                beforeAcc,
+                afterAcc,
+                delayedAcc,
+                totalDelayedMessagesRead,
+                timeBounds_,
+                BatchDataLocation.SeparateBatchEvent
+            );
+        }
+        emit SequencerBatchData(seqMessageIndex, data);
     }
 
     function inboxAccs(uint256 index) external view returns (bytes32) {

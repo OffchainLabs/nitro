@@ -376,7 +376,7 @@ type BlobTxWrapData struct {
 func ToGethWrapData(b *BlobTxWrapData) types.TxWrapData {
 	proof := [48]byte{}
 	copy(proof[:], b.KzgAggregatedProof[:])
-	blobs := types.Blobs{}
+	blobs := make(types.Blobs, len(b.Blobs))
 	for i, blob := range b.Blobs {
 		rawBlob := types.Blob{}
 		for j, val := range blob {

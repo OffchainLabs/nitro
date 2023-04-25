@@ -85,4 +85,31 @@ func TestNitroDevnet(t *testing.T) {
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
 
+	/// Second node
+	l2clientB, nodeB := Create2ndNodeWithConfigAndClient(t, ctx, currentNode, l1client, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1NonSequencerTest(), nil)
+	defer nodeB.StopAndWait()
+
+	// Start test
+	/*
+		seqInbox, err := bridgegen.NewSequencerInbox(l1info.GetAddress("SequencerInbox"), l1client)
+		Require(t, err)
+		seqOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+		_ = seqOpts
+
+		seqInbox.AddSequencerL2BatchWithBlobs(&seqOpts, nil, nil, common.Address{}, nil, nil)
+	*/
+
+	l2info.GenerateAccount("User1")
+
+	tx := l2info.PrepareTx("Owner", "User1", l2info.TransferGas, big.NewInt(1e12), nil)
+
+	err = l2client.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
+	Require(t, err)
+
 }
