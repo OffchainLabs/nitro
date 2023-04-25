@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    api::EvmApi,
+    evm_api::EvmApi,
     env::{MeterData, WasmEnv},
     host,
 };

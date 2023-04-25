@@ -10,9 +10,8 @@ use crate::{
     wavmio::{Bytes20, Bytes32},
     Opts,
 };
-
 use arbutil::Color;
-use eyre::{bail, Result, WrapErr};
+use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{
@@ -164,6 +163,8 @@ pub enum Escape {
     Failure(String),
     #[error("hostio failed with `{0}`")]
     HostIO(String),
+    #[error("comms with child instance failed with `{0}`")]
+    Child(ErrReport),
     #[error("hostio socket failed with `{0}`")]
     SocketError(#[from] io::Error),
 }

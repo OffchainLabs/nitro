@@ -4,22 +4,18 @@
 use crate::{
     gostack::GoStack,
     machine::{Escape, MaybeEscape, WasmEnvMut},
-    syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
-    user::evm::{ApiValue, EvmMsg, JitApi},
+    user::evm_api::exec_wasm,
 };
-use arbutil::{heapify, Color};
+use arbutil::heapify;
 use eyre::eyre;
 use prover::programs::{
     config::{EvmData, GoParams},
     prelude::*,
 };
-use std::{mem, sync::mpsc, thread, time::Duration};
-use stylus::{
-    native::{self, NativeInstance},
-    run::RunProgram,
-};
+use std::mem;
+use stylus::native;
 
-mod evm;
+mod evm_api;
 
 /// Compiles and instruments user wasm.
 /// go side: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
@@ -44,109 +40,34 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 /// Links and executes a user wasm.
 /// λ(mach *Machine, data []byte, params *Configs, api *GoApi, evmData: *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
-pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let mut sp = GoStack::simple(sp, &env);
     macro_rules! unbox {
         () => {
             unsafe { *Box::from_raw(sp.read_ptr_mut()) }
         };
     }
-    use EvmMsg::*;
     use UserOutcomeKind::*;
 
     // move inputs
     let module: Vec<u8> = unbox!();
     let calldata = sp.read_go_slice_owned();
-    let configs: (CompileConfig, StylusConfig) = unbox!();
+    let (compile, config): (CompileConfig, StylusConfig) = unbox!();
     let evm = sp.read_go_slice_owned();
     let evm_data: EvmData = unbox!();
 
     // buy ink
-    let pricing = configs.1.pricing;
+    let pricing = config.pricing;
     let gas = sp.read_go_ptr();
     let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
     // skip the root since we don't use these
     sp.skip_u64();
 
-    let (tx, rx) = mpsc::sync_channel(0);
-    let evm = JitApi::new(evm, tx.clone());
-
-    let handle = thread::spawn(move || unsafe {
-        // Safety: module came from compile_user_wasm
-        let instance = NativeInstance::deserialize(&module, configs.0.clone(), evm, evm_data);
-        let mut instance = match instance {
-            Ok(instance) => instance,
-            Err(error) => {
-                let message = format!("failed to instantiate program {error:?}");
-                tx.send(Panic(message.clone())).unwrap();
-                panic!("{message}");
-            }
-        };
-
-        let outcome = instance.run_main(&calldata, configs.1, ink);
-        tx.send(Done).unwrap();
-
-        let ink_left = match outcome.as_ref().map(|e| e.into()) {
-            Ok(OutOfStack) => 0, // take all ink when out of stack
-            _ => instance.ink_left().into(),
-        };
-        (outcome, ink_left)
-    });
-
-    loop {
-        let msg = match rx.recv_timeout(Duration::from_secs(15)) {
-            Ok(msg) => msg,
-            Err(err) => return Escape::hostio(format!("{err}")),
-        };
-        match msg {
-            Call(func, args, respond) => {
-                let (env, mut store) = env.data_and_store_mut();
-                let js = &mut env.js_state;
-
-                let mut objects = vec![];
-                let mut object_ids = vec![];
-                for arg in args {
-                    let id = js.pool.insert(DynamicObject::Uint8Array(arg.0));
-                    objects.push(GoValue::Object(id));
-                    object_ids.push(id);
-                }
-
-                let Some(DynamicObject::FunctionWrapper(func)) = js.pool.get(func).cloned() else {
-                    return Escape::hostio(format!("missing func {}", func.red()))
-                };
-
-                js.set_pending_event(func, JsValue::Ref(STYLUS_ID), objects);
-                unsafe { sp.resume(env, &mut store)? };
-
-                let js = &mut env.js_state;
-                let Some(JsValue::Ref(output)) = js.stylus_result.take() else {
-                    return Escape::hostio(format!("no return value for func {}", func.red()))
-                };
-                let Some(DynamicObject::ValueArray(output)) = js.pool.remove(output) else {
-                    return Escape::hostio(format!("bad return value for func {}", func.red()))
-                };
-
-                let mut outs = vec![];
-                for out in output {
-                    let id = out.assume_id()?;
-                    let Some(DynamicObject::Uint8Array(x)) = js.pool.remove(id) else {
-                        return Escape::hostio(format!("bad inner return value for func {}", func.red()))
-                    };
-                    outs.push(ApiValue(x));
-                }
-
-                for id in object_ids {
-                    env.js_state.pool.remove(id);
-                }
-                respond.send(outs).unwrap();
-            }
-            Panic(error) => return Escape::hostio(error),
-            Done => break,
-        }
-    }
-
-    let (outcome, ink_left) = handle.join().unwrap();
+    let result = exec_wasm(
+        &mut sp, env, module, calldata, compile, config, evm, evm_data, ink,
+    );
+    let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
     match outcome {
         Err(err) | Ok(UserOutcome::Failure(err)) => {

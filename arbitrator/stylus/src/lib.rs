@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::api::GoApi;
+use crate::evm_api::GoApi;
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
 use prover::programs::{
@@ -12,12 +12,12 @@ use run::RunProgram;
 use std::mem;
 
 pub use {
-    crate::api::{EvmApi, EvmApiMethod, EvmApiStatus},
+    crate::evm_api::{EvmApi, EvmApiMethod, EvmApiStatus},
     prover,
 };
 
-mod api;
 mod env;
+mod evm_api;
 pub mod host;
 pub mod native;
 pub mod run;

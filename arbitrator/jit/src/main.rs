@@ -89,6 +89,7 @@ fn main() {
         Some(Escape::Exit(x)) => (false, format!("Failed in {time} with exit code {x}.")),
         Some(Escape::Failure(err)) => (false, format!("Jit failed with {err} in {time}.")),
         Some(Escape::HostIO(err)) => (false, format!("Hostio failed with {err} in {time}.")),
+        Some(Escape::Child(err)) => (false, format!("Child failed with {err} in {time}.")),
         Some(Escape::SocketError(err)) => (false, format!("Socket failed with {err} in {time}.")),
         None => (false, "Machine exited prematurely".to_owned()),
     };

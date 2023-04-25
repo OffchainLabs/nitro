@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::api::EvmApi;
+use crate::evm_api::EvmApi;
 use arbutil::{evm, Color};
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};

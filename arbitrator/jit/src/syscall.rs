@@ -307,14 +307,10 @@ pub fn js_value_set(mut env: WasmEnvMut, sp: u32) {
         env.js_state.pending_event = None;
         return;
     }
-    match (source, field.as_slice()) {
-        (Ref(STYLUS_ID), b"result") => {
-            env.js_state.stylus_result = Some(new_value);
-            return;
-        }
-        _ => {}
+    if let (Ref(STYLUS_ID), b"result") = (source, field.as_slice()) {
+        env.js_state.stylus_result = Some(new_value);
+        return;
     }
-
     if let Ref(id) = source {
         let source = env.js_state.pool.get_mut(id);
         if let Some(DynamicObject::PendingEvent(_)) = source {
@@ -510,7 +506,7 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                     JsValue::Number(x) => print!(" num {x}"),
                     JsValue::Ref(id) => match pool.get(id) {
                         Some(DynamicObject::GoString(data)) => {
-                            print!(" {}", String::from_utf8_lossy(&data))
+                            print!(" {}", String::from_utf8_lossy(data))
                         }
                         Some(DynamicObject::Uint8Array(data)) => {
                             print!(" 0x{}", hex::encode(data))
@@ -520,7 +516,7 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                     },
                 }
             }
-            println!("");
+            println!();
             GoValue::Undefined
         }
         (Ref(obj_id), _) => {
