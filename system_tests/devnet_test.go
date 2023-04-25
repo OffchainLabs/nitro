@@ -117,6 +117,7 @@ func TestNitroDevnet(t *testing.T) {
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 
 	nodeConfig := arbnode.ConfigDefaultL1Test()
+	nodeConfig.BatchPoster.EIP4844 = true
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, nil)
 	_ = l2info
