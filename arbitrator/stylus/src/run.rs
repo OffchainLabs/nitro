@@ -96,8 +96,8 @@ impl<E: EvmApi> RunProgram for NativeInstance<E> {
                 };
                 return Ok(match escape {
                     Escape::OutOfInk => OutOfInk,
-                    Escape::Memory(error) => UserOutcome::revert(error.into()),
-                    Escape::Internal(error) | Escape::Logical(error) => UserOutcome::revert(error),
+                    Escape::Memory(error) => UserOutcome::Failure(error.into()),
+                    Escape::Internal(error) | Escape::Logical(error) => UserOutcome::Failure(error),
                 });
             }
         };

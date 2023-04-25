@@ -37,7 +37,6 @@ enum ApiValueKind {
     Bytes20(Bytes20),
     Bytes32(Bytes32),
     String(String),
-    Status(EvmApiStatus),
     Nil,
 }
 
@@ -58,8 +57,7 @@ impl ApiValueKind {
             ApiValueKind::Bytes20(_) => 3,
             ApiValueKind::Bytes32(_) => 4,
             ApiValueKind::String(_) => 5,
-            ApiValueKind::Status(_) => 6,
-            ApiValueKind::Nil => 7,
+            ApiValueKind::Nil => 6,
         }
     }
 }
@@ -75,8 +73,7 @@ impl From<ApiValue> for ApiValueKind {
             3 => ApiValueKind::Bytes20(data.try_into().unwrap()),
             4 => ApiValueKind::Bytes32(data.try_into().unwrap()),
             5 => ApiValueKind::String(String::from_utf8(data.to_vec()).unwrap()),
-            6 => ApiValueKind::Status(data[0].into()),
-            7 => ApiValueKind::Nil,
+            6 => ApiValueKind::Nil,
             _ => unreachable!(),
         }
     }
@@ -93,7 +90,6 @@ impl From<ApiValueKind> for ApiValue {
             Bytes20(x) => x.0.as_ref().to_vec(),
             Bytes32(x) => x.0.as_ref().to_vec(),
             String(x) => x.as_bytes().to_vec(),
-            Status(x) => vec![x as u8],
             Nil => vec![],
         });
         Self(data)
@@ -165,9 +161,10 @@ impl ApiValueKind {
         }
     }
 
-    fn assert_outcome(self) -> UserOutcomeKind {
+    fn assert_status(self) -> UserOutcomeKind {
         match self {
-            ApiValueKind::Status(value) => value.into(),
+            ApiValueKind::Nil => EvmApiStatus::Success.into(),
+            ApiValueKind::String(_) => EvmApiStatus::Failure.into(),
             x => panic!("wrong type {x:?}"),
         }
     }
@@ -180,7 +177,7 @@ impl JitApi {
             let start = i * 4;
             let slice = &ids[start..(start + 4)];
             let value = u32::from_be_bytes(slice.try_into().unwrap());
-            println!("Func id {}", value.pink());
+            //println!("Func id {}", value.pink());
             object_ids.push(value);
         }
         Self { object_ids, parent }
@@ -227,7 +224,7 @@ impl EvmApi for JitApi {
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
         let [len, cost, status] = call!(self, 3, ContractCall, contract, input, gas, value);
-        (len.assert_u32(), cost.assert_u64(), status.assert_outcome())
+        (len.assert_u32(), cost.assert_u64(), status.assert_status())
     }
 
     fn delegate_call(
@@ -237,7 +234,7 @@ impl EvmApi for JitApi {
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let [len, cost, status] = call!(self, 3, DelegateCall, contract, input, gas);
-        (len.assert_u32(), cost.assert_u64(), status.assert_outcome())
+        (len.assert_u32(), cost.assert_u64(), status.assert_status())
     }
 
     fn static_call(
@@ -247,7 +244,8 @@ impl EvmApi for JitApi {
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let [len, cost, status] = call!(self, 3, StaticCall, contract, input, gas);
-        (len.assert_u32(), cost.assert_u64(), status.assert_outcome())
+        println!("STATIC: {:?} {:?} {:?}", len, cost, status);
+        (len.assert_u32(), cost.assert_u64(), status.assert_status())
     }
 
     fn create1(

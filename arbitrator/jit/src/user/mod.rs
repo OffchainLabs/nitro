@@ -7,7 +7,7 @@ use crate::{
     syscall::{DynamicObject, GoValue, JsValue, STYLUS_ID},
     user::evm::{ApiValue, EvmMsg, JitApi},
 };
-use arbutil::{heapify, Color, DebugColor};
+use arbutil::{heapify, Color};
 use eyre::eyre;
 use prover::programs::{
     config::{EvmData, GoParams},
@@ -111,7 +111,6 @@ pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                     objects.push(GoValue::Object(id));
                     object_ids.push(id);
                 }
-                println!("Ready with objects {}", object_ids.debug_pink());
 
                 let Some(DynamicObject::FunctionWrapper(func)) = js.pool.get(func).cloned() else {
                     return Escape::hostio(format!("missing func {}", func.red()))
@@ -137,7 +136,6 @@ pub fn call_user_wasm(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                     outs.push(ApiValue(x));
                 }
 
-                println!("Resumed with results {}", outs.debug_pink());
                 for id in object_ids {
                     env.js_state.pool.remove(id);
                 }

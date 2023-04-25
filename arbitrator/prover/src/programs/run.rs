@@ -24,11 +24,6 @@ pub enum UserOutcomeKind {
 }
 
 impl UserOutcome {
-    pub fn revert(error: ErrReport) -> Self {
-        let data = format!("{:?}", error);
-        Self::Revert(data.into_bytes())
-    }
-
     pub fn into_data(self) -> (UserOutcomeKind, Vec<u8>) {
         let kind = (&self).into();
         let data = match self {

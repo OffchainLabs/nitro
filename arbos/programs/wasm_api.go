@@ -45,7 +45,6 @@ func newApi(
 		preBytes20
 		preBytes32
 		preString
-		preStatus
 		preNil
 	)
 
@@ -83,7 +82,7 @@ func newApi(
 		js.CopyBytesToJS(array, value)
 		return array
 	}
-	array := func(results ...any) js.Value {
+	write := func(stylus js.Value, results ...any) any {
 		array := make([]interface{}, 0)
 		for _, result := range results {
 			var value js.Value
@@ -111,7 +110,8 @@ func newApi(
 			}
 			array = append(array, value)
 		}
-		return js.ValueOf(array)
+		stylus.Set("result", js.ValueOf(array))
+		return nil
 	}
 	maybe := func(value interface{}, err error) interface{} {
 		if err != nil {
@@ -119,21 +119,17 @@ func newApi(
 		}
 		return value
 	}
-	result := func(stylus js.Value, outs ...any) any {
-		stylus.Set("result", array(outs...))
-		return nil
-	}
 
 	getBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		key := jsHash(args[0])
 		value, cost := closures.getBytes32(key)
-		return result(stylus, value, cost)
+		return write(stylus, value, cost)
 	})
 	setBytes32 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		key := jsHash(args[0])
 		value := jsHash(args[1])
 		cost, err := closures.setBytes32(key, value)
-		return result(stylus, maybe(cost, err))
+		return write(stylus, maybe(cost, err))
 	})
 	contractCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
@@ -141,28 +137,28 @@ func newApi(
 		gas := jsU64(args[2])
 		value := jsBig(args[3])
 		len, cost, status := closures.contractCall(contract, input, gas, value)
-		return result(stylus, len, cost, status)
+		return write(stylus, len, cost, status)
 	})
 	delegateCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
 		input := jsBytes(args[1])
 		gas := jsU64(args[2])
 		len, cost, status := closures.delegateCall(contract, input, gas)
-		return result(stylus, len, cost, status)
+		return write(stylus, len, cost, status)
 	})
 	staticCall := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		contract := jsAddress(args[0])
 		input := jsBytes(args[1])
 		gas := jsU64(args[2])
 		len, cost, status := closures.staticCall(contract, input, gas)
-		return result(stylus, len, cost, status)
+		return write(stylus, len, cost, status)
 	})
 	create1 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		code := jsBytes(args[0])
 		endowment := jsBig(args[1])
 		gas := jsU64(args[2])
 		addr, len, cost, err := closures.create1(code, endowment, gas)
-		return result(stylus, maybe(addr, err), len, cost)
+		return write(stylus, maybe(addr, err), len, cost)
 	})
 	create2 := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		code := jsBytes(args[0])
@@ -170,17 +166,17 @@ func newApi(
 		salt := jsBig(args[2])
 		gas := jsU64(args[3])
 		addr, len, cost, err := closures.create2(code, endowment, salt, gas)
-		return result(stylus, maybe(addr, err), len, cost)
+		return write(stylus, maybe(addr, err), len, cost)
 	})
 	getReturnData := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		data := closures.getReturnData()
-		return result(stylus, data)
+		return write(stylus, data)
 	})
 	emitLog := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		data := jsBytes(args[0])
 		topics := jsU32(args[1])
 		err := closures.emitLog(data, topics)
-		return result(stylus, err)
+		return write(stylus, err)
 	})
 
 	ids := make([]byte, 0, 10*2)

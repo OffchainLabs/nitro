@@ -413,7 +413,6 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
                 fail!("Go trying to call Go._makeFuncWrapper with bad args {args:?}")
             };
             let ref_id = pool.insert(DynamicObject::FunctionWrapper(*func_id as u32));
-            println!("Wrapping func object {}", ref_id.pink());
             GoValue::Function(ref_id)
         }
         (Ref(STYLUS_ID), b"setCallbacks") => {

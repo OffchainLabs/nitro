@@ -119,7 +119,7 @@ impl EvmApi for TestEvmApi {
         self.return_data.clone()
     }
 
-    fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> Result<()> {
+    fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
         Ok(()) // pretend a log was emitted
     }
 }

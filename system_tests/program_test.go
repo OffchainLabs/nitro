@@ -156,7 +156,7 @@ func TestProgramCallsArb(t *testing.T) {
 }
 
 func testCalls(t *testing.T, jit bool) {
-	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
+	ctx, node, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -354,8 +354,7 @@ func testCalls(t *testing.T, jit bool) {
 		Fail(t, balance, value)
 	}
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, ctx, node, l2client)
 }
 
 func TestProgramLogsJIT(t *testing.T) {
