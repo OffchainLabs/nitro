@@ -5,7 +5,6 @@
 
 use arbitrum::block;
 use arbitrum::evm;
-use arbitrum::Bytes32;
 use arbitrum::msg;
 use arbitrum::tx;
 
