@@ -24,8 +24,8 @@ extern "C" {
     pub(crate) fn evm_blockhash(key: *const u8, dest: *mut u8);
 }
 
-pub fn blockhash(key: Bytes32) -> Bytes32 {
+pub fn blockhash(key: Bytes32) -> Option<Bytes32> {
     let mut data = [0; 32];
     unsafe { evm_blockhash(key.ptr(), data.as_mut_ptr()) };
-    Bytes32(data)
+    (data != [0; 32]).then_some(Bytes32(data))
 }

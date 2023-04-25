@@ -5,6 +5,7 @@
 
 use arbitrum::block;
 use arbitrum::evm;
+use arbitrum::Bytes32;
 use arbitrum::msg;
 use arbitrum::tx;
 
@@ -26,7 +27,14 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let origin = tx::origin();
 
     let mut output = vec![];
-    output.extend(blockhash.0);
+    match blockhash {
+        Some(hash) => output.extend(hash.0),
+        None => {
+            let data = [0; 32];
+            output.extend(data)
+        }
+    }
+
     output.extend(basefee.0);
     output.extend(chainid.0);
     output.extend(coinbase.0);
