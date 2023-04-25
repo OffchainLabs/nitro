@@ -5,6 +5,8 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
 	"math/big"
 	"os"
 	"testing"
@@ -24,11 +26,25 @@ func shouldSkip(t *testing.T) {
 	}
 }
 
+func fileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return err == nil
+}
+
 func TestNitroDevnet(t *testing.T) {
 	shouldSkip(t)
 
 	if os.Getenv("FAUCET_KEY") == "" {
 		t.Fatal("No FAUCET_KEY was specified")
+	}
+
+	var rollupAddressesPath, l1AccountsPath string
+	if os.Getenv("ROLLUP_ADDRESSES_DIR") != "" {
+		rollupAddressesPath = os.Getenv("ROLLUP_ADDRESSES_DIR") + "/rollup.json"
+		l1AccountsPath = os.Getenv("ROLLUP_ADDRESSES_DIR") + "/l1accounts.json"
 	}
 
 	faucetKey, err := crypto.HexToECDSA(os.Getenv("FAUCET_KEY"))
@@ -59,8 +75,42 @@ func TestNitroDevnet(t *testing.T) {
 
 	l1info.SetFullAccountInfo("Faucet", &faucetAccount)
 
-	rollupAddresses := DeployOnTestL1(t, ctx, l1info, l1client, big.NewInt(412346))
-	_ = rollupAddresses
+	rollupAddresses := &arbnode.RollupAddresses{}
+
+	if rollupAddressesPath == "" || !fileExists(rollupAddressesPath) || !fileExists(l1AccountsPath) {
+		rollupAddresses = DeployOnTestL1(t, ctx, l1info, l1client, big.NewInt(412346))
+
+		if rollupAddressesPath != "" {
+			rollupAddressesJson, err := json.MarshalIndent(*rollupAddresses, "", "  ")
+			Require(t, err)
+
+			err = ioutil.WriteFile(rollupAddressesPath, rollupAddressesJson, os.ModePerm)
+			Require(t, err)
+
+			l1AccountsJson, err := json.MarshalIndent(l1info.Accounts, "", "  ")
+			Require(t, err)
+
+			err = ioutil.WriteFile(l1AccountsPath, l1AccountsJson, os.ModePerm)
+			Require(t, err)
+		}
+	} else {
+		rollupAddressesFile, err := os.Open(rollupAddressesPath)
+		Require(t, err)
+		defer rollupAddressesFile.Close()
+		rollupAddressesBytes, err := ioutil.ReadAll(rollupAddressesFile)
+		Require(t, err)
+		err = json.Unmarshal(rollupAddressesBytes, rollupAddresses)
+		Require(t, err)
+
+		l1AccountsFile, err := os.Open(l1AccountsPath)
+		Require(t, err)
+		defer l1AccountsFile.Close()
+		l1AccountsBytes, err := ioutil.ReadAll(l1AccountsFile)
+		Require(t, err)
+		err = json.Unmarshal(l1AccountsBytes, &l1info.Accounts)
+		Require(t, err)
+	}
+
 	t.Logf("rollupAddresses: %v", rollupAddresses)
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)

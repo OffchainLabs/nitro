@@ -503,12 +503,25 @@ func Create2ndNodeWithConfig(
 	nodeConfig *arbnode.Config,
 	stackConfig *node.Config,
 ) (*ethclient.Client, *arbnode.Node) {
-	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		Fail(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
+	return Create2ndNodeWithConfigAndClient(t, ctx, first, l1client, l1info, l2InitData, nodeConfig, stackConfig)
+}
+
+func Create2ndNodeWithConfigAndClient(
+	t *testing.T,
+	ctx context.Context,
+	first *arbnode.Node,
+	l1client *ethclient.Client,
+	l1info *BlockchainTestInfo,
+	l2InitData *statetransfer.ArbosInitializationInfo,
+	nodeConfig *arbnode.Config,
+	stackConfig *node.Config,
+) (*ethclient.Client, *arbnode.Node) {
+	feedErrChan := make(chan error, 10)
 
 	if stackConfig == nil {
 		stackConfig = getTestStackConfig(t)

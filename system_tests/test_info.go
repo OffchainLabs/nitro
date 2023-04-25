@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"sync/atomic"
@@ -31,6 +33,40 @@ type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
 	Nonce      uint64
+}
+
+type AccountInfoSerializable struct {
+	Address    common.Address
+	PrivateKey string
+	Nonce      uint64
+}
+
+func (a *AccountInfo) UnmarshalJSON(b []byte) error {
+	var s AccountInfoSerializable
+	err := json.Unmarshal(b, &s)
+	if err != nil {
+		return err
+	}
+
+	a.Address = s.Address
+	if s.PrivateKey != "" {
+		a.PrivateKey, err = crypto.HexToECDSA(s.PrivateKey)
+		if err != nil {
+			return err
+		}
+	}
+	a.Nonce = s.Nonce
+	return nil
+}
+
+func (a *AccountInfo) MarshalJSON() ([]byte, error) {
+	s := AccountInfoSerializable{
+		Address:    a.Address,
+		PrivateKey: hex.EncodeToString(crypto.FromECDSA(a.PrivateKey)),
+		Nonce:      a.Nonce,
+	}
+
+	return json.Marshal(s)
 }
 
 type BlockchainTestInfo struct {
