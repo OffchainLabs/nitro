@@ -341,12 +341,27 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
+	header, err := v.client.HeaderByNumber(ctx, big.NewInt(int64(currentL1BlockNum)))
+	if err != nil {
+		return nil, false, fmt.Errorf("error getting L1 block number %d header : %w", currentL1BlockNum, err)
+	}
+	headerInfo, err := types.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return nil, false, fmt.Errorf("error deserializeing header extra information for L1 block number %d : %w", currentL1BlockNum, err)
+	}
+	var parentChainBlockNumber uint64
+	if headerInfo.L1BlockNumber != 0 {
+		parentChainBlockNumber = headerInfo.L1BlockNumber
+	} else {
+		parentChainBlockNumber = currentL1BlockNum
+	}
+
 	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
-	timeSinceProposed := big.NewInt(int64(currentL1BlockNum) - int64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(parentChainBlockNumber) - int64(startStateProposed))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
