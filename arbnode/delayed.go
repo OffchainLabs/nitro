@@ -195,6 +195,8 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
+		h, _ := b.client.HeaderByNumber(ctx, big.NewInt(int64(parsedLog.Raw.BlockNumber)))
+		i, _ := types.DeserializeHeaderExtraInformation(h)
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
@@ -202,7 +204,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: parsedLog.Raw.BlockNumber,
+					BlockNumber: i.L1BlockNumber,
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,

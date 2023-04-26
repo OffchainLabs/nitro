@@ -189,41 +189,35 @@
       }
     }
   },
-  "421613" : {
-    "chain-name" : "goerli-rollup",
-    "parent-chain-id" : 5,
+  "11111112" : {
+    "chain-name" : "l3-goerli-rollup",
+    "parent-chain-id" : 421613,
     "chain-parameters": {
       "persistent" : {
         "chain": "goerli-rollup"
       },
-      "node": {
-        "forwarding-target": "https://goerli-rollup.arbitrum.io/rpc",
-        "feed": {
-          "input": {
-            "url" : "wss://goerli-rollup.arbitrum.io/feed"
-          }
-        }
-      },
       "l1": {
         "rollup": {
-          "bridge": "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
-          "inbox": "0x6bebc4925716945d46f0ec336d5c2564f419682c",
-          "rollup": "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
-          "sequencer-inbox": "0x0484a87b144745a2e5b7c359552119b6ea2917a9",
-          "validator-utils": "0x344f651fe566a02db939c8657427deb5524ea78e",
-          "validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
-          "deployed-at": 7217526
-        }
+          "bridge": "0x6c66c67babcccfd76bd99f764cecb9b9b2c372f9",
+          "inbox": "0x23c305588114898d879356e0460282524220ade3",
+          "rollup": "0x7e322f917143a38db56c9edf0f5976f98d531a73",
+          "sequencer-inbox": "0xbde3a9f4edbc5ebe6467f1c004afb7dacbf31e36",
+          "validator-utils": "0x3cb54cf46d1d6695b00ff4da420fd41a20d0ff9f",
+          "validator-wallet-creator": "0xca6981377270e4e3375294283ddd11114b672a95",
+          "deployed-at": 17702515
+        },
+        "url": "https://goerli-rollup.arbitrum.io/rpc",
+        "chain-id": 421613
       },
       "l2": {
-        "chain-id": 421613
+        "chain-id": 11111112
       },
       "init": {
         "empty": true
       }
     },
     "chain-config": {
-      "chainId": 421613,
+      "chainId": 11111112,
       "homesteadBlock": 0,
       "daoForkBlock": null,
       "daoForkSupport": true,
@@ -247,7 +241,7 @@
         "AllowDebugPrecompiles": false,
         "DataAvailabilityCommittee": false,
         "InitialArbOSVersion": 2,
-        "InitialChainOwner": "0x186b56023d42b2b4e7616589a5c62eef5fca21dd",
+        "InitialChainOwner": "0xDA4cA7F538bc88Ad24CFB09e219Fdb2382eFb1CC",
         "GenesisBlockNum": 0
       }
     }

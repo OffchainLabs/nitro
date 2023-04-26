@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -48,6 +50,17 @@ func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction
 }
 
 func GetPendingCallBlockNumber(ctx context.Context, client L1Interface) (*big.Int, error) {
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	if err != nil {
+		return nil, err
+	}
+	blockNumber, err := arbSys.ArbBlockNumber(&bind.CallOpts{Pending: true})
+	if err == nil {
+		return blockNumber, nil
+	} else {
+		log.Trace("failed to get pending block number with ArbSys, trying the normal EVM way", "err", err)
+	}
+
 	msg := ethereum.CallMsg{
 		// Pretend to be a contract deployment to execute EVM code without calling a contract.
 		To: nil,

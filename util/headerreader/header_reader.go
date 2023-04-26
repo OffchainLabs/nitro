@@ -117,6 +117,20 @@ func (s *HeaderReader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Head
 	return result, unsubscribeFunc
 }
 
+func (s *HeaderReader) CorrespondingL1BlockNumber(ctx context.Context, blockNumber *big.Int) (*big.Int, error) {
+	header, err := s.client.HeaderByNumber(ctx, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+	headerInfo, err := types.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return nil, err
+	}
+	if headerInfo.L1BlockNumber == 0 {
+		return blockNumber, nil
+	}
+	return big.NewInt(int64(headerInfo.L1BlockNumber)), nil
+}
 func (s *HeaderReader) unsubscribe(requireBlockNrUpdates bool, from chan<- *types.Header) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
