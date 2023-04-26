@@ -200,10 +200,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		if err != nil {
 			return nil, err
 		}
-		headerInfo, err := types.DeserializeHeaderExtraInformation(header)
-		if err != nil {
-			return nil, err
-		}
+		headerInfo, _ := types.DeserializeHeaderExtraInformation(header)
 		var parentChainBlockNumber uint64
 		if headerInfo.L1BlockNumber != 0 {
 			parentChainBlockNumber = headerInfo.L1BlockNumber
