@@ -82,8 +82,24 @@ type L1ValidatorConfig struct {
 	gasRefunder common.Address
 }
 
+func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
+	if strings.ToLower(c.Strategy) == "watchtower" {
+		return WatchtowerStrategy, nil
+	} else if strings.ToLower(c.Strategy) == "defensive" {
+		return DefensiveStrategy, nil
+	} else if strings.ToLower(c.Strategy) == "stakelatest" {
+		return StakeLatestStrategy, nil
+	} else if strings.ToLower(c.Strategy) == "resolvenodes" {
+		return ResolveNodesStrategy, nil
+	} else if strings.ToLower(c.Strategy) == "makenodes" {
+		return MakeNodesStrategy, nil
+	} else {
+		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", c.Strategy)
+	}
+}
+
 func (c *L1ValidatorConfig) Validate() error {
-	strategy, err := stakerStrategyFromString(c.Strategy)
+	strategy, err := c.ParseStrategy()
 	if err != nil {
 		return err
 	}
@@ -157,22 +173,6 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
-}
-
-func stakerStrategyFromString(s string) (StakerStrategy, error) {
-	if strings.ToLower(s) == "watchtower" {
-		return WatchtowerStrategy, nil
-	} else if strings.ToLower(s) == "defensive" {
-		return DefensiveStrategy, nil
-	} else if strings.ToLower(s) == "stakelatest" {
-		return StakeLatestStrategy, nil
-	} else if strings.ToLower(s) == "resolvenodes" {
-		return ResolveNodesStrategy, nil
-	} else if strings.ToLower(s) == "makenodes" {
-		return MakeNodesStrategy, nil
-	} else {
-		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", s)
-	}
 }
 
 func NewStaker(
