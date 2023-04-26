@@ -105,9 +105,10 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint6
 }
 
 type DelayedInboxMessage struct {
-	BlockHash      common.Hash
-	BeforeInboxAcc common.Hash
-	Message        *arbostypes.L1IncomingMessage
+	BlockHash              common.Hash
+	BeforeInboxAcc         common.Hash
+	Message                *arbostypes.L1IncomingMessage
+	ParentChainBlockNumber uint64
 }
 
 func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
@@ -195,6 +196,20 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
+		header, err := b.client.HeaderByNumber(ctx, big.NewInt(int64(parsedLog.Raw.BlockNumber)))
+		if err != nil {
+			return nil, err
+		}
+		headerInfo, err := types.DeserializeHeaderExtraInformation(header)
+		if err != nil {
+			return nil, err
+		}
+		var parentChainBlockNumber uint64
+		if headerInfo.L1BlockNumber != 0 {
+			parentChainBlockNumber = headerInfo.L1BlockNumber
+		} else {
+			parentChainBlockNumber = parsedLog.Raw.BlockNumber
+		}
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
@@ -202,15 +217,16 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: parsedLog.Raw.BlockNumber,
+					BlockNumber: parentChainBlockNumber,
 					Timestamp:   parsedLog.Timestamp,
 					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
 				},
 				L2msg: data,
 			},
+			ParentChainBlockNumber: parentChainBlockNumber,
 		}
-		err := msg.Message.FillInBatchGasCost(batchFetcher)
+		err = msg.Message.FillInBatchGasCost(batchFetcher)
 		if err != nil {
 			return nil, err
 		}

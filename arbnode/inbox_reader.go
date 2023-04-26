@@ -554,11 +554,11 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	msg, err := r.tracker.GetDelayedMessage(delayedCount - 1)
+	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
 	if err != nil {
 		return nil, err
 	}
-	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
+	msgBlock := new(big.Int).SetUint64(parentChainBlockNumber)
 	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
 		msgBlock.Set(r.firstMessageBlock)
 	}
