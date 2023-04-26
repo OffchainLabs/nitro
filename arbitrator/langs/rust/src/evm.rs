@@ -29,3 +29,29 @@ pub fn blockhash(key: Bytes32) -> Option<Bytes32> {
     unsafe { evm_blockhash(key.ptr(), data.as_mut_ptr()) };
     (data != [0; 32]).then_some(Bytes32(data))
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn evm_gas_price(gas_price: *mut u8);
+    pub(crate) fn evm_ink_price() -> u64;
+    pub(crate) fn evm_gas_left() -> u64;
+    pub(crate) fn evm_ink_left() -> u64;
+}
+
+pub fn gas_price() -> Bytes32 {
+    let mut data = [0; 32];
+    unsafe { evm_gas_price(data.as_mut_ptr()) };
+    Bytes32(data)
+}
+
+pub fn ink_price() -> u64 {
+    unsafe { evm_ink_price() }
+}
+
+pub fn gas_left() -> u64 {
+    unsafe { evm_gas_left() }
+}
+
+pub fn ink_left() -> u64 {
+    unsafe { evm_ink_left() }
+}

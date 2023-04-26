@@ -22,8 +22,11 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let timestamp = block::timestamp();
     let sender = msg::sender();
     let value = msg::value();
-    let gas_price = tx::gas_price();
     let origin = tx::origin();
+    let gas_price = evm::gas_price();
+    let ink_price = evm::ink_price();
+    let gas_left_before = evm::gas_left();
+    let ink_left_before = evm::ink_left();
 
     let mut output = vec![];
     match blockhash {
@@ -33,7 +36,6 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             output.extend(data)
         }
     }
-
     output.extend(basefee.0);
     output.extend(chainid.0);
     output.extend(coinbase.0);
@@ -43,7 +45,10 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(timestamp.0);
     output.extend(sender.0);
     output.extend(value.0);
-    output.extend(gas_price.0);
     output.extend(origin.0);
+    output.extend(gas_price.0);
+    output.extend(ink_price.to_be_bytes());
+    output.extend(gas_left.to_be_bytes());
+    output.extend(ink_left.to_be_bytes());
     Ok(output)
 }
