@@ -42,6 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -315,8 +316,8 @@ func callUserWasm(
 		block_gas_limit:  C.uint64_t(evm.Context.GasLimit),
 		block_number:     bigToBytes32(evm.Context.BlockNumber),
 		block_timestamp:  bigToBytes32(evm.Context.Time),
-		msg_sender:       addressToBytes20(msg.From()),
-		msg_value:        bigToBytes32(msg.Value()),
+		msg_sender:       addressToBytes20(contract.Caller()),
+		msg_value:        bigToBytes32(contract.Value()),
 		gas_price:        bigToBytes32(evm.TxContext.GasPrice),
 		origin:           addressToBytes20(evm.TxContext.Origin),
 	}
@@ -335,10 +336,11 @@ func callUserWasm(
 		output,
 		(*u64)(&contract.Gas),
 	))
-	data, err := status.output(output.intoBytes())
+	returnData := output.intoBytes()
+	data, err := status.output(returnData)
 
 	if status == userFailure {
-		log.Debug("program failure", "err", string(data), "program", actingAddress)
+		log.Debug("program failure", "err", string(data), "program", actingAddress, "returnData", colors.Uncolor(arbutil.ToStringOrHex(returnData)))
 	}
 	return data, err
 }

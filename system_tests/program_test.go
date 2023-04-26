@@ -482,7 +482,7 @@ func TestProgramCreate(t *testing.T) {
 }
 
 func TestProgramEvmData(t *testing.T) {
-	ctx, _, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
+	ctx, _, l2info, l2client, auth, evmDataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -496,10 +496,15 @@ func TestProgramEvmData(t *testing.T) {
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
+	callEvmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("call-evm-data"))
+	var ink uint64 = 0x2000000
+	inkBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(inkBytes, ink)
+	data := append(evmDataAddr.Bytes(), inkBytes...)
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
-	result, err := mock.StaticcallProgram(&opts, dataAddr, []byte{})
+	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, data)
 	Require(t, err)
 
 	expectU64 := func(name string, expected uint64) {
@@ -558,15 +563,15 @@ func TestProgramEvmData(t *testing.T) {
 	expectBigInt("chainid", expectedChainid)
 	expectAddress("coinbase", common.HexToAddress("0xA4b000000000000000000073657175656e636572"))
 	expectBigInt("difficulty", big.NewInt(1))
-	expectU64("gas limit", uint64(1125899906842624))
-	expectBigInt("block number", big.NewInt(6))
+	expectU64("gas limit", 0x4000000000000)
+	expectBigInt("block number", big.NewInt(8))
 	expectBigIntGreaterThan("timestamp", big.NewInt(1680662290))
-	expectAddress("sender", opts.From)
+	expectAddress("sender", callEvmDataAddr)
 	expectBigInt("value", big.NewInt(0))
 	expectBigInt("gas price", big.NewInt(0))
 	expectAddress("origin", opts.From)
 
-	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})
+	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, data)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd
