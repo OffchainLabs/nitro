@@ -46,6 +46,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -385,7 +386,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
 	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
 		// Calling Stop on the blockchain multiple times does nothing
@@ -481,7 +482,7 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), currentNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, currentNode.Execution.Backend.APIBackend(), currentNode.Execution.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
@@ -640,10 +641,18 @@ type RpcResultLogger struct {
 	request interface{}
 }
 
+const maxRequestLogLength int = 2048
+
 func (l RpcResultLogger) OnResult(response interface{}, err error) {
 	if err != nil {
 		// The request might not've been logged if the log level is debug not trace, so we log it again here
-		log.Info("received error response from L1 RPC", "request", l.request, "response", response, "err", err)
+		request := fmt.Sprintf("%+v", l.request)
+		if len(request) > maxRequestLogLength {
+			prefix := request[:maxRequestLogLength/2]
+			postfix := request[len(request)-maxRequestLogLength/2:]
+			request = fmt.Sprintf("%v...%v", prefix, postfix)
+		}
+		log.Info("received error response from L1 RPC", "request", request, "response", response, "err", err)
 	} else {
 		// The request was already logged and can be cross-referenced by JSON-RPC id
 		log.Trace("received response from L1 RPC", "response", response)

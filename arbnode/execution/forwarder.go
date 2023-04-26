@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package execution
 
 import (
 	"context"
@@ -91,11 +91,23 @@ type TxForwarder struct {
 }
 
 func NewForwarder(target string, config *ForwarderConfig) *TxForwarder {
+	dialer := net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 2 * time.Second,
+	}
+
 	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 2 * time.Second,
-		}).DialContext,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// For tcp connections, prefer IPv4 over IPv6
+			if network == "tcp" {
+				conn, err := dialer.DialContext(ctx, "tcp4", addr)
+				if err == nil {
+					return conn, nil
+				}
+				return dialer.DialContext(ctx, "tcp6", addr)
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
 		MaxIdleConns:          config.MaxIdleConnections,
 		MaxIdleConnsPerHost:   config.MaxIdleConnections,
 		IdleConnTimeout:       config.IdleConnectionTimeout,

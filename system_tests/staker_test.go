@@ -75,8 +75,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil)
 	defer l2nodeB.StopAndWait()
 
-	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
+	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
 			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
@@ -138,8 +138,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.ArbInterface.BlockChain(),
-		l2nodeA.ChainDB,
+		l2nodeA.Execution.ArbInterface.BlockChain(),
+		l2nodeA.Execution.ChainDB,
 		l2nodeA.ArbDB,
 		nil,
 		&blockValidatorConfig,
@@ -171,8 +171,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.ArbInterface.BlockChain(),
-		l2nodeB.ChainDB,
+		l2nodeB.Execution.ArbInterface.BlockChain(),
+		l2nodeB.Execution.ChainDB,
 		l2nodeB.ArbDB,
 		nil,
 		&blockValidatorConfig,

@@ -48,7 +48,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		conf.BlockValidator.Enable = true
 	}
 	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil)
-	l2Backend := arbNode.Backend
+	l2Backend := arbNode.Execution.Backend
 	defer requireClose(t, l1stack)
 	defer arbNode.StopAndWait()
 

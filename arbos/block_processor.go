@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -38,6 +39,20 @@ var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
+
+type L1Info struct {
+	poster        common.Address
+	l1BlockNumber uint64
+	l1Timestamp   uint64
+}
+
+func (info *L1Info) Equals(o *L1Info) bool {
+	return info.poster == o.poster && info.l1BlockNumber == o.l1BlockNumber && info.l1Timestamp == o.l1Timestamp
+}
+
+func (info *L1Info) L1BlockNumber() uint64 {
+	return info.l1BlockNumber
+}
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
@@ -103,19 +118,17 @@ func NoopSequencingHooks() *SequencingHooks {
 	}
 }
 
-type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
-
 func ProduceBlock(
-	message *L1IncomingMessage,
+	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-	batchFetcher FallibleBatchFetcher,
+	batchFetcher arbostypes.FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
@@ -144,7 +157,7 @@ func ProduceBlock(
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
-	l1Header *L1IncomingMessageHeader,
+	l1Header *arbostypes.L1IncomingMessageHeader,
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
