@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -25,10 +27,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
 )
 
-func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, ethdb.Database, *core.BlockChain) {
+func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*execution.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
@@ -44,14 +45,18 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, ConfigDefaultL2Test(), 0)
+	bc, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, ConfigDefaultL2Test().TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &DefaultTransactionStreamerConfig }
-	inbox, err := NewTransactionStreamer(arbDb, bc, nil, make(chan error, 1), transactionStreamerConfigFetcher)
+	execEngine, err := execution.NewExecutionEngine(bc)
+	if err != nil {
+		Fail(t, err)
+	}
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execEngine, nil, make(chan error, 1), transactionStreamerConfigFetcher)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -62,7 +67,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
-	return inbox, arbDb, bc
+	return execEngine, inbox, arbDb, bc
 }
 
 type blockTestState struct {
@@ -75,11 +80,13 @@ type blockTestState struct {
 func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 
-	inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
+	exec, inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	inbox.Start(ctx)
+	err := inbox.Start(ctx)
+	Require(t, err)
+	exec.Start(ctx)
 
 	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
@@ -111,7 +118,7 @@ func TestTransactionStreamer(t *testing.T) {
 			}
 			state.balances = newBalances
 
-			var messages []arbstate.MessageWithMetadata
+			var messages []arbostypes.MessageWithMetadata
 			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
@@ -136,10 +143,10 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, math.U256Bytes(value)...)
 				var requestId common.Hash
 				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))
-				messages = append(messages, arbstate.MessageWithMetadata{
-					Message: &arbos.L1IncomingMessage{
-						Header: &arbos.L1IncomingMessageHeader{
-							Kind:      arbos.L1MessageType_L2Message,
+				messages = append(messages, arbostypes.MessageWithMetadata{
+					Message: &arbostypes.L1IncomingMessage{
+						Header: &arbostypes.L1IncomingMessageHeader{
+							Kind:      arbostypes.L1MessageType_L2Message,
 							Poster:    source,
 							RequestId: &requestId,
 						},

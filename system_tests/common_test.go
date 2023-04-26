@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
@@ -412,7 +413,7 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test(), 0)
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -624,7 +625,7 @@ func Create2ndNodeWithConfig(
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.Execution.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)

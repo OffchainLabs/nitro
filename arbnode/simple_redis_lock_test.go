@@ -1,6 +1,3 @@
-//go:build redistest
-// +build redistest
-
 package arbnode
 
 import (
@@ -28,10 +25,8 @@ func attemptLock(ctx context.Context, s *SimpleRedisLock, flag *int32, wg *sync.
 	for i := 0; i < test_attempts; i++ {
 		if s.AttemptLock(ctx) {
 			atomic.AddInt32(flag, 1)
-		} else {
-			if rand.Intn(test_release_frac) == 0 {
-				s.Release(ctx)
-			}
+		} else if rand.Intn(test_release_frac) == 0 {
+			s.Release(ctx)
 		}
 		select {
 		case <-time.After(test_delay):
@@ -46,7 +41,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 	defer cancel()
 
 	redisKey := test_redisKey_prefix + redisKeySuffix
-	redisUrl := redisutil.GetTestRedisURL(t)
+	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
 	Require(t, redisClient.Del(ctx, redisKey).Err())
