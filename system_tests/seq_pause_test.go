@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 )
 
 func TestSequencerPause(t *testing.T) {
@@ -21,11 +21,11 @@ func TestSequencerPause(t *testing.T) {
 
 	const numUsers = 100
 
-	prechecker, ok := nodeA.TxPublisher.(*arbnode.TxPreChecker)
+	prechecker, ok := nodeA.Execution.TxPublisher.(*execution.TxPreChecker)
 	if !ok {
 		t.Error("prechecker not found on node")
 	}
-	sequencer, ok := prechecker.TransactionPublisher.(*arbnode.Sequencer)
+	sequencer, ok := prechecker.TransactionPublisher.(*execution.Sequencer)
 	if !ok {
 		t.Error("sequencer not found on node")
 	}
@@ -57,7 +57,7 @@ func TestSequencerPause(t *testing.T) {
 
 	for _, tx := range txs {
 		go func(ptx *types.Transaction) {
-			err := sequencer.PublishTransaction(ctx, ptx)
+			err := sequencer.PublishTransaction(ctx, ptx, nil)
 			Require(t, err)
 		}(tx)
 	}

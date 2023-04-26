@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -209,7 +210,7 @@ func TestRedisForwarder(t *testing.T) {
 			if err == nil {
 				break
 			}
-			time.Sleep(arbnode.DefaultTestForwarderConfig.UpdateInterval / 2)
+			time.Sleep(execution.DefaultTestForwarderConfig.UpdateInterval / 2)
 		}
 		testhelpers.RequireImpl(t, err)
 		_, err = EnsureTxSucceeded(ctx, clients[i], tx)
