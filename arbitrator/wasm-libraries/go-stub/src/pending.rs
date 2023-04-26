@@ -1,7 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::value::{InterpValue, GoValue};
+use crate::value::{GoValue, InterpValue};
 
 #[derive(Clone, Debug)]
 pub struct PendingEvent {

@@ -4,7 +4,7 @@
 mod pending;
 mod value;
 
-use crate::{value::*, pending::PENDING_EVENT};
+use crate::{pending::PENDING_EVENT, value::*};
 use arbutil::wavm;
 use fnv::FnvHashSet as HashSet;
 use go_abi::*;
@@ -463,7 +463,7 @@ pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
         }
         _ => fail!("Go trying to call unknown method {object:?} . {name}"),
     };
-    
+
     sp.write_u64(value.encode());
     sp.write_u8(1);
 }

@@ -87,7 +87,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 }
 
 /// Links and executes a user wasm.
-/// λ(mach *Machine, data []byte, params *Config, api *GoApi, evmData *EvmData, gas *u64, root *[32]byte)
+/// λ(mach *Machine, calldata []byte, params *Config, api []byte, evmData *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
@@ -102,14 +102,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let machine: Machine = unbox!();
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = unbox!();
-    let api = sp.read_go_ptr();
-    let data: EvmData = unbox!();
-    
-    let get_bytes32 = wavm::caller_load32(api + 0);
-    let set_bytes32 = wavm::caller_load32(api + 8);
-    let api = wavm::caller_load32(api + 16);
-
-    println!("Fields: {} {} {}", get_bytes32, set_bytes32, api);
+    let evm = sp.read_go_slice_owned();
+    let evm_data: EvmData = unbox!();
 
     //go_stub::set_pending_event(id, this, args);
 
@@ -209,7 +203,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(origin u32) *EvmData
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(sp: usize) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
+    sp: usize,
+) {
     let mut sp = GoStack::new(sp);
     let origin = wavm::read_bytes20(sp.read_go_ptr());
     let evm_data = EvmData::new(origin.into());

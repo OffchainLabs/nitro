@@ -2,8 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    evm_api::EvmApi,
     env::{MeterData, WasmEnv},
+    evm_api::EvmApi,
     host,
 };
 use arbutil::{operator::OperatorCode, Color};

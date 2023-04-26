@@ -184,10 +184,8 @@ impl JitApi {
     fn new(ids: Vec<u8>, parent: SyncSender<EvmMsg>) -> Self {
         let mut object_ids = vec![];
         for i in 0..(ids.len() / 4) {
-            let start = i * 4;
-            let slice = &ids[start..(start + 4)];
+            let slice = &ids[(i * 4)..(i * 4 + 4)];
             let value = u32::from_be_bytes(slice.try_into().unwrap());
-            //println!("Func id {}", value.pink());
             object_ids.push(value);
         }
         Self { object_ids, parent }
@@ -254,7 +252,6 @@ impl EvmApi for JitApi {
         gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         let [len, cost, status] = call!(self, 3, StaticCall, contract, input, gas);
-        println!("STATIC: {:?} {:?} {:?}", len, cost, status);
         (len.assert_u32(), cost.assert_u64(), status.assert_status())
     }
 

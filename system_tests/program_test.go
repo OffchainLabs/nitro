@@ -37,7 +37,7 @@ func TestProgramKeccakJIT(t *testing.T) {
 }
 
 func TestProgramKeccakArb(t *testing.T) {
-	// keccakTest(t, false)
+	keccakTest(t, false)
 }
 
 func keccakTest(t *testing.T, jit bool) {
@@ -93,7 +93,7 @@ func TestProgramErrorsJIT(t *testing.T) {
 }
 
 func TestProgramErrorsArb(t *testing.T) {
-	// errorTest(t, false)
+	errorTest(t, false)
 }
 
 func errorTest(t *testing.T, jit bool) {
@@ -712,37 +712,4 @@ func formatTime(duration time.Duration) string {
 		unit += 1
 	}
 	return fmt.Sprintf("%.2f%s", span, units[unit])
-}
-
-func TestTemp(t *testing.T) {
-	rand.Seed(time.Now().UTC().UnixNano())
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	l2config := arbnode.ConfigDefaultL1Test()
-	l2info, _, l2client, _, _, _, _ := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		return receipt
-	}
-	ensureFails := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		return EnsureTxFailed(t, ctx, l2client, tx)
-	}
-
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
-	ensure(tx, err)
-
-	auth.GasLimit = 32000000
-	before := time.Now()
-	receipt := ensureFails(mock.FillBlock(&auth))
-	println("Gas used:", receipt.GasUsed, receipt.GasUsedForL1)
-	colors.PrintPink(formatTime(time.Since(before)))
 }

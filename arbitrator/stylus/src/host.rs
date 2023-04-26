@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    evm_api::EvmApi,
     env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
+    evm_api::EvmApi,
 };
 use arbutil::evm;
 use prover::{programs::prelude::*, value::Value};

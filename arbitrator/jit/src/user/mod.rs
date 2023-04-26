@@ -38,7 +38,7 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 }
 
 /// Links and executes a user wasm.
-/// λ(mach *Machine, data []byte, params *Configs, api *GoApi, evmData: *EvmData, gas *u64, root *[32]byte)
+/// λ(mach *Machine, calldata []byte, params *Configs, api []byte, evmData: *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
 pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let mut sp = GoStack::simple(sp, &env);
