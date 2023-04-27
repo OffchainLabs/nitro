@@ -13,7 +13,7 @@ pub fn log(topics: &[Bytes32], data: &[u8]) -> Result<(), &'static str> {
         return Err("too many topics");
     }
     let mut bytes: Vec<u8> = vec![];
-    bytes.extend(topics.iter().map(|x| x.0.iter()).flatten());
+    bytes.extend(topics.iter().flat_map(|x| x.0.iter()));
     bytes.extend(data);
     unsafe { emit_log(bytes.as_ptr(), bytes.len(), topics.len()) }
     Ok(())

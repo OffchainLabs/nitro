@@ -8,10 +8,7 @@ use crate::{
 };
 use arbutil::heapify;
 use eyre::eyre;
-use prover::programs::{
-    config::{EvmData, GoParams},
-    prelude::*,
-};
+use prover::programs::{config::GoParams, prelude::*};
 use std::mem;
 use stylus::native;
 

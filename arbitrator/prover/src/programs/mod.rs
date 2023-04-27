@@ -5,7 +5,6 @@ use crate::{
     binary::{ExportKind, WasmBinary},
     value::{FunctionType as ArbFunctionType, Value},
 };
-
 use arbutil::Color;
 use eyre::{bail, Report, Result};
 use fnv::FnvHashMap as HashMap;
@@ -30,6 +29,7 @@ pub mod config;
 pub mod counter;
 pub mod depth;
 pub mod dynamic;
+pub mod evm_api;
 pub mod heap;
 pub mod meter;
 pub mod prelude;

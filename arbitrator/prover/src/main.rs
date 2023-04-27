@@ -37,6 +37,8 @@ struct Opts {
     inbox_add_stub_headers: bool,
     #[structopt(long)]
     always_merkleize: bool,
+    #[structopt(long)]
+    debug_funcs: bool,
     /// profile output instead of generting proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
@@ -192,6 +194,7 @@ fn main() -> Result<()> {
         true,
         opts.always_merkleize,
         opts.allow_hostapi,
+        opts.debug_funcs,
         global_state,
         inbox_contents,
         preimage_resolver,

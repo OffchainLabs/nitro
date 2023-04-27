@@ -57,8 +57,11 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
+    debug_chain: usize,
 ) -> *mut Machine {
-    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size) {
+    let debug_chain = debug_chain != 0;
+    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
+    {
         Ok(mach) => mach,
         Err(err) => {
             eprintln!("Error loading binary: {:?}", err);
@@ -71,6 +74,7 @@ unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
+    debug_chain: bool,
 ) -> Result<*mut Machine> {
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
@@ -87,6 +91,7 @@ unsafe fn arbitrator_load_machine_impl(
         true,
         false,
         false,
+        debug_chain,
         Default::default(),
         Default::default(),
         get_empty_preimage_resolver(),

@@ -4,17 +4,11 @@
 use crate::evm_api::GoApi;
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::programs::{
-    config::{EvmData, GoParams},
-    prelude::*,
-};
+use prover::programs::{config::GoParams, prelude::*};
 use run::RunProgram;
 use std::mem;
 
-pub use {
-    crate::evm_api::{EvmApi, EvmApiMethod, EvmApiStatus},
-    prover,
-};
+pub use prover;
 
 mod env;
 mod evm_api;
@@ -74,6 +68,12 @@ impl RustVec {
     }
 }
 
+/// Compiles a user program to its native representation.
+/// The `output` is either the serialized module or an error string.
+///
+/// # Safety
+///
+/// Output must not be null
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
@@ -97,6 +97,12 @@ pub unsafe extern "C" fn stylus_compile(
     }
 }
 
+/// Calls a compiled user program.
+///
+/// # Safety
+///
+/// `module` must represent a valid module produced from `stylus_compile`.
+/// `output` and `gas` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
@@ -140,11 +146,21 @@ pub unsafe extern "C" fn stylus_call(
     status
 }
 
+/// Frees the vector.
+///
+/// # Safety
+///
+/// Must only be called once per vec.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_drop_vec(vec: RustVec) {
     mem::drop(vec.into_vec())
 }
 
+/// Overwrites the bytes of the vector.
+///
+/// # Safety
+///
+/// `rust` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustVec, data: GoSliceData) {
     let rust = &mut *rust;

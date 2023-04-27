@@ -2,7 +2,6 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    api::EvmApi,
     native::{self, NativeInstance},
     run::RunProgram,
 };
@@ -10,7 +9,7 @@ use arbutil::Color;
 use eyre::Result;
 use parking_lot::Mutex;
 use prover::{
-    programs::{config::EvmData, prelude::*},
+    programs::prelude::*,
     utils::{Bytes20, Bytes32},
 };
 use std::{collections::HashMap, sync::Arc};

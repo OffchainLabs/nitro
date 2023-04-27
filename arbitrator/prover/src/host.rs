@@ -54,7 +54,7 @@ impl InternalFunc {
     }
 }
 
-pub fn get_impl(module: &str, name: &str) -> Result<Function> {
+pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
     macro_rules! func {
         () => {
             FunctionType::default()
@@ -253,7 +253,8 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
         Ok(())
     };
 
-    Function::new(&[], append, ty, &[])
+    let debug = module == "console";
+    Function::new(&[], append, ty, &[]).map(|x| (x, debug))
 }
 
 /// Adds internal functions to a module.

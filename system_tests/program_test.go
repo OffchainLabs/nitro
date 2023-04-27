@@ -85,7 +85,7 @@ func keccakTest(t *testing.T, jit bool) {
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 
-	validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
 func TestProgramErrorsJIT(t *testing.T) {
@@ -115,7 +115,7 @@ func errorTest(t *testing.T, jit bool) {
 		Fail(t, "call should have failed")
 	}
 
-	validateBlocks(t, 7, ctx, node, l2client)
+	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
 func TestProgramStorageJIT(t *testing.T) {
@@ -123,7 +123,7 @@ func TestProgramStorageJIT(t *testing.T) {
 }
 
 func TestProgramStorageArb(t *testing.T) {
-	// storageTest(t, false)
+	storageTest(t, false)
 }
 
 func storageTest(t *testing.T, jit bool) {
@@ -144,7 +144,7 @@ func storageTest(t *testing.T, jit bool) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	validateBlocks(t, 2, ctx, node, l2client)
+	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
 func TestProgramCallsJIT(t *testing.T) {
@@ -354,7 +354,7 @@ func testCalls(t *testing.T, jit bool) {
 		Fail(t, balance, value)
 	}
 
-	validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
 func TestProgramLogsJIT(t *testing.T) {
@@ -422,7 +422,7 @@ func testLogs(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 2, ctx, node, l2client)
+	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
 func TestProgramCreateJIT(t *testing.T) {
@@ -505,7 +505,7 @@ func testCreate(t *testing.T, jit bool) {
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
 
-	validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
 func TestProgramEvmData(t *testing.T) {
@@ -541,7 +541,7 @@ func TestProgramEvmData(t *testing.T) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	// validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
 func setupProgramTest(t *testing.T, file string, jit bool) (
@@ -657,7 +657,13 @@ func rustFile(name string) string {
 	return fmt.Sprintf("../arbitrator/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
 }
 
-func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
+func validateBlocks(
+	t *testing.T, start uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
+) {
+	if jit || start == 0 {
+		start = 1
+	}
+
 	colors.PrintGrey("Validating blocks from ", start, " onward")
 
 	doUntil(t, 20*time.Millisecond, 50, func() bool {

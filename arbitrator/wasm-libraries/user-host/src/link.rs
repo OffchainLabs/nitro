@@ -1,5 +1,5 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{Program, PROGRAMS};
 use arbutil::{heapify, wavm};
@@ -8,7 +8,8 @@ use go_abi::GoStack;
 use go_stub;
 use prover::{
     programs::{
-        config::{CompileConfig, EvmData, GoParams, StylusConfig},
+        config::{CompileConfig, GoParams, StylusConfig},
+        prelude::{EvmApi, EvmData},
         run::UserOutcomeKind,
     },
     Machine,
@@ -73,6 +74,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         false,
         false,
         false,
+        compile.debug.debug_funcs,
         prover::machine::GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("user program tried to read preimage")),
@@ -125,7 +127,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // provide arguments
     let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, config));
+    PROGRAMS.push(Program::new(calldata, evm_data, config));
 
     // call the program
     let status = program_call_main(module, main, args_len);

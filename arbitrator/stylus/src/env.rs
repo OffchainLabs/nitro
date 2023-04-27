@@ -1,16 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::evm_api::EvmApi;
 use arbutil::{evm, Color};
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
 use prover::{
-    programs::{
-        config::{EvmData, PricingParams, StylusConfig},
-        meter::{MachineMeter, MeteredMachine},
-        prelude::CompileConfig,
-    },
+    programs::{config::PricingParams, prelude::*},
     utils::{Bytes20, Bytes32},
 };
 use std::{

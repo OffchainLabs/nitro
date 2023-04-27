@@ -1,14 +1,12 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{
-    api::EvmApi, env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi,
-};
+use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
 use arbutil::Color;
 use eyre::{bail, Result};
 use prover::{
     machine::GlobalState,
-    programs::{config::EvmData, counter::CountingMachine, prelude::*},
+    programs::prelude::*,
     utils::{Bytes20, Bytes32},
     Machine,
 };
@@ -143,6 +141,7 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         false,
         false,
         true,
+        compile.debug.debug_funcs,
         GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("tried to read preimage")),

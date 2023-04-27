@@ -3,9 +3,11 @@
 
 pub use super::{
     config::{CompileConfig, StylusConfig},
+    counter::CountingMachine,
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
     run::{UserOutcome, UserOutcomeKind},
+    evm_api::{EvmApi, EvmApiMethod, EvmApiStatus, EvmData},
 };
 
 #[cfg(feature = "native")]

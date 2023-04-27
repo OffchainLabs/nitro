@@ -1,10 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{
-    env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
-    evm_api::EvmApi,
-};
+use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::evm;
 use prover::{programs::prelude::*, value::Value};
 

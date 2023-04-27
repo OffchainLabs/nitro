@@ -6,7 +6,7 @@
 use arbutil::Color;
 use eyre::{bail, eyre, Result};
 use prover::{
-    programs::{config::EvmData, prelude::*, run::UserOutcomeKind},
+    programs::{prelude::*, run::UserOutcomeKind},
     utils::{Bytes20, Bytes32},
 };
 use std::{
@@ -15,7 +15,7 @@ use std::{
     thread,
     time::Duration,
 };
-use stylus::{native::NativeInstance, run::RunProgram, EvmApi, EvmApiMethod, EvmApiStatus};
+use stylus::{native::NativeInstance, run::RunProgram};
 
 use crate::{
     gostack::GoStack,

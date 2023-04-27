@@ -8,8 +8,6 @@ use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
 
-use crate::utils::Bytes20;
-
 #[cfg(feature = "native")]
 use {
     super::{
@@ -229,21 +227,5 @@ impl GoParams {
         );
         let compile_config = CompileConfig::version(self.version, self.debug_mode != 0);
         (compile_config, stylus_config)
-    }
-}
-
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct EvmData {
-    pub origin: Bytes20,
-    pub return_data_len: u32,
-}
-
-impl EvmData {
-    pub fn new(origin: Bytes20) -> Self {
-        Self {
-            origin,
-            return_data_len: 0,
-        }
     }
 }

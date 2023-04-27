@@ -3,13 +3,11 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    evm_api::EvmApi,
     host,
 };
 use arbutil::{operator::OperatorCode, Color};
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::programs::{
-    config::EvmData,
     counter::{Counter, CountingMachine, OP_OFFSETS},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
@@ -65,8 +63,11 @@ impl<E: EvmApi> NativeInstance<E> {
         Ok(data)
     }
 
-    /// Creates a `NativeInstance` from a serialized module
-    /// Safety: module bytes must represent a module
+    /// Creates a `NativeInstance` from a serialized module.
+    ///
+    /// # Safety
+    ///
+    /// `module` must represent a valid module.
     pub unsafe fn deserialize(
         module: &[u8],
         compile: CompileConfig,

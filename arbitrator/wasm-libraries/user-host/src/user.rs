@@ -32,11 +32,4 @@ pub unsafe extern "C" fn user_host__account_store_bytes32(key: usize, value: usi
     let key = wavm::read_bytes32(key);
     let value = wavm::read_bytes32(value);
     program.buy_gas(2200);
-    println!("STORE: {} {}", hex::encode(key), hex::encode(value));
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn console__log_txt(ptr: usize, len: usize) {
-    let program = Program::start_free();
-    //env.say(Value::from(value.into()));
 }
