@@ -492,31 +492,44 @@ func TestProgramEvmData(t *testing.T) {
 		Require(t, err)
 		return receipt
 	}
+	u64ToBytes := func(input uint64) []byte {
+		inputBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(inputBytes, input)
+		return inputBytes
+	}
+	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	callEvmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("call-evm-data"))
-	var ink uint64 = 0x2000000
-	inkBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(inkBytes, ink)
-	data := append(evmDataAddr.Bytes(), inkBytes...)
+	ink := uint64(100000000)
+	gasToBurn := int64(1000000)
+	callBurnData, err := burnArbGas(big.NewInt(gasToBurn))
+	callData := append(evmDataAddr.Bytes(), u64ToBytes(ink)...)
+	callData = append(callData, types.ArbosTestAddress.Bytes()...)
+	callData = append(callData, callBurnData...)
+	ensure(tx, err)
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
-	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, data)
+	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, callData)
 	Require(t, err)
 
-	expectU64 := func(name string, expected uint64) {
+	getU64 := func(name string) uint64 {
 		dataSize := 8
 		if len(result) < dataSize {
 			Fail(t, "not enough data left", name, dataSize, len(result))
 		}
 		value := binary.BigEndian.Uint64(result[:dataSize])
+		result = result[dataSize:]
+		return value
+	}
+	expectU64 := func(name string, expected uint64) {
+		value := getU64(name)
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		result = result[dataSize:]
 	}
 	expectAddress := func(name string, expected common.Address) {
 		dataSize := 20
@@ -570,11 +583,21 @@ func TestProgramEvmData(t *testing.T) {
 	expectBigInt("value", big.NewInt(0))
 	expectAddress("origin", opts.From)
 	expectBigInt("gas price", big.NewInt(0))
-	//expectU64("ink price", 100000000)
-	//expectU64("gas left", 100000000)
-	//expectU64("ink left", 0x4000000000000)
+	inkPrice := getU64("ink price")
+	gasLeftBefore := getU64("gas left before")
+	inkLeftBefore := getU64("ink left before")
+	gasLeftAfter := getU64("gas left after")
+	inkLeftAfter := getU64("ink left after")
 
-	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, data)
+	inkUsed := inkLeftBefore - inkLeftAfter
+	calculatedInkUsed := ((gasLeftBefore - gasLeftAfter) * 10000) / inkPrice
+
+	// Should be within inkPrice
+	if inkUsed > calculatedInkUsed+inkPrice || inkUsed < calculatedInkUsed-inkPrice {
+		Fail(t, "ink and gas converted to ink don't match")
+	}
+
+	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, callData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd

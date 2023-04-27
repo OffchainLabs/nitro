@@ -3,14 +3,16 @@
 
 #![no_main]
 
+use arbitrum::Bytes20;
 use arbitrum::block;
+use arbitrum::contract;
 use arbitrum::evm;
 use arbitrum::msg;
 use arbitrum::tx;
 
 arbitrum::arbitrum_main!(user_main);
 
-fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let block: u64 = 4;
     let blockhash = evm::blockhash(block.into());
     let basefee = block::basefee();
@@ -27,6 +29,12 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let ink_price = evm::ink_price();
     let gas_left_before = evm::gas_left();
     let ink_left_before = evm::ink_left();
+
+    // Call burnArbGas
+    let addr = Bytes20::from_slice(&input[0..20]).expect("incorrect slice size for Bytes20");
+    contract::call(addr, &input[20..], None, None);
+    let gas_left_after = evm::gas_left();
+    let ink_left_after = evm::ink_left();
 
     let mut output = vec![];
     match blockhash {
@@ -48,7 +56,9 @@ fn user_main(_input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(origin.0);
     output.extend(gas_price.0);
     output.extend(ink_price.to_be_bytes());
-    output.extend(gas_left.to_be_bytes());
-    output.extend(ink_left.to_be_bytes());
+    output.extend(gas_left_before.to_be_bytes());
+    output.extend(ink_left_before.to_be_bytes());
+    output.extend(gas_left_after.to_be_bytes());
+    output.extend(ink_left_after.to_be_bytes());
     Ok(output)
 }
