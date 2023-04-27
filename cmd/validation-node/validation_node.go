@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"io/fs"
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
@@ -16,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/log"
@@ -98,26 +95,9 @@ func mainImpl() int {
 		}
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		fileName := pathResolver(nodeConfig.Persistent.Chain)("jwtsecret")
-		secret := common.Hash{}
-		_, err := rand.Read(secret[:])
-		if err != nil {
-			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
-		}
-		err = os.MkdirAll(filepath.Dir(fileName), 0755)
-		if err != nil {
-			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
-		}
-		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
-		if errors.Is(err, fs.ErrExist) {
-			log.Info("using existing jwt file", "fileName", fileName)
-		} else {
-			if err != nil {
-				log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
-			}
-			log.Info("created jwt file", "fileName", fileName)
-		}
-		stackConf.JWTSecret = fileName
+		filename := pathResolver(nodeConfig.Persistent.Chain)("jwtsecret")
+		nodehelpers.TryCreatingJWTSecret(filename)
+		stackConf.JWTSecret = filename
 	}
 
 	err = nodehelpers.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.Chain))

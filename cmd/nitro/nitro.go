@@ -6,15 +6,12 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"fmt"
 	"io"
-	"io/fs"
 	"math"
 	"math/big"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -151,30 +148,18 @@ func mainImpl() int {
 	stackConf.Version = vcsRevision
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		fileName := stackConf.ResolvePath("jwtsecret")
-		secret := common.Hash{}
-		_, err := rand.Read(secret[:])
-		if err != nil {
-			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
-		}
-		err = os.MkdirAll(filepath.Dir(fileName), 0755)
-		if err != nil {
-			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
-		}
-		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
-		if errors.Is(err, fs.ErrExist) {
-			log.Info("using existing jwt file", "fileName", fileName)
-		} else {
-			if err != nil {
-				log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
-			}
-			log.Info("created jwt file", "fileName", fileName)
-		}
-		stackConf.JWTSecret = fileName
+		filename := stackConf.ResolvePath("jwtsecret")
+		nodehelpers.TryCreatingJWTSecret(filename)
+		stackConf.JWTSecret = filename
 	}
 
+	var embedValidationNode bool
 	if nodeConfig.Node.BlockValidator.JWTSecret == "self" {
 		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
+	}
+	if nodeConfig.Node.BlockValidator.URL == "self" {
+		embedValidationNode = true
+		nodeConfig.Node.BlockValidator.URL = fmt.Sprintf("ws://%s:%d", stackConf.AuthAddr, stackConf.AuthPort)
 	}
 
 	err = nodehelpers.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
@@ -343,8 +328,7 @@ func mainImpl() int {
 
 	var valNode *valnode.ValidationNode
 
-	selfAuthURL := fmt.Sprintf("ws://%s:%d", stackConf.AuthAddr, stackConf.AuthPort)
-	if nodeConfig.Node.BlockValidator.Enable && nodeConfig.Node.BlockValidator.URL == selfAuthURL {
+	if nodeConfig.Node.BlockValidator.Enable && embedValidationNode {
 		valNode, err = valnode.CreateValidationNode(
 			func() *valnode.Config { return &liveNodeConfig.Get().Validation },
 			stack,
@@ -404,6 +388,8 @@ func mainImpl() int {
 		err = valNode.Start(ctx)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
+		} else {
+			log.Info("validation node started")
 		}
 	}
 	if err == nil {
