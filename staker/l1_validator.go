@@ -345,10 +345,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting L1 block number %d header : %w", currentL1BlockNum, err)
 	}
-	headerInfo, err := types.DeserializeHeaderExtraInformation(header)
-	if err != nil {
-		return nil, false, fmt.Errorf("error deserializeing header extra information for L1 block number %d : %w", currentL1BlockNum, err)
-	}
+	headerInfo, _ := types.DeserializeHeaderExtraInformation(header)
 	var parentChainBlockNumber uint64
 	if headerInfo.L1BlockNumber != 0 {
 		parentChainBlockNumber = headerInfo.L1BlockNumber
