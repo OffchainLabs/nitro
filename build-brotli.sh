@@ -7,6 +7,7 @@ cd "$mydir"
 
 BUILD_WASM=false
 BUILD_LOCAL=false
+BUILD_SOFTFLOAT=false
 USE_DOCKER=false
 TARGET_DIR=target/
 SOURCE_DIR=brotli
@@ -19,6 +20,7 @@ usage(){
     echo "use one or more of:"
     echo " -w     build wasm (uses emscripten)"
     echo " -l     build local"
+    echo " -f     build soft-float"
     echo
     echo "to avoid dependencies you might want:"
     echo " -d     build inside docker container"
@@ -31,7 +33,7 @@ usage(){
     echo "all relative paths are relative to script location"
 }
 
-while getopts "s:t:c:wldh" option; do
+while getopts "s:t:c:wldhf" option; do
     case $option in
         h)
             usage
@@ -42,6 +44,9 @@ while getopts "s:t:c:wldh" option; do
             ;;
         l)
             BUILD_LOCAL=true
+            ;;
+        f)
+            BUILD_SOFTFLOAT=true
             ;;
         d)
             USE_DOCKER=true
@@ -55,7 +60,7 @@ while getopts "s:t:c:wldh" option; do
     esac
 done
 
-if ! $BUILD_WASM && ! $BUILD_LOCAL; then
+if ! $BUILD_WASM && ! $BUILD_LOCAL && ! $BUILD_SOFT; then
     usage
     exit
 fi
@@ -73,6 +78,9 @@ if $USE_DOCKER; then
     fi
     if $BUILD_LOCAL; then
         DOCKER_BUILDKIT=1 docker build --target brotli-library-export -o type=local,dest="$TARGET_DIR_ABS" .
+    fi
+    if $BUILD_SOFTFLOAT; then
+        DOCKER_BUILDKIT=1 docker build --target wasm-libs-export -o type=local,dest="$TARGET_DIR_ABS" .
     fi
     exit 0
 fi

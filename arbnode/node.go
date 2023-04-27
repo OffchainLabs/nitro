@@ -429,19 +429,10 @@ func (c *Config) Validate() error {
 	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
+	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
 	return nil
-}
-
-func (c *Config) Get() *Config {
-	return c
-}
-
-func (c *Config) Start(context.Context) {}
-
-func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -529,6 +520,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Staker.Enable = false
 	config.Forwarder = execution.DefaultTestForwarderConfig
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
@@ -544,6 +536,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
+	config.Staker.Enable = false
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
