@@ -6,6 +6,7 @@ package headerreader
 import (
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"math/big"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -23,8 +25,9 @@ import (
 
 type HeaderReader struct {
 	stopwaiter.StopWaiter
-	config ConfigFetcher
-	client arbutil.L1Interface
+	config                ConfigFetcher
+	client                arbutil.L1Interface
+	isParentChainArbitrum bool
 
 	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
@@ -88,13 +91,19 @@ var TestConfig = Config{
 }
 
 func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
+	isParentChainArbitrum := false
+	_, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	if err == nil {
+		isParentChainArbitrum = true
+	}
 	return &HeaderReader{
-		client:            client,
-		config:            config,
-		outChannels:       make(map[chan<- *types.Header]struct{}),
-		outChannelsBehind: make(map[chan<- *types.Header]struct{}),
-		safe:              cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
-		finalized:         cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
+		client:                client,
+		config:                config,
+		isParentChainArbitrum: isParentChainArbitrum,
+		outChannels:           make(map[chan<- *types.Header]struct{}),
+		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
+		safe:                  cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:             cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}
 }
 
@@ -168,7 +177,7 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	}
 
 	if s.requiresPendingCallUpdates > 0 {
-		pendingCallBlockNr, err := arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
+		pendingCallBlockNr, err := s.getPendingCallBlockNumber()
 		if err == nil && pendingCallBlockNr.IsUint64() {
 			pendingU64 := pendingCallBlockNr.Uint64()
 			if pendingU64 > s.lastPendingCallBlockNr {
@@ -199,6 +208,22 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 		default:
 		}
 	}
+}
+
+func (s *HeaderReader) getPendingCallBlockNumber() (*big.Int, error) {
+	if s.isParentChainArbitrum {
+		arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, s.client)
+		if err != nil {
+			return nil, err
+		}
+		blockNumber, err := arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.GetContext(), Pending: true})
+		if err == nil {
+			return blockNumber, nil
+		} else {
+			log.Trace("failed to get pending block number with ArbSys, trying the normal EVM way", "err", err)
+		}
+	}
+	return arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
 }
 
 func (s *HeaderReader) setError(err error) {
