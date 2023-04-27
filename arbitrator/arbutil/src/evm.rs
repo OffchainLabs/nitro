@@ -14,6 +14,8 @@ pub const LOG_DATA_GAS: u64 = 8;
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
 
+pub const ADDRESS_GAS: u64 = GAS_QUICK_STEP;
+
 // vm.GasQuickStep (see eips.go)
 pub const BASEFEE_GAS: u64 = GAS_QUICK_STEP;
 

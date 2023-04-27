@@ -579,6 +579,7 @@ func TestProgramEvmData(t *testing.T) {
 	expectU64("block gas limit", 0x4000000000000)
 	expectBigInt("block number", big.NewInt(8))
 	expectBigIntGreaterThan("timestamp", big.NewInt(1680662290))
+	expectAddress("contract address", evmDataAddr)
 	expectAddress("sender", callEvmDataAddr)
 	expectBigInt("value", big.NewInt(0))
 	expectAddress("origin", opts.From)

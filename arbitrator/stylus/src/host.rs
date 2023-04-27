@@ -283,6 +283,15 @@ pub(crate) fn block_timestamp(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     Ok(())
 }
 
+pub(crate) fn contract_address(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    env.buy_gas(evm::ADDRESS_GAS)?;
+
+    let address = env.evm_data().contract_address;
+    env.write_bytes20(data, address)?;
+    Ok(())
+}
+
 pub(crate) fn msg_sender(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::CALLER_GAS)?;

@@ -22,6 +22,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let gas_limit = block::gas_limit();
     let block_number = block::number();
     let timestamp = block::timestamp();
+    let address = contract::address();
     let sender = msg::sender();
     let value = msg::value();
     let origin = tx::origin();
@@ -51,6 +52,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(gas_limit.to_be_bytes());
     output.extend(block_number.0);
     output.extend(timestamp.0);
+    output.extend(address.0);
     output.extend(sender.0);
     output.extend(value.0);
     output.extend(origin.0);

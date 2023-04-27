@@ -206,3 +206,14 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
 pub fn return_data_len() -> usize {
     unsafe { return_data_size() as usize }
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn contract_address(block: *mut u8);
+}
+
+pub fn address() -> Bytes20 {
+    let mut data = [0; 20];
+    unsafe { contract_address(data.as_mut_ptr()) };
+    Bytes20(data)
+}

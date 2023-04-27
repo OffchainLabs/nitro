@@ -107,6 +107,7 @@ pub struct EvmData {
     pub block_gas_limit: u64,
     pub block_number: Bytes32,
     pub block_timestamp: Bytes32,
+    pub contract_address: Bytes20,
     pub msg_sender: Bytes20,
     pub msg_value: Bytes32,
     pub gas_price: Bytes32,

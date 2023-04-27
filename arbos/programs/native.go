@@ -316,6 +316,7 @@ func callUserWasm(
 		block_gas_limit:  C.uint64_t(evm.Context.GasLimit),
 		block_number:     bigToBytes32(evm.Context.BlockNumber),
 		block_timestamp:  bigToBytes32(evm.Context.Time),
+		contract_address: addressToBytes20(contract.Address()),
 		msg_sender:       addressToBytes20(contract.Caller()),
 		msg_value:        bigToBytes32(contract.Value()),
 		gas_price:        bigToBytes32(evm.TxContext.GasPrice),
