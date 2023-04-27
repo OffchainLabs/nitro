@@ -2,14 +2,9 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
-use arbutil::Color;
+use arbutil::{evm::user::UserOutcome, Bytes20, Bytes32, Color};
 use eyre::{bail, Result};
-use prover::{
-    machine::GlobalState,
-    programs::prelude::*,
-    utils::{Bytes20, Bytes32},
-    Machine,
-};
+use prover::{machine::GlobalState, programs::prelude::*, Machine};
 use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{

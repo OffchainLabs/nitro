@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
-use arbutil::evm;
+use arbutil::evm::{self, api::EvmApi};
 use prover::{programs::prelude::*, value::Value};
 
 pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
@@ -26,7 +26,7 @@ pub(crate) fn account_load_bytes32<E: EvmApi>(
 ) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let key = env.read_bytes32(key)?;
-    let (value, gas_cost) = env.evm.get_bytes32(key);
+    let (value, gas_cost) = env.evm_api.get_bytes32(key);
     env.write_slice(dest, &value.0)?;
     env.buy_gas(gas_cost)
 }
@@ -41,7 +41,7 @@ pub(crate) fn account_store_bytes32<E: EvmApi>(
 
     let key = env.read_bytes32(key)?;
     let value = env.read_bytes32(value)?;
-    let gas_cost = env.evm.set_bytes32(key, value)?;
+    let gas_cost = env.evm_api.set_bytes32(key, value)?;
     env.buy_gas(gas_cost)
 }
 
@@ -63,7 +63,7 @@ pub(crate) fn call_contract<E: EvmApi>(
     let input = env.read_slice(calldata, calldata_len)?;
     let value = env.read_bytes32(value)?;
 
-    let (outs_len, gas_cost, status) = env.evm.contract_call(contract, input, gas, value);
+    let (outs_len, gas_cost, status) = env.evm_api.contract_call(contract, input, gas, value);
     env.evm_data.return_data_len = outs_len;
     env.write_u32(return_data_len, outs_len)?;
     env.buy_gas(gas_cost)?;
@@ -86,7 +86,7 @@ pub(crate) fn delegate_call_contract<E: EvmApi>(
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
 
-    let (outs_len, gas_cost, status) = env.evm.delegate_call(contract, input, gas);
+    let (outs_len, gas_cost, status) = env.evm_api.delegate_call(contract, input, gas);
     env.evm_data.return_data_len = outs_len;
     env.write_u32(return_data_len, outs_len)?;
     env.buy_gas(gas_cost)?;
@@ -109,7 +109,7 @@ pub(crate) fn static_call_contract<E: EvmApi>(
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
 
-    let (outs_len, gas_cost, status) = env.evm.static_call(contract, input, gas);
+    let (outs_len, gas_cost, status) = env.evm_api.static_call(contract, input, gas);
     env.evm_data.return_data_len = outs_len;
     env.write_u32(return_data_len, outs_len)?;
     env.buy_gas(gas_cost)?;
@@ -131,7 +131,7 @@ pub(crate) fn create1<E: EvmApi>(
     let endowment = env.read_bytes32(endowment)?;
     let gas = env.gas_left();
 
-    let (result, ret_len, gas_cost) = env.evm.create1(code, endowment, gas);
+    let (result, ret_len, gas_cost) = env.evm_api.create1(code, endowment, gas);
     env.evm_data.return_data_len = ret_len;
     env.write_u32(revert_data_len, ret_len)?;
     env.buy_gas(gas_cost)?;
@@ -156,7 +156,7 @@ pub(crate) fn create2<E: EvmApi>(
     let salt = env.read_bytes32(salt)?;
     let gas = env.gas_left();
 
-    let (result, ret_len, gas_cost) = env.evm.create2(code, endowment, salt, gas);
+    let (result, ret_len, gas_cost) = env.evm_api.create2(code, endowment, salt, gas);
     env.evm_data.return_data_len = ret_len;
     env.write_u32(revert_data_len, ret_len)?;
     env.buy_gas(gas_cost)?;
@@ -169,7 +169,7 @@ pub(crate) fn read_return_data<E: EvmApi>(mut env: WasmEnvMut<E>, dest: u32) -> 
     let len = env.evm_data.return_data_len;
     env.pay_for_evm_copy(len.into())?;
 
-    let data = env.evm.get_return_data();
+    let data = env.evm_api.get_return_data();
     env.write_slice(dest, &data)?;
     assert_eq!(data.len(), len as usize);
     Ok(())
@@ -197,7 +197,7 @@ pub(crate) fn emit_log<E: EvmApi>(
     env.buy_gas((length - topics * 32) * evm::LOG_DATA_GAS)?;
 
     let data = env.read_slice(data, len)?;
-    env.evm.emit_log(data, topics as u32)?;
+    env.evm_api.emit_log(data, topics as u32)?;
     Ok(())
 }
 

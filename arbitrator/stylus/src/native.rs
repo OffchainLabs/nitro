@@ -5,7 +5,11 @@ use crate::{
     env::{MeterData, WasmEnv},
     host,
 };
-use arbutil::{operator::OperatorCode, Color};
+use arbutil::{
+    evm::{api::EvmApi, EvmData},
+    operator::OperatorCode,
+    Color,
+};
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::programs::{
     counter::{Counter, CountingMachine, OP_OFFSETS},
@@ -82,12 +86,12 @@ impl<E: EvmApi> NativeInstance<E> {
 
     pub fn from_path(
         path: &str,
-        evm: E,
+        evm_api: E,
         evm_data: EvmData,
         compile: &CompileConfig,
         config: StylusConfig,
     ) -> Result<Self> {
-        let env = WasmEnv::new(compile.clone(), Some(config), evm, evm_data);
+        let env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
         let store = env.compile.store();
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;

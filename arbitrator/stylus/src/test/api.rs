@@ -5,13 +5,13 @@ use crate::{
     native::{self, NativeInstance},
     run::RunProgram,
 };
-use arbutil::Color;
+use arbutil::{
+    evm::{api::EvmApi, user::UserOutcomeKind, EvmData},
+    Bytes20, Bytes32, Color,
+};
 use eyre::Result;
 use parking_lot::Mutex;
-use prover::{
-    programs::prelude::*,
-    utils::{Bytes20, Bytes32},
-};
+use prover::programs::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 
 /*#[derive(Clone)]

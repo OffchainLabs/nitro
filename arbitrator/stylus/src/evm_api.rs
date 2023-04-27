@@ -1,16 +1,18 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use eyre::{ErrReport, Result};
-use prover::{
-    programs::prelude::*,
-    utils::{Bytes20, Bytes32},
-};
-
 use crate::RustVec;
+use arbutil::{
+    evm::{
+        api::{EvmApi, EvmApiStatus},
+        user::UserOutcomeKind,
+    },
+    Bytes20, Bytes32,
+};
+use eyre::{ErrReport, Result};
 
 #[repr(C)]
-pub struct GoApi {
+pub struct GoEvmApi {
     pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub set_bytes32: unsafe extern "C" fn(
         id: usize,
@@ -82,7 +84,7 @@ macro_rules! into_vec {
     };
 }
 
-impl EvmApi for GoApi {
+impl EvmApi for GoEvmApi {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let mut cost = 0;
         let value = call!(self, get_bytes32, key, ptr!(cost));

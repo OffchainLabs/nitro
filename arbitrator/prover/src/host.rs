@@ -6,11 +6,11 @@
 use crate::{
     binary,
     machine::{Function, InboxIdentifier},
-    programs::{run::UserOutcomeKind, StylusGlobals},
+    programs::StylusGlobals,
     value::{ArbValueType, FunctionType, IntegerValType},
     wavm::{wasm_to_wavm, IBinOpType, Instruction, Opcode},
 };
-use arbutil::Color;
+use arbutil::{evm::user::UserOutcomeKind, Color};
 use eyre::{bail, Result};
 use lazy_static::lazy_static;
 use std::{collections::HashMap, path::Path};

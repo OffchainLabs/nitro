@@ -1,7 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::evm_api::GoApi;
+use crate::evm_api::GoEvmApi;
+use arbutil::evm::{
+    user::{UserOutcome, UserOutcomeKind},
+    EvmData,
+};
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
 use prover::programs::{config::GoParams, prelude::*};
@@ -108,7 +112,7 @@ pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
     params: GoParams,
-    go_api: GoApi,
+    go_api: GoEvmApi,
     evm_data: EvmData,
     output: *mut RustVec,
     gas: *mut u64,

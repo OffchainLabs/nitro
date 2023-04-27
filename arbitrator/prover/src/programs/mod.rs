@@ -29,11 +29,9 @@ pub mod config;
 pub mod counter;
 pub mod depth;
 pub mod dynamic;
-pub mod evm_api;
 pub mod heap;
 pub mod meter;
 pub mod prelude;
-pub mod run;
 pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";

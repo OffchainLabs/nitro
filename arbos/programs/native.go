@@ -74,7 +74,7 @@ func callUserWasm(
 	}
 	module := db.GetCompiledWasmCode(program, stylusParams.version)
 
-	api, id := newApi(interpreter, tracingInfo, scope)
+	evmApi, id := newApi(interpreter, tracingInfo, scope)
 	defer dropApi(id)
 
 	output := &rustVec{}
@@ -82,7 +82,7 @@ func callUserWasm(
 		goSlice(module),
 		goSlice(calldata),
 		stylusParams.encode(),
-		api,
+		evmApi,
 		evmData.encode(),
 		output,
 		(*u64)(&contract.Gas),

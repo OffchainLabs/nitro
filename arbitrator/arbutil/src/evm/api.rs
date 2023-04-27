@@ -1,27 +1,8 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{
-    programs::run::UserOutcomeKind,
-    utils::{Bytes20, Bytes32},
-};
+use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
 use eyre::Result;
-
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct EvmData {
-    pub origin: Bytes20,
-    pub return_data_len: u32,
-}
-
-impl EvmData {
-    pub fn new(origin: Bytes20) -> Self {
-        Self {
-            origin,
-            return_data_len: 0,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

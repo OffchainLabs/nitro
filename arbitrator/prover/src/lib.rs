@@ -18,8 +18,10 @@ pub mod wavm;
 #[cfg(test)]
 mod test;
 
-use eyre::Result;
 pub use machine::Machine;
+
+use arbutil::Bytes32;
+use eyre::Result;
 use machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
     PreimageResolver,
@@ -35,7 +37,7 @@ use std::{
         Arc,
     },
 };
-use utils::{Bytes32, CBytes};
+use utils::CBytes;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -356,12 +358,12 @@ pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> utils::Bytes32 {
+pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
     (*mach).hash()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> utils::Bytes32 {
+pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
     (*mach).get_modules_root()
 }
 

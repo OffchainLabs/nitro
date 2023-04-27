@@ -77,12 +77,12 @@ func newApi(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
-) (C.GoApi, usize) {
+) (C.GoEvmApi, usize) {
 	closures := newApiClosures(interpreter, tracingInfo, scope)
 	apiId := atomic.AddUintptr(&apiIds, 1)
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
-	return C.GoApi{
+	return C.GoEvmApi{
 		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
 		contract_call:   (*[0]byte)(C.contractCallWrap),

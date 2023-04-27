@@ -13,14 +13,14 @@ use crate::{
         USER_HOST,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
+    utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Color};
+use arbutil::{math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;

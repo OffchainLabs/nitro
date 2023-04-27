@@ -2,6 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{env::Escape, native::NativeInstance};
+use arbutil::evm::api::EvmApi;
+use arbutil::evm::user::UserOutcome;
 use eyre::{ensure, eyre, Result};
 use prover::machine::Machine;
 use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};

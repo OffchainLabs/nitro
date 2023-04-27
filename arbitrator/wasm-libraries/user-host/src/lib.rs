@@ -1,8 +1,11 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use prover::programs::prelude::{EvmApi, EvmData, StylusConfig};
+use arbutil::evm::{js::JsEvmApi, EvmData};
+use evm_api::ApiCaller;
+use prover::programs::prelude::StylusConfig;
 
+mod evm_api;
 mod ink;
 mod link;
 mod user;
@@ -12,16 +15,22 @@ pub(crate) static mut PROGRAMS: Vec<Program> = vec![];
 pub(crate) struct Program {
     args: Vec<u8>,
     outs: Vec<u8>,
-    //evm_api: EvmApi,
+    evm_api: JsEvmApi<ApiCaller>,
     evm_data: EvmData,
     config: StylusConfig,
 }
 
 impl Program {
-    pub fn new(args: Vec<u8>, evm_data: EvmData, config: StylusConfig) -> Self {
+    pub fn new(
+        args: Vec<u8>,
+        evm_api: JsEvmApi<ApiCaller>,
+        evm_data: EvmData,
+        config: StylusConfig,
+    ) -> Self {
         Self {
             args,
             outs: vec![],
+            evm_api,
             evm_data,
             config,
         }
@@ -53,7 +62,8 @@ pub unsafe extern "C" fn user_host__push_program(
 ) -> *const u8 {
     let args = vec![0; len];
     let config = StylusConfig::new(version, max_depth, ink_price, hostio_ink);
-    let program = Program::new(args, EvmData::default(), config);
+    let evm_api = JsEvmApi::new(vec![], ApiCaller::new());
+    let program = Program::new(args, evm_api, EvmData::default(), config);
     let data = program.args.as_ptr();
     PROGRAMS.push(program);
     data

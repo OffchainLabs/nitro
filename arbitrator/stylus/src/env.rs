@@ -1,13 +1,13 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::{evm, Color};
+use arbutil::{
+    evm::{self, api::EvmApi, EvmData},
+    Bytes20, Bytes32, Color,
+};
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
-use prover::{
-    programs::{config::PricingParams, prelude::*},
-    utils::{Bytes20, Bytes32},
-};
+use prover::programs::{config::PricingParams, prelude::*};
 use std::{
     fmt::{Debug, Display},
     io,
@@ -34,7 +34,7 @@ pub struct WasmEnv<E: EvmApi> {
     /// Mechanism for accessing metering-specific global state
     pub meter: Option<MeterData>,
     /// Mechanism for reading and writing permanent storage, and doing calls
-    pub evm: E,
+    pub evm_api: E,
     /// Mechanism for reading EVM context data
     pub evm_data: EvmData,
     /// The compile time config
@@ -55,13 +55,13 @@ impl<E: EvmApi> WasmEnv<E> {
     pub fn new(
         compile: CompileConfig,
         config: Option<StylusConfig>,
-        evm: E,
+        evm_api: E,
         evm_data: EvmData,
     ) -> Self {
         Self {
             compile,
             config,
-            evm,
+            evm_api,
             evm_data,
             args: vec![],
             outs: vec![],

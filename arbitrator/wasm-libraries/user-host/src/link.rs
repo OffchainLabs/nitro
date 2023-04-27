@@ -1,17 +1,15 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{Program, PROGRAMS};
-use arbutil::{heapify, wavm};
+use crate::{evm_api::ApiCaller, Program, PROGRAMS};
+use arbutil::{
+    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
+    heapify, wavm,
+};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
-use go_stub;
 use prover::{
-    programs::{
-        config::{CompileConfig, GoParams, StylusConfig},
-        prelude::{EvmApi, EvmData},
-        run::UserOutcomeKind,
-    },
+    programs::config::{CompileConfig, GoParams, StylusConfig},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -89,7 +87,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 }
 
 /// Links and executes a user wasm.
-/// λ(mach *Machine, calldata []byte, params *Config, api []byte, evmData *EvmData, gas *u64, root *[32]byte)
+/// λ(mach *Machine, calldata []byte, params *Config, evmApi []byte, evmData *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
@@ -104,10 +102,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let machine: Machine = unbox!();
     let calldata = sp.read_go_slice_owned();
     let config: StylusConfig = unbox!();
-    let evm = sp.read_go_slice_owned();
+    let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
     let evm_data: EvmData = unbox!();
-
-    //go_stub::set_pending_event(id, this, args);
 
     // buy ink
     let pricing = config.pricing;
@@ -127,7 +123,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // provide arguments
     let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, evm_data, config));
+    PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
 
     // call the program
     let status = program_call_main(module, main, args_len);

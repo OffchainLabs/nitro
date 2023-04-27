@@ -13,7 +13,7 @@ use crate::{
         run_machine, run_native, test_compile_config, test_configs, TestInstance,
     },
 };
-use arbutil::{crypto, format, Color};
+use arbutil::{crypto, evm::user::UserOutcome, format, Bytes20, Bytes32, Color};
 use eyre::{bail, Result};
 use p256::ecdsa::{
     signature::{Signer, Verifier},
@@ -27,7 +27,6 @@ use prover::{
         start::StartMover,
         MiddlewareWrapper, ModuleMod,
     },
-    utils::{Bytes20, Bytes32},
     Machine,
 };
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};

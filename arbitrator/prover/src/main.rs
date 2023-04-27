@@ -1,14 +1,14 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![cfg(feature = "native")]
 
-use arbutil::{format, Color, DebugColor};
+use arbutil::{format, Bytes32, Color, DebugColor};
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
-    utils::{file_bytes, Bytes32, CBytes},
+    utils::{file_bytes, CBytes},
     wavm::Opcode,
 };
 use sha3::{Digest, Keccak256};

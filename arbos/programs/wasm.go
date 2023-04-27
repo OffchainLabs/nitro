@@ -34,7 +34,7 @@ type rustEvmData byte
 
 func compileUserWasmRustImpl(wasm []byte, version, debugMode u32) (machine *rustMachine, err *rustVec)
 func callUserWasmRustImpl(
-	machine *rustMachine, calldata []byte, params *rustConfig, api []byte,
+	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
 	evmData *rustEvmData, gas *u64, root *hash,
 ) (status userStatus, out *rustVec)
 
@@ -78,14 +78,14 @@ func callUserWasm(
 	}
 
 	root := db.NoncanonicalProgramHash(program, params.version)
-	api := newApi(interpreter, tracingInfo, scope)
-	defer api.drop()
+	evmApi := newApi(interpreter, tracingInfo, scope)
+	defer evmApi.drop()
 
 	status, output := callUserWasmRustImpl(
 		machine,
 		calldata,
 		params.encode(),
-		api.funcs,
+		evmApi.funcs,
 		evmData.encode(),
 		&scope.Contract.Gas,
 		&root,

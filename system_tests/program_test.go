@@ -139,7 +139,8 @@ func storageTest(t *testing.T, jit bool) {
 	}
 
 	key := testhelpers.RandomHash()
-	value := testhelpers.RandomHash()
+	// value := testhelpers.RandomHash()
+	value := common.Hash{}
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)

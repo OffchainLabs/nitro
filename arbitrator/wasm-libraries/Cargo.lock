@@ -26,7 +26,10 @@ dependencies = [
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
+ "digest 0.9.0",
+ "eyre",
  "hex",
+ "serde",
  "sha3 0.10.6",
  "siphasher",
  "wasmparser",

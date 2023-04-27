@@ -6,7 +6,13 @@ use crate::{
     machine::{Escape, MaybeEscape, WasmEnvMut},
     user::evm_api::exec_wasm,
 };
-use arbutil::heapify;
+use arbutil::{
+    evm::{
+        user::{UserOutcome, UserOutcomeKind},
+        EvmData,
+    },
+    heapify,
+};
 use eyre::eyre;
 use prover::programs::{config::GoParams, prelude::*};
 use std::mem;
@@ -35,10 +41,10 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 }
 
 /// Links and executes a user wasm.
-/// λ(mach *Machine, calldata []byte, params *Configs, api []byte, evmData: *EvmData, gas *u64, root *[32]byte)
+/// λ(mach *Machine, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64, root *[32]byte)
 ///     -> (status byte, out *Vec<u8>)
 pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let mut sp = GoStack::simple(sp, &env);
+    let sp = &mut GoStack::simple(sp, &env);
     macro_rules! unbox {
         () => {
             unsafe { *Box::from_raw(sp.read_ptr_mut()) }
@@ -50,7 +56,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let module: Vec<u8> = unbox!();
     let calldata = sp.read_go_slice_owned();
     let (compile, config): (CompileConfig, StylusConfig) = unbox!();
-    let evm = sp.read_go_slice_owned();
+    let evm_api = sp.read_go_slice_owned();
     let evm_data: EvmData = unbox!();
 
     // buy ink
@@ -62,7 +68,7 @@ pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
     sp.skip_u64();
 
     let result = exec_wasm(
-        &mut sp, env, module, calldata, compile, config, evm, evm_data, ink,
+        sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
     );
     let (outcome, ink_left) = result.map_err(Escape::Child)?;
 

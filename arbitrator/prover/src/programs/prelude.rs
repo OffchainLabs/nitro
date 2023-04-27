@@ -6,8 +6,6 @@ pub use super::{
     counter::CountingMachine,
     depth::DepthCheckedMachine,
     meter::{MachineMeter, MeteredMachine},
-    run::{UserOutcome, UserOutcomeKind},
-    evm_api::{EvmApi, EvmApiMethod, EvmApiStatus, EvmData},
 };
 
 #[cfg(feature = "native")]
