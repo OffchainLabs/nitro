@@ -50,7 +50,7 @@ contract AssertionChain is IAssertionChain {
     uint256 public challengePeriodSeconds;
     IInbox inbox;
 
-    constructor(bytes32 stateHash, uint256 _challengePeriodSeconds) public {
+    constructor(bytes32 stateHash, uint256 _challengePeriodSeconds) {
         challengePeriodSeconds = _challengePeriodSeconds;
         bytes32 assertionId = bytes32(0);
         assertions[assertionId] = Assertion({

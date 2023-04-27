@@ -3,244 +3,132 @@ package execution
 import (
 	"encoding/binary"
 	"errors"
+	"math/big"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 var (
 	ErrOutOfBounds = errors.New("instruction number out of bounds")
 )
 
-// EngineAtBlock defines a struct that can provide the number of opcodes, big steps,
-// and execution states after N opcodes at a specific L2 block height.
-type EngineAtBlock interface {
-	NumOpcodes() uint64
-	NumBigSteps() uint64
-	StateAfterSmallSteps(n uint64) (IntermediateStateIterator, error)
-	StateAfterBigSteps(n uint64) (IntermediateStateIterator, error)
-	StartingAssertionStateHash() common.Hash
-	EndingAssertionStateHash() common.Hash
-	FirstMachineState() IntermediateStateIterator
-	Serialize() []byte
-}
-
-// IntermediateStateIterator defines a struct which can be used for iterating over intermediate
-// states using an execution engine at a specific L2 block height.
-type IntermediateStateIterator interface {
-	Engine() EngineAtBlock
-	NextMachineState() (IntermediateStateIterator, error)
+type Machine interface {
 	CurrentStepNum() uint64
+	GetExecutionState() *protocol.ExecutionState
 	Hash() common.Hash
 	IsStopped() bool
+	Clone() Machine
+	Step(steps uint64) error
+	OneStepProof() ([]byte, error)
 }
 
-// MachineConfig for the machines in the execution engine.
-type MachineConfig struct {
-	MaxInstructionsPerBlock uint64
-	BigStepSize             uint64
+type SimpleMachine struct {
+	step           uint64
+	state          *protocol.ExecutionState
+	maxBatchesRead *big.Int
 }
 
-// DefaultMachineConfig for the engine's machines.
-func DefaultMachineConfig() *MachineConfig {
-	return &MachineConfig{
-		// MaxInstructions per block is defined as 2^43 WAVM opcodes in Arbitrum.
-		MaxInstructionsPerBlock: 1 << 43,
-		// BigStepSize defines a "BigStep" in the challenge protocol
-		// as 2^20 WAVM opcodes.
-		BigStepSize: 1 << 20,
+func NewSimpleMachine(startingState *protocol.ExecutionState, maxBatchesRead *big.Int) *SimpleMachine {
+	stateCopy := *startingState
+	if maxBatchesRead != nil {
+		maxBatchesRead = new(big.Int).Set(maxBatchesRead)
+	}
+	return &SimpleMachine{
+		step:           0,
+		state:          &stateCopy,
+		maxBatchesRead: maxBatchesRead,
 	}
 }
 
-// Engine can provide an execution engine for a specific pre-state of an L2 block,
-// giving access to a state iterator to advance opcode-by-opcode and fetch one-step-proofs.
-type Engine struct {
-	machineCfg                 *MachineConfig
-	numSteps                   uint64
-	startingAssertionStateHash common.Hash
-	endingAssertionStateHash   common.Hash
+func (m *SimpleMachine) CurrentStepNum() uint64 {
+	return m.step
 }
 
-// NewExecutionEngine constructs an engine at a specific block number when given
-// a pre and post-state for L2.
-func NewExecutionEngine(
-	machineCfg *MachineConfig,
-	startAssertionStateHash,
-	endAssertionStateHash common.Hash,
-) (*Engine, error) {
-	return &Engine{
-		machineCfg:                 machineCfg,
-		numSteps:                   machineCfg.MaxInstructionsPerBlock,
-		startingAssertionStateHash: startAssertionStateHash,
-		endingAssertionStateHash:   endAssertionStateHash,
-	}, nil
+func (m *SimpleMachine) GetExecutionState() *protocol.ExecutionState {
+	stateCopy := *m.state
+	return &stateCopy
 }
 
-func (engine *Engine) StartingAssertionStateHash() common.Hash {
-	return engine.startingAssertionStateHash
+func (m *SimpleMachine) Hash() common.Hash {
+	return m.GetExecutionState().GlobalState.Hash()
 }
 
-func (engine *Engine) EndingAssertionStateHash() common.Hash {
-	return engine.endingAssertionStateHash
-}
-
-// Serialize an execution engine.
-func (engine *Engine) Serialize() []byte {
-	var ret []byte
-	ret = append(ret, engine.startingAssertionStateHash.Bytes()...)
-	ret = append(ret, engine.endingAssertionStateHash.Bytes()...)
-	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)
-	return ret
-}
-
-// SerializeForHash prepares a machine serialization that helps with determining
-// intermediate hashes is comprised of keccak(serializeForHash(machine), stepNum).
-// We want validators to agree up to a certain height in subchallenges, and by encoding only
-// the start state root and num steps in the machine serialization we achieve that.
-func (engine *Engine) SerializeForHash() []byte {
-	var ret []byte
-	ret = append(ret, engine.startingAssertionStateHash.Bytes()...)
-	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, engine.numSteps)...)
-	return ret
-}
-
-func deserializeExecutionEngine(buf []byte) (*Engine, error) {
-	if len(buf) != 32+32+8 {
-		return nil, errors.New("deserialization error")
+func (m *SimpleMachine) IsStopped() bool {
+	if m.step == 0 && m.state.MachineStatus == protocol.MachineStatusFinished {
+		if m.maxBatchesRead == nil || new(big.Int).SetUint64(m.state.GlobalState.Batch).Cmp(m.maxBatchesRead) < 0 {
+			// Kickstart the machine at step 0
+			return false
+		}
 	}
-	return &Engine{
-		startingAssertionStateHash: common.BytesToHash(buf[:32]),
-		endingAssertionStateHash:   common.BytesToHash(buf[32:64]),
-		numSteps:                   binary.BigEndian.Uint64(buf[64:]),
-	}, nil
+	return m.state.MachineStatus != protocol.MachineStatusRunning
 }
 
-func (engine *Engine) internalHash() common.Hash {
-	return crypto.Keccak256Hash(engine.SerializeForHash())
+func (m *SimpleMachine) Clone() Machine {
+	newMachine := *m
+	stateCopy := *m.state
+	newMachine.state = &stateCopy
+	return &newMachine
 }
 
-// NumOpcodes in the engine at the block height.
-func (engine *Engine) NumOpcodes() uint64 {
-	return engine.numSteps
-}
+// End the batch after 2000 steps. This results in 11 blocks for an honest validator.
+// This constant must be synchronized with the one in execution/engine.go
+const stepsPerBatch = 2000
 
-// NumBigSteps in the engine at the block height.
-func (engine *Engine) NumBigSteps() uint64 {
-	if engine.numSteps <= engine.machineCfg.BigStepSize {
-		return 1
+func (m *SimpleMachine) Step(steps uint64) error {
+	for ; steps > 0; steps-- {
+		if m.IsStopped() {
+			m.step += steps
+			return nil
+		}
+		m.state.MachineStatus = protocol.MachineStatusRunning
+		m.step++
+		m.state.GlobalState.PosInBatch++
+		if m.state.GlobalState.PosInBatch%stepsPerBatch == 0 {
+			m.state.GlobalState.Batch++
+			m.state.GlobalState.PosInBatch = 0
+			m.state.MachineStatus = protocol.MachineStatusFinished
+		}
+		if m.Hash()[0] == 0 {
+			m.state.MachineStatus = protocol.MachineStatusFinished
+		}
 	}
-	return engine.numSteps / engine.machineCfg.BigStepSize
+	return nil
 }
 
-// StateAfterBigSteps gets the intermediate state after executing N big step(s).
-// If the number of total steps is less than the total number of opcodes in the N big steps,
-// we simply advance by the number of opcodes.
-func (engine *Engine) StateAfterBigSteps(num uint64) (IntermediateStateIterator, error) {
-	numOpcodes := num * engine.machineCfg.BigStepSize
-	if numOpcodes > engine.numSteps {
-		numOpcodes = engine.numSteps
-	}
-	return &ExecutionState{
-		engine:  engine,
-		stepNum: numOpcodes,
-	}, nil
+func (m *SimpleMachine) OneStepProof() ([]byte, error) {
+	proof := make([]byte, 16)
+	binary.BigEndian.PutUint64(proof[:8], m.state.GlobalState.Batch)
+	binary.BigEndian.PutUint64(proof[8:], m.state.GlobalState.PosInBatch)
+	return proof, nil
 }
 
-// StateAfterSmallSteps gets the intermediate state after executing N WAVM opcode(s).
-func (engine *Engine) StateAfterSmallSteps(num uint64) (IntermediateStateIterator, error) {
-	if num > engine.numSteps {
-		return nil, ErrOutOfBounds
-	}
-	return &ExecutionState{
-		engine:  engine,
-		stepNum: num,
-	}, nil
-}
-
-func (engine *Engine) FirstMachineState() IntermediateStateIterator {
-	return &ExecutionState{
-		engine:  engine,
-		stepNum: 0,
-	}
-}
-
-// ExecutionState represents execution of opcodes within an L2 block, which is able
-// to provide the hash the intermediate machine state as well as retrieve the next state.
-type ExecutionState struct {
-	engine  *Engine
-	stepNum uint64
-}
-
-func (execState *ExecutionState) Engine() EngineAtBlock {
-	return execState.engine
-}
-
-// IsStopped checks if the execution state's machine has reached the last step of computation.
-func (execState *ExecutionState) IsStopped() bool {
-	return execState.stepNum == execState.engine.numSteps
-}
-
-// CurrentStepNum of execution.
-func (execState *ExecutionState) CurrentStepNum() uint64 {
-	return execState.stepNum
-}
-
-// Hash of the execution state is defined as the end state root if the machine
-// has finished, or otherwise the intermediary state root defined by hashing the
-// internal hash with the step number.
-func (execState *ExecutionState) Hash() common.Hash {
-	if execState.stepNum == 0 || execState.engine.startingAssertionStateHash == execState.engine.endingAssertionStateHash {
-		return execState.engine.startingAssertionStateHash
-	}
-	if execState.stepNum >= execState.engine.numSteps {
-		return execState.engine.endingAssertionStateHash
-	}
-	// This is the intermediary state root after executing N steps with the engine.
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64(execState.engine.internalHash().Bytes(), execState.stepNum))
-}
-
-// NextState fetches the state at the next step of execution. If the machine is stopped,
-// it will return an error.
-func (execState *ExecutionState) NextMachineState() (IntermediateStateIterator, error) {
-	if execState.IsStopped() {
-		return nil, ErrOutOfBounds
-	}
-	return &ExecutionState{
-		engine:  execState.engine,
-		stepNum: execState.stepNum + 1,
-	}, nil
-}
-
-// OneStepProof provides a proof of execution of a single WAVM step for an execution state.
-func OneStepProof(execState IntermediateStateIterator) ([]byte, error) {
-	if execState.IsStopped() {
-		return nil, ErrOutOfBounds
-	}
-	ret := execState.Engine().Serialize()
-	ret = append(ret, binary.BigEndian.AppendUint64([]byte{}, execState.CurrentStepNum())...)
-	return ret, nil
-}
-
-// VerifyOneStepProof checks the claimed post-state root results from executing
+// VerifySimpleMachineOneStepProof checks the claimed post-state root results from executing
 // a specified pre-state hash.
-func VerifyOneStepProof(beforeStateRoot common.Hash, claimedAfterStateRoot common.Hash, proof []byte) bool {
-	if len(proof) < 8 {
+func VerifySimpleMachineOneStepProof(beforeStateRoot common.Hash, claimedAfterStateRoot common.Hash, step uint64, maxBatchesRead *big.Int, proof []byte) bool {
+	if len(proof) != 16 {
 		return false
 	}
-	engine, err := deserializeExecutionEngine(proof[:len(proof)-8])
+	batch := binary.BigEndian.Uint64(proof[:8])
+	posInBatch := binary.BigEndian.Uint64(proof[8:])
+	state := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			Batch:      batch,
+			PosInBatch: posInBatch,
+		},
+		MachineStatus: protocol.MachineStatusRunning,
+	}
+	mach := NewSimpleMachine(state, maxBatchesRead)
+	mach.step = step
+	if step == 0 || mach.Hash()[0] == 0 {
+		mach.state.MachineStatus = protocol.MachineStatusFinished
+	}
+	if mach.Hash() != beforeStateRoot {
+		return false
+	}
+	err := mach.Step(1)
 	if err != nil {
 		return false
 	}
-	beforeState := ExecutionState{
-		engine:  engine,
-		stepNum: binary.BigEndian.Uint64(proof[len(proof)-8:]),
-	}
-	if beforeState.Hash() != beforeStateRoot {
-		return false
-	}
-	afterState, err := beforeState.NextMachineState()
-	if err != nil {
-		return false
-	}
-	return afterState.Hash() == claimedAfterStateRoot
+	return mach.Hash() == claimedAfterStateRoot
 }

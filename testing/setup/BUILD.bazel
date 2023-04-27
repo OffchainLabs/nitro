@@ -13,6 +13,7 @@ go_library(
         "//solgen/go/challengeV2gen",
         "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",
+        "//state-manager",
         "//testing",
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",

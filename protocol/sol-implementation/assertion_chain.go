@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/pkg/errors"
@@ -35,6 +34,20 @@ var (
 	ErrTooSoon          = errors.New("too soon to confirm assertion")
 	ErrInvalidHeight    = errors.New("invalid assertion height")
 )
+
+var assertionCreatedId common.Hash
+
+func init() {
+	rollupAbi, err := rollupgen.RollupCoreMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	assertionCreatedEvent, ok := rollupAbi.Events["AssertionCreated"]
+	if !ok {
+		panic("RollupCore ABI missing AssertionCreated event")
+	}
+	assertionCreatedId = assertionCreatedEvent.ID
+}
 
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
@@ -163,7 +176,7 @@ func (ac *AssertionChain) CreateAssertion(
 		)
 	})
 	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {
-		return nil, createErr
+		return nil, fmt.Errorf("failed to create assertion: %w", createErr)
 	}
 	if len(receipt.Logs) == 0 {
 		return nil, errors.New("no logs observed from assertion creation")
@@ -277,29 +290,35 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 		if err != nil {
 			return nil, err
 		}
-		return &protocol.AssertionCreatedInfo{
+		emptyExecutionState := rollupgen.ExecutionState{
+			MachineStatus: uint8(protocol.MachineStatusFinished),
+		}
+		info := &protocol.AssertionCreatedInfo{
 			ParentAssertionHash: common.Hash{},
-			BeforeState:         rollupgen.ExecutionState{},
-			AfterState:          rollupgen.ExecutionState{},
+			BeforeState:         emptyExecutionState,
+			AfterState:          emptyExecutionState,
 			InboxMaxCount:       big.NewInt(1),
 			AfterInboxBatchAcc:  common.Hash{},
-			ExecutionHash:       executionHash,
 			AssertionHash:       assertionHash,
 			WasmModuleRoot:      wasmModuleRoot,
-		}, nil
+		}
+		computedExecutionHash := info.ExecutionHash()
+		if computedExecutionHash != executionHash {
+			return nil, fmt.Errorf("computed genesis assertion execution hash %v but the rollup has the hash %v", computedExecutionHash, executionHash)
+		}
+		return info, nil
 	}
 	node, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, uint64(seqNum))
 	if err != nil {
 		return nil, err
 	}
-	topic := common.BytesToHash(hexutil.MustDecode("0xc9cc7aa3617dc3853c50ebf6703ec797191654dcc781255bed2057dce23b0e33"))
 	var numberAsHash common.Hash
 	binary.BigEndian.PutUint64(numberAsHash[(32-8):], uint64(seqNum))
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
 		ToBlock:   new(big.Int).SetUint64(node.CreatedAtBlock),
 		Addresses: []common.Address{a.rollupAddr},
-		Topics:    [][]common.Hash{{topic}, {numberAsHash}},
+		Topics:    [][]common.Hash{{assertionCreatedId}, {numberAsHash}},
 	}
 	logs, err := a.backend.FilterLogs(ctx, query)
 	if err != nil {
@@ -316,13 +335,13 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	if err != nil {
 		return nil, err
 	}
+	afterState := parsedLog.Assertion.AfterState
 	return &protocol.AssertionCreatedInfo{
 		ParentAssertionHash: parsedLog.ParentAssertionHash,
 		BeforeState:         parsedLog.Assertion.BeforeState,
-		AfterState:          parsedLog.Assertion.AfterState,
+		AfterState:          afterState,
 		InboxMaxCount:       parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
-		ExecutionHash:       parsedLog.ExecutionHash,
 		AssertionHash:       parsedLog.AssertionHash,
 		WasmModuleRoot:      parsedLog.WasmModuleRoot,
 	}, nil

@@ -5,7 +5,6 @@ package protocol
 import (
 	"encoding/binary"
 	"math"
-	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengegen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
@@ -20,24 +19,25 @@ type GoGlobalState struct {
 	PosInBatch uint64
 }
 
+func GoGlobalStateFromSolidity(globalState rollupgen.GlobalState) GoGlobalState {
+	return GoGlobalState{
+		BlockHash:  globalState.Bytes32Vals[0],
+		SendRoot:   globalState.Bytes32Vals[1],
+		Batch:      globalState.U64Vals[0],
+		PosInBatch: globalState.U64Vals[1],
+	}
+}
+
 func u64ToBe(x uint64) []byte {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, x)
 	return data
 }
 
-func ComputeStateHash(
+func ComputeSimpleMachineChallengeHash(
 	execState *ExecutionState,
-	inboxMaxCount *big.Int,
 ) common.Hash {
-	data := make([]byte, 0)
-	globalHash := execState.GlobalState.Hash()
-	data = append(data, globalHash[:]...)
-	inboxCount := make([]byte, 32)
-	copy(inboxCount[24:32], u64ToBe(inboxMaxCount.Uint64()))
-	data = append(data, inboxCount...)
-	data = append(data, byte(execState.MachineStatus))
-	return crypto.Keccak256Hash(data)
+	return execState.GlobalState.Hash()
 }
 
 func (s GoGlobalState) Hash() common.Hash {
@@ -56,13 +56,17 @@ func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 	}
 }
 
+func (s GoGlobalState) Equals(other GoGlobalState) bool {
+	// This is correct because we don't have any pointers or slices
+	return s == other
+}
+
 type MachineStatus uint8
 
 const (
 	MachineStatusRunning  MachineStatus = 0
 	MachineStatusFinished MachineStatus = 1
 	MachineStatusErrored  MachineStatus = 2
-	MachineStatusTooFar   MachineStatus = 3
 )
 
 type ExecutionState struct {
@@ -70,11 +74,22 @@ type ExecutionState struct {
 	MachineStatus MachineStatus
 }
 
+func GoExecutionStateFromSolidity(executionState rollupgen.ExecutionState) *ExecutionState {
+	return &ExecutionState{
+		GlobalState:   GoGlobalStateFromSolidity(executionState.GlobalState),
+		MachineStatus: MachineStatus(executionState.MachineStatus),
+	}
+}
+
 func (s *ExecutionState) AsSolidityStruct() rollupgen.ExecutionState {
 	return rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
 		MachineStatus: uint8(s.MachineStatus),
 	}
+}
+
+func (s *ExecutionState) Equals(other *ExecutionState) bool {
+	return s.MachineStatus == other.MachineStatus && s.GlobalState.Equals(other.GlobalState)
 }
 
 // RequiredBatches determines the batch count required to reach the execution state.

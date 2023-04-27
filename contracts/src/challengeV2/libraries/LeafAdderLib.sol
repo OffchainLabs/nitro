@@ -112,7 +112,7 @@ library BlockLeafAdder {
             uint256 heightDiff = assertionHeight - predecessorAssertionHeight;
             require(heightDiff == leafLibArgs.leafData.height, "Invalid leaf height");
 
-            // bytes32 claimStateHash = assertionChain.getStateHash(leafLibArgs.leafData.claimId);
+            // bytes32 claimStateHash = assertionChain.getChallengeHash(leafLibArgs.leafData.claimId);
 
             // RJ: TODO: provide valid inbox proofs from the validator client
             // require(

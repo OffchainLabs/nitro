@@ -358,26 +358,17 @@ func (et *edgeTracker) submitOneStepProof(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	assertionNum, err := et.cfg.chain.GetAssertionNum(ctx, prevAssertionId)
+	prevAssertionNum, err := et.cfg.chain.GetAssertionNum(ctx, prevAssertionId)
 	if err != nil {
 		return err
 	}
-	prevAssertion, err := et.cfg.chain.AssertionBySequenceNum(ctx, assertionNum)
-	if err != nil {
-		return err
-	}
-	parentAssertionStateHash, err := prevAssertion.StateHash()
-	if err != nil {
-		return err
-	}
-	assertionCreationInfo, err := et.cfg.chain.ReadAssertionCreationInfo(ctx, assertionNum)
+	parentAssertionCreationInfo, err := et.cfg.chain.ReadAssertionCreationInfo(ctx, prevAssertionNum)
 	if err != nil {
 		return err
 	}
 	data, beforeStateInclusionProof, afterStateInclusionProof, err := et.cfg.stateManager.OneStepProofData(
 		ctx,
-		parentAssertionStateHash,
-		assertionCreationInfo,
+		parentAssertionCreationInfo,
 		fromAssertionHeight,
 		toAssertionHeight,
 		fromBigStep,

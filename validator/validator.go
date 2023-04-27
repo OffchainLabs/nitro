@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -25,24 +24,20 @@ type Opt = func(val *Validator)
 // Validator defines a validator client instances in the assertion protocol, which will be
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
-	chain                                  protocol.Protocol
-	chalManagerAddr                        common.Address
-	rollupAddr                             common.Address
-	rollup                                 *rollupgen.RollupCore
-	rollupFilterer                         *rollupgen.RollupCoreFilterer
-	chalManager                            *challengeV2gen.EdgeChallengeManagerFilterer
-	backend                                bind.ContractBackend
-	stateManager                           statemanager.Manager
-	address                                common.Address
-	name                                   string
-	createdAssertions                      map[common.Hash]protocol.Assertion
-	assertionsLock                         sync.RWMutex
-	sequenceNumbersByParentStateCommitment map[common.Hash][]protocol.AssertionSequenceNumber
-	assertions                             map[protocol.AssertionSequenceNumber]protocol.Assertion
-	postAssertionsInterval                 time.Duration
-	timeRef                                util.TimeReference
-	edgeTrackerWakeInterval                time.Duration
-	newAssertionCheckInterval              time.Duration
+	chain                     protocol.Protocol
+	chalManagerAddr           common.Address
+	rollupAddr                common.Address
+	rollup                    *rollupgen.RollupCore
+	rollupFilterer            *rollupgen.RollupCoreFilterer
+	chalManager               *challengeV2gen.EdgeChallengeManagerFilterer
+	backend                   bind.ContractBackend
+	stateManager              statemanager.Manager
+	address                   common.Address
+	name                      string
+	postAssertionsInterval    time.Duration
+	timeRef                   util.TimeReference
+	edgeTrackerWakeInterval   time.Duration
+	newAssertionCheckInterval time.Duration
 }
 
 // WithName is a human-readable identifier for this validator client for logging purposes.
@@ -100,25 +95,18 @@ func New(
 	opts ...Opt,
 ) (*Validator, error) {
 	v := &Validator{
-		backend:                                backend,
-		chain:                                  chain,
-		stateManager:                           stateManager,
-		address:                                common.Address{},
-		postAssertionsInterval:                 time.Second * 5,
-		createdAssertions:                      make(map[common.Hash]protocol.Assertion),
-		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]protocol.AssertionSequenceNumber),
-		assertions:                             make(map[protocol.AssertionSequenceNumber]protocol.Assertion),
-		timeRef:                                util.NewRealTimeReference(),
-		rollupAddr:                             rollupAddr,
-		edgeTrackerWakeInterval:                time.Millisecond * 100,
-		newAssertionCheckInterval:              time.Second,
+		backend:                   backend,
+		chain:                     chain,
+		stateManager:              stateManager,
+		address:                   common.Address{},
+		postAssertionsInterval:    time.Second * 5,
+		timeRef:                   util.NewRealTimeReference(),
+		rollupAddr:                rollupAddr,
+		edgeTrackerWakeInterval:   time.Millisecond * 100,
+		newAssertionCheckInterval: time.Second,
 	}
 	for _, o := range opts {
 		o(v)
-	}
-	genesisAssertion, err := v.chain.AssertionBySequenceNum(ctx, 1)
-	if err != nil {
-		return nil, err
 	}
 	chalManager, err := v.chain.SpecChallengeManager(ctx)
 	if err != nil {
@@ -140,7 +128,6 @@ func New(
 	}
 	v.rollup = rollup
 	v.rollupFilterer = rollupFilterer
-	v.assertions[0] = genesisAssertion
 	v.chalManagerAddr = chalManagerAddr
 	v.chalManager = chalManagerFilterer
 	return v, nil
@@ -193,19 +180,21 @@ func (v *Validator) postLatestAssertion(ctx context.Context) (protocol.Assertion
 	if err != nil {
 		return nil, err
 	}
-	parentAssertionState, err := v.stateManager.AssertionExecutionState(ctx, parentAssertionStateHash)
+	parentAssertionCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, parentAssertionSeq)
 	if err != nil {
 		return nil, err
 	}
-	assertionToCreate, err := v.stateManager.LatestAssertionCreationData(ctx)
+	prevInboxMaxCount := parentAssertionCreationInfo.InboxMaxCount
+	// TODO: this should really only go up to the prevInboxMaxCount batch state
+	newState, err := v.stateManager.LatestExecutionState(ctx)
 	if err != nil {
 		return nil, err
 	}
 	assertion, err := v.chain.CreateAssertion(
 		ctx,
-		parentAssertionState,
-		assertionToCreate.State,
-		assertionToCreate.InboxMaxCount,
+		protocol.GoExecutionStateFromSolidity(parentAssertionCreationInfo.AfterState),
+		newState,
+		prevInboxMaxCount,
 	)
 	switch {
 	case errors.Is(err, solimpl.ErrAlreadyExists):
@@ -224,14 +213,6 @@ func (v *Validator) postLatestAssertion(ctx context.Context) (protocol.Assertion
 	}
 	log.WithFields(logFields).Info("Submitted latest L2 state claim as an assertion to L1")
 
-	// Keep track of the created assertion locally.
-	v.assertionsLock.Lock()
-	v.assertions[assertion.SeqNum()] = assertion
-	v.sequenceNumbersByParentStateCommitment[parentAssertionStateHash] = append(
-		v.sequenceNumbersByParentStateCommitment[parentAssertionStateHash],
-		assertion.SeqNum(),
-	)
-	v.assertionsLock.Unlock()
 	return assertion, nil
 }
 
@@ -248,24 +229,29 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 		return 0, err
 	}
 	latestConfirmed := latestConfirmedFetched.SeqNum()
-	v.assertionsLock.RLock()
-	defer v.assertionsLock.RUnlock()
-	for s := protocol.AssertionSequenceNumber(numAssertions); s > latestConfirmed; s-- {
-		a, ok := v.assertions[s]
-		if !ok {
-			continue
-		}
-		stateHash, err := a.StateHash()
+	bestAssertion := latestConfirmed
+	for s := latestConfirmed + 1; s < protocol.AssertionSequenceNumber(numAssertions); s++ {
+		a, err := v.chain.AssertionBySequenceNum(ctx, s)
 		if err != nil {
 			return 0, err
 		}
-		if v.stateManager.HasStateCommitment(ctx, util.StateCommitment{
-			StateRoot: stateHash,
-		}) {
-			return a.SeqNum(), nil
+		parent, err := a.PrevSeqNum()
+		if err != nil {
+			return 0, err
+		}
+		if parent != bestAssertion {
+			continue
+		}
+		info, err := v.chain.ReadAssertionCreationInfo(ctx, s)
+		if err != nil {
+			return 0, err
+		}
+		_, hasState := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
+		if hasState {
+			bestAssertion = s
 		}
 	}
-	return latestConfirmed, nil
+	return bestAssertion, nil
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
@@ -282,30 +268,13 @@ func (v *Validator) onLeafCreated(
 		"stateHash": fmt.Sprintf("%#x", assertionStateHash),
 	}).Info("New assertion appended to protocol")
 
-	// Keep track of assertions by parent state root to more easily detect forks.
-	assertionPrevSeqNum, err := assertion.PrevSeqNum()
-	if err != nil {
-		return err
-	}
-	prevAssertion, err := v.chain.AssertionBySequenceNum(ctx, assertionPrevSeqNum)
+	isFirstChild, err := assertion.IsFirstChild()
 	if err != nil {
 		return err
 	}
 
-	v.assertionsLock.Lock()
-	key, err := prevAssertion.StateHash()
-	if err != nil {
-		return err
-	}
-	v.sequenceNumbersByParentStateCommitment[key] = append(
-		v.sequenceNumbersByParentStateCommitment[key],
-		assertion.SeqNum(),
-	)
-	hasForked := len(v.sequenceNumbersByParentStateCommitment[key]) > 1
-	v.assertionsLock.Unlock()
-
-	// If this leaf's creation has not triggered fork, we have nothing else to do.
-	if !hasForked {
+	// If this leaf is the first child, we have nothing else to do.
+	if isFirstChild {
 		log.Info("No fork detected in assertion tree upon leaf creation")
 		return nil
 	}

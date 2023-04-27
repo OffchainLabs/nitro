@@ -31,4 +31,8 @@ library StateToolsLib {
     function hash(State memory s) internal pure returns (bytes32) {
         return RollupLib.stateHashMem(s.es, s.inboxMsgCountMax);
     }
+
+    function mockMachineHash(State memory s) internal pure returns (bytes32) {
+        return s.es.globalState.hash();
+    }
 }

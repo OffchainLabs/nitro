@@ -400,7 +400,8 @@ contract ChallengeManagerImpl is IChallengeManager {
         // CHRIS: TODO: we should have an existance check
         // CHRIS: TODO: this and the history root propagation in createSubChallenge need to be re-assessed - dont we have
         // different types of state at each level?
-        bytes32 originStateHash = assertionChain.getStateHash(assertionId);
+        bytes32 originStateHash;
+        // TODO if we ever revisit this code: should be assertionChain.getChallengeHash(assertionId); but that method no longer exists
         ChallengeVertex memory root =
             ChallengeVertexLib.newRoot(challengeId, keccak256(abi.encodePacked(originStateHash)), assertionId);
         bytes32 rootId = ChallengeVertexLib.id(root);

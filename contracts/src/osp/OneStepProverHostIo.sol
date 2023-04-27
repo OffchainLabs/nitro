@@ -216,7 +216,7 @@ contract OneStepProverHostIo is IOneStepProver {
             inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER &&
             msgIndex >= execCtx.maxInboxMessagesRead
         ) {
-            mach.status = MachineStatus.TOO_FAR;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 

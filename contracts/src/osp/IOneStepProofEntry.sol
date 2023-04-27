@@ -5,9 +5,15 @@
 pragma solidity ^0.8.0;
 
 import "./IOneStepProver.sol";
+import "../state/Machine.sol";
 
 library OneStepProofEntryLib {
     uint256 internal constant MAX_STEPS = 1 << 43;
+}
+
+struct ExecutionState {
+    GlobalState globalState;
+    MachineStatus machineStatus;
 }
 
 interface IOneStepProofEntry {
@@ -17,4 +23,6 @@ interface IOneStepProofEntry {
         bytes32 beforeHash,
         bytes calldata proof
     ) external view returns (bytes32 afterHash);
+
+    function getMachineHash(ExecutionState calldata execState) external pure returns (bytes32);
 }

@@ -3,8 +3,6 @@ package validator
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
-	"math"
 	"math/big"
 	"sync"
 	"testing"
@@ -15,7 +13,6 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -64,32 +61,13 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 	//
 	t.Run("two forked assertions at the same height", func(t *testing.T) {
 		cfg := &challengeProtocolTestConfig{
-			// The latest assertion height each validator has seen.
-			aliceHeight: 7,
-			bobHeight:   7,
 			// The heights at which the validators diverge in histories. In this test,
 			// alice and bob start diverging at height 3 at all subchallenge levels.
 			assertionDivergenceHeight: 4,
 			bigStepDivergenceHeight:   4,
 			smallStepDivergenceHeight: 4,
 		}
-		cfg.expectedLeavesAdded = 60
-		cfg.expectedBisections = 30
-		hook := test.NewGlobal()
-		runChallengeIntegrationTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork at start height 3")
-		AssertLogsContain(t, hook, "Succeeded one-step-proof for edge and confirmed it as winner")
-	})
-	t.Run("two validators opening leaves at height 31", func(t *testing.T) {
-		// TODO: we would use a larger height here but we're limited by protocol.LevelZeroBlockEdgeHeight
-		cfg := &challengeProtocolTestConfig{
-			aliceHeight:               31,
-			bobHeight:                 31,
-			assertionDivergenceHeight: 4,
-			bigStepDivergenceHeight:   4,
-			smallStepDivergenceHeight: 4,
-		}
-		cfg.expectedLeavesAdded = 60
+		cfg.expectedLeavesAdded = 61
 		cfg.expectedBisections = 30
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
@@ -97,15 +75,13 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 		AssertLogsContain(t, hook, "Succeeded one-step-proof for edge and confirmed it as winner")
 	})
 	t.Run("two validators disagreeing on the number of blocks", func(t *testing.T) {
-		// TODO: we would use a larger height here but we're limited by protocol.LevelZeroBlockEdgeHeight
 		cfg := &challengeProtocolTestConfig{
-			aliceHeight:               7,
-			bobHeight:                 8,
-			assertionDivergenceHeight: 8,
-			bigStepDivergenceHeight:   4,
-			smallStepDivergenceHeight: 4,
+			assertionDivergenceHeight:      7,
+			assertionBlockHeightDifference: 1,
+			bigStepDivergenceHeight:        4,
+			smallStepDivergenceHeight:      4,
 		}
-		cfg.expectedLeavesAdded = 60
+		cfg.expectedLeavesAdded = 61
 		cfg.expectedBisections = 30
 		hook := test.NewGlobal()
 		runChallengeIntegrationTest(t, hook, cfg)
@@ -115,11 +91,10 @@ func TestChallengeProtocol_AliceAndBob(t *testing.T) {
 }
 
 type challengeProtocolTestConfig struct {
-	// The latest heights by index at the assertion chain level.
-	aliceHeight uint64
-	bobHeight   uint64
 	// The height in the assertion chain at which the validators diverge.
 	assertionDivergenceHeight uint64
+	// The difference between the malicious assertion block height and the honest assertion block height.
+	assertionBlockHeightDifference int64
 	// The heights at which the validators diverge in histories at the big step
 	// subchallenge level.
 	bigStepDivergenceHeight uint64
@@ -129,100 +104,6 @@ type challengeProtocolTestConfig struct {
 	// Events we want to assert are fired from the goimpl.
 	expectedBisections  uint64
 	expectedLeavesAdded uint64
-}
-
-func prepareHonestStates(
-	ctx context.Context,
-	t testing.TB,
-	chain protocol.Protocol,
-	backend *backends.SimulatedBackend,
-	honestHashes []common.Hash,
-	chainHeight uint64,
-	prevInboxMaxCount *big.Int,
-) ([]*protocol.ExecutionState, []*big.Int) {
-	t.Helper()
-	// Initialize each validator's associated state roots which diverge
-	genesis, err := chain.AssertionBySequenceNum(ctx, 1)
-	require.NoError(t, err)
-
-	genesisState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: common.Hash{},
-		},
-		MachineStatus: protocol.MachineStatusFinished,
-	}
-	genesisStateHash := protocol.ComputeStateHash(genesisState, prevInboxMaxCount)
-	actualGenesisStateHash, err := genesis.StateHash()
-	require.NoError(t, err)
-
-	require.Equal(t, genesisStateHash, actualGenesisStateHash, "Genesis state hash unequal")
-
-	// Initialize each validator associated state roots which diverge
-	// at specified points in the test config.
-	honestStates := make([]*protocol.ExecutionState, chainHeight+1)
-	honestInboxCounts := make([]*big.Int, chainHeight+1)
-	honestStates[0] = genesisState
-	honestInboxCounts[0] = big.NewInt(1)
-
-	for i := uint64(1); i <= chainHeight; i++ {
-		backend.Commit()
-		state := &protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
-				BlockHash:  honestHashes[i],
-				Batch:      0,
-				PosInBatch: i,
-			},
-			MachineStatus: protocol.MachineStatusFinished,
-		}
-		if i == chainHeight {
-			state.GlobalState.Batch = 1
-			state.GlobalState.PosInBatch = 0
-		}
-
-		honestStates[i] = state
-		honestInboxCounts[i] = big.NewInt(2)
-	}
-	return honestStates, honestInboxCounts
-}
-
-func prepareMaliciousStates(
-	cfg *challengeProtocolTestConfig,
-	evilHashes []common.Hash,
-	honestStates []*protocol.ExecutionState,
-	honestInboxCounts []*big.Int,
-) ([]*protocol.ExecutionState, []*big.Int) {
-	divergenceHeight := cfg.assertionDivergenceHeight
-	numRoots := cfg.bobHeight + 1
-	states := make([]*protocol.ExecutionState, numRoots)
-	inboxCounts := make([]*big.Int, numRoots)
-
-	for j := uint64(0); j < numRoots; j++ {
-		if divergenceHeight == 0 || j < divergenceHeight {
-			evilState := *honestStates[j]
-			if j < cfg.bobHeight {
-				evilState.GlobalState.Batch = 0
-				evilState.GlobalState.PosInBatch = j
-			}
-			states[j] = &evilState
-			inboxCounts[j] = honestInboxCounts[j]
-		} else {
-			evilState := &protocol.ExecutionState{
-				GlobalState: protocol.GoGlobalState{
-					BlockHash:  evilHashes[j],
-					Batch:      0,
-					PosInBatch: j,
-				},
-				MachineStatus: protocol.MachineStatusFinished,
-			}
-			if j == cfg.bobHeight {
-				evilState.GlobalState.Batch = 1
-				evilState.GlobalState.PosInBatch = 0
-			}
-			states[j] = evilState
-			inboxCounts[j] = big.NewInt(2)
-		}
-	}
-	return states, inboxCounts
 }
 
 func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProtocolTestConfig) {
@@ -243,33 +124,8 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 		backend.Commit()
 	}
 
-	honestHashes := honestHashesForUints(0, cfg.aliceHeight+1)
-	evilHashes := evilHashesForUints(0, cfg.bobHeight+1)
-
-	honestStates, honestInboxCounts := prepareHonestStates(
-		ctx,
-		t,
-		chains[0],
-		backend,
-		honestHashes,
-		cfg.aliceHeight,
-		prevInboxMaxCount,
-	)
-
-	maliciousStates, maliciousInboxCounts := prepareMaliciousStates(
-		cfg,
-		evilHashes,
-		honestStates,
-		honestInboxCounts,
-	)
-
 	// Initialize each validator.
-	honestManager, err := statemanager.NewWithAssertionStates(
-		honestStates,
-		honestInboxCounts,
-		statemanager.WithNumOpcodesPerBigStep(protocol.LevelZeroSmallStepEdgeHeight),
-		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LevelZeroBigStepEdgeHeight*protocol.LevelZeroSmallStepEdgeHeight),
-	)
+	honestManager, err := statemanager.NewForSimpleMachine()
 	require.NoError(t, err)
 	aliceAddr := accs[1].AccountAddr
 	alice, err := New(
@@ -286,13 +142,10 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 	)
 	require.NoError(t, err)
 
-	maliciousManager, err := statemanager.NewWithAssertionStates(
-		maliciousStates,
-		maliciousInboxCounts,
-		statemanager.WithNumOpcodesPerBigStep(protocol.LevelZeroSmallStepEdgeHeight),
-		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LevelZeroBigStepEdgeHeight*protocol.LevelZeroSmallStepEdgeHeight),
-		statemanager.WithBigStepStateDivergenceHeight(cfg.bigStepDivergenceHeight),
-		statemanager.WithSmallStepStateDivergenceHeight(cfg.smallStepDivergenceHeight),
+	maliciousManager, err := statemanager.NewForSimpleMachine(
+		statemanager.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*protocol.LevelZeroSmallStepEdgeHeight+cfg.smallStepDivergenceHeight),
+		statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
+		statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
 	)
 	require.NoError(t, err)
 	bobAddr := accs[1].AccountAddr
@@ -354,44 +207,30 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 		}
 	}()
 
-	genesis, err := alice.chain.AssertionBySequenceNum(ctx, protocol.GenesisAssertionSeqNum)
-	require.NoError(t, err)
-	genesisStateHash, err := genesis.StateHash()
+	genesisCreation, err := alice.chain.ReadAssertionCreationInfo(ctx, protocol.GenesisAssertionSeqNum)
 	require.NoError(t, err)
 
 	// Submit leaf creation manually for each validator.
-	genesisState, err := honestManager.AssertionExecutionState(ctx, genesisStateHash)
+	genesisState := protocol.GoExecutionStateFromSolidity(genesisCreation.AfterState)
+	latestHonest, err := honestManager.LatestExecutionState(ctx)
 	require.NoError(t, err)
-	latestHonest, err := honestManager.LatestAssertionCreationData(ctx)
-	require.NoError(t, err)
-	inboxMaxCount := big.NewInt(2)
-	// TODO: this field is broken :/ see the comment in LatestAssertionCreationData
-	//assert.Equal(t, latestHonest.InboxMaxCount, inboxSize, "honest assertion has an incorrect InboxMaxCount")
 	leaf1, err := alice.chain.CreateAssertion(
 		ctx,
 		genesisState,
-		latestHonest.State,
-		latestHonest.InboxMaxCount,
+		latestHonest,
+		genesisCreation.InboxMaxCount,
 	)
 	require.NoError(t, err)
-	leaf1State, err := leaf1.StateHash()
-	require.NoError(t, err)
-	expectedLeaf1State := protocol.ComputeStateHash(latestHonest.State, inboxMaxCount)
-	assert.Equal(t, leaf1State, expectedLeaf1State, "created honest leaf1 with an unexpected state hash")
 
-	latestEvil, err := maliciousManager.LatestAssertionCreationData(ctx)
+	latestEvil, err := maliciousManager.LatestExecutionState(ctx)
 	require.NoError(t, err)
 	leaf2, err := bob.chain.CreateAssertion(
 		ctx,
 		genesisState,
-		latestEvil.State,
-		latestEvil.InboxMaxCount,
+		latestEvil,
+		genesisCreation.InboxMaxCount,
 	)
 	require.NoError(t, err)
-	leaf2State, err := leaf2.StateHash()
-	require.NoError(t, err)
-	expectedLeaf2State := protocol.ComputeStateHash(latestEvil.State, inboxMaxCount)
-	assert.Equal(t, leaf2State, expectedLeaf2State, "created evil leaf2 with an unexpected state hash")
 
 	// Honest assertion being added.
 	leafAdder := func(startCommit, endCommit util.HistoryCommitment, prefixProof []byte, leaf protocol.Assertion) protocol.SpecEdge {
@@ -472,24 +311,4 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 	wg.Wait()
 	assert.Equal(t, cfg.expectedLeavesAdded, totalLeavesAdded, "Did not get expected challenge leaf creations")
 	assert.Equal(t, cfg.expectedBisections, totalBisections, "Did not get expected total bisections")
-}
-
-func evilHashesForUints(lo, hi uint64) []common.Hash {
-	var ret []common.Hash
-	for i := lo; i < hi; i++ {
-		ret = append(ret, hashForUint(math.MaxUint64-i))
-	}
-	return ret
-}
-
-func honestHashesForUints(lo, hi uint64) []common.Hash {
-	var ret []common.Hash
-	for i := lo; i < hi; i++ {
-		ret = append(ret, hashForUint(i))
-	}
-	return ret
-}
-
-func hashForUint(x uint64) common.Hash {
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, x))
 }

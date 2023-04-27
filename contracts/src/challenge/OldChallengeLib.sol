@@ -86,8 +86,6 @@ library OldChallengeLib {
             return keccak256(abi.encodePacked("Machine finished:", globalStateHash));
         } else if (status == MachineStatus.ERRORED) {
             return keccak256(abi.encodePacked("Machine errored:"));
-        } else if (status == MachineStatus.TOO_FAR) {
-            return keccak256(abi.encodePacked("Machine too far:"));
         } else {
             revert("BAD_BLOCK_STATUS");
         }
@@ -124,8 +122,6 @@ library OldChallengeLib {
             return keccak256(abi.encodePacked("Block state:", globalStateHash));
         } else if (status == MachineStatus.ERRORED) {
             return keccak256(abi.encodePacked("Block state, errored:", globalStateHash));
-        } else if (status == MachineStatus.TOO_FAR) {
-            return keccak256(abi.encodePacked("Block state, too far:"));
         } else {
             revert("BAD_BLOCK_STATUS");
         }

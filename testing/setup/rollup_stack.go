@@ -3,7 +3,6 @@ package setup
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -12,6 +11,7 @@ import (
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/mocksgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
+	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	challenge_testing "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -30,32 +30,26 @@ type SetupBackend interface {
 }
 
 type CreatedValidatorFork struct {
-	Leaf1                      protocol.Assertion
-	Leaf2                      protocol.Assertion
-	Chains                     []*solimpl.AssertionChain
-	Accounts                   []*TestAccount
-	Backend                    *backends.SimulatedBackend
-	HonestValidatorStateRoots  []common.Hash
-	EvilValidatorStateRoots    []common.Hash
-	HonestValidatorStates      []*protocol.ExecutionState
-	EvilValidatorStates        []*protocol.ExecutionState
-	HonestValidatorInboxCounts []*big.Int
-	EvilValidatorInboxCounts   []*big.Int
-	Addrs                      *RollupAddresses
+	Leaf1              protocol.Assertion
+	Leaf2              protocol.Assertion
+	Chains             []*solimpl.AssertionChain
+	Accounts           []*TestAccount
+	Backend            *backends.SimulatedBackend
+	HonestStateManager statemanager.Manager
+	EvilStateManager   statemanager.Manager
+	Addrs              *RollupAddresses
 }
 
 type CreateForkConfig struct {
-	NumBlocks     uint64
-	DivergeHeight uint64
+	DivergeBlockHeight    uint64
+	BlockHeightDifference int64
+	DivergeMachineHeight  uint64
 }
 
 func CreateTwoValidatorFork(
 	ctx context.Context,
 	cfg *CreateForkConfig,
 ) (*CreatedValidatorFork, error) {
-	divergenceHeight := cfg.DivergeHeight
-	numBlocks := cfg.NumBlocks
-
 	setup, err := SetupChainsWithEdgeChallengeManager()
 	if err != nil {
 		return nil, err
@@ -68,81 +62,38 @@ func CreateTwoValidatorFork(
 		setup.Backend.Commit()
 	}
 
-	genesis, err := setup.Chains[0].AssertionBySequenceNum(ctx, 1)
-	if err != nil {
-		return nil, err
-	}
-
 	genesisState := &protocol.ExecutionState{
 		GlobalState: protocol.GoGlobalState{
 			BlockHash: common.Hash{},
 		},
 		MachineStatus: protocol.MachineStatusFinished,
 	}
-	genesisStateHash := protocol.ComputeStateHash(genesisState, big.NewInt(1))
 
-	actualGenesisStateHash, err := genesis.StateHash()
+	honestStateManager, err := statemanager.NewForSimpleMachine()
 	if err != nil {
 		return nil, err
 	}
-	if genesisStateHash != actualGenesisStateHash {
-		return nil, errors.New("genesis state hash not equal")
+
+	// Set defaults (zeroes are not valid here)
+	if cfg.DivergeBlockHeight == 0 {
+		cfg.DivergeBlockHeight = 1
+	}
+	if cfg.DivergeMachineHeight == 0 {
+		cfg.DivergeMachineHeight = 1
 	}
 
-	height := uint64(0)
-	honestValidatorStateRoots := []common.Hash{genesisStateHash}
-	evilValidatorStateRoots := []common.Hash{genesisStateHash}
-	honestValidatorStates := []*protocol.ExecutionState{genesisState}
-	evilValidatorStates := []*protocol.ExecutionState{genesisState}
-	honestValidatorInboxMaxCounts := []*big.Int{big.NewInt(1)}
-	evilValidatorInboxMaxCounts := []*big.Int{big.NewInt(1)}
-
-	var honestBlockHash common.Hash
-	for i := uint64(1); i < numBlocks; i++ {
-		height += 1
-		honestBlockHash = setup.Backend.Commit()
-
-		state := &protocol.ExecutionState{
-			GlobalState: protocol.GoGlobalState{
-				BlockHash:  honestBlockHash,
-				Batch:      0,
-				PosInBatch: i,
-			},
-			MachineStatus: protocol.MachineStatusFinished,
-		}
-
-		honestValidatorStateRoots = append(honestValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
-		honestValidatorStates = append(honestValidatorStates, state)
-		honestValidatorInboxMaxCounts = append(honestValidatorInboxMaxCounts, big.NewInt(1))
-
-		// Before the divergence height, the evil validator agrees.
-		if i < divergenceHeight {
-			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(state, big.NewInt(1)))
-			evilValidatorStates = append(evilValidatorStates, state)
-			evilValidatorInboxMaxCounts = append(evilValidatorInboxMaxCounts, big.NewInt(1))
-		} else {
-			stateCopy := *state
-			evilState := &stateCopy
-			junkRoot := make([]byte, 32)
-			_, err2 := rand.Read(junkRoot)
-			if err2 != nil {
-				return nil, err2
-			}
-			blockHash := crypto.Keccak256Hash(junkRoot)
-			evilState.GlobalState.BlockHash = blockHash
-			evilValidatorStateRoots = append(evilValidatorStateRoots, protocol.ComputeStateHash(evilState, big.NewInt(1)))
-			evilValidatorStates = append(evilValidatorStates, evilState)
-			evilValidatorInboxMaxCounts = append(evilValidatorInboxMaxCounts, big.NewInt(1))
-		}
+	evilStateManager, err := statemanager.NewForSimpleMachine(
+		statemanager.WithBlockDivergenceHeight(cfg.DivergeBlockHeight),
+		statemanager.WithDivergentBlockHeightOffset(cfg.BlockHeightDifference),
+		statemanager.WithMachineDivergenceStep(cfg.DivergeMachineHeight),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	honestBlockHash = setup.Backend.Commit()
-	honestPostState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: honestBlockHash,
-			Batch:     1,
-		},
-		MachineStatus: protocol.MachineStatusFinished,
+	honestPostState, err := honestStateManager.LatestExecutionState(ctx)
+	if err != nil {
+		return nil, err
 	}
 	assertion, err := setup.Chains[0].CreateAssertion(
 		ctx,
@@ -154,20 +105,9 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	assertionStateHash, err := assertion.StateHash()
+	evilPostState, err := evilStateManager.LatestExecutionState(ctx)
 	if err != nil {
 		return nil, err
-	}
-	honestValidatorStateRoots = append(honestValidatorStateRoots, assertionStateHash)
-	honestValidatorStates = append(honestValidatorStates, honestPostState)
-	honestValidatorInboxMaxCounts = append(honestValidatorInboxMaxCounts, new(big.Int).SetUint64(2))
-
-	evilPostState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: common.BytesToHash([]byte("evilcommit")),
-			Batch:     1,
-		},
-		MachineStatus: protocol.MachineStatusFinished,
 	}
 	forkedAssertion, err := setup.Chains[1].CreateAssertion(
 		ctx,
@@ -179,27 +119,15 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	forkedAssertionStateHash, err := forkedAssertion.StateHash()
-	if err != nil {
-		return nil, err
-	}
-	evilValidatorStateRoots = append(evilValidatorStateRoots, forkedAssertionStateHash)
-	evilValidatorStates = append(evilValidatorStates, evilPostState)
-	evilValidatorInboxMaxCounts = append(evilValidatorInboxMaxCounts, new(big.Int).SetUint64(2))
-
 	return &CreatedValidatorFork{
-		Leaf1:                      assertion,
-		Leaf2:                      forkedAssertion,
-		Chains:                     setup.Chains,
-		Accounts:                   setup.Accounts,
-		Backend:                    setup.Backend,
-		Addrs:                      setup.Addrs,
-		HonestValidatorStateRoots:  honestValidatorStateRoots,
-		EvilValidatorStateRoots:    evilValidatorStateRoots,
-		HonestValidatorStates:      honestValidatorStates,
-		EvilValidatorStates:        evilValidatorStates,
-		HonestValidatorInboxCounts: honestValidatorInboxMaxCounts,
-		EvilValidatorInboxCounts:   evilValidatorInboxMaxCounts,
+		Leaf1:              assertion,
+		Leaf2:              forkedAssertion,
+		Chains:             setup.Chains,
+		Accounts:           setup.Accounts,
+		Backend:            setup.Backend,
+		Addrs:              setup.Addrs,
+		HonestStateManager: honestStateManager,
+		EvilStateManager:   evilStateManager,
 	}, nil
 }
 
@@ -468,23 +396,12 @@ func deployChallengeFactory(
 	auth *bind.TransactOpts,
 	backend SetupBackend,
 ) (common.Address, common.Address, error) {
-	ospEntryAddr, tx, _, err := mocksgen.DeployMockOneStepProofEntry(auth, backend)
+	ospEntryAddr, tx, _, err := mocksgen.DeploySimpleOneStepProofEntry(auth, backend)
 	err = challenge_testing.TxSucceeded(ctx, tx, ospEntryAddr, backend, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, errors.Wrap(err, "mocksgen.DeployMockOneStepProofEntry")
 	}
 
-	// TODO(RJ): This assertion chain is not used, but still needed by challenge manager. Need to remove.
-	genesisStateHash := common.BytesToHash([]byte("nyan"))
-
-	assertionChainAddr, tx, _, err := challengeV2gen.DeployAssertionChain(auth, backend, genesisStateHash, big.NewInt(1))
-	if err != nil {
-		return common.Address{}, common.Address{}, err
-	}
-	err = challenge_testing.TxSucceeded(ctx, tx, assertionChainAddr, backend, err)
-	if err != nil {
-		return common.Address{}, common.Address{}, errors.Wrap(err, "challengeV2gen.DeployAssertionChain")
-	}
 	edgeChallengeManagerAddr, tx, _, err := challengeV2gen.DeployEdgeChallengeManager(
 		auth,
 		backend,

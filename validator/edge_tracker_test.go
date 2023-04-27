@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -137,45 +136,32 @@ func Test_act(t *testing.T) {
 }
 
 func setupNonPSTracker(ctx context.Context, t *testing.T) (*edgeTracker, *edgeTracker) {
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-		DivergeHeight: 0,
-		NumBlocks:     7,
-	})
-	require.NoError(t, err)
-
-	honestManager, err := statemanager.NewWithAssertionStates(createdData.HonestValidatorStates, createdData.HonestValidatorInboxCounts)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
 	require.NoError(t, err)
 
 	honestValidator, err := New(
 		ctx,
 		createdData.Chains[0],
 		createdData.Backend,
-		honestManager,
+		createdData.HonestStateManager,
 		createdData.Addrs.Rollup,
 		WithName("alice"),
 	)
-	require.NoError(t, err)
-
-	evilManager, err := statemanager.NewWithAssertionStates(createdData.EvilValidatorStates, createdData.EvilValidatorInboxCounts)
 	require.NoError(t, err)
 
 	evilValidator, err := New(
 		ctx,
 		createdData.Chains[1],
 		createdData.Backend,
-		evilManager,
+		createdData.EvilStateManager,
 		createdData.Addrs.Rollup,
 		WithName("bob"),
 	)
 	require.NoError(t, err)
 
-	honestValidator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
-	honestValidator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
 	honestEdge, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, 1)
 	require.NoError(t, err)
 
-	evilValidator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
-	evilValidator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
 	evilEdge, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, 1)
 	require.NoError(t, err)
 

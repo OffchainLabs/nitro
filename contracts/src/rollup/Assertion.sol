@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 
 import "../state/GlobalState.sol";
 import "../state/Machine.sol";
+import "../osp/IOneStepProofEntry.sol";
 
 struct AssertionNode {
     // Hash of the state of the chain as of this assertion
@@ -33,11 +34,6 @@ struct AssertionNode {
     bytes32 assertionHash;
 
     bool isFirstChild; // no longer in assertionHash
-}
-
-struct ExecutionState {
-    GlobalState globalState;
-    MachineStatus machineStatus;
 }
 
 struct AssertionInputs {

@@ -377,13 +377,60 @@ func newStaticType(t string, internalType string, components []abi.ArgumentMarsh
 	return ty
 }
 
+var uint256Type = newStaticType("uint256", "", nil)
 var bytes32Type = newStaticType("bytes32", "", nil)
 var bytes32ArrayType = newStaticType("bytes32[]", "", []abi.ArgumentMarshaling{{Type: "bytes32"}})
+var executionStateType = newStaticType("tuple", "ExecutionState", []abi.ArgumentMarshaling{
+	{
+		Type:         "tuple",
+		InternalType: "GlobalState",
+		Name:         "globalState",
+		Components: []abi.ArgumentMarshaling{
+			{
+				Type: "bytes32[2]",
+				Components: []abi.ArgumentMarshaling{{
+					Type: "bytes32",
+				}},
+				Name: "bytes32Vals",
+			},
+			{
+				Type: "uint64[2]",
+				Components: []abi.ArgumentMarshaling{{
+					Type: "uint64",
+				}},
+				Name: "u64Vals",
+			},
+		},
+	},
+	{
+		Type:         "uint8",
+		InternalType: "MachineStatus",
+		Name:         "machineStatus",
+	},
+})
 
-var blockEdgeProofAbi = abi.Arguments{{
-	Name: "inclusionProof",
-	Type: bytes32ArrayType,
-}}
+var blockEdgeProofAbi = abi.Arguments{
+	{
+		Name: "inclusionProof",
+		Type: bytes32ArrayType,
+	},
+	{
+		Name: "startState",
+		Type: executionStateType,
+	},
+	{
+		Name: "prevInboxMaxCount",
+		Type: uint256Type,
+	},
+	{
+		Name: "endState",
+		Type: executionStateType,
+	},
+	{
+		Name: "afterInboxMaxCount",
+		Type: uint256Type,
+	},
+}
 
 func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 	ctx context.Context,
@@ -400,11 +447,19 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			assertion.SeqNum(),
 		)
 	}
-	prevSeqNum, err := assertion.PrevSeqNum()
+	assertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, assertion.SeqNum())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read assertion %v creation info: %w", assertion.SeqNum(), err)
 	}
-	prevAssertionId, err := cm.assertionChain.GetAssertionId(ctx, prevSeqNum)
+	parentAssertionSeqNum, err := assertion.PrevSeqNum()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query assertion %v parent sequence number: %w", assertion.SeqNum(), err)
+	}
+	parentAssertionCreation, err := cm.assertionChain.ReadAssertionCreationInfo(ctx, parentAssertionSeqNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read parent assertion %v creation info: %w", parentAssertionSeqNum, err)
+	}
+	parentAssertionId, err := cm.assertionChain.GetAssertionId(ctx, parentAssertionSeqNum)
 	if err != nil {
 		return nil, err
 	}
@@ -415,9 +470,15 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			protocol.LevelZeroBlockEdgeHeight,
 		)
 	}
-	blockEdgeProof, err := blockEdgeProofAbi.Pack(endCommit.LastLeafProof)
+	blockEdgeProof, err := blockEdgeProofAbi.Pack(
+		endCommit.LastLeafProof,
+		parentAssertionCreation.AfterState,
+		parentAssertionCreation.InboxMaxCount,
+		assertionCreation.AfterState,
+		assertionCreation.InboxMaxCount,
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to serialize block edge proof: %w", err)
 	}
 	_, err = transact(ctx, cm.backend, cm.reader, func() (*types.Transaction, error) {
 		return cm.writer.CreateLayerZeroEdge(
@@ -433,13 +494,13 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 		)
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create layer zero edge: %w", err)
 	}
 
 	edgeId, err := cm.CalculateEdgeId(
 		ctx,
 		protocol.BlockChallengeEdge,
-		protocol.OriginId(prevAssertionId),
+		protocol.OriginId(parentAssertionId),
 		protocol.Height(startCommit.Height),
 		startCommit.Merkle,
 		protocol.Height(endCommit.Height),

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/mocks"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
@@ -22,23 +22,24 @@ func Test_onLeafCreation(t *testing.T) {
 	ctx := context.Background()
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, _, s := setupValidator(t)
+		v, _, _ := setupValidator(t)
 
 		parentSeqNum := protocol.AssertionSequenceNumber(1)
 		seqNum := parentSeqNum + 1
 		prev := &mocks.MockAssertion{
-			MockPrevSeqNum: 1,
-			MockSeqNum:     parentSeqNum,
-			MockStateHash:  common.Hash{},
+			MockPrevSeqNum:   1,
+			MockSeqNum:       parentSeqNum,
+			MockStateHash:    common.Hash{},
+			MockIsFirstChild: true,
 		}
 		ev := &mocks.MockAssertion{
-			MockPrevSeqNum: parentSeqNum,
-			MockSeqNum:     seqNum,
-			MockStateHash:  common.BytesToHash([]byte("bar")),
+			MockPrevSeqNum:   parentSeqNum,
+			MockSeqNum:       seqNum,
+			MockStateHash:    common.BytesToHash([]byte("bar")),
+			MockIsFirstChild: true,
 		}
 
 		p := &mocks.MockProtocol{}
-		s.On("HasStateCommitment", ctx, util.StateCommitment{}).Return(false)
 		p.On("SpecChallengeManager", ctx).Return(&mocks.MockSpecChallengeManager{}, nil)
 		p.On("AssertionBySequenceNum", ctx, prev.SeqNum()).Return(prev, nil)
 		v.chain = p
@@ -52,24 +53,18 @@ func Test_onLeafCreation(t *testing.T) {
 		logsHook := test.NewGlobal()
 		ctx := context.Background()
 		createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-			NumBlocks:     20,
-			DivergeHeight: 10,
+			DivergeBlockHeight: 5,
 		})
-		require.NoError(t, err)
-
-		manager, err := statemanager.NewWithAssertionStates(createdData.HonestValidatorStates, createdData.HonestValidatorInboxCounts)
 		require.NoError(t, err)
 
 		validator, err := New(
 			ctx,
 			createdData.Chains[1],
 			createdData.Backend,
-			manager,
+			createdData.HonestStateManager,
 			createdData.Addrs.Rollup,
 		)
 		require.NoError(t, err)
-		validator.assertions[createdData.Leaf1.SeqNum()] = createdData.Leaf1
-		validator.assertions[createdData.Leaf2.SeqNum()] = createdData.Leaf2
 
 		err = validator.onLeafCreated(ctx, createdData.Leaf1)
 		require.NoError(t, err)
@@ -88,63 +83,34 @@ func Test_onLeafCreation(t *testing.T) {
 func Test_findLatestValidAssertion(t *testing.T) {
 	ctx := context.Background()
 	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
-		v, p, _ := setupValidator(t)
-		genesis := &mocks.MockAssertion{
-			MockSeqNum:    0,
-			MockHeight:    0,
-			MockStateHash: common.Hash{},
-			Prev:          util.None[*mocks.MockAssertion](),
-		}
-		p.On("LatestConfirmed", ctx).Return(genesis, nil)
-		p.On("NumAssertions", ctx).Return(uint64(100), nil)
+		v, p, s := setupValidator(t)
+		setupAssertions(ctx, p, s, 10, func(int) bool { return false })
+		p.On("LatestConfirmed", ctx).Return(0, nil)
 		latestValid, err := v.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, genesis.SeqNum(), latestValid)
+		require.Equal(t, protocol.AssertionSequenceNumber(0), latestValid)
 	})
 	t.Run("all are valid, latest one is picked", func(t *testing.T) {
 		v, p, s := setupValidator(t)
-		assertions := setupAssertions(10)
-		for _, a := range assertions {
-			v.assertions[a.SeqNum()] = a
-			stateHash, err := a.StateHash()
-			require.NoError(t, err)
-			s.On("HasStateCommitment", ctx, util.StateCommitment{
-				StateRoot: stateHash,
-			}).Return(true)
-		}
-		p.On("LatestConfirmed", ctx).Return(assertions[0], nil)
-		p.On("NumAssertions", ctx).Return(uint64(len(assertions)), nil)
+		numAssertions := 10
+		setupAssertions(ctx, p, s, numAssertions, func(int) bool { return true })
 
 		latestValid, err := v.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, assertions[len(assertions)-1].SeqNum(), latestValid)
+		require.Equal(t, protocol.AssertionSequenceNumber(numAssertions), latestValid)
 	})
 	t.Run("latest valid is behind", func(t *testing.T) {
 		v, p, s := setupValidator(t)
-		assertions := setupAssertions(10)
-		for i, a := range assertions {
-			v.assertions[a.SeqNum()] = a
-			stateHash, err := a.StateHash()
-			require.NoError(t, err)
-			if i <= 5 {
-				s.On("HasStateCommitment", ctx, util.StateCommitment{
-					StateRoot: stateHash,
-				}).Return(true)
-			} else {
-				s.On("HasStateCommitment", ctx, util.StateCommitment{
-					StateRoot: stateHash,
-				}).Return(false)
-			}
-		}
-		p.On("LatestConfirmed", ctx).Return(assertions[0], nil)
-		p.On("NumAssertions", ctx).Return(uint64(len(assertions)), nil)
+		setupAssertions(ctx, p, s, 10, func(i int) bool { return i <= 5 })
+		p.On("LatestConfirmed", ctx).Return(1, nil)
+
 		latestValid, err := v.findLatestValidAssertion(ctx)
 		require.NoError(t, err)
-		require.Equal(t, assertions[5].SeqNum(), latestValid)
+		require.Equal(t, protocol.AssertionSequenceNumber(5), latestValid)
 	})
 }
 
-func setupAssertions(num int) []protocol.Assertion {
+func setupAssertions(ctx context.Context, p *mocks.MockProtocol, s *mocks.MockStateManager, num int, validity func(int) bool) []protocol.Assertion {
 	if num == 0 {
 		return make([]protocol.Assertion, 0)
 	}
@@ -155,14 +121,47 @@ func setupAssertions(num int) []protocol.Assertion {
 		Prev:          util.None[*mocks.MockAssertion](),
 	}
 	assertions := []protocol.Assertion{genesis}
-	for i := 1; i < num; i++ {
-		assertions = append(assertions, protocol.Assertion(&mocks.MockAssertion{
-			MockSeqNum:    protocol.AssertionSequenceNumber(i),
-			MockHeight:    uint64(i),
-			MockStateHash: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
-			Prev:          util.Some(assertions[i-1].(*mocks.MockAssertion)),
-		}))
+	for i := 1; i <= num; i++ {
+		mockHash := common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
+		assertion := protocol.Assertion(&mocks.MockAssertion{
+			MockSeqNum:     protocol.AssertionSequenceNumber(i),
+			MockHeight:     uint64(i),
+			MockStateHash:  mockHash,
+			Prev:           util.Some(assertions[i-1].(*mocks.MockAssertion)),
+			MockPrevSeqNum: protocol.AssertionSequenceNumber(i - 1),
+		})
+		assertions = append(assertions, assertion)
+		p.On(
+			"AssertionBySequenceNum",
+			ctx,
+			protocol.AssertionSequenceNumber(i),
+		).Return(assertion, nil)
+		mockState := rollupgen.ExecutionState{
+			MachineStatus: uint8(protocol.MachineStatusFinished),
+			GlobalState: rollupgen.GlobalState(protocol.GoGlobalState{
+				BlockHash: mockHash,
+			}.AsSolidityStruct()),
+		}
+		mockAssertionCreationInfo := &protocol.AssertionCreatedInfo{
+			AfterState: mockState,
+		}
+		p.On(
+			"ReadAssertionCreationInfo",
+			ctx,
+			protocol.AssertionSequenceNumber(i),
+		).Return(mockAssertionCreationInfo, nil)
+		valid := validity(i)
+		s.On("ExecutionStateBlockHeight", ctx, protocol.GoExecutionStateFromSolidity(mockState)).Return(uint64(i), valid)
+
+		if i == 1 {
+			var firstValid protocol.Assertion = genesis
+			if valid {
+				firstValid = assertion
+			}
+			p.On("LatestConfirmed", ctx).Return(firstValid, nil)
+		}
 	}
+	p.On("NumAssertions", ctx).Return(uint64(num+1), nil)
 	return assertions
 }
 

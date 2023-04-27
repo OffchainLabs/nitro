@@ -5,9 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"math/big"
 	"testing"
 
+	"github.com/OffchainLabs/challenge-protocol-v2/execution"
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	prefixproofs "github.com/OffchainLabs/challenge-protocol-v2/util/prefix-proofs"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,6 +16,18 @@ import (
 )
 
 var _ = Manager(&Simulated{})
+
+func mockMachineAtBlock(_ context.Context, block uint64) (execution.Machine, error) {
+	blockBytes := make([]uint8, 8)
+	binary.BigEndian.PutUint64(blockBytes, block)
+	startState := &protocol.ExecutionState{
+		GlobalState: protocol.GoGlobalState{
+			BlockHash: crypto.Keccak256Hash(blockBytes),
+		},
+		MachineStatus: protocol.MachineStatusFinished,
+	}
+	return execution.NewSimpleMachine(startState, nil), nil
+}
 
 func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing.T) {
 	ctx := context.Background()
@@ -28,6 +40,8 @@ func TestChallengeBoundaries_DifferentiateAssertionAndExecutionStates(t *testing
 		hashes,
 		WithMaxWavmOpcodesPerBlock(8),
 		WithNumOpcodesPerBigStep(8),
+		WithMachineAtBlockProvider(mockMachineAtBlock),
+		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
 	blockChalCommit, err := manager.HistoryCommitmentUpTo(ctx, 4)
@@ -71,6 +85,8 @@ func TestGranularCommitments_SameStartHistory(t *testing.T) {
 		hashes,
 		WithMaxWavmOpcodesPerBlock(56),
 		WithNumOpcodesPerBigStep(8),
+		WithMachineAtBlockProvider(mockMachineAtBlock),
+		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
 
@@ -143,6 +159,8 @@ func TestGranularCommitments_DifferentStartPoints(t *testing.T) {
 		hashes,
 		WithMaxWavmOpcodesPerBlock(56),
 		WithNumOpcodesPerBigStep(8),
+		WithMachineAtBlockProvider(mockMachineAtBlock),
+		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
 
@@ -213,6 +231,8 @@ func TestAllPrefixProofs(t *testing.T) {
 		hashes,
 		WithMaxWavmOpcodesPerBlock(20),
 		WithNumOpcodesPerBigStep(4),
+		WithMachineAtBlockProvider(mockMachineAtBlock),
+		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
 
@@ -339,12 +359,13 @@ func TestDivergenceGranularity(t *testing.T) {
 	bigStepSize := uint64(10)
 	maxOpcodesPerBlock := uint64(100)
 
-	honestStates, _, honestCounts := setupStates(t, numStates, 0 /* honest */)
+	honestStates, _ := setupStates(t, numStates, 0 /* honest */)
 	honestManager, err := NewWithAssertionStates(
 		honestStates,
-		honestCounts,
 		WithMaxWavmOpcodesPerBlock(maxOpcodesPerBlock),
 		WithNumOpcodesPerBigStep(bigStepSize),
+		WithMachineAtBlockProvider(mockMachineAtBlock),
+		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
 
@@ -359,16 +380,18 @@ func TestDivergenceGranularity(t *testing.T) {
 
 	t.Log("Big step leaf commitment height", honestCommit.Height)
 
-	divergenceHeight := uint64(3)
-	evilStates, _, evilCounts := setupStates(t, numStates, divergenceHeight)
+	divergenceHeight := toBlock
+	evilStates, _ := setupStates(t, numStates, divergenceHeight)
 
 	evilManager, err := NewWithAssertionStates(
 		evilStates,
-		evilCounts,
 		WithMaxWavmOpcodesPerBlock(maxOpcodesPerBlock),
 		WithNumOpcodesPerBigStep(bigStepSize),
-		WithBigStepStateDivergenceHeight(divergenceHeight),   // Diverges at the 3rd big step.
-		WithSmallStepStateDivergenceHeight(divergenceHeight), // Diverges at the 3rd small step, within the 3rd big step.
+		WithBlockDivergenceHeight(toBlock),
+		// Diverges at the 3rd small step, within the 3rd big step.
+		WithMachineDivergenceStep(divergenceHeight+(divergenceHeight-1)*bigStepSize),
+		WithMachineAtBlockProvider(mockMachineAtBlock),
+		WithForceMachineBlockCompat(),
 	)
 	require.NoError(t, err)
 
@@ -382,6 +405,7 @@ func TestDivergenceGranularity(t *testing.T) {
 
 	require.Equal(t, honestCommit.Height, evilCommit.Height)
 	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.LastLeaf, evilCommit.LastLeaf)
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 
 	// Check if big step commitments between the validators agree before the divergence height.
@@ -422,6 +446,7 @@ func TestDivergenceGranularity(t *testing.T) {
 
 	require.Equal(t, honestCommit.Height, evilCommit.Height)
 	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.LastLeaf, evilCommit.LastLeaf)
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 
 	t.Log("Big step commitments diverge at divergence height")
@@ -449,6 +474,7 @@ func TestDivergenceGranularity(t *testing.T) {
 
 	require.Equal(t, honestCommit.Height, evilCommit.Height)
 	require.Equal(t, honestCommit.FirstLeaf, evilCommit.FirstLeaf)
+	require.NotEqual(t, honestCommit.LastLeaf, evilCommit.LastLeaf)
 	require.NotEqual(t, honestCommit.Merkle, evilCommit.Merkle)
 
 	t.Log("Small step commitments diverge at divergence height")
@@ -476,11 +502,10 @@ func TestDivergenceGranularity(t *testing.T) {
 	require.Equal(t, honestCommit, evilCommit)
 }
 
-func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.ExecutionState, []common.Hash, []*big.Int) {
+func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.ExecutionState, []common.Hash) {
 	t.Helper()
 	states := make([]*protocol.ExecutionState, numStates)
 	roots := make([]common.Hash, numStates)
-	inboxCounts := make([]*big.Int, numStates)
 	for i := uint64(0); i < numStates; i++ {
 		var blockHash common.Hash
 		if divergenceHeight == 0 || i < divergenceHeight {
@@ -504,10 +529,9 @@ func setupStates(t *testing.T, numStates, divergenceHeight uint64) ([]*protocol.
 			state.GlobalState.PosInBatch = 0
 		}
 		states[i] = state
-		roots[i] = protocol.ComputeStateHash(state, big.NewInt(1))
-		inboxCounts[i] = big.NewInt(1)
+		roots[i] = protocol.ComputeSimpleMachineChallengeHash(state)
 	}
-	return states, roots, inboxCounts
+	return states, roots
 }
 
 func TestPrefixProofs(t *testing.T) {

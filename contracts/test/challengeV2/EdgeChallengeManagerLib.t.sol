@@ -1,4 +1,4 @@
-    // SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
@@ -13,6 +13,11 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
         returns (bytes32 afterHash)
     {
         return bytes32(proof);
+    }
+
+    function getMachineHash(ExecutionState calldata execState) external pure override returns (bytes32) {
+        require(execState.machineStatus == MachineStatus.FINISHED, "BAD_MACHINE_STATUS");
+        return GlobalStateLib.hash(execState.globalState);
     }
 }
 

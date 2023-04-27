@@ -12,28 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAssertionStateHash(t *testing.T) {
-	ctx := context.Background()
-
-	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
-	require.NoError(t, err)
-
-	chain := cfg.Chains[0]
-	assertion, err := chain.LatestConfirmed(ctx)
-	require.NoError(t, err)
-
-	execState := &protocol.ExecutionState{
-		GlobalState: protocol.GoGlobalState{
-			BlockHash: common.Hash{},
-		},
-		MachineStatus: protocol.MachineStatusFinished,
-	}
-	computed := protocol.ComputeStateHash(execState, big.NewInt(1))
-	stateHash, err := assertion.StateHash()
-	require.NoError(t, err)
-	require.Equal(t, computed, stateHash)
-}
-
 func TestCreateAssertion(t *testing.T) {
 	ctx := context.Background()
 	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
@@ -62,12 +40,8 @@ func TestCreateAssertion(t *testing.T) {
 			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
-		created, err := chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err := chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
 		require.NoError(t, err)
-		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
-		stateHash, err := created.StateHash()
-		require.NoError(t, err)
-		require.Equal(t, computed, stateHash, "Unequal computed hash")
 
 		_, err = chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
 		require.ErrorContains(t, err, "ALREADY_STAKED")
@@ -93,12 +67,8 @@ func TestCreateAssertion(t *testing.T) {
 			MachineStatus: protocol.MachineStatusFinished,
 		}
 		prevInboxMaxCount := big.NewInt(1)
-		forked, err := assertionChain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err := assertionChain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
 		require.NoError(t, err)
-		computed := protocol.ComputeStateHash(postState, big.NewInt(2))
-		stateHash, err := forked.StateHash()
-		require.NoError(t, err)
-		require.Equal(t, computed, stateHash, "Unequal computed hash")
 	})
 }
 

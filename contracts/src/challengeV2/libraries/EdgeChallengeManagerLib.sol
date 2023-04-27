@@ -6,6 +6,7 @@ import "./MerkleTreeLib.sol";
 import "./ChallengeEdgeLib.sol";
 import "../../osp/IOneStepProofEntry.sol";
 import "../../libraries/Constants.sol";
+import "../../rollup/RollupLib.sol";
 
 /// @notice Data for creating a layer zero edge
 struct CreateEdgeArgs {
@@ -161,6 +162,7 @@ library EdgeChallengeManagerLib {
         EdgeStore storage store,
         CreateEdgeArgs memory args,
         AssertionReferenceData memory ard,
+        IOneStepProofEntry oneStepProofEntry,
         bytes memory proof
     ) internal view returns (ProofData memory, bytes32) {
         if (args.edgeType == EdgeType.Block) {
@@ -183,11 +185,22 @@ library EdgeChallengeManagerLib {
 
             // parse the inclusion proof for later use
             require(proof.length > 0, "Block edge specific proof is empty");
-            bytes32[] memory inclusionProof = abi.decode(proof, (bytes32[]));
+            (
+                bytes32[] memory inclusionProof,
+                ExecutionState memory startState,
+                uint256 prevInboxMaxCount,
+                ExecutionState memory endState,
+                uint256 afterInboxMaxCount
+            ) = abi.decode(proof, (bytes32[], ExecutionState, uint256, ExecutionState, uint256));
 
-            bytes32 startState = ard.startState;
-            bytes32 endState = ard.endState;
-            return (ProofData(startState, endState, inclusionProof), originId);
+            require(ard.startState == RollupLib.stateHashMem(startState, prevInboxMaxCount), "Incorrect assertion start state");
+            require(ard.endState == RollupLib.stateHashMem(endState, afterInboxMaxCount), "Incorrect assertion end state");
+
+            // Create machine hashes out of the proven state
+            bytes32 startStateHash = oneStepProofEntry.getMachineHash(startState);
+            bytes32 endStateHash = oneStepProofEntry.getMachineHash(endState);
+
+            return (ProofData(startStateHash, endStateHash, inclusionProof), originId);
         } else {
             ChallengeEdge storage claimEdge = get(store, args.claimId);
 
@@ -331,12 +344,13 @@ library EdgeChallengeManagerLib {
         EdgeStore storage store,
         CreateEdgeArgs memory args,
         AssertionReferenceData memory ard,
+        IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
         bytes calldata prefixProof,
         bytes calldata proof
     ) internal returns (EdgeAddedData memory) {
         // each edge type requires some specific checks
-        (ProofData memory proofData, bytes32 originId) = layerZeroTypeSpecifcChecks(store, args, ard, proof);
+        (ProofData memory proofData, bytes32 originId) = layerZeroTypeSpecifcChecks(store, args, ard, oneStepProofEntry, proof);
         // all edge types share some common checks
         (bytes32 startHistoryRoot) = layerZeroCommonChecks(proofData, args, expectedEndHeight, prefixProof);
         // we only wrap the struct creation in a function as doing so with exceeds the stack limit

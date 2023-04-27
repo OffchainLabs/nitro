@@ -6,6 +6,8 @@ import "./libraries/UintUtilsLib.sol";
 import "./DataEntities.sol";
 import "./libraries/EdgeChallengeManagerLib.sol";
 import "../libraries/Constants.sol";
+import "../state/Machine.sol";
+
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// @title EdgeChallengeManager interface
@@ -26,6 +28,8 @@ interface IEdgeChallengeManager {
         uint256 layerZeroBigStepEdgeHeight,
         uint256 layerZeroSmallStepEdgeHeight
     ) external;
+
+    function oneStepProofEntry() external view returns (IOneStepProofEntry);
 
     /// @notice Performs necessary checks and creates a new layer zero edge
     /// @param args             Edge data
@@ -240,7 +244,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @notice The assertion chain about which challenges are created
     IAssertionChain public assertionChain;
     /// @notice The one step proof resolver used to decide between rival SmallStep edges of length 1
-    IOneStepProofEntry public oneStepProofEntry;
+    IOneStepProofEntry public override oneStepProofEntry;
     /// @notice The end height of layer zero Block edges
     uint256 public LAYERZERO_BLOCKEDGE_HEIGHT;
     /// @notice The end height of layer zero BigStep edges
@@ -297,7 +301,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             );
         }
         uint256 expectedEndHeight = getLayerZeroEndHeight(args.edgeType);
-        EdgeAddedData memory edgeAdded = store.createLayerZeroEdge(args, ard, expectedEndHeight, prefixProof, proof);
+        EdgeAddedData memory edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, prefixProof, proof);
         emit EdgeAdded(
             edgeAdded.edgeId,
             edgeAdded.mutualId,
@@ -404,11 +408,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         ExecutionContext memory execCtx = ExecutionContext({
             maxInboxMessagesRead: assertionChain.proveInboxMsgCountSeen(
                 prevAssertionId, oneStepData.inboxMsgCountSeen, oneStepData.inboxMsgCountSeenProof
-                ),
+            ),
             bridge: assertionChain.bridge(),
             initialWasmModuleRoot: assertionChain.proveWasmModuleRoot(
                 prevAssertionId, oneStepData.wasmModuleRoot, oneStepData.wasmModuleRootProof
-                )
+            )
         });
 
         store.confirmEdgeByOneStepProof(

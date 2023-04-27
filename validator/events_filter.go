@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
 func (v *Validator) pollForAssertions(ctx context.Context) {
 	ticker := time.NewTicker(v.newAssertionCheckInterval)
 	defer ticker.Stop()
+	var nextAssertion protocol.AssertionSequenceNumber
 	for {
 		select {
 		case <-ticker.C:
@@ -24,29 +24,15 @@ func (v *Validator) pollForAssertions(ctx context.Context) {
 				log.Error(err)
 				continue
 			}
+			latestConfirmedSeqNum := latestConfirmedAssertion.SeqNum()
+			if latestConfirmedSeqNum >= nextAssertion {
+				nextAssertion = latestConfirmedSeqNum + 1
+			}
 
-			for i := uint64(latestConfirmedAssertion.SeqNum()); i < numberOfAssertions; i++ {
-				v.assertionsLock.RLock()
-				_, ok := v.assertions[protocol.AssertionSequenceNumber(i)]
-				v.assertionsLock.RUnlock()
-				if ok {
-					continue
-				}
-				assertion, err := v.chain.AssertionBySequenceNum(ctx, protocol.AssertionSequenceNumber(i))
+			for ; nextAssertion < protocol.AssertionSequenceNumber(numberOfAssertions); nextAssertion++ {
+				assertion, err := v.chain.AssertionBySequenceNum(ctx, nextAssertion)
 				if err != nil {
 					log.Error(err)
-					continue
-				}
-				v.assertionsLock.Lock()
-				v.assertions[assertion.SeqNum()] = assertion
-				v.assertionsLock.Unlock()
-				selfStakedAssertion, err := v.rollup.AssertionHasStaker(&bind.CallOpts{Context: ctx}, i, v.address)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				// Ignore assertions from self.
-				if selfStakedAssertion {
 					continue
 				}
 				if err := v.onLeafCreated(ctx, assertion); err != nil {

@@ -22,31 +22,12 @@ var (
 	_ = protocol.SpecChallengeManager(&solimpl.SpecChallengeManager{})
 )
 
+var genesisOspData = make([]byte, 16)
+
 func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 	ctx := context.Background()
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-		NumBlocks:     4,
-		DivergeHeight: 0,
-	})
-	require.NoError(t, err)
-
-	opts := []statemanager.Opt{
-		statemanager.WithNumOpcodesPerBigStep(1),
-		statemanager.WithMaxWavmOpcodesPerBlock(1),
-	}
-
-	honestStateManager, err := statemanager.NewWithAssertionStates(
-		createdData.HonestValidatorStates,
-		createdData.HonestValidatorInboxCounts,
-		opts...,
-	)
-	require.NoError(t, err)
-	evilStateManager, err := statemanager.NewWithAssertionStates(
-		createdData.EvilValidatorStates,
-		createdData.EvilValidatorInboxCounts,
-		opts...,
-	)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
 	require.NoError(t, err)
 
 	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -72,7 +53,7 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 		return edge
 	}
 
-	honestEdge := leafAdder(honestStateManager, createdData.Leaf1)
+	honestEdge := leafAdder(createdData.HonestStateManager, createdData.Leaf1)
 	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
 
 	t.Run("first leaf is presumptive", func(t *testing.T) {
@@ -81,7 +62,7 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 		require.Equal(t, true, !hasRival)
 	})
 
-	evilEdge := leafAdder(evilStateManager, createdData.Leaf2)
+	evilEdge := leafAdder(createdData.EvilStateManager, createdData.Leaf2)
 	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
 
 	t.Run("neither is presumptive if rivals", func(t *testing.T) {
@@ -96,9 +77,9 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 
 	t.Run("bisected children are presumptive", func(t *testing.T) {
 		var bisectHeight uint64 = protocol.LevelZeroBlockEdgeHeight / 2
-		honestBisectCommit, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, bisectHeight, 1)
+		honestBisectCommit, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, bisectHeight, 1)
 		require.NoError(t, err)
-		honestProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, bisectHeight, protocol.LevelZeroBlockEdgeHeight, 1)
+		honestProof, err := createdData.HonestStateManager.PrefixProofUpToBatch(ctx, 0, bisectHeight, protocol.LevelZeroBlockEdgeHeight, 1)
 		require.NoError(t, err)
 
 		lower, upper, err := honestEdge.Bisect(ctx, honestBisectCommit.Merkle, honestProof)
@@ -123,11 +104,7 @@ func TestEdgeChallengeManager_IsUnrivaled(t *testing.T) {
 
 func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 	ctx := context.Background()
-	bisectionScenario := setupBisectionScenario(
-		t,
-		statemanager.WithNumOpcodesPerBigStep(1),
-		statemanager.WithMaxWavmOpcodesPerBlock(1),
-	)
+	bisectionScenario := setupBisectionScenario(t)
 	honestStateManager := bisectionScenario.honestStateManager
 	evilStateManager := bisectionScenario.evilStateManager
 	honestEdge := bisectionScenario.honestLevelZeroEdge
@@ -172,10 +149,7 @@ func TestEdgeChallengeManager_HasLengthOneRival(t *testing.T) {
 
 func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-		NumBlocks:     4,
-		DivergeHeight: 0,
-	})
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
 	require.NoError(t, err)
 
 	chain1 := createdData.Chains[0]
@@ -205,22 +179,12 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	for i := range leaves {
 		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
 	}
-	opts := []statemanager.Opt{
-		statemanager.WithNumOpcodesPerBigStep(1),
-		statemanager.WithMaxWavmOpcodesPerBlock(1),
-	}
 
-	honestStateManager, err := statemanager.New(
-		createdData.HonestValidatorStateRoots,
-		opts...,
-	)
+	start, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
 	require.NoError(t, err)
-
-	start, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, 0, 1)
+	end, err := createdData.HonestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
-	end, err := honestStateManager.HistoryCommitmentUpToBatch(ctx, 0, protocol.LevelZeroBlockEdgeHeight, 1)
-	require.NoError(t, err)
-	prefixProof, err := honestStateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
+	prefixProof, err := createdData.HonestStateManager.PrefixProofUpToBatch(ctx, 0, 0, protocol.LevelZeroBlockEdgeHeight, 1)
 	require.NoError(t, err)
 
 	t.Run("OK", func(t *testing.T) {
@@ -235,11 +199,7 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 
 func TestEdgeChallengeManager_Bisect(t *testing.T) {
 	ctx := context.Background()
-	bisectionScenario := setupBisectionScenario(
-		t,
-		statemanager.WithNumOpcodesPerBigStep(1),
-		statemanager.WithMaxWavmOpcodesPerBlock(1),
-	)
+	bisectionScenario := setupBisectionScenario(t)
 	honestStateManager := bisectionScenario.honestStateManager
 	honestEdge := bisectionScenario.honestLevelZeroEdge
 
@@ -283,11 +243,7 @@ func TestEdgeChallengeManager_SubChallenges(t *testing.T) {
 func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 	ctx := context.Background()
 	t.Run("edge does not exist", func(t *testing.T) {
-		bisectionScenario := setupBisectionScenario(
-			t,
-			statemanager.WithNumOpcodesPerBigStep(1),
-			statemanager.WithMaxWavmOpcodesPerBlock(1),
-		)
+		bisectionScenario := setupBisectionScenario(t)
 		challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
 		require.NoError(t, err)
 		err = challengeManager.ConfirmEdgeByOneStepProof(
@@ -304,11 +260,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		require.ErrorContains(t, err, "Edge does not exist")
 	})
 	t.Run("edge not pending", func(t *testing.T) {
-		bisectionScenario := setupBisectionScenario(
-			t,
-			statemanager.WithNumOpcodesPerBigStep(1),
-			statemanager.WithMaxWavmOpcodesPerBlock(1),
-		)
+		bisectionScenario := setupBisectionScenario(t)
 		honestStateManager := bisectionScenario.honestStateManager
 		honestEdge := bisectionScenario.honestLevelZeroEdge
 		challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
@@ -361,7 +313,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			honestChildren1.Id(),
 			&protocol.OneStepData{
 				BeforeHash:             common.Hash{},
-				Proof:                  make([]byte, 0),
+				Proof:                  genesisOspData,
 				InboxMsgCountSeen:      big.NewInt(1),
 				InboxMsgCountSeenProof: inboxMaxCountProof,
 				WasmModuleRoot:         wasmModuleRoot,
@@ -376,7 +328,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			honestChildren2.Id(),
 			&protocol.OneStepData{
 				BeforeHash:             common.Hash{},
-				Proof:                  make([]byte, 0),
+				Proof:                  genesisOspData,
 				InboxMsgCountSeen:      big.NewInt(1),
 				InboxMsgCountSeenProof: inboxMaxCountProof,
 				WasmModuleRoot:         wasmModuleRoot,
@@ -388,11 +340,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 		require.ErrorContains(t, err, "Edge not pending")
 	})
 	t.Run("edge not small step type", func(t *testing.T) {
-		bisectionScenario := setupBisectionScenario(
-			t,
-			statemanager.WithNumOpcodesPerBigStep(1),
-			statemanager.WithMaxWavmOpcodesPerBlock(1),
-		)
+		bisectionScenario := setupBisectionScenario(t)
 		honestStateManager := bisectionScenario.honestStateManager
 		honestEdge := bisectionScenario.honestLevelZeroEdge
 		challengeManager, err := bisectionScenario.topLevelFork.Chains[1].SpecChallengeManager(ctx)
@@ -431,7 +379,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			honestChildren1.Id(),
 			&protocol.OneStepData{
 				BeforeHash:             common.Hash{},
-				Proof:                  make([]byte, 0),
+				Proof:                  genesisOspData,
 				InboxMsgCountSeen:      big.NewInt(1),
 				InboxMsgCountSeenProof: inboxMaxCountProof,
 				WasmModuleRoot:         wasmModuleRoot,
@@ -446,7 +394,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			honestChildren2.Id(),
 			&protocol.OneStepData{
 				BeforeHash:             common.Hash{},
-				Proof:                  make([]byte, 0),
+				Proof:                  genesisOspData,
 				InboxMsgCountSeen:      big.NewInt(1),
 				InboxMsgCountSeenProof: inboxMaxCountProof,
 				WasmModuleRoot:         wasmModuleRoot,
@@ -499,7 +447,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			honestEdge.Id(),
 			&protocol.OneStepData{
 				BeforeHash:             common.BytesToHash([]byte("foo")),
-				Proof:                  honestCommit.LastLeaf[:],
+				Proof:                  genesisOspData,
 				InboxMsgCountSeen:      big.NewInt(1),
 				InboxMsgCountSeenProof: inboxMaxCountProof,
 				WasmModuleRoot:         wasmModuleRoot,
@@ -561,7 +509,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 			evilEdge.Id(),
 			&protocol.OneStepData{
 				BeforeHash:             startCommit.LastLeaf,
-				Proof:                  make([]byte, 0),
+				Proof:                  genesisOspData,
 				InboxMsgCountSeen:      big.NewInt(1),
 				InboxMsgCountSeenProof: inboxMaxCountProof,
 				WasmModuleRoot:         wasmModuleRoot,
@@ -590,19 +538,14 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 
 		prevId, err := honestEdge.PrevAssertionId(ctx)
 		require.NoError(t, err)
-		assertionNum, err := chain.GetAssertionNum(ctx, prevId)
+		parentAssertionNum, err := chain.GetAssertionNum(ctx, prevId)
 		require.NoError(t, err)
-		prevAssertion, err := chain.AssertionBySequenceNum(ctx, assertionNum)
-		require.NoError(t, err)
-		parentAssertionStateHash, err := prevAssertion.StateHash()
-		require.NoError(t, err)
-		assertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, assertionNum)
+		parentAssertionCreationInfo, err := chain.ReadAssertionCreationInfo(ctx, parentAssertionNum)
 		require.NoError(t, err)
 
 		data, startInclusionProof, endInclusionProof, err := honestStateManager.OneStepProofData(
 			ctx,
-			parentAssertionStateHash,
-			assertionCreationInfo,
+			parentAssertionCreationInfo,
 			fromBlockChallengeHeight,
 			toBlockChallengeHeight,
 			fromBigStep,
@@ -628,11 +571,7 @@ func TestEdgeChallengeManager_ConfirmByOneStepProof(t *testing.T) {
 
 func TestEdgeChallengeManager_ConfirmByTimerAndChildren(t *testing.T) {
 	ctx := context.Background()
-	bisectionScenario := setupBisectionScenario(
-		t,
-		statemanager.WithNumOpcodesPerBigStep(1),
-		statemanager.WithMaxWavmOpcodesPerBlock(1),
-	)
+	bisectionScenario := setupBisectionScenario(t)
 	honestStateManager := bisectionScenario.honestStateManager
 	honestEdge := bisectionScenario.honestLevelZeroEdge
 
@@ -672,19 +611,8 @@ func TestEdgeChallengeManager_ConfirmByTimerAndChildren(t *testing.T) {
 
 func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 	ctx := context.Background()
-	height := protocol.Height(3)
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-		NumBlocks:     uint64(height) + 1,
-		DivergeHeight: 0,
-	})
-	require.NoError(t, err)
-
-	honestStateManager, err := statemanager.New(
-		createdData.HonestValidatorStateRoots,
-		statemanager.WithNumOpcodesPerBigStep(1),
-		statemanager.WithMaxWavmOpcodesPerBlock(1),
-	)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
 	require.NoError(t, err)
 
 	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -709,7 +637,7 @@ func TestEdgeChallengeManager_ConfirmByTimer(t *testing.T) {
 		require.NoError(t, err)
 		return edge
 	}
-	honestEdge := leafAdder(honestStateManager, createdData.Leaf1)
+	honestEdge := leafAdder(createdData.HonestStateManager, createdData.Leaf1)
 	s0, err := honestEdge.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, protocol.EdgePending, s0)
@@ -755,34 +683,10 @@ type bisectionScenario struct {
 
 func setupBisectionScenario(
 	t *testing.T,
-	commonStateManagerOpts ...statemanager.Opt,
 ) *bisectionScenario {
 	ctx := context.Background()
 
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{
-		NumBlocks:     8,
-		DivergeHeight: 0,
-	})
-	require.NoError(t, err)
-
-	honestStateManager, err := statemanager.NewWithAssertionStates(
-		createdData.HonestValidatorStates,
-		createdData.HonestValidatorInboxCounts,
-		commonStateManagerOpts...,
-	)
-	require.NoError(t, err)
-
-	commonStateManagerOpts = append(
-		commonStateManagerOpts,
-		statemanager.WithMaliciousIntent(),
-		statemanager.WithBigStepStateDivergenceHeight(1),
-		statemanager.WithSmallStepStateDivergenceHeight(1),
-	)
-	evilStateManager, err := statemanager.NewWithAssertionStates(
-		createdData.EvilValidatorStates,
-		createdData.EvilValidatorInboxCounts,
-		commonStateManagerOpts...,
-	)
+	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{})
 	require.NoError(t, err)
 
 	challengeManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
@@ -808,7 +712,7 @@ func setupBisectionScenario(
 		return startCommit, edge
 	}
 
-	honestStartCommit, honestEdge := leafAdder(honestStateManager, createdData.Leaf1)
+	honestStartCommit, honestEdge := leafAdder(createdData.HonestStateManager, createdData.Leaf1)
 	require.Equal(t, protocol.BlockChallengeEdge, honestEdge.GetType())
 	hasRival, err := honestEdge.HasRival(ctx)
 	require.NoError(t, err)
@@ -818,7 +722,7 @@ func setupBisectionScenario(
 	require.NoError(t, err)
 	require.Equal(t, false, isOSF)
 
-	evilStartCommit, evilEdge := leafAdder(evilStateManager, createdData.Leaf2)
+	evilStartCommit, evilEdge := leafAdder(createdData.EvilStateManager, createdData.Leaf2)
 	require.Equal(t, protocol.BlockChallengeEdge, evilEdge.GetType())
 
 	// Honest and evil edge are rivals, neither is presumptive.
@@ -832,8 +736,8 @@ func setupBisectionScenario(
 
 	return &bisectionScenario{
 		topLevelFork:        createdData,
-		honestStateManager:  honestStateManager,
-		evilStateManager:    evilStateManager,
+		honestStateManager:  createdData.HonestStateManager,
+		evilStateManager:    createdData.EvilStateManager,
 		honestLevelZeroEdge: honestEdge,
 		evilLevelZeroEdge:   evilEdge,
 		honestStartCommit:   honestStartCommit,
@@ -858,15 +762,9 @@ type oneStepProofScenario struct {
 // to then confirm the winner by one-step-proof execution.
 func setupOneStepProofScenario(
 	t *testing.T,
-	commonStateManagerOpts ...statemanager.Opt,
 ) *oneStepProofScenario {
 	ctx := context.Background()
-	commonStateManagerOpts = append(
-		commonStateManagerOpts,
-		statemanager.WithNumOpcodesPerBigStep(protocol.LevelZeroSmallStepEdgeHeight),
-		statemanager.WithMaxWavmOpcodesPerBlock(protocol.LevelZeroBigStepEdgeHeight*protocol.LevelZeroSmallStepEdgeHeight),
-	)
-	bisectionScenario := setupBisectionScenario(t, commonStateManagerOpts...)
+	bisectionScenario := setupBisectionScenario(t)
 	honestStateManager := bisectionScenario.honestStateManager
 	evilStateManager := bisectionScenario.evilStateManager
 	honestEdge := bisectionScenario.honestLevelZeroEdge

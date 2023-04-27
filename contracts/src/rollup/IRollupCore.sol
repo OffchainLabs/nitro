@@ -28,7 +28,6 @@ interface IRollupCore is IAssertionChain {
         uint64 indexed assertionNum,
         bytes32 indexed parentAssertionHash,
         bytes32 indexed assertionHash,
-        bytes32 executionHash,
         AssertionInputs assertion,
         bytes32 afterInboxBatchAcc,
         bytes32 wasmModuleRoot,
@@ -181,6 +180,6 @@ interface IRollupCore is IAssertionChain {
     /// @return Number of active stakers currently staked
     function stakerCount() external view returns (uint64);
 
-    /// @return genesis execution hash, assertion hash, and wasm module root
+    /// @return genesis end state hash, assertion hash, and wasm module root
     function genesisAssertionHashes() external view returns (bytes32, bytes32, bytes32);
 }

@@ -22,18 +22,6 @@ type Assertion struct {
 	id              uint64
 }
 
-func (a *Assertion) Height() (uint64, error) {
-	genesis, err := a.chain.rollup.GetAssertion(&bind.CallOpts{}, uint64(1))
-	if err != nil {
-		return 0, err
-	}
-	inner, err := a.inner()
-	if err != nil {
-		return 0, err
-	}
-	return inner.CreatedAtBlock - genesis.CreatedAtBlock, nil
-}
-
 func (a *Assertion) SeqNum() protocol.AssertionSequenceNumber {
 	return protocol.AssertionSequenceNumber(a.id)
 }
@@ -55,6 +43,14 @@ func (a *Assertion) StateHash() (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	return inner.StateHash, nil
+}
+
+func (a *Assertion) IsFirstChild() (bool, error) {
+	inner, err := a.inner()
+	if err != nil {
+		return false, err
+	}
+	return inner.IsFirstChild, nil
 }
 
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
