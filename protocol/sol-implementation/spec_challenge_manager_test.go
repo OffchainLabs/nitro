@@ -912,7 +912,7 @@ func setupOneStepProofScenario(
 	require.NoError(t, err)
 	require.Equal(t, false, !hasRival)
 
-	// Get the lower-level edge of either vertex we just bisected.
+	// Get the lower-level edge of either edge we just bisected.
 	require.Equal(t, protocol.SmallStepChallengeEdge, honestEdge.GetType())
 
 	var smallStepHeight uint64 = protocol.LevelZeroBigStepEdgeHeight

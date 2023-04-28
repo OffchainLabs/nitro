@@ -100,7 +100,7 @@ func (et *edgeTracker) act(ctx context.Context) error {
 			et.topLevelClaimEndBatchCount,
 		)
 		if err != nil {
-			log.WithError(err).WithFields(fields).Error("Could not create new vertex tracker")
+			log.WithError(err).WithFields(fields).Error("Could not create new edge tracker")
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		secondTracker, err := newEdgeTracker(
@@ -111,7 +111,7 @@ func (et *edgeTracker) act(ctx context.Context) error {
 			et.topLevelClaimEndBatchCount,
 		)
 		if err != nil {
-			log.WithError(err).WithFields(fields).Error("Could not create new vertex tracker")
+			log.WithError(err).WithFields(fields).Error("Could not create new edge tracker")
 			return et.fsm.Do(edgeBackToStart{})
 		}
 		go firstTracker.spawn(ctx)
@@ -326,7 +326,7 @@ func (et *edgeTracker) openSubchallengeLeaf(ctx context.Context) error {
 	fields["endHeight"] = endHistory.Height
 	fields["startCommitment"] = util.Trunc(startHistory.Merkle.Bytes())
 	fields["subChallengeType"] = addedLeaf.GetType()
-	log.WithFields(fields).Info("Added subchallenge leaf, now tracking its vertex")
+	log.WithFields(fields).Info("Added subchallenge level zero edge, now tracking it")
 	tracker, err := newEdgeTracker(
 		ctx,
 		et.cfg,
@@ -441,7 +441,7 @@ func newEdgeTracker(
 
 func (et *edgeTracker) spawn(ctx context.Context) {
 	fields := et.uniqueTrackerLogFields()
-	log.WithFields(fields).Info("Tracking edge vertex")
+	log.WithFields(fields).Info("Tracking edge")
 
 	t := et.cfg.timeRef.NewTicker(et.cfg.actEveryNSeconds)
 	defer t.Stop()

@@ -26,7 +26,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	if !ok {
 		return fmt.Errorf("missing previous assertion %v after execution %+v in local state manager", assertionPrevSeqNum, prevCreationInfo.AfterState)
 	}
-	// We then add a challenge vertex to the challenge.
+	// We then add a level zero edge to initiate a challenge.
 	levelZeroEdge, err := v.addBlockChallengeLevelZeroEdge(ctx, assertionPrevSeqNum)
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {

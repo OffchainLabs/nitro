@@ -325,7 +325,7 @@ func (cm *SpecChallengeManager) CalculateEdgeId(
 	)
 }
 
-// ConfirmEdgeByOneStepProof checks a one step proof for a tentative winner vertex id
+// ConfirmEdgeByOneStepProof checks a one step proof for a tentative winner edge id
 // which will mark it as the winning claim of its associated challenge if correct.
 // The edges along the winning branch and the corresponding assertion then need to be confirmed
 // through separate transactions, if this succeeds.
