@@ -376,7 +376,7 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 	}
 	header, err := p.client.HeaderByNumber(ctx, blockNumQuery)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get the latest or finalized L1 header: %w", err)
 	}
 	p.lastBlock = header.Number
 	nonce, err := p.client.NonceAt(ctx, p.auth.From, p.lastBlock)

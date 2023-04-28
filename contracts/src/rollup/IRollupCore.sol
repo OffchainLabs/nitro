@@ -85,6 +85,15 @@ interface IRollupCore {
     function getNode(uint64 nodeNum) external view returns (Node memory);
 
     /**
+     * @notice Returns the block in which the given node was created for looking up its creation event.
+     * Unlike the Node's createdAtBlock field, this will be the ArbSys blockNumber if the host chain is an Arbitrum chain.
+     * That means that the block number returned for this is usable for event queries.
+     * This function will revert if the given node number does not exist.
+     * @dev This function is meant for internal use only and has no stability guarantees.
+     */
+    function getNodeCreationBlockForLogLookup(uint64 nodeNum) external view returns (uint256);
+
+    /**
      * @notice Check if the specified node has been staked on by the provided staker.
      * Only accurate at the latest confirmed node and afterwards.
      */
