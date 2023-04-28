@@ -73,6 +73,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit RollupInitialized(config.wasmModuleRoot, config.chainId);
     }
 
+    function fixGenesisNodeAfterUpgrade(uint256 rollupCreatedAt) external {
+        require(_hostChainIsArbitrum, "NOT_ARBITRUM");
+        require(_nodeCreatedAtArbSysBlock[GENESIS_NODE] == 0, "ALREADY_SET");
+        _nodeCreatedAtArbSysBlock[GENESIS_NODE] = rollupCreatedAt;
+    }
+
     function createInitialNode() private view returns (Node memory) {
         GlobalState memory emptyGlobalState;
         bytes32 state = RollupLib.stateHashMem(
