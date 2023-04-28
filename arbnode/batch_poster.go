@@ -70,7 +70,8 @@ type BatchPosterConfig struct {
 	Enable                             bool                        `koanf:"enable"`
 	DisableDasFallbackStoreDataOnChain bool                        `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
 	MaxBatchSize                       int                         `koanf:"max-size" reload:"hot"`
-	MaxBatchPostInterval               time.Duration               `koanf:"max-interval" reload:"hot"`
+	MaxBatchPostDelay                  time.Duration               `koanf:"max-delay" reload:"hot"`
+	WaitForMaxBatchPostDelay           bool                        `koanf:"wait-for-max-delay" reload:"hot"`
 	BatchPollDelay                     time.Duration               `koanf:"poll-delay" reload:"hot"`
 	PostingErrorDelay                  time.Duration               `koanf:"error-delay" reload:"hot"`
 	CompressionLevel                   int                         `koanf:"compression-level" reload:"hot"`
@@ -80,12 +81,15 @@ type BatchPosterConfig struct {
 	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+
+	gasRefunder common.Address
 }
 
 func (c *BatchPosterConfig) Validate() error {
 	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
 		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
 	}
+	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	if c.MaxBatchSize <= 40 {
 		return errors.New("MaxBatchSize too small")
 	}
@@ -98,7 +102,8 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
 	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
-	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
+	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxBatchPostDelay, "maximum batch posting delay")
+	f.Bool(prefix+".wait-for-max-delay", DefaultBatchPosterConfig.WaitForMaxBatchPostDelay, "wait for the max batch delay, even if the batch is full")
 	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
@@ -116,7 +121,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxBatchSize:                       100000,
 	BatchPollDelay:                     time.Second * 10,
 	PostingErrorDelay:                  time.Second * 10,
-	MaxBatchPostInterval:               time.Hour,
+	MaxBatchPostDelay:                  time.Hour,
+	WaitForMaxBatchPostDelay:           false,
 	CompressionLevel:                   brotli.BestCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
@@ -125,16 +131,17 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	Enable:               true,
-	MaxBatchSize:         100000,
-	BatchPollDelay:       time.Millisecond * 10,
-	PostingErrorDelay:    time.Millisecond * 10,
-	MaxBatchPostInterval: 0,
-	CompressionLevel:     2,
-	DASRetentionPeriod:   time.Hour * 24 * 15,
-	GasRefunderAddress:   "",
-	ExtraBatchGas:        10_000,
-	DataPoster:           dataposter.TestDataPosterConfig,
+	Enable:                   true,
+	MaxBatchSize:             100000,
+	BatchPollDelay:           time.Millisecond * 10,
+	PostingErrorDelay:        time.Millisecond * 10,
+	MaxBatchPostDelay:        0,
+	WaitForMaxBatchPostDelay: false,
+	CompressionLevel:         2,
+	DASRetentionPeriod:       time.Hour * 24 * 15,
+	GasRefunderAddress:       "",
+	ExtraBatchGas:            10_000,
+	DataPoster:               dataposter.TestDataPosterConfig,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
@@ -462,7 +469,7 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 		seqNum,
 		message,
 		new(big.Int).SetUint64(delayedMsg),
-		common.HexToAddress(b.config().GasRefunderAddress),
+		b.config().gasRefunder,
 		new(big.Int).SetUint64(uint64(prevMsgNum)),
 		new(big.Int).SetUint64(uint64(newMsgNum)),
 	)
@@ -484,7 +491,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	}
 	safeDelayedMessagesBig, err := b.bridge.DelayedMessageCount(callOpts)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to get the confirmed delayed message count: %w", err)
 	}
 	if !safeDelayedMessagesBig.IsUint64() {
 		return 0, fmt.Errorf("calling delayedMessageCount() on the bridge returned a non-uint64 result %v", safeDelayedMessagesBig)
@@ -559,7 +566,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	config := b.config()
-	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostInterval
+	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostDelay
 	haveUsefulMessage := false
 
 	for b.building.msgCount < msgCount {
@@ -576,7 +583,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if !success {
 			// this batch is full
-			forcePostBatch = true
+			if !config.WaitForMaxBatchPostDelay {
+				forcePostBatch = true
+			}
 			haveUsefulMessage = true
 			break
 		}
