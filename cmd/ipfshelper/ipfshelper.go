@@ -12,13 +12,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-
-	files "github.com/ipfs/go-ipfs-files"
-	ipfspath "github.com/ipfs/go-path"
-	icore "github.com/ipfs/interface-go-ipfs-core"
+	"github.com/ipfs/go-libipfs/files"
+	coreiface "github.com/ipfs/interface-go-ipfs-core"
 	"github.com/ipfs/interface-go-ipfs-core/options"
 	"github.com/ipfs/interface-go-ipfs-core/path"
-	icorepath "github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/ipfs/kubo/config"
 	"github.com/ipfs/kubo/core"
 	"github.com/ipfs/kubo/core/coreapi"
@@ -34,7 +31,7 @@ import (
 const DefaultIpfsProfiles = ""
 
 type IpfsHelper struct {
-	api      icore.CoreAPI
+	api      coreiface.CoreAPI
 	node     *core.IpfsNode
 	cfg      *config.Config
 	repoPath string
@@ -159,7 +156,7 @@ func normalizeCidString(cidString string) string {
 
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDir string) (string, error) {
 	cidString = normalizeCidString(cidString)
-	cidPath := icorepath.New(cidString)
+	cidPath := path.New(cidString)
 	resolvedPath, err := h.api.ResolvePath(ctx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
@@ -185,7 +182,7 @@ func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destina
 	printProgress(0, len(links))
 	for i, j := range permutation {
 		link := links[j]
-		if err := h.api.Pin().Add(ctx, icorepath.IpfsPath(link.Cid), options.Pin.Recursive(true)); err != nil {
+		if err := h.api.Pin().Add(ctx, path.IpfsPath(link.Cid), options.Pin.Recursive(true)); err != nil {
 			return "", fmt.Errorf("failed to pin child path: %w", err)
 		}
 		printProgress(i+1, len(links))
@@ -268,8 +265,8 @@ func createIpfsHelperImpl(ctx context.Context, downloadPath string, clientOnly b
 }
 
 func CanBeIpfsPath(pathString string) bool {
-	_, err := ipfspath.ParsePath(pathString)
-	return err == nil ||
+	path := path.New(pathString)
+	return path.IsValid() == nil ||
 		strings.HasPrefix(pathString, "/ipfs/") ||
 		strings.HasPrefix(pathString, "/ipld/") ||
 		strings.HasPrefix(pathString, "/ipns/") ||
@@ -278,6 +275,6 @@ func CanBeIpfsPath(pathString string) bool {
 }
 
 // TODO break abstraction for now til we figure out what fns are needed
-func (h *IpfsHelper) GetAPI() icore.CoreAPI {
+func (h *IpfsHelper) GetAPI() coreiface.CoreAPI {
 	return h.api
 }
