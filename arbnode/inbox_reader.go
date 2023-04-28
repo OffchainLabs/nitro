@@ -140,7 +140,8 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, err := message.ParseInitMessage()
+			// TODO we are ignoring chain config from init msg here, should we validate it?
+			initChainId, _, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}

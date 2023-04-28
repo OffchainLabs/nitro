@@ -36,7 +36,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             true
         );
 
-        connectedContracts.rollupEventInbox.rollupInitialized(config.chainId);
+        connectedContracts.rollupEventInbox.rollupInitialized(config.chainId, config.chainConfig);
         connectedContracts.sequencerInbox.addSequencerL2Batch(
             0,
             "",

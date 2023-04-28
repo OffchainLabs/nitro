@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -279,12 +280,17 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, loserStakeEscrow common.Address) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
 	} else {
 		confirmPeriod = 20
+	}
+	chainConfigJson, err := json.Marshal(chainConfig)
+	if err != nil {
+		// TODO
+		panic(err)
 	}
 	return rollupgen.Config{
 		ConfirmPeriodBlocks:      confirmPeriod,
@@ -294,7 +300,8 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		WasmModuleRoot:           wasmModuleRoot,
 		Owner:                    rollupOwner,
 		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainId,
+		ChainId:                  chainConfig.ChainID,
+		ChainConfig:              string(chainConfigJson),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),

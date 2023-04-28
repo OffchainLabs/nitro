@@ -462,6 +462,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 				RequestId: &common.Hash{},
 				L1BaseFee: common.Big0,
 			},
+			// TODO serialize chain config
 			L2msg: math.U256Bytes(s.chainConfig.ChainID),
 		},
 		DelayedMessagesRead: 1,

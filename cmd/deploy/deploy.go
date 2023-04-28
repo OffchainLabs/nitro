@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -112,6 +113,57 @@ func main() {
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
 
+	// TODO load chainConfig from file
+	chainConfigJson := []byte(`{
+      "chainId": 412346,
+      "homesteadBlock": 0,
+      "daoForkBlock": null,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "clique": {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum": {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": false,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 6,
+        "InitialChainOwner": "0xd345e41ae2cb00311956aa7109fc801ae8c81a52",
+        "GenesisBlockNum": 0
+      }
+    }`)
+	var chainConfig params.ChainConfig
+	err = json.Unmarshal(chainConfigJson, &chainConfig)
+	if err != nil {
+		// TODO
+		panic(err)
+	}
+
+	// TODO remove
+	chainConfigTmp, err := arbos.GetChainConfig(l2ChainId, 0)
+	if err != nil {
+		// TODO
+		panic(err)
+	}
+
+	// TODO should we validate if chainConfig.chainID == l2ChainId?
+	// 		or should l2chainId be always taken from chainConfig?
+	if chainConfigTmp.ChainID != l2ChainId {
+		// TODO
+		panic("chain id missmatch")
+	}
+
 	deployPtr, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -119,7 +171,7 @@ func main() {
 		sequencerAddress,
 		*authorizevalidators,
 		func() *headerreader.Config { return &headerReaderConfig },
-		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, l2ChainId, loserEscrowAddress),
+		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, chainConfigTmp /*&chainConfig*/, loserEscrowAddress),
 	)
 	if err != nil {
 		flag.Usage()

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -198,11 +200,23 @@ func main() {
 		}
 		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
 		if err != nil {
-			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+			panic(fmt.Sprintf("Error getting genesis block number from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
+		chainConfigJson, err := initialArbosState.ChainConfig()
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("Error getting chain config from initial ArbOS state: %v", err.Error()))
+		}
+		var chainConfig params.ChainConfig
+		err = json.Unmarshal(chainConfigJson, &chainConfig)
+		if err != nil {
+			panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
+		}
+		// TODO do we need chainID? should we validate it?
+		if chainConfig.ChainID != chainId {
+			panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
+		}
+		if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
+			panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
 		}
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
@@ -211,21 +225,20 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, &chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
 		}
 
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
+		// TODO
+		// * for first block will get the chain config from init message, for next blocks read form ArbOS state <- preimages provided by replay caller
 
 		message := readMessage(false)
 
-		chainId, err := message.Message.ParseInitMessage()
-		if err != nil {
-			panic(err)
-		}
-		chainConfig, err := arbos.GetChainConfig(chainId, 0)
+		// TODO should we validate chain id here or in ParseInitMessage?
+		_, chainConfig, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}

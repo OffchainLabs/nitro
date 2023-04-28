@@ -354,7 +354,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 }
 
 func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int,
+	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig,
 ) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
@@ -368,7 +368,7 @@ func DeployOnTestL1(
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	config := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainId, common.Address{})
+	config := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, common.Address{})
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -475,7 +475,7 @@ func createTestNodeOnL1WithConfigImpl(
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, nil, "", chainConfig, stackConfig)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {

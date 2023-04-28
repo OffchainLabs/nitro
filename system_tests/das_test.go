@@ -110,7 +110,7 @@ func TestDASRekey(t *testing.T) {
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -237,7 +237,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 	feedErrChan := make(chan error, 10)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 
 	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
