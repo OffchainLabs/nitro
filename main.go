@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"math/big"
-
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -31,7 +30,7 @@ var (
 	// How often the validator polls the chain to see if new assertions have been posted.
 	checkForAssertionsInteral = time.Second
 	// How often the validator will post its latest assertion to the chain.
-	postNewAssertionInterval = time.Hour
+	postNewAssertionInterval = time.Second * 5
 )
 
 func main() {

@@ -99,7 +99,6 @@ func New(
 		chain:                     chain,
 		stateManager:              stateManager,
 		address:                   common.Address{},
-		postAssertionsInterval:    time.Second * 5,
 		timeRef:                   util.NewRealTimeReference(),
 		rollupAddr:                rollupAddr,
 		edgeTrackerWakeInterval:   time.Millisecond * 100,
