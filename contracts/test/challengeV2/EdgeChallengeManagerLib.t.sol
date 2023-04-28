@@ -759,7 +759,7 @@ contract EdgeChallengeManagerLibTest is Test {
         );
         store.bisectEdge(edgeId, bisectionRoot1, proof);
 
-        vm.expectRevert("Edge already has children");
+        vm.expectRevert("Edge already exists");
         store.bisectEdge(edgeId, bisectionRoot1, proof);
     }
 

@@ -104,6 +104,14 @@ library EdgeChallengeManagerLib {
         return store.edges[edgeId];
     }
 
+    /// @notice Gets an edge from the store with checking if it exists
+    /// @dev    Useful where you already know the edge exists in the store - avoid a storage lookup
+    /// @param store    The edge store to fetch an id from
+    /// @param edgeId   The id of the edge to fetch
+    function getNoCheck(EdgeStore storage store, bytes32 edgeId) internal view returns (ChallengeEdge storage) {
+        return store.edges[edgeId];
+    }
+
     /// @notice Adds a new edge to the store
     /// @dev    Updates first rival info for later use in calculating time unrivaled
     /// @param store    The store to add the edge to
@@ -489,10 +497,8 @@ library EdgeChallengeManagerLib {
         require(hasRival(store, edgeId), "Cannot bisect an unrivaled edge");
 
         // cannot bisect an edge twice
-        ChallengeEdge memory ce = get(store, edgeId);
-        require(
-            store.edges[edgeId].lowerChildId == 0 && store.edges[edgeId].upperChildId == 0, "Edge already has children"
-        );
+        // has rival above checks the edge - so no need to check again
+        ChallengeEdge memory ce = getNoCheck(store, edgeId);
 
         // bisections occur at deterministic heights, this ensures that
         // rival edges bisect at the same height, and create the same child if they agree
@@ -525,9 +531,7 @@ library EdgeChallengeManagerLib {
                 ce.originId, bisectionHistoryRoot, middleHeight, ce.endHistoryRoot, ce.endHeight, ce.eType
             );
 
-            // Sanity check: it's not possible that the upper child already exists, for this to be the case
-            // the edge would have to have been bisected already.
-            require(!store.edges[upperChild.idMem()].exists(), "Store contains upper child");
+            // add checks existence and throws if the id already exists
             upperChildAdded = add(store, upperChild);
         }
 
@@ -682,14 +686,14 @@ library EdgeChallengeManagerLib {
         bytes32[] memory beforeHistoryInclusionProof,
         bytes32[] memory afterHistoryInclusionProof
     ) internal {
-        require(store.edges[edgeId].exists(), "Edge does not exist");
+        // get checks existence
+        uint256 machineStep = get(store, edgeId).startHeight;
         require(store.edges[edgeId].status == EdgeStatus.Pending, "Edge not pending");
 
         // edge must be length one and be of type SmallStep
         require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
         require(store.edges[edgeId].length() == 1, "Edge does not have single step");
 
-        uint256 machineStep = get(store, edgeId).startHeight;
 
         // the state in the onestep data must be committed to by the startHistoryRoot
         MerkleTreeLib.verifyInclusionProof(
