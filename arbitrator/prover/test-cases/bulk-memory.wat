@@ -3,7 +3,7 @@
 
 (module
     (import "env" "wavm_halt_and_set_finished" (func $halt))
-    (func $start (local $i i32)
+    (func $start (export "start") (local $i i32)
         ;; test memory_fill
         (memory.fill (i32.const 0x1003) (i32.const 5) (i32.const 4)) ;; ---5555---
         (memory.fill (i32.const 0x1001) (i32.const 8) (i32.const 3)) ;; -888555---
@@ -28,10 +28,11 @@
         (memory.copy (i32.const 0x100f) (i32.const 0x1001) (i32.const 1))  ;; -888525--225-258----------------
         (memory.copy (i32.const 0x100f) (i32.const 0x1000) (i32.const 32)) ;; ----------------888525--225-258-
         (memory.copy (i32.const 0x1001) (i32.const 0x100f) (i32.const 32)) ;; --888525--225-258---------------
-        (memory.copy (i32.const 0x100f) (i32.const 0x1000) (i32.const 25)) ;; ----------------888525--225-258-
-        (memory.copy (i32.const 0x1000) (i32.const 0x100f) (i32.const 25)) ;; --888525--225-258---------------
+        (memory.copy (i32.const 0x100f) (i32.const 0x1000) (i32.const 35)) ;; ----------------888525--225-258-
+        (memory.copy (i32.const 0x1000) (i32.const 0x100f) (i32.const 35)) ;; --888525--225-258---------------
         (memory.copy (i32.const 0x100f) (i32.const 0x1002) (i32.const 39)) ;; ----------------888525--225-258-
         (memory.copy (i32.const 0x1002) (i32.const 0x100f) (i32.const 39)) ;; --888525--225-258---------------
+
         (call $check (i32.const 0x1009) (i32.const 0))
         (call $check (i32.const 0x100a) (i32.const 2))
         (call $check (i32.const 0x100b) (i32.const 2))
@@ -77,4 +78,4 @@
         i32.ne
         (if (then (unreachable))))
     (start $start)
-    (memory 1))
+    (memory (export "mem") 1))

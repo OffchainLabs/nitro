@@ -26,15 +26,21 @@
 
         ;; create an 8-byte value for chunked filling
         (local.tee $value64 (i64.extend_i32_u (local.get $value)))
-        (local.set $value64
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64))
-            (i64.shl (i64.const 8)) (i64.add (local.get $value64)))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        (i64.shl (i64.const 8))
+        (i64.or (local.get $value64))
+        local.set $value64
 
         ;; fill the region 8-bytes at a time
         (block $done
@@ -99,9 +105,9 @@
                 (block $done
                     (loop $forward
                         ;; see if there's more data to set
-                        (i32.add (local.get $offset) (i32.const 8))
-                        local.get $size
-                        i32.gt_u
+                        (i64.add (i64.extend_i32_u (local.get $offset)) (i64.const 8))
+                        (i64.extend_i32_u (local.get $size))
+                        i64.gt_u
                         br_if $done
 
                         ;; push target
