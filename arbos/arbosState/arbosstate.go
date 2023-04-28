@@ -80,7 +80,6 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
-		// TODO verify
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(infraFeeAccountOffset)),
@@ -218,7 +217,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
-	// TODO do we need ChainID?
 	chainConfigStorage := sto.OpenStorageBackedBytes(chainConfigSubspace)
 	_ = chainConfigStorage.Set(serializedChainConfig)
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
@@ -311,10 +309,6 @@ func (state *ArbosState) UpgradeArbosVersion(
 				)
 			}
 			// no state changes needed
-		// case 11:
-		//	// TODO
-		// case 12:
-		// TODO store chain config in arbos state ?
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

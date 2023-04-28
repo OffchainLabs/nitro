@@ -11,10 +11,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -146,24 +146,17 @@ func main() {
 	var chainConfig params.ChainConfig
 	err = json.Unmarshal(chainConfigJson, &chainConfig)
 	if err != nil {
-		// TODO
-		panic(err)
+		panic(errors.Wrap(err, "failed to deserialize chain config"))
 	}
 
-	// TODO remove
-	chainConfigTmp, err := arbos.GetChainConfig(l2ChainId, 0)
+	if chainConfig.ChainID.Cmp(l2ChainId) != 0 {
+		panic("chain id mismatch")
+	}
+
+	rollupConfig, err := arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, loserEscrowAddress)
 	if err != nil {
-		// TODO
 		panic(err)
 	}
-
-	// TODO should we validate if chainConfig.chainID == l2ChainId?
-	// 		or should l2chainId be always taken from chainConfig?
-	if chainConfigTmp.ChainID.Cmp(l2ChainId) != 0 {
-		// TODO
-		panic("chain id missmatch")
-	}
-
 	deployPtr, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -171,7 +164,7 @@ func main() {
 		sequencerAddress,
 		*authorizevalidators,
 		func() *headerreader.Config { return &headerReaderConfig },
-		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, chainConfigTmp /*&chainConfig*/, loserEscrowAddress),
+		rollupConfig,
 	)
 	if err != nil {
 		flag.Usage()

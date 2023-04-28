@@ -211,7 +211,6 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
 		}
-		// TODO do we need chainID? should we validate it?
 		if chainConfig.ChainID.Cmp(chainId) != 0 {
 			panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
 		}
@@ -232,8 +231,6 @@ func main() {
 
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
-		// TODO
-		// * for first block will get the chain config from init message, for next blocks read form ArbOS state <- preimages provided by replay caller
 
 		message := readMessage(false)
 

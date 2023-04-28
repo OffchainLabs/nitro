@@ -7,10 +7,11 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/pkg/errors"
 
 	flag "github.com/spf13/pflag"
 
@@ -280,7 +281,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, loserStakeEscrow common.Address) rollupgen.Config {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, loserStakeEscrow common.Address) (*rollupgen.Config, error) {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
@@ -289,10 +290,9 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 	chainConfigJson, err := json.Marshal(chainConfig)
 	if err != nil {
-		// TODO
-		panic(err)
+		return nil, errors.Wrap(err, "failed to marshal chain config")
 	}
-	return rollupgen.Config{
+	return &rollupgen.Config{
 		ConfirmPeriodBlocks:      confirmPeriod,
 		ExtraChallengeTimeBlocks: 200,
 		StakeToken:               common.Address{},
@@ -308,10 +308,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 			DelaySeconds:  big.NewInt(60 * 60 * 24),
 			FutureSeconds: big.NewInt(60 * 60),
 		},
-	}
+	}, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config *rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -332,7 +332,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		config,
+		*config,
 		expectedRollupAddr,
 	)
 	if err != nil {

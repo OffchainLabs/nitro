@@ -245,7 +245,6 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig,
 	var chainId *big.Int
 	log.Warn("ParseInitMessage", "msg", msg, "msg.L2msg", msg.L2msg, "enc msg.L2msg", hex.EncodeToString(msg.L2msg))
 	if len(msg.L2msg) == 32 {
-		// TODO
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		return chainId, nil, nil
 	} else if len(msg.L2msg) > 32 {

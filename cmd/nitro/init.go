@@ -180,10 +180,10 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	if err != nil {
 		return err
 	}
-	// TODO ChainConfig?
 	if chainId.Cmp(expectedChainId) != 0 {
 		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", expectedChainId, chainId)
 	}
+	// TODO should we validate also chainConfig?
 	return nil
 }
 
