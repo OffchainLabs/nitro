@@ -6,6 +6,7 @@ package staker
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"math/big"
 	"runtime/debug"
 	"strings"
@@ -64,19 +65,21 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable                   bool              `koanf:"enable"`
-	Strategy                 string            `koanf:"strategy"`
-	StakerInterval           time.Duration     `koanf:"staker-interval"`
-	MakeAssertionInterval    time.Duration     `koanf:"make-assertion-interval"`
-	L1PostingStrategy        L1PostingStrategy `koanf:"posting-strategy"`
-	DisableChallenge         bool              `koanf:"disable-challenge"`
-	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
-	UseSmartContractWallet   bool              `koanf:"use-smart-contract-wallet"`
-	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
-	StartFromStaked          bool              `koanf:"start-validation-from-staked"`
-	ContractWalletAddress    string            `koanf:"contract-wallet-address"`
-	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
-	Dangerous                DangerousConfig   `koanf:"dangerous"`
+	Enable                   bool                     `koanf:"enable"`
+	Strategy                 string                   `koanf:"strategy"`
+	StakerInterval           time.Duration            `koanf:"staker-interval"`
+	MakeAssertionInterval    time.Duration            `koanf:"make-assertion-interval"`
+	L1PostingStrategy        L1PostingStrategy        `koanf:"posting-strategy"`
+	DisableChallenge         bool                     `koanf:"disable-challenge"`
+	ConfirmationBlocks       int64                    `koanf:"confirmation-blocks"`
+	UseSmartContractWallet   bool                     `koanf:"use-smart-contract-wallet"`
+	OnlyCreateWalletContract bool                     `koanf:"only-create-wallet-contract"`
+	StartFromStaked          bool                     `koanf:"start-validation-from-staked"`
+	ContractWalletAddress    string                   `koanf:"contract-wallet-address"`
+	GasRefunderAddress       string                   `koanf:"gas-refunder-address"`
+	Dangerous                DangerousConfig          `koanf:"dangerous"`
+	UseSeparateL1Wallet      bool                     `koanf:"use-separate-l1-wallet"`
+	L1Wallet                 genericconf.WalletConfig `koanf:"l1-wallet"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -125,6 +128,8 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ContractWalletAddress:    "",
 	GasRefunderAddress:       "",
 	Dangerous:                DefaultDangerousConfig,
+	UseSeparateL1Wallet:      false,
+	L1Wallet:                 genericconf.WalletConfigDefault,
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -141,6 +146,8 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".use-separate-l1-wallet", DefaultL1ValidatorConfig.UseSeparateL1Wallet, "use separate l1 wallet for validator")
+	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, "validator-wallet")
 }
 
 type DangerousConfig struct {

@@ -495,7 +495,7 @@ func createTestNodeOnL1WithConfigImpl(
 	var err error
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
-		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
@@ -522,7 +522,7 @@ func CreateTestL2WithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -630,7 +630,7 @@ func Create2ndNodeWithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
