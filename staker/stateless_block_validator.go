@@ -368,6 +368,11 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 		if err != nil {
 			return common.Hash{}, nil, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
 		}
+		// TODO should we parse and validate chain config?
+		_, err := initialArbosState.ChainConfig()
+		if err != nil {
+			return common.Hash{}, nil, nil, fmt.Errorf("error getting chain config from initial ArbOS state: %w", err)
+		}
 		if chainId.Cmp(chainConfig.ChainID) != 0 {
 			return common.Hash{}, nil, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
 		}
