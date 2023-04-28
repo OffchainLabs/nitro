@@ -196,9 +196,6 @@
       "persistent" : {
         "chain": "goerli-rollup"
       },
-      "node": {
-        "forwarding-target": "https://rinkeby.arbitrum.io/rpc"
-      },
       "l1": {
         "rollup": {
           "bridge": "0x6c66c67babcccfd76bd99f764cecb9b9b2c372f9",
@@ -207,7 +204,7 @@
           "sequencer-inbox": "0xbde3a9f4edbc5ebe6467f1c004afb7dacbf31e36",
           "validator-utils": "0x3cb54cf46d1d6695b00ff4da420fd41a20d0ff9f",
           "validator-wallet-creator": "0xca6981377270e4e3375294283ddd11114b672a95",
-          "deployed-at": 17702669
+          "deployed-at": 17702515
         },
         "url": "https://goerli-rollup.arbitrum.io/rpc",
         "chain-id": 421613
