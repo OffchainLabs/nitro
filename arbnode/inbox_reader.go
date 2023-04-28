@@ -5,7 +5,6 @@ package arbnode
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
@@ -140,14 +141,19 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			// TODO we are ignoring chain config from init msg here, should we validate it?
-			initChainId, _, err := message.ParseInitMessage()
+			initChainId, initChainConfig, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}
-			configChainId := r.tracker.txStreamer.chainConfig.ChainID
+			chainConfig := r.tracker.txStreamer.chainConfig
+			configChainId := chainConfig.ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
+			if initChainConfig != nil {
+				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum); err != nil {
+					return errors.Wrap(err, "incompatible chain config read from init message in L1 inbox")
+				}
 			}
 			break
 		}
