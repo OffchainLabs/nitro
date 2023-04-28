@@ -47,6 +47,8 @@
         (memory.fill (i32.const 0xfffe) (i32.const 4) (i32.const 2))
         (memory.copy (i32.const 0xffff) (i32.const 0xffff) (i32.const 1))
         (memory.copy (i32.const 0xfffd) (i32.const 0xfffc) (i32.const 3))
+        (memory.copy (i32.const 0xfff2) (i32.const 0xfff3) (i32.const 13))
+        (memory.copy (i32.const 0xfff3) (i32.const 0xfff2) (i32.const 13))
 
         ;; write [1, 16]
         (local.set $i (i32.const 16))
