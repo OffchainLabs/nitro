@@ -159,7 +159,7 @@ func main() {
 
 	// TODO should we validate if chainConfig.chainID == l2ChainId?
 	// 		or should l2chainId be always taken from chainConfig?
-	if chainConfigTmp.ChainID != l2ChainId {
+	if chainConfigTmp.ChainID.Cmp(l2ChainId) != 0 {
 		// TODO
 		panic("chain id missmatch")
 	}

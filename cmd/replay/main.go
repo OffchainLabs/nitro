@@ -212,7 +212,7 @@ func main() {
 			panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
 		}
 		// TODO do we need chainID? should we validate it?
-		if chainConfig.ChainID != chainId {
+		if chainConfig.ChainID.Cmp(chainId) != 0 {
 			panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
 		}
 		if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
