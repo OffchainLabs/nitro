@@ -3,19 +3,20 @@
 
 #![allow(clippy::vec_init_then_push)]
 
-use std::collections::HashMap;
-
 use crate::{
-    binary,
+    binary, host,
     machine::{Function, InboxIdentifier},
+    utils,
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
 };
 use arbutil::Color;
-use eyre::{bail, Result};
+use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
+use std::{collections::HashMap, str::FromStr};
 
 /// Represents the internal hostio functions a module may have.
+#[derive(Clone, Copy)]
 #[repr(u64)]
 pub enum InternalFunc {
     WavmCallerLoad8,
@@ -38,113 +39,167 @@ impl InternalFunc {
     }
 }
 
-pub fn get_impl(module: &str, name: &str) -> Result<Function> {
-    macro_rules! func {
-        () => {
-            FunctionType::default()
-        };
-        ([$($args:expr),*]) => {
-            FunctionType::new(vec![$($args),*], vec![])
-        };
-        ([$($args:expr),*], [$($outs:expr),*]) => {
-            FunctionType::new(vec![$($args),*], vec![$($outs),*])
-        };
+/// Represents the internal hostio functions a module may have.
+pub enum Hostio {
+    WavmCallerLoad8,
+    WavmCallerLoad32,
+    WavmCallerStore8,
+    WavmCallerStore32,
+    WavmGetGlobalStateBytes32,
+    WavmSetGlobalStateBytes32,
+    WavmGetGlobalStateU64,
+    WavmSetGlobalStateU64,
+    WavmReadPreImage,
+    WavmReadInboxMessage,
+    WavmReadDelayedInboxMessage,
+    WavmHaltAndSetFinished,
+}
+
+impl FromStr for Hostio {
+    type Err = ErrReport;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let (module, name) = utils::split_import(s)?;
+
+        use Hostio::*;
+        Ok(match (module, name) {
+            ("env", "wavm_caller_load8") => WavmCallerLoad8,
+            ("env", "wavm_caller_load32") => WavmCallerLoad32,
+            ("env", "wavm_caller_store8") => WavmCallerStore8,
+            ("env", "wavm_caller_store32") => WavmCallerStore32,
+            ("env", "wavm_get_globalstate_bytes32") => WavmGetGlobalStateBytes32,
+            ("env", "wavm_set_globalstate_bytes32") => WavmSetGlobalStateBytes32,
+            ("env", "wavm_get_globalstate_u64") => WavmGetGlobalStateU64,
+            ("env", "wavm_set_globalstate_u64") => WavmSetGlobalStateU64,
+            ("env", "wavm_read_pre_image") => WavmReadPreImage,
+            ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
+            ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
+            ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
+            _ => bail!("no such hostio {} in {}", name.red(), module.red()),
+        })
     }
+}
 
-    use ArbValueType::*;
-    use InternalFunc::*;
-    use Opcode::*;
-    #[rustfmt::skip]
-    let ty = match (module, name) {
-        ("env", "wavm_caller_load8")   => func!([I32], [I32]),
-        ("env", "wavm_caller_load32")  => func!([I32], [I32]),
-        ("env", "wavm_caller_store8")  => func!([I32, I32]),
-        ("env", "wavm_caller_store32") => func!([I32, I32]),
-        ("env", "wavm_get_globalstate_bytes32") => func!([I32, I32]),
-        ("env", "wavm_set_globalstate_bytes32") => func!([I32, I32]),
-        ("env", "wavm_get_globalstate_u64")     => func!([I32], [I64]),
-        ("env", "wavm_set_globalstate_u64")     => func!([I32, I64]),
-        ("env", "wavm_read_pre_image")          => func!([I32, I32], [I32]),
-        ("env", "wavm_read_inbox_message")      => func!([I64, I32, I32], [I32]),
-        ("env", "wavm_read_delayed_inbox_message") => func!([I64, I32, I32], [I32]),
-        ("env", "wavm_halt_and_set_finished")      => func!(),
-        _ => bail!("no such hostio {} in {}", name.red(), module.red()),
-    };
+impl Hostio {
+    pub fn ty(&self) -> FunctionType {
+        use ArbValueType::*;
+        use Hostio::*;
 
-    let append = |code: &mut Vec<Instruction>| {
-        macro_rules! opcode {
-            ($opcode:expr) => {
-                code.push(Instruction::simple($opcode))
+        macro_rules! func {
+            () => {
+                FunctionType::default()
             };
-            ($opcode:expr, $value:expr) => {
-                code.push(Instruction::with_data($opcode, $value as u64))
+            ([$($args:expr),*]) => {
+                FunctionType::new(vec![$($args),*], vec![])
+            };
+            ([$($args:expr),*], [$($outs:expr),*]) => {
+                FunctionType::new(vec![$($args),*], vec![$($outs),*])
             };
         }
 
-        match (module, name) {
-            ("env", "wavm_caller_load8") => {
+        #[rustfmt::skip]
+        let ty = match self {
+            WavmCallerLoad8             => InternalFunc::WavmCallerLoad8.ty(),
+            WavmCallerLoad32            => InternalFunc::WavmCallerLoad32.ty(),
+            WavmCallerStore8            => InternalFunc::WavmCallerStore8.ty(),
+            WavmCallerStore32           => InternalFunc::WavmCallerStore32.ty(),
+            WavmGetGlobalStateBytes32   => func!([I32, I32]),
+            WavmSetGlobalStateBytes32   => func!([I32, I32]),
+            WavmGetGlobalStateU64       => func!([I32], [I64]),
+            WavmSetGlobalStateU64       => func!([I32, I64]),
+            WavmReadPreImage            => func!([I32, I32], [I32]),
+            WavmReadInboxMessage        => func!([I64, I32, I32], [I32]),
+            WavmReadDelayedInboxMessage => func!([I64, I32, I32], [I32]),
+            WavmHaltAndSetFinished      => func!(),
+        };
+        ty
+    }
+
+    pub fn body(&self) -> Vec<Instruction> {
+        let mut body = vec![];
+
+        macro_rules! opcode {
+            ($opcode:expr) => {
+                body.push(Instruction::simple($opcode))
+            };
+            ($opcode:expr, $value:expr) => {
+                body.push(Instruction::with_data($opcode, $value as u64))
+            };
+        }
+
+        use Hostio::*;
+        use Opcode::*;
+        match self {
+            WavmCallerLoad8 => {
                 opcode!(LocalGet, 0);
-                opcode!(CallerModuleInternalCall, WavmCallerLoad8);
+                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerLoad8);
             }
-            ("env", "wavm_caller_load32") => {
+            WavmCallerLoad32 => {
                 opcode!(LocalGet, 0);
-                opcode!(CallerModuleInternalCall, WavmCallerLoad32);
+                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerLoad32);
             }
-            ("env", "wavm_caller_store8") => {
+            WavmCallerStore8 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
-                opcode!(CallerModuleInternalCall, WavmCallerStore8);
+                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerStore8);
             }
-            ("env", "wavm_caller_store32") => {
+            WavmCallerStore32 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
-                opcode!(CallerModuleInternalCall, WavmCallerStore32);
+                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerStore32);
             }
-            ("env", "wavm_get_globalstate_bytes32") => {
+            WavmGetGlobalStateBytes32 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(GetGlobalStateBytes32);
             }
-            ("env", "wavm_set_globalstate_bytes32") => {
+            WavmSetGlobalStateBytes32 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(SetGlobalStateBytes32);
             }
-            ("env", "wavm_get_globalstate_u64") => {
+            WavmGetGlobalStateU64 => {
                 opcode!(LocalGet, 0);
                 opcode!(GetGlobalStateU64);
             }
-            ("env", "wavm_set_globalstate_u64") => {
+            WavmSetGlobalStateU64 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(SetGlobalStateU64);
             }
-            ("env", "wavm_read_pre_image") => {
+            WavmReadPreImage => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(ReadPreImage);
             }
-            ("env", "wavm_read_inbox_message") => {
+            WavmReadInboxMessage => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(LocalGet, 2);
                 opcode!(ReadInboxMessage, InboxIdentifier::Sequencer);
             }
-            ("env", "wavm_read_delayed_inbox_message") => {
+            WavmReadDelayedInboxMessage => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(LocalGet, 2);
                 opcode!(ReadInboxMessage, InboxIdentifier::Delayed);
             }
-            ("env", "wavm_halt_and_set_finished") => {
+            WavmHaltAndSetFinished => {
                 opcode!(HaltAndSetFinished);
             }
-            _ => bail!("no such hostio {} in {}", name.red(), module.red()),
         }
+        body
+    }
+}
+
+pub fn get_impl(module: &str, name: &str) -> Result<Function> {
+    let hostio: Hostio = format!("{module}__{name}").parse()?;
+
+    let append = |code: &mut Vec<Instruction>| {
+        code.extend(hostio.body());
         Ok(())
     };
-
-    Function::new(&[], append, ty, &[])
+    Function::new(&[], append, hostio.ty(), &[])
 }
 
 /// Adds internal functions to a module.
@@ -166,44 +221,55 @@ pub fn new_internal_funcs() -> Vec<Function> {
     }
 
     let mut funcs = vec![];
+    let mut add_func = |func, internal| {
+        assert_eq!(funcs.len(), internal as usize);
+        funcs.push(func)
+    };
+    let mut add_op_func = |opcode, internal| add_func(op_func(opcode, internal), internal);
 
     // order matters!
-    funcs.push(op_func(
+    add_op_func(
         MemoryLoad {
             ty: I32,
             bytes: 1,
             signed: false,
         },
         WavmCallerLoad8,
-    ));
-    funcs.push(op_func(
+    );
+    add_op_func(
         MemoryLoad {
             ty: I32,
             bytes: 4,
             signed: false,
         },
         WavmCallerLoad32,
-    ));
-    funcs.push(op_func(MemoryStore { ty: I32, bytes: 1 }, WavmCallerStore8));
-    funcs.push(op_func(
-        MemoryStore { ty: I32, bytes: 4 },
-        WavmCallerStore32,
-    ));
+    );
+    add_op_func(MemoryStore { ty: I32, bytes: 1 }, WavmCallerStore8);
+    add_op_func(MemoryStore { ty: I32, bytes: 4 }, WavmCallerStore32);
 
     let [memory_fill, memory_copy] = (*BULK_MEMORY_FUNCS).clone();
-    funcs.push(memory_fill);
-    funcs.push(memory_copy);
+    add_func(memory_fill, MemoryFill);
+    add_func(memory_copy, MemoryCopy);
     funcs
 }
 
 lazy_static! {
     static ref BULK_MEMORY_FUNCS: [Function; 2] = {
+        use host::InternalFunc::*;
+
         let data = include_bytes!("bulk_memory.wat");
         let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory.wat");
         let bin = binary::parse(&wasm).expect("failed to parse bulk_memory.wasm");
+        let types = [MemoryFill.ty(), MemoryCopy.ty()];
+        let names = ["memory_fill", "memory_copy"];
+
         [0, 1].map(|i| {
             let code = &bin.codes[i];
+            let name = bin.names.functions.get(&(i as u32)).unwrap();
             let ty = &bin.types[bin.functions[i] as usize];
+            assert_eq!(ty, &types[i]);
+            assert_eq!(name, names[i]);
+
             let func = Function::new(
                 &code.locals,
                 |wasm| wasm_to_wavm(

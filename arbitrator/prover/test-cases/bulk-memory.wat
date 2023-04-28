@@ -3,7 +3,7 @@
 
 (module
     (import "env" "wavm_halt_and_set_finished" (func $halt))
-    (func $start
+    (func $start (local $i i32)
         ;; test memory_fill
         (memory.fill (i32.const 0x1003) (i32.const 5) (i32.const 4)) ;; ---5555---
         (memory.fill (i32.const 0x1001) (i32.const 8) (i32.const 3)) ;; -888555---
@@ -28,6 +28,10 @@
         (memory.copy (i32.const 0x100f) (i32.const 0x1001) (i32.const 1))  ;; -888525--225-258----------------
         (memory.copy (i32.const 0x100f) (i32.const 0x1000) (i32.const 32)) ;; ----------------888525--225-258-
         (memory.copy (i32.const 0x1001) (i32.const 0x100f) (i32.const 32)) ;; --888525--225-258---------------
+        (memory.copy (i32.const 0x100f) (i32.const 0x1000) (i32.const 25)) ;; ----------------888525--225-258-
+        (memory.copy (i32.const 0x1000) (i32.const 0x100f) (i32.const 25)) ;; --888525--225-258---------------
+        (memory.copy (i32.const 0x100f) (i32.const 0x1002) (i32.const 39)) ;; ----------------888525--225-258-
+        (memory.copy (i32.const 0x1002) (i32.const 0x100f) (i32.const 39)) ;; --888525--225-258---------------
         (call $check (i32.const 0x1009) (i32.const 0))
         (call $check (i32.const 0x100a) (i32.const 2))
         (call $check (i32.const 0x100b) (i32.const 2))
@@ -42,6 +46,28 @@
         (memory.fill (i32.const 0xfffe) (i32.const 4) (i32.const 2))
         (memory.copy (i32.const 0xffff) (i32.const 0xffff) (i32.const 1))
         (memory.copy (i32.const 0xfffd) (i32.const 0xfffc) (i32.const 3))
+
+        ;; write [1, 16]
+        (local.set $i (i32.const 16))
+        (loop $loop
+            (memory.fill (i32.const 0x0) (local.get $i) (local.get $i))
+
+            (i32.sub (local.get $i) (i32.const 1))
+            local.tee $i
+            i32.const 0
+            i32.ne
+            br_if $loop)
+
+        ;; check [1, 16]
+        (local.set $i (i32.const 16))
+        (loop $loop
+            (call $check (i32.sub (local.get $i) (i32.const 1)) (local.get $i))
+
+            (i32.sub (local.get $i) (i32.const 1))
+            local.tee $i
+            i32.const 0
+            i32.ne
+            br_if $loop)
 
         (call $halt))
     (func $check (param i32 i32)
