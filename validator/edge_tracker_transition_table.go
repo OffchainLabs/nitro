@@ -14,7 +14,6 @@ func newEdgeTrackerFsm(
 			// this, including challenge moves.
 			Typ: edgeBackToStart{},
 			From: []edgeTrackerState{
-				edgeAtOneStepFork,
 				edgePresumptive,
 				edgeBisecting,
 			},
@@ -27,7 +26,6 @@ func newEdgeTrackerFsm(
 			From: []edgeTrackerState{
 				edgeStarted,
 				edgePresumptive,
-				edgeBisecting,
 			},
 			To: edgePresumptive,
 		},
@@ -42,7 +40,7 @@ func newEdgeTrackerFsm(
 			// The tracker will take some action if it has reached a one-step-proof
 			// in a small step challenge.
 			Typ:  edgeHandleOneStepProof{},
-			From: []edgeTrackerState{edgeAtOneStepFork, edgeAtOneStepProof},
+			From: []edgeTrackerState{edgeStarted},
 			To:   edgeAtOneStepProof,
 		},
 		{
@@ -51,32 +49,22 @@ func newEdgeTrackerFsm(
 			From: []edgeTrackerState{edgeAtOneStepFork, edgeAddingSubchallengeLeaf},
 			To:   edgeAddingSubchallengeLeaf,
 		},
-		{
-			// The tracker will be awaiting subchallenge resolution until it will exit.
-			Typ: edgeAwaitSubchallengeResolution{},
-			From: []edgeTrackerState{
-				edgeAtOneStepFork,
-				edgeAtOneStepProof,
-				edgeAddingSubchallengeLeaf,
-				edgeBisecting,
-				edgeAwaitingSubchallenge,
-			},
-			To: edgeAwaitingSubchallenge,
-		},
 		// Challenge moves.
 		{
-			Typ: edgeBisect{},
-			From: []edgeTrackerState{
-				edgeStarted,
-				edgeBisecting, // TODO: Can this still happen?
-			},
-			To: edgeBisecting,
+			Typ:  edgeBisect{},
+			From: []edgeTrackerState{edgeStarted},
+			To:   edgeBisecting,
 		},
-		// Finishing.
+		{
+			Typ:  edgeTryToConfirm{},
+			From: []edgeTrackerState{edgeConfirming, edgeBisecting, edgeAtOneStepFork, edgeAddingSubchallengeLeaf},
+			To:   edgeConfirming,
+		},
+		// Terminal state.
 		{
 			Typ:  edgeConfirm{},
-			From: []edgeTrackerState{edgeAtOneStepProof, edgeConfirming},
-			To:   edgeConfirming,
+			From: []edgeTrackerState{edgeConfirmed, edgeConfirming, edgeAtOneStepProof},
+			To:   edgeConfirmed,
 		},
 	}
 	return util.NewFsm(startState, transitions, fsmOpts...)

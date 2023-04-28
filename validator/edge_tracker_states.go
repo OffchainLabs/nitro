@@ -21,14 +21,14 @@ const (
 	edgeAtOneStepProof
 	// The tracker is adding a subchallenge leaf on the edge's subchallenge.
 	edgeAddingSubchallengeLeaf
-	// The tracker is awaiting resolution of its subchallenges.
-	edgeAwaitingSubchallenge
 	// The tracker is attempting a bisection move.
 	edgeBisecting
 	// The tracker is confirming an edge.
 	// TODO: There are other ways the edge can be confirmed, and perhaps should
 	// be tracked in a separate goroutine then the tracker.
 	edgeConfirming
+	// Terminal state
+	edgeConfirmed
 )
 
 // String turns an edge tracker state into a readable string.
@@ -44,12 +44,12 @@ func (s edgeTrackerState) String() string {
 		return "one_step_proof"
 	case edgeAddingSubchallengeLeaf:
 		return "adding_subchallenge_leaf"
-	case edgeAwaitingSubchallenge:
-		return "awaiting_subchallenge_resolution"
 	case edgeBisecting:
 		return "bisecting"
 	case edgeConfirming:
 		return "confirming"
+	case edgeConfirmed:
+		return "confirmed"
 	default:
 		return "invalid"
 	}
@@ -77,13 +77,12 @@ type edgeHandleOneStepProof struct{}
 // Tracker will add a subchallenge on its edge's subchallenge.
 type edgeOpenSubchallengeLeaf struct{}
 
-// Tracker will await subchallenge resolution.
-type edgeAwaitSubchallengeResolution struct{}
-
 // Tracker will attempt to bisect its edge.
 type edgeBisect struct{}
 
 // Tracker will attempt to confirm a challenge winner.
+type edgeTryToConfirm struct{}
+
 type edgeConfirm struct{}
 
 func (edgeBackToStart) String() string {
@@ -101,11 +100,11 @@ func (edgeHandleOneStepProof) String() string {
 func (edgeOpenSubchallengeLeaf) String() string {
 	return "open_subchallenge_leaf"
 }
-func (edgeAwaitSubchallengeResolution) String() string {
-	return "await_subchallenge_resolution"
-}
 func (edgeBisect) String() string {
 	return "bisect"
+}
+func (edgeTryToConfirm) String() string {
+	return "trying_to_confirm"
 }
 func (edgeConfirm) String() string {
 	return "confirm"
@@ -126,10 +125,10 @@ func (edgeHandleOneStepProof) isEdgeTrackerAction() bool {
 func (edgeOpenSubchallengeLeaf) isEdgeTrackerAction() bool {
 	return true
 }
-func (edgeAwaitSubchallengeResolution) isEdgeTrackerAction() bool {
+func (edgeBisect) isEdgeTrackerAction() bool {
 	return true
 }
-func (edgeBisect) isEdgeTrackerAction() bool {
+func (edgeTryToConfirm) isEdgeTrackerAction() bool {
 	return true
 }
 func (edgeConfirm) isEdgeTrackerAction() bool {
