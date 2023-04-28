@@ -7,6 +7,8 @@ import "../../src/challengeV2/EdgeChallengeManager.sol";
 import "./Utils.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
+    using GlobalStateLib for GlobalState;
+
     function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
         external
         view
@@ -16,8 +18,13 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
     }
 
     function getMachineHash(ExecutionState calldata execState) external pure override returns (bytes32) {
-        require(execState.machineStatus == MachineStatus.FINISHED, "BAD_MACHINE_STATUS");
-        return GlobalStateLib.hash(execState.globalState);
+        if (execState.machineStatus == MachineStatus.FINISHED) {
+            return keccak256(abi.encodePacked("Machine finished:", execState.globalState.hash()));
+        } else if (execState.machineStatus == MachineStatus.ERRORED) {
+            return keccak256(abi.encodePacked("Machine errored:", execState.globalState.hash()));
+        } else {
+            revert("BAD_MACHINE_STATUS");
+        }
     }
 }
 
@@ -34,6 +41,10 @@ contract EdgeChallengeManagerLibAccess {
         return store.get(id);
     }
 
+    function setConfirmed(bytes32 id) public {
+        store.edges[id].status = EdgeStatus.Confirmed;
+    }
+
     function confirmEdgeByOneStepProof(
         bytes32 edgeId,
         IOneStepProofEntry oneStepProofEntry,
@@ -45,6 +56,17 @@ contract EdgeChallengeManagerLibAccess {
         store.confirmEdgeByOneStepProof(
             edgeId, oneStepProofEntry, oneStepData, execCtx, beforeHistoryInclusionProof, afterHistoryInclusionProof
         );
+    }
+
+    function createLayerZeroEdge(
+        CreateEdgeArgs calldata args,
+        AssertionReferenceData memory ard,
+        IOneStepProofEntry oneStepProofEntry,
+        uint256 expectedEndHeight,
+        bytes calldata prefixProof,
+        bytes calldata proof
+    ) public returns (EdgeAddedData memory) {
+        return store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, prefixProof, proof);
     }
 }
 
@@ -1374,7 +1396,287 @@ contract EdgeChallengeManagerLibTest is Test {
         assertEq(EdgeChallengeManagerLib.isPowerOfTwo(6), false);
         assertEq(EdgeChallengeManagerLib.isPowerOfTwo(7), false);
         assertEq(EdgeChallengeManagerLib.isPowerOfTwo(8), true);
-        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(2**17), true);
+        assertEq(EdgeChallengeManagerLib.isPowerOfTwo(2 ** 17), true);
         assertEq(EdgeChallengeManagerLib.isPowerOfTwo(1 << 255), true);
+    }
+
+    struct ExpsAndProofs {
+        bytes32[] states;
+        bytes32[] startExp;
+        bytes32[] endExp;
+        bytes32[] startInclusionProof;
+        bytes32[] endInclusionProof;
+        bytes32[] prefixProof;
+    }
+
+    function newRootsAndProofs(uint256 startHeight, uint256 endHeight, bytes32 startState, bytes32 endState)
+        internal
+        returns (ExpsAndProofs memory)
+    {
+        bytes32[] memory states;
+        {
+            if (startState == 0) {
+                startState = rand.hash();
+            }
+            if (endState == 0) {
+                endState = rand.hash();
+            }
+
+            bytes32[] memory innerStates = rand.hashes(endHeight - 1);
+            bytes32[] memory startStates = new bytes32[](1);
+            startStates[0] = startState;
+            bytes32[] memory endStates = new bytes32[](1);
+            endStates[0] = endState;
+            states = ArrayUtilsLib.concat(ArrayUtilsLib.concat(startStates, innerStates), endStates);
+        }
+        bytes32[] memory startExp = ProofUtils.expansionFromLeaves(states, 0, startHeight + 1);
+        bytes32[] memory expansion = ProofUtils.expansionFromLeaves(states, 0, endHeight + 1);
+
+        // inclusion in the start root
+        bytes32[] memory startInclusionProof = ProofUtils.generateInclusionProof(
+            ProofUtils.rehashed(ArrayUtilsLib.slice(states, 0, startHeight + 1)), startHeight
+        );
+        bytes32[] memory endInclusionProof = ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), endHeight);
+
+        bytes32[] memory prefixProof =
+            ProofUtils.generatePrefixProof(startHeight + 1, ArrayUtilsLib.slice(states, startHeight + 1, endHeight + 1));
+
+        return ExpsAndProofs(states, startExp, expansion, startInclusionProof, endInclusionProof, prefixProof);
+    }
+
+    struct ExecStateVars {
+        ExecutionState execState;
+        bytes32 machineHash;
+        bytes32 stateHash;
+    }
+
+    function randomExecutionState(IOneStepProofEntry os, uint256 inboxMaxCount)
+        private
+        returns (ExecStateVars memory)
+    {
+        ExecutionState memory execState = ExecutionState(
+            GlobalState([rand.hash(), rand.hash()], [uint64(uint256(rand.hash())), uint64(uint256(rand.hash()))]),
+            MachineStatus.FINISHED
+        );
+
+        bytes32 machineHash = os.getMachineHash(execState);
+        bytes32 stateHash = RollupLib.stateHashMem(execState, inboxMaxCount);
+        return ExecStateVars(execState, machineHash, stateHash);
+    }
+
+    function createZeroBlockEdge(uint256 mode, string memory revertArg) internal {
+        MockOneStepProofEntry entry = new MockOneStepProofEntry();
+        uint256 expectedEndHeight = mode == 139 ? 2 ** 5 - 1 : 2 ** 2;
+        ExecStateVars memory startExec = randomExecutionState(entry, 10);
+        ExecStateVars memory endExec = randomExecutionState(entry, 20);
+        ExpsAndProofs memory roots = newRootsAndProofs(0, expectedEndHeight, startExec.machineHash, endExec.machineHash);
+        bytes32 claimId = rand.hash();
+        bytes32 endRoot = mode == 137 ? rand.hash() : MerkleTreeLib.root(roots.endExp);
+        bytes memory proof = abi.encode(
+            ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight),
+            startExec.execState,
+            mode == 147 ? uint256(11) : uint256(10),
+            endExec.execState,
+            mode == 148 ? uint256(12) : uint256(20)
+        );
+        if (mode == 140) {
+            bytes32[] memory b = new bytes32[](1);
+            b[0] = rand.hash();
+            roots.prefixProof = ArrayUtilsLib.concat(roots.prefixProof, b);
+        }
+        AssertionReferenceData memory ard;
+        if (mode != 144) {
+            ard = AssertionReferenceData({
+                assertionId: mode == 141 ? rand.hash() : claimId,
+                predecessorId: rand.hash(),
+                isPending: mode == 142 ? false : true,
+                hasSibling: mode == 143 ? false : true,
+                startState: startExec.stateHash,
+                endState: endExec.stateHash
+            });
+        }
+        if (mode == 145) {
+            ard.startState = 0;
+        }
+        if (mode == 146) {
+            ard.endState = 0;
+        }
+
+        EdgeChallengeManagerLibAccess a = new EdgeChallengeManagerLibAccess();
+        if (bytes(revertArg).length != 0) {
+            vm.expectRevert(bytes(revertArg));
+        }
+        a.createLayerZeroEdge(
+            CreateEdgeArgs({
+                edgeType: EdgeType.Block,
+                endHistoryRoot: endRoot,
+                endHeight: mode == 138 ? 2 ** 4 : expectedEndHeight,
+                claimId: claimId
+            }),
+            ard,
+            entry,
+            expectedEndHeight,
+            abi.encode(roots.startExp, roots.prefixProof),
+            proof
+        );
+    }
+
+    function testCreateLayerZeroEdgeBlockA() public {
+        createZeroBlockEdge(0, "");
+    }
+
+    function testCreateLayerZeroEdgeBlockInvalidInclusionProof() public {
+        createZeroBlockEdge(137, "Invalid inclusion proof");
+    }
+
+    function testCreateLayerZeroEdgeBlockEndHeight() public {
+        createZeroBlockEdge(138, "Invalid edge size");
+    }
+
+    function testCreateLayerZeroEdgeBlockPowerHeight() public {
+        createZeroBlockEdge(139, "End height is not a power of 2");
+    }
+
+    function testCreateLayerZeroEdgeInvalidPrefixProof() public {
+        createZeroBlockEdge(140, "Incomplete proof usage");
+    }
+
+    function testCreateLayerZeroEdgeClaimId() public {
+        createZeroBlockEdge(141, "Mismatched claim id");
+    }
+
+    function testCreateLayerZeroEdgeIsPending() public {
+        createZeroBlockEdge(142, "Claim assertion is not pending");
+    }
+
+    function testCreateLayerZeroEdgeHasSibling() public {
+        createZeroBlockEdge(143, "Assertion is not in a fork");
+    }
+
+    function testCreateLayerZeroEdgeEmptyAssertion() public {
+        createZeroBlockEdge(144, "Empty assertion id");
+    }
+
+    function testCreateLayerZeroEdgeEmptyStartState() public {
+        createZeroBlockEdge(145, "Empty start state");
+    }
+
+    function testCreateLayerZeroEdgeEmptyEndState() public {
+        createZeroBlockEdge(146, "Empty end state");
+    }
+
+    function testCreateLayerZeroEdgeInvalidStartState() public {
+        createZeroBlockEdge(147, "Incorrect assertion start state");
+    }
+
+    function testCreateLayerZeroEdgeInvalidEndState() public {
+        createZeroBlockEdge(148, "Incorrect assertion end state");
+    }
+
+    function createClaimEdge(EdgeChallengeManagerLibAccess c, uint256 start, uint256 end, bool includeRival)
+        public
+        returns (bytes32, ExpsAndProofs memory)
+    {
+        // create a claim edge
+        ExpsAndProofs memory claimRoots = newRootsAndProofs(start, end, 0, 0);
+        ChallengeEdge memory ce = ChallengeEdgeLib.newChildEdge(
+            rand.hash(),
+            MerkleTreeLib.root(claimRoots.startExp),
+            start,
+            MerkleTreeLib.root(claimRoots.endExp),
+            end,
+            EdgeType.BigStep
+        );
+        c.add(ce);
+        // and give it a rival
+        if (includeRival) {
+            c.add(
+                ChallengeEdgeLib.newChildEdge(
+                    ce.originId, ce.startHistoryRoot, ce.startHeight, rand.hash(), ce.endHeight, ce.eType
+                )
+            );
+        }
+
+        return (ce.idMem(), claimRoots);
+    }
+
+    function createSmallStepEdge(uint256 mode, string memory revertArg) internal {
+        uint256 claimStartHeight = 4;
+        uint256 claimEndHeight = mode == 161 ? 6 : 5;
+        uint256 expectedEndHeight = 2 ** 5;
+        EdgeChallengeManagerLibAccess c = new EdgeChallengeManagerLibAccess();
+        (bytes32 claimId, ExpsAndProofs memory claimRoots) =
+            createClaimEdge(c, claimStartHeight, claimEndHeight, mode == 160 ? false : true);
+
+        ExpsAndProofs memory roots = newRootsAndProofs(
+            0, expectedEndHeight, claimRoots.states[claimStartHeight], claimRoots.states[claimEndHeight]
+        );
+        if (mode == 164) {
+            bytes32[] memory b = new bytes32[](1);
+            b[0] = rand.hash();
+            claimRoots.startInclusionProof = ArrayUtilsLib.concat(claimRoots.startInclusionProof, b);
+        }
+        if (mode == 165) {
+            bytes32[] memory b = new bytes32[](1);
+            b[0] = rand.hash();
+            claimRoots.endInclusionProof = ArrayUtilsLib.concat(claimRoots.endInclusionProof, b);
+        }
+        bytes memory proof = abi.encode(
+            roots.states[0],
+            roots.states[expectedEndHeight],
+            claimRoots.startInclusionProof,
+            claimRoots.endInclusionProof,
+            ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight)
+        );
+        if (mode == 162) {
+            c.setConfirmed(claimId);
+        }
+
+        MockOneStepProofEntry a = new MockOneStepProofEntry();
+        AssertionReferenceData memory emptyArd;
+        if (bytes(revertArg).length != 0) {
+            vm.expectRevert(bytes(revertArg));
+        }
+        c.createLayerZeroEdge(
+            CreateEdgeArgs({
+                edgeType: mode == 163 ? EdgeType.BigStep : EdgeType.SmallStep,
+                endHistoryRoot: MerkleTreeLib.root(roots.endExp),
+                endHeight: expectedEndHeight,
+                claimId: claimId
+            }),
+            emptyArd,
+            a,
+            expectedEndHeight,
+            abi.encode(roots.startExp, roots.prefixProof),
+            proof
+        );
+    }
+
+    function testCreateLayerZeroEdgeSmallStep() public {
+        createSmallStepEdge(0, "");
+    }
+
+    function testCreateLayerZeroEdgeSmallStepNoRival() public {
+        createSmallStepEdge(160, "Claim does not have length 1 rival");
+    }
+
+    function testCreateLayerZeroEdgeSmallStepNotLength1() public {
+        createSmallStepEdge(161, "Claim does not have length 1 rival");
+    }
+
+    function testCreateLayerZeroEdgeSmallStepEdgeType() public {
+        createSmallStepEdge(162, "Claim is not pending");
+    }
+
+    function testCreateLayerZeroEdgeSmallStepNotPending() public {
+        createSmallStepEdge(163, "Invalid claim edge type");
+    }
+
+    function testCreateLayerZeroEdgeSmallStepStartInclusion() public {
+        createSmallStepEdge(164, "Invalid inclusion proof");
+    }
+
+    function testCreateLayerZeroEdgeSmallStepEndInclusion() public {
+        createSmallStepEdge(165, "Invalid inclusion proof");
     }
 }

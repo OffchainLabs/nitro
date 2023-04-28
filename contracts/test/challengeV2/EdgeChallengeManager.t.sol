@@ -472,14 +472,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -502,14 +495,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -568,14 +554,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -601,14 +580,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -639,14 +611,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -677,14 +642,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -717,14 +675,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -755,14 +706,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[6] memory edges1,
             BisectionChildren[6] memory edges2
         ) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         bytes32[] memory bigStepStates1;
@@ -840,14 +784,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         bytes32[] memory bigStepStates1;
@@ -882,14 +819,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[6] memory edges1,
             BisectionChildren[6] memory edges2
         ) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         bytes32[] memory bigStepStates1;
@@ -967,14 +897,7 @@ contract EdgeChallengeManagerTest is Test {
         EdgeInitData memory ei = deployAndInit();
 
         (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (bytes32[] memory bigStepStates, bytes32[] memory bigStepExp) =
@@ -1048,14 +971,13 @@ contract EdgeChallengeManagerTest is Test {
             appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(args.endState1), height1);
         bytes32 edge1Id;
         {
-            bytes memory typeSpecificProof1 =
-                abi.encode(
-                    ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), states1.length - 1),
-                    genesisState.es,
-                    genesisState.inboxMsgCountMax,
-                    args.endState1.es,
-                    args.endState1.inboxMsgCountMax
-                );
+            bytes memory typeSpecificProof1 = abi.encode(
+                ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), states1.length - 1),
+                genesisState.es,
+                genesisState.inboxMsgCountMax,
+                args.endState1.es,
+                args.endState1.inboxMsgCountMax
+            );
             edge1Id = args.challengeManager.createLayerZeroEdge(
                 CreateEdgeArgs({
                     edgeType: EdgeType.Block,
@@ -1079,14 +1001,13 @@ contract EdgeChallengeManagerTest is Test {
             appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(args.endState2), height1);
         bytes32 edge2Id;
         {
-            bytes memory typeSpecificProof2 =
-                abi.encode(
-                    ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), states2.length - 1),
-                    genesisState.es,
-                    genesisState.inboxMsgCountMax,
-                    args.endState2.es,
-                    args.endState2.inboxMsgCountMax
-                );
+            bytes memory typeSpecificProof2 = abi.encode(
+                ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), states2.length - 1),
+                genesisState.es,
+                genesisState.inboxMsgCountMax,
+                args.endState2.es,
+                args.endState2.inboxMsgCountMax
+            );
             edge2Id = args.challengeManager.createLayerZeroEdge(
                 CreateEdgeArgs({
                     edgeType: EdgeType.Block,
@@ -1209,14 +1130,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[6] memory blockEdges1,
             BisectionChildren[6] memory blockEdges2
         ) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (
@@ -1322,14 +1236,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[6] memory blockEdges1,
             BisectionChildren[6] memory blockEdges2
         ) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (
@@ -1351,7 +1258,8 @@ contract EdgeChallengeManagerTest is Test {
             )
         );
 
-        (bytes32[] memory smallStepStates1,, BisectionChildren[6] memory smallStepEdges1,) = createMachineEdgesAndBisectToFork(
+        (bytes32[] memory smallStepStates1,, BisectionChildren[6] memory smallStepEdges1,) =
+        createMachineEdgesAndBisectToFork(
             CreateMachineEdgesBisectArgs(
                 ei.challengeManager,
                 EdgeType.SmallStep,
@@ -1382,7 +1290,7 @@ contract EdgeChallengeManagerTest is Test {
                 wasmModuleRoot: bytes32(0),
                 wasmModuleRootProof: abi.encode(
                     bytes32(0), genesisAfterStateHash, keccak256(abi.encode(genesisState.es.globalState.u64Vals[0]))
-                ),
+                    ),
                 beforeHash: firstStates[0],
                 proof: abi.encodePacked(firstStates[1])
             }),
@@ -1454,14 +1362,7 @@ contract EdgeChallengeManagerTest is Test {
             BisectionChildren[6] memory blockEdges1,
             BisectionChildren[6] memory blockEdges2
         ) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(
-                ei.challengeManager,
-                ei.a1,
-                ei.a2,
-                ei.a1State,
-                ei.a2State,
-                false
-            )
+            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
         (

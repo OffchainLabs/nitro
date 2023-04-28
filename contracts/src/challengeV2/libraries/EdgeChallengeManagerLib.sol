@@ -160,11 +160,11 @@ library EdgeChallengeManagerLib {
     /// @return                 Data parsed from the proof, or fetched from elsewhere. Also the origin id for the to be created.
     function layerZeroTypeSpecifcChecks(
         EdgeStore storage store,
-        CreateEdgeArgs memory args,
+        CreateEdgeArgs calldata args,
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
-        bytes memory proof
-    ) internal view returns (ProofData memory, bytes32) {
+        bytes calldata proof
+    ) private view returns (ProofData memory, bytes32) {
         if (args.edgeType == EdgeType.Block) {
             // origin id is the assertion which is the root of challenge
             // all rivals and their children share the same origin id - it is a link to the information
@@ -174,6 +174,7 @@ library EdgeChallengeManagerLib {
             // Sanity check: The assertion reference data should be related to the claim
             // Of course the caller can provide whatever args they wish, so this is really just a helpful
             // check to avoid mistakes
+            require(ard.assertionId != 0, "Empty assertion id");
             require(ard.assertionId == args.claimId, "Mismatched claim id");
 
             // if the assertion is already confirmed or rejected then it cant be referenced as a claim
@@ -193,8 +194,16 @@ library EdgeChallengeManagerLib {
                 uint256 afterInboxMaxCount
             ) = abi.decode(proof, (bytes32[], ExecutionState, uint256, ExecutionState, uint256));
 
-            require(ard.startState == RollupLib.stateHashMem(startState, prevInboxMaxCount), "Incorrect assertion start state");
-            require(ard.endState == RollupLib.stateHashMem(endState, afterInboxMaxCount), "Incorrect assertion end state");
+            // show that the supplied start and end execution states were really committed to by the assertion
+            require(ard.startState != 0, "Empty start state");
+            require(
+                ard.startState == RollupLib.stateHashMem(startState, prevInboxMaxCount),
+                "Incorrect assertion start state"
+            );
+            require(ard.endState != 0, "Empty end state");
+            require(
+                ard.endState == RollupLib.stateHashMem(endState, afterInboxMaxCount), "Incorrect assertion end state"
+            );
 
             // Create machine hashes out of the proven state
             bytes32 startStateHash = oneStepProofEntry.getMachineHash(startState);
@@ -273,10 +282,10 @@ library EdgeChallengeManagerLib {
     ///                             to by the end history root
     function layerZeroCommonChecks(
         ProofData memory proofData,
-        CreateEdgeArgs memory args,
+        CreateEdgeArgs calldata args,
         uint256 expectedEndHeight,
         bytes calldata prefixProof
-    ) internal pure returns (bytes32) {
+    ) private pure returns (bytes32) {
         // since zero layer edges have a start height of zero, we know that they are a size
         // one tree containing only the start state. We can then compute the history root directly
         bytes32 startHistoryRoot = MerkleTreeLib.root(MerkleTreeLib.appendLeaf(new bytes32[](0), proofData.startState));
@@ -342,7 +351,7 @@ library EdgeChallengeManagerLib {
     ///                         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
     function createLayerZeroEdge(
         EdgeStore storage store,
-        CreateEdgeArgs memory args,
+        CreateEdgeArgs calldata args,
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
@@ -350,7 +359,8 @@ library EdgeChallengeManagerLib {
         bytes calldata proof
     ) internal returns (EdgeAddedData memory) {
         // each edge type requires some specific checks
-        (ProofData memory proofData, bytes32 originId) = layerZeroTypeSpecifcChecks(store, args, ard, oneStepProofEntry, proof);
+        (ProofData memory proofData, bytes32 originId) =
+            layerZeroTypeSpecifcChecks(store, args, ard, oneStepProofEntry, proof);
         // all edge types share some common checks
         (bytes32 startHistoryRoot) = layerZeroCommonChecks(proofData, args, expectedEndHeight, prefixProof);
         // we only wrap the struct creation in a function as doing so with exceeds the stack limit

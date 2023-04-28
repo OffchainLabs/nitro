@@ -283,7 +283,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /////////////////////////////
 
     /// @inheritdoc IEdgeChallengeManager
-    function createLayerZeroEdge(CreateEdgeArgs memory args, bytes calldata prefixProof, bytes calldata proof)
+    function createLayerZeroEdge(CreateEdgeArgs calldata args, bytes calldata prefixProof, bytes calldata proof)
         external
         payable
         returns (bytes32)
@@ -301,7 +301,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             );
         }
         uint256 expectedEndHeight = getLayerZeroEndHeight(args.edgeType);
-        EdgeAddedData memory edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, prefixProof, proof);
+        EdgeAddedData memory edgeAdded =
+            store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, prefixProof, proof);
         emit EdgeAdded(
             edgeAdded.edgeId,
             edgeAdded.mutualId,
@@ -408,11 +409,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         ExecutionContext memory execCtx = ExecutionContext({
             maxInboxMessagesRead: assertionChain.proveInboxMsgCountSeen(
                 prevAssertionId, oneStepData.inboxMsgCountSeen, oneStepData.inboxMsgCountSeenProof
-            ),
+                ),
             bridge: assertionChain.bridge(),
             initialWasmModuleRoot: assertionChain.proveWasmModuleRoot(
                 prevAssertionId, oneStepData.wasmModuleRoot, oneStepData.wasmModuleRootProof
-            )
+                )
         });
 
         store.confirmEdgeByOneStepProof(
