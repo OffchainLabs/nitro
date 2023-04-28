@@ -843,7 +843,7 @@ func createNodeImpl(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() {
+		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		} else {
 			log.Warn("validation not supported", "err", err)
