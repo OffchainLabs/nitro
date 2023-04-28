@@ -311,6 +311,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 				)
 			}
 			// no state changes needed
+		// case 11:
+		//	// TODO
+		//case 12:
+		// TODO store chain config in arbos state ?
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",

@@ -92,6 +92,7 @@ async function getDefaultConfig(
   return {
     baseStake: stakeRequirement,
     chainId: stakeToken,
+	chainConfig: "", // TODO
     confirmPeriodBlocks: _confirmPeriodBlocks,
     extraChallengeTimeBlocks: extraChallengeTimeBlocks,
     owner: await accounts[0].getAddress(),
