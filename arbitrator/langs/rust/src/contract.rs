@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use super::util::{Bytes20, Bytes32};
+use crate::{evm, Bytes20, Bytes32};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -216,4 +216,8 @@ pub fn address() -> Bytes20 {
     let mut data = [0; 20];
     unsafe { contract_address(data.as_mut_ptr()) };
     Bytes20(data)
+}
+
+pub fn balance() -> Option<Bytes32> {
+    evm::address_balance(address())
 }

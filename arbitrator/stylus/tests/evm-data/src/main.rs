@@ -3,13 +3,7 @@
 
 #![no_main]
 
-use arbitrum::Bytes20;
-use arbitrum::Bytes32;
-use arbitrum::block;
-use arbitrum::contract;
-use arbitrum::evm;
-use arbitrum::msg;
-use arbitrum::tx;
+use arbitrum::{Bytes20, Bytes32, block, contract, evm, msg, tx};
 
 arbitrum::arbitrum_main!(user_main);
 

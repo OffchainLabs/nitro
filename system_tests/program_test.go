@@ -503,15 +503,14 @@ func TestProgramEvmData(t *testing.T) {
 	ensure(tx, err)
 
 	callEvmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("call-evm-data"))
-	ink := uint64(100000000)
-	gasToBurn := int64(1000000)
-	callBurnData, err := burnArbGas(big.NewInt(gasToBurn))
+	ink := uint64(10000000000)
+	gasToBurn := uint64(1000000)
+	callBurnData, err := burnArbGas(new(big.Int).SetUint64(gasToBurn))
+	Require(t, err)
 	callEvmDataData := append(evmDataAddr.Bytes(), u64ToBytes(ink)...)
 	callEvmDataData = append(callEvmDataData, l2info.Accounts["Faucet"].Address.Bytes()...)
 	callEvmDataData = append(callEvmDataData, types.ArbosTestAddress.Bytes()...)
-	callEvmDataData = append(callEvmDataData, u64ToBytes(ink)...)
 	callEvmDataData = append(callEvmDataData, callBurnData...)
-	ensure(tx, err)
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
@@ -606,7 +605,7 @@ func TestProgramEvmData(t *testing.T) {
 	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
 
 	// Should be within 1 gas
-	if gasUsed == 0 || gasUsed > calculatedGasUsed+1 || gasUsed < calculatedGasUsed-1 {
+	if gasUsed < gasToBurn || gasUsed > calculatedGasUsed+1 || gasUsed < calculatedGasUsed-1 {
 		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 

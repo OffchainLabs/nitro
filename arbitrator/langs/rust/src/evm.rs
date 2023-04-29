@@ -1,8 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::Bytes20;
-use crate::Bytes32;
+use crate::{Bytes20, Bytes32};
 
 #[link(wasm_import_module = "forward")]
 extern "C" {

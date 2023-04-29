@@ -3,8 +3,7 @@
 
 #![no_main]
 
-use arbitrum::Bytes20;
-use arbitrum::contract;
+use arbitrum::{Bytes20, contract};
 
 arbitrum::arbitrum_main!(user_main);
 
