@@ -250,6 +250,30 @@ func (l *lifecycle) Stop() error {
 	return nil
 }
 
+type staticNodeConfigFetcher struct {
+	config *arbnode.Config
+}
+
+func NewFetcherFromConfig(c *arbnode.Config) *staticNodeConfigFetcher {
+	err := c.Validate()
+	if err != nil {
+		panic("invalid static config: " + err.Error())
+	}
+	return &staticNodeConfigFetcher{c}
+}
+
+func (c *staticNodeConfigFetcher) Get() *arbnode.Config {
+	return c.config
+}
+
+func (c *staticNodeConfigFetcher) Start(context.Context) {}
+
+func (c *staticNodeConfigFetcher) StopAndWait() {}
+
+func (c *staticNodeConfigFetcher) Started() bool {
+	return true
+}
+
 func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
@@ -534,7 +558,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 	var err error
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
+		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
 		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
@@ -562,7 +586,7 @@ func CreateTestL2WithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -670,7 +694,7 @@ func Create2ndNodeWithConfig(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
