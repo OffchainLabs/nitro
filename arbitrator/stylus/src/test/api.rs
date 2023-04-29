@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    env::{BlockHash, GetBytes32, SetBytes32},
+    env::{AddressBalance, AddressCodeHash, BlockHash, GetBytes32, SetBytes32},
     native::{self, NativeInstance},
     run::RunProgram,
 };
@@ -46,29 +46,12 @@ impl TestEvmContracts {
 pub(crate) struct TestEvmStorage(Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>);
 
 impl TestEvmStorage {
-    pub fn block_hash(&self, program: Bytes20, block: Bytes32) -> Option<Bytes32> {
-        self.0
-            .lock()
-            .entry(program)
-            .or_default()
-            .get(&block)
-            .cloned()
-    }
-
     pub fn get_bytes32(&self, program: Bytes20, key: Bytes32) -> Option<Bytes32> {
         self.0.lock().entry(program).or_default().get(&key).cloned()
     }
 
     pub fn set_bytes32(&mut self, program: Bytes20, key: Bytes32, value: Bytes32) {
         self.0.lock().entry(program).or_default().insert(key, value);
-    }
-
-    pub fn block_hasher(&self, program: Bytes20) -> BlockHash {
-        let storage = self.clone();
-        Box::new(move |key| {
-            let value = storage.block_hash(program, key).unwrap().to_owned();
-            (value, 20)
-        })
     }
 
     pub fn getter(&self, program: Bytes20) -> GetBytes32 {
@@ -95,7 +78,10 @@ impl NativeInstance {
         storage: TestEvmStorage,
         contracts: TestEvmContracts,
     ) -> TestEvmStorage {
-        let block_hash = storage.block_hasher(address);
+        let address_balance = Box::new(move |_address| todo!("address_balance not yet supported"));
+        let address_code_hash =
+            Box::new(move |_address| todo!("address_code_hash not yet supported"));
+        let block_hash = Box::new(move |_block| todo!("block_hash not yet supported"));
         let get_bytes32 = storage.getter(address);
         let set_bytes32 = storage.setter(address);
         let moved_storage = storage.clone();
@@ -140,6 +126,8 @@ impl NativeInstance {
         let emit_log = Box::new(move |_data, _topics| Ok(()));
 
         self.env_mut().set_evm_api(
+            address_balance,
+            address_code_hash,
             block_hash,
             get_bytes32,
             set_bytes32,

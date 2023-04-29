@@ -52,6 +52,12 @@ pub struct MeterData {
     pub ink_status: Global,
 }
 
+/// Balance for given address: key → (value, cost)
+pub type AddressBalance = Box<dyn Fn(Bytes20) -> (Bytes32, u64) + Send>;
+
+/// Code hash for given address: key → (value, cost)
+pub type AddressCodeHash = Box<dyn Fn(Bytes20) -> (Bytes32, u64) + Send>;
+
 /// Hash for given block: key → (value, cost)
 pub type BlockHash = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
 
@@ -85,6 +91,8 @@ pub type Create2 =
     Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
 
 pub struct EvmAPI {
+    address_balance: AddressBalance,
+    address_code_hash: AddressCodeHash,
     block_hash: BlockHash,
     get_bytes32: GetBytes32,
     set_bytes32: SetBytes32,
@@ -125,6 +133,8 @@ impl WasmEnv {
 
     pub fn set_evm_api(
         &mut self,
+        address_balance: AddressBalance,
+        address_code_hash: AddressCodeHash,
         block_hash: BlockHash,
         get_bytes32: GetBytes32,
         set_bytes32: SetBytes32,
@@ -137,6 +147,8 @@ impl WasmEnv {
         emit_log: EmitLog,
     ) {
         self.evm = Some(EvmAPI {
+            address_balance,
+            address_code_hash,
             block_hash,
             get_bytes32,
             set_bytes32,
@@ -334,6 +346,14 @@ impl<'a> DerefMut for HostioInfo<'a> {
 }
 
 impl EvmAPI {
+    pub fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        (self.address_balance)(address)
+    }
+
+    pub fn address_code_hash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        (self.address_code_hash)(address)
+    }
+
     pub fn block_hash(&mut self, key: Bytes32) -> (Bytes32, u64) {
         (self.block_hash)(key)
     }

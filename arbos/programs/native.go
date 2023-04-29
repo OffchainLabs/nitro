@@ -15,6 +15,8 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
+Bytes32     addressBalanceWrap(usize api, Bytes20 address, u64 * cost);
+Bytes32     addressCodeHashWrap(usize api, Bytes20 address, u64 * cost);
 Bytes32     blockHashWrap(usize api, Bytes32 block, u64 * cost);
 Bytes32     getBytes32Wrap(usize api, Bytes32 key, u64 * cost);
 GoApiStatus setBytes32Wrap(usize api, Bytes32 key, Bytes32 value, u64 * cost, RustVec * error);
@@ -101,15 +103,26 @@ func callUserWasm(
 	module := db.GetCompiledWasmCode(program, stylusParams.version)
 
 	// closures so Rust can call back into Go
-	blockHash := func(block common.Hash) (common.Hash, uint64) {
-		numBig := block.Big()
-		if !numBig.IsUint64() {
-			return common.Hash{}, 0
+	addressBalance := func(address common.Address) (*big.Int, uint64) {
+		gasCost := params.BalanceGasFrontier
+		return interpreter.Evm().StateDB.GetBalance(address), gasCost
+	}
+	addressCodeHash := func(address common.Address) (common.Hash, uint64) {
+		gasCost := params.ExtcodeHashGasConstantinople
+		if interpreter.Evm().StateDB.Empty(address) {
+			return common.Hash{}, gasCost
 		}
-		num64 := numBig.Uint64()
+		return interpreter.Evm().StateDB.GetCodeHash(address), gasCost
+	}
+	blockHash := func(block *big.Int) (common.Hash, uint64) {
+		gasCost := vm.GasExtStep
+		if !block.IsUint64() {
+			return common.Hash{}, gasCost
+		}
+		num64 := block.Uint64()
 		upper, err := interpreter.Evm().ProcessingHook.L1BlockNumber(interpreter.Evm().Context)
 		if err != nil {
-			return common.Hash{}, 0
+			return common.Hash{}, gasCost
 		}
 		var lower uint64
 		if upper < 257 {
@@ -120,12 +133,12 @@ func callUserWasm(
 		if num64 >= lower && num64 < upper {
 			h, err := interpreter.Evm().ProcessingHook.L1BlockHash(interpreter.Evm().Context, num64)
 			if err != nil {
-				return common.Hash{}, 0
+				return common.Hash{}, gasCost
 			}
-			return h, vm.GasExtStep
+			return h, gasCost
 		}
 
-		return common.Hash{}, 0
+		return common.Hash{}, gasCost
 	}
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		if tracingInfo != nil {
@@ -329,7 +342,7 @@ func callUserWasm(
 		goSlice(calldata),
 		stylusParams.encode(),
 		newAPI(
-			blockHash, getBytes32, setBytes32,
+			addressBalance, addressCodeHash, blockHash, getBytes32, setBytes32,
 			contractCall, delegateCall, staticCall, create1, create2, getReturnData,
 			emitLog,
 		),
@@ -351,10 +364,26 @@ type apiStatus = C.GoApiStatus
 const apiSuccess C.GoApiStatus = C.GoApiStatus_Success
 const apiFailure C.GoApiStatus = C.GoApiStatus_Failure
 
+//export addressBalanceImpl
+func addressBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
+	closure := getAPI(api)
+	value, gas := closure.addressBalance(address.toAddress())
+	*cost = u64(gas)
+	return bigToBytes32(value)
+}
+
+//export addressCodeHashImpl
+func addressCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
+	closure := getAPI(api)
+	value, gas := closure.addressCodeHash(address.toAddress())
+	*cost = u64(gas)
+	return hashToBytes32(value)
+}
+
 //export blockHashImpl
 func blockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
 	closure := getAPI(api)
-	value, gas := closure.blockHash(block.toHash())
+	value, gas := closure.blockHash(block.toBig())
 	*cost = u64(gas)
 	return hashToBytes32(value)
 }

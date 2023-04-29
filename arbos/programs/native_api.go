@@ -15,6 +15,16 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
+Bytes32 addressBalanceImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 addressBalanceWrap(usize api, Bytes20 address, u64 * cost) {
+    return addressBalanceImpl(api, address, cost);
+}
+
+Bytes32 addressCodeHashImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 addressCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
+    return addressCodeHashImpl(api, address, cost);
+}
+
 Bytes32 blockHashImpl(usize api, Bytes32 block, u64 * cost);
 Bytes32 blockHashWrap(usize api, Bytes32 block, u64 * cost) {
     return blockHashImpl(api, block, cost);
@@ -78,7 +88,9 @@ import (
 var apiClosures sync.Map
 var apiIds int64 // atomic
 
-type blockHashType func(key common.Hash) (value common.Hash, cost uint64)
+type addressBalanceType func(address common.Address) (value *big.Int, cost uint64)
+type addressCodeHashType func(address common.Address) (value common.Hash, cost uint64)
+type blockHashType func(block *big.Int) (value common.Hash, cost uint64)
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
 type contractCallType func(
@@ -105,19 +117,23 @@ type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics int) error
 
 type apiClosure struct {
-	blockHash     blockHashType
-	getBytes32    getBytes32Type
-	setBytes32    setBytes32Type
-	contractCall  contractCallType
-	delegateCall  delegateCallType
-	staticCall    staticCallType
-	create1       create1Type
-	create2       create2Type
-	getReturnData getReturnDataType
-	emitLog       emitLogType
+	addressBalance  addressBalanceType
+	addressCodeHash addressCodeHashType
+	blockHash       blockHashType
+	getBytes32      getBytes32Type
+	setBytes32      setBytes32Type
+	contractCall    contractCallType
+	delegateCall    delegateCallType
+	staticCall      staticCallType
+	create1         create1Type
+	create2         create2Type
+	getReturnData   getReturnDataType
+	emitLog         emitLogType
 }
 
 func newAPI(
+	addressBalance addressBalanceType,
+	addressCodeHash addressCodeHashType,
 	blockHash blockHashType,
 	getBytes32 getBytes32Type,
 	setBytes32 setBytes32Type,
@@ -131,29 +147,33 @@ func newAPI(
 ) C.GoApi {
 	id := atomic.AddInt64(&apiIds, 1)
 	apiClosures.Store(id, apiClosure{
-		blockHash:     blockHash,
-		getBytes32:    getBytes32,
-		setBytes32:    setBytes32,
-		contractCall:  contractCall,
-		delegateCall:  delegateCall,
-		staticCall:    staticCall,
-		create1:       create1,
-		create2:       create2,
-		getReturnData: getReturnData,
-		emitLog:       emitLog,
+		addressBalance:  addressBalance,
+		addressCodeHash: addressCodeHash,
+		blockHash:       blockHash,
+		getBytes32:      getBytes32,
+		setBytes32:      setBytes32,
+		contractCall:    contractCall,
+		delegateCall:    delegateCall,
+		staticCall:      staticCall,
+		create1:         create1,
+		create2:         create2,
+		getReturnData:   getReturnData,
+		emitLog:         emitLog,
 	})
 	return C.GoApi{
-		block_hash:      (*[0]byte)(C.blockHashWrap),
-		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
-		contract_call:   (*[0]byte)(C.contractCallWrap),
-		delegate_call:   (*[0]byte)(C.delegateCallWrap),
-		static_call:     (*[0]byte)(C.staticCallWrap),
-		create1:         (*[0]byte)(C.create1Wrap),
-		create2:         (*[0]byte)(C.create2Wrap),
-		get_return_data: (*[0]byte)(C.getReturnDataWrap),
-		emit_log:        (*[0]byte)(C.emitLogWrap),
-		id:              u64(id),
+		address_balance:   (*[0]byte)(C.addressBalanceWrap),
+		address_code_hash: (*[0]byte)(C.addressCodeHashWrap),
+		block_hash:        (*[0]byte)(C.blockHashWrap),
+		get_bytes32:       (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:       (*[0]byte)(C.setBytes32Wrap),
+		contract_call:     (*[0]byte)(C.contractCallWrap),
+		delegate_call:     (*[0]byte)(C.delegateCallWrap),
+		static_call:       (*[0]byte)(C.staticCallWrap),
+		create1:           (*[0]byte)(C.create1Wrap),
+		create2:           (*[0]byte)(C.create2Wrap),
+		get_return_data:   (*[0]byte)(C.getReturnDataWrap),
+		emit_log:          (*[0]byte)(C.emitLogWrap),
+		id:                u64(id),
 	}
 }
 

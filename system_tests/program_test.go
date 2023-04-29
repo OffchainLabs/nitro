@@ -506,14 +506,16 @@ func TestProgramEvmData(t *testing.T) {
 	ink := uint64(100000000)
 	gasToBurn := int64(1000000)
 	callBurnData, err := burnArbGas(big.NewInt(gasToBurn))
-	callData := append(evmDataAddr.Bytes(), u64ToBytes(ink)...)
-	callData = append(callData, types.ArbosTestAddress.Bytes()...)
-	callData = append(callData, callBurnData...)
+	callEvmDataData := append(evmDataAddr.Bytes(), u64ToBytes(ink)...)
+	callEvmDataData = append(callEvmDataData, l2info.Accounts["Faucet"].Address.Bytes()...)
+	callEvmDataData = append(callEvmDataData, types.ArbosTestAddress.Bytes()...)
+	callEvmDataData = append(callEvmDataData, u64ToBytes(ink)...)
+	callEvmDataData = append(callEvmDataData, callBurnData...)
 	ensure(tx, err)
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
-	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, callData)
+	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, callEvmDataData)
 	Require(t, err)
 
 	getU64 := func(name string) uint64 {
@@ -565,7 +567,17 @@ func TestProgramEvmData(t *testing.T) {
 		result = result[dataSize:]
 	}
 
-	expectedHash, success := new(big.Int).SetString("88380104C7132464D7FDC735DF32EBD023A4A0CA477379EE10A938BD70C04486", 16)
+	expectedAddressBalance, success := new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7", 16)
+	if !success {
+		Fail(t, "expectedAddressBalance not formatted correctly")
+	}
+	expectBigInt("address balance", expectedAddressBalance)
+	expectedCodeHash, success := new(big.Int).SetString("85390056544617812267951848328061578782426827649981142973569645762604679766667", 10)
+	if !success {
+		Fail(t, "expectedCodeHash not formatted correctly")
+	}
+	expectBigInt("address code hash", expectedCodeHash)
+	expectedHash, success := new(big.Int).SetString("61613497873502972471861111583026735641670395221585790890736138142434671477894", 10)
 	if !success {
 		Fail(t, "expectedHash not formatted correctly")
 	}
@@ -590,15 +602,15 @@ func TestProgramEvmData(t *testing.T) {
 	gasLeftAfter := getU64("gas left after")
 	inkLeftAfter := getU64("ink left after")
 
-	inkUsed := inkLeftBefore - inkLeftAfter
-	calculatedInkUsed := ((gasLeftBefore - gasLeftAfter) * 10000) / inkPrice
+	gasUsed := gasLeftBefore - gasLeftAfter
+	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
 
-	// Should be within inkPrice
-	if inkUsed > calculatedInkUsed+inkPrice || inkUsed < calculatedInkUsed-inkPrice {
-		Fail(t, "ink and gas converted to ink don't match")
+	// Should be within 1 gas
+	if gasUsed == 0 || gasUsed > calculatedGasUsed+1 || gasUsed < calculatedGasUsed-1 {
+		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 
-	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, callData)
+	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, callEvmDataData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	// TODO: enable validation when prover side is PR'd

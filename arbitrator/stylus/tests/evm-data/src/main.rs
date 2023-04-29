@@ -4,6 +4,7 @@
 #![no_main]
 
 use arbitrum::Bytes20;
+use arbitrum::Bytes32;
 use arbitrum::block;
 use arbitrum::contract;
 use arbitrum::evm;
@@ -13,6 +14,12 @@ use arbitrum::tx;
 arbitrum::arbitrum_main!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
+    let balance_check_addr = Bytes20::from_slice(&input[0..20]).expect("incorrect slice size for Bytes20");
+    let arb_test_addr = Bytes20::from_slice(&input[20..40]).expect("incorrect slice size for Bytes20");
+    let burn_call_data = &input[40..];
+
+    let address_balance = evm::address_balance(balance_check_addr);
+    let address_codehash = evm::address_code_hash(arb_test_addr);
     let block: u64 = 4;
     let blockhash = evm::blockhash(block.into());
     let basefee = block::basefee();
@@ -26,25 +33,29 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let sender = msg::sender();
     let value = msg::value();
     let origin = tx::origin();
-    let gas_price = evm::gas_price();
-    let ink_price = evm::ink_price();
+    let gas_price = tx::gas_price();
+    let ink_price = tx::ink_price();
     let gas_left_before = evm::gas_left();
     let ink_left_before = evm::ink_left();
 
     // Call burnArbGas
-    let addr = Bytes20::from_slice(&input[0..20]).expect("incorrect slice size for Bytes20");
-    contract::call(addr, &input[20..], None, None);
+    contract::call(arb_test_addr, burn_call_data, None, None)?;
     let gas_left_after = evm::gas_left();
     let ink_left_after = evm::ink_left();
 
     let mut output = vec![];
-    match blockhash {
-        Some(hash) => output.extend(hash.0),
-        None => {
-            let data = [0; 32];
-            output.extend(data)
+    let mut extend_optional = |a: Option<Bytes32>| {
+        match a {
+            Some(data) => output.extend(data.0),
+            None => {
+                let data = [0; 32];
+                output.extend(data)
+            }
         }
-    }
+    };
+    extend_optional(address_balance);
+    extend_optional(address_codehash);
+    extend_optional(blockhash);
     output.extend(basefee.0);
     output.extend(chainid.0);
     output.extend(coinbase.0);

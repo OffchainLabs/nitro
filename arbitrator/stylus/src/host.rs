@@ -19,6 +19,22 @@ pub(crate) fn return_data(mut env: WasmEnvMut, ptr: u32, len: u32) -> MaybeEscap
     Ok(())
 }
 
+pub(crate) fn evm_address_balance(mut env: WasmEnvMut, address: u32, dest: u32) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    let address = env.read_bytes20(address)?;
+    let (balance, gas_cost) = env.evm().address_balance(address);
+    env.write_slice(dest, &balance.0)?;
+    env.buy_gas(gas_cost)
+}
+
+pub(crate) fn evm_address_codehash(mut env: WasmEnvMut, address: u32, dest: u32) -> MaybeEscape {
+    let mut env = WasmEnv::start(&mut env)?;
+    let address = env.read_bytes20(address)?;
+    let (hash, gas_cost) = env.evm().address_code_hash(address);
+    env.write_slice(dest, &hash.0)?;
+    env.buy_gas(gas_cost)
+}
+
 pub(crate) fn evm_blockhash(mut env: WasmEnvMut, block: u32, dest: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let block = env.read_bytes32(block)?;
@@ -27,7 +43,7 @@ pub(crate) fn evm_blockhash(mut env: WasmEnvMut, block: u32, dest: u32) -> Maybe
     env.buy_gas(gas_cost)
 }
 
-pub(crate) fn evm_gas_price(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
+pub(crate) fn tx_gas_price(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::GASPRICE_GAS)?;
 
@@ -36,7 +52,7 @@ pub(crate) fn evm_gas_price(mut env: WasmEnvMut, data: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub(crate) fn evm_ink_price(mut env: WasmEnvMut) -> Result<u64, Escape> {
+pub(crate) fn tx_ink_price(mut env: WasmEnvMut) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::GASPRICE_GAS)?;
     Ok(env.pricing().ink_price)

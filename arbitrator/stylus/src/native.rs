@@ -96,9 +96,9 @@ impl NativeInstance {
             "forward" => {
                 "read_args" => func!(host::read_args),
                 "return_data" => func!(host::return_data),
+                "evm_address_balance" => func!(host::evm_address_balance),
+                "evm_address_codehash" => func!(host::evm_address_codehash),
                 "evm_blockhash" => func!(host::evm_blockhash),
-                "evm_gas_price" => func!(host::evm_gas_price),
-                "evm_ink_price" => func!(host::evm_ink_price),
                 "evm_gas_left" => func!(host::evm_gas_left),
                 "evm_ink_left" => func!(host::evm_ink_left),
                 "account_load_bytes32" => func!(host::account_load_bytes32),
@@ -121,6 +121,8 @@ impl NativeInstance {
                 "contract_address" => func!(host::contract_address),
                 "msg_sender" => func!(host::msg_sender),
                 "msg_value" => func!(host::msg_value),
+                "tx_gas_price" => func!(host::tx_gas_price),
+                "tx_ink_price" => func!(host::tx_ink_price),
                 "tx_origin" => func!(host::tx_origin),
             },
         };
@@ -194,6 +196,8 @@ impl NativeInstance {
             };
         }
 
+        let address_balance = api.address_balance;
+        let address_code_hash = api.address_code_hash;
         let block_hash = api.block_hash;
         let get_bytes32 = api.get_bytes32;
         let set_bytes32 = api.set_bytes32;
@@ -206,6 +210,16 @@ impl NativeInstance {
         let emit_log = api.emit_log;
         let id = api.id;
 
+        let address_balance = Box::new(move |address| unsafe {
+            let mut cost = 0;
+            let hash = address_balance(id, address, ptr!(cost));
+            (hash, cost)
+        });
+        let address_code_hash = Box::new(move |address| unsafe {
+            let mut cost = 0;
+            let hash = address_code_hash(id, address, ptr!(cost));
+            (hash, cost)
+        });
         let block_hash = Box::new(move |block| unsafe {
             let mut cost = 0;
             let hash = block_hash(id, block, ptr!(cost));
@@ -316,6 +330,8 @@ impl NativeInstance {
         });
 
         env.set_evm_api(
+            address_balance,
+            address_code_hash,
             block_hash,
             get_bytes32,
             set_bytes32,
@@ -435,9 +451,9 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         "forward" => {
             "read_args" => stub!(|_: u32|),
             "return_data" => stub!(|_: u32, _: u32|),
+            "evm_address_balance" => stub!(|_: u32, _: u32|),
+            "evm_address_codehash" => stub!(|_: u32, _: u32|),
             "evm_blockhash" => stub!(|_: u32, _: u32|),
-            "evm_gas_price" => stub!(|_: u32|),
-            "evm_ink_price" => stub!(u64 <- ||),
             "evm_gas_left" => stub!(u64 <- ||),
             "evm_ink_left" => stub!(u64 <- ||),
             "account_load_bytes32" => stub!(|_: u32, _: u32|),
@@ -460,6 +476,8 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "contract_address" => stub!(|_: u32|),
             "msg_sender" => stub!(|_: u32|),
             "msg_value" => stub!(|_: u32|),
+            "tx_gas_price" => stub!(|_: u32|),
+            "tx_ink_price" => stub!(u64 <- ||),
             "tx_origin" => stub!(|_: u32|),
         },
     };
