@@ -470,6 +470,8 @@ func ConfigDefaultL1Test() *Config {
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Sequencer = true
+	config.Dangerous.NoCoordinator = true
 
 	return config
 }

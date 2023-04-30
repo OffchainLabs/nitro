@@ -175,8 +175,9 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.CompressionLevel = brotli.BestCompression
 	conf.BatchPoster.MaxBatchPostDelay = time.Hour
-	conf.RPC.RPCTxFeeCap = 1000.
-	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	execConf := gethexec.ConfigDefaultTest()
+	execConf.RPC.RPCTxFeeCap = 1000.
+	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, execConf, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 	l2info.GasPrice = big.NewInt(100e9)
