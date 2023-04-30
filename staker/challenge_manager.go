@@ -458,9 +458,6 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, initialCo
 		return nil
 	}
 	m.executionChallengeBackend = nil
-	if initialCount == 0 {
-		return errors.New("cannot validate before genesis block")
-	}
 	entry, err := m.validator.CreateReadyValidationEntry(ctx, initialCount)
 	if err != nil {
 		return fmt.Errorf("error creating validation entry for challenge %v msg %v for execution challenge: %w", m.challengeIndex, initialCount, err)

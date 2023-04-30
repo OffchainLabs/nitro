@@ -418,19 +418,10 @@ func (c *Config) Validate() error {
 	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
+	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
 	return nil
-}
-
-func (c *Config) Get() *Config {
-	return c
-}
-
-func (c *Config) Start(context.Context) {}
-
-func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
 }
 
 func (c *Config) ValidatorRequired() bool {
@@ -480,6 +471,8 @@ func ConfigDefaultL1Test() *Config {
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Sequencer = true
+	config.Dangerous.NoCoordinator = true
 
 	return config
 }
@@ -493,6 +486,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.Staker.Enable = false
 
 	return &config
 }
@@ -506,6 +500,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 	config.SyncMonitor = TestSyncMonitorConfig
+	config.Staker.Enable = false
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config

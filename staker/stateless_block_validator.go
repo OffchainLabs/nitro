@@ -231,17 +231,19 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	if e.Stage != ReadyForRecord {
 		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
-	// nothing to record for genesis
-	if e.Pos == 0 {
-		e.Stage = Ready
-		return nil
-	}
-	recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
-	if err != nil {
-		return err
-	}
-	if recording.BlockHash != e.End.BlockHash {
-		return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
+	if e.Pos != 0 {
+		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
+		if err != nil {
+			return err
+		}
+		if recording.BlockHash != e.End.BlockHash {
+			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
+		}
+		e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
+
+		if recording.Preimages != nil {
+			e.Preimages = recording.Preimages
+		}
 	}
 	if e.HasDelayedMsg {
 		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
@@ -254,12 +256,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-
-	e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
-
-	if recording.Preimages != nil {
-		e.Preimages = recording.Preimages
-	} else {
+	if e.Preimages == nil {
 		e.Preimages = make(map[common.Hash][]byte)
 	}
 	for _, batch := range e.BatchInfo {
