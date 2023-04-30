@@ -227,7 +227,7 @@ func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chai
 	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChain(t, l2info, "", chainConfig)
 	execNode, err := gethexec.CreateExecutionNode(stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
 	Require(t, err)
-	consensusNode, err := arbnode.CreateNode(ctx, stack, execNode, l2ArbDb, conf, chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
+	consensusNode, err := arbnode.CreateNode(ctx, stack, execNode, l2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
 	Require(t, err)
 
 	return consensusNode, execNode

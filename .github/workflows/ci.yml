@@ -44,7 +44,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.18.x
+          go-version: 1.19.x
 
       - name: Install wasm-ld
         run: |
@@ -55,14 +55,14 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           target: wasm32-unknown-unknown
 
       - name: Install rust wasm32-wasi
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           target: wasm32-wasi
 
       - name: Install rust stable
@@ -70,7 +70,7 @@ jobs:
         id: install-rust
         with:
           profile: minimal
-          toolchain: "1.66.1"
+          toolchain: "stable"
           override: true
 
       - name: Cache Build Products
@@ -133,16 +133,20 @@ jobs:
         run: |
           mkdir -p target/tmp
           echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
-          echo "GOMEMLIMIT=6GB" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
+        run: |
+          packages=`go list ./...`
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum --format short-verbose -- ./... -race -parallel=8
+        run:  |
+          packages=`go list ./...`
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -race -parallel=8
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'

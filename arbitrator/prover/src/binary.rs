@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue};
 use eyre::{bail, ensure, Result};
@@ -253,7 +253,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         sign_extension: true,
         reference_types: false,
         multi_value: true,
-        bulk_memory: false,
+        bulk_memory: true, // not all ops supported yet
         simd: false,
         relaxed_simd: false,
         threads: false,
@@ -266,15 +266,11 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         component_model: false,
     };
     wasmparser::Validator::new_with_features(features).validate_all(input)?;
-
-    let sections: Vec<_> = Parser::new(0)
-        .parse_all(input)
-        .into_iter()
-        .collect::<Result<_, _>>()?;
+    let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
     let mut binary = WasmBinary::default();
 
-    for mut section in sections.into_iter() {
+    for mut section in sections {
         use Payload::*;
 
         macro_rules! process {
