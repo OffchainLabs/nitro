@@ -2,12 +2,12 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
-    evm::{self, api::EvmApi, EvmData},
+    evm::{api::EvmApi, EvmData},
     Bytes20, Bytes32, Color,
 };
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
-use prover::programs::{config::PricingParams, prelude::*};
+use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
     fmt::{Debug, Display},
     io,
@@ -103,45 +103,6 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
         self.config().pricing
     }
 
-    pub fn gas_left(&mut self) -> u64 {
-        let ink = self.ink_left().into();
-        self.pricing().ink_to_gas(ink)
-    }
-
-    pub fn buy_ink(&mut self, ink: u64) -> MaybeEscape {
-        let MachineMeter::Ready(ink_left) = self.ink_left() else {
-            return Escape::out_of_ink();
-        };
-        if ink_left < ink {
-            return Escape::out_of_ink();
-        }
-        self.set_ink(ink_left - ink);
-        Ok(())
-    }
-
-    pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
-        let ink = self.pricing().gas_to_ink(gas);
-        self.buy_ink(ink)
-    }
-
-    /// Checks if the user has enough gas, but doesn't burn any
-    pub fn require_gas(&mut self, gas: u64) -> MaybeEscape {
-        let ink = self.pricing().gas_to_ink(gas);
-        let MachineMeter::Ready(ink_left) = self.ink_left() else {
-            return Escape::out_of_ink();
-        };
-        match ink_left < ink {
-            true => Escape::out_of_ink(),
-            false => Ok(()),
-        }
-    }
-
-    pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
-        let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
-        self.buy_gas(gas)
-    }
-
     pub fn view(&self) -> MemoryView {
         self.memory.view(&self.store.as_store_ref())
     }
@@ -210,11 +171,19 @@ impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
         }
     }
 
-    fn set_ink(&mut self, ink: u64) {
+    fn set_meter(&mut self, value: MachineMeter) {
         let store = &mut self.store;
         let meter = self.env.meter.as_ref().unwrap();
+        let ink = value.ink();
+        let status = value.status();
         meter.ink_left.set(store, ink.into()).unwrap();
-        meter.ink_status.set(store, 0.into()).unwrap();
+        meter.ink_status.set(store, status.into()).unwrap();
+    }
+}
+
+impl<'a, E: EvmApi> GasMeteredMachine for HostioInfo<'a, E> {
+    fn pricing(&mut self) -> PricingParams {
+        self.config().pricing
     }
 }
 
@@ -257,6 +226,12 @@ impl Escape {
 
     pub fn out_of_ink<T>() -> Result<T, Escape> {
         Err(Self::OutOfInk)
+    }
+}
+
+impl From<OutOfInkError> for Escape {
+    fn from(_: OutOfInkError) -> Self {
+        Self::OutOfInk
     }
 }
 

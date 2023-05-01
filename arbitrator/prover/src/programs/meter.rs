@@ -1,9 +1,9 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{FuncMiddleware, Middleware, ModuleMod};
+use super::{config::PricingParams, FuncMiddleware, Middleware, ModuleMod};
 use crate::Machine;
-use arbutil::operator::OperatorInfo;
+use arbutil::{evm, operator::OperatorInfo};
 use derivative::Derivative;
 use eyre::Result;
 use parking_lot::Mutex;
@@ -147,20 +147,33 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MachineMeter {
     Ready(u64),
     Exhausted,
+}
+
+impl MachineMeter {
+    pub fn ink(self) -> u64 {
+        match self {
+            Self::Ready(ink) => ink,
+            Self::Exhausted => 0,
+        }
+    }
+
+    pub fn status(self) -> u32 {
+        match self {
+            Self::Ready(_) => 0,
+            Self::Exhausted => 1,
+        }
+    }
 }
 
 /// We don't implement `From` since it's unclear what 0 would map to
 #[allow(clippy::from_over_into)]
 impl Into<u64> for MachineMeter {
     fn into(self) -> u64 {
-        match self {
-            Self::Ready(ink) => ink,
-            Self::Exhausted => 0,
-        }
+        self.ink()
     }
 }
 
@@ -173,10 +186,82 @@ impl Display for MachineMeter {
     }
 }
 
+#[derive(Debug)]
+pub struct OutOfInkError;
+
 /// Note: implementers may panic if uninstrumented
 pub trait MeteredMachine {
     fn ink_left(&mut self) -> MachineMeter;
-    fn set_ink(&mut self, ink: u64);
+    fn set_meter(&mut self, meter: MachineMeter);
+
+    fn set_ink(&mut self, ink: u64) {
+        self.set_meter(MachineMeter::Ready(ink));
+    }
+
+    fn out_of_ink<T>(&mut self) -> Result<T, OutOfInkError> {
+        self.set_meter(MachineMeter::Exhausted);
+        Err(OutOfInkError)
+    }
+
+    fn ink_ready(&mut self) -> Result<u64, OutOfInkError> {
+        let MachineMeter::Ready(ink_left) = self.ink_left() else {
+            return self.out_of_ink()
+        };
+        Ok(ink_left)
+    }
+
+    fn buy_ink(&mut self, ink: u64) -> Result<(), OutOfInkError> {
+        let ink_left = self.ink_ready()?;
+        if ink_left < ink {
+            return self.out_of_ink();
+        }
+        self.set_ink(ink_left - ink);
+        Ok(())
+    }
+
+    /// Checks if the user has enough ink, but doesn't burn any
+    fn require_ink(&mut self, ink: u64) -> Result<(), OutOfInkError> {
+        let ink_left = self.ink_ready()?;
+        if ink_left < ink {
+            return self.out_of_ink();
+        }
+        Ok(())
+    }
+}
+
+pub trait GasMeteredMachine: MeteredMachine {
+    fn pricing(&mut self) -> PricingParams;
+
+    fn gas_left(&mut self) -> Result<u64, OutOfInkError> {
+        let pricing = self.pricing();
+        match self.ink_left() {
+            MachineMeter::Ready(ink) => Ok(pricing.ink_to_gas(ink)),
+            MachineMeter::Exhausted => Err(OutOfInkError),
+        }
+    }
+
+    fn buy_gas(&mut self, gas: u64) -> Result<(), OutOfInkError> {
+        let pricing = self.pricing();
+        self.buy_ink(pricing.gas_to_ink(gas))
+    }
+
+    /// Checks if the user has enough gas, but doesn't burn any
+    fn require_gas(&mut self, gas: u64) -> Result<(), OutOfInkError> {
+        let pricing = self.pricing();
+        self.require_ink(pricing.gas_to_ink(gas))
+    }
+
+    fn pay_for_evm_copy(&mut self, bytes: u64) -> Result<(), OutOfInkError> {
+        let evm_words = |count: u64| count.saturating_mul(31) / 32;
+        let gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
+        self.buy_gas(gas)
+    }
+
+    fn pay_for_evm_log(&mut self, topics: u32, data_len: u32) -> Result<(), OutOfInkError> {
+        let cost = (1 + topics as u64) * evm::LOG_TOPIC_GAS;
+        let cost = cost.saturating_add(data_len as u64 * evm::LOG_DATA_GAS);
+        self.buy_gas(cost)
+    }
 }
 
 impl MeteredMachine for Machine {
@@ -196,8 +281,10 @@ impl MeteredMachine for Machine {
         }
     }
 
-    fn set_ink(&mut self, ink: u64) {
+    fn set_meter(&mut self, meter: MachineMeter) {
+        let ink = meter.ink();
+        let status = meter.status();
         self.set_global(STYLUS_INK_LEFT, ink.into()).unwrap();
-        self.set_global(STYLUS_INK_STATUS, 0_u32.into()).unwrap();
+        self.set_global(STYLUS_INK_STATUS, status.into()).unwrap();
     }
 }

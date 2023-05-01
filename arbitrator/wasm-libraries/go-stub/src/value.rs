@@ -1,7 +1,9 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::pending::{PendingEvent, PENDING_EVENT};
+use crate::pending::{PendingEvent, PENDING_EVENT, STYLUS_RESULT};
+use arbutil::DebugColor;
+use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
 
 pub const ZERO_ID: u32 = 1;
@@ -17,25 +19,45 @@ pub const FS_ID: u32 = 103;
 pub const UINT8_ARRAY_ID: u32 = 104;
 pub const CRYPTO_ID: u32 = 105;
 pub const DATE_ID: u32 = 106;
+pub const CONSOLE_ID: u32 = 107;
 
 pub const FS_CONSTANTS_ID: u32 = 200;
 
 pub const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum InterpValue {
+pub enum JsValue {
     Undefined,
     Number(f64),
     Ref(u32),
 }
 
-impl InterpValue {
+impl JsValue {
     pub fn assume_num_or_object(self) -> GoValue {
         match self {
-            InterpValue::Undefined => GoValue::Undefined,
-            InterpValue::Number(x) => GoValue::Number(x),
-            InterpValue::Ref(x) => GoValue::Object(x),
+            JsValue::Undefined => GoValue::Undefined,
+            JsValue::Number(x) => GoValue::Number(x),
+            JsValue::Ref(x) => GoValue::Object(x),
         }
+    }
+
+    /// Creates a JS runtime value from its native 64-bit floating point representation.
+    /// The JS runtime stores handles to references in the NaN bits.
+    /// Native 0 is the value called "undefined", and actual 0 is a special-cased NaN.
+    /// Anything else that's not a NaN is the Number class.
+    pub fn new(repr: u64) -> Self {
+        if repr == 0 {
+            return Self::Undefined;
+        }
+        let float = f64::from_bits(repr);
+        if float.is_nan() && repr != f64::NAN.to_bits() {
+            let id = repr as u32;
+            if id == ZERO_ID {
+                return Self::Number(0.);
+            }
+            return Self::Ref(id);
+        }
+        Self::Number(float)
     }
 }
 
@@ -77,24 +99,41 @@ impl GoValue {
         assert!(ty != 0 || id != 0, "GoValue must not be empty");
         f64::NAN.to_bits() | (u64::from(ty) << 32) | u64::from(id)
     }
+
+    pub fn assume_id(self) -> Result<u32> {
+        match self {
+            GoValue::Object(id) => Ok(id),
+            x => bail!("not an id: {}", x.debug_red()),
+        }
+    }
+
+    pub unsafe fn free(self) {
+        use GoValue::*;
+        match self {
+            Object(id) => drop(DynamicObjectPool::singleton().remove(id)),
+            Undefined | Null | Number(_) => {}
+            _ => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub enum DynamicObject {
+pub(crate) enum DynamicObject {
     Uint8Array(Vec<u8>),
-    FunctionWrapper(InterpValue, InterpValue),
+    GoString(Vec<u8>),
+    FunctionWrapper(u32), // the func_id
     PendingEvent(PendingEvent),
     ValueArray(Vec<GoValue>),
     Date,
 }
 
 #[derive(Default, Debug)]
-pub struct DynamicObjectPool {
+pub(crate) struct DynamicObjectPool {
     objects: HashMap<u32, DynamicObject>,
     free_ids: Vec<u32>,
 }
 
-static mut DYNAMIC_OBJECT_POOL: Option<DynamicObjectPool> = None;
+pub(crate) static mut DYNAMIC_OBJECT_POOL: Option<DynamicObjectPool> = None;
 
 impl DynamicObjectPool {
     pub unsafe fn singleton<'a>() -> &'a mut Self {
@@ -133,7 +172,8 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
 
     if let Some(source) = pool.get(source) {
         return match (source, field) {
-            (PendingEvent(event), b"id" | b"this") => event.id.assume_num_or_object(),
+            (PendingEvent(event), b"id") => event.id.assume_num_or_object(),
+            (PendingEvent(event), b"this") => event.this.assume_num_or_object(),
             (PendingEvent(event), b"args") => {
                 let args = ValueArray(event.args.clone());
                 let id = pool.insert(args);
@@ -150,7 +190,6 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
     }
 
     match (source, field) {
-        (GLOBAL_ID, b"stylus") => GoValue::Object(STYLUS_ID),
         (GLOBAL_ID, b"Object") => GoValue::Function(OBJECT_ID),
         (GLOBAL_ID, b"Array") => GoValue::Function(ARRAY_ID),
         (GLOBAL_ID, b"process") => GoValue::Object(PROCESS_ID),
@@ -158,6 +197,7 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
         (GLOBAL_ID, b"Uint8Array") => GoValue::Function(UINT8_ARRAY_ID),
         (GLOBAL_ID, b"crypto") => GoValue::Object(CRYPTO_ID),
         (GLOBAL_ID, b"Date") => GoValue::Object(DATE_ID),
+        (GLOBAL_ID, b"console") => GoValue::Object(CONSOLE_ID),
         (GLOBAL_ID, b"fetch") => GoValue::Undefined, // Triggers a code path in Go for a fake network impl
         (FS_ID, b"constants") => GoValue::Object(FS_CONSTANTS_ID),
         (
@@ -170,6 +210,11 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
                 let id = pool.insert(event);
                 GoValue::Object(id)
             }
+            None => GoValue::Null,
+        },
+        (GLOBAL_ID, b"stylus") => GoValue::Object(STYLUS_ID),
+        (STYLUS_ID, b"result") => match &mut STYLUS_RESULT {
+            Some(value) => value.assume_num_or_object(), // TODO: reference count
             None => GoValue::Null,
         },
         _ => {

@@ -3,7 +3,7 @@
 
 use arbutil::evm::{js::JsEvmApi, EvmData};
 use evm_api::ApiCaller;
-use prover::programs::prelude::StylusConfig;
+use prover::programs::{meter::MeteredMachine, prelude::StylusConfig};
 
 mod evm_api;
 mod ink;
@@ -42,7 +42,7 @@ impl Program {
 
     pub fn start() -> &'static mut Self {
         let program = unsafe { PROGRAMS.last_mut().expect("no program") };
-        program.buy_ink(program.config.pricing.hostio_ink);
+        program.buy_ink(program.config.pricing.hostio_ink).unwrap();
         program
     }
 }
@@ -51,7 +51,7 @@ impl Program {
 ///
 /// # Safety
 ///
-/// non-reentrant and test-only
+/// Non-reentrant and test-only.
 #[no_mangle]
 pub unsafe extern "C" fn user_host__push_program(
     len: usize,
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn user_host__push_program(
 ///
 /// # Safety
 ///
-/// non-reentrant and test-only
+/// Non-reentrant and test-only.
 #[no_mangle]
 pub unsafe extern "C" fn user_host__pop_program() -> usize {
     PROGRAMS.pop();
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn user_host__pop_program() -> usize {
 ///
 /// # Safety
 ///
-/// non-reentrant and test-only
+/// Non-reentrant and test-only.
 #[no_mangle]
 pub unsafe extern "C" fn user_host__get_output_len() -> usize {
     let program = PROGRAMS.last().expect("no program");
@@ -95,7 +95,7 @@ pub unsafe extern "C" fn user_host__get_output_len() -> usize {
 ///
 /// # Safety
 ///
-/// non-reentrant and test-only
+/// Non-reentrant and test-only.
 #[no_mangle]
 pub unsafe extern "C" fn user_host__get_output_ptr() -> *const u8 {
     let program = PROGRAMS.last().expect("no program");

@@ -362,8 +362,10 @@ name = "go-stub"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "eyre",
  "fnv",
  "go-abi",
+ "hex",
  "rand",
  "rand_pcg",
 ]
@@ -1028,7 +1030,6 @@ dependencies = [
  "eyre",
  "fnv",
  "go-abi",
- "go-stub",
  "hex",
  "prover",
 ]

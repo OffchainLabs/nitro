@@ -5,7 +5,7 @@ pub use super::{
     config::{CompileConfig, StylusConfig},
     counter::CountingMachine,
     depth::DepthCheckedMachine,
-    meter::{MachineMeter, MeteredMachine},
+    meter::{GasMeteredMachine, MachineMeter, MeteredMachine},
 };
 
 #[cfg(feature = "native")]

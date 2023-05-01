@@ -563,11 +563,8 @@ pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
         DATE_ID => DynamicObject::Date,
         ARRAY_ID => {
             // Note: assumes values are only numbers and objects
-            let values = args
-                .into_iter()
-                .map(JsValue::assume_num_or_object)
-                .collect();
-            DynamicObject::ValueArray(values)
+            let values = args.into_iter().map(JsValue::assume_num_or_object);
+            DynamicObject::ValueArray(values.collect())
         }
         _ => fail!("Go trying to construct unimplemented JS value {class}"),
     };

@@ -12,6 +12,7 @@ use arbutil::{
 };
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::programs::{
+    config::PricingParams,
     counter::{Counter, CountingMachine, OP_OFFSETS},
     depth::STYLUS_STACK_LEFT,
     meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
@@ -212,9 +213,15 @@ impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
         }
     }
 
-    fn set_ink(&mut self, ink: u64) {
-        self.set_global(STYLUS_INK_LEFT, ink).unwrap();
-        self.set_global(STYLUS_INK_STATUS, 0).unwrap();
+    fn set_meter(&mut self, meter: MachineMeter) {
+        self.set_global(STYLUS_INK_LEFT, meter.ink()).unwrap();
+        self.set_global(STYLUS_INK_STATUS, meter.status()).unwrap();
+    }
+}
+
+impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
+    fn pricing(&mut self) -> PricingParams {
+        self.env().config.unwrap().pricing
     }
 }
 

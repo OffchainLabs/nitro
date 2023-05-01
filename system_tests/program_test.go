@@ -139,8 +139,7 @@ func storageTest(t *testing.T, jit bool) {
 	}
 
 	key := testhelpers.RandomHash()
-	// value := testhelpers.RandomHash()
-	value := common.Hash{}
+	value := testhelpers.RandomHash()
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
@@ -153,7 +152,7 @@ func TestProgramCallsJIT(t *testing.T) {
 }
 
 func TestProgramCallsArb(t *testing.T) {
-	// testCalls(t, false)
+	testCalls(t, false)
 }
 
 func testCalls(t *testing.T, jit bool) {
@@ -355,7 +354,8 @@ func testCalls(t *testing.T, jit bool) {
 		Fail(t, balance, value)
 	}
 
-	validateBlocks(t, 1, jit, ctx, node, l2client)
+	blocks := []uint64{11}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
 func TestProgramLogsJIT(t *testing.T) {
@@ -363,7 +363,7 @@ func TestProgramLogsJIT(t *testing.T) {
 }
 
 func TestProgramLogsArb(t *testing.T) {
-	// testLogs(t, false)
+	testLogs(t, false)
 }
 
 func testLogs(t *testing.T, jit bool) {
@@ -423,7 +423,7 @@ func testLogs(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 2, jit, ctx, node, l2client)
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramCreateJIT(t *testing.T) {
@@ -431,7 +431,7 @@ func TestProgramCreateJIT(t *testing.T) {
 }
 
 func TestProgramCreateArb(t *testing.T) {
-	// testCreate(t, false)
+	testCreate(t, false)
 }
 
 func testCreate(t *testing.T, jit bool) {
@@ -506,11 +506,21 @@ func testCreate(t *testing.T, jit bool) {
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
 
-	validateBlocks(t, 1, jit, ctx, node, l2client)
+	// validate just the opcodes
+	blocks := []uint64{5, 6}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
-func TestProgramEvmData(t *testing.T) {
-	ctx, _, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
+func TestProgramEvmDataJIT(t *testing.T) {
+	testEvmData(t, true)
+}
+
+func TestProgramEvmDataArb(t *testing.T) {
+	testEvmData(t, false)
+}
+
+func testEvmData(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -541,8 +551,7 @@ func TestProgramEvmData(t *testing.T) {
 	tx = l2info.PrepareTxTo("Owner", &dataAddr, 1e9, nil, []byte{})
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, jit, ctx, node, l2client)
+	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
 func setupProgramTest(t *testing.T, file string, jit bool) (
@@ -557,6 +566,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 	l2config.Sequencer.MaxRevertGasReject = 0
+	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
 	AddDefaultValNode(t, ctx, l2config, jit)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
@@ -665,8 +675,19 @@ func validateBlocks(
 		start = 1
 	}
 
-	colors.PrintGrey("Validating blocks from ", start, " onward")
+	blockHeight, err := l2client.BlockNumber(ctx)
+	Require(t, err)
 
+	blocks := []uint64{}
+	for i := start; i <= blockHeight; i++ {
+		blocks = append(blocks, i)
+	}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
+}
+
+func validateBlockRange(
+	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
+) {
 	doUntil(t, 20*time.Millisecond, 50, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
@@ -680,8 +701,16 @@ func validateBlocks(
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
+	// validate everything
+	if jit {
+		blocks = []uint64{}
+		for i := uint64(1); i <= blockHeight; i++ {
+			blocks = append(blocks, i)
+		}
+	}
+
 	success := true
-	for block := start; block <= blockHeight; block++ {
+	for _, block := range blocks {
 		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
 		Require(t, err)
 

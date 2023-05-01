@@ -1,6 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+/// cbindgen:ignore
 pub mod color;
 pub mod crypto;
 pub mod evm;
