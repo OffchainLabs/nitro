@@ -124,7 +124,7 @@ while [[ $# -gt 0 ]]; do
             echo --no-tokenbridge:  don\'t build or launch tokenbridge
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
-            echo script rus inside a separate docker. For SCRIPT-ARGS, run $0 script --help
+            echo script runs inside a separate docker. For SCRIPT-ARGS, run $0 script --help
             exit 0
     esac
 done
