@@ -92,12 +92,12 @@ var TestConfig = Config{
 
 func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
 	isParentChainArbitrum := false
-	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
-	if err == nil {
-		_, err := arbSys.ArbBlockNumber(&bind.CallOpts{Pending: true})
-		if err == nil {
-			isParentChainArbitrum = true
-		}
+	codeAt, err := client.CodeAt(context.Background(), types.ArbSysAddress, nil)
+	if err != nil {
+		return nil
+	}
+	if len(codeAt) != 0 {
+		isParentChainArbitrum = true
 	}
 	return &HeaderReader{
 		client:                client,
