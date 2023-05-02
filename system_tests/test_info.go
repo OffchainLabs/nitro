@@ -4,7 +4,6 @@
 package arbtest
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"errors"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -70,17 +70,16 @@ func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
 }
 
 func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {
-	nameBytes := []byte(name)
-	seedBytes := make([]byte, 0, 128)
-	for len(seedBytes) < 64 {
-		seedBytes = append(seedBytes, nameBytes...)
+	// For simplicity, make a larger than necessary buffer so copies always work
+	keyBytes := make([]byte, 32+len(name))
+	// We start at byte 1 to make sure the key isn't greater than the scalar modulus
+	for i := 1; i < 32; i++ {
+		copy(keyBytes[i:i+len(name)], name)
 	}
-	seedReader := bytes.NewReader(seedBytes)
-	privateKey, err := ecdsa.GenerateKey(crypto.S256(), seedReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return privateKey
+	keyBytes = keyBytes[:32]
+	key, err := crypto.ToECDSA(keyBytes)
+	testhelpers.RequireImpl(t, err, "failed to generate private key from account name")
+	return key
 }
 
 func GetTestAddressForAccountName(t *testing.T, name string) common.Address {
