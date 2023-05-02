@@ -141,7 +141,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.Execution.ChainDB,
 		l2nodeA.ArbDB,
 		nil,
-		&blockValidatorConfig,
+		StaticFetcherFrom[*staker.BlockValidatorConfig](&blockValidatorConfig),
 		valStack,
 	)
 	Require(t, err)
@@ -175,7 +175,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.Execution.ChainDB,
 		l2nodeB.ArbDB,
 		nil,
-		&blockValidatorConfig,
+		StaticFetcherFrom[*staker.BlockValidatorConfig](&blockValidatorConfig),
 		valStack,
 	)
 	Require(t, err)

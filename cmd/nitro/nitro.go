@@ -319,10 +319,27 @@ func mainImpl() int {
 		}
 	}
 
+	if nodeConfig.Node.Staker.Enable {
+		if !nodeConfig.Node.L1Reader.Enable {
+			flag.Usage()
+			log.Crit("validator have the L1 reader enabled")
+		}
+		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		if err != nil {
+			log.Crit("couldn't parse staker strategy", "err", err)
+		}
+		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+			nodeConfig.Node.BlockValidator.Enable = true
+		}
+	}
+
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
+
 	var rollupAddrs arbnode.RollupAddresses
 	var l1Client *ethclient.Client
 	if nodeConfig.Node.L1Reader.Enable {
-		rpcClient := rpcclient.NewRpcClient(&nodeConfig.L1.Connection, nil)
+		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.get().L1.Connection }
+		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
 		err := rpcClient.Start(ctx)
 		if err != nil {
 			log.Crit("couldn't connect to L1", "err", err)
@@ -344,21 +361,6 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Node.Staker.Enable {
-		if !nodeConfig.Node.L1Reader.Enable {
-			flag.Usage()
-			log.Crit("validator have the L1 reader enabled")
-		}
-		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
-		if err != nil {
-			log.Crit("couldn't parse staker strategy", "err", err)
-		}
-		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
-			nodeConfig.Node.BlockValidator.Enable = true
-		}
-	}
-
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			flag.Usage()
@@ -540,7 +542,7 @@ type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	L1            conf.L1Config                   `koanf:"l1"`
+	L1            conf.L1Config                   `koanf:"l1" reload:"hot"`
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`

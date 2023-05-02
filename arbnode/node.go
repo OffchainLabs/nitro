@@ -839,7 +839,7 @@ func createNodeImpl(
 			chainDb,
 			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
-			&configFetcher.Get().BlockValidator,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)
 	} else {

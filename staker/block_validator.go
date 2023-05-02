@@ -81,7 +81,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
-	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server"`
+	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`

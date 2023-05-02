@@ -25,7 +25,7 @@ type ValidationClient struct {
 	name   string
 }
 
-func NewValidationClient(config *rpcclient.ClientConfig, stack *node.Node) *ValidationClient {
+func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
 		client: rpcclient.NewRpcClient(config, stack),
 	}
@@ -89,7 +89,7 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(config *rpcclient.ClientConfig, stack *node.Node) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
 		ValidationClient: *NewValidationClient(config, stack),
 	}

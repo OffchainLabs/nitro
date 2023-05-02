@@ -15,7 +15,7 @@ import (
 type L1Config struct {
 	ChainID    uint64                        `koanf:"chain-id"`
 	Rollup     arbnode.RollupAddressesConfig `koanf:"rollup"`
-	Connection rpcclient.ClientConfig        `koanf:"connection"`
+	Connection rpcclient.ClientConfig        `koanf:"connection" reload:"hot"`
 	Wallet     genericconf.WalletConfig      `koanf:"wallet"`
 }
 
