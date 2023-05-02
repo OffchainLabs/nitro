@@ -13,12 +13,12 @@ use crate::{
         run_machine, run_native, test_compile_config, test_configs, TestInstance,
     },
 };
-use arbutil::{crypto, evm::user::UserOutcome, format, Bytes20, Bytes32, Color};
-use eyre::{bail, Result};
-use p256::ecdsa::{
-    signature::{Signer, Verifier},
-    Signature, SigningKey, VerifyingKey,
+use arbutil::{
+    crypto,
+    evm::{api::EvmApi, user::UserOutcome},
+    format, Bytes20, Bytes32, Color,
 };
+use eyre::{bail, Result};
 use prover::{
     binary,
     programs::{
@@ -238,13 +238,13 @@ fn test_heap() -> Result<()> {
     //     memory2.wat  there's a 2-page memory with no upper limit
 
     let mut compile = CompileConfig::default();
-    compile.bounds.heap_bound = Pages(1).into();
+    compile.bounds.heap_bound = Pages(1);
     assert!(TestInstance::new_test("tests/memory.wat", compile.clone()).is_err());
     assert!(TestInstance::new_test("tests/memory2.wat", compile).is_err());
 
     let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
         let mut compile = CompileConfig::default();
-        compile.bounds.heap_bound = Pages(bound).into();
+        compile.bounds.heap_bound = Pages(bound);
 
         let instance = TestInstance::new_test(file, compile.clone())?;
         let machine = new_test_machine(file, &compile)?;
@@ -287,12 +287,11 @@ fn test_rust() -> Result<()> {
     println!("Exec {}", format::time(start.elapsed()));
     assert_eq!(hex::encode(output), hash);
 
-    /*let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), hash);
 
-    check_instrumentation(native, machine)*/
-    Ok(())
+    check_instrumentation(native, machine)
 }
 
 #[test]
@@ -318,12 +317,11 @@ fn test_c() -> Result<()> {
     let output = run_native(&mut native, &args, ink)?;
     assert_eq!(hex::encode(output), args_string);
 
-    /*let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), args_string);
 
-    check_instrumentation(native, machine)*/
-    Ok(())
+    check_instrumentation(native, machine)
 }
 
 #[test]
@@ -345,7 +343,7 @@ fn test_fallible() -> Result<()> {
         err => bail!("expected hard error: {}", err.red()),
     }
 
-    /*let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     match machine.run_main(&[0x00], config, ink)? {
         UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
         err => bail!("expected hard error: {}", err.red()),
@@ -359,11 +357,11 @@ fn test_fallible() -> Result<()> {
     let machine_counts = machine.operator_counts()?;
     assert_eq!(native_counts, machine_counts);
     assert_eq!(native.ink_left(), machine.ink_left());
-    assert_eq!(native.stack_left(), machine.stack_left());*/
+    assert_eq!(native.stack_left(), machine.stack_left());
     Ok(())
 }
 
-/*#[test]
+#[test]
 fn test_storage() -> Result<()> {
     // in storage.rs
     //     an input starting with 0x00 will induce a storage read
@@ -375,28 +373,26 @@ fn test_storage() -> Result<()> {
     let key = crypto::keccak(filename.as_bytes());
     let value = crypto::keccak("value".as_bytes());
 
-    let mut args = vec![0x01];
-    args.extend(key);
-    args.extend(value);
+    let mut store_args = vec![0x01];
+    store_args.extend(key);
+    store_args.extend(value);
 
-    let address = Bytes20::default();
-    let mut native = TestInstance::new_linked(filename, &compile, config)?;
-    let api = native.set_test_evm_api(
-        address,
-        TestEvmStorage::default(),
-        TestEvmContracts::new(compile, config),
-    );
+    let mut load_args = vec![0x00];
+    load_args.extend(key);
 
-    run_native(&mut native, &args, ink)?;
-    assert_eq!(api.get_bytes32(address, Bytes32(key)), Some(Bytes32(value)));
+    let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;
+    run_native(&mut native, &store_args, ink)?;
+    assert_eq!(evm.get_bytes32(key.into()).0, Bytes32(value));
+    assert_eq!(run_native(&mut native, &load_args, ink)?, value);
 
-    args[0] = 0x00; // load the value
-    let output = run_native(&mut native, &args, ink)?;
-    assert_eq!(output, value);
-    Ok(())
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    run_machine(&mut machine, &store_args, config, ink)?;
+    assert_eq!(run_machine(&mut machine, &load_args, config, ink)?, value);
+
+    check_instrumentation(native, machine)
 }
 
-#[test]
+/*#[test]
 fn test_calls() -> Result<()> {
     // in call.rs
     //     the first bytes determines the number of calls to make

@@ -2,7 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
-use arbutil::{evm::user::UserOutcome, Bytes20, Bytes32, Color};
+use arbutil::{
+    evm::{api::EvmApi, user::UserOutcome},
+    Bytes20, Bytes32, Color,
+};
 use eyre::{bail, Result};
 use prover::{machine::GlobalState, programs::prelude::*, Machine};
 use rand::prelude::*;
@@ -62,18 +65,18 @@ impl TestInstance {
 
     fn new_linked(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
         let (evm, evm_data) = TestEvmApi::new();
-        Self::from_path(path, evm, evm_data, &compile, config)
+        Self::from_path(path, evm, evm_data, compile, config)
     }
 
-    /*fn new_with_evm(
-        file: &str,
-        compile: CompileConfig,
+    fn new_with_evm(
+        path: &str,
+        compile: &CompileConfig,
         config: StylusConfig,
-    ) -> Result<(Self, TestEvmContracts, TestEvmStorage)> {
+    ) -> Result<(Self, TestEvmApi)> {
         let (evm, evm_data) = TestEvmApi::new();
-        let mut native = Self::from_path(file, evm, evm_data, &compile, config)?;
-        Ok((native, contracts, storage))
-    }*/
+        let native = Self::from_path(path, evm.clone(), evm_data, compile, config)?;
+        Ok((native, evm))
+    }
 }
 
 fn expensive_add(op: &Operator) -> u64 {
@@ -107,7 +110,7 @@ fn test_compile_config() -> CompileConfig {
 
 fn uniform_cost_config() -> StylusConfig {
     let mut stylus_config = StylusConfig::default();
-    stylus_config.pricing.ink_price = 100_00;
+    stylus_config.pricing.ink_price = 10000;
     stylus_config.pricing.hostio_ink = 100;
     stylus_config
 }
@@ -148,8 +151,8 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
 }
 
 fn run_native(native: &mut TestInstance, args: &[u8], ink: u64) -> Result<Vec<u8>> {
-    let config = native.env().config.expect("no config").clone();
-    match native.run_main(&args, config, ink)? {
+    let config = native.env().config.expect("no config");
+    match native.run_main(args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
         err => bail!("user program failure: {}", err.red()),
     }
@@ -161,7 +164,7 @@ fn run_machine(
     config: StylusConfig,
     ink: u64,
 ) -> Result<Vec<u8>> {
-    match machine.run_main(&args, config, ink)? {
+    match machine.run_main(args, config, ink)? {
         UserOutcome::Success(output) => Ok(output),
         err => bail!("user program failure: {}", err.red()),
     }

@@ -56,7 +56,7 @@ fn test_bulk_memory_oob() -> Result<()> {
         drop(machine.call_user_func(oob, vec![], ink).unwrap_err());
 
         let exports = &native.instance.exports;
-        let oob = exports.get_typed_function::<(), ()>(&mut native.store, oob)?;
+        let oob = exports.get_typed_function::<(), ()>(&native.store, oob)?;
         let err = format!("{}", native.call_func(oob, ink).unwrap_err());
         assert!(err.contains("out of bounds memory access"));
     }

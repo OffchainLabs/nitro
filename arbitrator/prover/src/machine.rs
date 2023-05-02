@@ -10,7 +10,6 @@ use crate::{
     merkle::{Merkle, MerkleType},
     programs::{
         config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT,
-        USER_HOST,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
@@ -1047,17 +1046,15 @@ impl Machine {
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
 
-        let forward = include_bytes!("../../../target/machines/latest/forward.wasm");
-        let forward = parse(forward, Path::new("forward"))?;
-        let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
-        let user_host = parse(&user_host, Path::new(USER_HOST))?;
+        let user_test = std::fs::read("../../target/machines/latest/user_test.wasm")?;
+        let user_test = parse(&user_test, Path::new("user_test"))?;
         let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
         let wasi_stub = parse(&wasi_stub, Path::new("wasi_stub"))?;
         let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
         let soft_float = parse(&soft_float, Path::new("soft-float"))?;
 
         Self::from_binaries(
-            &[forward, soft_float, user_host, wasi_stub],
+            &[soft_float, wasi_stub, user_test],
             bin,
             false,
             false,

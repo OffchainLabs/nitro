@@ -57,7 +57,7 @@ impl Default for PricingParams {
 }
 
 impl StylusConfig {
-    pub fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
+    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
         let pricing = PricingParams::new(ink_price, hostio_ink);
         Self {
             version,
@@ -69,7 +69,7 @@ impl StylusConfig {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub fn new(ink_price: u64, hostio_ink: u64) -> Self {
+    pub const fn new(ink_price: u64, hostio_ink: u64) -> Self {
         Self {
             ink_price,
             hostio_ink,

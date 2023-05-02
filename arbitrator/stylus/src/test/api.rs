@@ -41,11 +41,24 @@ impl TestEvmContracts {
     }
 }*/
 
-#[derive(Default)]
+#[derive(Clone)]
 pub(crate) struct TestEvmApi {
-    storage: HashMap<Bytes20, HashMap<Bytes32, Bytes32>>,
+    storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
     program: Bytes20,
-    return_data: Vec<u8>,
+    return_data: Arc<Mutex<Vec<u8>>>,
+}
+
+impl Default for TestEvmApi {
+    fn default() -> Self {
+        let program = Bytes20::default();
+        let mut storage = HashMap::new();
+        storage.insert(program, HashMap::new());
+        Self {
+            storage: Arc::new(Mutex::new(storage)),
+            program,
+            return_data: Arc::new(Mutex::new(vec![])),
+        }
+    }
 }
 
 impl TestEvmApi {
@@ -56,15 +69,17 @@ impl TestEvmApi {
 
 impl EvmApi for TestEvmApi {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
-        let storage = self.storage.get_mut(&self.program).unwrap();
+        let storage = &mut self.storage.lock();
+        let storage = storage.get_mut(&self.program).unwrap();
         let value = storage.get(&key).unwrap().to_owned();
-        (value, 2100)
+        (value, 2100) // pretend worst case
     }
 
     fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
-        let storage = self.storage.get_mut(&self.program).unwrap();
-        let value = storage.insert(key, value);
-        Ok(22100)
+        let storage = &mut self.storage.lock();
+        let storage = storage.get_mut(&self.program).unwrap();
+        storage.insert(key, value);
+        Ok(22100) // pretend worst case
     }
 
     fn contract_call(
@@ -79,46 +94,46 @@ impl EvmApi for TestEvmApi {
 
     fn delegate_call(
         &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
+        _contract: Bytes20,
+        _input: Vec<u8>,
+        _gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!("delegate call not yet supported")
     }
 
     fn static_call(
         &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
+        _contract: Bytes20,
+        _input: Vec<u8>,
+        _gas: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!("static call not yet supported")
     }
 
     fn create1(
         &mut self,
-        code: Vec<u8>,
-        endowment: Bytes32,
-        gas: u64,
+        _code: Vec<u8>,
+        _endowment: Bytes32,
+        _gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
         unimplemented!("create1 not supported")
     }
 
     fn create2(
         &mut self,
-        code: Vec<u8>,
-        endowment: Bytes32,
-        salt: Bytes32,
-        gas: u64,
+        _code: Vec<u8>,
+        _endowment: Bytes32,
+        _salt: Bytes32,
+        _gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
         unimplemented!("create2 not supported")
     }
 
     fn get_return_data(&mut self) -> Vec<u8> {
-        self.return_data.clone()
+        self.return_data.lock().clone()
     }
 
-    fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
+    fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {
         Ok(()) // pretend a log was emitted
     }
 }
