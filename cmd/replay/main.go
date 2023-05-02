@@ -206,16 +206,25 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain config from initial ArbOS state: %v", err.Error()))
 		}
-		var chainConfig params.ChainConfig
-		err = json.Unmarshal(chainConfigJson, &chainConfig)
-		if err != nil {
-			panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
-		}
-		if chainConfig.ChainID.Cmp(chainId) != 0 {
-			panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
-		}
-		if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
-			panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
+		var chainConfig *params.ChainConfig
+		if len(chainConfigJson) > 0 {
+			chainConfig = &params.ChainConfig{}
+			err = json.Unmarshal(chainConfigJson, chainConfig)
+			if err != nil {
+				panic(fmt.Sprintf("Error parsing chain config: %v", err.Error()))
+			}
+			if chainConfig.ChainID.Cmp(chainId) != 0 {
+				panic(fmt.Sprintf("Error: chain id mismatch, chainID: %v, chainConfig.ChainID: %v", chainId, chainConfig.ChainID))
+			}
+			if chainConfig.ArbitrumChainParams.GenesisBlockNum != genesisBlockNum {
+				panic(fmt.Sprintf("Error: genesis block number mismatch, genesisBlockNum: %v, chainConfig.ArbitrumParams.GenesisBlockNum: %v", genesisBlockNum, chainConfig.ArbitrumChainParams.GenesisBlockNum))
+			}
+		} else {
+			log.Info("Falling back to hardcoded chain config.")
+			chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNum)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
@@ -224,7 +233,7 @@ func main() {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, &chainConfig, batchFetcher)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
 		if err != nil {
 			panic(err)
 		}
@@ -234,11 +243,19 @@ func main() {
 
 		message := readMessage(false)
 
-		// TODO should we validate chain id here or in ParseInitMessage?
-		_, chainConfig, err := message.Message.ParseInitMessage()
+		chainId, chainConfig, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
+
+		if chainConfig == nil {
+			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
+			chainConfig, err = arbos.GetChainConfig(chainId, 0)
+			if err != nil {
+				panic(err)
+			}
+		}
+
 		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))

@@ -14,7 +14,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -243,7 +242,6 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig,
 	}
 	var chainConfig params.ChainConfig
 	var chainId *big.Int
-	log.Warn("ParseInitMessage", "msg", msg, "msg.L2msg", msg.L2msg, "enc msg.L2msg", hex.EncodeToString(msg.L2msg))
 	if len(msg.L2msg) == 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		return chainId, nil, nil
