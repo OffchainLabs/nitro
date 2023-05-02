@@ -46,11 +46,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	conf.InboxReader.HardReorg = true
 	if validator {
 		conf.BlockValidator.Enable = true
-		conf.BlockValidator.ArbitratorValidator = true
-		conf.BlockValidator.ConcurrentRunsLimit = 16
 	}
 	l2Info, arbNode, _, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, nil, nil)
-	l2Backend := arbNode.Backend
+	l2Backend := arbNode.Execution.Backend
 	defer requireClose(t, l1stack)
 	defer arbNode.StopAndWait()
 

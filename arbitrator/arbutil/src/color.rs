@@ -1,9 +1,9 @@
-// Copyright 2020-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2020-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![allow(dead_code)]
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 pub const BLUE: &str = "\x1b[34;1m";
 pub const DIM: &str = "\x1b[2m";
@@ -52,4 +52,36 @@ pub fn when<T: Display>(cond: bool, text: T, when_color: &str) -> String {
         true => text.color(when_color),
         false => format!("{text}"),
     }
+}
+
+pub trait DebugColor {
+    fn debug_color(&self, color: &str) -> String;
+
+    fn debug_blue(&self) -> String;
+    fn debug_dim(&self) -> String;
+    fn debug_clear(&self) -> String;
+    fn debug_grey(&self) -> String;
+    fn debug_mint(&self) -> String;
+    fn debug_pink(&self) -> String;
+    fn debug_red(&self) -> String;
+    fn debug_white(&self) -> String;
+    fn debug_yellow(&self) -> String;
+}
+
+#[rustfmt::skip]
+impl<T> DebugColor for T where T: Debug {
+
+    fn debug_color(&self, color: &str) -> String {
+        format!("{}{:?}{}", color, self, CLEAR)
+    }
+
+    fn debug_blue(&self)   -> String { self.debug_color(BLUE)   }
+    fn debug_dim(&self)    -> String { self.debug_color(DIM)    }
+    fn debug_clear(&self)  -> String { self.debug_color(CLEAR)  }
+    fn debug_grey(&self)   -> String { self.debug_color(GREY)   }
+    fn debug_mint(&self)   -> String { self.debug_color(MINT)   }
+    fn debug_pink(&self)   -> String { self.debug_color(PINK)   }
+    fn debug_red(&self)    -> String { self.debug_color(RED)    }
+    fn debug_white(&self)  -> String { self.debug_color(WHITE)  }
+    fn debug_yellow(&self) -> String { self.debug_color(YELLOW) }
 }

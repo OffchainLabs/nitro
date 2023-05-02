@@ -13,7 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -95,8 +95,19 @@ func main() {
 		panic("cannot specify sequencer address if owner is not deployer")
 	}
 
-	machineConfig := validator.DefaultNitroMachineConfig
-	machineConfig.RootPath = *wasmrootpath
+	var moduleRoot common.Hash
+	if *wasmmoduleroot == "" {
+		locator, err := server_common.NewMachineLocator(*wasmrootpath)
+		if err != nil {
+			panic(err)
+		}
+		moduleRoot = locator.LatestWasmModuleRoot()
+	} else {
+		moduleRoot = common.HexToHash(*wasmmoduleroot)
+	}
+	if moduleRoot == (common.Hash{}) {
+		panic("wasmModuleRoot not found")
+	}
 
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
@@ -108,8 +119,7 @@ func main() {
 		sequencerAddress,
 		*authorizevalidators,
 		func() *headerreader.Config { return &headerReaderConfig },
-		machineConfig,
-		arbnode.GenerateRollupConfig(*prod, common.HexToHash(*wasmmoduleroot), ownerAddress, l2ChainId, loserEscrowAddress),
+		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, l2ChainId, loserEscrowAddress),
 	)
 	if err != nil {
 		flag.Usage()

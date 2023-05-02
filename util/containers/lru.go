@@ -12,6 +12,7 @@ import (
 type LruCache[K comparable, V any] struct {
 	inner   *simplelru.LRU[K, V]
 	onEvict func(key K, value V)
+	size    int
 }
 
 func NewLruCache[K comparable, V any](size int) *LruCache[K, V] {
@@ -27,14 +28,16 @@ func NewLruCacheWithOnEvict[K comparable, V any](size int, onEvict func(K, V)) *
 	return &LruCache[K, V]{
 		inner:   inner,
 		onEvict: onEvict,
+		size:    size,
 	}
 }
 
-func (c *LruCache[K, V]) Add(key K, value V) {
+// Returns true if an item was evicted
+func (c *LruCache[K, V]) Add(key K, value V) bool {
 	if c.inner == nil {
-		return
+		return true
 	}
-	c.inner.Add(key, value)
+	return c.inner.Add(key, value)
 }
 
 func (c *LruCache[K, V]) Get(key K) (V, bool) {
@@ -82,6 +85,10 @@ func (c *LruCache[K, V]) Len() int {
 	return c.inner.Len()
 }
 
+func (c *LruCache[K, V]) Size() int {
+	return c.size
+}
+
 func (c *LruCache[K, V]) Clear() {
 	if c.inner == nil {
 		return
@@ -101,4 +108,5 @@ func (c *LruCache[K, V]) Resize(newSize int) {
 	} else {
 		c.inner.Resize(newSize)
 	}
+	c.size = newSize
 }

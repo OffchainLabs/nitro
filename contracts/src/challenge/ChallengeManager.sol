@@ -285,7 +285,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex].current.addr;
     }
 
-    function isTimedOut(uint64 challengeIndex) public view override returns (bool) {
+    function isTimedOut(uint64 challengeIndex) public view virtual override returns (bool) {
         return challenges[challengeIndex].isTimedOut();
     }
 

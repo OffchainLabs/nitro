@@ -13,8 +13,14 @@ contract Simple {
     event CounterEvent(uint64 count);
     event RedeemedEvent(address caller, address redeemer);
     event NullEvent();
+    event LogAndIncrementCalled(uint256 expected, uint256 have);
 
     function increment() external {
+        counter++;
+    }
+
+    function logAndIncrement(uint256 expected) external {
+        emit LogAndIncrementCalled(expected, counter);
         counter++;
     }
 
@@ -103,5 +109,11 @@ contract Simple {
         );
         (success, ) = address(this).call(data);
         require(success, "CALL_FAILED");
+    }
+
+    function checkGasUsed(address to, bytes calldata input) external view returns (uint256) {
+        uint256 before = gasleft();
+        to.staticcall{gas: before - 10000}(input);
+        return before - gasleft();
     }
 }

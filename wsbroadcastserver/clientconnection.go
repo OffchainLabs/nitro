@@ -5,10 +5,9 @@ package wsbroadcastserver
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"math/rand"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -28,6 +27,7 @@ type ClientConnection struct {
 	ioMutex  sync.Mutex
 	conn     net.Conn
 	creation time.Time
+	clientIp net.IP
 
 	desc            *netpoll.Desc
 	Name            string
@@ -36,6 +36,11 @@ type ClientConnection struct {
 
 	lastHeardUnix int64
 	out           chan []byte
+
+	compression bool
+	flateReader *wsflate.Reader
+
+	delay time.Duration
 }
 
 func NewClientConnection(
@@ -43,17 +48,23 @@ func NewClientConnection(
 	desc *netpoll.Desc,
 	clientManager *ClientManager,
 	requestedSeqNum arbutil.MessageIndex,
-	connectingIP string,
+	connectingIP net.IP,
+	compression bool,
+	delay time.Duration,
 ) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
+		clientIp:        connectingIP,
 		desc:            desc,
 		creation:        time.Now(),
-		Name:            connectingIP + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
 		out:             make(chan []byte, clientManager.config().MaxSendQueue),
+		compression:     compression,
+		flateReader:     NewFlateReader(),
+		delay:           delay,
 	}
 }
 
@@ -61,9 +72,37 @@ func (cc *ClientConnection) Age() time.Duration {
 	return time.Since(cc.creation)
 }
 
+func (cc *ClientConnection) Compression() bool {
+	return cc.compression
+}
+
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
+		if cc.delay != 0 {
+			var delayQueue [][]byte
+			t := time.NewTimer(cc.delay)
+			done := false
+			for !done {
+				select {
+				case <-ctx.Done():
+					return
+				case data := <-cc.out:
+					delayQueue = append(delayQueue, data)
+				case <-t.C:
+					for _, data := range delayQueue {
+						err := cc.writeRaw(data)
+						if err != nil {
+							logWarn(err, "error writing data to client")
+							cc.clientManager.Remove(cc)
+							return
+						}
+					}
+					done = true
+				}
+			}
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -115,21 +154,28 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 
 	atomic.StoreInt64(&cc.lastHeardUnix, time.Now().Unix())
 
-	return ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide)
+	var data []byte
+	var opCode ws.OpCode
+	var err error
+	data, opCode, err = ReadData(ctx, cc.conn, nil, timeout, ws.StateServerSide, cc.compression, cc.flateReader)
+	return data, opCode, err
 }
 
 func (cc *ClientConnection) Write(x interface{}) error {
-	writer := wsutil.NewWriter(cc.conn, ws.StateServerSide, ws.OpText)
-	encoder := json.NewEncoder(writer)
-
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
 
-	if err := encoder.Encode(x); err != nil {
+	notCompressed, compressed, err := serializeMessage(cc.clientManager, x, !cc.compression, cc.compression)
+	if err != nil {
 		return err
 	}
 
-	return writer.Flush()
+	if cc.compression {
+		cc.out <- compressed.Bytes()
+	} else {
+		cc.out <- notCompressed.Bytes()
+	}
+	return nil
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {

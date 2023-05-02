@@ -22,6 +22,8 @@ advanced calldata compression, and more.
 
 See the live docs-site [here](https://developer.arbitrum.io/) (or [here](https://github.com/OffchainLabs/arbitrum-docs) for markdown docs source.)
 
+See [here](./audits) for security audit reports.
+
 The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic 
 interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using 
 standard languages and tools, replacing the custom-designed language and compiler used in previous Arbitrum

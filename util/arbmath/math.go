@@ -7,6 +7,8 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
+
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // NextPowerOf2 the smallest power of two greater than the input
@@ -28,24 +30,30 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
+type Signed interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
+
+type Unsigned interface {
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr
+}
+
+type Integer interface {
+	Signed | Unsigned
+}
+
+type Float interface {
+	~float32 | ~float64
+}
+
+// Ordered is anything that implements comparison operators such as `<` and `>`.
+// Unfortunately, that doesn't include big ints.
+type Ordered interface {
+	Integer | Float
+}
+
 // MinInt the minimum of two ints
-func MinInt(value, ceiling int64) int64 {
-	if value > ceiling {
-		return ceiling
-	}
-	return value
-}
-
-// MinUint the minimum of two uints
-func MinUint(value, ceiling uint64) uint64 {
-	if value > ceiling {
-		return ceiling
-	}
-	return value
-}
-
-// MinUint32 the minimum of two 32-bit uints
-func MinUint32(value, ceiling uint32) uint32 {
+func MinInt[T Ordered](value, ceiling T) T {
 	if value > ceiling {
 		return ceiling
 	}
@@ -53,7 +61,7 @@ func MinUint32(value, ceiling uint32) uint32 {
 }
 
 // MaxInt the maximum of two ints
-func MaxInt(value, floor int64) int64 {
+func MaxInt[T Ordered](value, floor T) T {
 	if value < floor {
 		return floor
 	}
@@ -356,4 +364,10 @@ func SquareUint(value uint64) uint64 {
 // SquareFloat returns square of float
 func SquareFloat(value float64) float64 {
 	return value * value
+}
+
+// BalancePerEther returns balance per ether.
+func BalancePerEther(balance *big.Int) float64 {
+	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
+	return balancePerEther
 }

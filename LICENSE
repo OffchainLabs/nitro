@@ -10,7 +10,7 @@ Parameters
 Licensor:             Offchain Labs
 
 Licensed Work:        Arbitrum Nitro
-                      The Licensed Work is (c) 2021-2022 Offchain Labs
+                      The Licensed Work is (c) 2021-2023 Offchain Labs
 
 Additional Use Grant: You may use the Licensed Work in a production environment solely
                       to provide a point of interface to permit end users or applications
@@ -18,11 +18,19 @@ Additional Use Grant: You may use the Licensed Work in a production environment 
                       state of a Covered Arbitrum Chain, including without limitation
                       validating the correctness of the posted chain state. For purposes
                       of this Additional Use Grant, the "Covered Arbitrum Chains" are
-                      Arbitrum One (chainid:42161), Arbitrum Nova (chainid:42170),
+                      means (a) Arbitrum One (chainid:42161), Arbitrum Nova (chainid:42170),
                       Arbitrum Rinkeby testnet/Rinkarby (chainid:421611), and
-                      Arbitrum Nitro Goerli testnet (chainid:421613).
+                      Arbitrum Nitro Goerli testnet (chainid:421613) (b) any future
+                      blockchains authorized to be designated as Covered Arbitrum Chains
+                      by the decentralized autonomous organization governing the Arbitrum
+                      network; and (c) any “Layer 3” Arbitrum-based blockchain that is built
+                      on and settles to another Covered Arbitrum Chain.
 
-Change Date:          
+
+
+
+
+Change Date:          Dec 31, 2027
 
 Change License:       Apache License Version 2.0
 
