@@ -17,7 +17,7 @@ pub const LOG_DATA_GAS: u64 = 8;
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct EvmData {
     pub origin: Bytes20,

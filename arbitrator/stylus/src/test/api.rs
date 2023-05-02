@@ -1,69 +1,56 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{
-    native::{self, NativeInstance},
-    run::RunProgram,
-};
+use crate::{native, run::RunProgram};
 use arbutil::{
     evm::{api::EvmApi, user::UserOutcomeKind, EvmData},
-    Bytes20, Bytes32, Color,
+    Bytes20, Bytes32,
 };
 use eyre::Result;
 use parking_lot::Mutex;
 use prover::programs::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 
-/*#[derive(Clone)]
-pub(crate) struct TestEvmContracts {
+use super::TestInstance;
+
+#[derive(Clone)]
+pub(crate) struct TestEvmApi {
     contracts: Arc<Mutex<HashMap<Bytes20, Vec<u8>>>>,
+    storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
+    program: Bytes20,
     return_data: Arc<Mutex<Vec<u8>>>,
     compile: CompileConfig,
-    config: StylusConfig,
+    configs: Arc<Mutex<HashMap<Bytes20, StylusConfig>>>,
+    evm_data: EvmData,
 }
 
-impl TestEvmContracts {
-    pub fn new(compile: CompileConfig, config: StylusConfig) -> Self {
-        Self {
+impl TestEvmApi {
+    pub fn new(compile: CompileConfig) -> (TestEvmApi, EvmData) {
+        let program = Bytes20::default();
+        let evm_data = EvmData::default();
+
+        let mut storage = HashMap::new();
+        storage.insert(program, HashMap::new());
+
+        let api = TestEvmApi {
             contracts: Arc::new(Mutex::new(HashMap::new())),
+            storage: Arc::new(Mutex::new(storage)),
+            program,
             return_data: Arc::new(Mutex::new(vec![])),
             compile,
-            config,
-        }
+            configs: Arc::new(Mutex::new(HashMap::new())),
+            evm_data,
+        };
+        (api, evm_data)
     }
 
-    pub fn insert(&mut self, address: Bytes20, name: &str) -> Result<()> {
+    pub fn deploy(&mut self, address: Bytes20, config: StylusConfig, name: &str) -> Result<()> {
         let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
         let wasm = std::fs::read(file)?;
         let module = native::module(&wasm, self.compile.clone())?;
         self.contracts.lock().insert(address, module);
+        self.configs.lock().insert(address, config);
         Ok(())
-    }
-}*/
-
-#[derive(Clone)]
-pub(crate) struct TestEvmApi {
-    storage: Arc<Mutex<HashMap<Bytes20, HashMap<Bytes32, Bytes32>>>>,
-    program: Bytes20,
-    return_data: Arc<Mutex<Vec<u8>>>,
-}
-
-impl Default for TestEvmApi {
-    fn default() -> Self {
-        let program = Bytes20::default();
-        let mut storage = HashMap::new();
-        storage.insert(program, HashMap::new());
-        Self {
-            storage: Arc::new(Mutex::new(storage)),
-            program,
-            return_data: Arc::new(Mutex::new(vec![])),
-        }
-    }
-}
-
-impl TestEvmApi {
-    pub fn new() -> (TestEvmApi, EvmData) {
-        (Self::default(), EvmData::default())
     }
 }
 
@@ -82,14 +69,34 @@ impl EvmApi for TestEvmApi {
         Ok(22100) // pretend worst case
     }
 
+    /// Simulates a contract call.
+    /// Note: this call function is for testing purposes only and deviates from onchain behavior.
     fn contract_call(
         &mut self,
         contract: Bytes20,
         input: Vec<u8>,
         gas: u64,
-        value: Bytes32,
+        _value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
-        todo!()
+        let compile = self.compile.clone();
+        let evm_data = self.evm_data;
+        let config = *self.configs.lock().get(&contract).unwrap();
+
+        let mut native = unsafe {
+            let contracts = self.contracts.lock();
+            let module = contracts.get(&contract).unwrap();
+            TestInstance::deserialize(module, compile, self.clone(), evm_data).unwrap()
+        };
+
+        let ink = config.pricing.gas_to_ink(gas);
+        let outcome = native.run_main(&input, config, ink).unwrap();
+        let (status, outs) = outcome.into_data();
+        let outs_len = outs.len() as u32;
+
+        let ink_left: u64 = native.ink_left().into();
+        let gas_left = config.pricing.ink_to_gas(ink_left);
+        *self.return_data.lock() = outs;
+        (outs_len, gas - gas_left, status)
     }
 
     fn delegate_call(
@@ -137,46 +144,3 @@ impl EvmApi for TestEvmApi {
         Ok(()) // pretend a log was emitted
     }
 }
-
-/*impl NativeInstance<TestEvmApi> {
-    pub(crate) fn set_test_evm_api(
-        &mut self,
-        address: Bytes20,
-        storage: TestEvmStorage,
-        contracts: TestEvmContracts,
-    ) -> TestEvmStorage {
-        let get_bytes32 = storage.getter(address);
-        let set_bytes32 = storage.setter(address);
-        let moved_storage = storage.clone();
-        let moved_contracts = contracts.clone();
-
-        let contract_call = Box::new(
-            move |address: Bytes20, input: Vec<u8>, gas, _value| unsafe {
-                // this call function is for testing purposes only and deviates from onchain behavior
-                let contracts = moved_contracts.clone();
-                let compile = contracts.compile.clone();
-                let config = contracts.config;
-                *contracts.return_data.lock() = vec![];
-
-                let mut native = match contracts.contracts.lock().get(&address) {
-                    Some(module) => NativeInstance::deserialize(module, compile.clone()).unwrap(),
-                    None => panic!("No contract at address {}", address.red()),
-                };
-
-                native.set_test_evm_api(address, moved_storage.clone(), contracts.clone());
-                let ink = config.pricing.gas_to_ink(gas);
-
-                let outcome = native.run_main(&input, config, ink).unwrap();
-                let (status, outs) = outcome.into_data();
-                let outs_len = outs.len() as u32;
-
-                let ink_left: u64 = native.ink_left().into();
-                let gas_left = config.pricing.ink_to_gas(ink_left);
-                *contracts.return_data.lock() = outs;
-                (outs_len, gas - gas_left, status)
-            },
-        );
-        storage
-    }
-}
-*/

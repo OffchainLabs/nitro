@@ -317,6 +317,7 @@ pub struct TimeoutState {
 }
 
 #[test]
+#[allow(clippy::identity_op, clippy::field_reassign_with_default)]
 fn test_sp() -> eyre::Result<()> {
     use prover::programs::prelude::CompileConfig;
     use wasmer::{FunctionEnv, MemoryType};
@@ -326,7 +327,7 @@ fn test_sp() -> eyre::Result<()> {
     env.memory = Some(Memory::new(&mut store, MemoryType::new(0, None, false))?);
     let env = FunctionEnv::new(&mut store, env);
 
-    let mut sp = GoStack::simple(0, &mut env.into_mut(&mut store));
+    let mut sp = GoStack::simple(0, &env.into_mut(&mut store));
     assert_eq!(sp.advance(3), 8 + 0);
     assert_eq!(sp.advance(2), 8 + 3);
     assert_eq!(sp.skip_space().top, 8 + 8);

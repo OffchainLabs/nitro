@@ -2,10 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
-use arbutil::{
-    evm::{api::EvmApi, user::UserOutcome},
-    Bytes20, Bytes32, Color,
-};
+use arbutil::{evm::user::UserOutcome, Bytes20, Bytes32, Color};
 use eyre::{bail, Result};
 use prover::{machine::GlobalState, programs::prelude::*, Machine};
 use rand::prelude::*;
@@ -58,13 +55,13 @@ impl TestInstance {
 
     fn new_sans_env(instance: Instance, mut store: Store) -> Self {
         let compile = CompileConfig::default();
-        let (evm, evm_data) = TestEvmApi::new();
+        let (evm, evm_data) = TestEvmApi::new(compile.clone());
         let env = FunctionEnv::new(&mut store, WasmEnv::new(compile, None, evm, evm_data));
         Self::new(instance, store, env)
     }
 
     fn new_linked(path: &str, compile: &CompileConfig, config: StylusConfig) -> Result<Self> {
-        let (evm, evm_data) = TestEvmApi::new();
+        let (evm, evm_data) = TestEvmApi::new(compile.clone());
         Self::from_path(path, evm, evm_data, compile, config)
     }
 
@@ -73,7 +70,7 @@ impl TestInstance {
         compile: &CompileConfig,
         config: StylusConfig,
     ) -> Result<(Self, TestEvmApi)> {
-        let (evm, evm_data) = TestEvmApi::new();
+        let (evm, evm_data) = TestEvmApi::new(compile.clone());
         let native = Self::from_path(path, evm.clone(), evm_data, compile, config)?;
         Ok((native, evm))
     }

@@ -392,7 +392,7 @@ fn test_storage() -> Result<()> {
     check_instrumentation(native, machine)
 }
 
-/*#[test]
+#[test]
 fn test_calls() -> Result<()> {
     // in call.rs
     //     the first bytes determines the number of calls to make
@@ -459,16 +459,14 @@ fn test_calls() -> Result<()> {
     let filename = "tests/multicall/target/wasm32-unknown-unknown/release/multicall.wasm";
     let (compile, config, ink) = test_configs();
 
-    let (mut native, mut contracts, storage) =
-        TestInstance::new_with_evm(&filename, compile, config)?;
-    contracts.insert(calls_addr, "multicall")?;
-    contracts.insert(store_addr, "storage")?;
+    let (mut native, mut evm) = TestInstance::new_with_evm(filename, &compile, config)?;
+    evm.deploy(calls_addr, config, "multicall")?;
+    evm.deploy(store_addr, config, "storage")?;
 
     run_native(&mut native, &args, ink)?;
 
     for (key, value) in slots {
-        assert_eq!(storage.get_bytes32(store_addr, key), Some(value));
+        assert_eq!(evm.get_bytes32(key).0, value);
     }
     Ok(())
 }
-*/
