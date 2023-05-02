@@ -139,11 +139,11 @@ jobs:
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 | stdbuf -oL grep -vE "INFO|seal" | tee run-tests.log
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum --format short-verbose -- ./... -race -parallel=8
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -race -parallel=8 | stdbuf -oL grep -vE "INFO|seal" | tee run-tests.log
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -151,7 +151,13 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge | stdbuf -oL grep -vE "INFO|seal" | tee run-tests.log
+
+      - name: Archive detailed run log
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.test-mode }}-run-tests.log
+          path: run-tests.log
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
