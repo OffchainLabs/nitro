@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -11,9 +12,14 @@ func (v *Validator) pollForAssertions(ctx context.Context) {
 	ticker := time.NewTicker(v.newAssertionCheckInterval)
 	defer ticker.Stop()
 	var nextAssertion protocol.AssertionSequenceNumber
+
+	var onLeafCreatedLock sync.Mutex
+
 	for {
 		select {
 		case <-ticker.C:
+			onLeafCreatedLock.Lock()
+
 			numberOfAssertions, err := v.chain.NumAssertions(ctx)
 			if err != nil {
 				log.Error(err)
@@ -39,6 +45,8 @@ func (v *Validator) pollForAssertions(ctx context.Context) {
 					log.Error(err)
 				}
 			}
+
+			onLeafCreatedLock.Unlock()
 		case <-ctx.Done():
 			return
 		}
