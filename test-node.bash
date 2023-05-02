@@ -115,7 +115,7 @@ while [[ $# -gt 0 ]]; do
             echo --build:           rebuild docker images
             echo --dev:             build nitro and blockscout dockers from source \(otherwise - pull docker\)
             echo --init:            remove all data, rebuild, deploy new rollup
-            echo --pos:             l1 is a proof-of-stake chain \(using prism for consensus\)
+            echo --pos:             l1 is a proof-of-stake chain \(using prysm for consensus\)
             echo --validate:        heavy computation, validating all blocks in WASM
             echo --batchposters:    batch posters [0-3]
             echo --redundantsequencers redundant sequencers [0-3]
