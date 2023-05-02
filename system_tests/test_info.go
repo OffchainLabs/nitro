@@ -73,7 +73,7 @@ func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {
 	// For simplicity, make a larger than necessary buffer so copies always work
 	keyBytes := make([]byte, 32+len(name))
 	// We start at byte 1 to make sure the key isn't greater than the scalar modulus
-	for i := 1; i < 32; i++ {
+	for i := 1; i < 32; i += len(name) {
 		copy(keyBytes[i:i+len(name)], name)
 	}
 	keyBytes = keyBytes[:32]
