@@ -18,16 +18,9 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 	if err != nil {
 		return err
 	}
-	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, assertionPrevSeqNum)
-	if err != nil {
-		return err
-	}
-	assertionPrevHeight, ok := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(prevCreationInfo.AfterState))
-	if !ok {
-		return fmt.Errorf("missing previous assertion %v after execution %+v in local state manager", assertionPrevSeqNum, prevCreationInfo.AfterState)
-	}
+
 	// We then add a level zero edge to initiate a challenge.
-	levelZeroEdge, err := v.addBlockChallengeLevelZeroEdge(ctx, assertionPrevSeqNum)
+	levelZeroEdge, err := v.addBlockChallengeLevelZeroEdge(ctx, assertion)
 	if err != nil {
 		if errors.Is(err, solimpl.ErrAlreadyExists) {
 			// TODO: Should we return error here instead of a log and nil?
@@ -38,6 +31,15 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 			return nil
 		}
 		return fmt.Errorf("failed to created block challenge layer zero edge: %w", err)
+	}
+
+	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, assertionPrevSeqNum)
+	if err != nil {
+		return err
+	}
+	assertionPrevHeight, ok := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(prevCreationInfo.AfterState))
+	if !ok {
+		return fmt.Errorf("missing previous assertion %v after execution %+v in local state manager", assertionPrevSeqNum, prevCreationInfo.AfterState)
 	}
 
 	// Start tracking the challenge.
@@ -62,26 +64,20 @@ func (v *Validator) challengeAssertion(ctx context.Context, assertion protocol.A
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"], err = assertion.PrevSeqNum()
-	if err != nil {
-		return err
-	}
+	logFields["parentAssertionSeqNum"] = assertionPrevSeqNum
 	log.WithFields(logFields).Info("Successfully created level zero edge for block challenge, now tracking")
 	return nil
 }
 
 func (v *Validator) addBlockChallengeLevelZeroEdge(
 	ctx context.Context,
-	prevAssertionSeqNum protocol.AssertionSequenceNumber,
+	assertion protocol.Assertion,
 ) (protocol.SpecEdge, error) {
-	latestValidAssertionSeq, err := v.findLatestValidAssertion(ctx)
+	prevAssertionSeqNum, err := assertion.PrevSeqNum()
 	if err != nil {
 		return nil, err
 	}
-	assertion, err := v.chain.AssertionBySequenceNum(ctx, latestValidAssertionSeq)
-	if err != nil {
-		return nil, err
-	}
+
 	prevCreationInfo, err := v.chain.ReadAssertionCreationInfo(ctx, prevAssertionSeqNum)
 	if err != nil {
 		return nil, err
