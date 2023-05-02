@@ -101,6 +101,19 @@ func (c *L1ValidatorConfig) ParseStrategy() (StakerStrategy, error) {
 	}
 }
 
+func (c *L1ValidatorConfig) ValidatorRequired() bool {
+	if !c.Enable {
+		return false
+	}
+	if c.Dangerous.WithoutBlockValidator {
+		return false
+	}
+	if c.strategy == WatchtowerStrategy {
+		return false
+	}
+	return true
+}
+
 func (c *L1ValidatorConfig) Validate() error {
 	strategy, err := c.ParseStrategy()
 	if err != nil {

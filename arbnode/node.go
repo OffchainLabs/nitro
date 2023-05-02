@@ -448,7 +448,7 @@ func (c *Config) ValidatorRequired() bool {
 		return true
 	}
 	if c.Staker.Enable {
-		return !c.Staker.Dangerous.WithoutBlockValidator
+		return c.Staker.ValidatorRequired()
 	}
 	return false
 }
@@ -844,7 +844,7 @@ func createNodeImpl(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() {
+		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		} else {
 			log.Warn("validation not supported", "err", err)
@@ -853,7 +853,7 @@ func createNodeImpl(
 	}
 
 	var blockValidator *staker.BlockValidator
-	if config.BlockValidator.Enable {
+	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
@@ -893,6 +893,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
+
 		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
