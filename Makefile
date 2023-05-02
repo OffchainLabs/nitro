@@ -205,7 +205,7 @@ $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm,%, $@)
 
-$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go $(arbitrator_cases)/go/go.mod $(arbitrator_cases)/go/go.sum
+$(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go
 	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
 
 $(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
@@ -236,7 +236,8 @@ arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/w
 $(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a \
+		.make/wasm-lib
 	mkdir -p $(output_root)/machines/latest
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
@@ -328,19 +329,23 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
-	test -f target/include/brotli/encode.h
-	test -f target/include/brotli/decode.h
-	test -f target/lib/libbrotlicommon-static.a
-	test -f target/lib/libbrotlienc-static.a
-	test -f target/lib/libbrotlidec-static.a
+	test -f target/include/brotli/encode.h || ./build-brotli.sh -l
+	test -f target/include/brotli/decode.h || ./build-brotli.sh -l
+	test -f target/lib/libbrotlicommon-static.a || ./build-brotli.sh -l
+	test -f target/lib/libbrotlienc-static.a || ./build-brotli.sh -l
+	test -f target/lib/libbrotlidec-static.a || ./build-brotli.sh -l
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	@printf "%btesting cbrotli wasm build exists. If this step fails, run ./build-brotli.sh -w%b\n" $(color_pink) $(color_reset)
-	test -f target/lib-wasm/libbrotlicommon-static.a
-	test -f target/lib-wasm/libbrotlienc-static.a
-	test -f target/lib-wasm/libbrotlidec-static.a
+	test -f target/lib-wasm/libbrotlicommon-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlienc-static.a || ./build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlidec-static.a || ./build-brotli.sh -w -d
+	@touch $@
+
+.make/wasm-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
+	test -f arbitrator/wasm-libraries/soft-float/bindings32.o || ./build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/bindings64.o || ./build-brotli.sh -f -d -t .
+	test -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a || ./build-brotli.sh -f -d -t .
 	@touch $@
 
 .make:

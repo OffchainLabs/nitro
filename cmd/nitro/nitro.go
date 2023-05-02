@@ -46,6 +46,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -338,7 +339,11 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("validator have the L1 reader enabled")
 		}
-		if !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		if err != nil {
+			log.Crit("couldn't parse staker strategy", "err", err)
+		}
+		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
@@ -385,7 +390,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
 	defer closeDb(chainDb, "chainDb")
 	if l2BlockChain != nil {
 		// Calling Stop on the blockchain multiple times does nothing
@@ -481,7 +486,7 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), currentNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, currentNode.Execution.Backend.APIBackend(), currentNode.Execution.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
@@ -539,6 +544,7 @@ type NodeConfig struct {
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	Init          InitConfig                      `koanf:"init"`
+	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -574,6 +580,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	InitConfigAddOptions("init", f)
+	genericconf.RpcConfigAddOptions("rpc", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -640,10 +647,22 @@ type RpcResultLogger struct {
 	request interface{}
 }
 
+const maxRequestLogLength int = 2048
+
 func (l RpcResultLogger) OnResult(response interface{}, err error) {
 	if err != nil {
+		logger := log.Info
+		if err.Error() == "already known" {
+			logger = log.Trace
+		}
 		// The request might not've been logged if the log level is debug not trace, so we log it again here
-		log.Info("received error response from L1 RPC", "request", l.request, "response", response, "err", err)
+		request := fmt.Sprintf("%+v", l.request)
+		if len(request) > maxRequestLogLength {
+			prefix := request[:maxRequestLogLength/2]
+			postfix := request[len(request)-maxRequestLogLength/2:]
+			request = fmt.Sprintf("%v...%v", prefix, postfix)
+		}
+		logger("received error response from L1 RPC", "request", request, "response", response, "err", err)
 	} else {
 		// The request was already logged and can be cross-referenced by JSON-RPC id
 		log.Trace("received response from L1 RPC", "response", response)
@@ -807,6 +826,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
+	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 

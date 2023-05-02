@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package execution
 
 import (
 	"context"
@@ -16,6 +16,8 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -89,11 +91,23 @@ type TxForwarder struct {
 }
 
 func NewForwarder(target string, config *ForwarderConfig) *TxForwarder {
+	dialer := net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 2 * time.Second,
+	}
+
 	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 2 * time.Second,
-		}).DialContext,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// For tcp connections, prefer IPv4 over IPv6
+			if network == "tcp" {
+				conn, err := dialer.DialContext(ctx, "tcp4", addr)
+				if err == nil {
+					return conn, nil
+				}
+				return dialer.DialContext(ctx, "tcp6", addr)
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
 		MaxIdleConns:          config.MaxIdleConnections,
 		MaxIdleConnsPerHost:   config.MaxIdleConnections,
 		IdleConnTimeout:       config.IdleConnectionTimeout,
@@ -114,13 +128,16 @@ func (f *TxForwarder) ctxWithTimeout(inctx context.Context) (context.Context, co
 	return context.WithTimeout(inctx, f.timeout)
 }
 
-func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transaction) error {
+func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	if atomic.LoadInt32(&f.enabled) == 0 {
 		return ErrNoSequencer
 	}
 	ctx, cancelFunc := f.ctxWithTimeout(inctx)
 	defer cancelFunc()
-	return f.ethClient.SendTransaction(ctx, tx)
+	if options == nil {
+		return f.ethClient.SendTransaction(ctx, tx)
+	}
+	return arbitrum.SendConditionalTransactionRPC(ctx, f.rpcClient, tx, options)
 }
 
 const cacheUpstreamHealth = 2 * time.Second
@@ -189,7 +206,7 @@ func NewTxDropper() *TxDropper {
 
 var txDropperErr = errors.New("publishing transactions not supported by this endpoint")
 
-func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	return txDropperErr
 }
 
@@ -228,12 +245,12 @@ func NewRedisTxForwarder(fallbackTarget string, config *ForwarderConfig) *RedisT
 	}
 }
 
-func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
 	forwarder := f.getForwarder()
 	if forwarder == nil {
 		return ErrNoSequencer
 	}
-	return forwarder.PublishTransaction(ctx, tx)
+	return forwarder.PublishTransaction(ctx, tx, options)
 }
 
 func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {

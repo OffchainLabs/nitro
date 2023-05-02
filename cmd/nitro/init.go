@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,18 +16,24 @@ import (
 
 	"github.com/cavaliergopher/grab/v3"
 	extract "github.com/codeclysm/extract/v3"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state/pruner"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -44,6 +51,8 @@ type InitConfig struct {
 	AccountsPerSync uint          `koanf:"accounts-per-sync"`
 	ImportFile      string        `koanf:"import-file"`
 	ThenQuit        bool          `koanf:"then-quit"`
+	Prune           string        `koanf:"prune"`
+	PruneBloomSize  uint64        `koanf:"prune-bloom-size"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -57,6 +66,8 @@ var InitConfigDefault = InitConfig{
 	ImportFile:      "",
 	AccountsPerSync: 100000,
 	ThenQuit:        false,
+	Prune:           "",
+	PruneBloomSize:  2048,
 }
 
 func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -71,6 +82,8 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
+	f.String(prefix+".prune", InitConfigDefault.Prune, "pruning for a given use: \"full\" for full nodes serving RPC requests, or \"validator\" for validators")
+	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
 }
 
 func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
@@ -173,16 +186,239 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	return nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+type importantRoots struct {
+	chainDb ethdb.Database
+	roots   []common.Hash
+	heights []uint64
+}
+
+// The minimum block distance between two important roots
+const minRootDistance = 2000
+
+// Marks a header as important, and records its root and height.
+// If overwrite is true, it'll remove any future roots and replace them with this header.
+// If overwrite is false, it'll ignore this header if it has future roots.
+func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
+	targetBlockNum := header.Number.Uint64()
+	for {
+		if header == nil || header.Root == (common.Hash{}) {
+			log.Error("missing state of pruning target", "blockNum", targetBlockNum)
+			return nil
+		}
+		exists, err := r.chainDb.Has(header.Root.Bytes())
+		if err != nil {
+			return err
+		}
+		if exists {
+			break
+		}
+		num := header.Number.Uint64()
+		if num%3000 == 0 {
+			log.Info("looking for old block with state to keep", "current", num, "target", targetBlockNum)
+		}
+		// An underflow is fine here because it'll just return nil due to not found
+		header = rawdb.ReadHeader(r.chainDb, header.ParentHash, num-1)
+	}
+	height := header.Number.Uint64()
+	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
+		if overwrite {
+			r.roots = r.roots[:len(r.roots)-1]
+			r.heights = r.heights[:len(r.heights)-1]
+		} else {
+			return nil
+		}
+	}
+	if len(r.heights) > 0 && r.heights[len(r.heights)-1]+minRootDistance > height {
+		return nil
+	}
+	r.roots = append(r.roots, header.Root)
+	r.heights = append(r.heights, height)
+	return nil
+}
+
+var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
+
+// Finds important roots to retain while proving
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) ([]common.Hash, error) {
+	initConfig := &nodeConfig.Init
+	chainConfig := execution.TryReadStoredChainConfig(chainDb)
+	if chainConfig == nil {
+		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
+	}
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := arbDb.Close()
+		if err != nil {
+			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
+		}
+	}()
+	roots := importantRoots{
+		chainDb: chainDb,
+	}
+	genesisNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	genesisHash := rawdb.ReadCanonicalHash(chainDb, genesisNum)
+	genesisHeader := rawdb.ReadHeader(chainDb, genesisHash, genesisNum)
+	if genesisHeader == nil {
+		return nil, errors.New("missing L2 genesis block header")
+	}
+	err = roots.addHeader(genesisHeader, false)
+	if err != nil {
+		return nil, err
+	}
+	if initConfig.Prune == "validator" {
+		if l1Client == nil {
+			return nil, errors.New("an L1 connection is required for validator pruning")
+		}
+		callOpts := bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
+		}
+		rollup, err := staker.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
+		if err != nil {
+			return nil, err
+		}
+		latestConfirmedNum, err := rollup.LatestConfirmed(&callOpts)
+		if err != nil {
+			return nil, err
+		}
+		latestConfirmedNode, err := rollup.LookupNode(ctx, latestConfirmedNum)
+		if err != nil {
+			return nil, err
+		}
+		confirmedHash := latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash
+		confirmedNumber := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
+		var confirmedHeader *types.Header
+		if confirmedNumber != nil {
+			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, *confirmedNumber)
+		}
+		if confirmedHeader != nil {
+			err = roots.addHeader(confirmedHeader, false)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			log.Warn("missing latest confirmed block", "hash", confirmedHash)
+		}
+
+		validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
+		lastValidated, err := staker.ReadLastValidatedFromDb(validatorDb)
+		if err != nil {
+			return nil, err
+		}
+		if lastValidated != nil {
+			lastValidatedHeader := rawdb.ReadHeader(chainDb, lastValidated.BlockHash, lastValidated.BlockNumber)
+			if lastValidatedHeader != nil {
+				err = roots.addHeader(lastValidatedHeader, false)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				log.Warn("missing latest validated block", "number", lastValidated.BlockNumber, "hash", lastValidated.BlockHash)
+			}
+		}
+	} else if initConfig.Prune == "full" {
+		if nodeConfig.Node.Staker.Enable || nodeConfig.Node.BlockValidator.Enable {
+			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
+		}
+	} else if hashListRegex.MatchString(initConfig.Prune) {
+		parts := strings.Split(initConfig.Prune, ",")
+		roots := []common.Hash{genesisHeader.Root}
+		for _, part := range parts {
+			root := common.HexToHash(part)
+			if root == genesisHeader.Root {
+				// This was already included in the builtin list
+				continue
+			}
+			roots = append(roots, root)
+		}
+		return roots, nil
+	} else {
+		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
+	}
+	if l1Client != nil {
+		// Find the latest finalized block and add it as a pruning target
+		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get finalized block: %w", err)
+		}
+		l1BlockNum := l1Block.NumberU64()
+		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		batch, err := tracker.GetBatchCount()
+		if err != nil {
+			return nil, err
+		}
+		for {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if batch == 0 {
+				// No batch has been finalized
+				break
+			}
+			batch -= 1
+			meta, err := tracker.GetBatchMetadata(batch)
+			if err != nil {
+				return nil, err
+			}
+			if meta.L1Block <= l1BlockNum {
+				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
+				blockNum := uint64(signedBlockNum)
+				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+				l2Header := rawdb.ReadHeader(chainDb, l2Hash, blockNum)
+				if l2Header == nil {
+					log.Warn("latest finalized L2 block is unknown", "blockNum", signedBlockNum)
+					break
+				}
+				err = roots.addHeader(l2Header, false)
+				if err != nil {
+					return nil, err
+				}
+				break
+			}
+		}
+	}
+	roots.roots = append(roots.roots, common.Hash{}) // the latest snapshot
+	log.Info("found pruning target blocks", "heights", roots.heights, "roots", roots.roots)
+	return roots.roots, nil
+}
+
+func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) error {
+	trieCachePath := cacheConfig.TrieCleanJournal
+	config := &nodeConfig.Init
+	if config.Prune == "" {
+		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, trieCachePath)
+	}
+	root, err := findImportantRoots(ctx, chainDb, stack, nodeConfig, cacheConfig, l1Client, rollupAddrs)
+	if err != nil {
+		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
+	}
+	pruner, err := pruner.NewPruner(chainDb, stack.InstanceDir(), trieCachePath, config.PruneBloomSize)
+	if err != nil {
+		return err
+	}
+	return pruner.Prune(root)
+}
+
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
-		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, config.Persistent.Ancient, "", true); err == nil {
-			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
+		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
+			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Node.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 				if err != nil {
 					return chainDb, nil, err
 				}
-				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+				err = pruneChainDb(ctx, chainDb, stack, config, cacheConfig, l1Client, rollupAddrs)
+				if err != nil {
+					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
+				}
+				l2BlockChain, err := execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
 				if err != nil {
 					return chainDb, nil, err
 				}
@@ -261,11 +497,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	var l2BlockChain *core.BlockChain
 	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
-		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
+		chainConfig = execution.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
 			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+		l2BlockChain, err = execution.GetBlockChain(chainDb, cacheConfig, chainConfig, config.Node.TxLookupLimit)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -307,7 +543,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Init.ThenQuit {
 			cacheConfig.SnapshotWait = true
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
+		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err
 		}
@@ -316,6 +552,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	err = chainDb.Sync()
 	if err != nil {
 		return chainDb, l2BlockChain, err
+	}
+
+	err = pruneChainDb(ctx, chainDb, stack, config, cacheConfig, l1Client, rollupAddrs)
+	if err != nil {
+		return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
