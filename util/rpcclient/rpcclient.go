@@ -41,8 +41,8 @@ var DefaultClientConfig = ClientConfig{
 func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientConfig) {
 	f.String(prefix+".url", defaultConfig.URL, "url of server, use auto for loopback websocket, auto-auth for loopback with authentication")
 	f.String(prefix+".jwtsecret", defaultConfig.JWTSecret, "path to file with jwtsecret for validation - ignored if url is auto or auto-auth")
-	f.Duration(prefix+"connection-wait", defaultConfig.ConnectionWait, "how long to wait for initial connection")
-	f.Duration(prefix+"timeout", defaultConfig.Timeout, "per-response timeout (0-disabled)")
+	f.Duration(prefix+".connection-wait", defaultConfig.ConnectionWait, "how long to wait for initial connection")
+	f.Duration(prefix+".timeout", defaultConfig.Timeout, "per-response timeout (0-disabled)")
 	f.Uint(prefix+".log-limit", defaultConfig.TraceLogLimit, "limit size of log entries")
 	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
 }
@@ -94,14 +94,30 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 	return err
 }
 
+func (c *RpcClient) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
+	return c.client.BatchCallContext(ctx, b)
+}
+
+func (c *RpcClient) EthSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error) {
+	return c.client.EthSubscribe(ctx, channel, args...)
+}
+
 func (c *RpcClient) Start(ctx_in context.Context) error {
 	url := c.config.URL
 	jwtPath := c.config.JWTSecret
 	if url == "auto" {
+		if c.autoStack == nil {
+			return errors.New("auto not supported for this connection")
+		}
 		url = c.autoStack.WSEndpoint()
 		jwtPath = ""
 	} else if url == "auto-auth" {
+		if c.autoStack == nil {
+			return errors.New("auto-auth not supported for this connection")
+		}
 		url, jwtPath = c.autoStack.AuthEndpoint(true)
+	} else if url == "" {
+		return errors.New("no url provided for this connection")
 	}
 	var jwtBytes []byte
 	if jwtPath != "" {
@@ -111,7 +127,7 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		}
 		jwtBytes = jwtHash.Bytes()
 	}
-	timeout := time.After(c.config.ConnectionAttempts)
+	timeout := time.After(c.config.ConnectionWait)
 	for {
 		var ctx context.Context
 		var cancelCtx context.CancelFunc
