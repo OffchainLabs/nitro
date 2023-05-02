@@ -500,6 +500,7 @@ fn main() -> Result<()> {
     }
 
     if opts.require_success && mach.get_status() != MachineStatus::Finished {
+        eprintln!("Machine didn't finish: {}", mach.get_status().red());
         std::process::exit(1);
     }
 

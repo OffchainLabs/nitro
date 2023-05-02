@@ -429,19 +429,10 @@ func (c *Config) Validate() error {
 	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
+	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
 	return nil
-}
-
-func (c *Config) Get() *Config {
-	return c
-}
-
-func (c *Config) Start(context.Context) {}
-
-func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -457,7 +448,7 @@ func (c *Config) ValidatorRequired() bool {
 		return true
 	}
 	if c.Staker.Enable {
-		return !c.Staker.Dangerous.WithoutBlockValidator
+		return c.Staker.ValidatorRequired()
 	}
 	return false
 }
@@ -529,6 +520,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Staker.Enable = false
 	config.Forwarder = execution.DefaultTestForwarderConfig
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
@@ -544,6 +536,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
+	config.Staker.Enable = false
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -850,7 +843,7 @@ func createNodeImpl(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() {
+		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		} else {
 			log.Warn("validation not supported", "err", err)
@@ -859,7 +852,7 @@ func createNodeImpl(
 	}
 
 	var blockValidator *staker.BlockValidator
-	if config.BlockValidator.Enable {
+	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
@@ -899,6 +892,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
+
 		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
