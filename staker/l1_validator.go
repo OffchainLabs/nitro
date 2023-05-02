@@ -606,17 +606,31 @@ func (v *L1Validator) createNewNodeAction(
 	return action, nil
 }
 
-// Returns (execution state, inbox max count, block proposed, error)
+// Returns (execution state, inbox max count, L1 block proposed, error)
 func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
 		}
+		header, err := rollup.client.HeaderByNumber(ctx, big.NewInt(int64(creationEvent.Raw.BlockNumber)))
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("error getting L1 block number %d header : %w", creationEvent.Raw.BlockNumber, err)
+		}
+		headerInfo, err := types.DeserializeHeaderExtraInformation(header)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("error deserializeing header extra information for L1 block number %d : %w", creationEvent.Raw.BlockNumber, err)
+		}
+		var parentChainBlockNumber uint64
+		if headerInfo.L1BlockNumber != 0 {
+			parentChainBlockNumber = headerInfo.L1BlockNumber
+		} else {
+			parentChainBlockNumber = creationEvent.Raw.BlockNumber
+		}
 		return &validator.ExecutionState{
 			GlobalState:   validator.GoGlobalState{},
 			MachineStatus: validator.MachineStatusFinished,
-		}, big.NewInt(1), creationEvent.Raw.BlockNumber, nil
+		}, big.NewInt(1), parentChainBlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
 	if err != nil {
