@@ -43,16 +43,13 @@ contract ProgramTest {
     }
 
     function fillBlock() external payable {
-        bytes memory prefix = "\x19Ethereum Signed Message:\n32";
-        bytes
-            memory message = hex"1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36deac8";
-        bytes32 messageHash = keccak256(abi.encodePacked(prefix, message));
-        address recovered = 0xdD4c825203f97984e7867F11eeCc813A036089D1;
-        uint8 v = 28;
-        bytes32 r = 0xb7cf302145348387b9e69fde82d8e634a0f8761e78da3bfa059efced97cbed0d;
-        bytes32 s = 0x2a66b69167cafe0ccfc726aec6ee393fea3cf0e4f3f9c394705e0f56d9bfe1c9;
+        bytes32 bridgeToNova = 0x967bc1cb06df2c783a66ae59b65424821ab286beb9471d80ee2f484f0e827672;
+        address cryptoIsCute = 0x361594F5429D23ECE0A88E4fBE529E1c49D524d8;
+        uint8 v = 0x0;
+        bytes32 r = 0xc6178c2de1078cd36c3bd302cde755340d7f17fcb3fcc0b9c333ba03b217029f;
+        bytes32 s = 0x5fdbcefe2675e96219cdae57a7894280bf80fd40d44ce146a35e169ea6a78fd3;
         while (true) {
-            require(ecrecover(messageHash, v, r, s) == recovered);
+            require(ecrecover(bridgeToNova, v, r, s) == cryptoIsCute, "WRONG_ARBINAUT");
         }
     }
 }
