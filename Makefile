@@ -179,6 +179,10 @@ test-go-challenge: test-go-deps
 	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
+test-go-stylus: test-go-deps
+	go test -v -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
+	@printf $(done)
+
 test-go-redis: test-go-deps
 	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)

@@ -32,12 +32,9 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestProgramKeccakJIT(t *testing.T) {
+func TestProgramKeccak(t *testing.T) {
+	t.Parallel()
 	keccakTest(t, true)
-}
-
-func TestProgramKeccakArb(t *testing.T) {
-	keccakTest(t, false)
 }
 
 func keccakTest(t *testing.T, jit bool) {
@@ -88,12 +85,9 @@ func keccakTest(t *testing.T, jit bool) {
 	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
-func TestProgramErrorsJIT(t *testing.T) {
+func TestProgramErrors(t *testing.T) {
+	t.Parallel()
 	errorTest(t, true)
-}
-
-func TestProgramErrorsArb(t *testing.T) {
-	errorTest(t, false)
 }
 
 func errorTest(t *testing.T, jit bool) {
@@ -118,12 +112,9 @@ func errorTest(t *testing.T, jit bool) {
 	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
-func TestProgramStorageJIT(t *testing.T) {
+func TestProgramStorage(t *testing.T) {
+	t.Parallel()
 	storageTest(t, true)
-}
-
-func TestProgramStorageArb(t *testing.T) {
-	storageTest(t, false)
 }
 
 func storageTest(t *testing.T, jit bool) {
@@ -147,12 +138,9 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
-func TestProgramCallsJIT(t *testing.T) {
+func TestProgramCalls(t *testing.T) {
+	t.Parallel()
 	testCalls(t, true)
-}
-
-func TestProgramCallsArb(t *testing.T) {
-	testCalls(t, false)
 }
 
 func testCalls(t *testing.T, jit bool) {
@@ -358,12 +346,9 @@ func testCalls(t *testing.T, jit bool) {
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
-func TestProgramLogsJIT(t *testing.T) {
+func TestProgramLogs(t *testing.T) {
+	t.Parallel()
 	testLogs(t, true)
-}
-
-func TestProgramLogsArb(t *testing.T) {
-	testLogs(t, false)
 }
 
 func testLogs(t *testing.T, jit bool) {
@@ -426,12 +411,9 @@ func testLogs(t *testing.T, jit bool) {
 	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
-func TestProgramCreateJIT(t *testing.T) {
+func TestProgramCreate(t *testing.T) {
+	t.Parallel()
 	testCreate(t, true)
-}
-
-func TestProgramCreateArb(t *testing.T) {
-	testCreate(t, false)
 }
 
 func testCreate(t *testing.T, jit bool) {
@@ -511,12 +493,9 @@ func testCreate(t *testing.T, jit bool) {
 	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
-func TestProgramEvmDataJIT(t *testing.T) {
+func TestProgramEvmData(t *testing.T) {
+	t.Parallel()
 	testEvmData(t, true)
-}
-
-func TestProgramEvmDataArb(t *testing.T) {
-	testEvmData(t, false)
 }
 
 func testEvmData(t *testing.T, jit bool) {
@@ -688,7 +667,7 @@ func validateBlocks(
 func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
-	doUntil(t, 20*time.Millisecond, 50, func() bool {
+	doUntil(t, 20*time.Millisecond, 250, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)

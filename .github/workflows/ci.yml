@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge]
+        test-mode: [defaults, race, challenge, stylus]
 
     steps:
       - name: Checkout
@@ -152,6 +152,10 @@ jobs:
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
         run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+
+      - name: run stylus tests
+        if: matrix.test-mode == 'stylus'
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=stylustest -run=TestProgramArbitrator > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3
