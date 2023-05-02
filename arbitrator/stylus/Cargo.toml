@@ -10,6 +10,7 @@ wasmer = { path = "../tools/wasmer/lib/api/" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
 wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift" }
 wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm", optional = true }
+derivative = "2.2.0"
 ouroboros = "0.15.5"
 parking_lot = "0.12.1"
 thiserror = "1.0.33"

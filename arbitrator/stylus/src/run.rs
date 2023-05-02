@@ -2,9 +2,11 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{env::Escape, native::NativeInstance};
-use eyre::{ensure, eyre, Result};
+use arbutil::evm::api::EvmApi;
+use arbutil::evm::user::UserOutcome;
+use eyre::{eyre, Result};
 use prover::machine::Machine;
-use prover::programs::{prelude::*, STYLUS_ENTRY_POINT, USER_HOST};
+use prover::programs::{prelude::*, STYLUS_ENTRY_POINT};
 
 pub trait RunProgram {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome>;
@@ -33,8 +35,8 @@ impl RunProgram for Machine {
             config.pricing.ink_price.into(),
             config.pricing.hostio_ink.into(),
         ];
-        let args_ptr = call!("user_host", "push_program", push_vec);
-        let user_host = self.find_module(USER_HOST)?;
+        let args_ptr = call!("user_test", "prepare", push_vec);
+        let user_host = self.find_module("user_test")?;
         self.write_memory(user_host, args_ptr, args)?;
 
         self.set_ink(ink);
@@ -50,12 +52,9 @@ impl RunProgram for Machine {
             UserOutcome::Failure(error)
         });
 
-        let outs_ptr = call!(USER_HOST, "get_output_ptr", vec![]);
-        let outs_len = call!(USER_HOST, "get_output_len", vec![]);
+        let outs_ptr = call!("user_test", "get_outs_ptr", vec![]);
+        let outs_len = call!("user_test", "get_outs_len", vec![]);
         let outs = self.read_memory(user_host, outs_ptr, outs_len)?.to_vec();
-
-        let num_progs: u32 = call!(USER_HOST, "pop_program", vec![]);
-        ensure!(num_progs == 0, "dirty user_host");
 
         Ok(match status {
             0 => UserOutcome::Success(outs),
@@ -64,7 +63,7 @@ impl RunProgram for Machine {
     }
 }
 
-impl RunProgram for NativeInstance {
+impl<E: EvmApi> RunProgram for NativeInstance<E> {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
         use UserOutcome::*;
 
@@ -95,8 +94,8 @@ impl RunProgram for NativeInstance {
                 };
                 return Ok(match escape {
                     Escape::OutOfInk => OutOfInk,
-                    Escape::Memory(error) => UserOutcome::revert(error.into()),
-                    Escape::Internal(error) | Escape::Logical(error) => UserOutcome::revert(error),
+                    Escape::Memory(error) => UserOutcome::Failure(error.into()),
+                    Escape::Internal(error) | Escape::Logical(error) => UserOutcome::Failure(error),
                 });
             }
         };

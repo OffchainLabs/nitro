@@ -2,13 +2,15 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    machine::{WasmEnv, WasmEnvMut},
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     syscall::JsValue,
+    wavmio::{Bytes20, Bytes32},
 };
+use arbutil::Color;
 use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
 use std::collections::{BTreeSet, BinaryHeap};
-use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
+use wasmer::{AsStoreRef, Memory, MemoryView, StoreMut, StoreRef, WasmPtr};
 
 #[self_referencing]
 struct MemoryViewContainer {
@@ -55,6 +57,15 @@ impl GoStack {
         (sp, env.data_mut())
     }
 
+    pub fn new_with_store<'a, 'b: 'a>(
+        start: u32,
+        env: &'a mut WasmEnvMut<'b>,
+    ) -> (Self, &'a mut WasmEnv, StoreMut<'a>) {
+        let sp = Self::simple(start, env);
+        let (env, store) = env.data_and_store_mut();
+        (sp, env, store)
+    }
+
     pub fn simple(sp: u32, env: &WasmEnvMut<'_>) -> Self {
         let top = sp + 8;
         let memory = MemoryViewContainer::create(env);
@@ -69,10 +80,6 @@ impl GoStack {
     /// note: wasmer measures memory in 65536-byte pages.
     pub fn memory_size(&self) -> u64 {
         self.view().size().0 as u64 * 65536
-    }
-
-    pub fn save_offset(&self) -> u32 {
-        self.top - (self.sp + 8)
     }
 
     fn advance(&mut self, bytes: usize) -> u32 {
@@ -189,6 +196,14 @@ impl GoStack {
         data
     }
 
+    pub fn read_bytes20(&self, ptr: u64) -> Bytes20 {
+        self.read_slice(ptr, 20).try_into().unwrap()
+    }
+
+    pub fn read_bytes32(&self, ptr: u64) -> Bytes32 {
+        self.read_slice(ptr, 32).try_into().unwrap()
+    }
+
     pub fn write_slice(&self, ptr: u64, src: &[u8]) {
         u32::try_from(ptr).expect("Go pointer not a u32");
         self.view().write(ptr, src).unwrap();
@@ -224,6 +239,29 @@ impl GoStack {
         let ptr = self.read_u64();
         let len = self.read_u64();
         self.read_slice(ptr, len)
+    }
+
+    /// Resumes the Go runtime, updating the stack pointer.
+    /// Safety: caller must cut lifetimes before this call.
+    pub unsafe fn resume(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
+        let Some(resume) = &env.exports.resume else {
+            return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
+        };
+        let Some(get_stack_pointer) = &env.exports.get_stack_pointer else {
+            return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
+        };
+
+        // save our progress from the stack pointer
+        let saved = self.top - self.sp;
+
+        // recursively call into wasmer (reentrant)
+        resume.call(store)?;
+
+        // recover the stack pointer
+        let pointer = get_stack_pointer.call(store)? as u32;
+        self.sp = pointer;
+        self.top = pointer + saved;
+        Ok(())
     }
 }
 
@@ -279,6 +317,7 @@ pub struct TimeoutState {
 }
 
 #[test]
+#[allow(clippy::identity_op, clippy::field_reassign_with_default)]
 fn test_sp() -> eyre::Result<()> {
     use prover::programs::prelude::CompileConfig;
     use wasmer::{FunctionEnv, MemoryType};
@@ -288,7 +327,7 @@ fn test_sp() -> eyre::Result<()> {
     env.memory = Some(Memory::new(&mut store, MemoryType::new(0, None, false))?);
     let env = FunctionEnv::new(&mut store, env);
 
-    let mut sp = GoStack::simple(0, &mut env.into_mut(&mut store));
+    let mut sp = GoStack::simple(0, &env.into_mut(&mut store));
     assert_eq!(sp.advance(3), 8 + 0);
     assert_eq!(sp.advance(2), 8 + 3);
     assert_eq!(sp.skip_space().top, 8 + 8);

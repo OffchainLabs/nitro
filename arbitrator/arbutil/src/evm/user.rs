@@ -1,9 +1,10 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use eyre::ErrReport;
 use std::fmt::Display;
 
+#[derive(Debug)]
 pub enum UserOutcome {
     Success(Vec<u8>),
     Revert(Vec<u8>),
@@ -23,11 +24,6 @@ pub enum UserOutcomeKind {
 }
 
 impl UserOutcome {
-    pub fn revert(error: ErrReport) -> Self {
-        let data = format!("{:?}", error);
-        Self::Revert(data.into_bytes())
-    }
-
     pub fn into_data(self) -> (UserOutcomeKind, Vec<u8>) {
         let kind = (&self).into();
         let data = match self {
@@ -55,7 +51,13 @@ impl From<&UserOutcome> for UserOutcomeKind {
 
 impl From<&UserOutcome> for u8 {
     fn from(value: &UserOutcome) -> Self {
-        UserOutcomeKind::from(value) as u8
+        UserOutcomeKind::from(value).into()
+    }
+}
+
+impl From<UserOutcomeKind> for u8 {
+    fn from(value: UserOutcomeKind) -> Self {
+        value as u8
     }
 }
 

@@ -1,7 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::utils::Bytes32;
+use arbutil::Bytes32;
 use digest::Digest;
 use sha3::Keccak256;
 use std::convert::TryFrom;

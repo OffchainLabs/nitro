@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge]
+        test-mode: [defaults, race, challenge, stylus]
 
     steps:
       - name: Checkout
@@ -139,11 +139,11 @@ jobs:
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum --format short-verbose -- ./... -race -parallel=8
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -race -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -151,7 +151,17 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+
+      - name: run stylus tests
+        if: matrix.test-mode == 'stylus'
+        run: stdbuf -oL gotestsum --format short-verbose --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=stylustest -run=TestProgramArbitrator > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+
+      - name: Archive detailed run log
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.test-mode }}-full.log
+          path: full.log
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2

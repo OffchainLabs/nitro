@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 //
 // You can compile this file with stock clang as follows
-//     clang *.c -o siphash.wasm --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
+//     clang *.c -o siphash.wasm --target=wasm32 --no-standard-libraries -mbulk-memory -Wl,--no-entry -Oz
 //
 // For C programs reliant on the standard library, cross compile clang with wasi
 //     https://github.com/WebAssembly/wasi-sdk

@@ -10,17 +10,16 @@ use crate::{
     merkle::{Merkle, MerkleType},
     programs::{
         config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusGlobals, STYLUS_ENTRY_POINT,
-        USER_HOST,
     },
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
+    utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Color};
+use arbutil::{math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -295,6 +294,7 @@ impl Module {
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        debug_funcs: bool,
         stylus_data: Option<StylusGlobals>,
     ) -> Result<Module> {
         let mut code = Vec::new();
@@ -330,11 +330,12 @@ impl Module {
                     Instruction::simple(Opcode::Return),
                 ];
                 Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else if let Ok(hostio) = host::get_impl(import.module, import_name) {
+            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import_name) {
                 ensure!(
-                    allow_hostapi,
-                    "Calling hostapi directly is not allowed. Func {}",
-                    import_name.red()
+                    (debug && debug_funcs) || (!debug && allow_hostapi),
+                    "Debug func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi}",
+                    import_name.red(),
+                    import.module.red(),
                 );
                 hostio
             } else {
@@ -1008,6 +1009,7 @@ impl Machine {
         language_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
+        debug_funcs: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1031,6 +1033,7 @@ impl Machine {
             language_support,
             always_merkleize,
             allow_hostapi_from_main,
+            debug_funcs,
             global_state,
             inbox_contents,
             preimage_resolver,
@@ -1038,26 +1041,25 @@ impl Machine {
         )
     }
 
-    pub fn from_user_path(path: &Path, config: &CompileConfig) -> Result<Self> {
+    pub fn from_user_path(path: &Path, compile: &CompileConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(config)?;
+        let stylus_data = bin.instrument(compile)?;
 
-        let forward = include_bytes!("../../../target/machines/latest/forward.wasm");
-        let forward = parse(forward, Path::new("forward"))?;
-        let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
-        let user_host = parse(&user_host, Path::new(USER_HOST))?;
+        let user_test = std::fs::read("../../target/machines/latest/user_test.wasm")?;
+        let user_test = parse(&user_test, Path::new("user_test"))?;
         let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
         let wasi_stub = parse(&wasi_stub, Path::new("wasi_stub"))?;
         let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
         let soft_float = parse(&soft_float, Path::new("soft-float"))?;
 
         Self::from_binaries(
-            &[forward, soft_float, user_host, wasi_stub],
+            &[soft_float, wasi_stub, user_test],
             bin,
             false,
             false,
             false,
+            compile.debug.debug_funcs,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1087,6 +1089,7 @@ impl Machine {
             false,
             false,
             false,
+            debug_chain,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1105,6 +1108,7 @@ impl Machine {
         runtime_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
+        debug_funcs: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1149,8 +1153,14 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module =
-                Module::from_binary(lib, &available_imports, &floating_point_impls, true, None)?;
+            let module = Module::from_binary(
+                lib,
+                &available_imports,
+                &floating_point_impls,
+                true,
+                debug_funcs,
+                None,
+            )?;
             for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
                 if let Ok(op) = name.parse::<FloatInstruction>() {
@@ -1183,6 +1193,7 @@ impl Machine {
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
+            debug_funcs,
             stylus_data,
         )?);
 
@@ -2427,8 +2438,8 @@ impl Machine {
                 Ok(())
             }
             ("console", "log_txt") => {
-                let ptr = pull_arg!(0, I32);
-                let len = pull_arg!(1, I32);
+                let ptr = pull_arg!(1, I32);
+                let len = pull_arg!(0, I32);
                 let text = read_bytes_segment!(ptr, len);
                 match std::str::from_utf8(text) {
                     Ok(text) => Self::say(text),
@@ -2441,6 +2452,11 @@ impl Machine {
     }
 
     pub fn say<D: Display>(text: D) {
+        let text = format!("{text}");
+        let text = match text.len() {
+            0..=250 => text,
+            _ => format!("{} ...", &text[0..250]),
+        };
         println!("{} {text}", "WASM says:".yellow());
     }
 

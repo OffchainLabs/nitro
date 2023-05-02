@@ -33,12 +33,9 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestProgramKeccakJIT(t *testing.T) {
+func TestProgramKeccak(t *testing.T) {
+	t.Parallel()
 	keccakTest(t, true)
-}
-
-func TestProgramKeccakArb(t *testing.T) {
-	keccakTest(t, false)
 }
 
 func keccakTest(t *testing.T, jit bool) {
@@ -86,15 +83,12 @@ func keccakTest(t *testing.T, jit bool) {
 	ensure(tx, err)
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 
-	validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
-func TestProgramErrorsJIT(t *testing.T) {
+func TestProgramErrors(t *testing.T) {
+	t.Parallel()
 	errorTest(t, true)
-}
-
-func TestProgramErrorsArb(t *testing.T) {
-	errorTest(t, false)
 }
 
 func errorTest(t *testing.T, jit bool) {
@@ -116,11 +110,16 @@ func errorTest(t *testing.T, jit bool) {
 		Fail(t, "call should have failed")
 	}
 
-	validateBlocks(t, 7, ctx, node, l2client)
+	validateBlocks(t, 7, jit, ctx, node, l2client)
 }
 
 func TestProgramStorage(t *testing.T) {
-	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), true)
+	t.Parallel()
+	storageTest(t, true)
+}
+
+func storageTest(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -137,12 +136,16 @@ func TestProgramStorage(t *testing.T) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 2, jit, ctx, node, l2client)
 }
 
 func TestProgramCalls(t *testing.T) {
-	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), true)
+	t.Parallel()
+	testCalls(t, true)
+}
+
+func testCalls(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -340,12 +343,17 @@ func TestProgramCalls(t *testing.T) {
 		Fail(t, balance, value)
 	}
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	blocks := []uint64{11}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
 func TestProgramLogs(t *testing.T) {
-	ctx, _, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), true)
+	t.Parallel()
+	testLogs(t, true)
+}
+
+func testLogs(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -401,12 +409,16 @@ func TestProgramLogs(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 11, jit, ctx, node, l2client)
 }
 
 func TestProgramCreate(t *testing.T) {
-	ctx, _, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), true)
+	t.Parallel()
+	testCreate(t, true)
+}
+
+func testCreate(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -477,12 +489,18 @@ func TestProgramCreate(t *testing.T) {
 	auth.Value = startValue
 	ensure(mock.CheckRevertData(&auth, createAddr, revertArgs, revertData))
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	// validate just the opcodes
+	blocks := []uint64{5, 6}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
 }
 
 func TestProgramEvmData(t *testing.T) {
-	ctx, _, l2info, l2client, auth, evmDataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
+	t.Parallel()
+	testEvmData(t, true)
+}
+
+func testEvmData(t *testing.T, jit bool) {
+	ctx, node, l2info, l2client, auth, evmDataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), jit)
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -612,8 +630,7 @@ func TestProgramEvmData(t *testing.T) {
 	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, callEvmDataData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
-	// TODO: enable validation when prover side is PR'd
-	// validateBlocks(t, 1, ctx, node, l2client)
+	validateBlocks(t, 1, jit, ctx, node, l2client)
 }
 
 func setupProgramTest(t *testing.T, file string, jit bool) (
@@ -628,6 +645,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	l2config.BatchPoster.Enable = true
 	l2config.L1Reader.Enable = true
 	l2config.Sequencer.MaxRevertGasReject = 0
+	l2config.L1Reader.OldHeaderTimeout = 10 * time.Minute
 	AddDefaultValNode(t, ctx, l2config, jit)
 
 	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
@@ -729,10 +747,27 @@ func rustFile(name string) string {
 	return fmt.Sprintf("../arbitrator/stylus/tests/%v/target/wasm32-unknown-unknown/release/%v.wasm", name, name)
 }
 
-func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client) {
-	colors.PrintGrey("Validating blocks from ", start, " onward")
+func validateBlocks(
+	t *testing.T, start uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
+) {
+	if jit || start == 0 {
+		start = 1
+	}
 
-	doUntil(t, 20*time.Millisecond, 50, func() bool {
+	blockHeight, err := l2client.BlockNumber(ctx)
+	Require(t, err)
+
+	blocks := []uint64{}
+	for i := start; i <= blockHeight; i++ {
+		blocks = append(blocks, i)
+	}
+	validateBlockRange(t, blocks, jit, ctx, node, l2client)
+}
+
+func validateBlockRange(
+	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
+) {
+	doUntil(t, 20*time.Millisecond, 250, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
@@ -745,8 +780,16 @@ func validateBlocks(t *testing.T, start uint64, ctx context.Context, node *arbno
 	blockHeight, err := l2client.BlockNumber(ctx)
 	Require(t, err)
 
+	// validate everything
+	if jit {
+		blocks = []uint64{}
+		for i := uint64(1); i <= blockHeight; i++ {
+			blocks = append(blocks, i)
+		}
+	}
+
 	success := true
-	for block := start; block <= blockHeight; block++ {
+	for _, block := range blocks {
 		header, err := l2client.HeaderByNumber(ctx, arbmath.UintToBig(block))
 		Require(t, err)
 

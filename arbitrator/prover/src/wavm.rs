@@ -4,9 +4,9 @@
 use crate::{
     binary::FloatInstruction,
     host::InternalFunc,
-    utils::Bytes32,
     value::{ArbValueType, FunctionType, IntegerValType},
 };
+use arbutil::Bytes32;
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;

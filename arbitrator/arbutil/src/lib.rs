@@ -1,14 +1,17 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+/// cbindgen:ignore
 pub mod color;
 pub mod crypto;
 pub mod evm;
 pub mod format;
 pub mod math;
 pub mod operator;
+pub mod types;
 
 pub use color::{Color, DebugColor};
+pub use types::{Bytes20, Bytes32};
 
 #[cfg(feature = "wavm")]
 pub mod wavm;

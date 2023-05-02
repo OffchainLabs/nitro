@@ -10,9 +10,8 @@ use crate::{
     wavmio::{Bytes20, Bytes32},
     Opts,
 };
-
 use arbutil::Color;
-use eyre::{bail, Result, WrapErr};
+use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{
@@ -125,6 +124,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             github!("arbos/programs.readRustVecLenImpl") => func!(user::read_rust_vec_len),
             github!("arbos/programs.rustVecIntoSliceImpl") => func!(user::rust_vec_into_slice),
             github!("arbos/programs.rustConfigImpl") => func!(user::rust_config_impl),
+            github!("arbos/programs.rustEvmDataImpl") => func!(user::evm_data_impl),
 
             github!("arbcompress.brotliCompress") => func!(arbcompress::brotli_compress),
             github!("arbcompress.brotliDecompress") => func!(arbcompress::brotli_decompress),
@@ -163,6 +163,8 @@ pub enum Escape {
     Failure(String),
     #[error("hostio failed with `{0}`")]
     HostIO(String),
+    #[error("comms with child instance failed with `{0}`")]
+    Child(ErrReport),
     #[error("hostio socket failed with `{0}`")]
     SocketError(#[from] io::Error),
 }
@@ -178,7 +180,7 @@ impl Escape {
         Err(Self::HostIO(message.as_ref().to_string()))
     }
 
-    pub fn failure<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+    pub fn failure<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::Failure(message.as_ref().to_string()))
     }
 }

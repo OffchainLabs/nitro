@@ -3,6 +3,7 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
+use derivative::Derivative;
 use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
@@ -14,7 +15,7 @@ use {
         meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
-    wasmer::{CompilerConfig, Store},
+    wasmer::{Cranelift, CraneliftOptLevel, Store},
     wasmer_compiler_singlepass::Singlepass,
 };
 
@@ -56,7 +57,7 @@ impl Default for PricingParams {
 }
 
 impl StylusConfig {
-    pub fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
+    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
         let pricing = PricingParams::new(ink_price, hostio_ink);
         Self {
             version,
@@ -68,7 +69,7 @@ impl StylusConfig {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub fn new(ink_price: u64, hostio_ink: u64) -> Self {
+    pub const fn new(ink_price: u64, hostio_ink: u64) -> Self {
         Self {
             ink_price,
             hostio_ink,
@@ -86,7 +87,7 @@ impl PricingParams {
 
 pub type OpCosts = fn(&Operator) -> u64;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CompileConfig {
     /// Version of the compiler to use
     pub version: u32,
@@ -98,7 +99,7 @@ pub struct CompileConfig {
     pub debug: CompileDebugParams,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CompileMemoryParams {
     /// The maximum number of pages a program may use
     pub heap_bound: Pages,
@@ -106,9 +107,11 @@ pub struct CompileMemoryParams {
     pub max_frame_size: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct CompilePricingParams {
     /// Associates opcodes to their ink costs
+    #[derivative(Debug = "ignore")]
     pub costs: OpCosts,
     /// Per-byte `MemoryFill` cost
     pub memory_fill_ink: u64,
@@ -116,12 +119,14 @@ pub struct CompilePricingParams {
     pub memory_copy_ink: u64,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CompileDebugParams {
     /// Allow debug functions
     pub debug_funcs: bool,
     /// Add instrumentation to count the number of times each kind of opcode is executed
     pub count_ops: bool,
+    /// Whether to use the Cranelift compiler
+    pub cranelift: bool,
 }
 
 impl Default for CompilePricingParams {
@@ -169,7 +174,14 @@ impl CompileConfig {
 
     #[cfg(feature = "native")]
     pub fn store(&self) -> Store {
-        let mut compiler = Singlepass::new();
+        let mut compiler: Box<dyn wasmer::CompilerConfig> = match self.debug.cranelift {
+            true => {
+                let mut compiler = Cranelift::new();
+                compiler.opt_level(CraneliftOptLevel::Speed);
+                Box::new(compiler)
+            }
+            false => Box::new(Singlepass::new()),
+        };
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 

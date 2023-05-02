@@ -1,5 +1,5 @@
 # Copyright 2021-2023, Offchain Labs, Inc.
-# For license information, see https://github.com/nitro/blob/master/LICENSE
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
 # have to update an existing file. So - for docker, convert all dependencies
@@ -51,8 +51,8 @@ replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSig
 replay_wasm=$(output_latest)/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float user_host forward)
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli)
+arbitrator_wasm_libs_nogo=$(patsubst %, $(output_root)/machines/latest/%.wasm, wasi_stub host_io soft-float)
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(patsubst %,$(output_root)/machines/latest/%.wasm, go_stub brotli forward user_host)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
@@ -75,7 +75,7 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.toml)
+rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml)
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_src = arbitrator/prover/src
@@ -124,7 +124,7 @@ stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(st
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
 jit_dir = arbitrator/jit
-jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(stylus_files)
+jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs $(jit_dir)/src/*/*.rs) $(stylus_files)
 
 # user targets
 
@@ -181,6 +181,10 @@ test-go-challenge: test-go-deps
 	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
+test-go-stylus: test-go-deps
+	go test -v -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
+	@printf $(done)
+
 test-go-redis: test-go-deps
 	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
@@ -191,7 +195,7 @@ test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
 
-wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms)
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
 	@printf $(done)
 
 clean:
@@ -320,6 +324,10 @@ $(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-host
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
 
+$(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test) $(rust_prover_files) .make/machines
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-test
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
+
 $(output_latest)/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi) .make/cbrotli-wasm
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
@@ -426,7 +434,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/test-go: $(DEP_PREDICATE) $(go_source) build-node-deps test-go-deps $(ORDER_ONLY_PREDICATE) .make
-	gotestsum --format short-verbose
+	gotestsum --format short-verbose --no-color=false
 	@touch $@
 
 .make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make
