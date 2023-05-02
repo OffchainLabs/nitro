@@ -103,6 +103,7 @@ func New(
 		rollupAddr:                rollupAddr,
 		edgeTrackerWakeInterval:   time.Millisecond * 100,
 		newAssertionCheckInterval: time.Second,
+		postAssertionsInterval:    time.Second * 5,
 	}
 	for _, o := range opts {
 		o(v)
