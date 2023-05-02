@@ -288,7 +288,7 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.ValidationServer.URL != "auto" {
+	if nodeConfig.BlockValidator.ValidationServer.URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig
