@@ -6,6 +6,7 @@ package programs
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -133,7 +134,8 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	programVersion, err := p.machineVersions.GetUint32(scope.Contract.Address().Hash())
+	contract := scope.Contract
+	programVersion, err := p.machineVersions.GetUint32(contract.Address().Hash())
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +151,18 @@ func (p Programs) CallProgram(
 	}
 	evm := interpreter.Evm()
 	evmData := &evmData{
-		origin: evm.TxContext.Origin,
+		block_basefee:    evm.Context.BaseFee,
+		block_chainid:    evm.ChainConfig().ChainID,
+		block_coinbase:   evm.Context.Coinbase,
+		block_difficulty: evm.Context.Difficulty,
+		block_gas_limit:  evm.Context.GasLimit,
+		block_number:     evm.Context.BlockNumber,
+		block_timestamp:  evm.Context.Time,
+		contract_address: contract.Address(),
+		msg_sender:       contract.Caller(),
+		msg_value:        contract.Value(),
+		gas_price:        evm.TxContext.GasPrice,
+		origin:           evm.TxContext.Origin,
 	}
 	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
@@ -200,7 +213,18 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 }
 
 type evmData struct {
-	origin common.Address
+	block_basefee    *big.Int
+	block_chainid    *big.Int
+	block_coinbase   common.Address
+	block_difficulty *big.Int
+	block_gas_limit  uint64
+	block_number     *big.Int
+	block_timestamp  *big.Int
+	contract_address common.Address
+	msg_sender       common.Address
+	msg_value        *big.Int
+	gas_price        *big.Int
+	origin           common.Address
 }
 
 type userStatus uint8

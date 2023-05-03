@@ -17,6 +17,9 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+type addressBalance func(address common.Address) (value common.Hash, cost uint64)
+type addressCodeHash func(address common.Address) (value common.Hash, cost uint64)
+type blockHash func(block common.Hash) (value common.Hash, cost uint64)
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
 type contractCallType func(
@@ -43,15 +46,18 @@ type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics uint32) error
 
 type goClosures struct {
-	getBytes32    getBytes32Type
-	setBytes32    setBytes32Type
-	contractCall  contractCallType
-	delegateCall  delegateCallType
-	staticCall    staticCallType
-	create1       create1Type
-	create2       create2Type
-	getReturnData getReturnDataType
-	emitLog       emitLogType
+	addressBalance  addressBalance
+	addressCodeHash addressCodeHash
+	blockHash       blockHash
+	getBytes32      getBytes32Type
+	setBytes32      setBytes32Type
+	contractCall    contractCallType
+	delegateCall    delegateCallType
+	staticCall      staticCallType
+	create1         create1Type
+	create2         create2Type
+	getReturnData   getReturnDataType
+	emitLog         emitLogType
 }
 
 func newApiClosures(

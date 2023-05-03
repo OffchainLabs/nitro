@@ -13,6 +13,9 @@ use eyre::{ErrReport, Result};
 
 #[repr(C)]
 pub struct GoEvmApi {
+    pub address_balance: unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
+    pub address_code_hash: unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
+    pub block_hash: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub set_bytes32: unsafe extern "C" fn(
         id: usize,
@@ -85,6 +88,24 @@ macro_rules! into_vec {
 }
 
 impl EvmApi for GoEvmApi {
+    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let mut cost = 0;
+        let value = call!(self, address_balance, address, ptr!(cost));
+        (value, cost)
+    }
+
+    fn address_code_hash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let mut cost = 0;
+        let value = call!(self, address_code_hash, address, ptr!(cost));
+        (value, cost)
+    }
+
+    fn block_hash(&mut self, block: Bytes32) -> (Bytes32, u64) {
+        let mut cost = 0;
+        let value = call!(self, block_hash, block, ptr!(cost));
+        (value, cost)
+    }
+
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let mut cost = 0;
         let value = call!(self, get_bytes32, key, ptr!(cost));

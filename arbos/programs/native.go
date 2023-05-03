@@ -104,24 +104,24 @@ const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 
 //export addressBalanceImpl
 func addressBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
-	closure := getAPI(api)
-	value, gas := closure.addressBalance(address.toAddress())
+	closures := getApi(api)
+	value, gas := closures.addressBalance(address.toAddress())
 	*cost = u64(gas)
-	return bigToBytes32(value)
+	return hashToBytes32(value)
 }
 
 //export addressCodeHashImpl
 func addressCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
-	closure := getAPI(api)
-	value, gas := closure.addressCodeHash(address.toAddress())
+	closures := getApi(api)
+	value, gas := closures.addressCodeHash(address.toAddress())
 	*cost = u64(gas)
 	return hashToBytes32(value)
 }
 
 //export blockHashImpl
 func blockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
-	closure := getAPI(api)
-	value, gas := closure.blockHash(block.toBig())
+	closures := getApi(api)
+	value, gas := closures.blockHash(block.toHash())
 	*cost = u64(gas)
 	return hashToBytes32(value)
 }
@@ -316,6 +316,17 @@ func (params *goParams) encode() C.GoParams {
 
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
-		origin: addressToBytes20(data.origin),
+		block_basefee:    bigToBytes32(data.block_basefee),
+		block_chainid:    bigToBytes32(data.block_chainid),
+		block_coinbase:   addressToBytes20(data.block_coinbase),
+		block_difficulty: bigToBytes32(data.block_difficulty),
+		block_gas_limit:  C.uint64_t(data.block_gas_limit),
+		block_number:     bigToBytes32(data.block_number),
+		block_timestamp:  bigToBytes32(data.block_timestamp),
+		contract_address: addressToBytes20(data.contract_address),
+		msg_sender:       addressToBytes20(data.msg_sender),
+		msg_value:        bigToBytes32(data.msg_value),
+		gas_price:        bigToBytes32(data.gas_price),
+		origin:           addressToBytes20(data.origin),
 	}
 }

@@ -207,7 +207,31 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
+    let block_basefee = wavm::read_bytes32(sp.read_go_ptr().into());
+    let block_chainid = wavm::read_bytes32(sp.read_go_ptr().into());
+    let block_coinbase = wavm::read_bytes20(sp.read_go_ptr().into());
+    let block_difficulty = wavm::read_bytes32(sp.read_go_ptr().into());
+    let block_gas_limit = wavm::caller_load64(sp.read_go_ptr().into());
+    let block_number = wavm::read_bytes32(sp.read_go_ptr().into());
+    let block_timestamp = wavm::read_bytes32(sp.read_go_ptr().into());
+    let contract_address = wavm::read_bytes20(sp.read_go_ptr().into());
+    let msg_sender = wavm::read_bytes20(sp.read_go_ptr().into());
+    let msg_value = wavm::read_bytes32(sp.read_go_ptr().into());
+    let gas_price = wavm::read_bytes32(sp.read_go_ptr().into());
     let origin = wavm::read_bytes20(sp.read_go_ptr());
-    let evm_data = EvmData::new(origin.into());
+    let evm_data = EvmData::new(
+        block_basefee.into(),
+        block_chainid.into(),
+        block_coinbase.into(),
+        block_difficulty.into(),
+        block_gas_limit.into(),
+        block_number.into(),
+        block_timestamp.into(),
+        contract_address.into(),
+        msg_sender.into(),
+        msg_value.into(),
+        gas_price.into(),
+        origin.into(),
+    );
     sp.write_ptr(heapify(evm_data));
 }

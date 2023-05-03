@@ -98,16 +98,19 @@ func newApi(
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
 	return C.GoEvmApi{
-		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
-		contract_call:   (*[0]byte)(C.contractCallWrap),
-		delegate_call:   (*[0]byte)(C.delegateCallWrap),
-		static_call:     (*[0]byte)(C.staticCallWrap),
-		create1:         (*[0]byte)(C.create1Wrap),
-		create2:         (*[0]byte)(C.create2Wrap),
-		get_return_data: (*[0]byte)(C.getReturnDataWrap),
-		emit_log:        (*[0]byte)(C.emitLogWrap),
-		id:              id,
+		address_balance:   (*[0]byte)(C.addressBalanceWrap),
+		address_code_hash: (*[0]byte)(C.addressCodeHashWrap),
+		block_hash:        (*[0]byte)(C.blockHashWrap),
+		get_bytes32:       (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:       (*[0]byte)(C.setBytes32Wrap),
+		contract_call:     (*[0]byte)(C.contractCallWrap),
+		delegate_call:     (*[0]byte)(C.delegateCallWrap),
+		static_call:       (*[0]byte)(C.staticCallWrap),
+		create1:           (*[0]byte)(C.create1Wrap),
+		create2:           (*[0]byte)(C.create2Wrap),
+		get_return_data:   (*[0]byte)(C.getReturnDataWrap),
+		emit_log:          (*[0]byte)(C.emitLogWrap),
+		id:                id,
 	}, id
 }
 
