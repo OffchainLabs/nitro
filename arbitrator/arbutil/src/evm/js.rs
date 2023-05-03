@@ -169,8 +169,8 @@ impl ApiValueKind {
 impl<T: JsCallIntoGo> JsEvmApi<T> {
     pub fn new(ids: Vec<u8>, caller: T) -> Self {
         let mut object_ids = vec![];
-        for i in 0..(ids.len() / 4) {
-            let slice = &ids[(i * 4)..(i * 4 + 4)];
+        for i in (0..ids.len()).step_by(4) {
+            let slice = &ids[i..(i + 4)];
             let value = u32::from_be_bytes(slice.try_into().unwrap());
             object_ids.push(value);
         }
