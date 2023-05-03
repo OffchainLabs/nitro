@@ -36,6 +36,7 @@ var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
 func NewBlockChallengeBackend(
 	initialState *challengegen.ChallengeManagerInitiatedChallenge,
+	maxBatchesRead uint64,
 	bc *core.BlockChain,
 	inboxTracker InboxTrackerInterface,
 	genesisBlockNumber uint64,
@@ -64,16 +65,14 @@ func NewBlockChallengeBackend(
 		return nil, fmt.Errorf("start block %v and start message count %v don't correspond", startBlockNum, startMsgCount)
 	}
 
-	endGs := validator.GoGlobalStateFromSolidity(initialState.EndState)
 	var endMsgCount arbutil.MessageIndex
-	if endGs.Batch > 0 {
+	if maxBatchesRead > 0 {
 		var err error
-		endMsgCount, err = inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
+		endMsgCount, err = inboxTracker.GetBatchMessageCount(maxBatchesRead - 1)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get challenge end batch metadata: %w", err)
 		}
 	}
-	endMsgCount += arbutil.MessageIndex(endGs.PosInBatch)
 
 	return &BlockChallengeBackend{
 		bc:                     bc,
@@ -81,7 +80,7 @@ func NewBlockChallengeBackend(
 		startGs:                startGs,
 		startPosition:          0,
 		endPosition:            math.MaxUint64,
-		endGs:                  endGs,
+		endGs:                  validator.GoGlobalStateFromSolidity(initialState.EndState),
 		inboxTracker:           inboxTracker,
 		genesisBlockNumber:     genesisBlockNumber,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
@@ -153,13 +152,13 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 const StatusFinished uint8 = 1
 const StatusTooFar uint8 = 3
 
-func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) (int64, bool) {
-	return b.startBlock + int64(step), step >= b.tooFarStartsAtPosition
+func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) int64 {
+	return b.startBlock + int64(step)
 }
 
 func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (validator.GoGlobalState, uint8, error) {
-	blockNum, tooFar := b.GetBlockNrAtStep(step)
-	if tooFar {
+	blockNum := b.GetBlockNrAtStep(step)
+	if step >= b.tooFarStartsAtPosition {
 		return validator.GoGlobalState{}, StatusTooFar, nil
 	}
 	var header *types.Header
