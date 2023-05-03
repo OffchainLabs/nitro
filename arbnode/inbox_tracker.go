@@ -14,9 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/pkg/errors"
@@ -34,7 +35,8 @@ type InboxTracker struct {
 }
 
 func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
-	if txStreamer.bc.Config().ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
+	// We support a nil txStreamer for the pruning code
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	tracker := &InboxTracker{
@@ -84,7 +86,19 @@ func (t *InboxTracker) Initialize() error {
 		log.Info("InboxTracker", "SequencerBatchCount", 0)
 	}
 
-	return batch.Write()
+	err = batch.Write()
+	if err != nil {
+		return err
+	}
+
+	if t.txStreamer.broadcastServer != nil {
+		err = t.populateFeedBacklog(t.txStreamer.broadcastServer)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 var AccumulatorNotFoundErr = errors.New("accumulator not found")
@@ -188,7 +202,43 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
+func (t *InboxTracker) populateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return fmt.Errorf("error getting batch count: %w", err)
+	}
+	var startMessage arbutil.MessageIndex
+	if batchCount >= 2 {
+		// As in AddSequencerBatches, we want to keep the most recent batch's messages.
+		// This prevents issues if a user's L1 is a bit behind or an L1 reorg occurs.
+		// `batchCount - 2` is the index of the batch before the last batch.
+		batchIndex := batchCount - 2
+		startMessage, err = t.GetBatchMessageCount(batchIndex)
+		if err != nil {
+			return fmt.Errorf("error getting batch %v message count: %w", batchIndex, err)
+		}
+	}
+	messageCount, err := t.txStreamer.GetMessageCount()
+	if err != nil {
+		return fmt.Errorf("error getting tx streamer message count: %w", err)
+	}
+	var feedMessages []*broadcaster.BroadcastFeedMessage
+	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
+		message, err := t.txStreamer.GetMessage(seqNum)
+		if err != nil {
+			return fmt.Errorf("error getting message %v: %w", seqNum, err)
+		}
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum)
+		if err != nil {
+			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
+		}
+		feedMessages = append(feedMessages, feedMessage)
+	}
+	broadcastServer.PopulateBacklog(feedMessages)
+	return nil
+}
+
+func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(legacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -199,11 +249,11 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*ar
 	}
 	var acc common.Hash
 	copy(acc[:], data[:32])
-	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
+	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
 	return msg, acc, err
 }
 
-func (t *InboxTracker) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
+func (t *InboxTracker) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(rlpDelayedMessagePrefix, seqNum)
 	exists, err := t.db.Has(key)
 	if err != nil {
@@ -221,12 +271,12 @@ func (t *InboxTracker) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1
 	}
 	var acc common.Hash
 	copy(acc[:], data[:32])
-	var msg *arbos.L1IncomingMessage
+	var msg *arbostypes.L1IncomingMessage
 	err = rlp.DecodeBytes(data[32:], &msg)
 	return msg, acc, err
 }
 
-func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	msg, _, err := t.GetDelayedMessageAndAccumulator(seqNum)
 	return msg, err
 }
@@ -312,6 +362,12 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
 }
 
+func (t *InboxTracker) clearBatchMetaCache() {
+	t.batchMetaMutex.Lock()
+	defer t.batchMetaMutex.Unlock()
+	t.batchMeta.Clear()
+}
+
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
@@ -366,9 +422,9 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	// which we'll do because of the defer.
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount != nil {
-		t.batchMetaMutex.Lock()
-		t.batchMeta.Clear()
-		t.batchMetaMutex.Unlock()
+		// Clear the batchMeta cache after writing the reorg to disk
+		defer t.clearBatchMetaCache()
+
 		count := *reorgSeqBatchesToCount
 		if t.validator != nil {
 			t.validator.ReorgToBatchCount(count)
@@ -436,7 +492,7 @@ func (b *multiplexerBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	if len(b.batches) == 0 || seqNum >= b.batches[0].AfterDelayedCount {
 		return nil, errors.New("attempted to read past end of sequencer batch delayed messages")
 	}
@@ -498,7 +554,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		pos++
 	}
 
-	var messages []arbstate.MessageWithMetadata
+	var messages []arbostypes.MessageWithMetadata
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
@@ -525,6 +581,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	lastBatchMeta := prevbatchmeta
+	batchMetas := make(map[uint64]BatchMetadata, len(batches))
 	for _, batch := range batches {
 		meta := BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
@@ -532,6 +589,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			MessageCount:        batchMessageCounts[batch.SequenceNumber],
 			L1Block:             batch.BlockNumber,
 		}
+		batchMetas[batch.SequenceNumber] = meta
 		metaBytes, err := rlp.EncodeToBytes(meta)
 		if err != nil {
 			return err
@@ -597,6 +655,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		return err
 	}
 
+	// Update the batchMeta cache immediately after writing the batch
+	t.batchMetaMutex.Lock()
+	for seqNum, meta := range batchMetas {
+		t.batchMeta.Add(seqNum, meta)
+	}
+	t.batchMetaMutex.Unlock()
+
 	if t.validator != nil {
 		batchBytes := make([][]byte, 0, len(batches))
 		for _, batch := range batches {
@@ -661,9 +726,8 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		t.validator.ReorgToBatchCount(count)
 	}
 
-	t.batchMetaMutex.Lock()
-	t.batchMeta.Clear()
-	t.batchMetaMutex.Unlock()
+	// Clear the batchMeta cache after writing the reorg to disk
+	defer t.clearBatchMetaCache()
 
 	dbBatch := t.db.NewBatch()
 

@@ -1,6 +1,6 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "author": "Offchain Labs, Inc.",
   "license": "BUSL-1.1",
@@ -33,7 +33,8 @@
   "dependencies": {
     "@openzeppelin/contracts": "4.5.0",
     "@openzeppelin/contracts-upgradeable": "4.5.2",
-    "hardhat": "^2.6.6"
+    "hardhat": "^2.6.6",
+    "patch-package": "^6.4.7"
   },
   "private": false,
   "devDependencies": {
@@ -57,7 +58,6 @@
     "ethers": "^5.5.2",
     "hardhat-deploy": "^0.11.4",
     "hardhat-gas-reporter": "^1.0.8",
-    "patch-package": "^6.4.7",
     "postinstall-postinstall": "^2.1.0",
     "prettier": "^2.5.1",
     "prettier-plugin-solidity": "^1.0.0-beta.19",

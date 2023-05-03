@@ -144,7 +144,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			configChainId := r.tracker.txStreamer.bc.Config().ChainID
+			configChainId := r.tracker.txStreamer.chainConfig.ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
 			}
@@ -570,17 +570,19 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	if err != nil {
 		return nil, err
 	}
-	blockNum := big.NewInt(0).SetUint64(metadata.L1Block)
+	blockNum := arbmath.UintToBig(metadata.L1Block)
 	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
 	if err != nil {
 		return nil, err
 	}
+	var seenBatches []uint64
 	for _, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
 			return batch.Serialize(ctx, r.client)
 		}
+		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
-	return nil, errors.New("sequencer batch not found")
+	return nil, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.L1Block, seenBatches)
 }
 
 func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {

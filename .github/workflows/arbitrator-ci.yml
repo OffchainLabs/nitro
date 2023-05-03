@@ -18,7 +18,7 @@ on:
 env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings
-  WABT_VERSION: 1.0.24
+  WABT_VERSION: 1.0.32
 
 jobs:
   coverage:
@@ -33,17 +33,28 @@ jobs:
       - name: Install Ubuntu dependencies
         run: |
           sudo add-apt-repository -y ppa:ethereum/ethereum
-          sudo add-apt-repository -y ppa:longsleep/golang-backports
           sudo apt-get update && sudo apt-get install -y \
-            build-essential cmake nodejs ethereum lld-14 golang-go libudev-dev
+            build-essential cmake ethereum lld-14 libudev-dev
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
+
+      - name: Install go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.19.x
+
+      - name: Setup nodejs
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
 
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
         id: install-rust
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: "stable"
           override: true
           components: 'llvm-tools-preview, rustfmt, clippy'
 

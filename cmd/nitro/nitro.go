@@ -6,14 +6,17 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"math/big"
 	"net/http"
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -40,8 +43,10 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -52,6 +57,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func printSampleUsage(name string) {
@@ -228,6 +234,7 @@ func mainImpl() int {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.AuthRPC.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
@@ -238,6 +245,33 @@ func mainImpl() int {
 	stackConf.P2P.NoDiscovery = true
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
+
+	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
+		fileName := stackConf.ResolvePath("jwtsecret")
+		secret := common.Hash{}
+		_, err := rand.Read(secret[:])
+		if err != nil {
+			log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+		}
+		err = os.MkdirAll(filepath.Dir(fileName), 0755)
+		if err != nil {
+			log.Crit("couldn't create directory for jwt secret", "err", err, "dirName", filepath.Dir(fileName))
+		}
+		err = os.WriteFile(fileName, []byte(secret.Hex()), fs.FileMode(0600|os.O_CREATE))
+		if errors.Is(err, fs.ErrExist) {
+			log.Info("using existing jwt file", "fileName", fileName)
+		} else {
+			if err != nil {
+				log.Crit("couldn't create jwt secret", "err", err, "fileName", fileName)
+			}
+			log.Info("created jwt file", "fileName", fileName)
+		}
+		stackConf.JWTSecret = fileName
+	}
+
+	if nodeConfig.Node.BlockValidator.JWTSecret == "self" {
+		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
+	}
 
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
@@ -276,13 +310,13 @@ func mainImpl() int {
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
-	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	validatorCanAct := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Staker.OnlyCreateWalletContract
+	validatorCanAct := nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
 			flag.Usage()
-			log.Crit("error opening L1 wallet", "err", err)
+			log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 		}
 	}
 
@@ -300,19 +334,23 @@ func mainImpl() int {
 		l1Client = nil
 	}
 
-	if nodeConfig.Node.Validator.Enable {
+	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			log.Crit("validator have the L1 reader enabled")
 		}
-		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
+		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		if err != nil {
+			log.Crit("couldn't parse staker strategy", "err", err)
+		}
+		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
-	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
-		if !nodeConfig.Node.Validator.UseSmartContractWallet {
+	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
+		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
@@ -352,8 +390,12 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), execution.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching), l1Client, rollupAddrs)
 	defer closeDb(chainDb, "chainDb")
+	if l2BlockChain != nil {
+		// Calling Stop on the blockchain multiple times does nothing
+		defer l2BlockChain.Stop()
+	}
 	if err != nil {
 		flag.Usage()
 		log.Error("error initializing database", "err", err)
@@ -395,6 +437,17 @@ func mainImpl() int {
 	}
 
 	fatalErrChan := make(chan error, 10)
+
+	valNode, err := valnode.CreateValidationNode(
+		func() *valnode.Config { return &liveNodeConfig.get().Validation },
+		stack,
+		fatalErrChan,
+	)
+	if err != nil {
+		valNode = nil
+		log.Warn("couldn't init validation node", "err", err)
+	}
+
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
@@ -433,14 +486,23 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), currentNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, currentNode.Execution.Backend.APIBackend(), currentNode.Execution.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
 	}
 
-	if err := currentNode.Start(ctx); err != nil {
-		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+	if valNode != nil {
+		err = valNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting validator node: %w", err)
+		}
+	}
+	if err == nil {
+		err = currentNode.Start(ctx)
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting node: %w", err)
+		}
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -467,6 +529,7 @@ func mainImpl() int {
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
+	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
@@ -476,10 +539,12 @@ type NodeConfig struct {
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
+	AuthRPC       genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	Init          InitConfig                      `koanf:"init"`
+	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -500,6 +565,7 @@ var NodeConfigDefault = NodeConfig{
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
+	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
@@ -509,10 +575,12 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
+	genericconf.AuthRPCConfigAddOptions("auth", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	InitConfigAddOptions("init", f)
+	genericconf.RpcConfigAddOptions("rpc", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -542,8 +610,12 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 		}
 
 		for i := 0; i < node.NumField(); i++ {
-			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
-			dot := path + "." + node.Type().Field(i).Name
+			fieldTy := node.Type().Field(i)
+			if !fieldTy.IsExported() {
+				continue
+			}
+			hot := fieldTy.Tag.Get("reload") == "hot"
+			dot := path + "." + fieldTy.Name
 
 			first := node.Field(i).Interface()
 			other := value.Field(i).Interface()
@@ -562,6 +634,39 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 
 func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
+}
+
+type RpcLogger struct{}
+
+func (l RpcLogger) OnRequest(request interface{}) rpc.ResultHook {
+	log.Trace("sending L1 RPC request", "request", request)
+	return RpcResultLogger{request}
+}
+
+type RpcResultLogger struct {
+	request interface{}
+}
+
+const maxRequestLogLength int = 2048
+
+func (l RpcResultLogger) OnResult(response interface{}, err error) {
+	if err != nil {
+		logger := log.Info
+		if err.Error() == "already known" {
+			logger = log.Trace
+		}
+		// The request might not've been logged if the log level is debug not trace, so we log it again here
+		request := fmt.Sprintf("%+v", l.request)
+		if len(request) > maxRequestLogLength {
+			prefix := request[:maxRequestLogLength/2]
+			postfix := request[len(request)-maxRequestLogLength/2:]
+			request = fmt.Sprintf("%v...%v", prefix, postfix)
+		}
+		logger("received error response from L1 RPC", "request", request, "response", response, "err", err)
+	} else {
+		// The request was already logged and can be cross-referenced by JSON-RPC id
+		log.Trace("received response from L1 RPC", "response", response)
+	}
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -584,8 +689,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			maxConnectionAttempts = math.MaxInt
 		}
 		for i := 1; i <= maxConnectionAttempts; i++ {
-			l1Client, err = ethclient.DialContext(ctx, l1URL)
+			rawRpc, err := rpc.DialContextWithRequestHook(ctx, l1URL, RpcLogger{})
 			if err == nil {
+				l1Client = ethclient.NewClient(rawRpc)
 				l1ChainId, err = l1Client.ChainID(ctx)
 				if err == nil {
 					// Successfully got chain ID
@@ -720,13 +826,14 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
+	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
 func applyArbitrumOneParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "arb1",
-		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"node.forwarding-target":             "https://arb1-sequencer.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
 		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",

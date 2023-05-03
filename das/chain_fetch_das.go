@@ -37,35 +37,11 @@ func (c *syncedKeysetCache) put(key [32]byte, value []byte) {
 	c.cache[key] = value
 }
 
-type ChainFetchDAS struct {
-	DataAvailabilityService
-	seqInboxCaller   *bridgegen.SequencerInboxCaller
-	seqInboxFilterer *bridgegen.SequencerInboxFilterer
-	keysetCache      syncedKeysetCache
-}
-
 type ChainFetchReader struct {
 	arbstate.DataAvailabilityReader
 	seqInboxCaller   *bridgegen.SequencerInboxCaller
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer
 	keysetCache      syncedKeysetCache
-}
-
-func NewChainFetchDAS(inner DataAvailabilityService, l1client arbutil.L1Interface, seqInboxAddr common.Address) (*ChainFetchDAS, error) {
-	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1client)
-	if err != nil {
-		return nil, err
-	}
-	return NewChainFetchDASWithSeqInbox(inner, seqInbox)
-}
-
-func NewChainFetchDASWithSeqInbox(inner DataAvailabilityService, seqInbox *bridgegen.SequencerInbox) (*ChainFetchDAS, error) {
-	return &ChainFetchDAS{
-		DataAvailabilityService: inner,
-		seqInboxCaller:          &seqInbox.SequencerInboxCaller,
-		seqInboxFilterer:        &seqInbox.SequencerInboxFilterer,
-		keysetCache:             syncedKeysetCache{cache: make(map[[32]byte][]byte)},
-	}, nil
 }
 
 func NewChainFetchReader(inner arbstate.DataAvailabilityReader, l1client arbutil.L1Interface, seqInboxAddr common.Address) (*ChainFetchReader, error) {
@@ -84,11 +60,6 @@ func NewChainFetchReaderWithSeqInbox(inner arbstate.DataAvailabilityReader, seqI
 		seqInboxFilterer:       &seqInbox.SequencerInboxFilterer,
 		keysetCache:            syncedKeysetCache{cache: make(map[[32]byte][]byte)},
 	}, nil
-}
-
-func (c *ChainFetchDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	log.Trace("das.ChainFetchDAS.GetByHash", "hash", pretty.PrettyHash(hash))
-	return chainFetchGetByHash(ctx, c.DataAvailabilityService, &c.keysetCache, c.seqInboxCaller, c.seqInboxFilterer, hash)
 }
 
 func (c *ChainFetchReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {

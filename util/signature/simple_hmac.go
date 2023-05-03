@@ -21,11 +21,11 @@ type SimpleHmac struct {
 }
 
 func NewSimpleHmac(config *SimpleHmacConfig) (*SimpleHmac, error) {
-	signingKey, err := loadSigningKey(config.SigningKey)
+	signingKey, err := LoadSigningKey(config.SigningKey)
 	if err != nil {
 		return nil, err
 	}
-	fallbackVerificationKey, err := loadSigningKey(config.FallbackVerificationKey)
+	fallbackVerificationKey, err := LoadSigningKey(config.FallbackVerificationKey)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ var TestSimpleHmacConfig = SimpleHmacConfig{
 
 var keyIsHexRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
 
-func loadSigningKey(keyConfig string) (*common.Hash, error) {
+func LoadSigningKey(keyConfig string) (*common.Hash, error) {
 	if keyConfig == "" {
 		return nil, nil
 	}
