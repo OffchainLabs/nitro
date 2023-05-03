@@ -112,7 +112,12 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	newState, err := InitializeArbosState(statedb, burner, params.ArbitrumDevTestChainConfig())
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		log.Crit("failed to serialize chain config", "error", err)
+	}
+	newState, err := InitializeArbosState(statedb, burner, chainConfig, serializedChainConfig)
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}
@@ -179,7 +184,7 @@ func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Addres
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig) (*ArbosState, error) {
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, serializedChainConfig []byte) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -192,11 +197,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	desiredArbosVersion := chainConfig.ArbitrumChainParams.InitialArbOSVersion
 	if desiredArbosVersion == 0 {
 		return nil, errors.New("cannot initialize to ArbOS version 0")
-	}
-
-	serializedChainConfig, err := json.Marshal(chainConfig)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to serialize chain config")
 	}
 
 	// Solidity requires call targets have code, but precompiles don't.

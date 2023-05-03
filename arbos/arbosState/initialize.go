@@ -73,7 +73,8 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	}
 
 	burner := burn.NewSystemBurner(nil, false)
-	arbosState, err := InitializeArbosState(statedb, burner, chainConfig)
+	// TODO(magic) pass serializedChainConfig from init message
+	arbosState, err := InitializeArbosState(statedb, burner, chainConfig, []byte{})
 	if err != nil {
 		log.Crit("failed to open the ArbOS state", "error", err)
 	}

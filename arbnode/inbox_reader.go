@@ -141,7 +141,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, initChainConfig, err := message.ParseInitMessage()
+			initChainId, initChainConfig, _, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}

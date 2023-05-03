@@ -243,7 +243,7 @@ func main() {
 
 		message := readMessage(false)
 
-		chainId, chainConfig, err := message.Message.ParseInitMessage()
+		chainId, chainConfig, serializedChainConfig, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
@@ -256,7 +256,7 @@ func main() {
 			}
 		}
 
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig)
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, serializedChainConfig)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}

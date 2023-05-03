@@ -236,28 +236,28 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
 
 // ParseInitMessage returns the chain id on success
-func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig, error) {
+func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig, []byte, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
-		return nil, nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
+		return nil, nil, nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
 	var chainConfig params.ChainConfig
 	var chainId *big.Int
 	if len(msg.L2msg) == 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
-		return chainId, nil, nil
+		return chainId, nil, nil, nil
 	} else if len(msg.L2msg) > 32 {
 		chainId = new(big.Int).SetBytes(msg.L2msg[:32])
 		version := msg.L2msg[32]
 		if version == 0 && len(msg.L2msg) > 33 {
-			chainConfigBytes := msg.L2msg[33:]
-			err := json.Unmarshal(chainConfigBytes, &chainConfig)
+			serializedChainConfig := msg.L2msg[33:]
+			err := json.Unmarshal(serializedChainConfig, &chainConfig)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, hex.EncodeToString(msg.L2msg))
+				return nil, nil, nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, hex.EncodeToString(msg.L2msg))
 			}
-			return chainId, &chainConfig, nil
+			return chainId, &chainConfig, serializedChainConfig, nil
 		}
 	}
-	return nil, nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
+	return nil, nil, nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
 }
 
 func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, error) {
