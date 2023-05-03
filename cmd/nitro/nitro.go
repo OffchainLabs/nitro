@@ -805,7 +805,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2Ch
 	for _, l2ChainInfoFile := range l2ChainInfoFiles {
 		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
 		}
 		var chainsInfo map[uint64]arbos.ChainInfo
 		err = encoding_json.Unmarshal(chainsInfoBytes, &chainsInfo)

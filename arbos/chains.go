@@ -32,7 +32,7 @@ func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles [
 	for _, l2ChainInfoFile := range l2ChainInfoFiles {
 		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
 		}
 		var chainsInfo map[uint64]ChainInfo
 		err = encoding_json.Unmarshal(chainsInfoBytes, &chainsInfo)
