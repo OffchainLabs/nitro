@@ -29,19 +29,19 @@ type ClientConfig struct {
 type ClientConfigFetcher func() *ClientConfig
 
 var TestClientConfig = ClientConfig{
-	URL:       "auto",
+	URL:       "self",
 	JWTSecret: "",
 }
 
 var DefaultClientConfig = ClientConfig{
-	URL:         "auto-auth",
+	URL:         "self-auth",
 	JWTSecret:   "",
 	ArgLogLimit: 2048,
 }
 
 func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientConfig) {
-	f.String(prefix+".url", defaultConfig.URL, "url of server, use auto for loopback websocket, auto-auth for loopback with authentication")
-	f.String(prefix+".jwtsecret", defaultConfig.JWTSecret, "path to file with jwtsecret for validation - ignored if url is auto or auto-auth")
+	f.String(prefix+".url", defaultConfig.URL, "url of server, use self for loopback websocket, self-auth for loopback with authentication")
+	f.String(prefix+".jwtsecret", defaultConfig.JWTSecret, "path to file with jwtsecret for validation - ignored if url is self or self-auth")
 	f.Duration(prefix+".connection-wait", defaultConfig.ConnectionWait, "how long to wait for initial connection")
 	f.Duration(prefix+".timeout", defaultConfig.Timeout, "per-response timeout (0-disabled)")
 	f.Uint(prefix+".arg-log-limit", defaultConfig.ArgLogLimit, "limit size of arguments in log entries")
@@ -130,15 +130,15 @@ func (c *RpcClient) EthSubscribe(ctx context.Context, channel interface{}, args 
 func (c *RpcClient) Start(ctx_in context.Context) error {
 	url := c.config().URL
 	jwtPath := c.config().JWTSecret
-	if url == "auto" {
+	if url == "self" {
 		if c.autoStack == nil {
-			return errors.New("auto not supported for this connection")
+			return errors.New("self not supported for this connection")
 		}
 		url = c.autoStack.WSEndpoint()
 		jwtPath = ""
-	} else if url == "auto-auth" {
+	} else if url == "self-auth" {
 		if c.autoStack == nil {
-			return errors.New("auto-auth not supported for this connection")
+			return errors.New("self-auth not supported for this connection")
 		}
 		url, jwtPath = c.autoStack.AuthEndpoint(true)
 	} else if url == "" {

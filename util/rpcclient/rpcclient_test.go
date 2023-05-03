@@ -94,7 +94,7 @@ func TestRpcClientRetry(t *testing.T) {
 
 	configFetcher := func() *ClientConfig {
 		return &ClientConfig{
-			URL:     "auto",
+			URL:     "self",
 			Timeout: time.Second * 5,
 			Retries: 2,
 		}
