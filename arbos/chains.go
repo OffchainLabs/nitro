@@ -4,19 +4,21 @@
 package arbos
 
 import (
-	encoding_json "encoding/json"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 )
 
 type ChainInfo struct {
-	ChainName       string                    `json:"chain-name"`
-	ParentChainId   uint64                    `json:"parent-chain-id"`
-	ChainParameters *encoding_json.RawMessage `json:"chain-parameters"`
-	ChainConfig     *params.ChainConfig       `json:"chain-config"`
+	ChainName       string              `json:"chain-name"`
+	ParentChainId   uint64              `json:"parent-chain-id"`
+	ChainParameters *json.RawMessage    `json:"chain-parameters"`
+	ChainConfig     *params.ChainConfig `json:"chain-config"`
 }
 
 func getStaticChainConfig(chainId *big.Int) (*params.ChainConfig, error) {
@@ -29,22 +31,13 @@ func getStaticChainConfig(chainId *big.Int) (*params.ChainConfig, error) {
 }
 
 func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles []string) (*params.ChainConfig, error) {
-	for _, l2ChainInfoFile := range l2ChainInfoFiles {
-		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
-		}
-		var chainsInfo map[uint64]ChainInfo
-		err = encoding_json.Unmarshal(chainsInfoBytes, &chainsInfo)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := chainsInfo[chainId.Uint64()]; !ok {
-			continue
-		}
-		chainConfig := chainsInfo[chainId.Uint64()].ChainConfig
-		chainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
-		return chainConfig, nil
+	chainInfo, err := ProcessChainInfo(chainId.Uint64(), l2ChainInfoFiles)
+	if err != nil {
+		return nil, err
+	}
+	if chainInfo != nil {
+		chainInfo.ChainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
+		return chainInfo.ChainConfig, nil
 	}
 	if len(l2ChainInfoFiles) == 0 {
 		staticChainConfig, err := getStaticChainConfig(chainId)
@@ -55,4 +48,36 @@ func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles [
 		return staticChainConfig, nil
 	}
 	return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+}
+
+func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, error) {
+	for _, l2ChainInfoFile := range l2ChainInfoFiles {
+		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
+		}
+		var chainsInfo map[uint64]ChainInfo
+		err = json.Unmarshal(chainsInfoBytes, &chainsInfo)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := chainsInfo[chainId]; !ok {
+			continue
+		}
+		chainInfo := chainsInfo[chainId]
+		return &chainInfo, nil
+	}
+	if len(l2ChainInfoFiles) == 0 {
+		var chainsInfo map[uint64]ChainInfo
+		err := json.Unmarshal(chain_info.DefaultChainInfo, &chainsInfo)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := chainsInfo[chainId]; !ok {
+			return nil, nil
+		}
+		chainInfo := chainsInfo[chainId]
+		return &chainInfo, nil
+	}
+	return nil, nil
 }

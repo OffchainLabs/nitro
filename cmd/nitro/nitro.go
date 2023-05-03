@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
-	encoding_json "encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -802,23 +801,15 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 }
 
 func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
-	for _, l2ChainInfoFile := range l2ChainInfoFiles {
-		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
-		if err != nil {
-			return false, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
+	chainInfo, err := arbos.ProcessChainInfo(chainId, l2ChainInfoFiles)
+	if err != nil {
+		return false, err
+	}
+	if chainInfo != nil {
+		if chainInfo.ParentChainId != l1ChainId {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
 		}
-		var chainsInfo map[uint64]arbos.ChainInfo
-		err = encoding_json.Unmarshal(chainsInfoBytes, &chainsInfo)
-		if err != nil {
-			return false, err
-		}
-		if _, ok := chainsInfo[chainId]; !ok {
-			continue
-		}
-		if chainsInfo[chainId].ParentChainId != l1ChainId {
-			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainsInfo[chainId].ParentChainId, l2ChainInfoFile, chainId, l1ChainId)
-		}
-		err = k.Load(rawbytes.Provider(*chainsInfo[chainId].ChainParameters), json.Parser())
+		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
 		if err != nil {
 			return false, err
 		}

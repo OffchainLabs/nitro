@@ -45,7 +45,7 @@ type L2Config struct {
 
 var L2ConfigDefault = L2Config{
 	ChainID:        0,
-	ChainInfoFiles: []string{},
+	ChainInfoFiles: []string{}, // Default file used is chain_info/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_config.go
 	DevWallet:      genericconf.WalletConfigDefault,
 }
 
