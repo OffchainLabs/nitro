@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{evm, Bytes20, Bytes32};
+use crate::{address as addr, Bytes20, Bytes32};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -219,5 +219,5 @@ pub fn address() -> Bytes20 {
 }
 
 pub fn balance() -> Option<Bytes32> {
-    evm::address_balance(address())
+    addr::balance(address())
 }

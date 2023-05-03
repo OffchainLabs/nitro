@@ -33,21 +33,21 @@ pub unsafe extern "C" fn user_host__address_balance(address: usize, dest: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__address_code_hash(address: usize, dest: usize) {
+pub unsafe extern "C" fn user_host__address_codehash(address: usize, dest: usize) {
     let program = Program::start();
     let address = wavm::read_bytes20(address);
 
-    let (value, gas_cost) = program.evm_api.address_code_hash(address.into());
+    let (value, gas_cost) = program.evm_api.address_codehash(address.into());
     program.buy_gas(gas_cost).unwrap();
     wavm::write_slice_usize(&value.0, dest);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__block_hash(block: usize, dest: usize) {
+pub unsafe extern "C" fn user_host__evm_blockhash(block: usize, dest: usize) {
     let program = Program::start();
     let block = wavm::read_bytes32(block);
 
-    let (value, gas_cost) = program.evm_api.block_hash(block.into());
+    let (value, gas_cost) = program.evm_api.evm_blockhash(block.into());
     program.buy_gas(gas_cost).unwrap();
     wavm::write_slice_usize(&value.0, dest);
 }

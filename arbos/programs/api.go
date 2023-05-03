@@ -17,9 +17,9 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-type addressBalance func(address common.Address) (value common.Hash, cost uint64)
-type addressCodeHash func(address common.Address) (value common.Hash, cost uint64)
-type blockHash func(block common.Hash) (value common.Hash, cost uint64)
+type addressBalanceType func(address common.Address) (value common.Hash, cost uint64)
+type addressCodeHashType func(address common.Address) (value common.Hash, cost uint64)
+type evmBlockHashType func(block common.Hash) (value common.Hash, cost uint64)
 type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
 type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
 type contractCallType func(
@@ -46,9 +46,9 @@ type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics uint32) error
 
 type goClosures struct {
-	addressBalance  addressBalance
-	addressCodeHash addressCodeHash
-	blockHash       blockHash
+	addressBalance  addressBalanceType
+	addressCodeHash addressCodeHashType
+	evmBlockHash    evmBlockHashType
 	getBytes32      getBytes32Type
 	setBytes32      setBytes32Type
 	contractCall    contractCallType
@@ -72,6 +72,45 @@ func newApiClosures(
 	depth := evm.Depth()
 	db := evm.StateDB
 
+	addressBalance := func(address common.Address) (common.Hash, uint64) {
+		cost := params.BalanceGasEIP150
+		balance := evm.StateDB.GetBalance(address)
+		return common.BigToHash(balance), cost
+	}
+	addressCodeHash := func(address common.Address) (common.Hash, uint64) {
+		cost := params.ExtcodeHashGasConstantinople
+		if !evm.StateDB.Empty(address) {
+			return evm.StateDB.GetCodeHash(address), cost
+		}
+		return common.Hash{}, cost
+	}
+	evmBlockHash := func(block common.Hash) (common.Hash, uint64) {
+		cost := vm.GasExtStep
+		requested := block.Big()
+		if !requested.IsUint64() {
+			return common.Hash{}, cost
+		}
+		num := requested.Uint64()
+		upper, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
+		if err != nil {
+			return common.Hash{}, cost
+		}
+
+		var lower uint64
+		if upper < 257 {
+			lower = 0
+		} else {
+			lower = upper - 256
+		}
+		if num >= lower && num < upper {
+			hash, err := evm.ProcessingHook.L1BlockHash(evm.Context, num)
+			if err != nil {
+				return common.Hash{}, cost
+			}
+			return hash, cost
+		}
+		return common.Hash{}, cost
+	}
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		if tracingInfo != nil {
 			tracingInfo.RecordStorageGet(key)
@@ -254,14 +293,17 @@ func newApiClosures(
 	}
 
 	return &goClosures{
-		getBytes32:    getBytes32,
-		setBytes32:    setBytes32,
-		contractCall:  contractCall,
-		delegateCall:  delegateCall,
-		staticCall:    staticCall,
-		create1:       create1,
-		create2:       create2,
-		getReturnData: getReturnData,
-		emitLog:       emitLog,
+		addressBalance:  addressBalance,
+		addressCodeHash: addressCodeHash,
+		evmBlockHash:    evmBlockHash,
+		getBytes32:      getBytes32,
+		setBytes32:      setBytes32,
+		contractCall:    contractCall,
+		delegateCall:    delegateCall,
+		staticCall:      staticCall,
+		create1:         create1,
+		create2:         create2,
+		getReturnData:   getReturnData,
+		emitLog:         emitLog,
 	}
 }

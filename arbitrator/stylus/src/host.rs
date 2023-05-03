@@ -19,7 +19,7 @@ pub(crate) fn return_data<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32)
     Ok(())
 }
 
-pub(crate) fn evm_address_balance<E: EvmApi>(mut env: WasmEnvMut<E>, address: u32, ptr: u32) -> MaybeEscape {
+pub(crate) fn address_balance<E: EvmApi>(mut env: WasmEnvMut<E>, address: u32, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let address = env.read_bytes20(address)?;
     let (balance, gas_cost) = env.evm_api.address_balance(address);
@@ -28,10 +28,10 @@ pub(crate) fn evm_address_balance<E: EvmApi>(mut env: WasmEnvMut<E>, address: u3
     Ok(())
 }
 
-pub(crate) fn evm_address_codehash<E: EvmApi>(mut env: WasmEnvMut<E>, address: u32, ptr: u32) -> MaybeEscape {
+pub(crate) fn address_codehash<E: EvmApi>(mut env: WasmEnvMut<E>, address: u32, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let address = env.read_bytes20(address)?;
-    let (hash, gas_cost) = env.evm_api.address_code_hash(address);
+    let (hash, gas_cost) = env.evm_api.address_codehash(address);
     env.write_slice(ptr, &hash.0)?;
     env.buy_gas(gas_cost)?;
     Ok(())
@@ -40,7 +40,7 @@ pub(crate) fn evm_address_codehash<E: EvmApi>(mut env: WasmEnvMut<E>, address: u
 pub(crate) fn evm_blockhash<E: EvmApi>(mut env: WasmEnvMut<E>, block: u32, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
     let block = env.read_bytes32(block)?;
-    let (hash, gas_cost) = env.evm_api.block_hash(block);
+    let (hash, gas_cost) = env.evm_api.evm_blockhash(block);
     env.write_slice(ptr, &hash.0)?;
     env.buy_gas(gas_cost)?;
     Ok(())

@@ -198,13 +198,13 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         (value.assert_bytes32(), cost.assert_u64())
     }
 
-    fn address_code_hash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let [value, cost] = call!(self, 2, AddressCodeHash, address);
         (value.assert_bytes32(), cost.assert_u64())
     }
 
-    fn block_hash(&mut self, block: Bytes32) -> (Bytes32, u64) {
-        let [value, cost] = call!(self, 2, BlockHash, block);
+    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, EvmBlockHash, block);
         (value.assert_bytes32(), cost.assert_u64())
     }
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {

@@ -118,10 +118,10 @@ func addressCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	return hashToBytes32(value)
 }
 
-//export blockHashImpl
-func blockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
+//export evmBlockHashImpl
+func evmBlockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
 	closures := getApi(api)
-	value, gas := closures.blockHash(block.toHash())
+	value, gas := closures.evmBlockHash(block.toHash())
 	*cost = u64(gas)
 	return hashToBytes32(value)
 }

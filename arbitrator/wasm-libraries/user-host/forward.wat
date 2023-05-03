@@ -2,10 +2,13 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (import "user_host" "arbitrator_forward__read_args"              (func $read_args             (param i32)))
-    (import "user_host" "arbitrator_forward__return_data"            (func $return_data           (param i32 i32)))
-    (import "user_host" "arbitrator_forward__account_load_bytes32"   (func $account_load_bytes32  (param i32 i32)))
-    (import "user_host" "arbitrator_forward__account_store_bytes32"  (func $account_store_bytes32 (param i32 i32)))
+    (import "user_host" "arbitrator_forward__read_args"             (func $read_args             (param i32)))
+    (import "user_host" "arbitrator_forward__return_data"           (func $return_data           (param i32 i32)))
+    (import "user_host" "arbitrator_forward__address_balance"       (func $address_balance       (param i32 i32)))
+    (import "user_host" "arbitrator_forward__address_codehash"      (func $address_codehash      (param i32 i32)))
+    (import "user_host" "arbitrator_forward__evm_blockhash"         (func $evm_blockhash         (param i32 i32)))
+    (import "user_host" "arbitrator_forward__account_load_bytes32"  (func $account_load_bytes32  (param i32 i32)))
+    (import "user_host" "arbitrator_forward__account_store_bytes32" (func $account_store_bytes32 (param i32 i32)))
     (import "user_host" "arbitrator_forward__call_contract"
         (func $call_contract (param i32 i32 i32 i32 i64 i32) (result i32)))
     (import "user_host" "arbitrator_forward__delegate_call_contract"
@@ -20,6 +23,9 @@
     (import "user_host" "arbitrator_forward__tx_origin"        (func $tx_origin (param i32)))
     (export "forward__read_args"              (func $read_args))
     (export "forward__return_data"            (func $return_data))
+    (export "forward__address_balance"        (func $address_balance))
+    (export "forward__address_codehash"       (func $address_codehash))
+    (export "forward__evm_blockhash"          (func $evm_blockhash))
     (export "forward__account_load_bytes32"   (func $account_load_bytes32))
     (export "forward__account_store_bytes32"  (func $account_store_bytes32))
     (export "forward__call_contract"          (func $call_contract))

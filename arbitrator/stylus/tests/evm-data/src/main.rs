@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{Bytes20, Bytes32, block, contract, evm, msg, tx};
+use arbitrum::{Bytes20, Bytes32, address, block, contract, evm, msg, tx};
 
 arbitrum::arbitrum_main!(user_main);
 
@@ -12,8 +12,8 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let arb_test_addr = Bytes20::from_slice(&input[20..40]).expect("incorrect slice size for Bytes20");
     let burn_call_data = &input[40..];
 
-    let address_balance = evm::address_balance(balance_check_addr);
-    let address_codehash = evm::address_code_hash(arb_test_addr);
+    let address_balance = address::balance(balance_check_addr);
+    let address_codehash = address::codehash(arb_test_addr);
     let block: u64 = 4;
     let blockhash = evm::blockhash(block.into());
     let basefee = block::basefee();

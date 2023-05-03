@@ -111,8 +111,8 @@ impl<E: EvmApi> NativeInstance<E> {
             "forward" => {
                 "read_args" => func!(host::read_args),
                 "return_data" => func!(host::return_data),
-                "evm_address_balance" => func!(host::evm_address_balance),
-                "evm_address_codehash" => func!(host::evm_address_codehash),
+                "address_balance" => func!(host::address_balance),
+                "address_codehash" => func!(host::address_codehash),
                 "evm_blockhash" => func!(host::evm_blockhash),
                 "evm_gas_left" => func!(host::evm_gas_left),
                 "evm_ink_left" => func!(host::evm_ink_left),
@@ -303,8 +303,8 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         "forward" => {
             "read_args" => stub!(|_: u32|),
             "return_data" => stub!(|_: u32, _: u32|),
-            "evm_address_balance" => stub!(|_: u32, _: u32|),
-            "evm_address_codehash" => stub!(|_: u32, _: u32|),
+            "address_balance" => stub!(|_: u32, _: u32|),
+            "address_codehash" => stub!(|_: u32, _: u32|),
             "evm_blockhash" => stub!(|_: u32, _: u32|),
             "evm_gas_left" => stub!(u64 <- ||),
             "evm_ink_left" => stub!(u64 <- ||),

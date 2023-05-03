@@ -56,15 +56,15 @@ impl TestEvmApi {
 
 impl EvmApi for TestEvmApi {
     fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        self.address_balance(address)
+        todo!("address balance call not yet supported")
     }
 
-    fn address_code_hash(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        self.address_code_hash(address)
+    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        todo!("address codehash call not yet supported")
     }
 
-    fn block_hash(&mut self, block: Bytes32) -> (Bytes32, u64) {
-        self.block_hash(block)
+    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
+        todo!("blockhash call not yet supported")
     }
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let storage = &mut self.storage.lock();
