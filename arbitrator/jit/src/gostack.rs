@@ -242,7 +242,10 @@ impl GoStack {
     }
 
     /// Resumes the Go runtime, updating the stack pointer.
-    /// Safety: caller must cut lifetimes before this call.
+    ///
+    /// # Safety
+    ///
+    /// Caller must cut lifetimes before this call.
     pub unsafe fn resume(&mut self, env: &mut WasmEnv, store: &mut StoreMut) -> MaybeEscape {
         let Some(resume) = &env.exports.resume else {
             return Escape::failure(format!("wasmer failed to bind {}", "resume".red()))
