@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -43,71 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
-
-type RollupAddresses struct {
-	Bridge                 common.Address `json:"bridge"`
-	Inbox                  common.Address `json:"inbox"`
-	SequencerInbox         common.Address `json:"sequencer-inbox"`
-	Rollup                 common.Address `json:"rollup"`
-	ValidatorUtils         common.Address `json:"validator-utils"`
-	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
-	DeployedAt             uint64         `json:"deployed-at"`
-}
-
-type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
-}
-
-func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
-	a := RollupAddresses{
-		DeployedAt: c.DeployedAt,
-	}
-	strs := []string{
-		c.Bridge,
-		c.Inbox,
-		c.SequencerInbox,
-		c.Rollup,
-		c.ValidatorUtils,
-		c.ValidatorWalletCreator,
-	}
-	addrs := []*common.Address{
-		&a.Bridge,
-		&a.Inbox,
-		&a.SequencerInbox,
-		&a.Rollup,
-		&a.ValidatorUtils,
-		&a.ValidatorWalletCreator,
-	}
-	names := []string{
-		"Bridge",
-		"Inbox",
-		"SequencerInbox",
-		"Rollup",
-		"ValidatorUtils",
-		"ValidatorWalletCreator",
-	}
-	if len(strs) != len(addrs) {
-		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
-	}
-	complete := true
-	for i, s := range strs {
-		if !common.IsHexAddress(s) {
-			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
-		}
-		*addrs[i] = common.HexToAddress(s)
-	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
-	return a, nil
-}
 
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
@@ -292,7 +228,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -360,7 +296,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		}
 	}
 
-	return &RollupAddresses{
+	return &chaininfo.RollupAddresses{
 		Bridge:                 info.Bridge,
 		Inbox:                  info.InboxAddress,
 		SequencerInbox:         info.SequencerInbox,
@@ -551,7 +487,7 @@ type Node struct {
 	Execution               *execution.ExecutionNode
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
-	DeployInfo              *RollupAddresses
+	DeployInfo              *chaininfo.RollupAddresses
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -625,7 +561,7 @@ func createNodeImpl(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
+	deployInfo *chaininfo.RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
@@ -958,7 +894,7 @@ func CreateNode(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
+	deployInfo *chaininfo.RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,

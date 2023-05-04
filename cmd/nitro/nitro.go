@@ -49,7 +49,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/cmd/chain_info"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -323,11 +323,11 @@ func mainImpl() int {
 		}
 	}
 
-	var rollupAddrs arbnode.RollupAddresses
+	var rollupAddrs chaininfo.RollupAddresses
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrsConfig, err := chain_info.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		rollupAddrsConfig, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -364,7 +364,7 @@ func mainImpl() int {
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
-		rollupAddrsConfig, err := chain_info.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		rollupAddrsConfig, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -809,7 +809,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 }
 
 func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
-	chainInfo, err := chain_info.ProcessChainInfo(chainId, l2ChainInfoFiles)
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, l2ChainInfoFiles)
 	if err != nil {
 		return false, err
 	}

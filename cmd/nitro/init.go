@@ -32,7 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/chain_info"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -240,7 +240,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
 
 // Finds important roots to retain while proving
-func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) ([]common.Hash, error) {
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) ([]common.Hash, error) {
 	initConfig := &nodeConfig.Init
 	chainConfig := execution.TryReadStoredChainConfig(chainDb)
 	if chainConfig == nil {
@@ -389,7 +389,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	return roots.roots, nil
 }
 
-func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) error {
+func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) error {
 	trieCachePath := cacheConfig.TrieCleanJournal
 	config := &nodeConfig.Init
 	if config.Prune == "" {
@@ -406,7 +406,7 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	return pruner.Prune(root)
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -520,7 +520,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = chain_info.GetChainConfig(chainId, genesisBlockNr, config.L2.ChainInfoFiles)
+		chainConfig, err = chaininfo.GetChainConfig(chainId, genesisBlockNr, config.L2.ChainInfoFiles)
 		if err != nil {
 			return chainDb, nil, err
 		}
