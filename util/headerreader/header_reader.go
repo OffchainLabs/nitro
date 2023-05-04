@@ -219,12 +219,7 @@ func (s *HeaderReader) getPendingCallBlockNumber() (*big.Int, error) {
 		if err != nil {
 			return nil, err
 		}
-		blockNumber, err := arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.GetContext(), Pending: true})
-		if err == nil {
-			return blockNumber, nil
-		} else {
-			log.Trace("failed to get pending block number with ArbSys, trying the normal EVM way", "err", err)
-		}
+		return arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.GetContext(), Pending: true})
 	}
 	return arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
 }
