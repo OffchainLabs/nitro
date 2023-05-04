@@ -54,13 +54,11 @@ func NewMessagePruner(transactionStreamer *TransactionStreamer, inboxTracker *In
 }
 
 func (m *MessagePruner) Start(ctxIn context.Context) {
-	m.CallIteratively(func(ctx context.Context) time.Duration {
-		m.prune(ctx)
-		return m.config().MessagePruneInterval
-	})
+	m.StopWaiter.Start(ctxIn, m)
+	m.CallIteratively(m.prune)
 }
 
-func (m *MessagePruner) prune(ctx context.Context) {
+func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 	latestConfirmedNode, err := m.staker.Rollup().LatestConfirmed(
 		&bind.CallOpts{
 			Context:     ctx,
@@ -68,24 +66,24 @@ func (m *MessagePruner) prune(ctx context.Context) {
 		})
 	if err != nil {
 		log.Error("error getting latest confirmed node: %w", err)
-		return
+		return m.config().MessagePruneInterval
 	}
 	nodeInfo, err := m.staker.Rollup().LookupNode(ctx, latestConfirmedNode)
 	if err != nil {
 		log.Error("error getting latest confirmed node info: %w", err)
-		return
+		return m.config().MessagePruneInterval
 	}
 	endBatchCount := nodeInfo.Assertion.AfterState.GlobalState.Batch
 	if endBatchCount == 0 {
-		return
+		return m.config().MessagePruneInterval
 	}
 	endBatchMetadata, err := m.inboxTracker.GetBatchMetadata(endBatchCount - 1)
 	if err != nil {
 		log.Error("error getting last batch metadata: %w", err)
-		return
+		return m.config().MessagePruneInterval
 	}
 	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, m.inboxTracker.db, m.transactionStreamer.db)
-
+	return m.config().MessagePruneInterval
 }
 
 func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
