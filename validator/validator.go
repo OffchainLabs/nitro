@@ -254,6 +254,40 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) (protocol.Asse
 	return bestAssertion, nil
 }
 
+// validChildFromParent returns the assertion number of a child of the parent assertion number.
+// The assertion must be valid and exists in state manager by `ExecutionStateBlockHeight` validation.
+// It returns the first assertion number that is a child of the parent assertion number. This assumes there's no two children of the same parent.
+// If no such assertion exists, an error gets returned.
+func (v *Validator) validChildFromParent(ctx context.Context, parentAssertionNumber protocol.AssertionSequenceNumber) (protocol.AssertionSequenceNumber, error) {
+	numAssertions, err := v.chain.NumAssertions(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	for s := parentAssertionNumber + 1; s < protocol.AssertionSequenceNumber(numAssertions); s++ {
+		a, err := v.chain.AssertionBySequenceNum(ctx, s)
+		if err != nil {
+			return 0, err
+		}
+		n, err := a.PrevSeqNum()
+		if err != nil {
+			return 0, err
+		}
+		if n != parentAssertionNumber {
+			continue
+		}
+		info, err := v.chain.ReadAssertionCreationInfo(ctx, s)
+		if err != nil {
+			return 0, err
+		}
+		_, hasState := v.stateManager.ExecutionStateBlockHeight(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState))
+		if hasState {
+			return a.SeqNum(), nil
+		}
+	}
+	return 0, fmt.Errorf("no valid assertion found from parent %v", parentAssertionNumber)
+}
+
 // Processes new leaf creation events from the protocol that were not initiated by self.
 func (v *Validator) onLeafCreated(
 	ctx context.Context,
@@ -279,5 +313,10 @@ func (v *Validator) onLeafCreated(
 		return nil
 	}
 
-	return v.challengeAssertion(ctx, assertion)
+	psn, err := assertion.PrevSeqNum()
+	if err != nil {
+		return err
+	}
+
+	return v.challengeAssertion(ctx, psn)
 }
