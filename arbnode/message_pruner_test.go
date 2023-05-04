@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 )
 
-func TestMessagePrunerWithOldMessagesPresent(t *testing.T) {
+func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
 	endBatchCount := uint64(2 * 100 * 1024)
 	endBatchMetadata := BatchMetadata{
 		MessageCount:        2 * 100 * 1024,
@@ -25,7 +25,7 @@ func TestMessagePrunerWithOldMessagesPresent(t *testing.T) {
 
 }
 
-func TestMessagePrunerWithOldMessagesNotPresent(t *testing.T) {
+func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	endBatchCount := uint64(2)
 	endBatchMetadata := BatchMetadata{
 		MessageCount:        2,
