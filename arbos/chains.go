@@ -67,17 +67,15 @@ func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, er
 		chainInfo := chainsInfo[chainId]
 		return &chainInfo, nil
 	}
-	if len(l2ChainInfoFiles) == 0 {
-		var chainsInfo map[uint64]ChainInfo
-		err := json.Unmarshal(chain_info.DefaultChainInfo, &chainsInfo)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := chainsInfo[chainId]; !ok {
-			return nil, nil
-		}
-		chainInfo := chainsInfo[chainId]
-		return &chainInfo, nil
+
+	var chainsInfo map[uint64]ChainInfo
+	err := json.Unmarshal(chain_info.DefaultChainInfo, &chainsInfo)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+	if _, ok := chainsInfo[chainId]; !ok {
+		return nil, nil
+	}
+	chainInfo := chainsInfo[chainId]
+	return &chainInfo, nil
 }
