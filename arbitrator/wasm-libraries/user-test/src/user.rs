@@ -22,36 +22,6 @@ pub unsafe extern "C" fn forward__return_data(ptr: usize, len: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn forward__address_balance(address: usize, dest: usize) {
-    let mut program = Program::start();
-    let address = Bytes20(wavm::read_bytes20(address));
-
-    let (value, gas_cost) = program.evm_api.address_balance(address.into());
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_slice_usize(&value.0, dest);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__address_codehash(address: usize, dest: usize) {
-    let program = Program::start();
-    let address = wavm::read_bytes20(address);
-
-    let (value, gas_cost) = program.evm_api.address_codehash(address.into());
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_slice_usize(&value.0, dest);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__blockhash(block: usize, dest: usize) {
-    let program = Program::start();
-    let block = wavm::read_bytes32(block);
-
-    let (value, gas_cost) = program.evm_api.evm_blockhash(block.into());
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_slice_usize(&value.0, dest);
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn forward__account_load_bytes32(key: usize, dest: usize) {
     let mut program = Program::start();
     let key = Bytes32(wavm::read_bytes32(key));

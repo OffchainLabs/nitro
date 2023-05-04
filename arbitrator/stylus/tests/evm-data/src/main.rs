@@ -3,17 +3,21 @@
 
 #![no_main]
 
-use arbitrum::{Bytes20, Bytes32, address, block, contract, evm, msg, tx};
+use arbitrum::{Bytes20, address, block, contract, debug, evm, msg, tx};
 
 arbitrum::arbitrum_main!(user_main);
 
 fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let balance_check_addr = Bytes20::from_slice(&input[0..20]).expect("incorrect slice size for Bytes20");
-    let arb_test_addr = Bytes20::from_slice(&input[20..40]).expect("incorrect slice size for Bytes20");
-    let burn_call_data = &input[40..];
+    let balance_check_addr = Bytes20::from_slice(&input[..20]).unwrap();
+    let eth_precompile_addr = Bytes20::from_slice(&input[20..40]).unwrap();
+    let arb_test_addr = Bytes20::from_slice(&input[40..60]).unwrap();
+    let contract_addr = Bytes20::from_slice(&input[60..80]).unwrap();
+    let burn_call_data = &input[80..];
 
     let address_balance = address::balance(balance_check_addr);
-    let address_codehash = address::codehash(arb_test_addr);
+    let eth_precompile_codehash = address::codehash(eth_precompile_addr);
+    let arb_precompile_codehash = address::codehash(arb_test_addr);
+    let contract_codehash = address::codehash(contract_addr);
     let block: u64 = 4;
     let blockhash = evm::blockhash(block.into());
     let basefee = block::basefee();
@@ -37,31 +41,26 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let gas_left_after = evm::gas_left();
     let ink_left_after = evm::ink_left();
 
+    debug::println(format!("contract codehash {contract_codehash:#?}"));
+    debug::println(format!("blockhash {blockhash:#?}"));
     let mut output = vec![];
-    let mut extend_optional = |a: Option<Bytes32>| {
-        match a {
-            Some(data) => output.extend(data.0),
-            None => {
-                let data = [0; 32];
-                output.extend(data)
-            }
-        }
-    };
-    extend_optional(address_balance);
-    extend_optional(address_codehash);
-    extend_optional(blockhash);
-    output.extend(basefee.0);
-    output.extend(chainid.0);
-    output.extend(coinbase.0);
-    output.extend(difficulty.0);
+    output.extend(address_balance.unwrap_or_default().into_iter());
+    output.extend(eth_precompile_codehash.unwrap_or_default().into_iter());
+    output.extend(arb_precompile_codehash.unwrap_or_default().into_iter());
+    output.extend(contract_codehash.unwrap_or_default().into_iter());
+    output.extend(blockhash.unwrap_or_default().into_iter());
+    output.extend(basefee.into_iter());
+    output.extend(chainid.into_iter());
+    output.extend(coinbase.into_iter());
+    output.extend(difficulty.into_iter());
     output.extend(gas_limit.to_be_bytes());
-    output.extend(block_number.0);
-    output.extend(timestamp.0);
-    output.extend(address.0);
-    output.extend(sender.0);
-    output.extend(value.0);
-    output.extend(origin.0);
-    output.extend(gas_price.0);
+    output.extend(block_number.into_iter());
+    output.extend(timestamp.into_iter());
+    output.extend(address.into_iter());
+    output.extend(sender.into_iter());
+    output.extend(value.into_iter());
+    output.extend(origin.into_iter());
+    output.extend(gas_price.into_iter());
     output.extend(ink_price.to_be_bytes());
     output.extend(gas_left_before.to_be_bytes());
     output.extend(ink_left_before.to_be_bytes());

@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -402,6 +403,12 @@ func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
 	rpcClient, err := backend.Attach()
 	Require(t, err)
 	return ethclient.NewClient(rpcClient)
+}
+
+func GethClientForStack(t *testing.T, backend *node.Node) *gethclient.Client {
+	rpcClient, err := backend.Attach()
+	Require(t, err)
+	return gethclient.New(rpcClient)
 }
 
 // Create and deploy L1 and arbnode for L2

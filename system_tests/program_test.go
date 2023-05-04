@@ -510,11 +510,6 @@ func testEvmData(t *testing.T, jit bool) {
 		Require(t, err)
 		return receipt
 	}
-	u64ToBytes := func(input uint64) []byte {
-		inputBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(inputBytes, input)
-		return inputBytes
-	}
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
@@ -525,9 +520,14 @@ func testEvmData(t *testing.T, jit bool) {
 	gasToBurn := uint64(1000000)
 	callBurnData, err := burnArbGas(new(big.Int).SetUint64(gasToBurn))
 	Require(t, err)
-	callEvmDataData := append(evmDataAddr.Bytes(), u64ToBytes(ink)...)
-	callEvmDataData = append(callEvmDataData, l2info.Accounts["Faucet"].Address.Bytes()...)
-	callEvmDataData = append(callEvmDataData, types.ArbosTestAddress.Bytes()...)
+	fundedAccount := l2info.Accounts["Faucet"].Address
+	ethPrecompile := common.BigToAddress(big.NewInt(1))
+	arbTestAddress := types.ArbosTestAddress
+	callEvmDataData := append(evmDataAddr.Bytes(), arbmath.UintToBytes(ink)...)
+	callEvmDataData = append(callEvmDataData, fundedAccount.Bytes()...)
+	callEvmDataData = append(callEvmDataData, ethPrecompile.Bytes()...)
+	callEvmDataData = append(callEvmDataData, arbTestAddress.Bytes()...)
+	callEvmDataData = append(callEvmDataData, evmDataAddr.Bytes()...)
 	callEvmDataData = append(callEvmDataData, callBurnData...)
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
@@ -535,13 +535,19 @@ func testEvmData(t *testing.T, jit bool) {
 	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, callEvmDataData)
 	Require(t, err)
 
-	getU64 := func(name string) uint64 {
-		dataSize := 8
+	checkRemaining := func(name string, dataSize int) {
 		if len(result) < dataSize {
 			Fail(t, "not enough data left", name, dataSize, len(result))
 		}
-		value := binary.BigEndian.Uint64(result[:dataSize])
+	}
+	dropResult := func(dataSize int) {
 		result = result[dataSize:]
+	}
+	getU64 := func(name string) uint64 {
+		dataSize := 8
+		checkRemaining(name, dataSize)
+		value := binary.BigEndian.Uint64(result[:dataSize])
+		dropResult(dataSize)
 		return value
 	}
 	expectU64 := func(name string, expected uint64) {
@@ -552,62 +558,67 @@ func testEvmData(t *testing.T, jit bool) {
 	}
 	expectAddress := func(name string, expected common.Address) {
 		dataSize := 20
-		if len(result) < dataSize {
-			Fail(t, "not enough data left", name, dataSize, len(result))
-		}
+		checkRemaining(name, dataSize)
 		value := common.BytesToAddress(result[:dataSize])
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		result = result[dataSize:]
+		dropResult(dataSize)
+	}
+	expectHash := func(name string, expected common.Hash) common.Hash {
+		dataSize := 32
+		checkRemaining(name, dataSize)
+		value := common.BytesToHash(result[:dataSize])
+		if value != expected {
+			Fail(t, "mismatch", name, value, expected)
+		}
+		dropResult(dataSize)
+		return value
 	}
 	expectBigInt := func(name string, expected *big.Int) {
 		dataSize := 32
-		if len(result) < dataSize {
-			Fail(t, "not enough data left", name, dataSize, len(result))
-		}
+		checkRemaining(name, dataSize)
 		value := new(big.Int).SetBytes(result[:dataSize])
 		if !arbmath.BigEquals(value, expected) {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		result = result[dataSize:]
+		dropResult(dataSize)
 	}
 	expectBigIntGreaterThan := func(name string, expected *big.Int) {
 		dataSize := 32
-		if len(result) < dataSize {
-			Fail(t, "not enough data left", name, dataSize, len(result))
-		}
+		checkRemaining(name, dataSize)
 		value := new(big.Int).SetBytes(result[:dataSize])
 		if !arbmath.BigGreaterThan(value, expected) {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		result = result[dataSize:]
+		dropResult(dataSize)
 	}
 
-	expectedAddressBalance, success := new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7", 16)
-	if !success {
-		Fail(t, "expectedAddressBalance not formatted correctly")
-	}
-	expectBigInt("address balance", expectedAddressBalance)
-	expectedCodeHash, success := new(big.Int).SetString("85390056544617812267951848328061578782426827649981142973569645762604679766667", 10)
-	if !success {
-		Fail(t, "expectedCodeHash not formatted correctly")
-	}
-	expectBigInt("address code hash", expectedCodeHash)
-	expectedHash, success := new(big.Int).SetString("61613497873502972471861111583026735641670395221585790890736138142434671477894", 10)
-	if !success {
-		Fail(t, "expectedHash not formatted correctly")
-	}
-	expectBigInt("blockhash", expectedHash)
+	l2gclient := GethClientForStack(t, node.Stack)
+
+	selectedBlockNumber := big.NewInt(4)
+	expectedBalance, err := l2client.BalanceAt(ctx, fundedAccount, selectedBlockNumber)
+	Require(t, err)
+	expectBigInt("address balance", expectedBalance)
+	expectBigInt("eth precompile code hash", big.NewInt(0))
+	arbPrecompileProof, err := l2gclient.GetProof(ctx, arbTestAddress, nil, selectedBlockNumber)
+	Require(t, err)
+	expectHash("arb precompile code hash", arbPrecompileProof.CodeHash)
+	contractProof, err := l2gclient.GetProof(ctx, evmDataAddr, nil, selectedBlockNumber)
+	Require(t, err)
+	expectHash("contract code hash", contractProof.CodeHash)
+	selectedBlock, err := l2client.BlockByNumber(ctx, selectedBlockNumber)
+	Require(t, err)
+	expectHash("blockhash", common.HexToHash("0x88380104c7132464d7fdc735df32ebd023a4a0ca477379ee10a938bd70c04486"))
 	expectBigInt("base fee", big.NewInt(100000000))
 	expectedChainid, err := l2client.ChainID(ctx)
 	Require(t, err)
 	expectBigInt("chainid", expectedChainid)
-	expectAddress("coinbase", common.HexToAddress("0xA4b000000000000000000073657175656e636572"))
+	expectAddress("coinbase", selectedBlock.Coinbase())
 	expectBigInt("difficulty", big.NewInt(1))
-	expectU64("block gas limit", 0x4000000000000)
-	expectBigInt("block number", big.NewInt(8))
-	expectBigIntGreaterThan("timestamp", big.NewInt(1680662290))
+	expectU64("block gas limit", selectedBlock.GasLimit())
+	expectBigIntGreaterThan("block number", selectedBlock.Number())
+	expectBigIntGreaterThan("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
 	expectAddress("contract address", evmDataAddr)
 	expectAddress("sender", callEvmDataAddr)
 	expectBigInt("value", big.NewInt(0))

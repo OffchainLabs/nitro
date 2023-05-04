@@ -6,7 +6,9 @@
 
 package arbtest
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestProgramArbitratorKeccak(t *testing.T) {
 	keccakTest(t, false)
