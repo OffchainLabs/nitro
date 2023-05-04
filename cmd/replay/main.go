@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -19,11 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"

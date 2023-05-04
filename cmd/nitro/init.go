@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"math/big"
 	"os"
 	"regexp"
@@ -28,10 +27,12 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"

@@ -8,7 +8,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"io"
 	"io/fs"
 	"math"
@@ -50,6 +49,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
