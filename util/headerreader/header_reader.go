@@ -28,6 +28,7 @@ type HeaderReader struct {
 	config                ConfigFetcher
 	client                arbutil.L1Interface
 	isParentChainArbitrum bool
+	arbSys                *precompilesgen.ArbSys
 
 	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
@@ -92,17 +93,23 @@ var TestConfig = Config{
 
 func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) (*HeaderReader, error) {
 	isParentChainArbitrum := false
+	var arbSys *precompilesgen.ArbSys
 	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(codeAt) != 0 {
 		isParentChainArbitrum = true
+		arbSys, err = precompilesgen.NewArbSys(types.ArbSysAddress, client)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &HeaderReader{
 		client:                client,
 		config:                config,
 		isParentChainArbitrum: isParentChainArbitrum,
+		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
 		safe:                  cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
@@ -215,11 +222,7 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 
 func (s *HeaderReader) getPendingCallBlockNumber() (*big.Int, error) {
 	if s.isParentChainArbitrum {
-		arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, s.client)
-		if err != nil {
-			return nil, err
-		}
-		return arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.GetContext(), Pending: true})
+		return s.arbSys.ArbBlockNumber(&bind.CallOpts{Context: s.GetContext(), Pending: true})
 	}
 	return arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
 }
