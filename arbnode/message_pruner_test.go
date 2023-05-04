@@ -11,10 +11,10 @@ import (
 )
 
 func TestMessagePrunerWithOldMessagesPresent(t *testing.T) {
-	endBatchCount := uint64(3)
+	endBatchCount := uint64(2 * 100 * 1024)
 	endBatchMetadata := BatchMetadata{
-		MessageCount:        3,
-		DelayedMessageCount: 3,
+		MessageCount:        2 * 100 * 1024,
+		DelayedMessageCount: 2 * 100 * 1024,
 	}
 	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, endBatchCount, endBatchMetadata)
 	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
