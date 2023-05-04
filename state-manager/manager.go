@@ -295,6 +295,9 @@ func NewForSimpleMachine(
 
 // Produces the latest state to assert to L1 from the local state manager's perspective.
 func (s *Simulated) LatestExecutionState(_ context.Context) (*protocol.ExecutionState, error) {
+	if len(s.executionStates) == 0 {
+		return nil, errors.New("no execution states")
+	}
 	return s.executionStates[len(s.executionStates)-1], nil
 }
 

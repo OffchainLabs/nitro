@@ -79,6 +79,12 @@ jobs:
         with:
           go-version: 1.19
         id: go
+        
+      # Foundry is required for end to end tests
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
 
       - name: Get dependencies
         run: |
@@ -91,7 +97,7 @@ jobs:
         run: go build -v ./...
 
       - name: Test
-        run: go test -v ./...
+        run: ANVIL=$(which anvil) go test -v ./...
 
   bazel:
     name: Bazel
@@ -107,8 +113,17 @@ jobs:
     - name: build
       run: bazel build //...
     - name: test 
-      run: bazel test //... --build_manual_tests
-  
+      run: bazel test //... --build_manual_tests --test_output=all
+    
+    # Foundry is required for end to end tests
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+
+    - name: e2e test 
+      run: bazel test //testing/endtoend:endtoend_suite --test_env=ANVIL=$(which anvil) --test_output=all
+
   sol-test:
     name: Solidity tests
     runs-on: ubuntu-latest
