@@ -321,7 +321,7 @@ func mainImpl() int {
 			log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 		}
 		if nodeConfig.Node.BatchPoster.UseSeparateL1Wallet {
-			l1TransactionOptsBatchPoster, _, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
 				log.Crit("error opening Batch poster L1 wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
