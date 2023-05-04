@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"math/big"
 	"os"
 	"regexp"
@@ -29,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
@@ -519,7 +519,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr, config.L2.ChainInfoFiles)
+		chainConfig, err = chain_info.GetChainConfig(chainId, genesisBlockNr, config.L2.ChainInfoFiles)
 		if err != nil {
 			return chainDb, nil, err
 		}

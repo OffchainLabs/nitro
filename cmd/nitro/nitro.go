@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"io"
 	"io/fs"
 	"math"
@@ -49,7 +50,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -327,7 +327,11 @@ func mainImpl() int {
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
+		rollupAddrsConfig, err := chain_info.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		if err != nil {
+			log.Crit("error getting rollup addresses config", "err", err)
+		}
+		rollupAddrs, err = rollupAddrsConfig.ParseAddresses()
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -360,7 +364,11 @@ func mainImpl() int {
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
+		rollupAddrsConfig, err := chain_info.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		if err != nil {
+			log.Crit("error getting rollup addresses config", "err", err)
+		}
+		deployInfo, err := rollupAddrsConfig.ParseAddresses()
 		if err != nil {
 			log.Crit("error getting deployment info for creating validator wallet contract", "error", err)
 		}
@@ -801,7 +809,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 }
 
 func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
-	chainInfo, err := arbos.ProcessChainInfo(chainId, l2ChainInfoFiles)
+	chainInfo, err := chain_info.ProcessChainInfo(chainId, l2ChainInfoFiles)
 	if err != nil {
 		return false, err
 	}

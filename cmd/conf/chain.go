@@ -4,22 +4,19 @@
 package conf
 
 import (
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	flag "github.com/spf13/pflag"
 )
 
 type L1Config struct {
-	ChainID            uint64                        `koanf:"chain-id"`
-	Rollup             arbnode.RollupAddressesConfig `koanf:"rollup"`
-	URL                string                        `koanf:"url"`
-	ConnectionAttempts int                           `koanf:"connection-attempts"`
-	Wallet             genericconf.WalletConfig      `koanf:"wallet"`
+	ChainID            uint64                   `koanf:"chain-id"`
+	URL                string                   `koanf:"url"`
+	ConnectionAttempts int                      `koanf:"connection-attempts"`
+	Wallet             genericconf.WalletConfig `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
 	ChainID:            0,
-	Rollup:             arbnode.RollupAddressesConfigDefault,
 	URL:                "",
 	ConnectionAttempts: 15,
 	Wallet:             genericconf.WalletConfigDefault,
@@ -28,7 +25,6 @@ var L1ConfigDefault = L1Config{
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
-	arbnode.RollupAddressesConfigAddOptions(prefix+".rollup", f)
 	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet")
 }

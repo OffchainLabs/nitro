@@ -14,17 +14,6 @@
           }
         }
       },
-      "l1": {
-        "rollup": {
-          "bridge": "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
-          "inbox": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
-          "rollup": "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
-          "sequencer-inbox": "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
-          "validator-utils": "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
-          "validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
-          "deployed-at": 15411056
-        }
-      },
       "l2": {
         "chain-id": 42161
       }
@@ -57,6 +46,15 @@
         "InitialChainOwner": "0xd345e41ae2cb00311956aa7109fc801ae8c81a52",
         "GenesisBlockNum": 0
       }
+    },
+    "rollup": {
+      "bridge": "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
+      "inbox": "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+      "rollup": "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
+      "sequencer-inbox": "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
+      "validator-utils": "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
+      "validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
+      "deployed-at": 15411056
     }
   },
   "42170" : {
@@ -79,17 +77,6 @@
             "enable": true,
             "online-url-list": "https://nova.arbitrum.io/das-servers"
           }
-        }
-      },
-      "l1": {
-        "rollup": {
-          "bridge": "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
-          "inbox": "0xc4448b71118c9071bcb9734a0eac55d18a153949",
-          "rollup": "0xfb209827c58283535b744575e11953dcc4bead88",
-          "sequencer-inbox": "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
-          "validator-utils": "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
-          "validator-wallet-creator": "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
-          "deployed-at": 15016829
         }
       },
       "l2": {
@@ -127,6 +114,15 @@
         "InitialChainOwner": "0x9c040726f2a657226ed95712245dee84b650a1b5",
         "GenesisBlockNum": 0
       }
+    },
+    "rollup": {
+      "bridge": "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
+      "inbox": "0xc4448b71118c9071bcb9734a0eac55d18a153949",
+      "rollup": "0xfb209827c58283535b744575e11953dcc4bead88",
+      "sequencer-inbox": "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
+      "validator-utils": "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
+      "validator-wallet-creator": "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
+      "deployed-at": 15016829
     }
   },
   "421611" : {
@@ -142,17 +138,6 @@
           "input": {
             "url" : "wss://rinkeby.arbitrum.io/feed"
           }
-        }
-      },
-      "l1": {
-        "rollup": {
-          "bridge": "0x85c720444e436e1f9407e0c3895d3fe149f41168",
-          "inbox": "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
-          "rollup": "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
-          "sequencer-inbox": "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
-          "validator-utils": "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
-          "validator-wallet-creator": "0x237b8965cebe27108bc1d6b71575c3b070050f7a",
-          "deployed-at": 11088567
         }
       },
       "l2": {
@@ -187,6 +172,15 @@
         "InitialChainOwner": "0x06c7dbc804d7bcd881d7b86b667893736b8e0be2",
         "GenesisBlockNum": 0
       }
+    },
+    "rollup": {
+      "bridge": "0x85c720444e436e1f9407e0c3895d3fe149f41168",
+      "inbox": "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
+      "rollup": "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
+      "sequencer-inbox": "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
+      "validator-utils": "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
+      "validator-wallet-creator": "0x237b8965cebe27108bc1d6b71575c3b070050f7a",
+      "deployed-at": 11088567
     }
   },
   "421613" : {
@@ -202,17 +196,6 @@
           "input": {
             "url" : "wss://goerli-rollup.arbitrum.io/feed"
           }
-        }
-      },
-      "l1": {
-        "rollup": {
-          "bridge": "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
-          "inbox": "0x6bebc4925716945d46f0ec336d5c2564f419682c",
-          "rollup": "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
-          "sequencer-inbox": "0x0484a87b144745a2e5b7c359552119b6ea2917a9",
-          "validator-utils": "0x344f651fe566a02db939c8657427deb5524ea78e",
-          "validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
-          "deployed-at": 7217526
         }
       },
       "l2": {
@@ -250,6 +233,15 @@
         "InitialChainOwner": "0x186b56023d42b2b4e7616589a5c62eef5fca21dd",
         "GenesisBlockNum": 0
       }
+    },
+    "rollup": {
+      "bridge": "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
+      "inbox": "0x6bebc4925716945d46f0ec336d5c2564f419682c",
+      "rollup": "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
+      "sequencer-inbox": "0x0484a87b144745a2e5b7c359552119b6ea2917a9",
+      "validator-utils": "0x344f651fe566a02db939c8657427deb5524ea78e",
+      "validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
+      "deployed-at": 7217526
     }
   },
   "421703" : {

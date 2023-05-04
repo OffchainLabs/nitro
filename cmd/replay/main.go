@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/chain_info"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -200,7 +201,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum, []string{})
+		chainConfig, err := chain_info.GetChainConfig(chainId, genesisBlockNum, []string{})
 		if err != nil {
 			panic(err)
 		}
@@ -225,7 +226,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, 0, []string{})
+		chainConfig, err := chain_info.GetChainConfig(chainId, 0, []string{})
 		if err != nil {
 			panic(err)
 		}

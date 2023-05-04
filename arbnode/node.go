@@ -64,18 +64,6 @@ type RollupAddressesConfig struct {
 	DeployedAt             uint64 `koanf:"deployed-at"`
 }
 
-var RollupAddressesConfigDefault = RollupAddressesConfig{}
-
-func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".bridge", "", "the bridge contract address")
-	f.String(prefix+".inbox", "", "the inbox contract address")
-	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
-	f.String(prefix+".rollup", "", "the rollup contract address")
-	f.String(prefix+".validator-utils", "", "the validator utils contract address")
-	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
-	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
-}
-
 func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 	a := RollupAddresses{
 		DeployedAt: c.DeployedAt,
