@@ -90,11 +90,11 @@ var TestConfig = Config{
 	UseFinalityData:  false,
 }
 
-func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	codeAt, err := client.CodeAt(context.Background(), types.ArbSysAddress, nil)
+	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	if len(codeAt) != 0 {
 		isParentChainArbitrum = true
@@ -107,7 +107,7 @@ func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
 		safe:                  cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
 		finalized:             cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
-	}
+	}, nil
 }
 
 // Subscribe to block header updates.
