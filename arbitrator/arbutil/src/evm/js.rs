@@ -193,20 +193,6 @@ macro_rules! call {
 }
 
 impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
-    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let [value, cost] = call!(self, 2, AddressBalance, address);
-        (value.assert_bytes32(), cost.assert_u64())
-    }
-
-    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let [value, cost] = call!(self, 2, AddressCodeHash, address);
-        (value.assert_bytes32(), cost.assert_u64())
-    }
-
-    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
-        let [value, cost] = call!(self, 2, EvmBlockHash, block);
-        (value.assert_bytes32(), cost.assert_u64())
-    }
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let [value, cost] = call!(self, 2, GetBytes32, key);
         (value.assert_bytes32(), cost.assert_u64())
@@ -295,5 +281,20 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
             ApiValueKind::String(err) => bail!(err),
             _ => unreachable!(),
         }
+    }
+
+    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, AddressBalance, address);
+        (value.assert_bytes32(), cost.assert_u64())
+    }
+
+    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, AddressCodeHash, address);
+        (value.assert_bytes32(), cost.assert_u64())
+    }
+
+    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, EvmBlockHash, block);
+        (value.assert_bytes32(), cost.assert_u64())
     }
 }

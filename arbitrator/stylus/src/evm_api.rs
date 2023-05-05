@@ -13,9 +13,6 @@ use eyre::{ErrReport, Result};
 
 #[repr(C)]
 pub struct GoEvmApi {
-    pub address_balance: unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
-    pub address_codehash: unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
-    pub evm_blockhash: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub set_bytes32: unsafe extern "C" fn(
         id: usize,
@@ -63,6 +60,11 @@ pub struct GoEvmApi {
     ) -> EvmApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
     pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: u32) -> EvmApiStatus,
+    pub address_balance:
+        unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
+    pub address_codehash:
+        unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
+    pub evm_blockhash: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
     pub id: usize,
 }
 
@@ -88,24 +90,6 @@ macro_rules! into_vec {
 }
 
 impl EvmApi for GoEvmApi {
-    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let mut cost = 0;
-        let value = call!(self, address_balance, address, ptr!(cost));
-        (value, cost)
-    }
-
-    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let mut cost = 0;
-        let value = call!(self, address_codehash, address, ptr!(cost));
-        (value, cost)
-    }
-
-    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
-        let mut cost = 0;
-        let value = call!(self, evm_blockhash, block, ptr!(cost));
-        (value, cost)
-    }
-
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let mut cost = 0;
         let value = call!(self, get_bytes32, key, ptr!(cost));
@@ -248,5 +232,23 @@ impl EvmApi for GoEvmApi {
             EvmApiStatus::Success => Ok(()),
             EvmApiStatus::Failure => Err(error!(error)),
         }
+    }
+
+    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let mut cost = 0;
+        let value = call!(self, address_balance, address, ptr!(cost));
+        (value, cost)
+    }
+
+    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let mut cost = 0;
+        let value = call!(self, address_codehash, address, ptr!(cost));
+        (value, cost)
+    }
+
+    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
+        let mut cost = 0;
+        let value = call!(self, evm_blockhash, block, ptr!(cost));
+        (value, cost)
     }
 }

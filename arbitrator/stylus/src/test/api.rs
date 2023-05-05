@@ -55,17 +55,6 @@ impl TestEvmApi {
 }
 
 impl EvmApi for TestEvmApi {
-    fn address_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
-        unimplemented!()
-    }
-
-    fn address_codehash(&mut self, _address: Bytes20) -> (Bytes32, u64) {
-        unimplemented!()
-    }
-
-    fn evm_blockhash(&mut self, _block: Bytes32) -> (Bytes32, u64) {
-        unimplemented!()
-    }
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
@@ -153,5 +142,17 @@ impl EvmApi for TestEvmApi {
 
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {
         Ok(()) // pretend a log was emitted
+    }
+
+    fn address_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+        unimplemented!()
+    }
+
+    fn address_codehash(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+        unimplemented!()
+    }
+
+    fn evm_blockhash(&mut self, _block: Bytes32) -> (Bytes32, u64) {
+        unimplemented!()
     }
 }

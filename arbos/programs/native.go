@@ -103,30 +103,6 @@ type apiStatus = C.EvmApiStatus
 const apiSuccess C.EvmApiStatus = C.EvmApiStatus_Success
 const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 
-//export addressBalanceImpl
-func addressBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
-	closures := getApi(api)
-	value, gas := closures.addressBalance(address.toAddress())
-	*cost = u64(gas)
-	return hashToBytes32(value)
-}
-
-//export addressCodeHashImpl
-func addressCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
-	closures := getApi(api)
-	value, gas := closures.addressCodeHash(address.toAddress())
-	*cost = u64(gas)
-	return hashToBytes32(value)
-}
-
-//export evmBlockHashImpl
-func evmBlockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
-	closures := getApi(api)
-	value, gas := closures.evmBlockHash(block.toHash())
-	*cost = u64(gas)
-	return hashToBytes32(value)
-}
-
 //export getBytes32Impl
 func getBytes32Impl(api usize, key bytes32, cost *u64) bytes32 {
 	closures := getApi(api)
@@ -234,6 +210,30 @@ func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
 		return apiFailure
 	}
 	return apiSuccess
+}
+
+//export addressBalanceImpl
+func addressBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
+	closures := getApi(api)
+	value, gas := closures.addressBalance(address.toAddress())
+	*cost = u64(gas)
+	return hashToBytes32(value)
+}
+
+//export addressCodeHashImpl
+func addressCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
+	closures := getApi(api)
+	value, gas := closures.addressCodeHash(address.toAddress())
+	*cost = u64(gas)
+	return hashToBytes32(value)
+}
+
+//export evmBlockHashImpl
+func evmBlockHashImpl(api usize, block bytes32, cost *u64) bytes32 {
+	closures := getApi(api)
+	value, gas := closures.evmBlockHash(block.toHash())
+	*cost = u64(gas)
+	return hashToBytes32(value)
 }
 
 func (value bytes20) toAddress() common.Address {

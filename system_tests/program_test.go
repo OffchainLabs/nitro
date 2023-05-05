@@ -634,7 +634,7 @@ func testEvmData(t *testing.T, jit bool) {
 	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
 
 	// Should be within 1 gas
-	if !arbmath.Within(gasUsed, calculatedGasUsed, inkPrice) {
+	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
 		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 

@@ -161,6 +161,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_sender.into(),
         msg_value.into(),
         tx_gas_price.into(),
-        tx_origin.into());
+        tx_origin.into(),
+    );
     sp.write_ptr(heapify(evm_data));
 }

@@ -23,50 +23,6 @@ pub unsafe extern "C" fn user_host__return_data(ptr: usize, len: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__address_balance(address: usize, ptr: usize) {
-    let program = Program::start();
-    let address = wavm::read_bytes20(address);
-
-    let (value, gas_cost) = program.evm_api.address_balance(address.into());
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_slice_usize(&value.0, ptr);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__address_codehash(address: usize, ptr: usize) {
-    let program = Program::start();
-    let address = wavm::read_bytes20(address);
-
-    let (value, gas_cost) = program.evm_api.address_codehash(address.into());
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_slice_usize(&value.0, ptr);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__evm_blockhash(block: usize, ptr: usize) {
-    let program = Program::start();
-    let block = wavm::read_bytes32(block);
-
-    let (value, gas_cost) = program.evm_api.evm_blockhash(block.into());
-    program.buy_gas(gas_cost).unwrap();
-    wavm::write_slice_usize(&value.0, ptr);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
-    let program = Program::start();
-    program.buy_gas(evm::GASLEFT_GAS).unwrap();
-    program.gas_left().unwrap()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
-    let program = Program::start();
-    program.buy_gas(evm::GASLEFT_GAS).unwrap();
-    program.ink_ready().unwrap()
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn user_host__account_load_bytes32(key: usize, ptr: usize) {
     let program = Program::start();
     let key = wavm::read_bytes32(key);
@@ -238,6 +194,50 @@ pub unsafe extern "C" fn user_host__emit_log(data: usize, len: u32, topics: u32)
 
     let data = wavm::read_slice_usize(data, len as usize);
     program.evm_api.emit_log(data, topics).unwrap();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__address_balance(address: usize, ptr: usize) {
+    let program = Program::start();
+    let address = wavm::read_bytes20(address);
+
+    let (value, gas_cost) = program.evm_api.address_balance(address.into());
+    program.buy_gas(gas_cost).unwrap();
+    wavm::write_slice_usize(&value.0, ptr);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__address_codehash(address: usize, ptr: usize) {
+    let program = Program::start();
+    let address = wavm::read_bytes20(address);
+
+    let (value, gas_cost) = program.evm_api.address_codehash(address.into());
+    program.buy_gas(gas_cost).unwrap();
+    wavm::write_slice_usize(&value.0, ptr);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__evm_blockhash(block: usize, ptr: usize) {
+    let program = Program::start();
+    let block = wavm::read_bytes32(block);
+
+    let (value, gas_cost) = program.evm_api.evm_blockhash(block.into());
+    program.buy_gas(gas_cost).unwrap();
+    wavm::write_slice_usize(&value.0, ptr);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
+    let program = Program::start();
+    program.buy_gas(evm::GASLEFT_GAS).unwrap();
+    program.gas_left().unwrap()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
+    let program = Program::start();
+    program.buy_gas(evm::GASLEFT_GAS).unwrap();
+    program.ink_ready().unwrap()
 }
 
 #[no_mangle]

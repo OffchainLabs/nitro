@@ -31,9 +31,6 @@ impl From<u8> for EvmApiStatus {
 
 #[repr(usize)]
 pub enum EvmApiMethod {
-    AddressBalance,
-    AddressCodeHash,
-    EvmBlockHash,
     GetBytes32,
     SetBytes32,
     ContractCall,
@@ -43,12 +40,12 @@ pub enum EvmApiMethod {
     Create2,
     GetReturnData,
     EmitLog,
+    AddressBalance,
+    AddressCodeHash,
+    EvmBlockHash,
 }
 
 pub trait EvmApi: Send + 'static {
-    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
-    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
-    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64);
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64);
     fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64>;
     fn contract_call(
@@ -85,4 +82,7 @@ pub trait EvmApi: Send + 'static {
     ) -> (eyre::Result<Bytes20>, u32, u64);
     fn get_return_data(&mut self) -> Vec<u8>;
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()>;
+    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
+    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
+    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64);
 }

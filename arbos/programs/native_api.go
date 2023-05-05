@@ -15,21 +15,6 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
-Bytes32 addressBalanceImpl(usize api, Bytes20 address, u64 * cost);
-Bytes32 addressBalanceWrap(usize api, Bytes20 address, u64 * cost) {
-    return addressBalanceImpl(api, address, cost);
-}
-
-Bytes32 addressCodeHashImpl(usize api, Bytes20 address, u64 * cost);
-Bytes32 addressCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
-    return addressCodeHashImpl(api, address, cost);
-}
-
-Bytes32 evmBlockHashImpl(usize api, Bytes32 block, u64 * cost);
-Bytes32 evmBlockHashWrap(usize api, Bytes32 block, u64 * cost) {
-    return evmBlockHashImpl(api, block, cost);
-}
-
 Bytes32 getBytes32Impl(usize api, Bytes32 key, u64 * cost);
 Bytes32 getBytes32Wrap(usize api, Bytes32 key, u64 * cost) {
     return getBytes32Impl(api, key, cost);
@@ -74,6 +59,21 @@ EvmApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
 EvmApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
+
+Bytes32 addressBalanceImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 addressBalanceWrap(usize api, Bytes20 address, u64 * cost) {
+    return addressBalanceImpl(api, address, cost);
+}
+
+Bytes32 addressCodeHashImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 addressCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
+    return addressCodeHashImpl(api, address, cost);
+}
+
+Bytes32 evmBlockHashImpl(usize api, Bytes32 block, u64 * cost);
+Bytes32 evmBlockHashWrap(usize api, Bytes32 block, u64 * cost) {
+    return evmBlockHashImpl(api, block, cost);
+}
 */
 import "C"
 import (
@@ -98,9 +98,6 @@ func newApi(
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
 	return C.GoEvmApi{
-		address_balance:  (*[0]byte)(C.addressBalanceWrap),
-		address_codehash: (*[0]byte)(C.addressCodeHashWrap),
-		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
 		get_bytes32:      (*[0]byte)(C.getBytes32Wrap),
 		set_bytes32:      (*[0]byte)(C.setBytes32Wrap),
 		contract_call:    (*[0]byte)(C.contractCallWrap),
@@ -110,6 +107,9 @@ func newApi(
 		create2:          (*[0]byte)(C.create2Wrap),
 		get_return_data:  (*[0]byte)(C.getReturnDataWrap),
 		emit_log:         (*[0]byte)(C.emitLogWrap),
+		address_balance:  (*[0]byte)(C.addressBalanceWrap),
+		address_codehash: (*[0]byte)(C.addressCodeHashWrap),
+		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
 		id:               id,
 	}, id
 }
