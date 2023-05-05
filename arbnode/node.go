@@ -6,7 +6,6 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"time"
@@ -280,16 +279,12 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, loserStakeEscrow common.Address) (*rollupgen.Config, error) {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) (*rollupgen.Config, error) {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
 	} else {
 		confirmPeriod = 20
-	}
-	chainConfigJson, err := json.Marshal(chainConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal chain config: %w", err)
 	}
 	return &rollupgen.Config{
 		ConfirmPeriodBlocks:      confirmPeriod,
@@ -300,7 +295,8 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		Owner:                    rollupOwner,
 		LoserStakeEscrow:         loserStakeEscrow,
 		ChainId:                  chainConfig.ChainID,
-		ChainConfig:              string(chainConfigJson),
+		// TODO could the ChainConfig be just []byte?
+		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),

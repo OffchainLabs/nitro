@@ -369,7 +369,9 @@ func DeployOnTestL1(
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	config, err := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, common.Address{})
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	Require(t, err)
+	config, err := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{})
 	Require(t, err)
 	addresses, err := arbnode.DeployOnL1(
 		ctx,

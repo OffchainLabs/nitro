@@ -44,7 +44,7 @@ func main() {
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
-	// l2ChainConfig := flag.String("l2chainconfig", "l2config.json", "L2 chain config json file")
+	l2ChainConfig := flag.String("l2chainconfig", "l2config.json", "L2 chain config json file")
 	// l2ChainInfo := flag.String("l2chaininfo", "l2info.json", "L2 chain info output json file")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
@@ -115,47 +115,21 @@ func main() {
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
 
-	// TODO load chainConfig from file
-	chainConfigJson := []byte(`{
-      "chainId": 412346,
-      "homesteadBlock": 0,
-      "daoForkBlock": null,
-      "daoForkSupport": true,
-      "eip150Block": 0,
-      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "eip155Block": 0,
-      "eip158Block": 0,
-      "byzantiumBlock": 0,
-      "constantinopleBlock": 0,
-      "petersburgBlock": 0,
-      "istanbulBlock": 0,
-      "muirGlacierBlock": 0,
-      "berlinBlock": 0,
-      "londonBlock": 0,
-      "clique": {
-        "period": 0,
-        "epoch": 0
-      },
-      "arbitrum": {
-        "EnableArbOS": true,
-        "AllowDebugPrecompiles": false,
-        "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 6,
-        "InitialChainOwner": "0xd345e41ae2cb00311956aa7109fc801ae8c81a52",
-        "GenesisBlockNum": 0
-      }
-    }`)
+	serializedChainConfig, err := os.ReadFile(*l2ChainConfig)
+	if err != nil {
+		panic(fmt.Errorf("failed to read l2 chain config file: %w", err))
+	}
 	var chainConfig params.ChainConfig
-	err = json.Unmarshal(chainConfigJson, &chainConfig)
+	err = json.Unmarshal(serializedChainConfig, &chainConfig)
 	if err != nil {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
 	if chainConfig.ChainID.Cmp(l2ChainId) != 0 {
-		panic("chain id mismatch")
+		panic(fmt.Sprintf("chain id mismatch, id from args: %v, id from l2 chain config: %v", l2ChainId, chainConfig.ChainID))
 	}
 
-	rollupConfig, err := arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, loserEscrowAddress)
+	rollupConfig, err := arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, serializedChainConfig, loserEscrowAddress)
 	if err != nil {
 		panic(err)
 	}
