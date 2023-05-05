@@ -281,12 +281,15 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(seq
 
 	parentChainBlockNumberKey := dbKey(parentChainBlockNumberPrefix, seqNum)
 	exists, err = t.db.Has(parentChainBlockNumberKey)
-	if err != nil || !exists {
-		return msg, acc, 0, nil //nolint:nilerr
+	if err != nil {
+		return msg, acc, 0, err
+	}
+	if !exists {
+		return msg, acc, msg.Header.BlockNumber, nil
 	}
 	data, err = t.db.Get(parentChainBlockNumberKey)
 	if err != nil {
-		return msg, acc, 0, nil //nolint:nilerr
+		return msg, acc, 0, err
 	}
 
 	return msg, acc, binary.BigEndian.Uint64(data), nil
@@ -373,12 +376,14 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 			return err
 		}
 
-		parentChainBlockNumberKey := dbKey(parentChainBlockNumberPrefix, seqNum)
-		parentChainBlockNumberByte := make([]byte, 8)
-		binary.BigEndian.PutUint64(parentChainBlockNumberByte, message.ParentChainBlockNumber)
-		err = batch.Put(parentChainBlockNumberKey, parentChainBlockNumberByte)
-		if err != nil {
-			return err
+		if message.ParentChainBlockNumber != message.Message.Header.BlockNumber {
+			parentChainBlockNumberKey := dbKey(parentChainBlockNumberPrefix, seqNum)
+			parentChainBlockNumberByte := make([]byte, 8)
+			binary.BigEndian.PutUint64(parentChainBlockNumberByte, message.ParentChainBlockNumber)
+			err = batch.Put(parentChainBlockNumberKey, parentChainBlockNumberByte)
+			if err != nil {
+				return err
+			}
 		}
 
 		pos++
