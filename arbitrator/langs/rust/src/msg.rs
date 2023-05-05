@@ -5,8 +5,8 @@ use crate::{Bytes20, Bytes32};
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub(crate) fn msg_sender(origin: *mut u8);
-    pub(crate) fn msg_value(gas_price: *mut u8);
+    pub(crate) fn msg_sender(sender: *mut u8);
+    pub(crate) fn msg_value(value: *mut u8);
 }
 
 pub fn sender() -> Bytes20 {

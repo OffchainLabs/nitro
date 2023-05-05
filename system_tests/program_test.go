@@ -584,11 +584,11 @@ func testEvmData(t *testing.T, jit bool) {
 		}
 		dropResult(dataSize)
 	}
-	expectBigIntGreaterThan := func(name string, expected *big.Int) {
+	expectBigIntGreaterThanOrEqual := func(name string, expected *big.Int) {
 		dataSize := 32
 		checkRemaining(name, dataSize)
 		value := new(big.Int).SetBytes(result[:dataSize])
-		if !arbmath.BigGreaterThan(value, expected) {
+		if !arbmath.BigGreaterThanOrEqual(value, expected) {
 			Fail(t, "mismatch", name, value, expected)
 		}
 		dropResult(dataSize)
@@ -617,8 +617,8 @@ func testEvmData(t *testing.T, jit bool) {
 	expectAddress("coinbase", selectedBlock.Coinbase())
 	expectBigInt("difficulty", big.NewInt(1))
 	expectU64("block gas limit", selectedBlock.GasLimit())
-	expectBigIntGreaterThan("block number", selectedBlock.Number())
-	expectBigIntGreaterThan("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
+	expectBigIntGreaterThanOrEqual("block number", selectedBlock.Number())
+	expectBigIntGreaterThanOrEqual("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
 	expectAddress("contract address", evmDataAddr)
 	expectAddress("sender", callEvmDataAddr)
 	expectBigInt("value", big.NewInt(0))
@@ -634,7 +634,7 @@ func testEvmData(t *testing.T, jit bool) {
 	calculatedGasUsed := ((inkLeftBefore - inkLeftAfter) * inkPrice) / 10000
 
 	// Should be within 1 gas
-	if gasUsed < gasToBurn || gasUsed > calculatedGasUsed+1 || gasUsed < calculatedGasUsed-1 {
+	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
 		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 

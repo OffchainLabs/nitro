@@ -8,7 +8,7 @@ pub mod js;
 pub mod user;
 
 // vm.GasQuickStep (see gas.go)
-const GAS_QUICK_STEP: u64 = 2;
+pub const GAS_QUICK_STEP: u64 = 2;
 
 // params.SstoreSentryGasEIP2200
 pub const SSTORE_SENTRY_GAS: u64 = 2300;

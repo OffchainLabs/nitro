@@ -201,7 +201,9 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(origin u32) *EvmData
+/// Safety: λ(block_basefee u32, block_chainid u32, block_coinbase u32, block_difficulty u32,
+///           block_gas_limit u32, block_number u32, block_timestamp u32, contract_address u32,
+///           msg_sender u32, msg_value u32, gas_price u32, origin u32) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
     sp: usize,

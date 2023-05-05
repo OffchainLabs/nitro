@@ -82,6 +82,15 @@ impl From<usize> for Bytes20 {
     }
 }
 
+impl IntoIterator for Bytes20 {
+    type Item = u8;
+    type IntoIter = std::array::IntoIter<u8, 20>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIterator::into_iter(self.0)
+    }
+}
+
 impl Display for Bytes20 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(self))
@@ -173,6 +182,15 @@ impl From<Bytes20> for Bytes32 {
         let mut data = [0; 32];
         data[12..].copy_from_slice(&value.0);
         Self(data)
+    }
+}
+
+impl IntoIterator for Bytes32 {
+    type Item = u8;
+    type IntoIter = std::array::IntoIter<u8, 32>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIterator::into_iter(self.0)
     }
 }
 
