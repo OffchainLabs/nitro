@@ -1,10 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::Program;
+use crate::{evm_api::ApiCaller, Program};
 use arbutil::{
-    evm::{self, api::EvmApi},
-    wavm,
+    evm::{self, api::EvmApi, js::JsEvmApi, user::UserOutcomeKind},
+    wavm, Bytes20, Bytes32,
 };
 use prover::programs::meter::{GasMeteredMachine, MeteredMachine};
 
@@ -45,30 +45,22 @@ pub unsafe extern "C" fn user_host__account_store_bytes32(key: usize, value: usi
     program.buy_gas(gas_cost).unwrap();
 }
 
+type EvmCaller<'a> = &'a mut JsEvmApi<ApiCaller>;
+
 #[no_mangle]
 pub unsafe extern "C" fn user_host__call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
     value: usize,
-    mut ink: u64,
-    return_data_len: usize,
+    ink: u64,
+    ret_len: usize,
 ) -> u8 {
-    let program = Program::start();
-    program.pay_for_evm_copy(calldata_len as u64).unwrap();
-    ink = ink.min(program.ink_ready().unwrap());
-
-    let gas = program.pricing().ink_to_gas(ink);
-    let contract = wavm::read_bytes20(contract).into();
-    let input = wavm::read_slice_usize(calldata, calldata_len);
-    let value = wavm::read_bytes32(value).into();
-    let api = &mut program.evm_api;
-
-    let (outs_len, gas_cost, status) = api.contract_call(contract, input, gas, value);
-    program.evm_data.return_data_len = outs_len;
-    wavm::caller_store32(return_data_len, outs_len);
-    program.buy_gas(gas_cost).unwrap();
-    status as u8
+    let value = Some(value);
+    let call = |api: EvmCaller, contract, input, gas, value: Option<_>| {
+        api.contract_call(contract, input, gas, value.unwrap())
+    };
+    do_call(contract, calldata, calldata_len, value, ink, ret_len, call)
 }
 
 #[no_mangle]
@@ -76,23 +68,11 @@ pub unsafe extern "C" fn user_host__delegate_call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
-    mut ink: u64,
-    return_data_len: usize,
+    ink: u64,
+    ret_len: usize,
 ) -> u8 {
-    let program = Program::start();
-    program.pay_for_evm_copy(calldata_len as u64).unwrap();
-    ink = ink.min(program.ink_ready().unwrap());
-
-    let gas = program.pricing().ink_to_gas(ink);
-    let contract = wavm::read_bytes20(contract).into();
-    let input = wavm::read_slice_usize(calldata, calldata_len);
-    let api = &mut program.evm_api;
-
-    let (outs_len, gas_cost, status) = api.delegate_call(contract, input, gas);
-    program.evm_data.return_data_len = outs_len;
-    wavm::caller_store32(return_data_len, outs_len);
-    program.buy_gas(gas_cost).unwrap();
-    status as u8
+    let call = |api: EvmCaller, contract, input, gas, _| api.delegate_call(contract, input, gas);
+    do_call(contract, calldata, calldata_len, None, ink, ret_len, call)
 }
 
 #[no_mangle]
@@ -100,9 +80,25 @@ pub unsafe extern "C" fn user_host__static_call_contract(
     contract: usize,
     calldata: usize,
     calldata_len: usize,
+    ink: u64,
+    ret_len: usize,
+) -> u8 {
+    let call = |api: EvmCaller, contract, input, gas, _| api.static_call(contract, input, gas);
+    do_call(contract, calldata, calldata_len, None, ink, ret_len, call)
+}
+
+unsafe fn do_call<F>(
+    contract: usize,
+    calldata: usize,
+    calldata_len: usize,
+    value: Option<usize>,
     mut ink: u64,
     return_data_len: usize,
-) -> u8 {
+    call: F,
+) -> u8
+where
+    F: FnOnce(EvmCaller, Bytes20, Vec<u8>, u64, Option<Bytes32>) -> (u32, u64, UserOutcomeKind),
+{
     let program = Program::start();
     program.pay_for_evm_copy(calldata_len as u64).unwrap();
     ink = ink.min(program.ink_ready().unwrap());
@@ -110,9 +106,10 @@ pub unsafe extern "C" fn user_host__static_call_contract(
     let gas = program.pricing().ink_to_gas(ink);
     let contract = wavm::read_bytes20(contract).into();
     let input = wavm::read_slice_usize(calldata, calldata_len);
+    let value = value.map(|x| Bytes32(wavm::read_bytes32(x)));
     let api = &mut program.evm_api;
 
-    let (outs_len, gas_cost, status) = api.static_call(contract, input, gas);
+    let (outs_len, gas_cost, status) = call(api, contract, input, gas, value);
     program.evm_data.return_data_len = outs_len;
     wavm::caller_store32(return_data_len, outs_len);
     program.buy_gas(gas_cost).unwrap();
