@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -46,7 +46,7 @@ func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int
 	for _, seqNum := range seqNums {
 		broadcastMessage := &BroadcastFeedMessage{
 			SequenceNumber: seqNum,
-			Message:        arbstate.EmptyTestMessageWithMetadata,
+			Message:        arbostypes.EmptyTestMessageWithMetadata,
 		}
 		broadcastMessages = append(broadcastMessages, broadcastMessage)
 	}

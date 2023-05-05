@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity >=0.4.21 <0.9.0;
@@ -14,6 +14,9 @@ interface ArbDebug {
 
     /// @notice Emit events with values based on the args provided
     function events(bool flag, bytes32 value) external payable returns (address, uint256);
+
+    /// @notice Tries (and fails) to emit logs in a view context
+    function eventsView() external view;
 
     // Events that exist for testing log creation and pricing
     event Basic(bool flag, bytes32 indexed value);

@@ -258,7 +258,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, NewFetcherFromConfig(conf), asserterL2Blockchain, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
@@ -267,7 +267,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, NewFetcherFromConfig(conf), challengerL2Blockchain, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
@@ -296,13 +296,13 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		Fail(t, "latest machine not found")
 	}
 
-	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
-	challengerGenesis := challengerL2.ArbInterface.BlockChain().Genesis()
+	asserterGenesis := asserterL2.Execution.ArbInterface.BlockChain().Genesis()
+	challengerGenesis := challengerL2.Execution.ArbInterface.BlockChain().Genesis()
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
 		Fail(t, "asserter and challenger have different genesis hashes")
 	}
-	asserterLatestBlock := asserterL2.ArbInterface.BlockChain().CurrentBlock()
-	challengerLatestBlock := challengerL2.ArbInterface.BlockChain().CurrentBlock()
+	asserterLatestBlock := asserterL2.Execution.ArbInterface.BlockChain().CurrentBlock()
+	challengerLatestBlock := challengerL2.Execution.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
 		Fail(t, "asserter and challenger have the same end block")
 	}

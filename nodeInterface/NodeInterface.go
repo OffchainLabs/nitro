@@ -78,7 +78,7 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if node.InboxReader == nil {
 		return 0, nil
 	}
-	bc := node.ArbInterface.BlockChain()
+	bc := node.Execution.ArbInterface.BlockChain()
 	header := bc.GetHeaderByHash(blockHash)
 	if header == nil {
 		return 0, errors.New("unknown block hash")
@@ -495,7 +495,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	context := n.context
-	backend := node.Backend.APIBackend()
+	backend := node.Execution.Backend.APIBackend()
 	gasCap := backend.RPCGasCap()
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)

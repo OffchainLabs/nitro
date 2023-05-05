@@ -2,7 +2,7 @@
 
 set -e
 
-NITRO_NODE_VERSION=offchainlabs/nitro-node:v2.0.10-73224e3-dev
+NITRO_NODE_VERSION=offchainlabs/nitro-node:v2.0.13-174496c-dev
 BLOCKSCOUT_VERSION=offchainlabs/blockscout:v1.0.0-c8db5b1
 
 mydir=`dirname $0`
@@ -33,7 +33,7 @@ run=true
 force_build=false
 validate=false
 detach=false
-blockscout=true
+blockscout=false
 tokenbridge=true
 consensusclient=false
 redundantsequencers=0
@@ -82,8 +82,8 @@ while [[ $# -gt 0 ]]; do
             validate=true
             shift
             ;;
-        --no-blockscout)
-            blockscout=false
+        --blockscout)
+            blockscout=true
             shift
             ;;
         --no-tokenbridge)
@@ -129,16 +129,16 @@ while [[ $# -gt 0 ]]; do
             echo --build:           rebuild docker images
             echo --dev:             build nitro and blockscout dockers from source \(otherwise - pull docker\)
             echo --init:            remove all data, rebuild, deploy new rollup
-            echo --pos:             l1 is a proof-of-stake chain \(using prism for consensus\)
+            echo --pos:             l1 is a proof-of-stake chain \(using prysm for consensus\)
             echo --validate:        heavy computation, validating all blocks in WASM
             echo --batchposters:    batch posters [0-3]
             echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
-            echo --no-blockscout:   don\'t build or launch blockscout
+            echo --blockscout:      build or launch blockscout
             echo --no-tokenbridge:  don\'t build or launch tokenbridge
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
-            echo script rus inside a separate docker. For SCRIPT-ARGS, run $0 script --help
+            echo script runs inside a separate docker. For SCRIPT-ARGS, run $0 script --help
             exit 0
     esac
 done
@@ -239,6 +239,10 @@ if $force_init; then
         docker rm $leftoverContainers
     fi
     docker volume prune -f --filter label=com.docker.compose.project=nitro
+    leftoverVolumes=`docker volume ls --filter label=com.docker.compose.project=nitro -q | xargs echo`
+    if [ `echo $leftoverVolumes | wc -w` -gt 0 ]; then
+        docker volume rm $leftoverVolumes
+    fi
 
     echo == Generating l1 keys
     docker-compose run testnode-scripts write-accounts
