@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -290,7 +289,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 	chainConfigJson, err := json.Marshal(chainConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal chain config")
+		return nil, fmt.Errorf("failed to marshal chain config: %w", err)
 	}
 	return &rollupgen.Config{
 		ConfirmPeriodBlocks:      confirmPeriod,

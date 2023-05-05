@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -37,7 +38,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -578,7 +578,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			}
 			if initChainConfig != nil {
 				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum); err != nil {
-					return chainDb, nil, errors.Wrap(err, "incompatible chain config read from init message in L1 inbox")
+					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
 			log.Info("Read serialized chain config from init message", "json", string(serializedChainConfig))

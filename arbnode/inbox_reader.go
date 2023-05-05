@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -12,8 +13,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
@@ -152,7 +151,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			}
 			if initChainConfig != nil {
 				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum); err != nil {
-					return errors.Wrap(err, "incompatible chain config read from init message in L1 inbox")
+					return fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
 			break

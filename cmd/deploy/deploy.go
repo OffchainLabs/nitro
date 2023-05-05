@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"math/big"
 	"os"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -148,7 +148,7 @@ func main() {
 	var chainConfig params.ChainConfig
 	err = json.Unmarshal(chainConfigJson, &chainConfig)
 	if err != nil {
-		panic(errors.Wrap(err, "failed to deserialize chain config"))
+		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
 	if chainConfig.ChainID.Cmp(l2ChainId) != 0 {

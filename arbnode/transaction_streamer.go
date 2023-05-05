@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
+	"errors"
 
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -460,7 +460,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 func (s *TransactionStreamer) AddFakeInitMessage() error {
 	chainConfigJson, err := json.Marshal(s.chainConfig)
 	if err != nil {
-		return errors.Wrap(err, "failed to serialize chain config")
+		return fmt.Errorf("failed to serialize chain config: %w", err)
 	}
 	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
