@@ -2,6 +2,7 @@ package endtoend
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -49,6 +50,11 @@ func TestChallengeProtocol_AliceAndBob_AnvilLocal(t *testing.T) {
 	if err := be.Start(); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if err := be.Stop(); err != nil {
+			t.Log(fmt.Errorf("error stopping backend: %v", err))
+		}
+	}()
 
 	scenarios := []*ChallengeScenario{
 		{

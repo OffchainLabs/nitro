@@ -173,6 +173,7 @@ func (a *AnvilLocal) Start() error {
 // Stop the backend and terminate the anvil process.
 func (a *AnvilLocal) Stop() error {
 	a.cancel()
+	a.rpc.Close()
 	return a.cmd.Process.Kill()
 }
 
