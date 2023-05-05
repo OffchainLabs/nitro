@@ -327,8 +327,8 @@ func (data *evmData) encode() C.EvmData {
 		contract_address: addressToBytes20(data.contract_address),
 		msg_sender:       addressToBytes20(data.msg_sender),
 		msg_value:        bigToBytes32(data.msg_value),
-		gas_price:        bigToBytes32(data.gas_price),
-		origin:           addressToBytes20(data.origin),
+		tx_gas_price:     bigToBytes32(data.tx_gas_price),
+		tx_origin:        addressToBytes20(data.tx_origin),
 		return_data_len:  0,
 	}
 }

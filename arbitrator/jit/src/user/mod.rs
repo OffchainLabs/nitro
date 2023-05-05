@@ -123,32 +123,32 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 /// Creates an `EvmData` from its component parts.
 /// go side: λ(block_basefee u32, block_chainid u32, block_coinbase u32, block_difficulty u32,
 ///            block_gas_limit u32, block_number u32, block_timestamp u32, contract_address u32,
-///            msg_sender u32, msg_value u32, gas_price u32, origin u32) *EvmData
+///            msg_sender u32, msg_value u32, tx_gas_price u32, tx_origin u32) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let block_basefee = sp.read_go_ptr();
-    let block_basefee = sp.read_bytes32(block_basefee.into());
-    let block_chainid = sp.read_go_ptr();
-    let block_chainid = sp.read_bytes32(block_chainid.into());
-    let block_coinbase = sp.read_go_ptr();
-    let block_coinbase = sp.read_bytes20(block_coinbase.into());
-    let block_difficulty = sp.read_go_ptr();
-    let block_difficulty = sp.read_bytes32(block_difficulty.into());
+    let block_basefee = sp.read_go_ptr().into();
+    let block_basefee = sp.read_bytes32(block_basefee);
+    let block_chainid = sp.read_go_ptr().into();
+    let block_chainid = sp.read_bytes32(block_chainid);
+    let block_coinbase = sp.read_go_ptr().into();
+    let block_coinbase = sp.read_bytes20(block_coinbase);
+    let block_difficulty = sp.read_go_ptr().into();
+    let block_difficulty = sp.read_bytes32(block_difficulty);
     let block_gas_limit = sp.read_u64();
-    let block_number = sp.read_go_ptr();
-    let block_number = sp.read_bytes32(block_number.into());
-    let block_timestamp = sp.read_go_ptr();
-    let block_timestamp = sp.read_bytes32(block_timestamp.into());
-    let contract_address = sp.read_go_ptr();
-    let contract_address = sp.read_bytes20(contract_address.into());
-    let msg_sender = sp.read_go_ptr();
-    let msg_sender = sp.read_bytes20(msg_sender.into());
-    let msg_value = sp.read_go_ptr();
-    let msg_value = sp.read_bytes32(msg_value.into());
-    let gas_price = sp.read_go_ptr();
-    let gas_price = sp.read_bytes32(gas_price.into());
-    let origin = sp.read_go_ptr();
-    let origin = sp.read_bytes20(origin.into());
+    let block_number = sp.read_go_ptr().into();
+    let block_number = sp.read_bytes32(block_number);
+    let block_timestamp = sp.read_go_ptr().into();
+    let block_timestamp = sp.read_bytes32(block_timestamp);
+    let contract_address = sp.read_go_ptr().into();
+    let contract_address = sp.read_bytes20(contract_address);
+    let msg_sender = sp.read_go_ptr().into();
+    let msg_sender = sp.read_bytes20(msg_sender);
+    let msg_value = sp.read_go_ptr().into();
+    let msg_value = sp.read_bytes32(msg_value);
+    let tx_gas_price = sp.read_go_ptr().into();
+    let tx_gas_price = sp.read_bytes32(tx_gas_price);
+    let tx_origin = sp.read_go_ptr().into();
+    let tx_origin = sp.read_bytes20(tx_origin);
     let evm_data = EvmData::new(
         block_basefee.into(),
         block_chainid.into(),
@@ -160,7 +160,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         contract_address.into(),
         msg_sender.into(),
         msg_value.into(),
-        gas_price.into(),
-        origin.into());
+        tx_gas_price.into(),
+        tx_origin.into());
     sp.write_ptr(heapify(evm_data));
 }

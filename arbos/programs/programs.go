@@ -161,8 +161,8 @@ func (p Programs) CallProgram(
 		contract_address: contract.Address(),
 		msg_sender:       contract.Caller(),
 		msg_value:        contract.Value(),
-		gas_price:        evm.TxContext.GasPrice,
-		origin:           evm.TxContext.Origin,
+		tx_gas_price:     evm.TxContext.GasPrice,
+		tx_origin:        evm.TxContext.Origin,
 	}
 	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
@@ -223,8 +223,8 @@ type evmData struct {
 	contract_address common.Address
 	msg_sender       common.Address
 	msg_value        *big.Int
-	gas_price        *big.Int
-	origin           common.Address
+	tx_gas_price     *big.Int
+	tx_origin        common.Address
 }
 
 type userStatus uint8

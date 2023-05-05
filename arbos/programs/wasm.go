@@ -41,7 +41,20 @@ func callUserWasmRustImpl(
 func readRustVecLenImpl(vec *rustVec) (len u32)
 func rustVecIntoSliceImpl(vec *rustVec, ptr *byte)
 func rustConfigImpl(version, maxDepth u32, inkPrice, hostioInk u64, debugMode u32) *rustConfig
-func rustEvmDataImpl(origin *byte) *rustEvmData
+func rustEvmDataImpl(
+	block_basefee *byte,
+	block_chainid *byte,
+	block_coinbase *byte,
+	block_difficulty *byte,
+	block_gas_limit *uint64,
+	block_number *byte,
+	block_timestamp *byte,
+	contract_address *byte,
+	msg_sender *byte,
+	msg_value *byte,
+	tx_gas_price *byte,
+	tx_origin *byte,
+) *rustEvmData
 
 func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32, debug bool) error {
 	debugMode := arbmath.BoolToUint32(debug)
@@ -114,5 +127,18 @@ func (p *goParams) encode() *rustConfig {
 }
 
 func (d *evmData) encode() *rustEvmData {
-	return rustEvmDataImpl(arbutil.SliceToPointer(d.origin[:]))
+	return rustEvmDataImpl(
+		arbutil.SliceToPointer(d.block_basefee.Bytes()),
+		arbutil.SliceToPointer(d.block_chainid.Bytes()),
+		arbutil.SliceToPointer(d.block_coinbase.Bytes()),
+		arbutil.SliceToPointer(d.block_difficulty.Bytes()),
+		&d.block_gas_limit,
+		arbutil.SliceToPointer(d.block_number.Bytes()),
+		arbutil.SliceToPointer(d.block_timestamp.Bytes()),
+		arbutil.SliceToPointer(d.contract_address.Bytes()),
+		arbutil.SliceToPointer(d.msg_sender.Bytes()),
+		arbutil.SliceToPointer(d.msg_value.Bytes()),
+		arbutil.SliceToPointer(d.tx_gas_price.Bytes()),
+		arbutil.SliceToPointer(d.tx_origin.Bytes()),
+	)
 }

@@ -72,8 +72,8 @@ pub struct EvmData {
     pub contract_address: Bytes20,
     pub msg_sender: Bytes20,
     pub msg_value: Bytes32,
-    pub gas_price: Bytes32,
-    pub origin: Bytes20,
+    pub tx_gas_price: Bytes32,
+    pub tx_origin: Bytes20,
     pub return_data_len: u32,
 }
 
@@ -89,8 +89,8 @@ impl EvmData {
         contract_address: Bytes20,
         msg_sender: Bytes20,
         msg_value: Bytes32,
-        gas_price: Bytes32,
-        origin: Bytes20,
+        tx_gas_price: Bytes32,
+        tx_origin: Bytes20,
     ) -> Self {
         Self {
             block_basefee,
@@ -103,8 +103,8 @@ impl EvmData {
             contract_address,
             msg_sender,
             msg_value,
-            gas_price,
-            origin,
+            tx_gas_price,
+            tx_origin,
             return_data_len: 0,
         }
     }

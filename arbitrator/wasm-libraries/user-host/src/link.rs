@@ -203,7 +203,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(block_basefee u32, block_chainid u32, block_coinbase u32, block_difficulty u32,
 ///           block_gas_limit u32, block_number u32, block_timestamp u32, contract_address u32,
-///           msg_sender u32, msg_value u32, gas_price u32, origin u32) *EvmData
+///           msg_sender u32, msg_value u32, tx_gas_price u32, tx_origin u32) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
     sp: usize,
@@ -219,8 +219,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
     let contract_address = wavm::read_bytes20(sp.read_go_ptr().into());
     let msg_sender = wavm::read_bytes20(sp.read_go_ptr().into());
     let msg_value = wavm::read_bytes32(sp.read_go_ptr().into());
-    let gas_price = wavm::read_bytes32(sp.read_go_ptr().into());
-    let origin = wavm::read_bytes20(sp.read_go_ptr());
+    let tx_gas_price = wavm::read_bytes32(sp.read_go_ptr().into());
+    let tx_origin = wavm::read_bytes20(sp.read_go_ptr());
     let evm_data = EvmData::new(
         block_basefee.into(),
         block_chainid.into(),
@@ -232,8 +232,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
         contract_address.into(),
         msg_sender.into(),
         msg_value.into(),
-        gas_price.into(),
-        origin.into(),
+        tx_gas_price.into(),
+        tx_origin.into(),
     );
     sp.write_ptr(heapify(evm_data));
 }

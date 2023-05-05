@@ -323,8 +323,8 @@ pub unsafe extern "C" fn user_host__msg_value(ptr: usize) {
 pub unsafe extern "C" fn user_host__tx_gas_price(ptr: usize) {
     let program = Program::start();
     program.buy_gas(evm::GASPRICE_GAS).unwrap();
-    let gas_price = program.evm_data.gas_price;
-    wavm::write_slice_usize(&gas_price.0, ptr)
+    let tx_gas_price = program.evm_data.tx_gas_price;
+    wavm::write_slice_usize(&tx_gas_price.0, ptr)
 }
 
 #[no_mangle]
@@ -338,6 +338,6 @@ pub unsafe extern "C" fn user_host__tx_ink_price() -> u64 {
 pub unsafe extern "C" fn user_host__tx_origin(ptr: usize) {
     let program = Program::start();
     program.buy_gas(evm::ORIGIN_GAS).unwrap();
-    let origin = program.evm_data.origin;
-    wavm::write_slice_usize(&origin.0, ptr)
+    let tx_origin = program.evm_data.tx_origin;
+    wavm::write_slice_usize(&tx_origin.0, ptr)
 }
