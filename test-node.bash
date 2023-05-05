@@ -37,7 +37,8 @@ blockscout=false
 tokenbridge=true
 consensusclient=false
 redundantsequencers=0
-dev_build=false
+dev_build_nitro=false
+dev_build_blockscout=false
 batchposters=1
 devprivkey=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
 l1chainid=1337
@@ -57,8 +58,21 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --dev)
-            dev_build=true
             shift
+            if [[ $# -eq 0 || $1 == -* ]]; then
+                # If no argument after --dev, set both flags to true
+                dev_build_nitro=true
+                dev_build_blockscout=true
+            else
+                while [[ $# -gt 0 && $1 != -* ]]; do
+                    if [[ $1 == "nitro" ]]; then
+                        dev_build_nitro=true
+                    elif [[ $1 == "blockscout" ]]; then
+                        dev_build_blockscout=true
+                    fi
+                    shift
+                done
+            fi
             ;;
         --build)
             force_build=true
@@ -133,10 +147,13 @@ if $force_init; then
   force_build=true
 fi
 
-if $dev_build; then
+if $dev_build_nitro; then
   if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
     force_build=true
   fi
+fi
+
+if $dev_build_blockscout; then
   if [[ "$(docker images -q blockscout:latest 2> /dev/null)" == "" ]]; then
     force_build=true
   fi
@@ -177,8 +194,10 @@ if $blockscout; then
 fi
 if $force_build; then
   echo == Building..
-  if $dev_build; then
+  if $dev_build_nitro; then
     docker build . -t nitro-node-dev --target nitro-node-dev
+  fi
+  if $dev_build_blockscout; then
     if $blockscout; then
       docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
     fi
@@ -190,14 +209,18 @@ if $force_build; then
   docker-compose build --no-rm $LOCAL_BUILD_NODES
 fi
 
-if $dev_build; then
+if $dev_build_nitro; then
   docker tag nitro-node-dev:latest nitro-node-dev-testnode
+else
+  docker pull $NITRO_NODE_VERSION
+  docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
+fi
+
+if $dev_build_blockscout; then
   if $blockscout; then
     docker tag blockscout:latest blockscout-testnode
   fi
 else
-  docker pull $NITRO_NODE_VERSION
-  docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
   if $blockscout; then
     docker pull $BLOCKSCOUT_VERSION
     docker tag $BLOCKSCOUT_VERSION blockscout-testnode
