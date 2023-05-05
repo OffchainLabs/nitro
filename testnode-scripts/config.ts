@@ -250,6 +250,39 @@ function writeConfigs(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
 }
 
+function writeL2ChainConfig(argv: any) {
+    const l2ChainConfig = {
+		"chainId": 412346,
+		"homesteadBlock": 0,
+		"daoForkSupport": true,
+		"eip150Block": 0,
+		"eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+		"eip155Block": 0,
+		"eip158Block": 0,
+		"byzantiumBlock": 0,
+		"constantinopleBlock": 0,
+		"petersburgBlock": 0,
+		"istanbulBlock": 0,
+		"muirGlacierBlock": 0,
+		"berlinBlock": 0,
+		"londonBlock": 0,
+		"clique": {
+			"period": 0,
+			"epoch": 0
+		},
+		"arbitrum": {
+			"EnableArbOS": true,
+			"AllowDebugPrecompiles": true,
+			"DataAvailabilityCommittee": false,
+			"InitialArbOSVersion": 11,
+			"InitialChainOwner": "0x0000000000000000000000000000000000000000",
+			"GenesisBlockNum": 0
+		}
+    }
+    const l2ChainConfigJSON = JSON.stringify(l2ChainConfig)
+    fs.writeFileSync(path.join(consts.configpath, "l2_chain_config.json"), l2ChainConfigJSON)
+}
+
 export const writeConfigCommand = {
     command: "write-config",
     describe: "writes config files",
@@ -274,3 +307,10 @@ export const writeGethGenesisCommand = {
     }
 }
 
+export const writeL2ChainConfigCommand = {
+    command: "write-l2-chain-config",
+    describe: "writes l2 chain config file",
+    handler: (argv: any) => {
+        writeL2ChainConfig(argv)
+    }
+}
