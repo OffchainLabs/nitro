@@ -196,16 +196,9 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)
-		header, err := b.client.HeaderByNumber(ctx, big.NewInt(int64(parsedLog.Raw.BlockNumber)))
+		parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, b.client, parsedLog.Raw.BlockNumber)
 		if err != nil {
 			return nil, err
-		}
-		headerInfo, _ := types.DeserializeHeaderExtraInformation(header)
-		var parentChainBlockNumber uint64
-		if headerInfo.L1BlockNumber != 0 {
-			parentChainBlockNumber = headerInfo.L1BlockNumber
-		} else {
-			parentChainBlockNumber = parsedLog.Raw.BlockNumber
 		}
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,

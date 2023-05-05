@@ -341,16 +341,9 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
-	header, err := v.client.HeaderByNumber(ctx, big.NewInt(int64(currentL1BlockNum)))
+	parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
 	if err != nil {
-		return nil, false, fmt.Errorf("error getting L1 block number %d header : %w", currentL1BlockNum, err)
-	}
-	headerInfo, _ := types.DeserializeHeaderExtraInformation(header)
-	var parentChainBlockNumber uint64
-	if headerInfo.L1BlockNumber != 0 {
-		parentChainBlockNumber = headerInfo.L1BlockNumber
-	} else {
-		parentChainBlockNumber = currentL1BlockNum
+		return nil, false, err
 	}
 
 	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
@@ -615,19 +608,9 @@ func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum ui
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
 		}
-		header, err := rollup.client.HeaderByNumber(ctx, big.NewInt(int64(creationEvent.Raw.BlockNumber)))
+		parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, rollup.client, creationEvent.Raw.BlockNumber)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("error getting L1 block number %d header : %w", creationEvent.Raw.BlockNumber, err)
-		}
-		headerInfo, err := types.DeserializeHeaderExtraInformation(header)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("error deserializeing header extra information for L1 block number %d : %w", creationEvent.Raw.BlockNumber, err)
-		}
-		var parentChainBlockNumber uint64
-		if headerInfo.L1BlockNumber != 0 {
-			parentChainBlockNumber = headerInfo.L1BlockNumber
-		} else {
-			parentChainBlockNumber = creationEvent.Raw.BlockNumber
+			return nil, nil, 0, err
 		}
 		return &validator.ExecutionState{
 			GlobalState:   validator.GoGlobalState{},
