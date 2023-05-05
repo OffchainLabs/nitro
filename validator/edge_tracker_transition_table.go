@@ -16,6 +16,10 @@ func newEdgeTrackerFsm(
 			From: []edgeTrackerState{
 				edgePresumptive,
 				edgeBisecting,
+				edgeStarted,
+				edgeAtOneStepProof,
+				edgeAddingSubchallengeLeaf,
+				edgePresumptive,
 			},
 			To: edgeStarted,
 		},
