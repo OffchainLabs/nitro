@@ -6,6 +6,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -414,7 +415,9 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	Require(t, err)
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -625,8 +628,12 @@ func Create2ndNodeWithConfig(
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-
-	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.Execution.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		Fail(t, err)
+	}
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
