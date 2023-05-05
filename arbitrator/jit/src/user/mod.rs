@@ -134,8 +134,7 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let block_coinbase = sp.read_bytes20(block_coinbase.into());
     let block_difficulty = sp.read_go_ptr();
     let block_difficulty = sp.read_bytes32(block_difficulty.into());
-    let block_gas_limit = sp.read_go_ptr();
-    let block_gas_limit = sp.read_u64_raw(block_gas_limit);
+    let block_gas_limit = sp.read_u64();
     let block_number = sp.read_go_ptr();
     let block_number = sp.read_bytes32(block_number.into());
     let block_timestamp = sp.read_go_ptr();

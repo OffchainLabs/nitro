@@ -55,7 +55,7 @@ pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Esc
 pub(crate) fn evm_ink_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
     let mut env = WasmEnv::start(&mut env)?;
     env.buy_gas(evm::GASLEFT_GAS)?;
-    Ok(env.ink_left().into())
+    Ok(env.ink_ready()?)
 }
 
 pub(crate) fn account_load_bytes32<E: EvmApi>(
