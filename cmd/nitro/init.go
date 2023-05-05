@@ -550,12 +550,12 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if config.Node.L1Reader.Enable {
 			delayedBridge, err := arbnode.NewDelayedBridge(l1Client, rollupAddrs.Bridge, rollupAddrs.DeployedAt)
 			if err != nil {
-				return chainDb, nil, err
+				return chainDb, nil, fmt.Errorf("failed creating delayed bridge while attempting to get serialized chain config from init message: %w", err)
 			}
 			deployedAt := new(big.Int).SetUint64(rollupAddrs.DeployedAt)
 			delayedMessages, err := delayedBridge.LookupMessagesInRange(ctx, deployedAt, deployedAt, nil)
 			if err != nil {
-				return chainDb, nil, err
+				return chainDb, nil, fmt.Errorf("failed getting delayed messages while attempting to get serialized chain config from init message: %w", err)
 			}
 			var initMessage *arbostypes.L1IncomingMessage
 			for _, msg := range delayedMessages {
@@ -565,7 +565,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 			}
 			if initMessage == nil {
-				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config from init message")
+				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
 			}
 			var initChainConfig *params.ChainConfig
 			var initChainId *big.Int
