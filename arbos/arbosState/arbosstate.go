@@ -430,6 +430,10 @@ func (state *ArbosState) ChainConfig() ([]byte, error) {
 	return state.chainConfig.Get()
 }
 
+func (state *ArbosState) SetChainConfig(serializedChainConfig []byte) error {
+	return state.chainConfig.Set(serializedChainConfig)
+}
+
 func (state *ArbosState) GenesisBlockNum() (uint64, error) {
 	return state.genesisBlockNum.Get()
 }

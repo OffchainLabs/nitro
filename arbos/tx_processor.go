@@ -659,3 +659,7 @@ func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
 }
+
+func (p *TxProcessor) MsgIsGasEstimation() bool {
+	return p.msg.RunMode() == types.MessageGasEstimationMode
+}

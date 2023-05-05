@@ -4,11 +4,15 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"bytes"
+	"encoding/json"
 	"math/big"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -147,6 +151,28 @@ func TestArbOwner(t *testing.T) {
 	Require(t, err)
 	if avail.Cmp(deposited) != 0 {
 		Fail(t, avail, deposited)
+	}
+
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	Require(t, err)
+	err = prec.SetChainConfig(callCtx, evm, serializedChainConfig)
+	Require(t, err)
+	config, err := state.ChainConfig()
+	Require(t, err)
+	if !bytes.Equal(config, serializedChainConfig) {
+		Fail(t, config, serializedChainConfig)
+	}
+
+	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = false
+	serializedChainConfig, err = json.Marshal(chainConfig)
+	Require(t, err)
+	err = prec.SetChainConfig(callCtx, evm, serializedChainConfig)
+	Require(t, err)
+	config, err = state.ChainConfig()
+	Require(t, err)
+	if !bytes.Equal(config, serializedChainConfig) {
+		Fail(t, config, serializedChainConfig)
 	}
 }
 
