@@ -314,13 +314,16 @@ func mainImpl() int {
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Staker.OnlyCreateWalletContract
 	validatorCanAct := nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+	if *l1Wallet != genericconf.WalletConfigDefault && nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault && nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
+		log.Crit("--l1.l1-wallet, --node.staker.l1-wallet and --node.batch-poster.l1-wallet all cannot be set at the same time")
+	}
 	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
 			flag.Usage()
 			log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 		}
-		if nodeConfig.Node.BatchPoster.UseSeparateL1Wallet {
+		if nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
 			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
@@ -329,7 +332,7 @@ func mainImpl() int {
 		} else {
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 		}
-		if nodeConfig.Node.Staker.UseSeparateL1Wallet {
+		if nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault {
 			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
