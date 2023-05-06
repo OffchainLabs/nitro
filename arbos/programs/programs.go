@@ -116,24 +116,18 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 		return 0, err
 	}
 	// Already compiled and found in the machine versions mapping.
-	alreadyCompiled := latest >= version
-	compiledContractCode, err := statedb.CompiledWasmContractCode(version, codeHash)
-	switch {
-	case err == nil && alreadyCompiled:
-		statedb.SetCompiledWasmCode(program, compiledContractCode, version)
-	case errors.Is(state.ErrNotFound, err):
-		wasm, err := state.StripStylusPrefix(prefixedWasm)
-		if err != nil {
-			return 0, err
-		}
-		decompressed, err := arbcompress.Decompress(wasm, MaxWasmSize)
-		if err != nil {
-			return 0, err
-		}
-		if err := compileUserWasm(statedb, program, decompressed, version, debugMode); err != nil {
-			return 0, err
-		}
-	default:
+	if latest >= version {
+		return version, p.machineVersions.SetUint32(codeHash, version)
+	}
+	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	if err != nil {
+		return 0, err
+	}
+	decompressed, err := arbcompress.Decompress(wasm, MaxWasmSize)
+	if err != nil {
+		return 0, err
+	}
+	if err := compileUserWasm(statedb, program, decompressed, version, debugMode); err != nil {
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(codeHash, version)
