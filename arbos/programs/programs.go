@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -112,12 +113,29 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	if latest >= version {
 		return 0, ProgramUpToDateError()
 	}
-
-	wasm, err := getWasm(statedb, program)
-	if err != nil {
-		return 0, err
+	prefixedWasm := statedb.GetCode(program)
+	if prefixedWasm == nil {
+		return 0, fmt.Errorf("missing wasm at address %v", program)
 	}
-	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
+	compiledContractCode, err := statedb.CompiledWasmContractCode(latest, crypto.Keccak256Hash(prefixedWasm))
+	switch {
+	case err == nil:
+		fmt.Println("ALREADY EXISTS")
+		statedb.SetCompiledWasmCode(program, compiledContractCode, version)
+	case errors.Is(state.ErrNotFound, err):
+		fmt.Println("NOT EXISTS")
+		wasm, err := state.StripStylusPrefix(prefixedWasm)
+		if err != nil {
+			return 0, err
+		}
+		decompressed, err := arbcompress.Decompress(wasm, MaxWasmSize)
+		if err != nil {
+			return 0, err
+		}
+		if err := compileUserWasm(statedb, program, decompressed, version, debugMode); err != nil {
+			return 0, err
+		}
+	default:
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(program.Hash(), version)

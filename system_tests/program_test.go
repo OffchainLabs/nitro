@@ -41,8 +41,13 @@ func TestProgramKeccakArb(t *testing.T) {
 }
 
 func keccakTest(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, programAddress, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+	otherAddressSameCode := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+	if programAddress == otherAddressSameCode {
+		Fail(t, "expected to deploy at two separate program addresses")
+	}
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
@@ -97,8 +102,10 @@ func TestProgramErrorsArb(t *testing.T) {
 }
 
 func errorTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("fallible"), jit)
+	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("fallible"), jit)
 	defer cleanup()
+
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
 
 	// ensure tx passes
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, []byte{0x01})
@@ -119,8 +126,9 @@ func errorTest(t *testing.T, jit bool) {
 }
 
 func TestProgramStorage(t *testing.T) {
-	ctx, _, l2info, l2client, _, programAddress, cleanup := setupProgramTest(t, rustFile("storage"), true)
+	ctx, _, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("storage"), true)
 	defer cleanup()
+	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -141,8 +149,9 @@ func TestProgramStorage(t *testing.T) {
 }
 
 func TestProgramCalls(t *testing.T) {
-	ctx, _, l2info, l2client, auth, callsAddr, cleanup := setupProgramTest(t, rustFile("multicall"), true)
+	ctx, _, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("multicall"), true)
 	defer cleanup()
+	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -344,8 +353,9 @@ func TestProgramCalls(t *testing.T) {
 }
 
 func TestProgramLogs(t *testing.T) {
-	ctx, _, l2info, l2client, _, logAddr, cleanup := setupProgramTest(t, rustFile("log"), true)
+	ctx, _, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("log"), true)
 	defer cleanup()
+	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -405,8 +415,9 @@ func TestProgramLogs(t *testing.T) {
 }
 
 func TestProgramCreate(t *testing.T) {
-	ctx, _, l2info, l2client, auth, createAddr, cleanup := setupProgramTest(t, rustFile("create"), true)
+	ctx, _, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("create"), true)
 	defer cleanup()
+	createAddr := deployWasm(t, ctx, auth, l2client, rustFile("create"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -481,8 +492,9 @@ func TestProgramCreate(t *testing.T) {
 }
 
 func TestProgramEvmData(t *testing.T) {
-	ctx, _, l2info, l2client, auth, dataAddr, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
+	ctx, _, l2info, l2client, auth, cleanup := setupProgramTest(t, rustFile("evm-data"), true)
 	defer cleanup()
+	dataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
@@ -517,7 +529,7 @@ func TestProgramEvmData(t *testing.T) {
 }
 
 func setupProgramTest(t *testing.T, file string, jit bool) (
-	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, common.Address, func(),
+	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rand.Seed(time.Now().UTC().UnixNano())
@@ -563,9 +575,7 @@ func setupProgramTest(t *testing.T, file string, jit bool) (
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
 	ensure(arbOwner.SetWasmHostioInk(&auth, wasmHostioInk))
-
-	programAddress := deployWasm(t, ctx, auth, l2client, file)
-	return ctx, node, l2info, l2client, auth, programAddress, cleanup
+	return ctx, node, l2info, l2client, auth, cleanup
 }
 
 func readWasmFile(t *testing.T, file string) []byte {
