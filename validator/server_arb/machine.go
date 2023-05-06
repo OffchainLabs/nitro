@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
@@ -28,6 +29,7 @@ import (
 type u8 = C.uint8_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
+type usize = C.size_t
 
 type MachineInterface interface {
 	CloneMachineInterface() MachineInterface
@@ -84,10 +86,11 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	return mach
 }
 
-func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, error) {
+func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*ArbitratorMachine, error) {
 	cWasm := C.CString(wasm)
 	cLibraries := CreateCStringList(libraries)
-	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)))
+	debug := usize(arbmath.BoolToUint32(debugChain))
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), debug)
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {

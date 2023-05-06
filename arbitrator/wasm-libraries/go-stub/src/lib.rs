@@ -1,36 +1,25 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+mod pending;
 mod value;
 
-use crate::value::*;
-use arbutil::wavm;
+use crate::{
+    pending::{PENDING_EVENT, STYLUS_RESULT},
+    value::*,
+};
+use arbutil::{wavm, Color};
 use fnv::FnvHashSet as HashSet;
 use go_abi::*;
 use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{collections::BinaryHeap, convert::TryFrom, io::Write};
 
-fn interpret_value(repr: u64) -> InterpValue {
-    if repr == 0 {
-        return InterpValue::Undefined;
-    }
-    let float = f64::from_bits(repr);
-    if float.is_nan() && repr != f64::NAN.to_bits() {
-        let id = repr as u32;
-        if id == ZERO_ID {
-            return InterpValue::Number(0.);
-        }
-        return InterpValue::Ref(id);
-    }
-    InterpValue::Number(float)
-}
-
-unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<InterpValue> {
+unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<JsValue> {
     let mut values = Vec::new();
     for _ in 0..len {
         let p = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-        values.push(interpret_value(wavm::caller_load64(p)));
+        values.push(JsValue::new(wavm::caller_load64(p)));
         ptr += 8;
     }
     values
@@ -200,8 +189,6 @@ macro_rules! unimpl_js {
 }
 
 unimpl_js!(
-    go__syscall_js_stringVal,
-    go__syscall_js_valueSetIndex,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
     go__syscall_js_valueDelete,
@@ -213,11 +200,11 @@ unimpl_js!(
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
     let mut sp = GoStack::new(sp);
-    let source = interpret_value(sp.read_u64());
+    let source = JsValue::new(sp.read_u64());
     let field = sp.read_js_string();
 
     let value = match source {
-        InterpValue::Ref(id) => get_field(id, &field),
+        JsValue::Ref(id) => get_field(id, &field),
         val => {
             eprintln!(
                 "Go attempting to read field {:?} . {}",
@@ -234,45 +221,46 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueNew(sp: usize) {
     let mut sp = GoStack::new(sp);
+    let pool = DynamicObjectPool::singleton();
+
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
+            sp.write_u64(GoValue::Null.encode());
+            sp.write_u8(0);
+            return
+        }};
+    }
+
     let class = sp.read_u32();
     let (args_ptr, args_len) = sp.skip_space().read_go_slice();
     let args = read_value_slice(args_ptr, args_len);
-    if class == UINT8_ARRAY_ID {
-        if let Some(InterpValue::Number(size)) = args.get(0) {
-            let id = DynamicObjectPool::singleton()
-                .insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
-            sp.write_u64(GoValue::Object(id).encode());
-            sp.write_u8(1);
-            return;
-        } else {
-            eprintln!(
-                "Go attempted to construct Uint8Array with bad args: {:?}",
-                args,
-            );
+    let value = match class {
+        UINT8_ARRAY_ID => match args.get(0) {
+            Some(JsValue::Number(size)) => DynamicObject::Uint8Array(vec![0; *size as usize]),
+            _ => fail!("Go attempted to construct Uint8Array with bad args: {args:?}"),
+        },
+        DATE_ID => DynamicObject::Date,
+        ARRAY_ID => {
+            // Note: assumes values are only numbers and objects
+            let values = args.into_iter().map(JsValue::assume_num_or_object);
+            DynamicObject::ValueArray(values.collect())
         }
-    } else if class == DATE_ID {
-        let id = DynamicObjectPool::singleton().insert(DynamicObject::Date);
-        sp.write_u64(GoValue::Object(id).encode());
-        sp.write_u8(1);
-        return;
-    } else {
-        eprintln!(
-            "Go attempting to construct unimplemented JS value {}",
-            class,
-        );
-    }
-    sp.write_u64(GoValue::Null.encode());
-    sp.write_u8(0);
+        _ => fail!("Go trying to construct unimplemented JS value {class}"),
+    };
+    let id = pool.insert(value);
+    sp.write_u64(GoValue::Object(id).encode());
+    sp.write_u8(1);
 }
 
 /// Safety: λ(dest value, src []byte) (int, bool)
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
     let mut sp = GoStack::new(sp);
-    let dest_val = interpret_value(sp.read_u64());
+    let dest_val = JsValue::new(sp.read_u64());
     let (src_ptr, src_len) = sp.read_go_slice();
 
-    if let InterpValue::Ref(dest_id) = dest_val {
+    if let JsValue::Ref(dest_id) = dest_val {
         let dest = DynamicObjectPool::singleton().get_mut(dest_id);
         if let Some(DynamicObject::Uint8Array(buf)) = dest {
             if buf.len() as u64 != src_len {
@@ -306,9 +294,9 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: usize) {
 pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     let mut sp = GoStack::new(sp);
     let (dest_ptr, dest_len) = sp.read_go_slice();
-    let src_val = interpret_value(sp.read_u64());
+    let src_val = JsValue::new(sp.read_u64());
 
-    if let InterpValue::Ref(src_id) = src_val {
+    if let JsValue::Ref(src_id) = src_val {
         let source = DynamicObjectPool::singleton().get_mut(src_id);
         if let Some(DynamicObject::Uint8Array(buf)) = source {
             if buf.len() as u64 != dest_len {
@@ -336,148 +324,35 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: usize) {
     sp.skip_u64().write_u8(0);
 }
 
-/// Safety: λ(v value, method string, args []value) (value, bool)
-unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
-    let object = interpret_value(sp.read_u64());
-    let method_name = sp.read_js_string();
-    let (args_ptr, args_len) = sp.read_go_slice();
-    let args = read_value_slice(args_ptr, args_len);
+/// Safety: λ(array value, i int, v value)
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueSetIndex(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let pool = DynamicObjectPool::singleton();
 
-    if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
-        let id = args.get(0).ok_or_else(|| {
-            format!(
-                "Go attempting to call Go._makeFuncWrapper with bad args {:?}",
-                args,
-            )
-        })?;
-        let ref_id =
-            DynamicObjectPool::singleton().insert(DynamicObject::FunctionWrapper(*id, object));
-        Ok(GoValue::Function(ref_id))
-    } else if object == InterpValue::Ref(FS_ID) && &method_name == b"write" {
-        let args_len = std::cmp::min(6, args.len());
-        if let &[InterpValue::Number(fd), InterpValue::Ref(buf_id), InterpValue::Number(offset), InterpValue::Number(length), InterpValue::Ref(NULL_ID), InterpValue::Ref(callback_id)] =
-            &args.as_slice()[..args_len]
-        {
-            let object_pool = DynamicObjectPool::singleton();
-            let buf = match object_pool.get(buf_id) {
-                Some(DynamicObject::Uint8Array(x)) => x,
-                x => {
-                    return Err(format!(
-                        "Go attempting to call fs.write with bad buffer {:?}",
-                        x,
-                    ))
-                }
-            };
-            let (func_id, this) = match object_pool.get(callback_id) {
-                Some(DynamicObject::FunctionWrapper(f, t)) => (f, t),
-                x => {
-                    return Err(format!(
-                        "Go attempting to call fs.write with bad buffer {:?}",
-                        x,
-                    ))
-                }
-            };
-            let mut offset = offset as usize;
-            let mut length = length as usize;
-            if offset > buf.len() {
-                eprintln!(
-                    "Go attempting to call fs.write with offset {} >= buf.len() {}",
-                    offset,
-                    buf.len(),
-                );
-                offset = buf.len();
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
+            return
+        }};
+    }
+
+    let source = match JsValue::new(sp.read_u64()) {
+        JsValue::Ref(x) => pool.get_mut(x),
+        val => fail!("Go attempted to index into {val:?}"),
+    };
+    let index = sp.read_go_ptr() as usize;
+    let value = JsValue::new(sp.read_u64()).assume_num_or_object();
+
+    match source {
+        Some(DynamicObject::ValueArray(vec)) => {
+            if index >= vec.len() {
+                vec.resize(index + 1, GoValue::Undefined);
             }
-            if offset + length > buf.len() {
-                eprintln!(
-                    "Go attempting to call fs.write with offset {} + length {} >= buf.len() {}",
-                    offset,
-                    length,
-                    buf.len(),
-                );
-                length = buf.len() - offset;
-            }
-
-            if fd == 1. {
-                let stdout = std::io::stdout();
-                let mut stdout = stdout.lock();
-                stdout.write_all(&buf[offset..(offset + length)]).unwrap();
-            } else if fd == 2. {
-                let stderr = std::io::stderr();
-                let mut stderr = stderr.lock();
-                stderr.write_all(&buf[offset..(offset + length)]).unwrap();
-            } else {
-                eprintln!("Go attempting to write to unknown FD {}", fd);
-            }
-
-            PENDING_EVENT = Some(PendingEvent {
-                id: *func_id,
-                this: *this,
-                args: vec![
-                    GoValue::Null,                  // no error
-                    GoValue::Number(length as f64), // amount written
-                ],
-            });
-
-            sp.resume();
-            Ok(GoValue::Null)
-        } else {
-            Err(format!(
-                "Go attempting to call fs.write with bad args {:?}",
-                args
-            ))
+            let prior = std::mem::replace(&mut vec[index], value);
+            prior.free();
         }
-    } else if object == InterpValue::Ref(CRYPTO_ID) && &method_name == b"getRandomValues" {
-        let id = match args.get(0) {
-            Some(InterpValue::Ref(x)) => *x,
-            _ => {
-                return Err(format!(
-                    "Go attempting to call crypto.getRandomValues with bad args {:?}",
-                    args,
-                ));
-            }
-        };
-        match DynamicObjectPool::singleton().get_mut(id) {
-            Some(DynamicObject::Uint8Array(buf)) => {
-                get_rng().fill_bytes(buf.as_mut_slice());
-            }
-            Some(x) => {
-                return Err(format!(
-                    "Go attempting to call crypto.getRandomValues on bad object {:?}",
-                    x,
-                ));
-            }
-            None => {
-                return Err(format!(
-                    "Go attempting to call crypto.getRandomValues on unknown reference {}",
-                    id,
-                ));
-            }
-        }
-        Ok(GoValue::Undefined)
-    } else if let InterpValue::Ref(obj_id) = object {
-        let val = DynamicObjectPool::singleton().get(obj_id);
-        if let Some(DynamicObject::Date) = val {
-            if &method_name == b"getTimezoneOffset" {
-                return Ok(GoValue::Number(0.0));
-            } else {
-                return Err(format!(
-                    "Go attempting to call unknown method {} for date object",
-                    String::from_utf8_lossy(&method_name),
-                ));
-            }
-        } else {
-            return Err(format!(
-                "Go attempting to call method {} for unknown object - id {}",
-                String::from_utf8_lossy(&method_name),
-                obj_id,
-            ));
-        }
-    } else {
-        Err(format!(
-            "Go attempting to call unknown method {:?} . {}",
-            object,
-            String::from_utf8_lossy(&method_name),
-        ))
+        _ => fail!("Go attempted to index into unsupported value {source:?} {index}"),
     }
 }
 
@@ -485,36 +360,175 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueCall(sp: usize) {
     let mut sp = GoStack::new(sp);
-    match value_call_impl(&mut sp) {
-        Ok(val) => {
-            sp.write_u64(val.encode());
-            sp.write_u8(1);
-        }
-        Err(err) => {
-            eprintln!("{}", err);
+    let object = JsValue::new(sp.read_u64());
+    let method_name = sp.read_js_string();
+    let (args_ptr, args_len) = sp.read_go_slice();
+    let args = read_value_slice(args_ptr, args_len);
+    let name = String::from_utf8_lossy(&method_name);
+    let pool = DynamicObjectPool::singleton();
+    use JsValue::*;
+
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
             sp.write_u64(GoValue::Null.encode());
-            sp.write_u8(0);
-        }
+            sp.write_u8(1);
+            return
+        }};
     }
+
+    let value = match (object, method_name.as_slice()) {
+        (Ref(GO_ID), b"_makeFuncWrapper") => {
+            let Some(JsValue::Number(func_id)) = args.get(0) else {
+                fail!("Go trying to call Go._makeFuncWrapper with bad args {args:?}")
+            };
+            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*func_id as u32));
+            GoValue::Function(ref_id)
+        }
+        (Ref(STYLUS_ID), b"setCallbacks") => {
+            let mut ids = vec![];
+            for arg in args {
+                let Ref(id) = arg else {
+                    fail!("Stylus callback not a function {arg:?}")
+                };
+                ids.push(GoValue::Number(id as f64));
+            }
+            let value = pool.insert(DynamicObject::ValueArray(ids));
+            GoValue::Object(value)
+        }
+        (Ref(FS_ID), b"write") => {
+            // ignore any args after the 6th, and slice no more than than the number of args we have
+            let args_len = std::cmp::min(6, args.len());
+
+            match &args.as_slice()[..args_len] {
+                &[Number(fd), Ref(buf_id), Number(offset), Number(length), Ref(NULL_ID), Ref(callback_id)] =>
+                {
+                    let buf = match pool.get(buf_id) {
+                        Some(DynamicObject::Uint8Array(x)) => x,
+                        x => fail!("Go trying to call fs.write with bad buffer {x:?}"),
+                    };
+                    let &func_id = match pool.get(callback_id) {
+                        Some(DynamicObject::FunctionWrapper(func_id)) => func_id,
+                        x => fail!("Go trying to call fs.write with bad buffer {x:?}"),
+                    };
+
+                    let mut offset = offset as usize;
+                    let mut length = length as usize;
+                    if offset > buf.len() {
+                        eprintln!(
+                            "Go trying to call fs.write with offset {offset} >= buf.len() {length}"
+                        );
+                        offset = buf.len();
+                    }
+                    if offset + length > buf.len() {
+                        eprintln!(
+                            "Go trying to call fs.write with offset {offset} + length {length} >= buf.len() {}",
+                            buf.len(),
+                        );
+                        length = buf.len() - offset;
+                    }
+                    if fd == 1. {
+                        let stdout = std::io::stdout();
+                        let mut stdout = stdout.lock();
+                        stdout.write_all(&buf[offset..(offset + length)]).unwrap();
+                    } else if fd == 2. {
+                        let stderr = std::io::stderr();
+                        let mut stderr = stderr.lock();
+                        stderr.write_all(&buf[offset..(offset + length)]).unwrap();
+                    } else {
+                        eprintln!("Go trying to write to unknown FD {}", fd);
+                    }
+
+                    pending::set_event(
+                        func_id,
+                        object,
+                        vec![
+                            GoValue::Null,                  // no error
+                            GoValue::Number(length as f64), // amount written
+                        ],
+                    );
+                    sp.resume();
+                    GoValue::Null
+                }
+                _ => fail!("Go trying to call fs.write with bad args {args:?}"),
+            }
+        }
+        (Ref(CRYPTO_ID), b"getRandomValues") => {
+            let name = "crypto.getRandomValues";
+
+            let id = match args.get(0) {
+                Some(Ref(x)) => x,
+                _ => fail!("Go trying to call {name} with bad args {args:?}"),
+            };
+
+            let buf = match pool.get_mut(*id) {
+                Some(DynamicObject::Uint8Array(buf)) => buf,
+                Some(x) => fail!("Go trying to call {name} on bad object {x:?}"),
+                None => fail!("Go trying to call {name} on unknown reference {id}"),
+            };
+
+            get_rng().fill_bytes(buf.as_mut_slice());
+            GoValue::Undefined
+        }
+        (Ref(CONSOLE_ID), b"error") => {
+            print!("{}", "console error:".red());
+            for arg in args {
+                match arg {
+                    JsValue::Undefined => print!(" undefined"),
+                    JsValue::Number(x) => print!(" num {x}"),
+                    JsValue::Ref(id) => match pool.get(id) {
+                        Some(DynamicObject::GoString(data)) => {
+                            print!(" {}", String::from_utf8_lossy(data))
+                        }
+                        Some(DynamicObject::Uint8Array(data)) => {
+                            print!(" 0x{}", hex::encode(data))
+                        }
+                        Some(other) => print!(" {other:?}"),
+                        None => print!(" unknown"),
+                    },
+                }
+            }
+            println!();
+            GoValue::Undefined
+        }
+        (Ref(obj_id), _) => {
+            let value = match pool.get(obj_id) {
+                Some(value) => value,
+                None => fail!("Go trying to call method {name} for unknown object - id {obj_id}"),
+            };
+            match value {
+                DynamicObject::Date => GoValue::Number(0.0),
+                _ => fail!("Go trying to call unknown method {name} for date object"),
+            }
+        }
+        _ => fail!("Go trying to call unknown method {object:?} . {name}"),
+    };
+
+    sp.write_u64(value.encode());
+    sp.write_u8(1);
 }
 
 /// Safety: λ(v value, field string, x value)
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueSet(sp: usize) {
     let mut sp = GoStack::new(sp);
-    let source = interpret_value(sp.read_u64());
-    let field = sp.read_js_string();
-    let new_value = interpret_value(sp.read_u64());
+    use JsValue::*;
 
-    if source == InterpValue::Ref(GO_ID)
-        && &field == b"_pendingEvent"
-        && new_value == InterpValue::Ref(NULL_ID)
-    {
+    let source = JsValue::new(sp.read_u64());
+    let field = sp.read_js_string();
+    let new_value = JsValue::new(sp.read_u64());
+
+    if source == Ref(GO_ID) && &field == b"_pendingEvent" && new_value == Ref(NULL_ID) {
         PENDING_EVENT = None;
         return;
     }
+
     let pool = DynamicObjectPool::singleton();
-    if let InterpValue::Ref(id) = source {
+    if let (Ref(STYLUS_ID), b"result") = (source, field.as_slice()) {
+        STYLUS_RESULT = Some(new_value);
+        return;
+    }
+    if let Ref(id) = source {
         let source = pool.get(id);
         if let Some(DynamicObject::PendingEvent(_)) = source {
             if field == b"result" {
@@ -522,22 +536,28 @@ pub unsafe extern "C" fn go__syscall_js_valueSet(sp: usize) {
             }
         }
     }
-    eprintln!(
-        "Go attempted to set unsupported value {:?} field {} to {:?}",
-        source,
-        String::from_utf8_lossy(&field),
-        new_value,
-    );
+    let field = String::from_utf8_lossy(&field).red();
+    eprintln!("Go attempted to set unsupported value {source:?} field {field} to {new_value:?}",);
+}
+
+/// Safety: λ(v string) value
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_stringVal(sp: usize) {
+    let mut sp = GoStack::new(sp);
+    let pool = DynamicObjectPool::singleton();
+    let data = sp.read_js_string();
+    let id = pool.insert(DynamicObject::GoString(data));
+    sp.write_u64(GoValue::Object(id).encode());
 }
 
 /// Safety: λ(v value) int
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueLength(sp: usize) {
     let mut sp = GoStack::new(sp);
-    let source = interpret_value(sp.read_u64());
+    let source = JsValue::new(sp.read_u64());
     let pool = DynamicObjectPool::singleton();
     let source = match source {
-        InterpValue::Ref(x) => pool.get(x),
+        JsValue::Ref(x) => pool.get(x),
         _ => None,
     };
     let len = match source {
@@ -559,8 +579,8 @@ pub unsafe extern "C" fn go__syscall_js_valueLength(sp: usize) {
 /// Safety: λ(v value, i int) value
 unsafe fn value_index_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let pool = DynamicObjectPool::singleton();
-    let source = match interpret_value(sp.read_u64()) {
-        InterpValue::Ref(x) => pool.get(x),
+    let source = match JsValue::new(sp.read_u64()) {
+        JsValue::Ref(x) => pool.get(x),
         val => return Err(format!("Go attempted to index into {:?}", val)),
     };
     let index = usize::try_from(sp.read_u64()).map_err(|e| format!("{:?}", e))?;
@@ -601,10 +621,10 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: usize) {
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: usize) {
     let mut sp = GoStack::new(sp);
-    let val = interpret_value(sp.read_u64());
+    let val = JsValue::new(sp.read_u64());
     match val {
-        InterpValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
-        InterpValue::Ref(x) => {
+        JsValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
+        JsValue::Ref(x) => {
             if DynamicObjectPool::singleton().remove(x).is_none() {
                 eprintln!("Go attempting to finalize unknown ref {}", x);
             }

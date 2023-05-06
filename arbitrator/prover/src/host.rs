@@ -6,11 +6,11 @@
 use crate::{
     binary,
     machine::{Function, InboxIdentifier},
-    programs::{run::UserOutcomeKind, StylusGlobals},
+    programs::StylusGlobals,
     value::{ArbValueType, FunctionType, IntegerValType},
     wavm::{wasm_to_wavm, IBinOpType, Instruction, Opcode},
 };
-use arbutil::Color;
+use arbutil::{evm::user::UserOutcomeKind, Color};
 use eyre::{bail, Result};
 use lazy_static::lazy_static;
 use std::{collections::HashMap, path::Path};
@@ -54,7 +54,7 @@ impl InternalFunc {
     }
 }
 
-pub fn get_impl(module: &str, name: &str) -> Result<Function> {
+pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
     macro_rules! func {
         () => {
             FunctionType::default()
@@ -253,7 +253,8 @@ pub fn get_impl(module: &str, name: &str) -> Result<Function> {
         Ok(())
     };
 
-    Function::new(&[], append, ty, &[])
+    let debug = module == "console";
+    Function::new(&[], append, ty, &[]).map(|x| (x, debug))
 }
 
 /// Adds internal functions to a module.

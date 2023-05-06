@@ -115,13 +115,30 @@ impl GoStack {
         wavm::read_slice(ptr, len)
     }
 
-    /// Resumes the go runtime, updating the stack pointer.
-    /// Safety: caller must cut lifetimes before this call.
-    pub unsafe fn resume(&mut self) {
-        let saved = self.top - (self.sp + 8);
-        wavm_guest_call__resume();
+    /// Saves the stack pointer for later calls to `restore_stack`.
+    pub fn save_stack(&self) -> usize {
+        self.top - (self.sp + 8)
+    }
+
+    /// Writes the stack pointer.
+    ///
+    /// # Safety
+    ///
+    /// `saved` must come from `save_stack`, with no calls to `advance` in between.
+    pub unsafe fn restore_stack(&mut self, saved: usize) {
         *self = Self::new(wavm_guest_call__getsp());
         self.advance(saved);
+    }
+
+    /// Resumes the go runtime, updating the stack pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must cut lifetimes before this call.
+    pub unsafe fn resume(&mut self) {
+        let saved = self.save_stack();
+        wavm_guest_call__resume();
+        self.restore_stack(saved);
     }
 }
 

@@ -5,7 +5,6 @@ use crate::{
     binary::{ExportKind, WasmBinary},
     value::{FunctionType as ArbFunctionType, Value},
 };
-
 use arbutil::Color;
 use eyre::{bail, Report, Result};
 use fnv::FnvHashMap as HashMap;
@@ -33,11 +32,9 @@ pub mod dynamic;
 pub mod heap;
 pub mod meter;
 pub mod prelude;
-pub mod run;
 pub mod start;
 
 pub const STYLUS_ENTRY_POINT: &str = "arbitrum_main";
-pub const USER_HOST: &str = "user_host";
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;

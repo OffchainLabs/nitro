@@ -93,12 +93,12 @@ fn test_start() -> Result<()> {
     }
 
     let compile = test_compile_config();
-    let mut machine = &mut new_test_machine("tests/start.wat", &compile)?;
+    let machine = &mut new_test_machine("tests/start.wat", &compile)?;
     check(machine, 10)?;
 
     let call = |mech: &mut Machine, name: &str| mech.call_function("user", name, vec![]);
 
     call(machine, "move_me")?;
     call(machine, "stylus_start")?;
-    check(&mut machine, 12)
+    check(machine, 12)
 }

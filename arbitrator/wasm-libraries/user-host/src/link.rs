@@ -1,15 +1,15 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{Program, PROGRAMS};
-use arbutil::{heapify, wavm};
+use crate::{evm_api::ApiCaller, Program, PROGRAMS};
+use arbutil::{
+    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
+    heapify, wavm,
+};
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::{
-        config::{CompileConfig, GoParams, StylusConfig},
-        run::UserOutcomeKind,
-    },
+    programs::config::{CompileConfig, GoParams, StylusConfig},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -72,6 +72,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         false,
         false,
         false,
+        compile.debug.debug_funcs,
         prover::machine::GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("user program tried to read preimage")),
@@ -86,15 +87,23 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
 }
 
 /// Links and executes a user wasm.
-/// Safety: λ(mach *Machine, data []byte, params *StylusConfig, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
+/// λ(mach *Machine, calldata []byte, params *Config, evmApi []byte, evmData *EvmData, gas *u64, root *[32]byte)
+///     -> (status byte, out *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUserWasmRustImpl(
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let machine: Machine = *Box::from_raw(sp.read_ptr_mut());
+    macro_rules! unbox {
+        () => {
+            *Box::from_raw(sp.read_ptr_mut())
+        };
+    }
+    let machine: Machine = unbox!();
     let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
+    let config: StylusConfig = unbox!();
+    let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
+    let evm_data: EvmData = unbox!();
 
     // buy ink
     let pricing = config.pricing;
@@ -114,11 +123,13 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
 
     // provide arguments
     let args_len = calldata.len();
-    PROGRAMS.push(Program::new(calldata, config));
+    PROGRAMS.push(Program::new(calldata, evm_api, evm_data, config));
 
     // call the program
+    let go_stack = sp.save_stack();
     let status = program_call_main(module, main, args_len);
     let outs = PROGRAMS.pop().unwrap().into_outs();
+    sp.restore_stack(go_stack);
 
     /// cleans up and writes the output
     macro_rules! finish {
@@ -187,4 +198,16 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
         debug_mode: sp.read_u32(),
     };
     sp.skip_space().write_ptr(heapify(params.configs().1));
+}
+
+/// Creates an `EvmData` from its component parts.
+/// Safety: λ(origin u32) *EvmData
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
+    sp: usize,
+) {
+    let mut sp = GoStack::new(sp);
+    let origin = wavm::read_bytes20(sp.read_go_ptr());
+    let evm_data = EvmData::new(origin.into());
+    sp.write_ptr(heapify(evm_data));
 }

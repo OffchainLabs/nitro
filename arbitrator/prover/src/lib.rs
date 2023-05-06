@@ -18,8 +18,10 @@ pub mod wavm;
 #[cfg(test)]
 mod test;
 
-use eyre::Result;
 pub use machine::Machine;
+
+use arbutil::Bytes32;
+use eyre::Result;
 use machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
     PreimageResolver,
@@ -35,7 +37,7 @@ use std::{
         Arc,
     },
 };
-use utils::{Bytes32, CBytes};
+use utils::CBytes;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -57,8 +59,11 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
+    debug_chain: usize,
 ) -> *mut Machine {
-    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size) {
+    let debug_chain = debug_chain != 0;
+    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size, debug_chain)
+    {
         Ok(mach) => mach,
         Err(err) => {
             eprintln!("Error loading binary: {:?}", err);
@@ -71,6 +76,7 @@ unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
+    debug_chain: bool,
 ) -> Result<*mut Machine> {
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
@@ -87,6 +93,7 @@ unsafe fn arbitrator_load_machine_impl(
         true,
         false,
         false,
+        debug_chain,
         Default::default(),
         Default::default(),
         get_empty_preimage_resolver(),
@@ -351,12 +358,12 @@ pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> utils::Bytes32 {
+pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> Bytes32 {
     (*mach).hash()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> utils::Bytes32 {
+pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
     (*mach).get_modules_root()
 }
 

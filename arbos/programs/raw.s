@@ -25,3 +25,7 @@ TEXT ·rustVecIntoSliceImpl(SB), NOSPLIT, $0
 TEXT ·rustConfigImpl(SB), NOSPLIT, $0
   CallImport
   RET
+
+TEXT ·rustEvmDataImpl(SB), NOSPLIT, $0
+  CallImport
+  RET

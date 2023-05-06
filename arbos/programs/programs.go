@@ -9,7 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -144,7 +143,6 @@ func (p Programs) CallProgram(
 	statedb vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
-	msg core.Message,
 	calldata []byte,
 ) ([]byte, error) {
 	stylusVersion, err := p.StylusVersion()
@@ -165,7 +163,11 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	return callUserWasm(scope, statedb, interpreter, tracingInfo, msg, calldata, params)
+	evm := interpreter.Evm()
+	evmData := &evmData{
+		origin: evm.TxContext.Origin,
+	}
+	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -211,6 +213,10 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 		config.debugMode = 1
 	}
 	return config, nil
+}
+
+type evmData struct {
+	origin common.Address
 }
 
 type userStatus uint8

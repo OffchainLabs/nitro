@@ -5,10 +5,12 @@ edition = "2018"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["lib", "cdylib"]
 
 [dependencies]
+eyre = "0.6.5"
 fnv = "1.0.7"
+hex = "0.4.3"
 rand = { version = "0.8.4", default-features = false }
 rand_pcg = { version = "0.3.1", default-features = false }
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
