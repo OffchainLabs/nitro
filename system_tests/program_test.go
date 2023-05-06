@@ -40,6 +40,17 @@ func TestProgramKeccakArb(t *testing.T) {
 	keccakTest(t, false)
 }
 
+func TestProgramKeccak_ReusesOtherDuplicateProgramCompiledCode(t *testing.T) {
+	file := rustFile("keccak")
+	ctx, _, _, l2client, auth, cleanup := setupProgramTest(t, file, true)
+	defer cleanup()
+	programAddress := deployWasm(t, ctx, auth, l2client, file)
+	otherAddressSameCode := deployWasm(t, ctx, auth, l2client, file)
+	if programAddress == otherAddressSameCode {
+		Fail(t, "expected to deploy at two separate program addresses")
+	}
+}
+
 func keccakTest(t *testing.T, jit bool) {
 	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, rustFile("keccak"), jit)
 	defer cleanup()

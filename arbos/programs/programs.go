@@ -117,13 +117,11 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	if prefixedWasm == nil {
 		return 0, fmt.Errorf("missing wasm at address %v", program)
 	}
-	compiledContractCode, err := statedb.CompiledWasmContractCode(latest, crypto.Keccak256Hash(prefixedWasm))
+	compiledContractCode, err := statedb.CompiledWasmContractCode(version, crypto.Keccak256Hash(prefixedWasm))
 	switch {
 	case err == nil:
-		fmt.Println("ALREADY EXISTS")
 		statedb.SetCompiledWasmCode(program, compiledContractCode, version)
 	case errors.Is(state.ErrNotFound, err):
-		fmt.Println("NOT EXISTS")
 		wasm, err := state.StripStylusPrefix(prefixedWasm)
 		if err != nil {
 			return 0, err
