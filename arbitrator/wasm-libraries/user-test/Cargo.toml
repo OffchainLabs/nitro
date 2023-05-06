@@ -1,0 +1,16 @@
+[package]
+name = "user-test"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+arbutil = { path = "../../arbutil/", features = ["wavm"] }
+prover = { path = "../../prover/", default-features = false }
+eyre = "0.6.5"
+fnv = "1.0.7"
+hex = "0.4.3"
+lazy_static = "1.4.0"
+parking_lot = "0.12.1"

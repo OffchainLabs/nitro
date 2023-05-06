@@ -1,8 +1,8 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{binary::FloatType, utils::Bytes32};
-use arbutil::Color;
+use crate::binary::FloatType;
+use arbutil::{Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};

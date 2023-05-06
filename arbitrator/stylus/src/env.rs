@@ -1,19 +1,15 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::{evm, Color};
-use eyre::{eyre, ErrReport};
-use prover::{
-    programs::{
-        config::{PricingParams, StylusConfig},
-        meter::{MachineMeter, MeteredMachine},
-        prelude::CompileConfig,
-        run::UserOutcomeKind,
-    },
-    utils::{Bytes20, Bytes32},
+use arbutil::{
+    evm::{api::EvmApi, EvmData},
+    Bytes20, Bytes32, Color,
 };
+use derivative::Derivative;
+use eyre::{eyre, ErrReport};
+use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
-    fmt::Display,
+    fmt::{Debug, Display},
     io,
     ops::{Deref, DerefMut},
 };
@@ -22,22 +18,25 @@ use wasmer::{
     AsStoreRef, FunctionEnvMut, Global, Memory, MemoryAccessError, MemoryView, StoreMut, WasmPtr,
 };
 
-pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
+pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
 
-#[derive(Default)]
-pub struct WasmEnv {
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct WasmEnv<E: EvmApi> {
     /// The instance's arguments
+    #[derivative(Debug(format_with = "arbutil::format::hex_fmt"))]
     pub args: Vec<u8>,
     /// The instance's return data
+    #[derivative(Debug(format_with = "arbutil::format::hex_fmt"))]
     pub outs: Vec<u8>,
     /// Mechanism for reading and writing the module's memory
     pub memory: Option<Memory>,
     /// Mechanism for accessing metering-specific global state
     pub meter: Option<MeterData>,
     /// Mechanism for reading and writing permanent storage, and doing calls
-    pub evm: Option<EvmAPI>,
+    pub evm_api: E,
     /// Mechanism for reading EVM context data
-    pub evm_data: Option<EvmData>,
+    pub evm_data: EvmData,
     /// The compile time config
     pub compile: CompileConfig,
     /// The runtime config
@@ -52,116 +51,33 @@ pub struct MeterData {
     pub ink_status: Global,
 }
 
-/// State load: key → (value, cost)
-pub type GetBytes32 = Box<dyn Fn(Bytes32) -> (Bytes32, u64) + Send>;
-
-/// State store: (key, value) → (cost, error)
-pub type SetBytes32 = Box<dyn FnMut(Bytes32, Bytes32) -> eyre::Result<u64> + Send>;
-
-/// Contract call: (contract, calldata, gas, value) → (return_data_len, gas_cost, status)
-pub type ContractCall =
-    Box<dyn Fn(Bytes20, Vec<u8>, u64, Bytes32) -> (u32, u64, UserOutcomeKind) + Send>;
-
-/// Delegate call: (contract, calldata, gas) → (return_data_len, gas_cost, status)
-pub type DelegateCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
-
-/// Static call: (contract, calldata, gas) → (return_data_len, gas_cost, status)
-pub type StaticCall = Box<dyn Fn(Bytes20, Vec<u8>, u64) -> (u32, u64, UserOutcomeKind) + Send>;
-
-/// Last call's return data: () → return_data
-pub type GetReturnData = Box<dyn Fn() -> Vec<u8> + Send>;
-
-/// Emits a log event: (data, topics) -> error
-pub type EmitLog = Box<dyn Fn(Vec<u8>, usize) -> eyre::Result<()> + Send>;
-
-/// Creates a contract: (code, endowment, gas) -> (address/error, return_data_len, gas_cost)
-pub type Create1 = Box<dyn Fn(Vec<u8>, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
-
-/// Creates a contract: (code, endowment, salt, gas) -> (address/error, return_data_len, gas_cost)
-pub type Create2 =
-    Box<dyn Fn(Vec<u8>, Bytes32, Bytes32, u64) -> (eyre::Result<Bytes20>, u32, u64) + Send>;
-
-pub struct EvmAPI {
-    get_bytes32: GetBytes32,
-    set_bytes32: SetBytes32,
-    contract_call: ContractCall,
-    delegate_call: DelegateCall,
-    static_call: StaticCall,
-    create1: Create1,
-    create2: Create2,
-    get_return_data: GetReturnData,
-    return_data_len: u32,
-    emit_log: EmitLog,
-}
-
-#[repr(C)]
-pub struct EvmData {
-    pub origin: Bytes20,
-}
-
-impl WasmEnv {
-    pub fn new(compile: CompileConfig, config: Option<StylusConfig>) -> Self {
+impl<E: EvmApi> WasmEnv<E> {
+    pub fn new(
+        compile: CompileConfig,
+        config: Option<StylusConfig>,
+        evm_api: E,
+        evm_data: EvmData,
+    ) -> Self {
         Self {
             compile,
             config,
-            ..Default::default()
+            evm_api,
+            evm_data,
+            args: vec![],
+            outs: vec![],
+            memory: None,
+            meter: None,
         }
     }
 
-    pub fn set_evm_api(
-        &mut self,
-        get_bytes32: GetBytes32,
-        set_bytes32: SetBytes32,
-        contract_call: ContractCall,
-        delegate_call: DelegateCall,
-        static_call: StaticCall,
-        create1: Create1,
-        create2: Create2,
-        get_return_data: GetReturnData,
-        emit_log: EmitLog,
-    ) {
-        self.evm = Some(EvmAPI {
-            get_bytes32,
-            set_bytes32,
-            contract_call,
-            delegate_call,
-            static_call,
-            create1,
-            create2,
-            get_return_data,
-            emit_log,
-            return_data_len: 0,
-        })
-    }
-
-    pub fn evm(&mut self) -> &mut EvmAPI {
-        self.evm.as_mut().expect("no evm api")
-    }
-
-    pub fn evm_ref(&self) -> &EvmAPI {
-        self.evm.as_ref().expect("no evm api")
-    }
-
-    pub fn evm_data(&self) -> &EvmData {
-        self.evm_data.as_ref().expect("no evm data")
-    }
-
-    pub fn return_data_len(&self) -> u32 {
-        self.evm_ref().return_data_len
-    }
-
-    pub fn set_return_data_len(&mut self, len: u32) {
-        self.evm().return_data_len = len;
-    }
-
-    pub fn start<'a>(env: &'a mut WasmEnvMut<'_>) -> Result<HostioInfo<'a>, Escape> {
+    pub fn start<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
         let mut info = Self::start_free(env);
         let cost = info.config().pricing.hostio_ink;
         info.buy_ink(cost)?;
         Ok(info)
     }
 
-    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_>) -> HostioInfo<'a> {
+    pub fn start_free<'a>(env: &'a mut WasmEnvMut<'_, E>) -> HostioInfo<'a, E> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         HostioInfo { env, memory, store }
@@ -172,58 +88,19 @@ impl WasmEnv {
     }
 }
 
-pub struct HostioInfo<'a> {
-    pub env: &'a mut WasmEnv,
+pub struct HostioInfo<'a, E: EvmApi> {
+    pub env: &'a mut WasmEnv<E>,
     pub memory: Memory,
     pub store: StoreMut<'a>,
 }
 
-impl<'a> HostioInfo<'a> {
+impl<'a, E: EvmApi> HostioInfo<'a, E> {
     pub fn config(&self) -> StylusConfig {
         self.config.expect("no config")
     }
 
     pub fn pricing(&self) -> PricingParams {
         self.config().pricing
-    }
-
-    pub fn gas_left(&mut self) -> u64 {
-        let ink = self.ink_left().into();
-        self.pricing().ink_to_gas(ink)
-    }
-
-    pub fn buy_ink(&mut self, ink: u64) -> MaybeEscape {
-        let MachineMeter::Ready(ink_left) = self.ink_left() else {
-            return Escape::out_of_ink();
-        };
-        if ink_left < ink {
-            return Escape::out_of_ink();
-        }
-        self.set_ink(ink_left - ink);
-        Ok(())
-    }
-
-    pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
-        let ink = self.pricing().gas_to_ink(gas);
-        self.buy_ink(ink)
-    }
-
-    /// Checks if the user has enough gas, but doesn't burn any
-    pub fn require_gas(&mut self, gas: u64) -> MaybeEscape {
-        let ink = self.pricing().gas_to_ink(gas);
-        let MachineMeter::Ready(ink_left) = self.ink_left() else {
-            return Escape::out_of_ink();
-        };
-        match ink_left < ink {
-            true => Escape::out_of_ink(),
-            false => Ok(()),
-        }
-    }
-
-    pub fn pay_for_evm_copy(&mut self, bytes: u64) -> MaybeEscape {
-        let evm_words = |count: u64| count.saturating_mul(31) / 32;
-        let gas = evm_words(bytes).saturating_mul(evm::COPY_WORD_GAS);
-        self.buy_gas(gas)
     }
 
     pub fn view(&self) -> MemoryView {
@@ -279,7 +156,7 @@ impl<'a> HostioInfo<'a> {
     }
 }
 
-impl<'a> MeteredMachine for HostioInfo<'a> {
+impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
     fn ink_left(&mut self) -> MachineMeter {
         let store = &mut self.store;
         let meter = self.env.meter.as_ref().unwrap();
@@ -294,90 +171,33 @@ impl<'a> MeteredMachine for HostioInfo<'a> {
         }
     }
 
-    fn set_ink(&mut self, ink: u64) {
+    fn set_meter(&mut self, value: MachineMeter) {
         let store = &mut self.store;
         let meter = self.env.meter.as_ref().unwrap();
+        let ink = value.ink();
+        let status = value.status();
         meter.ink_left.set(store, ink.into()).unwrap();
-        meter.ink_status.set(store, 0.into()).unwrap();
+        meter.ink_status.set(store, status.into()).unwrap();
     }
 }
 
-impl<'a> Deref for HostioInfo<'a> {
-    type Target = WasmEnv;
+impl<'a, E: EvmApi> GasMeteredMachine for HostioInfo<'a, E> {
+    fn pricing(&mut self) -> PricingParams {
+        self.config().pricing
+    }
+}
+
+impl<'a, E: EvmApi> Deref for HostioInfo<'a, E> {
+    type Target = WasmEnv<E>;
 
     fn deref(&self) -> &Self::Target {
         self.env
     }
 }
 
-impl<'a> DerefMut for HostioInfo<'a> {
+impl<'a, E: EvmApi> DerefMut for HostioInfo<'a, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.env
-    }
-}
-
-impl EvmAPI {
-    pub fn load_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
-        (self.get_bytes32)(key)
-    }
-
-    pub fn store_bytes32(&mut self, key: Bytes32, value: Bytes32) -> eyre::Result<u64> {
-        (self.set_bytes32)(key, value)
-    }
-
-    pub fn contract_call(
-        &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
-        value: Bytes32,
-    ) -> (u32, u64, UserOutcomeKind) {
-        (self.contract_call)(contract, input, gas, value)
-    }
-
-    pub fn delegate_call(
-        &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
-    ) -> (u32, u64, UserOutcomeKind) {
-        (self.delegate_call)(contract, input, gas)
-    }
-
-    pub fn static_call(
-        &mut self,
-        contract: Bytes20,
-        input: Vec<u8>,
-        gas: u64,
-    ) -> (u32, u64, UserOutcomeKind) {
-        (self.static_call)(contract, input, gas)
-    }
-
-    pub fn create1(
-        &mut self,
-        code: Vec<u8>,
-        endowment: Bytes32,
-        gas: u64,
-    ) -> (eyre::Result<Bytes20>, u32, u64) {
-        (self.create1)(code, endowment, gas)
-    }
-
-    pub fn create2(
-        &mut self,
-        code: Vec<u8>,
-        endowment: Bytes32,
-        salt: Bytes32,
-        gas: u64,
-    ) -> (eyre::Result<Bytes20>, u32, u64) {
-        (self.create2)(code, endowment, salt, gas)
-    }
-
-    pub fn load_return_data(&mut self) -> Vec<u8> {
-        (self.get_return_data)()
-    }
-
-    pub fn emit_log(&mut self, data: Vec<u8>, topics: usize) -> eyre::Result<()> {
-        (self.emit_log)(data, topics)
     }
 }
 
@@ -406,6 +226,12 @@ impl Escape {
 
     pub fn out_of_ink<T>() -> Result<T, Escape> {
         Err(Self::OutOfInk)
+    }
+}
+
+impl From<OutOfInkError> for Escape {
+    fn from(_: OutOfInkError) -> Self {
+        Self::OutOfInk
     }
 }
 

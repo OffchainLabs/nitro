@@ -45,7 +45,20 @@ func Uint32ToBytes(value uint32) []byte {
 	return result
 }
 
-// Uint32FromBytes creates a uint32 from its big-endian representation
-func Uint32FromBytes(value []byte) uint32 {
+// BytesToUint creates a uint64 from its big-endian representation
+func BytesToUint(value []byte) uint64 {
+	return binary.BigEndian.Uint64(value)
+}
+
+// BytesToUint32 creates a uint32 from its big-endian representation
+func BytesToUint32(value []byte) uint32 {
 	return binary.BigEndian.Uint32(value)
+}
+
+// BoolToUint32 assigns a nonzero value when true
+func BoolToUint32(value bool) uint32 {
+	if value {
+		return 1
+	}
+	return 0
 }

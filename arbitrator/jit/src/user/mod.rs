@@ -1,15 +1,24 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{gostack::GoStack, machine::WasmEnvMut};
-use arbutil::heapify;
+use crate::{
+    gostack::GoStack,
+    machine::{Escape, MaybeEscape, WasmEnvMut},
+    user::evm_api::exec_wasm,
+};
+use arbutil::{
+    evm::{
+        user::{UserOutcome, UserOutcomeKind},
+        EvmData,
+    },
+    heapify,
+};
 use eyre::eyre;
 use prover::programs::{config::GoParams, prelude::*};
 use std::mem;
-use stylus::{
-    native::{self, NativeInstance},
-    run::RunProgram,
-};
+use stylus::native;
+
+mod evm_api;
 
 /// Compiles and instruments user wasm.
 /// go side: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
@@ -32,47 +41,51 @@ pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
 }
 
 /// Links and executes a user wasm.
-/// go side: λ(mach *Machine, data []byte, params *Configs, gas *u64, root *[32]byte) (status byte, out *Vec<u8>)
-pub fn call_user_wasm(env: WasmEnvMut, sp: u32) {
-    let mut sp = GoStack::simple(sp, &env);
-    let module: Vec<u8> = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
+/// λ(mach *Machine, calldata []byte, params *Configs, evmApi []byte, evmData: *EvmData, gas *u64, root *[32]byte)
+///     -> (status byte, out *Vec<u8>)
+pub fn call_user_wasm(env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let sp = &mut GoStack::simple(sp, &env);
+    macro_rules! unbox {
+        () => {
+            unsafe { *Box::from_raw(sp.read_ptr_mut()) }
+        };
+    }
+    use UserOutcomeKind::*;
+
+    // move inputs
+    let module: Vec<u8> = unbox!();
     let calldata = sp.read_go_slice_owned();
-    let configs: (CompileConfig, StylusConfig) = unsafe { *Box::from_raw(sp.read_ptr_mut()) };
+    let (compile, config): (CompileConfig, StylusConfig) = unbox!();
+    let evm_api = sp.read_go_slice_owned();
+    let evm_data: EvmData = unbox!();
 
     // buy ink
-    let pricing = configs.1.pricing;
+    let pricing = config.pricing;
     let gas = sp.read_go_ptr();
     let ink = pricing.gas_to_ink(sp.read_u64_raw(gas));
 
     // skip the root since we don't use these
     sp.skip_u64();
 
-    // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(&module, configs.0.clone()) };
-    let mut instance = match instance {
-        Ok(instance) => instance,
-        Err(error) => panic!("failed to instantiate program {error:?}"),
-    };
+    let result = exec_wasm(
+        sp, env, module, calldata, compile, config, evm_api, evm_data, ink,
+    );
+    let (outcome, ink_left) = result.map_err(Escape::Child)?;
 
-    let status = match instance.run_main(&calldata, configs.1, ink) {
+    match outcome {
         Err(err) | Ok(UserOutcome::Failure(err)) => {
             let outs = format!("{:?}", err.wrap_err(eyre!("failed to execute program")));
-            sp.write_u8(UserOutcomeKind::Failure as u8).skip_space();
+            sp.write_u8(Failure.into()).skip_space();
             sp.write_ptr(heapify(outs.into_bytes()));
-            UserOutcomeKind::Failure
         }
         Ok(outcome) => {
             let (status, outs) = outcome.into_data();
-            sp.write_u8(status as u8).skip_space();
+            sp.write_u8(status.into()).skip_space();
             sp.write_ptr(heapify(outs));
-            status
         }
-    };
-    let ink_left = match status {
-        UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
-        _ => instance.ink_left().into(),
-    };
+    }
     sp.write_u64_raw(gas, pricing.ink_to_gas(ink_left));
+    Ok(())
 }
 
 /// Reads the length of a rust `Vec`
@@ -105,4 +118,14 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
         debug_mode: sp.read_u32(),
     };
     sp.skip_space().write_ptr(heapify(params.configs()));
+}
+
+/// Creates an `EvmData` from its component parts.
+/// go side: λ(origin u32) *EvmData
+pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
+    let mut sp = GoStack::simple(sp, &env);
+    let origin = sp.read_go_ptr();
+    let origin = sp.read_bytes20(origin.into());
+    let evm_data = EvmData::new(origin.into());
+    sp.write_ptr(heapify(evm_data));
 }

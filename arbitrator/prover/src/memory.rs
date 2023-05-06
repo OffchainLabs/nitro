@@ -3,9 +3,9 @@
 
 use crate::{
     merkle::{Merkle, MerkleType},
-    utils::Bytes32,
     value::{ArbValueType, Value},
 };
+use arbutil::Bytes32;
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};

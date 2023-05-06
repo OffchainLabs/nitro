@@ -3,9 +3,9 @@
 
 pub use super::{
     config::{CompileConfig, StylusConfig},
+    counter::CountingMachine,
     depth::DepthCheckedMachine,
-    meter::{MachineMeter, MeteredMachine},
-    run::{UserOutcome, UserOutcomeKind},
+    meter::{GasMeteredMachine, MachineMeter, MeteredMachine},
 };
 
 #[cfg(feature = "native")]
