@@ -39,6 +39,6 @@ func (con ArbWasm) WasmHostioInk(c ctx, _ mech) (uint64, error) {
 }
 
 // Gets the current program version
-func (con ArbWasm) ProgramVersion(c ctx, _ mech, program addr) (uint32, error) {
-	return c.State.Programs().ProgramVersion(program)
+func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint32, error) {
+	return c.State.Programs().ProgramVersion(evm.StateDB, program)
 }

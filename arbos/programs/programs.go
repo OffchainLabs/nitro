@@ -96,27 +96,29 @@ func (p Programs) SetWasmHostioInk(cost uint64) error {
 	return p.wasmHostioInk.Set(cost)
 }
 
-func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
-	return p.machineVersions.GetUint32(program.Hash())
+func (p Programs) ProgramVersion(statedb vm.StateDB, program common.Address) (uint32, error) {
+	codeHash := statedb.GetCodeHash(program)
+	return p.machineVersions.GetUint32(codeHash)
 }
 
 func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
+	prefixedWasm := statedb.GetCode(program)
+	if prefixedWasm == nil {
+		return 0, fmt.Errorf("missing wasm at address %v", program)
+	}
+	codeHash := crypto.Keccak256Hash(prefixedWasm)
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, err
 	}
-	latest, err := p.machineVersions.GetUint32(program.Hash())
+	latest, err := p.machineVersions.GetUint32(codeHash)
 	if err != nil {
 		return 0, err
 	}
 	if latest >= version {
 		return 0, ProgramUpToDateError()
 	}
-	prefixedWasm := statedb.GetCode(program)
-	if prefixedWasm == nil {
-		return 0, fmt.Errorf("missing wasm at address %v", program)
-	}
-	compiledContractCode, err := statedb.CompiledWasmContractCode(version, crypto.Keccak256Hash(prefixedWasm))
+	compiledContractCode, err := statedb.CompiledWasmContractCode(version, codeHash)
 	switch {
 	case err == nil:
 		statedb.SetCompiledWasmCode(program, compiledContractCode, version)
@@ -135,7 +137,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	default:
 		return 0, err
 	}
-	return version, p.machineVersions.SetUint32(program.Hash(), version)
+	return version, p.machineVersions.SetUint32(codeHash, version)
 }
 
 func (p Programs) CallProgram(
@@ -149,7 +151,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	programVersion, err := p.machineVersions.GetUint32(scope.Contract.Address().Hash())
+	programVersion, err := p.machineVersions.GetUint32(scope.Contract.CodeHash)
 	if err != nil {
 		return nil, err
 	}
