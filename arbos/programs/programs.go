@@ -115,12 +115,11 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	if err != nil {
 		return 0, err
 	}
-	if latest >= version {
-		return 0, ProgramUpToDateError()
-	}
+	// Already compiled and found in the machine versions mapping.
+	alreadyCompiled := latest >= version
 	compiledContractCode, err := statedb.CompiledWasmContractCode(version, codeHash)
 	switch {
-	case err == nil:
+	case err == nil && alreadyCompiled:
 		statedb.SetCompiledWasmCode(program, compiledContractCode, version)
 	case errors.Is(state.ErrNotFound, err):
 		wasm, err := state.StripStylusPrefix(prefixedWasm)
