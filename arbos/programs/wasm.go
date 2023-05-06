@@ -116,3 +116,15 @@ func (p *goParams) encode() *rustConfig {
 func (d *evmData) encode() *rustEvmData {
 	return rustEvmDataImpl(arbutil.SliceToPointer(d.origin[:]))
 }
+
+func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
+	prefixedWasm := statedb.GetCode(program)
+	if prefixedWasm == nil {
+		return nil, fmt.Errorf("missing wasm at address %v", program)
+	}
+	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	if err != nil {
+		return nil, err
+	}
+	return arbcompress.Decompress(wasm, MaxWasmSize)
+}
