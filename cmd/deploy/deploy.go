@@ -129,10 +129,6 @@ func main() {
 		panic(fmt.Sprintf("chain id mismatch, id from args: %v, id from l2 chain config: %v", l2ChainId, chainConfig.ChainID))
 	}
 
-	rollupConfig, err := arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, serializedChainConfig, loserEscrowAddress)
-	if err != nil {
-		panic(err)
-	}
 	deployPtr, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -140,7 +136,7 @@ func main() {
 		sequencerAddress,
 		*authorizevalidators,
 		func() *headerreader.Config { return &headerReaderConfig },
-		rollupConfig,
+		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, serializedChainConfig, loserEscrowAddress),
 	)
 	if err != nil {
 		flag.Usage()

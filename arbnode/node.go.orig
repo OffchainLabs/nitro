@@ -203,14 +203,14 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) (*rollupgen.Config, error) {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
 	} else {
 		confirmPeriod = 20
 	}
-	return rollupgen.Config{
+	return &rollupgen.Config{
 		ConfirmPeriodBlocks:      confirmPeriod,
 		ExtraChallengeTimeBlocks: 200,
 		StakeToken:               common.Address{},
@@ -227,10 +227,14 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 			DelaySeconds:  big.NewInt(60 * 60 * 24),
 			FutureSeconds: big.NewInt(60 * 60),
 		},
-	}
+	}, nil
 }
 
+<<<<<<< HEAD
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config *rollupgen.Config) (*RollupAddresses, error) {
+=======
 func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
+>>>>>>> json-chain-config
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -251,7 +255,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		config,
+		*config,
 		expectedRollupAddr,
 	)
 	if err != nil {

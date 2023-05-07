@@ -204,7 +204,11 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting genesis block number from initial ArbOS state: %v", err.Error()))
 		}
+<<<<<<< HEAD
 		chainConfigJson, err := initialArbosState.ChainConfig()
+=======
+		chainConfig, err := chaininfo.GetChainConfig(chainId, genesisBlockNum, []string{})
+>>>>>>> json-chain-config
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain config from initial ArbOS state: %v", err.Error()))
 		}
@@ -223,7 +227,7 @@ func main() {
 			}
 		} else {
 			log.Info("Falling back to hardcoded chain config.")
-			chainConfig, err = chaininfo.GetChainConfig(chainId, genesisBlockNum, []string{})
+			chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNum)
 			if err != nil {
 				panic(err)
 			}
@@ -249,12 +253,19 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+<<<<<<< HEAD
+
 		if chainConfig == nil {
 			log.Info("No chain config in the init message. Falling back to hardcoded chain config.")
-			chainConfig, err = chaininfo.GetChainConfig(chainId, 0, []string{})
+			chainConfig, err = arbos.GetChainConfig(chainId, 0)
 			if err != nil {
 				panic(err)
 			}
+=======
+		chainConfig, err := chaininfo.GetChainConfig(chainId, 0, []string{})
+		if err != nil {
+			panic(err)
+>>>>>>> json-chain-config
 		}
 
 		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig, serializedChainConfig)
