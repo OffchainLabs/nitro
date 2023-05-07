@@ -41,7 +41,6 @@ const (
 
 var ProgramNotCompiledError func() error
 var ProgramOutOfDateError func(version uint32) error
-var ProgramUpToDateError func() error
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
@@ -102,11 +101,7 @@ func (p Programs) ProgramVersion(statedb vm.StateDB, program common.Address) (ui
 }
 
 func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
-	prefixedWasm := statedb.GetCode(program)
-	if prefixedWasm == nil {
-		return 0, fmt.Errorf("missing wasm at address %v", program)
-	}
-	codeHash := crypto.Keccak256Hash(prefixedWasm)
+	codeHash := statedb.GetCodeHash(program)
 	version, err := p.StylusVersion()
 	if err != nil {
 		return 0, err
@@ -117,17 +112,13 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	}
 	// Already compiled and found in the machine versions mapping.
 	if latest >= version {
-		return version, p.machineVersions.SetUint32(codeHash, version)
+		return version, nil
 	}
-	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	wasm, err := getWasm(statedb, program)
 	if err != nil {
 		return 0, err
 	}
-	decompressed, err := arbcompress.Decompress(wasm, MaxWasmSize)
-	if err != nil {
-		return 0, err
-	}
-	if err := compileUserWasm(statedb, program, decompressed, version, debugMode); err != nil {
+	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
 		return 0, err
 	}
 	return version, p.machineVersions.SetUint32(codeHash, version)
@@ -163,6 +154,18 @@ func (p Programs) CallProgram(
 		origin: evm.TxContext.Origin,
 	}
 	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
+}
+
+func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
+	prefixedWasm := statedb.GetCode(program)
+	if prefixedWasm == nil {
+		return nil, fmt.Errorf("missing wasm at address %v", program)
+	}
+	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	if err != nil {
+		return nil, err
+	}
+	return arbcompress.Decompress(wasm, MaxWasmSize)
 }
 
 type goParams struct {

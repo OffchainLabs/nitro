@@ -554,7 +554,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbWasm.arbosVersion = 11
 	programs.ProgramNotCompiledError = ArbWasmImpl.ProgramNotCompiledError
 	programs.ProgramOutOfDateError = ArbWasmImpl.ProgramOutOfDateError
-	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))

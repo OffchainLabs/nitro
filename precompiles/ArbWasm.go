@@ -8,7 +8,6 @@ type ArbWasm struct {
 
 	ProgramNotCompiledError func() error
 	ProgramOutOfDateError   func(version uint32) error
-	ProgramUpToDateError    func() error
 }
 
 // Compile a wasm program with the latest instrumentation

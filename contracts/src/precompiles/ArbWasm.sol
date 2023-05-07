@@ -36,5 +36,4 @@ interface ArbWasm {
 
     error ProgramNotCompiled();
     error ProgramOutOfDate(uint32 version);
-    error ProgramUpToDate();
 }
