@@ -556,6 +556,7 @@ type NodeConfig struct {
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	Init          InitConfig                      `koanf:"init"`
+	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -591,6 +592,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	InitConfigAddOptions("init", f)
+	genericconf.RpcConfigAddOptions("rpc", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -734,6 +736,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
