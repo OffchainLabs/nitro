@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"math/big"
 	"time"
 
@@ -308,78 +309,78 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(deployAuth, l1Reader.Client())
-	andTxSucceeded(ctx, l1Reader, tx, err)
-	fmt.Printf("rollupAdminLogic " + rollupAdminLogic.String())
+	if config.WasmModuleRoot == (common.Hash{}) {
+		return nil, errors.New("no machine specified")
+	}
 
-	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(deployAuth, l1Reader.Client())
-	andTxSucceeded(ctx, l1Reader, tx, err)
-	fmt.Printf("rollupUserLogic" + rollupUserLogic.String())
+	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+	if err != nil {
+		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
+	}
 
-	//if config.WasmModuleRoot == (common.Hash{}) {
-	//	return nil, errors.New("no machine specified")
-	//}
-	//
-	//rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
-	//if err != nil {
-	//	return nil, fmt.Errorf("error deploying rollup creator: %w", err)
-	//}
-	//
-	//nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
-	//if err != nil {
-	//	return nil, fmt.Errorf("error getting pending nonce: %w", err)
-	//}
-	//expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
-	//tx, err := rollupCreator.CreateRollup(
-	//	deployAuth,
-	//	config,
-	//	expectedRollupAddr,
-	//)
-	//if err != nil {
-	//	return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
-	//}
-	//receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
-	//if err != nil {
-	//	return nil, fmt.Errorf("error executing create rollup tx: %w", err)
-	//}
-	//info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
-	//if err != nil {
-	//	return nil, fmt.Errorf("error parsing rollup created log: %w", err)
-	//}
-	//
-	//sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
-	//if err != nil {
-	//	return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
-	//}
-	//
-	//// if a zero sequencer address is specified, don't authorize any sequencers
-	//if sequencer != (common.Address{}) {
-	//	tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-	//	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("error setting is batch poster: %w", err)
-	//	}
-	//}
-	//
-	//var allowValidators []bool
-	//var validatorAddrs []common.Address
-	//for i := uint64(1); i <= authorizeValidators; i++ {
-	//	validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
-	//	allowValidators = append(allowValidators, true)
-	//}
-	//if len(validatorAddrs) > 0 {
-	//	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("error getting rollup admin: %w", err)
-	//	}
-	//	tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-	//	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("error setting validator: %w", err)
-	//	}
-	//}
+	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
+	if err != nil {
+		return nil, fmt.Errorf("error getting pending nonce: %w", err)
+	}
+	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
+	tx, err := rollupCreator.CreateRollup(
+		deployAuth,
+		config,
+		expectedRollupAddr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
+	}
+	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
+	if err != nil {
+		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
+	}
+	info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
+	}
 
-	return &RollupAddresses{}, nil
+	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
+	if err != nil {
+		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
+	}
+
+	// if a zero sequencer address is specified, don't authorize any sequencers
+	if sequencer != (common.Address{}) {
+		tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
+		err = andTxSucceeded(ctx, l1Reader, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error setting is batch poster: %w", err)
+		}
+	}
+
+	var allowValidators []bool
+	var validatorAddrs []common.Address
+	for i := uint64(1); i <= authorizeValidators; i++ {
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
+		allowValidators = append(allowValidators, true)
+	}
+	if len(validatorAddrs) > 0 {
+		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+		if err != nil {
+			return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		}
+		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
+		err = andTxSucceeded(ctx, l1Reader, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error setting validator: %w", err)
+		}
+	}
+
+	return &RollupAddresses{
+		Bridge:                 info.Bridge,
+		Inbox:                  info.InboxAddress,
+		SequencerInbox:         info.SequencerInbox,
+		DeployedAt:             receipt.BlockNumber.Uint64(),
+		Rollup:                 info.RollupAddress,
+		ValidatorUtils:         validatorUtils,
+		ValidatorWalletCreator: validatorWalletCreator,
+	}, nil
 }
 
 type Config struct {

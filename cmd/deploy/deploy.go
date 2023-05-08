@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"math/big"
 	"os"
@@ -39,6 +40,7 @@ func main() {
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "12341234", "l1 private key file passphrase")
+	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 421613, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", 11111112, "L2 chain ID")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
@@ -110,7 +112,7 @@ func main() {
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
 
-	arbnode.DeployOnL1(
+	deployPtr, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		l1TransactionOpts,
@@ -119,16 +121,16 @@ func main() {
 		func() *headerreader.Config { return &headerReaderConfig },
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, l2ChainId, loserEscrowAddress),
 	)
-	//if err != nil {
-	//	flag.Usage()
-	//	log.Error("error deploying on l1")
-	//	panic(err)
-	//}
-	//deployData, err := json.Marshal(deployPtr)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
-	//	panic(err)
-	//}
+	if err != nil {
+		flag.Usage()
+		log.Error("error deploying on l1")
+		panic(err)
+	}
+	deployData, err := json.Marshal(deployPtr)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
+		panic(err)
+	}
 }
