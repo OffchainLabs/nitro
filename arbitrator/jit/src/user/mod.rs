@@ -126,29 +126,18 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 ///            msg_sender u32, msg_value u32, tx_gas_price u32, tx_origin u32) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let block_basefee = sp.read_go_ptr().into();
-    let block_basefee = sp.read_bytes32(block_basefee);
-    let block_chainid = sp.read_go_ptr().into();
-    let block_chainid = sp.read_bytes32(block_chainid);
-    let block_coinbase = sp.read_go_ptr().into();
-    let block_coinbase = sp.read_bytes20(block_coinbase);
-    let block_difficulty = sp.read_go_ptr().into();
-    let block_difficulty = sp.read_bytes32(block_difficulty);
+    let block_basefee = sp.read_bytes32();
+    let block_chainid = sp.read_bytes32();
+    let block_coinbase = sp.read_bytes20();
+    let block_difficulty = sp.read_bytes32();
     let block_gas_limit = sp.read_u64();
-    let block_number = sp.read_go_ptr().into();
-    let block_number = sp.read_bytes32(block_number);
-    let block_timestamp = sp.read_go_ptr().into();
-    let block_timestamp = sp.read_bytes32(block_timestamp);
-    let contract_address = sp.read_go_ptr().into();
-    let contract_address = sp.read_bytes20(contract_address);
-    let msg_sender = sp.read_go_ptr().into();
-    let msg_sender = sp.read_bytes20(msg_sender);
-    let msg_value = sp.read_go_ptr().into();
-    let msg_value = sp.read_bytes32(msg_value);
-    let tx_gas_price = sp.read_go_ptr().into();
-    let tx_gas_price = sp.read_bytes32(tx_gas_price);
-    let tx_origin = sp.read_go_ptr().into();
-    let tx_origin = sp.read_bytes20(tx_origin);
+    let block_number = sp.read_bytes32();
+    let block_timestamp = sp.read_bytes32();
+    let contract_address = sp.read_bytes20();
+    let msg_sender = sp.read_bytes20();
+    let msg_value = sp.read_bytes32();
+    let tx_gas_price = sp.read_bytes32();
+    let tx_origin = sp.read_bytes20();
     let evm_data = EvmData::new(
         block_basefee.into(),
         block_chainid.into(),
