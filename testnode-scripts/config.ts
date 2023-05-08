@@ -149,10 +149,9 @@ function writeGethGenesisConfig(argv: any) {
 }
 
 function writeConfigs(argv: any) {
-    const deployment = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString('utf-8'));
+	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
     const baseConfig = {
         "l1": {
-            "rollup": deployment,
             "url": argv.l1url,
             "wallet": {
                 "account": "",
@@ -164,7 +163,8 @@ function writeConfigs(argv: any) {
             "chain-id": 412346,
             "dev-wallet" : {
                 "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-            }
+            },
+			"chain-info-files": [chainInfoFile],
         },
         "node": {
             "archive": true,

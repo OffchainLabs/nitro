@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -41,11 +42,12 @@ func main() {
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
-	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
-	// l2ChainInfo := flag.String("l2chaininfo", "l2info.json", "L2 chain info output json file")
+	l2ChainName := flag.String("l2chainname", "", "L2 chain name (will be included in chain info output json file)")
+	l2ChainParams := flag.String("l2chainparams", "", "L2 chain default parameters json file (optional)")
+	l2ChainInfo := flag.String("l2chaininfo", "l2_chain_info.json", "L2 chain info output json file")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
@@ -60,6 +62,12 @@ func main() {
 		if *wasmmoduleroot == "" {
 			panic("must specify wasm module root when launching prod chain")
 		}
+		if *l2ChainParams == "" {
+			panic("must specify l2 chain default parameters json file when launching prod chain (can be empty)")
+		}
+	}
+	if *l2ChainName == "" {
+		panic("must specify l2 chain name")
 	}
 
 	wallet := genericconf.WalletConfig{
@@ -115,12 +123,12 @@ func main() {
 	headerReaderConfig := headerreader.DefaultConfig
 	headerReaderConfig.TxTimeout = *txTimeout
 
-	serializedChainConfig, err := os.ReadFile(*l2ChainConfig)
+	chainConfigJson, err := os.ReadFile(*l2ChainConfig)
 	if err != nil {
 		panic(fmt.Errorf("failed to read l2 chain config file: %w", err))
 	}
 	var chainConfig params.ChainConfig
-	err = json.Unmarshal(serializedChainConfig, &chainConfig)
+	err = json.Unmarshal(chainConfigJson, &chainConfig)
 	if err != nil {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
@@ -129,25 +137,56 @@ func main() {
 		panic(fmt.Sprintf("chain id mismatch, id from args: %v, id from l2 chain config: %v", l2ChainId, chainConfig.ChainID))
 	}
 
-	deployPtr, err := arbnode.DeployOnL1(
+	var chainParamsJson []byte
+	if *l2ChainParams != "" {
+		chainParamsJson, err = os.ReadFile(*l2ChainParams)
+		if err != nil {
+			panic(fmt.Errorf("failed to read l2 chain default parameters file: %w", err))
+		}
+	}
+	var chainParams json.RawMessage
+	if len(chainParamsJson) > 0 {
+		err = json.Unmarshal(chainParamsJson, &chainParams)
+		if err != nil {
+			panic(fmt.Errorf("failed to deserialize l2 default parameters: %w", err))
+		}
+	}
+	deployedAddresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		l1TransactionOpts,
 		sequencerAddress,
 		*authorizevalidators,
 		func() *headerreader.Config { return &headerReaderConfig },
-		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, serializedChainConfig, loserEscrowAddress),
+		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 	)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")
 		panic(err)
 	}
-	deployData, err := json.Marshal(deployPtr)
+	chainsInfo := map[uint64]chaininfo.ChainInfo{
+		l2ChainId.Uint64(): {
+			ChainName:       *l2ChainName,
+			ParentChainId:   l1ChainId.Uint64(),
+			ChainParameters: &chainParams,
+			ChainConfig:     &chainConfig,
+			RollupAddressesConfig: &chaininfo.RollupAddressesConfig{
+				Bridge:                 deployedAddresses.Bridge.Hex(),
+				Inbox:                  deployedAddresses.Inbox.Hex(),
+				SequencerInbox:         deployedAddresses.SequencerInbox.Hex(),
+				Rollup:                 deployedAddresses.Rollup.Hex(),
+				ValidatorUtils:         deployedAddresses.ValidatorUtils.Hex(),
+				ValidatorWalletCreator: deployedAddresses.ValidatorWalletCreator.Hex(),
+				DeployedAt:             deployedAddresses.DeployedAt,
+			},
+		},
+	}
+	chainsInfoJson, err := json.Marshal(chainsInfo)
 	if err != nil {
 		panic(err)
 	}
-	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
+	if err := os.WriteFile(*l2ChainInfo, chainsInfoJson, 0600); err != nil {
 		panic(err)
 	}
 }

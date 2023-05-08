@@ -817,9 +817,11 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2Ch
 		if chainInfo.ParentChainId != l1ChainId {
 			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
 		}
-		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
-		if err != nil {
-			return false, err
+		if chainInfo.ChainParameters != nil {
+			err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
+			if err != nil {
+				return false, err
+			}
 		}
 		return true, nil
 	}
