@@ -42,6 +42,7 @@ func main() {
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
+	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
@@ -163,6 +164,13 @@ func main() {
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")
+		panic(err)
+	}
+	deployData, err := json.Marshal(deployedAddresses)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
 		panic(err)
 	}
 	chainsInfo := map[uint64]chaininfo.ChainInfo{
