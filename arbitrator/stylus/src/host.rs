@@ -359,8 +359,9 @@ pub(crate) fn tx_ink_price<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Esc
 }
 
 pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
-    let env = WasmEnv::start(&mut env)?;
+    let mut env = WasmEnv::start(&mut env)?;
     let origin = env.evm_data.tx_origin;
+    env.buy_gas(evm::ORIGIN_GAS)?;
     env.write_bytes20(ptr, origin)?;
     Ok(())
 }
