@@ -10,6 +10,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -143,17 +144,18 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		if c.autoStack == nil {
 			return errors.New("self-auth not supported for this connection")
 		}
-		url, jwtPath = c.autoStack.AuthEndpoint(true)
+		url = c.autoStack.WSAuthEndpoint()
+		jwtPath = c.autoStack.JWTPath()
 	} else if url == "" {
 		return errors.New("no url provided for this connection")
 	}
-	var jwtBytes []byte
+	var jwt *common.Hash
 	if jwtPath != "" {
-		jwtHash, err := signature.LoadSigningKey(jwtPath)
+		var err error
+		jwt, err = signature.LoadSigningKey(jwtPath)
 		if err != nil {
 			return err
 		}
-		jwtBytes = jwtHash.Bytes()
 	}
 	connTimeout := time.After(c.config().ConnectionWait)
 	for {
@@ -167,10 +169,10 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		}
 		var err error
 		var client *rpc.Client
-		if len(jwtBytes) == 0 {
+		if jwt == nil {
 			client, err = rpc.DialWebsocket(ctx, url, "")
 		} else {
-			client, err = rpc.DialWebsocketJWT(ctx, url, "", jwtBytes)
+			client, err = rpc.DialOptions(ctx, url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*jwt))))
 		}
 		cancelCtx()
 		if err == nil {
