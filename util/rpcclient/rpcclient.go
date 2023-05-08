@@ -95,6 +95,9 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 	log.Trace("sending RPC request", "method", method, "logId", logId, "args", logArgs(int(c.config().ArgLogLimit), args...))
 	var err error
 	for i := 0; i < int(c.config().Retries)+1; i++ {
+		if ctx_in.Err() != nil {
+			return ctx_in.Err()
+		}
 		var ctx context.Context
 		var cancelCtx context.CancelFunc
 		timeout := c.config().Timeout
