@@ -26,7 +26,7 @@ use std::{
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
@@ -336,6 +336,8 @@ pub struct ProcessEnv {
     pub last_preimage: Option<([u8; 32], Vec<u8>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
+    /// How long to wait on any child threads to compute a result
+    pub child_timeout: Duration,
     /// Whether the machine has reached the first wavmio instruction
     pub reached_wavmio: bool,
 }
@@ -348,6 +350,7 @@ impl Default for ProcessEnv {
             socket: None,
             last_preimage: None,
             timestamp: Instant::now(),
+            child_timeout: Duration::from_secs(15),
             reached_wavmio: false,
         }
     }

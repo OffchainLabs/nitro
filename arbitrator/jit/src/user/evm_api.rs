@@ -21,7 +21,6 @@ use prover::programs::prelude::*;
 use std::{
     sync::mpsc::{self, SyncSender},
     thread,
-    time::Duration,
 };
 use stylus::{native::NativeInstance, run::RunProgram};
 
@@ -91,7 +90,7 @@ pub(super) fn exec_wasm(
     });
 
     loop {
-        let msg = match rx.recv_timeout(Duration::from_secs(15)) {
+        let msg = match rx.recv_timeout(env.data().process.child_timeout) {
             Ok(msg) => msg,
             Err(err) => bail!("{}", err.red()),
         };

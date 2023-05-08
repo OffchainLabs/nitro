@@ -1,8 +1,13 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#![allow(clippy::too_many_arguments)]
+
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
-use arbutil::evm::{self, api::EvmApi};
+use arbutil::{
+    evm::{self, api::EvmApi, user::UserOutcomeKind},
+    Bytes20, Bytes32,
+};
 use prover::{programs::prelude::*, value::Value};
 
 pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
@@ -48,61 +53,59 @@ pub(crate) fn account_store_bytes32<E: EvmApi>(
 }
 
 pub(crate) fn call_contract<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+    env: WasmEnvMut<E>,
     contract: u32,
-    calldata: u32,
-    calldata_len: u32,
+    data: u32,
+    data_len: u32,
     value: u32,
-    mut ink: u64,
-    return_data_len: u32,
+    ink: u64,
+    ret_len: u32,
 ) -> Result<u8, Escape> {
-    let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(calldata_len.into())?;
-    ink = ink.min(env.ink_ready()?); // provide no more than what the user has
-
-    let gas = env.pricing().ink_to_gas(ink);
-    let contract = env.read_bytes20(contract)?;
-    let input = env.read_slice(calldata, calldata_len)?;
-    let value = env.read_bytes32(value)?;
-
-    let (outs_len, gas_cost, status) = env.evm_api.contract_call(contract, input, gas, value);
-    env.evm_data.return_data_len = outs_len;
-    env.write_u32(return_data_len, outs_len)?;
-    env.buy_gas(gas_cost)?;
-    Ok(status as u8)
+    let value = Some(value);
+    let call = |api: &mut E, contract, data, gas, value: Option<_>| {
+        api.contract_call(contract, data, gas, value.unwrap())
+    };
+    do_call(env, contract, data, data_len, value, ink, ret_len, call)
 }
 
 pub(crate) fn delegate_call_contract<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+    env: WasmEnvMut<E>,
     contract: u32,
-    calldata: u32,
-    calldata_len: u32,
-    mut ink: u64,
-    return_data_len: u32,
+    data: u32,
+    data_len: u32,
+    ink: u64,
+    ret_len: u32,
 ) -> Result<u8, Escape> {
-    let mut env = WasmEnv::start(&mut env)?;
-    env.pay_for_evm_copy(calldata_len.into())?;
-    ink = ink.min(env.ink_ready()?); // provide no more than what the user has
-
-    let gas = env.pricing().ink_to_gas(ink);
-    let contract = env.read_bytes20(contract)?;
-    let input = env.read_slice(calldata, calldata_len)?;
-
-    let (outs_len, gas_cost, status) = env.evm_api.delegate_call(contract, input, gas);
-    env.evm_data.return_data_len = outs_len;
-    env.write_u32(return_data_len, outs_len)?;
-    env.buy_gas(gas_cost)?;
-    Ok(status as u8)
+    let call = |api: &mut E, contract, data, gas, _| api.delegate_call(contract, data, gas);
+    do_call(env, contract, data, data_len, None, ink, ret_len, call)
 }
 
 pub(crate) fn static_call_contract<E: EvmApi>(
+    env: WasmEnvMut<E>,
+    contract: u32,
+    data: u32,
+    data_len: u32,
+    ink: u64,
+    ret_len: u32,
+) -> Result<u8, Escape> {
+    let call = |api: &mut E, contract, data, gas, _| api.static_call(contract, data, gas);
+    do_call(env, contract, data, data_len, None, ink, ret_len, call)
+}
+
+pub(crate) fn do_call<F, E>(
     mut env: WasmEnvMut<E>,
     contract: u32,
     calldata: u32,
     calldata_len: u32,
+    value: Option<u32>,
     mut ink: u64,
     return_data_len: u32,
-) -> Result<u8, Escape> {
+    call: F,
+) -> Result<u8, Escape>
+where
+    E: EvmApi,
+    F: FnOnce(&mut E, Bytes20, Vec<u8>, u64, Option<Bytes32>) -> (u32, u64, UserOutcomeKind),
+{
     let mut env = WasmEnv::start(&mut env)?;
     env.pay_for_evm_copy(calldata_len.into())?;
     ink = ink.min(env.ink_ready()?); // provide no more than what the user has
@@ -110,8 +113,10 @@ pub(crate) fn static_call_contract<E: EvmApi>(
     let gas = env.pricing().ink_to_gas(ink);
     let contract = env.read_bytes20(contract)?;
     let input = env.read_slice(calldata, calldata_len)?;
+    let value = value.map(|x| env.read_bytes32(x)).transpose()?;
+    let api = &mut env.evm_api;
 
-    let (outs_len, gas_cost, status) = env.evm_api.static_call(contract, input, gas);
+    let (outs_len, gas_cost, status) = call(api, contract, input, gas, value);
     env.evm_data.return_data_len = outs_len;
     env.write_u32(return_data_len, outs_len)?;
     env.buy_gas(gas_cost)?;
