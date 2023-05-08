@@ -112,7 +112,7 @@ func GetRollupAddressesConfig(chainId *big.Int, l2ChainInfoFiles []string) (*Rol
 	if err != nil {
 		return nil, err
 	}
-	if chainInfo != nil {
+	if chainInfo != nil && chainInfo.RollupAddressesConfig != nil {
 		return chainInfo.RollupAddressesConfig, nil
 	}
 	return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
