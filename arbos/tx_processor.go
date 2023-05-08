@@ -661,5 +661,8 @@ func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 }
 
 func (p *TxProcessor) MsgIsGasEstimation() bool {
+	if p.msg == nil {
+		return false
+	}
 	return p.msg.RunMode() == types.MessageGasEstimationMode
 }

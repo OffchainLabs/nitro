@@ -152,8 +152,20 @@ func TestArbOwner(t *testing.T) {
 	if avail.Cmp(deposited) != 0 {
 		Fail(t, avail, deposited)
 	}
+}
+
+func TestArbOwnerSetChainConfig(t *testing.T) {
+	evm := newMockEVMForTestingWithVersionAndRunMode(nil, types.MessageGasEstimationMode)
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracer, false))
+	Require(t, err)
+	Require(t, state.ChainOwners().Add(caller))
+	prec := &ArbOwner{}
+	callCtx := testContext(caller, evm)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = false
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
 	err = prec.SetChainConfig(callCtx, evm, serializedChainConfig)
@@ -164,7 +176,7 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, config, serializedChainConfig)
 	}
 
-	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = false
+	chainConfig.ArbitrumChainParams.AllowDebugPrecompiles = true
 	serializedChainConfig, err = json.Marshal(chainConfig)
 	Require(t, err)
 	err = prec.SetChainConfig(callCtx, evm, serializedChainConfig)
