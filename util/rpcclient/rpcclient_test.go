@@ -102,15 +102,17 @@ func TestRpcClientRetry(t *testing.T) {
 
 	serverGood := createTestNode(t, ctx, 0)
 	clientGood := NewRpcClient(configFetcher, serverGood)
-	clientGood.Start(ctx)
-	err := clientGood.CallContext(ctx, nil, "test_failAtFirst")
+	err := clientGood.Start(ctx)
+	Require(t, err)
+	err = clientGood.CallContext(ctx, nil, "test_failAtFirst")
 	Require(t, err)
 	err = clientGood.CallContext(ctx, nil, "test_stuckAtFirst")
 	Require(t, err)
 
 	serverBad := createTestNode(t, ctx, 1000)
 	clientBad := NewRpcClient(configFetcher, serverBad)
-	clientBad.Start(ctx)
+	err = clientBad.Start(ctx)
+	Require(t, err)
 	err = clientBad.CallContext(ctx, nil, "test_failAtFirst")
 	if err == nil {
 		Fail(t, "no error for failAtFirst")
@@ -122,7 +124,8 @@ func TestRpcClientRetry(t *testing.T) {
 
 	serverRetry := createTestNode(t, ctx, 1)
 	clientRetry := NewRpcClient(configFetcher, serverRetry)
-	clientRetry.Start(ctx)
+	err = clientRetry.Start(ctx)
+	Require(t, err)
 	err = clientRetry.CallContext(ctx, nil, "test_failAtFirst")
 	if err == nil {
 		Fail(t, "no error for failAtFirst")
