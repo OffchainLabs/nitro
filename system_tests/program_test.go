@@ -512,27 +512,26 @@ func testEvmData(t *testing.T, jit bool) {
 	}
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	mockAddr, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
-	callEvmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("call-evm-data"))
-	ink := uint64(10000000000)
+	evmDataGas := uint64(1000000000)
 	gasToBurn := uint64(1000000)
 	callBurnData, err := burnArbGas(new(big.Int).SetUint64(gasToBurn))
 	Require(t, err)
 	fundedAccount := l2info.Accounts["Faucet"].Address
 	ethPrecompile := common.BigToAddress(big.NewInt(1))
 	arbTestAddress := types.ArbosTestAddress
-	callEvmDataData := append(evmDataAddr.Bytes(), arbmath.UintToBytes(ink)...)
-	callEvmDataData = append(callEvmDataData, fundedAccount.Bytes()...)
-	callEvmDataData = append(callEvmDataData, ethPrecompile.Bytes()...)
-	callEvmDataData = append(callEvmDataData, arbTestAddress.Bytes()...)
-	callEvmDataData = append(callEvmDataData, evmDataAddr.Bytes()...)
-	callEvmDataData = append(callEvmDataData, callBurnData...)
+	evmDataData := []byte{}
+	evmDataData = append(evmDataData, fundedAccount.Bytes()...)
+	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
+	evmDataData = append(evmDataData, arbTestAddress.Bytes()...)
+	evmDataData = append(evmDataData, evmDataAddr.Bytes()...)
+	evmDataData = append(evmDataData, callBurnData...)
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
-	result, err := mock.StaticcallProgram(&opts, callEvmDataAddr, callEvmDataData)
+	result, err := mock.StaticcallProgramWithGas(&opts, evmDataAddr, evmDataGas, evmDataData)
 	Require(t, err)
 
 	checkRemaining := func(name string, dataSize int) {
@@ -620,7 +619,7 @@ func testEvmData(t *testing.T, jit bool) {
 	expectBigIntGreaterThanOrEqual("block number", selectedBlock.Number())
 	expectBigIntGreaterThanOrEqual("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
 	expectAddress("contract address", evmDataAddr)
-	expectAddress("sender", callEvmDataAddr)
+	expectAddress("sender", mockAddr)
 	expectBigInt("value", big.NewInt(0))
 	expectAddress("origin", opts.From)
 	expectBigInt("gas price", big.NewInt(0))
@@ -638,7 +637,7 @@ func testEvmData(t *testing.T, jit bool) {
 		Fail(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
 	}
 
-	tx = l2info.PrepareTxTo("Owner", &callEvmDataAddr, 1e9, nil, callEvmDataData)
+	tx = l2info.PrepareTxTo("Owner", &evmDataAddr, evmDataGas, nil, evmDataData)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	validateBlocks(t, 1, jit, ctx, node, l2client)
@@ -761,6 +760,7 @@ func rustFile(name string) string {
 func validateBlocks(
 	t *testing.T, start uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
+	t.Helper()
 	if jit || start == 0 {
 		start = 1
 	}
@@ -778,6 +778,7 @@ func validateBlocks(
 func validateBlockRange(
 	t *testing.T, blocks []uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
 ) {
+	t.Helper()
 	doUntil(t, 20*time.Millisecond, 250, func() bool {
 		batchCount, err := node.InboxTracker.GetBatchCount()
 		Require(t, err)

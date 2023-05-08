@@ -112,14 +112,12 @@ stylus_test_log_wasm           = $(call get_stylus_test_wasm,log)
 stylus_test_log_src            = $(call get_stylus_test_rust,log)
 stylus_test_create_wasm        = $(call get_stylus_test_wasm,create)
 stylus_test_create_src         = $(call get_stylus_test_rust,create)
-stylus_test_call-evm-data_wasm = $(call get_stylus_test_wasm,call-evm-data)
-stylus_test_call-evm-data_src  = $(call get_stylus_test_rust,call-evm-data)
 stylus_test_evm-data_wasm      = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src       = $(call get_stylus_test_rust,evm-data)
 stylus_test_siphash_wasm       = $(stylus_test_dir)/siphash/siphash.wasm
 stylus_test_siphash_src        = $(call get_stylus_test_c,siphash)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_call-evm-data_wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_siphash_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_evm-data_wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 stylus_files = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(rust_prover_files)
 
@@ -370,10 +368,6 @@ $(stylus_test_log_wasm): $(stylus_test_log_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
-	cargo build --manifest-path $< --release --config $(stylus_cargo)
-	@touch -c $@ # cargo might decide to not rebuild the binary
-
-$(stylus_test_call-evm-data_wasm): $(stylus_test_call-evm-data_src)
 	cargo build --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 

@@ -28,6 +28,16 @@ contract ProgramTest {
         return result;
     }
 
+    function staticcallProgramWithGas(
+        address program,
+        uint64 gas,
+        bytes calldata data
+    ) external view returns (bytes memory) {
+        (bool success, bytes memory result) = address(program).staticcall{gas: gas}(data);
+        require(success, "call failed");
+        return result;
+    }
+
     function checkRevertData(
         address program,
         bytes calldata data,
