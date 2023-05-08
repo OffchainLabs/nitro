@@ -95,7 +95,7 @@ func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles [
 	if err != nil {
 		return nil, err
 	}
-	if chainInfo != nil {
+	if chainInfo != nil && chainInfo.ChainConfig != nil {
 		chainInfo.ChainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
 		return chainInfo.ChainConfig, nil
 	}
