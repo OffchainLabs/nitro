@@ -354,11 +354,16 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			wrongNodesExist = true
 			continue
 		}
+		if nd.Assertion.AfterState.MachineStatus != validator.MachineStatusFinished {
+			wrongNodesExist = true
+			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
+			continue
+		}
 		afterGS := nd.AfterState().GlobalState
 		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, ErrGlobalStateNotInChain) {
 			wrongNodesExist = true
-			log.Error("Found incorrect assertion", "err", err)
+			log.Error("Found incorrect assertion", "node", nd.NodeNum, "err", err)
 			continue
 		}
 		if err != nil {

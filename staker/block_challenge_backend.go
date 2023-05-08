@@ -34,6 +34,7 @@ var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
 func NewBlockChallengeBackend(
 	initialState *challengegen.ChallengeManagerInitiatedChallenge,
+	maxBatchesRead uint64,
 	streamer TransactionStreamerInterface,
 	inboxTracker InboxTrackerInterface,
 ) (*BlockChallengeBackend, error) {
@@ -49,16 +50,14 @@ func NewBlockChallengeBackend(
 	}
 	startMsgCount += arbutil.MessageIndex(startGs.PosInBatch)
 
-	endGs := validator.GoGlobalStateFromSolidity(initialState.EndState)
 	var endMsgCount arbutil.MessageIndex
-	if endGs.Batch > 0 {
+	if maxBatchesRead > 0 {
 		var err error
-		endMsgCount, err = inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
+		endMsgCount, err = inboxTracker.GetBatchMessageCount(maxBatchesRead - 1)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get challenge end batch metadata: %w", err)
 		}
 	}
-	endMsgCount += arbutil.MessageIndex(endGs.PosInBatch)
 
 	return &BlockChallengeBackend{
 		streamer:               streamer,
@@ -66,7 +65,7 @@ func NewBlockChallengeBackend(
 		startGs:                startGs,
 		startPosition:          0,
 		endPosition:            math.MaxUint64,
-		endGs:                  endGs,
+		endGs:                  validator.GoGlobalStateFromSolidity(initialState.EndState),
 		inboxTracker:           inboxTracker,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
 	}, nil
@@ -133,13 +132,13 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 const StatusFinished uint8 = 1
 const StatusTooFar uint8 = 3
 
-func (b *BlockChallengeBackend) GetMessageCountAtStep(step uint64) (arbutil.MessageIndex, bool) {
-	return b.startMsgCount + arbutil.MessageIndex(step), step >= b.tooFarStartsAtPosition
+func (b *BlockChallengeBackend) GetMessageCountAtStep(step uint64) arbutil.MessageIndex {
+	return b.startMsgCount + arbutil.MessageIndex(step)
 }
 
 func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (validator.GoGlobalState, uint8, error) {
-	msgNum, tooFar := b.GetMessageCountAtStep(step)
-	if tooFar {
+	msgNum := b.GetMessageCountAtStep(step)
+	if step >= b.tooFarStartsAtPosition {
 		return validator.GoGlobalState{}, StatusTooFar, nil
 	}
 	globalState, err := b.FindGlobalStateFromMessageCount(msgNum)

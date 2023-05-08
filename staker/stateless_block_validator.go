@@ -234,13 +234,13 @@ func NewStatelessBlockValidator(
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
 ) (*StatelessBlockValidator, error) {
-	var jwt []byte
+	var jwt *common.Hash
 	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
+		var err error
+		jwt, err = signature.LoadSigningKey(config.JWTSecret)
 		if err != nil {
 			return nil, err
 		}
-		jwt = jwtHash.Bytes()
 	}
 	valClient := server_api.NewValidationClient(config.URL, jwt)
 	execClient := server_api.NewExecutionClient(config.URL, jwt)

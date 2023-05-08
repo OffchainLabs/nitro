@@ -151,7 +151,7 @@ var (
 
 // Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
 func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Address {
-	rules := chainConfig.Rules(big.NewInt(0), false)
+	rules := chainConfig.Rules(big.NewInt(0), false, 0)
 	arbPrecompiles := vm.ActivePrecompiles(rules)
 	rules.IsArbitrum = false
 	ethPrecompiles := vm.ActivePrecompiles(rules)
