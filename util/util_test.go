@@ -40,3 +40,97 @@ func TestBisectionPoint(t *testing.T) {
 		require.Equal(t, testCase.expected, res)
 	}
 }
+
+func TestReverse(t *testing.T) {
+	type testCase[T any] struct {
+		items  []T
+		wanted []T
+	}
+	testCases := []testCase[uint64]{
+		{
+			items:  []uint64{},
+			wanted: []uint64{},
+		},
+		{
+			items:  []uint64{1},
+			wanted: []uint64{1},
+		},
+		{
+			items:  []uint64{1, 2, 3},
+			wanted: []uint64{3, 2, 1},
+		},
+	}
+	for _, tt := range testCases {
+		items := tt.items
+		Reverse(items)
+		require.Equal(t, tt.wanted, items)
+	}
+}
+
+func TestMin(t *testing.T) {
+	type testCase[T Unsigned] struct {
+		items      []T
+		wanted     T
+		wantedNone bool
+	}
+	testCases := []testCase[uint64]{
+		{
+			items:      []uint64{},
+			wantedNone: true,
+		},
+		{
+			items:  []uint64{1},
+			wanted: 1,
+		},
+		{
+			items:  []uint64{1, 2, 3},
+			wanted: 1,
+		},
+		{
+			items:  []uint64{32, 333, 202, 11, 3, 5, 1000},
+			wanted: 3,
+		},
+	}
+	for _, tt := range testCases {
+		res := Min(tt.items)
+		if tt.wantedNone {
+			require.Equal(t, None[uint64](), res)
+		} else {
+			require.Equal(t, tt.wanted, res.Unwrap())
+		}
+	}
+}
+
+func TestMax(t *testing.T) {
+	type testCase[T Unsigned] struct {
+		items      []T
+		wanted     T
+		wantedNone bool
+	}
+	testCases := []testCase[uint64]{
+		{
+			items:      []uint64{},
+			wantedNone: true,
+		},
+		{
+			items:  []uint64{1},
+			wanted: 1,
+		},
+		{
+			items:  []uint64{1, 2, 3},
+			wanted: 3,
+		},
+		{
+			items:  []uint64{32, 333, 202, 11, 3, 5, 1000},
+			wanted: 1000,
+		},
+	}
+	for _, tt := range testCases {
+		res := Max(tt.items)
+		if tt.wantedNone {
+			require.Equal(t, None[uint64](), res)
+		} else {
+			require.Equal(t, tt.wanted, res.Unwrap())
+		}
+	}
+}
