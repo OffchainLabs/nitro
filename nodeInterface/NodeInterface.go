@@ -459,7 +459,8 @@ func (n NodeInterface) GasEstimateL1Component(
 	randomGas := l1pricing.RandomGas
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
-	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB))
+	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
+	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), types.MessageEthcallMode)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -510,7 +511,7 @@ func (n NodeInterface) GasEstimateComponents(
 
 	// Setting the gas will affect the poster data cost
 	args.Gas = &totalRaw
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), types.MessageGasEstimationMode)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -526,10 +527,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	// Compute the fee paid for L1 in L2 terms
-	//   See in GasChargingHook that this does not induce truncation error
-	//
-	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
-	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
+	gasForL1 := arbos.GetPosterGas(c.State, baseFee, types.MessageGasEstimationMode, feeForL1)
 
 	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }
