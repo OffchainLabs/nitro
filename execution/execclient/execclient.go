@@ -6,7 +6,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -19,27 +18,19 @@ import (
 
 type Client struct {
 	stopwaiter.StopWaiter
-	client *rpc.Client
-	config *rpcclient.ClientConfig
-	stack  *node.Node
+	client *rpcclient.RpcClient
 }
 
-func NewClient(config *rpcclient.ClientConfig, stack *node.Node) *Client {
+func NewClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *Client {
 	return &Client{
-		config: config,
-		stack:  stack,
+		client: rpcclient.NewRpcClient(config, stack),
 	}
 }
 
 func (c *Client) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	client, err := rpcclient.CreateRPCClient(ctx, c.config, c.stack)
-	if err != nil {
-		return err
-	}
-	c.client = client
-	return nil
+	return c.client.Start(ctx)
 }
 
 func convertError(err error) error {
