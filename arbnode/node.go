@@ -421,7 +421,7 @@ type Config struct {
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
-	ExecutionServer     rpcclient.ClientConfig      `koanf:"execution-server"`
+	ExecutionServer     rpcclient.ClientConfig      `koanf:"execution-server" reload:"hot"`
 	ConsensusRPC        ConfigConsensusRPC          `koanf:"consensus-rpc"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 }
@@ -445,19 +445,10 @@ func (c *Config) Validate() error {
 	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
+	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
 	return nil
-}
-
-func (c *Config) Get() *Config {
-	return c
-}
-
-func (c *Config) Start(context.Context) {}
-
-func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
 }
 
 func (c *Config) ValidatorRequired() bool {
@@ -465,7 +456,7 @@ func (c *Config) ValidatorRequired() bool {
 		return true
 	}
 	if c.Staker.Enable {
-		return !c.Staker.Dangerous.WithoutBlockValidator
+		return c.Staker.ValidatorRequired()
 	}
 	return false
 }
@@ -484,7 +475,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
-	rpcclient.RPCClientAddOptions(prefix+".execution-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".execution-server", f, &ConfigDefault.ExecutionServer)
 	ConsensusRPCAddOptions(prefix+".consensus-rpc", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
 }
@@ -502,6 +493,7 @@ var ConfigDefault = Config{
 	SyncMonitor:         DefaultSyncMonitorConfig,
 	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
+	ExecutionServer:     rpcclient.DefaultClientConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -509,6 +501,8 @@ func ConfigDefaultL1Test() *Config {
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Sequencer = true
+	config.Dangerous.NoCoordinator = true
 
 	return config
 }
@@ -524,6 +518,8 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.ConsensusRPC = TestConfigConsensusRPC
 	config.ExecutionServer = rpcclient.TestClientConfig
+	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 
 	return &config
 }
@@ -539,6 +535,8 @@ func ConfigDefaultL2Test() *Config {
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.ConsensusRPC = TestConfigConsensusRPC
 	config.ExecutionServer = rpcclient.TestClientConfig
+	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -814,14 +812,14 @@ func createNodeImpl(
 			exec,
 			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
-			&configFetcher.Get().BlockValidator,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)
 	} else {
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() {
+		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		} else {
 			log.Warn("validation not supported", "err", err)
@@ -830,7 +828,7 @@ func createNodeImpl(
 	}
 
 	var blockValidator *staker.BlockValidator
-	if config.BlockValidator.Enable {
+	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
@@ -869,6 +867,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
+
 		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err

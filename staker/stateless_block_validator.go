@@ -11,6 +11,7 @@ import (
 
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -191,13 +192,14 @@ func NewStatelessBlockValidator(
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
-	config *BlockValidatorConfig,
+	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	valClient := server_api.NewValidationClient(&config.ValidationServer, stack)
-	execClient := server_api.NewExecutionClient(&config.ValidationServer, stack)
+	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
+	valClient := server_api.NewValidationClient(valConfFetcher, stack)
+	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
-		config:             config,
+		config:             config(),
 		execSpawner:        execClient,
 		recorder:           recorder,
 		validationSpawners: []validator.ValidationSpawner{valClient},
@@ -225,17 +227,19 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	if e.Stage != ReadyForRecord {
 		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
-	// nothing to record for genesis
-	if e.Pos == 0 {
-		e.Stage = Ready
-		return nil
-	}
-	recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg).Await(ctx)
-	if err != nil {
-		return err
-	}
-	if recording.BlockHash != e.End.BlockHash {
-		return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
+	if e.Pos != 0 {
+		recording, err := v.recorder.RecordBlockCreation(e.Pos, e.msg).Await(ctx)
+		if err != nil {
+			return err
+		}
+		if recording.BlockHash != e.End.BlockHash {
+			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
+		}
+		e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
+
+		if recording.Preimages != nil {
+			e.Preimages = recording.Preimages
+		}
 	}
 	if e.HasDelayedMsg {
 		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
@@ -248,12 +252,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
-
-	e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
-
-	if recording.Preimages != nil {
-		e.Preimages = recording.Preimages
-	} else {
+	if e.Preimages == nil {
 		e.Preimages = make(map[common.Hash][]byte)
 	}
 	for _, batch := range e.BatchInfo {

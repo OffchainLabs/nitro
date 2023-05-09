@@ -6,6 +6,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -85,6 +86,65 @@ func TransferBalanceTo(
 	Require(t, err)
 	res, err := EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
+	return tx, res
+}
+
+// if l2client is not nil - will wait until balance appears in l2
+func BridgeBalance(
+	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2client client, ctx context.Context,
+) (*types.Transaction, *types.Receipt) {
+	t.Helper()
+
+	// setup or validate the same account on l2info
+	l1acct := l1info.GetInfoWithPrivKey(account)
+	if l2info.Accounts[account] == nil {
+		l2info.SetFullAccountInfo(account, &AccountInfo{
+			Address:    l1acct.Address,
+			PrivateKey: l1acct.PrivateKey,
+			Nonce:      0,
+		})
+	} else {
+		l2acct := l2info.GetInfoWithPrivKey(account)
+		if l2acct.PrivateKey.X.Cmp(l1acct.PrivateKey.X) != 0 ||
+			l2acct.PrivateKey.Y.Cmp(l1acct.PrivateKey.Y) != 0 {
+			Fail(t, "l2 account already exists and not compatible to l1")
+		}
+	}
+
+	// check previous balance
+	var l2Balance *big.Int
+	var err error
+	if l2client != nil {
+		l2Balance, err = l2client.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
+		Require(t, err)
+	}
+
+	// send transaction
+	data, err := hex.DecodeString("0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
+	Require(t, err)
+	tx := l1info.PrepareTx(account, "Inbox", l1info.TransferGas*100, amount, data)
+	err = l1client.SendTransaction(ctx, tx)
+	Require(t, err)
+	res, err := EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+
+	// wait for balance to appear in l2
+	if l2client != nil {
+		l2Balance.Add(l2Balance, amount)
+		for i := 0; true; i++ {
+			balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
+			Require(t, err)
+			if balance.Cmp(l2Balance) >= 0 {
+				break
+			}
+			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
+			if i > 20 {
+				Fail(t, "bridging failed")
+			}
+			<-time.After(time.Millisecond * 100)
+		}
+	}
+
 	return tx, res
 }
 
@@ -195,6 +255,30 @@ func (l *lifecycle) Stop() error {
 	return nil
 }
 
+type staticNodeConfigFetcher struct {
+	config *arbnode.Config
+}
+
+func NewFetcherFromConfig(c *arbnode.Config) *staticNodeConfigFetcher {
+	err := c.Validate()
+	if err != nil {
+		panic("invalid static config: " + err.Error())
+	}
+	return &staticNodeConfigFetcher{c}
+}
+
+func (c *staticNodeConfigFetcher) Get() *arbnode.Config {
+	return c.config
+}
+
+func (c *staticNodeConfigFetcher) Start(context.Context) {}
+
+func (c *staticNodeConfigFetcher) StopAndWait() {}
+
+func (c *staticNodeConfigFetcher) Started() bool {
+	return true
+}
+
 func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
@@ -266,6 +350,10 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	return valnode, stack
 }
 
+func StaticFetcherFrom[T any](config T) func() T {
+	return func() T { return config }
+}
+
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
 	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
 	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
@@ -275,7 +363,7 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.ValidationServer.URL != "auto" && nodeConfig.BlockValidator.ValidationServer.URL != "" {
+	if nodeConfig.BlockValidator.ValidationServer.URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig
@@ -436,7 +524,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig)
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, execConfig, chainConfig, stackConfig, nil)
 	return
 }
 
@@ -448,6 +536,7 @@ func createTestNodeOnL1WithConfigImpl(
 	execConfig *gethexec.Config,
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
+	l2info_in info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
@@ -466,7 +555,11 @@ func createTestNodeOnL1WithConfigImpl(
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, nil, "", chainConfig, stackConfig)
+	l2info = l2info_in
+	if l2info == nil {
+		l2info = NewArbTestInfo(t, chainConfig.ChainID)
+	}
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, stackConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -490,9 +583,9 @@ func createTestNodeOnL1WithConfigImpl(
 	execNode, err := gethexec.CreateExecutionNode(l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
-	execclient := execclient.NewClient(&rpcclient.TestClientConfig, l2stack)
+	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stack)
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, execclient, l2arbDb, nodeConfig, l2blockchain.Config(), l1client,
+		ctx, l2stack, execclient, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
 		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
@@ -595,9 +688,9 @@ func CreateTestL2WithConfig(
 	execNode, err := gethexec.CreateExecutionNode(stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)
 
-	execclient := execclient.NewClient(&rpcclient.TestClientConfig, stack)
+	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), stack)
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, execclient, arbDb, nodeConfig, blockchain.Config(), nil, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, execclient, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -724,9 +817,9 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	execclient := execclient.NewClient(&rpcclient.TestClientConfig, l2stack)
+	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stack)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, execclient, l2arbDb, nodeConfig, l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, execclient, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	Require(t, currentExec.Initialize(ctx))

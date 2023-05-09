@@ -30,7 +30,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 
 	var delayEvery int
 	if simpletxloops > 1 {
-		l1NodeConfigA.BatchPoster.MaxBatchPostInterval = time.Millisecond * 500
+		l1NodeConfigA.BatchPoster.MaxBatchPostDelay = time.Millisecond * 500
 		delayEvery = simpletxloops / 3
 	}
 

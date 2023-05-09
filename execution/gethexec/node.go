@@ -70,7 +70,7 @@ type Config struct {
 	ExecRPC              ExecRPCConfig          `koanf:"exec-rpc"`
 	Archive              bool                   `koanf:"archive"`
 	TxLookupLimit        uint64                 `koanf:"tx-lookup-limit"`
-	ConsensesServer      rpcclient.ClientConfig `koanf:"consensus-server"`
+	ConsensesServer      rpcclient.ClientConfig `koanf:"consensus-server" reload:"hot"`
 	Dangerous            DangerousConfig        `koanf:"dangerous"`
 }
 
@@ -105,7 +105,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 	ExecRPCConfigAddOptions(prefix+".exec-rpc", f)
-	rpcclient.RPCClientAddOptions(prefix+".consensus-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".consensus-server", f, &ConfigDefault.ConsensesServer)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -170,7 +170,8 @@ func CreateExecutionNode(
 	var consensusClient *consensusclient.Client
 
 	if config.ConsensesServer.URL != "" {
-		consensusClient = consensusclient.NewClient(&config.ConsensesServer, stack)
+		clientFetcher := func() *rpcclient.ClientConfig { return &configFetcher().ConsensesServer }
+		consensusClient = consensusclient.NewClient(clientFetcher, stack)
 	}
 
 	var consensusInterface consensus.FullConsensusClient

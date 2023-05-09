@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"math/big"
 	"net/http"
 	_ "net/http/pprof" // #nosec G108
@@ -43,7 +42,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -56,6 +54,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -227,7 +226,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
+	nodeConfig, l1Wallet, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
@@ -317,31 +316,48 @@ func mainImpl() int {
 		}
 	}
 
-	var rollupAddrs arbnode.RollupAddresses
-	if nodeConfig.Node.L1Reader.Enable {
-		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
-
-		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
-		if err != nil {
-			log.Crit("error getting rollup addresses", "err", err)
-		}
-	} else if l1Client != nil {
-		// Don't need l1Client anymore
-		log.Info("used chain id to get rollup parameters", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
-		l1Client = nil
-	}
-
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			log.Crit("validator have the L1 reader enabled")
 		}
-		if !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
+		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
+		if err != nil {
+			log.Crit("couldn't parse staker strategy", "err", err)
+		}
+		if strategy != staker.WatchtowerStrategy && !nodeConfig.Node.Staker.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
+
+	var rollupAddrs arbnode.RollupAddresses
+	var l1Client *ethclient.Client
+	if nodeConfig.Node.L1Reader.Enable {
+		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.get().L1.Connection }
+		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
+		err := rpcClient.Start(ctx)
+		if err != nil {
+			log.Crit("couldn't connect to L1", "err", err)
+		}
+		l1Client = ethclient.NewClient(rpcClient)
+		l1ChainId, err := l1Client.ChainID(ctx)
+		if err != nil {
+			log.Crit("couldn't read L1 chainid", "err", err)
+		}
+		if l1ChainId.Uint64() != nodeConfig.L1.ChainID {
+			log.Crit("L1 chainID doesn't fit config", "found", l1ChainId.Uint64(), "expected", nodeConfig.L1.ChainID)
+		}
+
+		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.Connection.URL, "l1chainid", nodeConfig.L1.ChainID)
+
+		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
+		if err != nil {
+			log.Crit("error getting rollup addresses", "err", err)
+		}
+	}
+
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			flag.Usage()
@@ -453,7 +469,8 @@ func mainImpl() int {
 		return 1
 	}
 
-	execClient := execclient.NewClient(&nodeConfig.Node.ExecutionServer, stack)
+	execConfigFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.get().Node.ExecutionServer }
+	execClient := execclient.NewClient(execConfigFetcher, stack)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
@@ -547,7 +564,7 @@ type NodeConfig struct {
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	Execution     gethexec.Config                 `koanf:"execution" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	L1            conf.L1Config                   `koanf:"l1"`
+	L1            conf.L1Config                   `koanf:"l1" reload:"hot"`
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
@@ -561,6 +578,7 @@ type NodeConfig struct {
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	Init          InitConfig                      `koanf:"init"`
+	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
 }
 
 var NodeConfigDefault = NodeConfig{
@@ -597,6 +615,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	InitConfigAddOptions("init", f)
+	genericconf.RpcConfigAddOptions("rpc", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -652,146 +671,56 @@ func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
 }
 
-type RpcLogger struct{}
-
-func (l RpcLogger) OnRequest(request interface{}) rpc.ResultHook {
-	log.Trace("sending L1 RPC request", "request", request)
-	return RpcResultLogger{request}
-}
-
-type RpcResultLogger struct {
-	request interface{}
-}
-
-func (l RpcResultLogger) OnResult(response interface{}, err error) {
-	if err != nil {
-		// The request might not've been logged if the log level is debug not trace, so we log it again here
-		log.Info("received error response from L1 RPC", "request", l.request, "response", response, "err", err)
-	} else {
-		// The request was already logged and can be cross-referenced by JSON-RPC id
-		log.Trace("received response from L1 RPC", "response", response)
-	}
-}
-
-func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
+func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
-	}
-
-	var l1ChainId *big.Int
-	var l1Client *ethclient.Client
-	l1URL := k.String("l1.url")
-	configChainId := uint64(k.Int64("l1.chain-id"))
-	if l1URL != "" {
-		maxConnectionAttempts := k.Int("l1.connection-attempts")
-		if maxConnectionAttempts <= 0 {
-			maxConnectionAttempts = math.MaxInt
-		}
-		for i := 1; i <= maxConnectionAttempts; i++ {
-			rawRpc, err := rpc.DialContextWithRequestHook(ctx, l1URL, RpcLogger{})
-			if err == nil {
-				l1Client = ethclient.NewClient(rawRpc)
-				l1ChainId, err = l1Client.ChainID(ctx)
-				if err == nil {
-					// Successfully got chain ID
-					break
-				}
-			}
-			if i < maxConnectionAttempts {
-				log.Warn("error connecting to L1", "err", err)
-			} else {
-				return nil, nil, nil, nil, nil, fmt.Errorf("too many errors trying to connect to L1: %w", err)
-			}
-
-			timer := time.NewTimer(time.Second * 1)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return nil, nil, nil, nil, nil, errors.New("aborting startup")
-			case <-timer.C:
-			}
-		}
-	} else if configChainId == 0 && !k.Bool("conf.dump") {
-		return nil, nil, nil, nil, nil, errors.New("l1 chain id not provided")
-	} else if k.Bool("node.l1-reader.enable") {
-		return nil, nil, nil, nil, nil, errors.New("l1 reader enabled but --l1.url not provided")
-	}
-
-	if l1ChainId == nil {
-		l1ChainId = big.NewInt(int64(configChainId))
-	}
-
-	if configChainId != l1ChainId.Uint64() {
-		if configChainId != 0 {
-			log.Error("chain id from L1 does not match command line chain id", "l1", l1ChainId.String(), "cli", configChainId)
-			return nil, nil, nil, nil, nil, errors.New("chain id from L1 does not match command line chain id")
-		}
-
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"l1.chain-id": l1ChainId.Uint64(),
-		}, "."), nil)
-		if err != nil {
-			return nil, nil, nil, nil, nil, errors.Wrap(err, "error setting ")
-		}
+		return nil, nil, nil, err
 	}
 
 	chainFound := false
 	l2ChainId := k.Int64("l2.chain-id")
-	if l1ChainId.Uint64() == 1 { // mainnet
-		switch l2ChainId {
-		case 0:
-			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
-		case 42161:
-			if err := applyArbitrumOneParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		case 42170:
-			if err := applyArbitrumNovaParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
+	switch l2ChainId {
+	case 0:
+		return nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+	case 42161:
+		if err := applyArbitrumOneParameters(k); err != nil {
+			return nil, nil, nil, err
 		}
-	} else if l1ChainId.Uint64() == 4 {
-		switch l2ChainId {
-		case 0:
-			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
-		case 421611:
-			if err := applyArbitrumRollupRinkebyTestnetParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
+		chainFound = true
+	case 42170:
+		if err := applyArbitrumNovaParameters(k); err != nil {
+			return nil, nil, nil, err
 		}
-	} else if l1ChainId.Uint64() == 5 {
-		switch l2ChainId {
-		case 0:
-			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
-		case 421613:
-			if err := applyArbitrumRollupGoerliTestnetParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
-		case 421703:
-			if err := applyArbitrumAnytrustGoerliTestnetParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-			chainFound = true
+		chainFound = true
+	case 421611:
+		if err := applyArbitrumRollupRinkebyTestnetParameters(k); err != nil {
+			return nil, nil, nil, err
 		}
+		chainFound = true
+	case 421613:
+		if err := applyArbitrumRollupGoerliTestnetParameters(k); err != nil {
+			return nil, nil, nil, err
+		}
+		chainFound = true
+	case 421703:
+		if err := applyArbitrumAnytrustGoerliTestnetParameters(k); err != nil {
+			return nil, nil, nil, err
+		}
+		chainFound = true
 	}
 
 	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Don't print wallet passwords
@@ -803,21 +732,21 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			"l2.dev-wallet.private-key": "",
 		})
 		if err != nil {
-			return nil, nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	if nodeConfig.Persistent.Chain == "" {
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
-			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d.  Change L1, update L2 chain id, or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId)
+			return nil, nil, nil, fmt.Errorf("Unknown chain with L2: %d. update L2 chain id, or provide --persistent.chain\n", l2ChainId)
 		}
-		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
+		return nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
 
 	err = nodeConfig.ResolveDirectoryNames()
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Don't pass around wallet contents with normal configuration
@@ -828,9 +757,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	err = nodeConfig.Validate()
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
-	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
+	nodeConfig.Rpc.Apply()
+	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
 func applyArbitrumOneParameters(k *koanf.Koanf) error {
@@ -838,6 +768,7 @@ func applyArbitrumOneParameters(k *koanf.Koanf) error {
 		"persistent.chain":                   "arb1",
 		"execution.forwarding-target":        "https://arb1-sequencer.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
+		"l1.chain-id":                        1,
 		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
 		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
 		"l1.rollup.rollup":                   "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
@@ -857,6 +788,7 @@ func applyArbitrumNovaParameters(k *koanf.Koanf) error {
 		"node.data-availability.enable":                          true,
 		"node.data-availability.rest-aggregator.enable":          true,
 		"node.data-availability.rest-aggregator.online-url-list": "https://nova.arbitrum.io/das-servers",
+		"l1.chain-id":                                            1,
 		"l1.rollup.bridge":                                       "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
 		"l1.rollup.inbox":                                        "0xc4448b71118c9071bcb9734a0eac55d18a153949",
 		"l1.rollup.rollup":                                       "0xfb209827c58283535b744575e11953dcc4bead88",
@@ -874,6 +806,7 @@ func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
 		"persistent.chain":                   "goerli-rollup",
 		"execution.forwarding-target":        "https://goerli-rollup.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://goerli-rollup.arbitrum.io/feed",
+		"l1.chain-id":                        5,
 		"l1.rollup.bridge":                   "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
 		"l1.rollup.inbox":                    "0x6bebc4925716945d46f0ec336d5c2564f419682c",
 		"l1.rollup.rollup":                   "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
@@ -891,6 +824,7 @@ func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
 		"persistent.chain":                   "rinkeby-nitro",
 		"execution.forwarding-target":        "https://rinkeby.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
+		"l1.chain-id":                        4,
 		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
 		"l1.rollup.inbox":                    "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
 		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
@@ -905,6 +839,7 @@ func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
 func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain": "goerli-anytrust",
+		"l1.chain-id":      5,
 	}, "."), nil)
 }
 
@@ -976,7 +911,7 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 				case <-timer.C:
 				}
 			}
-			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			nodeConfig, _, _, err := ParseNode(ctx, c.args)
 			if err != nil {
 				log.Error("error parsing live config", "error", err.Error())
 				continue

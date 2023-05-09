@@ -230,9 +230,9 @@ func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chai
 	execNode, err := gethexec.CreateExecutionNode(stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
 	Require(t, err)
 
-	execclient := execclient.NewClient(&rpcclient.TestClientConfig, stack)
+	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), stack)
 
-	consensusNode, err := arbnode.CreateNode(ctx, stack, execclient, l2ArbDb, conf, chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
+	consensusNode, err := arbnode.CreateNode(ctx, stack, execclient, l2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
 	Require(t, err)
 
 	return consensusNode, execNode
@@ -383,7 +383,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2.ArbDB, nil, &conf.BlockValidator, valStack)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2.ArbDB, nil, StaticFetcherFrom[*staker.BlockValidatorConfig](&conf.BlockValidator), valStack)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -400,7 +400,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, nil, &conf.BlockValidator, valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, nil, StaticFetcherFrom[*staker.BlockValidatorConfig](&conf.BlockValidator), valStack)
 	if err != nil {
 		Fail(t, err)
 	}

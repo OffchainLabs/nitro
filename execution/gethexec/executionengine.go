@@ -136,8 +136,20 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 	return nil
 }
 
+func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
+	currentBlock := s.bc.CurrentBlock()
+	if currentBlock == nil {
+		return nil, errors.New("failed to get current block")
+	}
+	return currentBlock.Header(), nil
+}
+
 func (s *ExecutionEngine) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise[arbutil.MessageIndex](s.BlockNumberToMessageIndex(s.bc.CurrentHeader().Number.Uint64()))
+	currentHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return containers.NewReadyPromise[arbutil.MessageIndex](0, err)
+	}
+	return containers.NewReadyPromise[arbutil.MessageIndex](s.BlockNumberToMessageIndex(currentHeader.Number.Uint64()))
 }
 
 func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
@@ -147,7 +159,8 @@ func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) containers.Promise
 }
 
 func (s *ExecutionEngine) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
-	return containers.NewReadyPromise[uint64](s.bc.CurrentHeader().Nonce.Uint64(), nil)
+	currentHeader, err := s.getCurrentHeader()
+	return containers.NewReadyPromise[uint64](currentHeader.Nonce.Uint64(), err)
 }
 
 func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
@@ -189,9 +202,9 @@ func (s *ExecutionEngine) resequenceReorgedMessages(ctx context.Context, message
 	}
 
 	log.Info("Trying to resequence messages", "number", len(messages))
-	lastBlockHeader := s.bc.CurrentBlock().Header()
-	if lastBlockHeader == nil {
-		log.Error("block header not found during resequence")
+	lastBlockHeader, err := s.getCurrentHeader()
+	if err != nil {
+		log.Error("block header not found during resequence", "err", err)
 		return
 	}
 
@@ -279,9 +292,9 @@ func (s *ExecutionEngine) SequenceTransactions(ctx context.Context, header *arbo
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
-	lastBlockHeader := s.bc.CurrentBlock().Header()
-	if lastBlockHeader == nil {
-		return nil, errors.New("current block header not found")
+	lastBlockHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return nil, err
 	}
 
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
@@ -367,7 +380,10 @@ func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingM
 }
 
 func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(ctx context.Context, message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
-	currentHeader := s.bc.CurrentBlock().Header()
+	currentHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return nil, err
+	}
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
@@ -424,10 +440,17 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIn
 
 // must hold createBlockMutex
 func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
-	currentHeader := s.bc.CurrentHeader()
-	if currentHeader == nil {
-		return nil, nil, nil, errors.New("failed to get current header")
+	currentBlock := s.bc.CurrentBlock()
+	if currentBlock == nil {
+		return nil, nil, nil, errors.New("failed to get current block")
 	}
+
+	err := s.bc.RecoverState(currentBlock)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
+	}
+
+	currentHeader := currentBlock.Header()
 
 	statedb, err := s.bc.StateAt(currentHeader.Root)
 	if err != nil {
@@ -504,7 +527,10 @@ func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostype
 }
 
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	currentHeader := s.bc.CurrentHeader()
+	currentHeader, err := s.getCurrentHeader()
+	if err != nil {
+		return err
+	}
 	curMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
 		return err

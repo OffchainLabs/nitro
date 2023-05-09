@@ -3,7 +3,11 @@
 
 package precompiles
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/ethereum/go-ethereum/common"
+)
 
 // All calls to this precompile are authorized by the DebugPrecompile wrapper,
 // which ensures these methods are not accessible in production.
@@ -36,6 +40,11 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32)
 	}
 
 	return c.caller, paid, nil
+}
+
+func (con ArbDebug) EventsView(c ctx, evm mech) error {
+	_, _, err := con.Events(c, evm, common.Big0, true, bytes32{})
+	return err
 }
 
 func (con ArbDebug) CustomRevert(c ctx, number uint64) error {

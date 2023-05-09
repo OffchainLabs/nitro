@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -20,16 +19,13 @@ import (
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	config *rpcclient.ClientConfig
-	client *rpc.Client
-	stack  *node.Node
+	client *rpcclient.RpcClient
 	name   string
 }
 
-func NewValidationClient(config *rpcclient.ClientConfig, stack *node.Node) *ValidationClient {
+func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		config: config,
-		stack:  stack,
+		client: rpcclient.NewRpcClient(config, stack),
 	}
 }
 
@@ -47,11 +43,10 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	client, err := rpcclient.CreateRPCClient(ctx, c.config, c.stack)
+	err := c.client.Start(ctx)
 	if err != nil {
 		return err
 	}
-	c.client = client
 	var name string
 	err = c.client.CallContext(ctx, &name, Namespace+"_name")
 	if err != nil {
@@ -92,7 +87,7 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(config *rpcclient.ClientConfig, stack *node.Node) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
 		ValidationClient: *NewValidationClient(config, stack),
 	}

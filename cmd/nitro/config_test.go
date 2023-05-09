@@ -20,25 +20,25 @@ import (
 
 func TestSeqConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestUnsafeStakerConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null --node.staker.dangerous.without-block-validator", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestValidatorConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --execution.forwarding-target null", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestAggregatorConfig(t *testing.T) {
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
@@ -102,7 +102,7 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	args := strings.Split("--file-logging.enable=false --persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
-	config, _, _, _, _, err := ParseNode(context.Background(), args)
+	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
 	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
@@ -180,7 +180,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
-	config, _, _, _, _, err := ParseNode(context.Background(), args)
+	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
 	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })

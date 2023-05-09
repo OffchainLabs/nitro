@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -424,8 +425,10 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	select {
 	case res := <-resultChan:
 		return res
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-parentCtx.Done():
+		// We use parentCtx here and not ctx, because the QueueTimeout only applies to the background queue.
+		// We want to give the background queue as much time as possible to make a response.
+		return parentCtx.Err()
 	}
 }
 
@@ -798,7 +801,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		if len(txBytes) > config.MaxTxDataSize {
 			// This tx is too large
-			queueItem.returnResult(core.ErrOversizedData)
+			queueItem.returnResult(txpool.ErrOversizedData)
 			continue
 		}
 		if totalBatchSize+len(txBytes) > config.MaxTxDataSize {

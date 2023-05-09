@@ -142,8 +142,8 @@ func TestDASRekey(t *testing.T) {
 		execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 		Require(t, err)
 
-		execClient := execclient.NewClient(&rpcclient.TestClientConfig, l2stackA)
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+		execClient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stackA)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
 		Require(t, execA.Initialize(ctx))
 		Require(t, nodeA.Start(ctx))
@@ -194,8 +194,8 @@ func TestDASRekey(t *testing.T) {
 	Require(t, err)
 
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	execClient := execclient.NewClient(&rpcclient.TestClientConfig, l2stackA)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	execClient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stackA)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execClient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 	Require(t, execA.Initialize(ctx))
 	Require(t, nodeA.Start(ctx))
@@ -330,9 +330,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	execclient := execclient.NewClient(&rpcclient.TestClientConfig, l2stackA)
+	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stackA)
 
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execclient, l2arbDb, l1NodeConfigA, l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execclient, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
 	Require(t, err)
 	Require(t, execA.Initialize(ctx))
 	Require(t, nodeA.Start(ctx))

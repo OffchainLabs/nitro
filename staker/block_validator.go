@@ -79,7 +79,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
-	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server"`
+	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -97,7 +97,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
-	rpcclient.RPCClientAddOptions(prefix+".validation-server", f)
+	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -443,6 +443,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	defer v.reorgMutex.RUnlock()
 	pos := v.created()
 	if pos > v.validated()+arbutil.MessageIndex(v.config().ForwardBlocks) {
+		log.Trace("create validation entry: nothing to do", "pos", pos, "validated", v.validated())
 		return false, nil
 	}
 	streamerMsgCount, err := v.streamer.GetProcessedMessageCount()
@@ -450,6 +451,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, err
 	}
 	if pos >= streamerMsgCount {
+		log.Trace("create validation entry: nothing to do", "pos", pos, "streamerMsgCount", streamerMsgCount)
 		return false, nil
 	}
 	msg, err := v.streamer.GetMessage(pos)
@@ -496,6 +498,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	v.nextCreateStartGS = endGS
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	atomicStorePos(&v.createdA, pos+1)
+	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
 }
 
@@ -555,6 +558,7 @@ func (v *BlockValidator) sendNextRecordRequest(ctx context.Context) (bool, error
 	}
 	pos := v.recordSent()
 	if pos >= v.prepared {
+		log.Trace("next record request: nothing to send", "pos", pos)
 		return false, nil
 	}
 	validationStatus, found := v.validations.Load(pos)
@@ -570,6 +574,7 @@ func (v *BlockValidator) sendNextRecordRequest(ctx context.Context) (bool, error
 		return false, err
 	}
 	atomicStorePos(&v.recordSentA, pos+1)
+	log.Trace("next record request: sent", "pos", pos)
 	return true, nil
 }
 
@@ -621,6 +626,7 @@ validatiosLoop:
 		v.reorgMutex.RLock()
 		pos = v.valLoopPos
 		if pos >= v.recordSent() {
+			log.Trace("advanceValidations: nothing to validate", "pos", pos)
 			return nil, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
@@ -640,8 +646,9 @@ validatiosLoop:
 				return &pos, nil
 			}
 			var wasmRoots []common.Hash
-			for _, run := range validationStatus.Runs {
+			for i, run := range validationStatus.Runs {
 				if !run.Ready() {
+					log.Trace("advanceValidations: validation not ready", "pos", pos, "run", i)
 					continue validatiosLoop
 				}
 				wasmRoots = append(wasmRoots, run.WasmModuleRoot())
@@ -677,6 +684,7 @@ validatiosLoop:
 			continue
 		}
 		if room == 0 {
+			log.Trace("advanceValidations: no more room", "pos", pos)
 			return nil, nil
 		}
 		if currentStatus == Prepared {
@@ -697,8 +705,9 @@ validatiosLoop:
 				defer validatorPendingValidationsGauge.Dec(1)
 				var runs []validator.ValidationRun
 				for _, moduleRoot := range wasmRoots {
-					for _, spawner := range v.validationSpawners {
+					for i, spawner := range v.validationSpawners {
 						run := spawner.Launch(input, moduleRoot)
+						log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot, "spawner", i)
 						runs = append(runs, run)
 					}
 				}
