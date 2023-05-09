@@ -206,16 +206,16 @@ function writeConfigs(argv: any) {
                     "wait-for-l1-finality": false
                 }
             },
-			"block-validator": {
-				"url": argv.validationNodeUrl,
-				"jwtsecret": "",
-			}
+            "block-validator": {
+                "url": argv.validationNodeUrl,
+                "jwtsecret": "",
+            }
         },
         "init": {
             "dev-init": "true"
         },
         "persistent": {
-	        "chain": "local"
+            "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0"
@@ -255,20 +255,20 @@ function writeConfigs(argv: any) {
 
     let validationNodeConfig = JSON.parse(JSON.stringify({
         "persistent": {
-	        "chain": "local"
+            "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0",
-			"api": "validation",
+            "api": "validation",
         },
         "http": {
             "addr": "",
         },
-		"validation": {
-			"api-auth": false,
-			"api-public": true,
-		},
-	}))
+        "validation": {
+            "api-auth": false,
+            "api-public": true,
+        },
+    }))
     fs.writeFileSync(path.join(consts.configpath, "validation_node_config.json"), JSON.stringify(validationNodeConfig))
 }
 
