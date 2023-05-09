@@ -28,7 +28,8 @@ func getStorageRootHash(t *testing.T, execNode *gethexec.ExecutionNode, address 
 	t.Helper()
 	statedb, err := execNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
-	trie := statedb.StorageTrie(address)
+	trie, err := statedb.StorageTrie(address)
+	Require(t, err)
 	return trie.Hash()
 }
 

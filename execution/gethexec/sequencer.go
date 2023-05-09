@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -797,7 +798,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 		if len(txBytes) > config.MaxTxDataSize {
 			// This tx is too large
-			queueItem.returnResult(core.ErrOversizedData)
+			queueItem.returnResult(txpool.ErrOversizedData)
 			continue
 		}
 		if totalBatchSize+len(txBytes) > config.MaxTxDataSize {
