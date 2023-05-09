@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/pkg/errors"
@@ -190,20 +191,14 @@ func NewStatelessBlockValidator(
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
-	config *BlockValidatorConfig,
+	config func() *BlockValidatorConfig,
+	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	var jwt []byte
-	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
-		if err != nil {
-			return nil, err
-		}
-		jwt = jwtHash.Bytes()
-	}
-	valClient := server_api.NewValidationClient(config.URL, jwt)
-	execClient := server_api.NewExecutionClient(config.URL, jwt)
+	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
+	valClient := server_api.NewValidationClient(valConfFetcher, stack)
+	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
-		config:             config,
+		config:             config(),
 		execSpawner:        execClient,
 		recorder:           recorder,
 		validationSpawners: []validator.ValidationSpawner{valClient},

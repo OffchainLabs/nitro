@@ -9,27 +9,25 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/node"
 )
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client    *rpc.Client
-	url       string
-	name      string
-	jwtSecret []byte
+	client *rpcclient.RpcClient
+	name   string
 }
 
-func NewValidationClient(url string, jwtSecret []byte) *ValidationClient {
+func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		url:       url,
-		jwtSecret: jwtSecret,
+		client: rpcclient.NewRpcClient(config, stack),
 	}
 }
 
@@ -47,26 +45,19 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	var client *rpc.Client
-	var err error
-	if len(c.jwtSecret) == 0 {
-		client, err = rpc.DialWebsocket(ctx, c.url, "")
-	} else {
-		client, err = rpc.DialWebsocketJWT(ctx, c.url, "", c.jwtSecret)
-	}
+	err := c.client.Start(ctx)
 	if err != nil {
 		return err
 	}
 	var name string
-	err = client.CallContext(ctx, &name, Namespace+"_name")
+	err = c.client.CallContext(ctx, &name, Namespace+"_name")
 	if err != nil {
 		return err
 	}
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	c.client = client
-	c.name = name + " on " + c.url
+	c.name = name
 	return nil
 }
 
@@ -81,7 +72,7 @@ func (c *ValidationClient) Name() string {
 	if c.Started() {
 		return c.name
 	}
-	return "(not started) on " + c.url
+	return "(not started)"
 }
 
 func (c *ValidationClient) Room() int {
@@ -98,9 +89,9 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(url string, jwtSecret []byte) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
-		ValidationClient: *NewValidationClient(url, jwtSecret),
+		ValidationClient: *NewValidationClient(config, stack),
 	}
 }
 
