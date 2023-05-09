@@ -25,6 +25,29 @@ func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
 
 }
 
+func TestMessagePrunerTraverseEachMessageOnlyOnce(t *testing.T) {
+	endBatchCount := uint64(10)
+	endBatchMetadata := BatchMetadata{}
+	inboxTrackerDb, transactionStreamerDb := setupDatabase(t, endBatchCount, endBatchMetadata)
+	// In first iteration message till endBatchCount are tried to be deleted.
+	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	// In first iteration all the message till endBatchCount are deleted.
+	checkDbKeys(t, endBatchCount, inboxTrackerDb, sequencerBatchMetaPrefix)
+	// After first iteration endBatchCount/2 is reinserted in inbox db
+	err := inboxTrackerDb.Put(dbKey(sequencerBatchMetaPrefix, endBatchCount/2), []byte{})
+	Require(t, err)
+	// In second iteration message till endBatchCount are again tried to be deleted.
+	deleteOldMessageFromDB(endBatchCount, endBatchMetadata, inboxTrackerDb, transactionStreamerDb)
+	// In second iteration message endBatchCount/2 is not deleted because it was reinserted after first iteration
+	// and since each message is only traversed once during the pruning cycle and endBatchCount/2 was deleted in first
+	// iteration, it will not be deleted again.
+	hasKey, err := inboxTrackerDb.Has(dbKey(sequencerBatchMetaPrefix, endBatchCount/2))
+	Require(t, err)
+	if !hasKey {
+		Fail(t, "Key", endBatchCount/2, "with prefix", string(sequencerBatchMetaPrefix), "should be present after pruning")
+	}
+}
+
 func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	endBatchCount := uint64(2)
 	endBatchMetadata := BatchMetadata{
