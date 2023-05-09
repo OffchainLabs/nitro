@@ -338,16 +338,20 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	return valnode, stack
 }
 
+func StaticFetcherFrom[T any](config T) func() T {
+	return func() T { return config }
+}
+
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.JWTSecret = ""
+	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
 }
 
 func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.URL != "" {
+	if nodeConfig.BlockValidator.ValidationServer.URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig
