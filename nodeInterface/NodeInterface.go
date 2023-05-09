@@ -155,9 +155,14 @@ func (n NodeInterface) EstimateRetryableTicket(
 
 	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
 	msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
+	if err != nil {
+		return err
+	}
+
+	msg.TxRunMode = types.MessageGasEstimationMode
 	*n.returnMessage.message = msg
 	*n.returnMessage.changed = true
-	return err
+	return nil
 }
 
 func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) (bytes32, bytes32, []bytes32, error) {
