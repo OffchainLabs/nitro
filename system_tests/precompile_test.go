@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -30,6 +30,22 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "failed to get the ChainID")
 	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fail(t, "Wrong ChainID", chainId.Uint64())
+	}
+}
+
+func TestViewLogReverts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
+
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	Require(t, err, "could not deploy ArbSys contract")
+
+	err = arbDebug.EventsView(nil)
+	if err == nil {
+		Fail(t, "unexpected success")
 	}
 }
 
