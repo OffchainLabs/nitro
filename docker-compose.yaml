@@ -289,7 +289,7 @@ services:
     volumes:
       - "config:/config"
     command: --conf.file /config/validation_node_config.json
-    entrypoint: /usr/local/bin/validation-node
+    entrypoint: /usr/local/bin/nitro-val
 
   testnode-scripts:
     build: testnode-scripts/
