@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/rlp"
 	"math/big"
 	"time"
 
@@ -87,10 +88,39 @@ func (m *MessagePruner) prune(ctx context.Context) time.Duration {
 }
 
 func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata, inboxTrackerDb ethdb.Database, transactionStreamerDb ethdb.Database) {
-	if endBatchCount > 1 {
-		err := deleteFromRange(inboxTrackerDb, sequencerBatchMetaPrefix, 1, endBatchCount-1)
+	startBatchCount := uint64(1)
+	hasKey, err := inboxTrackerDb.Has(lastPrunedSequencerBatchMetaKey)
+	if err != nil {
+		log.Error("error checking last pruned batch metadata: %w", err)
+		return
+	}
+	if hasKey {
+		data, err := inboxTrackerDb.Get(lastPrunedSequencerBatchMetaKey)
+		if err != nil {
+			log.Error("error fetching last pruned batch metadata: %w", err)
+			return
+		}
+
+		err = rlp.DecodeBytes(data, &startBatchCount)
+		if err != nil {
+			log.Error("error decoding last pruned batch metadata: %w", err)
+			return
+		}
+	}
+	if endBatchCount > startBatchCount {
+		err := deleteFromRange(inboxTrackerDb, sequencerBatchMetaPrefix, startBatchCount, endBatchCount-1)
 		if err != nil {
 			log.Error("error deleting batch metadata: %w", err)
+			return
+		}
+		endBatchCountValue, err := rlp.EncodeToBytes(endBatchCount - 1)
+		if err != nil {
+			log.Error("error encoding end batch count: %w", err)
+			return
+		}
+		err = inboxTrackerDb.Put(lastPrunedSequencerBatchMetaKey, endBatchCountValue)
+		if err != nil {
+			log.Error("error storing last pruned batch metadata: %w", err)
 			return
 		}
 	}
