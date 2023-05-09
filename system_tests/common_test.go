@@ -733,6 +733,9 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 			if node != nil {
 				node.StopAndWait()
 			}
+			if exec != nil {
+				exec.StopAndWait()
+			}
 		case <-ctx.Done():
 		}
 		rmExecNode(t, endpoint, exec)
