@@ -135,7 +135,8 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Nonce() < stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Time))
+	extraInfo := types.DeserializeHeaderExtraInformation(header)
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Time, extraInfo.ArbOSFormatVersion))
 	if err != nil {
 		return err
 	}
@@ -151,10 +152,6 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if options != nil {
-		extraInfo, err := types.DeserializeHeaderExtraInformation(header)
-		if err != nil {
-			return errors.Wrap(err, "failed to deserialize extra information for current header")
-		}
 		if err := options.Check(extraInfo.L1BlockNumber, header.Time, statedb); err != nil {
 			conditionalTxRejectedByTxPreCheckerCurrentStateCounter.Inc(1)
 			return err
@@ -180,10 +177,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 				if err != nil {
 					return errors.Wrap(err, "failed to get old state")
 				}
-				oldExtraInfo, err := types.DeserializeHeaderExtraInformation(oldHeader)
-				if err != nil {
-					return errors.Wrap(err, "failed to deserialize extra information for old header")
-				}
+				oldExtraInfo := types.DeserializeHeaderExtraInformation(oldHeader)
 				if err := options.Check(oldExtraInfo.L1BlockNumber, oldHeader.Time, secondOldStatedb); err != nil {
 					conditionalTxRejectedByTxPreCheckerOldStateCounter.Inc(1)
 					return arbitrum_types.WrapOptionsCheckError(err, "conditions check failed for old state")

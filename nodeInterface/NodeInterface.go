@@ -170,10 +170,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	hash0 := bytes32{}
 
 	currentBlock := n.backend.CurrentBlock()
-	currentBlockInfo, err := types.DeserializeHeaderExtraInformation(currentBlock.Header())
-	if err != nil {
-		return hash0, hash0, nil, err
-	}
+	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock.Header())
 	if leaf > currentBlockInfo.SendCount {
 		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
@@ -279,11 +276,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 			return
 		}
 
-		info, err := types.DeserializeHeaderExtraInformation(block.Header())
-		if err != nil {
-			searchErr = err
-			return
-		}
+		info := types.DeserializeHeaderExtraInformation(block.Header())
 
 		// Figure out which elements are above and below the midpoint
 		//   lower includes leaves older than the midpoint
