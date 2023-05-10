@@ -149,7 +149,10 @@ func mainImpl() int {
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := stackConf.ResolvePath("jwtsecret")
-		nodehelpers.TryCreatingJWTSecret(filename)
+		if err := nodehelpers.TryCreatingJWTSecret(filename); err != nil {
+			log.Error("Failed to prepare jwt secret file", "err", err)
+			return 1
+		}
 		stackConf.JWTSecret = filename
 	}
 
@@ -165,7 +168,7 @@ func mainImpl() int {
 	err = nodehelpers.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if nodeConfig.Node.Archive {
 		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")

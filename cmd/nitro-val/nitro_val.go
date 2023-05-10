@@ -90,16 +90,19 @@ func mainImpl() int {
 			return filepath.Join(dataDir, path)
 		}
 	}
-	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Persistent.Chain)("jwtsecret")
-		nodehelpers.TryCreatingJWTSecret(filename)
-		stackConf.JWTSecret = filename
-	}
 
 	err = nodehelpers.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.Chain))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
-		os.Exit(1)
+		return 1
+	}
+	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
+		filename := pathResolver(nodeConfig.Persistent.Chain)("jwtsecret")
+		if err := nodehelpers.TryCreatingJWTSecret(filename); err != nil {
+			log.Error("Failed to prepare jwt secret file", "err", err)
+			return 1
+		}
+		stackConf.JWTSecret = filename
 	}
 
 	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
