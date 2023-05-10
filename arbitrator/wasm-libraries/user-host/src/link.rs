@@ -9,7 +9,7 @@ use arbutil::{
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::config::{CompileConfig, GoParams, StylusConfig},
+    programs::config::{CompileConfig, StylusConfig, PricingParams, MemoryModel},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};
@@ -190,14 +190,23 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
     sp: usize,
 ) {
     let mut sp = GoStack::new(sp);
-    let params = GoParams {
+    let config = StylusConfig {
+        version: sp.read_u32(),
+        max_depth: sp.read_u32(),
+        pricing: PricingParams {
+            ink_price: sp.read_u64(),
+            hostio_ink: sp.read_u64(),
+            memory_model: MemoryModel::default(),
+        },
+    };
+    /*let params = GoParams {
         version: sp.read_u32(),
         max_depth: sp.read_u32(),
         ink_price: sp.read_u64(),
         hostio_ink: sp.read_u64(),
         debug_mode: sp.read_u32(),
-    };
-    sp.skip_space().write_ptr(heapify(params.configs().1));
+    };*/
+    sp.skip_space().write_ptr(heapify(config));
 }
 
 /// Creates an `EvmData` from its component parts.

@@ -93,6 +93,11 @@ impl GoStack {
         self.read_u8_raw(ptr)
     }
 
+    pub fn read_u16(&mut self) -> u16 {
+        let ptr = self.advance(2);
+        self.read_u16_raw(ptr)
+    }
+
     pub fn read_u32(&mut self) -> u32 {
         let ptr = self.advance(4);
         self.read_u32_raw(ptr)
@@ -105,6 +110,11 @@ impl GoStack {
 
     pub fn read_u8_raw(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+        ptr.deref(self.view()).read().unwrap()
+    }
+
+    pub fn read_u16_raw(&self, ptr: u32) -> u16 {
+        let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(self.view()).read().unwrap()
     }
 

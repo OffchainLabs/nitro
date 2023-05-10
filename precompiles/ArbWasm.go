@@ -38,6 +38,21 @@ func (con ArbWasm) WasmHostioInk(c ctx, _ mech) (uint64, error) {
 	return c.State.Programs().WasmHostioInk()
 }
 
+// Gets the number of free wasm pages a tx gets
+func (con ArbWasm) FreePages(c ctx, _ mech) (uint16, error) {
+	return c.State.Programs().FreePages()
+}
+
+// Gets the base cost of each additional wasm page
+func (con ArbWasm) GasPerPage(c ctx, _ mech) (uint32, error) {
+	return c.State.Programs().GasPerPage()
+}
+
+// Gets the divisor slowing down exponential memory costs
+func (con ArbWasm) ExpMemDivisor(c ctx, _ mech) (uint32, error) {
+	return c.State.Programs().ExpMemDivisor()
+}
+
 // Gets the current program version
 func (con ArbWasm) ProgramVersion(c ctx, _ mech, program addr) (uint32, error) {
 	return c.State.Programs().ProgramVersion(program)

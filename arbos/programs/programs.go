@@ -26,6 +26,9 @@ type Programs struct {
 	inkPrice        storage.StorageBackedUBips
 	wasmMaxDepth    storage.StorageBackedUint32
 	wasmHostioInk   storage.StorageBackedUint64
+	freePages       storage.StorageBackedUint16
+	gasPerPage      storage.StorageBackedUint32
+	expMemDivisor   storage.StorageBackedUint32
 	version         storage.StorageBackedUint32
 }
 
@@ -36,20 +39,33 @@ const (
 	inkPriceOffset
 	wasmMaxDepthOffset
 	wasmHostioInkOffset
+	freePagesOffset
+	gasPerPageOffset
+	expMemDivisorOffset
 )
 
 var ProgramNotCompiledError func() error
 var ProgramOutOfDateError func(version uint32) error
 var ProgramUpToDateError func() error
 
+const initialFreePages = 2
+const initialPerPage = 1000
+const initialExpMemDivisor = 336543
+
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
 	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
+	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
+	gasPerPage := sto.OpenStorageBackedUint32(gasPerPageOffset)
+	expMemDivisor := sto.OpenStorageBackedUint32(expMemDivisorOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = inkPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
 	_ = wasmHostioInk.Set(0)
+	_ = freePages.Set(initialFreePages)
+	_ = gasPerPage.Set(initialPerPage)
+	_ = expMemDivisor.Set(initialExpMemDivisor)
 	_ = version.Set(1)
 }
 
@@ -60,6 +76,9 @@ func Open(sto *storage.Storage) *Programs {
 		inkPrice:        sto.OpenStorageBackedUBips(inkPriceOffset),
 		wasmMaxDepth:    sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
 		wasmHostioInk:   sto.OpenStorageBackedUint64(wasmHostioInkOffset),
+		freePages:       sto.OpenStorageBackedUint16(freePagesOffset),
+		gasPerPage:      sto.OpenStorageBackedUint32(gasPerPageOffset),
+		expMemDivisor:   sto.OpenStorageBackedUint32(expMemDivisorOffset),
 		version:         sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
@@ -91,8 +110,32 @@ func (p Programs) WasmHostioInk() (uint64, error) {
 	return p.wasmHostioInk.Get()
 }
 
-func (p Programs) SetWasmHostioInk(cost uint64) error {
-	return p.wasmHostioInk.Set(cost)
+func (p Programs) SetWasmHostioInk(ink uint64) error {
+	return p.wasmHostioInk.Set(ink)
+}
+
+func (p Programs) FreePages() (uint16, error) {
+	return p.freePages.Get()
+}
+
+func (p Programs) SetFreePages(pages uint16) error {
+	return p.freePages.Set(pages)
+}
+
+func (p Programs) GasPerPage() (uint32, error) {
+	return p.gasPerPage.Get()
+}
+
+func (p Programs) SetGasPerPage(gas uint32) error {
+	return p.gasPerPage.Set(gas)
+}
+
+func (p Programs) ExpMemDivisor() (uint32, error) {
+	return p.expMemDivisor.Get()
+}
+
+func (p Programs) SetExpMemDivisor(divisor uint32) error {
+	return p.expMemDivisor.Set(divisor)
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
@@ -129,6 +172,8 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 ) ([]byte, error) {
+
+	// ensure the program is runnable
 	stylusVersion, err := p.StylusVersion()
 	if err != nil {
 		return nil, err
@@ -143,7 +188,9 @@ func (p Programs) CallProgram(
 	if programVersion != stylusVersion {
 		return nil, ProgramOutOfDateError(programVersion)
 	}
-	params, err := p.goParams(programVersion, interpreter.Evm().ChainConfig().DebugMode())
+
+	debugMode := interpreter.Evm().ChainConfig().DebugMode()
+	params, err := p.goParams(programVersion, statedb, debugMode)
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +214,23 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 }
 
 type goParams struct {
-	version   uint32
-	maxDepth  uint32
-	inkPrice  uint64
-	hostioInk uint64
-	debugMode uint32
+	version     uint32
+	maxDepth    uint32
+	inkPrice    uint64
+	hostioInk   uint64
+	debugMode   uint32
+	memoryModel goMemoryModel
 }
 
-func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
+type goMemoryModel struct {
+	openPages     uint16 // number of pages currently open
+	everPages     uint16 // largest number of pages ever open
+	freePages     uint16 // number of pages the tx gets for free
+	gasPerPage    uint32 // base gas to charge per wasm page
+	expMemDivisor uint32 // throttles exponential memory costs
+}
+
+func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goParams, error) {
 	maxDepth, err := p.WasmMaxDepth()
 	if err != nil {
 		return nil, err
@@ -187,11 +243,34 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	openPages, everPages := statedb.GetStylusPages()
+	freePages, err := p.FreePages()
+	if err != nil {
+		return nil, err
+	}
+	gasPerPage, err := p.GasPerPage()
+	if err != nil {
+		return nil, err
+	}
+	expMemDivisor, err := p.ExpMemDivisor()
+	if err != nil {
+		return nil, err
+	}
+	memParams := goMemoryModel{
+		openPages:     openPages,
+		everPages:     everPages,
+		freePages:     freePages,
+		gasPerPage:    gasPerPage,
+		expMemDivisor: expMemDivisor,
+	}
+
 	config := &goParams{
-		version:   version,
-		maxDepth:  maxDepth,
-		inkPrice:  inkPrice.Uint64(),
-		hostioInk: hostioInk,
+		version:     version,
+		maxDepth:    maxDepth,
+		inkPrice:    inkPrice.Uint64(),
+		hostioInk:   hostioInk,
+		memoryModel: memParams,
 	}
 	if debug {
 		config.debugMode = 1

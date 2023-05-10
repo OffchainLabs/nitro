@@ -20,6 +20,7 @@ use {
 };
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct StylusConfig {
     /// Version the program was compiled against
     pub version: u32,
@@ -30,11 +31,29 @@ pub struct StylusConfig {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct PricingParams {
     /// The price of ink, measured in bips of an evm gas
     pub ink_price: u64,
     /// The amount of ink one pays to do a user_host call
     pub hostio_ink: u64,
+    /// Memory pricing model
+    pub memory_model: MemoryModel,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct MemoryModel {
+    /// Number of pages currently open
+    pub open_pages: u16,
+    /// Largest number of pages ever open
+    pub ever_pages: u16,
+    /// Number of pages a tx gets for free
+    pub free_pages: u16,
+    /// Base cost of each additional wasm page
+    pub gas_per_page: u32,
+    /// Slows down exponential memory costs
+    pub exp_mem_divisor: u32,
 }
 
 impl Default for StylusConfig {
@@ -52,13 +71,26 @@ impl Default for PricingParams {
         Self {
             ink_price: 1,
             hostio_ink: 0,
+            memory_model: MemoryModel::default(),
+        }
+    }
+}
+
+impl Default for MemoryModel {
+    fn default() -> Self {
+        Self {
+            open_pages: 0,
+            ever_pages: 0,
+            free_pages: u16::MAX,
+            gas_per_page: 0,
+            exp_mem_divisor: u32::MAX,
         }
     }
 }
 
 impl StylusConfig {
-    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64) -> Self {
-        let pricing = PricingParams::new(ink_price, hostio_ink);
+    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64, memory_model: MemoryModel) -> Self {
+        let pricing = PricingParams::new(ink_price, hostio_ink, memory_model);
         Self {
             version,
             max_depth,
@@ -69,10 +101,11 @@ impl StylusConfig {
 
 #[allow(clippy::inconsistent_digit_grouping)]
 impl PricingParams {
-    pub const fn new(ink_price: u64, hostio_ink: u64) -> Self {
+    pub const fn new(ink_price: u64, hostio_ink: u64, memory_model: MemoryModel) -> Self {
         Self {
             ink_price,
             hostio_ink,
+            memory_model,
         }
     }
 
@@ -205,27 +238,5 @@ impl CompileConfig {
         }
 
         Store::new(compiler)
-    }
-}
-
-#[repr(C)]
-pub struct GoParams {
-    pub version: u32,
-    pub max_depth: u32,
-    pub ink_price: u64,
-    pub hostio_ink: u64,
-    pub debug_mode: u32,
-}
-
-impl GoParams {
-    pub fn configs(self) -> (CompileConfig, StylusConfig) {
-        let stylus_config = StylusConfig::new(
-            self.version,
-            self.max_depth,
-            self.ink_price,
-            self.hostio_ink,
-        );
-        let compile_config = CompileConfig::version(self.version, self.debug_mode != 0);
-        (compile_config, stylus_config)
     }
 }

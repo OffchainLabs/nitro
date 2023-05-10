@@ -8,7 +8,7 @@ use arbutil::evm::{
 };
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::programs::{config::GoParams, prelude::*};
+use prover::programs::prelude::*;
 use run::RunProgram;
 use std::mem;
 
@@ -111,27 +111,28 @@ pub unsafe extern "C" fn stylus_compile(
 pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
-    params: GoParams,
+    config: StylusConfig,
     go_api: GoEvmApi,
     evm_data: EvmData,
+    debug_chain: u32,
     output: *mut RustVec,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let (compile_config, stylus_config) = params.configs();
-    let pricing = stylus_config.pricing;
+    let compile = CompileConfig::version(config.version, debug_chain != 0);
+    let pricing = config.pricing;
     let ink = pricing.gas_to_ink(*gas);
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
-    let instance = unsafe { NativeInstance::deserialize(module, compile_config, go_api, evm_data) };
+    let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
 
-    let status = match instance.run_main(&calldata, stylus_config, ink) {
+    let status = match instance.run_main(&calldata, config, ink) {
         Err(err) | Ok(UserOutcome::Failure(err)) => {
             output.write_err(err.wrap_err(eyre!("failed to execute program")));
             UserOutcomeKind::Failure

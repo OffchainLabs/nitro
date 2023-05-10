@@ -14,7 +14,10 @@ use arbutil::{
     heapify,
 };
 use eyre::eyre;
-use prover::programs::{config::GoParams, prelude::*};
+use prover::programs::{
+    config::{MemoryModel, PricingParams},
+    prelude::*,
+};
 use std::mem;
 use stylus::native;
 
@@ -110,14 +113,18 @@ pub fn rust_vec_into_slice(env: WasmEnvMut, sp: u32) {
 /// go side: λ(version, maxDepth u32, inkPrice, hostioInk u64, debugMode: u32) *(CompileConfig, StylusConfig)
 pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let params = GoParams {
+
+    let config = StylusConfig {
         version: sp.read_u32(),
         max_depth: sp.read_u32(),
-        ink_price: sp.read_u64(),
-        hostio_ink: sp.read_u64(),
-        debug_mode: sp.read_u32(),
+        pricing: PricingParams {
+            ink_price: sp.read_u64(),
+            hostio_ink: sp.read_u64(),
+            memory_model: MemoryModel::default(),
+        },
     };
-    sp.skip_space().write_ptr(heapify(params.configs()));
+    let compile = CompileConfig::version(config.version, sp.read_u32() != 0);
+    sp.skip_space().write_ptr(heapify((compile, config)));
 }
 
 /// Creates an `EvmData` from its component parts.

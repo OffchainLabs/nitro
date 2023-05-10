@@ -170,6 +170,21 @@ func (con ArbOwner) SetWasmMaxDepth(c ctx, evm mech, depth uint32) error {
 }
 
 // Sets the cost of starting a stylus hostio call
-func (con ArbOwner) SetWasmHostioInk(c ctx, evm mech, cost uint64) error {
-	return c.State.Programs().SetWasmHostioInk(cost)
+func (con ArbOwner) SetWasmHostioInk(c ctx, evm mech, ink uint64) error {
+	return c.State.Programs().SetWasmHostioInk(ink)
+}
+
+// Gets the number of free wasm pages a tx gets
+func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
+	return c.State.Programs().SetFreePages(pages)
+}
+
+// Sets the base cost of each additional wasm page
+func (con ArbOwner) SetWasmGasPerPage(c ctx, evm mech, gas uint32) error {
+	return c.State.Programs().SetGasPerPage(gas)
+}
+
+// Sets the divisor slowing down exponential wasm memory costs
+func (con ArbOwner) SetWasmExpMemDivisor(c ctx, evm mech, divisor uint32) error {
+	return c.State.Programs().SetExpMemDivisor(divisor)
 }

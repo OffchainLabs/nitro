@@ -27,8 +27,20 @@ interface ArbWasm {
     function wasmMaxDepth() external view returns (uint32 depth);
 
     // @notice gets the fixed-cost overhead needed to initiate a hostio call
-    // @return cost the cost (in ink) of starting a stylus hostio call
-    function wasmHostioInk() external view returns (uint64 price);
+    // @return ink the cost of starting a stylus hostio call
+    function wasmHostioInk() external view returns (uint64 ink);
+
+    // @notice gets the number of free wasm pages a program gets
+    // @return pages the number of wasm pages (2^16 bytes)
+    function freePages() external view returns (uint16 pages);
+
+    // @notice gets the base cost of each additional wasm page (2^16 bytes)
+    // @return gas base amount of gas needed to grow another wasm page
+    function gasPerPage() external view returns (uint32 gas);
+
+    // @notice gets the divisor slowing down exponential memory costs
+    // @return divisor unitless value throttling the exponential memory term
+    function expMemDivisor() external view returns (uint32 divisor);
 
     // @notice gets the stylus version the program was most recently compiled against.
     // @return version the program version (0 for EVM contracts)

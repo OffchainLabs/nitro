@@ -11,6 +11,8 @@ package programs
 #cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 
+typedef uint8_t u8;
+typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
@@ -29,6 +31,7 @@ import (
 )
 
 type u8 = C.uint8_t
+type u16 = C.uint16_t
 type u32 = C.uint32_t
 type u64 = C.uint64_t
 type usize = C.size_t
@@ -84,6 +87,7 @@ func callUserWasm(
 		stylusParams.encode(),
 		evmApi,
 		evmData.encode(),
+		u32(stylusParams.debugMode),
 		output,
 		(*u64)(&contract.Gas),
 	))
@@ -274,13 +278,26 @@ func goSlice(slice []byte) C.GoSliceData {
 	}
 }
 
-func (params *goParams) encode() C.GoParams {
-	return C.GoParams{
-		version:    u32(params.version),
-		max_depth:  u32(params.maxDepth),
-		ink_price:  u64(params.inkPrice),
-		hostio_ink: u64(params.hostioInk),
-		debug_mode: u32(params.debugMode),
+func (params *goParams) encode() C.StylusConfig {
+	pricing := C.PricingParams{
+		ink_price:    u64(params.inkPrice),
+		hostio_ink:   u64(params.hostioInk),
+		memory_model: params.memoryModel.encode(),
+	}
+	return C.StylusConfig{
+		version:   u32(params.version),
+		max_depth: u32(params.maxDepth),
+		pricing:   pricing,
+	}
+}
+
+func (model *goMemoryModel) encode() C.MemoryModel {
+	return C.MemoryModel{
+		open_pages:      u16(model.openPages),
+		ever_pages:      u16(model.everPages),
+		free_pages:      u16(model.freePages),
+		gas_per_page:    u32(model.gasPerPage),
+		exp_mem_divisor: u32(model.expMemDivisor),
 	}
 }
 

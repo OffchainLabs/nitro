@@ -93,7 +93,16 @@ interface ArbOwner {
     function setWasmMaxDepth(uint32 depth) external;
 
     // @notice sets the cost of starting a stylus hostio call
-    function setWasmHostioInk(uint64 cost) external;
+    function setWasmHostioInk(uint64 ink) external;
+
+    // @notice sets the number of free wasm pages a tx gets
+    function setWasmFreePages(uint16 pages) external;
+
+    // @notice sets the base cost of each additional wasm page
+    function setWasmGasPerPage(uint32 gas) external;
+
+    // @notice sets the divisor slowing down exponential wasm memory costs
+    function setWasmExpMemDivisor(uint32 divisor) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
