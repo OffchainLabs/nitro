@@ -413,7 +413,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			valid := !inboxPositionInvalid &&
 				nd.Assertion.NumBlocks == expectedNumBlocks &&
 				afterGs.BlockHash == expectedBlockHash &&
-				afterGs.SendRoot == expectedSendRoot
+				afterGs.SendRoot == expectedSendRoot &&
+				nd.Assertion.AfterState.MachineStatus == validator.MachineStatusFinished
 			if valid {
 				log.Info(
 					"found correct assertion",
@@ -438,6 +439,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 					"expectedBlockHash", expectedBlockHash,
 					"sendRoot", afterGs.SendRoot,
 					"expectedSendRoot", expectedSendRoot,
+					"machineStatus", nd.Assertion.AfterState.MachineStatus,
 				)
 			}
 		} else {
