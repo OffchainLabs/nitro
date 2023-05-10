@@ -64,7 +64,7 @@ pub struct GoEvmApi {
         unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
     pub address_codehash:
         unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
-    pub evm_blockhash: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
+    pub evm_blockhash: unsafe extern "C" fn(id: usize, num: Bytes32) -> Bytes32, // value
     pub id: usize,
 }
 
@@ -246,9 +246,8 @@ impl EvmApi for GoEvmApi {
         (value, cost)
     }
 
-    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64) {
-        let mut cost = 0;
-        let value = call!(self, evm_blockhash, block, ptr!(cost));
-        (value, cost)
+    fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32 {
+        let value = call!(self, evm_blockhash, num);
+        value
     }
 }

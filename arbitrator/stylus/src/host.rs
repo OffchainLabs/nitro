@@ -231,16 +231,12 @@ pub(crate) fn address_codehash<E: EvmApi>(
     Ok(())
 }
 
-pub(crate) fn evm_blockhash<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
-    block: u32,
-    ptr: u32,
-) -> MaybeEscape {
+pub(crate) fn evm_blockhash<E: EvmApi>(mut env: WasmEnvMut<E>, num: u32, ptr: u32) -> MaybeEscape {
     let mut env = WasmEnv::start(&mut env)?;
-    let block = env.read_bytes32(block)?;
-    let (hash, gas_cost) = env.evm_api.evm_blockhash(block);
+    let num = env.read_bytes32(num)?;
+    let hash = env.evm_api.evm_blockhash(num);
     env.write_slice(ptr, &hash.0)?;
-    env.buy_gas(gas_cost)?;
+    env.buy_gas(evm::BLOCKHASH_GAS)?;
     Ok(())
 }
 

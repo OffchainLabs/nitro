@@ -21,15 +21,15 @@ pub fn log(topics: &[Bytes32], data: &[u8]) -> Result<(), &'static str> {
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub(crate) fn evm_blockhash(key: *const u8, dest: *mut u8);
+    pub(crate) fn evm_blockhash(num: *const u8, dest: *mut u8);
     pub(crate) fn evm_gas_left() -> u64;
     pub(crate) fn evm_ink_left() -> u64;
 }
 
-pub fn blockhash(key: Bytes32) -> Option<Bytes32> {
-    let mut data = [0; 32];
-    unsafe { evm_blockhash(key.ptr(), data.as_mut_ptr()) };
-    (data != [0; 32]).then_some(Bytes32(data))
+pub fn blockhash(num: Bytes32) -> Option<Bytes32> {
+    let mut dest = [0; 32];
+    unsafe { evm_blockhash(num.ptr(), dest.as_mut_ptr()) };
+    (dest != [0; 32]).then_some(Bytes32(dest))
 }
 
 pub fn gas_left() -> u64 {

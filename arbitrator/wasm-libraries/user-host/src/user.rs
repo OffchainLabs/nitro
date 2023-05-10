@@ -214,12 +214,12 @@ pub unsafe extern "C" fn user_host__address_codehash(address: usize, ptr: usize)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__evm_blockhash(block: usize, ptr: usize) {
+pub unsafe extern "C" fn user_host__evm_blockhash(num: usize, ptr: usize) {
     let program = Program::start();
-    let block = wavm::read_bytes32(block);
+    let num = wavm::read_bytes32(num);
 
-    let (value, gas_cost) = program.evm_api.evm_blockhash(block.into());
-    program.buy_gas(gas_cost).unwrap();
+    let value = program.evm_api.evm_blockhash(num.into());
+    program.buy_gas(evm::BLOCKHASH_GAS).unwrap();
     wavm::write_slice_usize(&value.0, ptr);
 }
 

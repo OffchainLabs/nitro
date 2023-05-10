@@ -43,7 +43,7 @@ type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics uint32) error
 type addressBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type addressCodeHashType func(address common.Address) (value common.Hash, cost uint64)
-type evmBlockHashType func(block common.Hash) (value common.Hash, cost uint64)
+type evmBlockHashType func(block common.Hash) (value common.Hash)
 
 type goClosures struct {
 	getBytes32      getBytes32Type
@@ -253,43 +253,19 @@ func newApiClosures(
 		return nil
 	}
 	addressBalance := func(address common.Address) (common.Hash, uint64) {
-		cost := params.BalanceGasEIP150
+		cost := vm.GasEip2929AccountCheck(evm.StateDB, address)
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
 	addressCodeHash := func(address common.Address) (common.Hash, uint64) {
-		cost := params.ExtcodeHashGasConstantinople
+		cost := vm.GasEip2929AccountCheck(evm.StateDB, address)
 		if !evm.StateDB.Empty(address) {
 			return evm.StateDB.GetCodeHash(address), cost
 		}
 		return common.Hash{}, cost
 	}
-	evmBlockHash := func(block common.Hash) (common.Hash, uint64) {
-		cost := vm.GasExtStep
-		requested := block.Big()
-		if !requested.IsUint64() {
-			return common.Hash{}, cost
-		}
-		num := requested.Uint64()
-		upper, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
-		if err != nil {
-			return common.Hash{}, cost
-		}
-
-		var lower uint64
-		if upper < 257 {
-			lower = 0
-		} else {
-			lower = upper - 256
-		}
-		if num >= lower && num < upper {
-			hash, err := evm.ProcessingHook.L1BlockHash(evm.Context, num)
-			if err != nil {
-				return common.Hash{}, cost
-			}
-			return hash, cost
-		}
-		return common.Hash{}, cost
+	evmBlockHash := func(block common.Hash) common.Hash {
+		return vm.OpBlockHash(evm, block)
 	}
 
 	return &goClosures{

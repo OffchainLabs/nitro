@@ -120,5 +120,5 @@ pub trait EvmApi: Send + 'static {
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()>;
     fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
     fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
-    fn evm_blockhash(&mut self, block: Bytes32) -> (Bytes32, u64);
+    fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32;
 }

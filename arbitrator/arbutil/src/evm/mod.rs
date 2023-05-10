@@ -26,6 +26,9 @@ pub const ADDRESS_GAS: u64 = GAS_QUICK_STEP;
 // vm.GasQuickStep (see eips.go)
 pub const BASEFEE_GAS: u64 = GAS_QUICK_STEP;
 
+// vm.GasExtStep (see api.go)
+pub const BLOCKHASH_GAS: u64 = 20;
+
 // vm.GasQuickStep (see eips.go)
 pub const CHAINID_GAS: u64 = GAS_QUICK_STEP;
 

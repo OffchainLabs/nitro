@@ -152,7 +152,7 @@ impl EvmApi for TestEvmApi {
         unimplemented!()
     }
 
-    fn evm_blockhash(&mut self, _block: Bytes32) -> (Bytes32, u64) {
+    fn evm_blockhash(&mut self, _num: Bytes32) -> Bytes32 {
         unimplemented!()
     }
 }

@@ -193,8 +193,8 @@ func newApi(
 	})
 	evmBlockHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		block := jsHash(args[0])
-		value, cost := closures.evmBlockHash(block)
-		return write(stylus, value, cost)
+		value := closures.evmBlockHash(block)
+		return write(stylus, value)
 	})
 
 	ids := make([]byte, 0, 12*4)

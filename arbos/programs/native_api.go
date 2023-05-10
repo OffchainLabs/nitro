@@ -70,9 +70,9 @@ Bytes32 addressCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
     return addressCodeHashImpl(api, address, cost);
 }
 
-Bytes32 evmBlockHashImpl(usize api, Bytes32 block, u64 * cost);
-Bytes32 evmBlockHashWrap(usize api, Bytes32 block, u64 * cost) {
-    return evmBlockHashImpl(api, block, cost);
+Bytes32 evmBlockHashImpl(usize api, Bytes32 block);
+Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
+    return evmBlockHashImpl(api, block);
 }
 */
 import "C"
