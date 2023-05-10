@@ -41,8 +41,9 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	chainConfig *params.ChainConfig
-	exec        *execution.ExecutionEngine
+	chainConfig      *params.ChainConfig
+	exec             *execution.ExecutionEngine
+	execLastMsgCount arbutil.MessageIndex
 
 	db           ethdb.Database
 	fatalErrChan chan<- error
@@ -845,11 +846,13 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 		return false
 	}
 	defer s.reorgMutex.RUnlock()
+	prevMessageCount := s.execLastMsgCount
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
 		log.Error("feedOneMsg failed to get message count", "err", err)
 		return false
 	}
+	s.execLastMsgCount = prevMessageCount
 	pos, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
@@ -866,7 +869,11 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec *executio
 	}
 	err = s.exec.DigestMessage(pos, msg)
 	if err != nil {
-		log.Info("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
+		logger := log.Warn
+		if prevMessageCount < msgCount {
+			logger = log.Debug
+		}
+		logger("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
 	}
 	return pos+1 < msgCount

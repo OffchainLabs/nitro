@@ -135,7 +135,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Nonce() < stateNonce {
 		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), true, true)
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), chainConfig.IsIstanbul(header.Number), chainConfig.IsShanghai(header.Time))
 	if err != nil {
 		return err
 	}
