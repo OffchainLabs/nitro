@@ -110,9 +110,14 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
 
 	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
+	b.BroadcastFeedMessages(broadcastFeedMessages)
+}
+
+func (b *Broadcaster) BroadcastFeedMessages(messages []*BroadcastFeedMessage) {
+
 	bm := BroadcastMessage{
 		Version:  1,
-		Messages: broadcastFeedMessages,
+		Messages: messages,
 	}
 
 	b.server.Broadcast(bm)
