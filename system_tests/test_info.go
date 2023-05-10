@@ -4,7 +4,6 @@
 package arbtest
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"errors"
@@ -70,13 +69,9 @@ func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
 }
 
 func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {
-	nameBytes := []byte(name)
-	seedBytes := make([]byte, 0, 128)
-	for len(seedBytes) < 64 {
-		seedBytes = append(seedBytes, nameBytes...)
-	}
-	seedReader := bytes.NewReader(seedBytes)
-	privateKey, err := ecdsa.GenerateKey(crypto.S256(), seedReader)
+	keyBytes := crypto.Keccak256([]byte(name))
+	keyBytes[0] = 0
+	privateKey, err := crypto.ToECDSA(keyBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

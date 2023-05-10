@@ -396,10 +396,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				if lastBlock == nil {
 					return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
 				}
-				lastBlockExtra, err := types.DeserializeHeaderExtraInformation(lastBlock.Header())
-				if err != nil {
-					return nil, false, fmt.Errorf("error getting block %v header extra info: %w", lastBlockNum, err)
-				}
+				lastBlockExtra := types.DeserializeHeaderExtraInformation(lastBlock.Header())
 				expectedBlockHash = lastBlock.Hash()
 				expectedSendRoot = lastBlockExtra.SendRoot
 			}
@@ -413,7 +410,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			valid := !inboxPositionInvalid &&
 				nd.Assertion.NumBlocks == expectedNumBlocks &&
 				afterGs.BlockHash == expectedBlockHash &&
-				afterGs.SendRoot == expectedSendRoot
+				afterGs.SendRoot == expectedSendRoot &&
+				nd.Assertion.AfterState.MachineStatus == validator.MachineStatusFinished
 			if valid {
 				log.Info(
 					"found correct assertion",
@@ -438,6 +436,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 					"expectedBlockHash", expectedBlockHash,
 					"sendRoot", afterGs.SendRoot,
 					"expectedSendRoot", expectedSendRoot,
+					"machineStatus", nd.Assertion.AfterState.MachineStatus,
 				)
 			}
 		} else {
@@ -542,10 +541,7 @@ func (v *L1Validator) createNewNodeAction(
 	if assertingBlock == nil {
 		return nil, fmt.Errorf("missing validated block %v", lastBlockValidated)
 	}
-	assertingBlockExtra, err := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
-	if err != nil {
-		return nil, fmt.Errorf("error getting asserting block %v header extra info: %w", assertingBlock.Number(), err)
-	}
+	assertingBlockExtra := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
 
 	hasSiblingByte := [1]byte{0}
 	prevNum := stakerInfo.LatestStakedNode

@@ -167,7 +167,7 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		EnablePreimageRecording: false,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {

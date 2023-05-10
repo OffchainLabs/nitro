@@ -305,7 +305,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
-	l1Reader := headerreader.New(l1client, readerConfig)
+	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
+	if err != nil {
+		return nil, err
+	}
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
@@ -429,19 +432,10 @@ func (c *Config) Validate() error {
 	if err := c.Feed.Validate(); err != nil {
 		return err
 	}
+	if err := c.Staker.Validate(); err != nil {
+		return err
+	}
 	return nil
-}
-
-func (c *Config) Get() *Config {
-	return c
-}
-
-func (c *Config) Start(context.Context) {}
-
-func (c *Config) StopAndWait() {}
-
-func (c *Config) Started() bool {
-	return true
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -457,7 +451,7 @@ func (c *Config) ValidatorRequired() bool {
 		return true
 	}
 	if c.Staker.Enable {
-		return !c.Staker.Dangerous.WithoutBlockValidator
+		return c.Staker.ValidatorRequired()
 	}
 	return false
 }
@@ -529,6 +523,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.Staker.Enable = false
 	config.Forwarder = execution.DefaultTestForwarderConfig
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
@@ -544,6 +539,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Feed.Output.Signed = false
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
+	config.Staker.Enable = false
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -681,7 +677,10 @@ func createNodeImpl(
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
@@ -850,7 +849,7 @@ func createNodeImpl(
 		err = errors.New("no validator url specified")
 	}
 	if err != nil {
-		if config.ValidatorRequired() {
+		if config.ValidatorRequired() || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to init block validator", err)
 		} else {
 			log.Warn("validation not supported", "err", err)
@@ -859,7 +858,7 @@ func createNodeImpl(
 	}
 
 	var blockValidator *staker.BlockValidator
-	if config.BlockValidator.Enable {
+	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
@@ -899,6 +898,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
+
 		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
