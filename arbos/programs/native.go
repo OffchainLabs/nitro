@@ -50,7 +50,7 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	if err == nil {
 		db.SetCompiledWasmCode(program, result, version)
 	} else {
-		log.Info("compile failure", "err", err.Error(), "data", string(data), "program", program)
+		log.Debug("compile failure", "err", err.Error(), "data", string(data), "program", program)
 	}
 	return err
 }
