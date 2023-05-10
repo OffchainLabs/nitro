@@ -76,9 +76,6 @@ func mainImpl() int {
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.AuthRPC.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
-	if nodeConfig.WS.ExposeAll {
-		stackConf.WSModules = append(stackConf.WSModules, "personal")
-	}
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
