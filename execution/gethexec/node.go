@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -157,6 +158,22 @@ type ExecutionNode struct {
 	L1Reader        *headerreader.HeaderReader
 	ClassicOutbox   *ClassicOutboxRetriever
 	ConsensusClient *consensusclient.Client
+
+	stopOnce sync.Once
+}
+
+type ExecNodeLifeCycle struct {
+	exec *ExecutionNode
+}
+
+func (l *ExecNodeLifeCycle) Start() error { return nil }
+
+func (l *ExecNodeLifeCycle) Stop() error {
+	if !l.exec.ExecEngine.Stopped() {
+		log.Info("Stack shutting down - closing execution node..")
+	}
+	l.exec.StopAndWait()
+	return nil
 }
 
 func CreateExecutionNode(
@@ -259,6 +276,7 @@ func CreateExecutionNode(
 		l1Reader,
 		classicOutbox,
 		consensusClient,
+		sync.Once{},
 	}
 
 	apis := []rpc.API{{
@@ -299,6 +317,8 @@ func CreateExecutionNode(
 	})
 
 	stack.RegisterAPIs(apis)
+
+	stack.RegisterLifecycle(&ExecNodeLifeCycle{execNode})
 
 	return execNode, nil
 }
@@ -345,30 +365,32 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 }
 
 func (n *ExecutionNode) StopAndWait() {
-	// TODO after separation
-	// n.Stack.StopRPC() // does nothing if not running
-	if n.TxPublisher.Started() {
-		n.TxPublisher.StopAndWait()
-	}
-	n.Recorder.OrderlyShutdown()
-	if n.L1Reader != nil && n.L1Reader.Started() {
-		n.L1Reader.StopAndWait()
-	}
-	if n.ExecEngine.Started() {
-		n.ExecEngine.StopAndWait()
-	}
-	n.ArbInterface.BlockChain().Stop() // does nothing if not running
-	if err := n.Backend.Stop(); err != nil {
-		log.Error("backend stop", "err", err)
-	}
-	n.SyncMonitor.StopAndWait()
-	if n.ConsensusClient != nil && n.ConsensusClient.Started() {
-		n.ConsensusClient.StopAndWait()
-	}
-	// TODO after separation
-	// if err := n.Stack.Close(); err != nil {
-	// 	log.Error("error on stak close", "err", err)
-	// }
+	n.stopOnce.Do(func() {
+		// TODO after separation
+		// n.Stack.StopRPC() // does nothing if not running
+		if n.TxPublisher.Started() {
+			n.TxPublisher.StopAndWait()
+		}
+		n.Recorder.OrderlyShutdown()
+		if n.L1Reader != nil && n.L1Reader.Started() {
+			n.L1Reader.StopAndWait()
+		}
+		if n.ExecEngine.Started() {
+			n.ExecEngine.StopAndWait()
+		}
+		n.ArbInterface.BlockChain().Stop() // does nothing if not running
+		if err := n.Backend.Stop(); err != nil {
+			log.Error("backend stop", "err", err)
+		}
+		n.SyncMonitor.StopAndWait()
+		if n.ConsensusClient != nil && n.ConsensusClient.Started() {
+			n.ConsensusClient.StopAndWait()
+		}
+		// TODO after separation
+		// if err := n.Stack.Close(); err != nil {
+		// 	log.Error("error on stak close", "err", err)
+		// }
+	})
 }
 
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {

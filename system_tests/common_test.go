@@ -730,11 +730,11 @@ func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error
 		select {
 		case err := <-feedErrChan:
 			t.Errorf("error occurred: %v", err)
-			if node != nil {
-				node.StopAndWait()
-			}
 			if exec != nil {
 				exec.StopAndWait()
+			}
+			if node != nil {
+				node.StopAndWait()
 			}
 		case <-ctx.Done():
 		}
