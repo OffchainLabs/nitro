@@ -137,10 +137,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 			return validator.GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
+	extraInfo := types.DeserializeHeaderExtraInformation(header)
 	return validator.GoGlobalState{
 		BlockHash:  header.Hash(),
 		SendRoot:   extraInfo.SendRoot,

@@ -10,6 +10,10 @@
 [submodule "brotli"]
 	path = brotli
 	url = https://github.com/google/brotli.git
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/OffchainLabs/nitro-contracts.git
+	branch = develop
 [submodule "blockscout"]
 	path = blockscout
         url = https://github.com/OffchainLabs/blockscout.git

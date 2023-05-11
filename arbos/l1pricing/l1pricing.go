@@ -542,8 +542,9 @@ func makeFakeTxForMessage(message core.Message) *types.Transaction {
 	if gasFeeCap.Sign() == 0 {
 		gasFeeCap = randomGasFeeCap
 	}
+	// During gas estimation, we don't want the gas limit variability to change the L1 cost.
 	gas := message.Gas()
-	if gas == 0 {
+	if gas == 0 || message.RunMode() == types.MessageGasEstimationMode {
 		gas = RandomGas
 	}
 	return types.NewTx(&types.DynamicFeeTx{
