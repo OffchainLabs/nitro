@@ -225,7 +225,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 
 func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chainConfig *params.ChainConfig, l1Client arbutil.L1Interface, l2info *BlockchainTestInfo, rollupAddresses *arbnode.RollupAddresses, txOpts *bind.TransactOpts, signer signature.DataSignerFunc, fatalErrChan chan error) (*arbnode.Node, *gethexec.ExecutionNode) {
 	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChain(t, l2info, "", chainConfig)
-	execNode, err := gethexec.CreateExecutionNode(stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
+	execNode, err := gethexec.CreateExecutionNode(ctx, stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
 	Require(t, err)
 	consensusNode, err := arbnode.CreateNode(ctx, stack, execNode, l2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Client, rollupAddresses, txOpts, signer, fatalErrChan)
 	Require(t, err)
