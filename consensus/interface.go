@@ -5,6 +5,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -28,7 +29,7 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, result execution.MessageResult) containers.PromiseInterface[struct{}]
 	ExpectChosenSequencer() containers.PromiseInterface[struct{}]
 }
 

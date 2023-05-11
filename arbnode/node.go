@@ -1212,8 +1212,8 @@ func (n *Node) GetFinalizedMsgCount() containers.PromiseInterface[arbutil.Messag
 	return n.InboxReader.GetFinalizedMsgCount()
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, result execution.MessageResult) containers.PromiseInterface[struct{}] {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, result)
 }
 
 func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {

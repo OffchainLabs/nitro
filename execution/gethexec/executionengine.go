@@ -353,7 +353,11 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	_, err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta).Await(s.GetContext())
+	result, err := s.resultFromHeader(block.Header())
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *result).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -401,13 +405,18 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(ctx context.Conte
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	_, err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta).Await(s.GetContext())
+	startTime := time.Now()
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
 	if err != nil {
 		return nil, err
 	}
 
-	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
+	result, err := s.resultFromHeader(block.Header())
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, *result).Await(s.GetContext())
 	if err != nil {
 		return nil, err
 	}

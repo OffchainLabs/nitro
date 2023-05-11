@@ -54,6 +54,7 @@ type TransactionStreamer struct {
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
+	resultCountMutex   sync.Mutex
 	newMessageNotifier chan struct{}
 
 	nextAllowedFeedReorgLog time.Time
@@ -294,6 +295,16 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
+
+	err = s.writeMessageResultCount(count, batch)
+	if err != nil {
+		return err
+	}
+
+	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(uint64(count)))
+	if err != nil {
+		return err
+	}
 
 	_, err = s.exec.Reorg(count, newMessages, oldMessages).Await(s.GetContext())
 	if err != nil {
@@ -802,11 +813,11 @@ func (s *TransactionStreamer) expectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise[struct{}](struct{}{}, s.writeMessageFromSequencer(pos, msgWithMeta))
+func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, result execution.MessageResult) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise[struct{}](struct{}{}, s.writeMessageFromSequencer(pos, msgWithMeta, result))
 }
 
-func (s *TransactionStreamer) writeMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+func (s *TransactionStreamer) writeMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, result execution.MessageResult) error {
 	if err := s.expectChosenSequencer(); err != nil {
 		return err
 	}
@@ -840,6 +851,11 @@ func (s *TransactionStreamer) writeMessageFromSequencer(pos arbutil.MessageIndex
 		}
 	}
 
+	err = s.writeNextMessageResult(pos, result)
+	if err != nil && !errors.Is(err, errNotNext) {
+		log.Warn("error writing next message result", "err", err)
+	}
+
 	return nil
 }
 
@@ -859,6 +875,62 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 		return err
 	}
 	return batch.Put(key, msgBytes)
+}
+
+func (s *TransactionStreamer) getMessageResultCount() (arbutil.MessageIndex, error) {
+	countBytes, err := s.db.Get(messageResultCountKey)
+	if err != nil {
+		has, hasErr := s.db.Has(messageResultCountKey)
+		if hasErr == nil && !has {
+			return 0, nil
+		}
+		return 0, err
+	}
+	var count uint64
+	err = rlp.DecodeBytes(countBytes, &count)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(count), nil
+}
+
+var errNotNext error = errors.New("writing message: not next")
+
+func (s *TransactionStreamer) writeMessageResultCount(count arbutil.MessageIndex, batch ethdb.Batch) error {
+	countBytes, err := rlp.EncodeToBytes(count)
+	if err != nil {
+		return err
+	}
+	return batch.Put(messageResultCountKey, countBytes)
+}
+
+func (s *TransactionStreamer) writeNextMessageResult(pos arbutil.MessageIndex, result execution.MessageResult) error {
+	s.resultCountMutex.Lock()
+	defer s.resultCountMutex.Unlock()
+	batch := s.db.NewBatch()
+	msgCount, err := s.getMessageResultCount()
+	if err != nil {
+		log.Warn("error reading message result count. overwriting.", "err", err)
+		msgCount = pos
+	}
+	if msgCount != pos {
+		return fmt.Errorf("%w got %d expected %d", errNotNext, pos, msgCount)
+	}
+	msgCount += 1
+	err = s.writeMessageResultCount(msgCount, batch)
+	if err != nil {
+		return err
+	}
+	key := dbKey(messageResultPrefix, uint64(pos))
+	msgBytes, err := rlp.EncodeToBytes(result)
+	if err != nil {
+		return err
+	}
+	err = batch.Put(key, msgBytes)
+	if err != nil {
+		return err
+	}
+	return batch.Write()
 }
 
 // The mutex must be held, and pos must be the latest message count.
@@ -891,10 +963,25 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-// TODO: eventually there will be a table maintained by txStreamer itself
 func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
 	if count == 0 {
 		return &execution.MessageResult{}, nil
+	}
+	key := dbKey(messageResultPrefix, uint64(count-1))
+	has, err := s.db.Has(key)
+	if err == nil && has {
+		var resBytes []byte
+		resBytes, err = s.db.Get(key)
+		if err == nil {
+			var res execution.MessageResult
+			err = rlp.DecodeBytes(resBytes, res)
+			if err == nil {
+				return &res, nil
+			}
+		}
+	}
+	if err != nil {
+		log.Warn("streamer: failed getting message result from db", "count", count, "err", err)
 	}
 	return s.exec.ResultAtPos(count - 1).Await(s.GetContext())
 }
@@ -921,6 +1008,13 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		return false
 	}
 	pos++
+	localCount, err := s.getMessageResultCount()
+	if err != nil || localCount == 0 {
+		localCount = pos
+	}
+	if localCount < pos {
+		pos = localCount
+	}
 	if pos >= msgCount {
 		return false
 	}
@@ -929,7 +1023,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
 	}
-	_, err = s.exec.DigestMessage(pos, msg).Await(ctx)
+	res, err := s.exec.DigestMessage(pos, msg).Await(ctx)
 	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
@@ -937,6 +1031,10 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		}
 		logger("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
+	}
+	err = s.writeNextMessageResult(pos, *res)
+	if err != nil && !errors.Is(err, errNotNext) {
+		log.Warn("error writing next message result", "err", err)
 	}
 	return pos+1 < msgCount
 }
