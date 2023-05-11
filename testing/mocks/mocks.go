@@ -310,6 +310,34 @@ func (m *MockSpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) 
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.EdgeStatus), args.Error(1)
 }
+func (m *MockSpecEdge) CreatedAtBlock() uint64 {
+	args := m.Called()
+	return args.Get(0).(uint64)
+}
+func (m *MockSpecEdge) MutualId() protocol.MutualId {
+	args := m.Called()
+	return args.Get(0).(protocol.MutualId)
+}
+func (m *MockSpecEdge) ClaimId() util.Option[protocol.ClaimId] {
+	args := m.Called()
+	return args.Get(0).(util.Option[protocol.ClaimId])
+}
+func (m *MockSpecEdge) LowerChild(ctx context.Context) (util.Option[protocol.EdgeId], error) {
+	args := m.Called(ctx)
+	return args.Get(0).(util.Option[protocol.EdgeId]), args.Error(1)
+}
+func (m *MockSpecEdge) UpperChild(ctx context.Context) (util.Option[protocol.EdgeId], error) {
+	args := m.Called(ctx)
+	return args.Get(0).(util.Option[protocol.EdgeId]), args.Error(1)
+}
+func (m *MockSpecEdge) LowerChildSnapshot() util.Option[protocol.EdgeId] {
+	args := m.Called()
+	return args.Get(0).(util.Option[protocol.EdgeId])
+}
+func (m *MockSpecEdge) UpperChildSnapshot() util.Option[protocol.EdgeId] {
+	args := m.Called()
+	return args.Get(0).(util.Option[protocol.EdgeId])
+}
 func (m *MockSpecEdge) Bisect(
 	ctx context.Context,
 	prefixHistoryRoot common.Hash,

@@ -78,6 +78,12 @@ func (s *Set[T]) Insert(t T) {
 	s.items[t] = true
 }
 
+func (s *Set[T]) NumItems() uint64 {
+	s.RLock()
+	defer s.RUnlock()
+	return uint64(len(s.items))
+}
+
 func (s *Set[T]) Has(t T) bool {
 	s.RLock()
 	defer s.RUnlock()

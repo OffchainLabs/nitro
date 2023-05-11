@@ -210,18 +210,41 @@ type OriginHeights struct {
 	BigStepChallengeOriginHeight Height
 }
 
-// SpecEdge according to the protocol specification.
-type SpecEdge interface {
+// EdgeSnapshot defines a minimal set of methods of an edge that are taken
+// from reading it on-chain. Some of this data may change, such as the children
+// of the edge. An EdgeSnapshot only represents an edge at the time it was originally fetched.
+type EdgeSnapshot interface {
 	// The unique identifier for an edge.
 	Id() EdgeId
 	// The type of challenge the edge is a part of.
 	GetType() EdgeType
-	// The ministaker of an edge. Only existing for level zero edges.
-	MiniStaker() util.Option[common.Address]
 	// The start height and history commitment for an edge.
 	StartCommitment() (Height, common.Hash)
 	// The end height and history commitment for an edge.
 	EndCommitment() (Height, common.Hash)
+	// The block number the edge was created at.
+	CreatedAtBlock() uint64
+	// The mutual id of the edge.
+	MutualId() MutualId
+	// The claim id of the edge, if any
+	ClaimId() util.Option[ClaimId]
+	// The lower child of the edge at the time the edge was read on-chain. Note
+	// this may change and if a newer snapshot is required, the edge should be re-fetched.
+	LowerChildSnapshot() util.Option[EdgeId]
+	// The upper child of the edge at the time the edge was read on-chain. Note
+	// this may change and if a newer snapshot is required, the edge should be re-fetched.
+	UpperChildSnapshot() util.Option[EdgeId]
+}
+
+// SpecEdge according to the protocol specification.
+type SpecEdge interface {
+	EdgeSnapshot
+	// The lower child of the edge, if any.
+	LowerChild(ctx context.Context) (util.Option[EdgeId], error)
+	// The upper child of the edge, if any.
+	UpperChild(ctx context.Context) (util.Option[EdgeId], error)
+	// The ministaker of an edge. Only existing for level zero edges.
+	MiniStaker() util.Option[common.Address]
 	// The assertion id of the parent assertion that originated the challenge
 	// at the top-level.
 	PrevAssertionId(ctx context.Context) (AssertionId, error)
