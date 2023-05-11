@@ -123,6 +123,7 @@ type ExecutionNode struct {
 }
 
 func CreateExecutionNode(
+	ctx context.Context,
 	stack *node.Node,
 	chainDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
@@ -139,16 +140,19 @@ func CreateExecutionNode(
 	var sequencer *Sequencer
 
 	var l1Reader *headerreader.HeaderReader
+	if l1client != nil {
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		log.Warn("sequencer enabled without l1 client")
+	}
 
 	fwTarget := config.ForwardingTarget()
 	if config.Sequencer.Enable {
 		if fwTarget != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
-		}
-		if l1client != nil {
-			l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
-		} else {
-			log.Warn("sequencer enabled without l1 client")
 		}
 		seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 		sequencer, err = NewSequencer(execEngine, l1Reader, seqConfigFetcher)

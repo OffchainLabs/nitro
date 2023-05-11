@@ -137,7 +137,7 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
 		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{restServerUrlA}
 		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
-		execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
+		execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 		Require(t, err)
 
 		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
@@ -182,7 +182,7 @@ func TestDASRekey(t *testing.T) {
 	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, nil, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
 	Require(t, err)
 
-	execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
+	execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 	Require(t, err)
 
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
@@ -239,7 +239,8 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
-	l1Reader := headerreader.New(l1client, func() *headerreader.Config { return &headerreader.TestConfig })
+	l1Reader, err := headerreader.New(ctx, l1client, func() *headerreader.Config { return &headerreader.TestConfig })
+	Require(t, err)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 	feedErrChan := make(chan error, 10)
@@ -312,7 +313,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	l2info.GenerateAccount("User2")
 
-	execA, err := gethexec.CreateExecutionNode(l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
+	execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 	Require(t, err)
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)

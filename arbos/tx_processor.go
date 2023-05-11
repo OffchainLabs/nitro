@@ -349,6 +349,27 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
+func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode types.MessageRunMode, posterCost *big.Int) uint64 {
+	if runMode == types.MessageGasEstimationMode {
+		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
+		// This will help the user pad the total they'll pay in case the price rises a bit.
+		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
+
+		minGasPrice, _ := state.L2PricingState().MinBaseFeeWei()
+
+		adjustedPrice := arbmath.BigMulByFrac(baseFee, 7, 8) // assume congestion
+		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
+			adjustedPrice = minGasPrice
+		}
+		baseFee = adjustedPrice
+
+		// Pad the L1 cost in case the L1 gas price rises
+		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
+	}
+
+	return arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, baseFee))
+}
+
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
@@ -364,33 +385,16 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
-	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
-	if calldataUnits > 0 {
-		p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
-	}
-
-	if p.msg.RunMode() == types.MessageGasEstimationMode {
-		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
-		// This will help the user pad the total they'll pay in case the price rises a bit.
-		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
-
-		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
-
-		adjustedPrice := arbmath.BigMulByFrac(basefee, 7, 8) // assume congestion
-		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
-			adjustedPrice = minGasPrice
-		}
-		basefee = adjustedPrice
-
-		// Pad the L1 cost in case the L1 gas price rises
-		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
-	}
 
 	if basefee.Sign() > 0 {
 		// Since tips go to the network, and not to the poster, we use the basefee.
 		// Note, this only determines the amount of gas bought, not the price per gas.
 
-		p.posterGas = arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, basefee))
+		posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+		if calldataUnits > 0 {
+			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
+		}
+		p.posterGas = GetPosterGas(p.state, basefee, p.msg.RunMode(), posterCost)
 		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
