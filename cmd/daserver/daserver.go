@@ -175,7 +175,10 @@ func startup() error {
 		if err != nil {
 			return err
 		}
-		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+		if err != nil {
+			return err
+		}
 	}
 
 	var seqInboxAddress *common.Address
