@@ -120,6 +120,7 @@ type ExecutionNode struct {
 }
 
 func CreateExecutionNode(
+	ctx context.Context,
 	stack *node.Node,
 	chainDB ethdb.Database,
 	l2BlockChain *core.BlockChain,
@@ -137,7 +138,10 @@ func CreateExecutionNode(
 
 	var l1Reader *headerreader.HeaderReader
 	if l1client != nil {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher().L1Reader })
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	fwTarget := config.ForwardingTarget()

@@ -568,7 +568,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
 	currentNode, err = arbnode.CreateNode(
@@ -610,7 +610,7 @@ func CreateTestL2WithConfig(
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(stack, chainDb, blockchain, nil, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)
 
 	currentNode, err := arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), nil, nil, nil, nil, feedErrChan)
@@ -731,7 +731,7 @@ func Create2ndNodeWithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
 	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)

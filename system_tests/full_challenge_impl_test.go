@@ -271,7 +271,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterExec, err := gethexec.CreateExecutionNode(asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
+	asserterExec, err := gethexec.CreateExecutionNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
 	Require(t, err)
 	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
@@ -282,7 +282,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerRollupAddresses := *asserterRollupAddresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerExec, err := gethexec.CreateExecutionNode(challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
+	challengerExec, err := gethexec.CreateExecutionNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
 	Require(t, err)
 	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)

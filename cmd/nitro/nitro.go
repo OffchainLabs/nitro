@@ -465,6 +465,7 @@ func mainImpl() int {
 	}
 
 	execNode, err := gethexec.CreateExecutionNode(
+		ctx,
 		stack,
 		chainDb,
 		l2BlockChain,
