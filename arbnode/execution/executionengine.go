@@ -449,7 +449,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 
 	currentBlock := s.bc.GetBlock(currentHeader.Hash(), currentHeader.Number.Uint64())
-	if currentBlock != nil {
+	if currentBlock == nil {
 		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
