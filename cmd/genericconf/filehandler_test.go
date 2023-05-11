@@ -72,7 +72,7 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	config.MaxSize = 1
 	config.Compress = testCompressed
 	config.File = testFile
-	fileHandler := globalFileHandlerFactory.newHandler(log.JSONFormat(), &config, func(path string) string { return path })
+	fileHandler := globalFileHandlerFactory.newHandler(log.JSONFormat(), &config, testFile)
 	defer func() { testhelpers.RequireImpl(t, globalFileHandlerFactory.close()) }()
 	log.Root().SetHandler(fileHandler)
 	expected := []string{"dead", "beef", "ate", "bad", "beef"}
