@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/gethhook"
@@ -138,7 +139,7 @@ func init() {
 		}
 
 		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress)
-		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
+		posterCostInL2Gas := arbos.GetPosterGas(state, header.BaseFee, msg.RunMode(), posterCost)
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
 

@@ -150,8 +150,8 @@ var (
 )
 
 // Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
-func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Address {
-	rules := chainConfig.Rules(big.NewInt(0), false)
+func getArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common.Address {
+	rules := chainConfig.Rules(big.NewInt(0), false, 0, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
 	arbPrecompiles := vm.ActivePrecompiles(rules)
 	rules.IsArbitrum = false
 	ethPrecompiles := vm.ActivePrecompiles(rules)
@@ -191,8 +191,8 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	// Solidity requires call targets have code, but precompiles don't.
 	// To work around this, we give precompiles fake code.
-	for _, precompile := range getArbitrumOnlyPrecompiles(chainConfig) {
-		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
+	for _, genesisPrecompile := range getArbitrumOnlyGenesisPrecompiles(chainConfig) {
+		stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
 	}
 
 	// may be the zero address

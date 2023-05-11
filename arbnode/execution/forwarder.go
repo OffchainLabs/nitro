@@ -191,7 +191,9 @@ func (f *TxForwarder) Start(ctx context.Context) error {
 }
 
 func (f *TxForwarder) StopAndWait() {
-	f.ethClient.Close() // internally closes also the rpc client
+	if f.ethClient != nil {
+		f.ethClient.Close() // internally closes also the rpc client
+	}
 }
 
 func (f *TxForwarder) Started() bool {
