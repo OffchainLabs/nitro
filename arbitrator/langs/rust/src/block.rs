@@ -5,13 +5,13 @@ use crate::{Bytes20, Bytes32};
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub(crate) fn block_basefee(block: *mut u8);
-    pub(crate) fn block_chainid(block: *mut u8);
-    pub(crate) fn block_coinbase(block: *mut u8);
-    pub(crate) fn block_difficulty(block: *mut u8);
+    pub(crate) fn block_basefee(basefee: *mut u8);
+    pub(crate) fn block_chainid(chainid: *mut u8);
+    pub(crate) fn block_coinbase(coinbase: *mut u8);
+    pub(crate) fn block_difficulty(difficulty: *mut u8);
     pub(crate) fn block_gas_limit() -> u64;
-    pub(crate) fn block_number(block: *mut u8);
-    pub(crate) fn block_timestamp(block: *mut u8);
+    pub(crate) fn block_number(number: *mut u8);
+    pub(crate) fn block_timestamp(timestamp: *mut u8);
 }
 
 pub fn basefee() -> Bytes32 {

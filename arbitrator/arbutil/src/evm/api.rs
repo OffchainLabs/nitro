@@ -40,8 +40,8 @@ pub enum EvmApiMethod {
     Create2,
     GetReturnData,
     EmitLog,
-    AddressBalance,
-    AddressCodeHash,
+    AccountBalance,
+    AccountCodeHash,
     EvmBlockHash,
 }
 
@@ -118,7 +118,18 @@ pub trait EvmApi: Send + 'static {
     /// Returns an error message on failure.
     /// Analogous to `vm.LOG(n)` where n ∈ [0, 4].
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()>;
-    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
-    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
-    fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32;
+
+    /// Gets the balance of the given account.
+    /// Returns the balance and the access cost in gas.
+    /// Analogous to `vm.BALANCE`.
+    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64);
+
+    /// Gets the hash of the given address's code.
+    /// Returns the hash and the access cost in gas.
+    /// Analogous to `vm.CODEHASH`.
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64);
+
+    /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's history.
+    /// Analogous to `vm.BLOCKHASH`.
+    fn evm_blockhash(&mut self, number: Bytes32) -> Bytes32;
 }

@@ -283,13 +283,13 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
         }
     }
 
-    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let [value, cost] = call!(self, 2, AddressBalance, address);
+    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, AccountBalance, address);
         (value.assert_bytes32(), cost.assert_u64())
     }
 
-    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
-        let [value, cost] = call!(self, 2, AddressCodeHash, address);
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, AccountCodeHash, address);
         (value.assert_bytes32(), cost.assert_u64())
     }
 

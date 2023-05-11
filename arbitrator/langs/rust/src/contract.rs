@@ -209,7 +209,7 @@ pub fn return_data_len() -> usize {
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub(crate) fn contract_address(block: *mut u8);
+    pub(crate) fn contract_address(address: *mut u8);
 }
 
 pub fn address() -> Bytes20 {

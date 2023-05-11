@@ -41,8 +41,8 @@ type create2Type func(
 )
 type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics uint32) error
-type addressBalanceType func(address common.Address) (value common.Hash, cost uint64)
-type addressCodeHashType func(address common.Address) (value common.Hash, cost uint64)
+type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
+type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type evmBlockHashType func(block common.Hash) (value common.Hash)
 
 type goClosures struct {
@@ -55,8 +55,8 @@ type goClosures struct {
 	create2         create2Type
 	getReturnData   getReturnDataType
 	emitLog         emitLogType
-	addressBalance  addressBalanceType
-	addressCodeHash addressCodeHashType
+	accountBalance  accountBalanceType
+	accountCodeHash accountCodehashType
 	evmBlockHash    evmBlockHashType
 }
 
@@ -252,20 +252,20 @@ func newApiClosures(
 		db.AddLog(event)
 		return nil
 	}
-	addressBalance := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.GasEip2929AccountCheck(evm.StateDB, address)
+	accountBalance := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	addressCodeHash := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.GasEip2929AccountCheck(evm.StateDB, address)
+	accountCodehash := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
 		if !evm.StateDB.Empty(address) {
 			return evm.StateDB.GetCodeHash(address), cost
 		}
 		return common.Hash{}, cost
 	}
 	evmBlockHash := func(block common.Hash) common.Hash {
-		return vm.OpBlockHash(evm, block)
+		return vm.BlockHashOp(evm, block.Big())
 	}
 
 	return &goClosures{
@@ -278,8 +278,8 @@ func newApiClosures(
 		create2:         create2,
 		getReturnData:   getReturnData,
 		emitLog:         emitLog,
-		addressBalance:  addressBalance,
-		addressCodeHash: addressCodeHash,
+		accountBalance:  accountBalance,
+		accountCodeHash: accountCodehash,
 		evmBlockHash:    evmBlockHash,
 	}
 }

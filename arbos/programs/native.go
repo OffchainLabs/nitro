@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 type u8 = C.uint8_t
@@ -50,7 +49,8 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	if err == nil {
 		db.SetCompiledWasmCode(program, result, version)
 	} else {
-		log.Debug("compile failure", "err", err.Error(), "data", string(data), "program", program)
+		data := arbutil.ToStringOrHex(data)
+		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
 	}
 	return err
 }
@@ -92,8 +92,8 @@ func callUserWasm(
 	data, err := status.output(returnData)
 
 	if status == userFailure {
-		str := string(returnData)
-		log.Info("program failure", "err", string(data), "program", actingAddress, "returnData", colors.Uncolor(str))
+		str := arbutil.ToStringOrHex(returnData)
+		log.Debug("program failure", "err", string(data), "program", actingAddress, "returnData", str)
 	}
 	return data, err
 }
@@ -212,27 +212,27 @@ func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
 	return apiSuccess
 }
 
-//export addressBalanceImpl
-func addressBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
+//export accountBalanceImpl
+func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
 	closures := getApi(api)
-	value, gas := closures.addressBalance(address.toAddress())
+	balance, gas := closures.accountBalance(address.toAddress())
 	*cost = u64(gas)
-	return hashToBytes32(value)
+	return hashToBytes32(balance)
 }
 
-//export addressCodeHashImpl
-func addressCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
+//export accountCodeHashImpl
+func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
 	closures := getApi(api)
-	value, gas := closures.addressCodeHash(address.toAddress())
+	codehash, gas := closures.accountCodeHash(address.toAddress())
 	*cost = u64(gas)
-	return hashToBytes32(value)
+	return hashToBytes32(codehash)
 }
 
 //export evmBlockHashImpl
 func evmBlockHashImpl(api usize, block bytes32) bytes32 {
 	closures := getApi(api)
-	value := closures.evmBlockHash(block.toHash())
-	return hashToBytes32(value)
+	hash := closures.evmBlockHash(block.toHash())
+	return hashToBytes32(hash)
 }
 
 func (value bytes20) toAddress() common.Address {
@@ -261,10 +261,6 @@ func hashToBytes32(hash common.Hash) bytes32 {
 		value.bytes[index] = u8(b)
 	}
 	return value
-}
-
-func bigToBytes32(big *big.Int) bytes32 {
-	return hashToBytes32(common.BigToHash(big))
 }
 
 func addressToBytes20(addr common.Address) bytes20 {
@@ -316,18 +312,18 @@ func (params *goParams) encode() C.GoParams {
 
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
-		block_basefee:    bigToBytes32(data.block_basefee),
-		block_chainid:    bigToBytes32(data.block_chainid),
-		block_coinbase:   addressToBytes20(data.block_coinbase),
-		block_difficulty: bigToBytes32(data.block_difficulty),
-		block_gas_limit:  C.uint64_t(data.block_gas_limit),
-		block_number:     bigToBytes32(data.block_number),
-		block_timestamp:  bigToBytes32(data.block_timestamp),
-		contract_address: addressToBytes20(data.contract_address),
-		msg_sender:       addressToBytes20(data.msg_sender),
-		msg_value:        bigToBytes32(data.msg_value),
-		tx_gas_price:     bigToBytes32(data.tx_gas_price),
-		tx_origin:        addressToBytes20(data.tx_origin),
+		block_basefee:    hashToBytes32(data.blockBasefee),
+		block_chainid:    hashToBytes32(data.blockChainId),
+		block_coinbase:   addressToBytes20(data.blockCoinbase),
+		block_difficulty: hashToBytes32(data.blockDifficulty),
+		block_gas_limit:  u64(data.blockGasLimit),
+		block_number:     hashToBytes32(data.blockNumber),
+		block_timestamp:  hashToBytes32(data.blockTimestamp),
+		contract_address: addressToBytes20(data.contractAddress),
+		msg_sender:       addressToBytes20(data.msgSender),
+		msg_value:        hashToBytes32(data.msgValue),
+		tx_gas_price:     hashToBytes32(data.txGasPrice),
+		tx_origin:        addressToBytes20(data.txOrigin),
 		return_data_len:  0,
 	}
 }

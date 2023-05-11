@@ -121,36 +121,27 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 }
 
 /// Creates an `EvmData` from its component parts.
-/// go side: λ(block_basefee u32, block_chainid u32, block_coinbase u32, block_difficulty u32,
-///            block_gas_limit u32, block_number u32, block_timestamp u32, contract_address u32,
-///            msg_sender u32, msg_value u32, tx_gas_price u32, tx_origin u32) *EvmData
+/// go side: λ(
+///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
+///     block_gas_limit u64, block_number, block_timestamp *[32]byte, contract_address, msg_sender *[20]byte,
+///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
-    let block_basefee = sp.read_bytes32();
-    let block_chainid = sp.read_bytes32();
-    let block_coinbase = sp.read_bytes20();
-    let block_difficulty = sp.read_bytes32();
-    let block_gas_limit = sp.read_u64();
-    let block_number = sp.read_bytes32();
-    let block_timestamp = sp.read_bytes32();
-    let contract_address = sp.read_bytes20();
-    let msg_sender = sp.read_bytes20();
-    let msg_value = sp.read_bytes32();
-    let tx_gas_price = sp.read_bytes32();
-    let tx_origin = sp.read_bytes20();
-    let evm_data = EvmData::new(
-        block_basefee.into(),
-        block_chainid.into(),
-        block_coinbase.into(),
-        block_difficulty.into(),
-        block_gas_limit.into(),
-        block_number.into(),
-        block_timestamp.into(),
-        contract_address.into(),
-        msg_sender.into(),
-        msg_value.into(),
-        tx_gas_price.into(),
-        tx_origin.into(),
-    );
+    let evm_data = EvmData {
+        block_basefee: sp.read_bytes32().into(),
+        block_chainid: sp.read_bytes32().into(),
+        block_coinbase: sp.read_bytes20().into(),
+        block_difficulty: sp.read_bytes32().into(),
+        block_gas_limit: sp.read_u64(),
+        block_number: sp.read_bytes32().into(),
+        block_timestamp: sp.read_bytes32().into(),
+        contract_address: sp.read_bytes20().into(),
+        msg_sender: sp.read_bytes20().into(),
+        msg_value: sp.read_bytes32().into(),
+        tx_gas_price: sp.read_bytes32().into(),
+        tx_origin: sp.read_bytes20().into(),
+        return_data_len: 0,
+    };
     sp.write_ptr(heapify(evm_data));
 }

@@ -144,11 +144,11 @@ impl EvmApi for TestEvmApi {
         Ok(()) // pretend a log was emitted
     }
 
-    fn address_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+    fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {
         unimplemented!()
     }
 
-    fn address_codehash(&mut self, _address: Bytes20) -> (Bytes32, u64) {
+    fn account_codehash(&mut self, _address: Bytes20) -> (Bytes32, u64) {
         unimplemented!()
     }
 

@@ -201,39 +201,31 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(block_basefee u32, block_chainid u32, block_coinbase u32, block_difficulty u32,
-///           block_gas_limit u32, block_number u32, block_timestamp u32, contract_address u32,
-///           msg_sender u32, msg_value u32, tx_gas_price u32, tx_origin u32) *EvmData
+/// Safety: λ(
+///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
+///     block_gas_limit u64, block_number, block_timestamp *[32]byte, contract_address, msg_sender *[20]byte,
+///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
     sp: usize,
 ) {
+    use wavm::{read_bytes20, read_bytes32};
     let mut sp = GoStack::new(sp);
-    let block_basefee = wavm::read_bytes32(sp.read_go_ptr().into());
-    let block_chainid = wavm::read_bytes32(sp.read_go_ptr().into());
-    let block_coinbase = wavm::read_bytes20(sp.read_go_ptr().into());
-    let block_difficulty = wavm::read_bytes32(sp.read_go_ptr().into());
-    let block_gas_limit = wavm::caller_load64(sp.read_go_ptr().into());
-    let block_number = wavm::read_bytes32(sp.read_go_ptr().into());
-    let block_timestamp = wavm::read_bytes32(sp.read_go_ptr().into());
-    let contract_address = wavm::read_bytes20(sp.read_go_ptr().into());
-    let msg_sender = wavm::read_bytes20(sp.read_go_ptr().into());
-    let msg_value = wavm::read_bytes32(sp.read_go_ptr().into());
-    let tx_gas_price = wavm::read_bytes32(sp.read_go_ptr().into());
-    let tx_origin = wavm::read_bytes20(sp.read_go_ptr());
-    let evm_data = EvmData::new(
-        block_basefee.into(),
-        block_chainid.into(),
-        block_coinbase.into(),
-        block_difficulty.into(),
-        block_gas_limit.into(),
-        block_number.into(),
-        block_timestamp.into(),
-        contract_address.into(),
-        msg_sender.into(),
-        msg_value.into(),
-        tx_gas_price.into(),
-        tx_origin.into(),
-    );
+    let evm_data = EvmData {
+        block_basefee: read_bytes32(sp.read_go_ptr()).into(),
+        block_chainid: read_bytes32(sp.read_go_ptr()).into(),
+        block_coinbase: read_bytes20(sp.read_go_ptr()).into(),
+        block_difficulty: read_bytes32(sp.read_go_ptr()).into(),
+        block_gas_limit: sp.read_u64(),
+        block_number: read_bytes32(sp.read_go_ptr()).into(),
+        block_timestamp: read_bytes32(sp.read_go_ptr()).into(),
+        contract_address: read_bytes20(sp.read_go_ptr()).into(),
+        msg_sender: read_bytes20(sp.read_go_ptr()).into(),
+        msg_value: read_bytes32(sp.read_go_ptr()).into(),
+        tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
+        tx_origin: read_bytes20(sp.read_go_ptr()).into(),
+        return_data_len: 0,
+    };
     sp.write_ptr(heapify(evm_data));
 }

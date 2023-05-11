@@ -7,9 +7,6 @@ pub mod api;
 pub mod js;
 pub mod user;
 
-// vm.GasQuickStep (see gas.go)
-pub const GAS_QUICK_STEP: u64 = 2;
-
 // params.SstoreSentryGasEIP2200
 pub const SSTORE_SENTRY_GAS: u64 = 2300;
 
@@ -20,13 +17,16 @@ pub const LOG_DATA_GAS: u64 = 8;
 // params.CopyGas
 pub const COPY_WORD_GAS: u64 = 3;
 
+// vm.GasQuickStep (see gas.go)
+pub const GAS_QUICK_STEP: u64 = 2;
+
 // vm.GasQuickStep (see jump_table.go)
 pub const ADDRESS_GAS: u64 = GAS_QUICK_STEP;
 
 // vm.GasQuickStep (see eips.go)
 pub const BASEFEE_GAS: u64 = GAS_QUICK_STEP;
 
-// vm.GasExtStep (see api.go)
+// vm.GasExtStep (see jump_table.go)
 pub const BLOCKHASH_GAS: u64 = 20;
 
 // vm.GasQuickStep (see eips.go)
@@ -78,37 +78,4 @@ pub struct EvmData {
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
     pub return_data_len: u32,
-}
-
-impl EvmData {
-    pub fn new(
-        block_basefee: Bytes32,
-        block_chainid: Bytes32,
-        block_coinbase: Bytes20,
-        block_difficulty: Bytes32,
-        block_gas_limit: u64,
-        block_number: Bytes32,
-        block_timestamp: Bytes32,
-        contract_address: Bytes20,
-        msg_sender: Bytes20,
-        msg_value: Bytes32,
-        tx_gas_price: Bytes32,
-        tx_origin: Bytes20,
-    ) -> Self {
-        Self {
-            block_basefee,
-            block_chainid,
-            block_coinbase,
-            block_difficulty,
-            block_gas_limit,
-            block_number,
-            block_timestamp,
-            contract_address,
-            msg_sender,
-            msg_value,
-            tx_gas_price,
-            tx_origin,
-            return_data_len: 0,
-        }
-    }
 }

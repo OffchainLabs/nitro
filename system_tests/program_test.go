@@ -534,95 +534,77 @@ func testEvmData(t *testing.T, jit bool) {
 	result, err := mock.StaticcallProgramWithGas(&opts, evmDataAddr, evmDataGas, evmDataData)
 	Require(t, err)
 
-	checkRemaining := func(name string, dataSize int) {
-		if len(result) < dataSize {
-			Fail(t, "not enough data left", name, dataSize, len(result))
+	advance := func(count int, name string) []byte {
+		if len(result) < count {
+			Fail(t, "not enough data left", name, count, len(result))
 		}
+		data := result[:count]
+		result = result[count:]
+		return data
 	}
-	dropResult := func(dataSize int) {
-		result = result[dataSize:]
-	}
+
 	getU64 := func(name string) uint64 {
-		dataSize := 8
-		checkRemaining(name, dataSize)
-		value := binary.BigEndian.Uint64(result[:dataSize])
-		dropResult(dataSize)
-		return value
+		return binary.BigEndian.Uint64(advance(8, name))
 	}
-	expectU64 := func(name string, expected uint64) {
+	assertU64 := func(name string, expected uint64) {
 		value := getU64(name)
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
 	}
-	expectAddress := func(name string, expected common.Address) {
-		dataSize := 20
-		checkRemaining(name, dataSize)
-		value := common.BytesToAddress(result[:dataSize])
+	assertAddress := func(name string, expected common.Address) {
+		value := common.BytesToAddress(advance(20, name))
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		dropResult(dataSize)
 	}
-	expectHash := func(name string, expected common.Hash) common.Hash {
-		dataSize := 32
-		checkRemaining(name, dataSize)
-		value := common.BytesToHash(result[:dataSize])
+	assertHash := func(name string, expected common.Hash) common.Hash {
+		value := common.BytesToHash(advance(32, name))
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		dropResult(dataSize)
 		return value
 	}
-	expectBigInt := func(name string, expected *big.Int) {
-		dataSize := 32
-		checkRemaining(name, dataSize)
-		value := new(big.Int).SetBytes(result[:dataSize])
-		if !arbmath.BigEquals(value, expected) {
-			Fail(t, "mismatch", name, value, expected)
-		}
-		dropResult(dataSize)
+	assertBigInt := func(name string, expected *big.Int) {
+		assertHash(name, common.BigToHash(expected))
 	}
-	expectBigIntGreaterThanOrEqual := func(name string, expected *big.Int) {
-		dataSize := 32
-		checkRemaining(name, dataSize)
-		value := new(big.Int).SetBytes(result[:dataSize])
+	assertBigIntAtLeast := func(name string, expected *big.Int) {
+		value := new(big.Int).SetBytes(advance(32, name))
 		if !arbmath.BigGreaterThanOrEqual(value, expected) {
 			Fail(t, "mismatch", name, value, expected)
 		}
-		dropResult(dataSize)
 	}
 
 	selectedBlockNumber := big.NewInt(4)
 	expectedBalance, err := l2client.BalanceAt(ctx, fundedAccount, selectedBlockNumber)
 	Require(t, err)
-	expectBigInt("address balance", expectedBalance)
-	expectBigInt("eth precompile code hash", big.NewInt(0))
+	assertBigInt("address balance", expectedBalance)
+	assertBigInt("eth precompile code hash", big.NewInt(0))
 	arbPrecompileCode, err := l2client.CodeAt(ctx, arbTestAddress, selectedBlockNumber)
 	Require(t, err)
 	arbPrecompileHash := crypto.Keccak256Hash(arbPrecompileCode)
-	expectHash("arb precompile code hash", arbPrecompileHash)
+	assertHash("arb precompile code hash", arbPrecompileHash)
 	contractCode, err := l2client.CodeAt(ctx, evmDataAddr, selectedBlockNumber)
 	Require(t, err)
 	contractHash := crypto.Keccak256Hash(contractCode)
-	expectHash("contract code hash", contractHash)
+	assertHash("contract code hash", contractHash)
 	selectedBlock, err := l2client.BlockByNumber(ctx, selectedBlockNumber)
 	Require(t, err)
-	expectHash("blockhash", common.HexToHash("0x88380104c7132464d7fdc735df32ebd023a4a0ca477379ee10a938bd70c04486"))
-	expectBigInt("base fee", big.NewInt(100000000))
+	assertHash("blockhash", common.HexToHash("0x88380104c7132464d7fdc735df32ebd023a4a0ca477379ee10a938bd70c04486"))
+	assertBigInt("base fee", big.NewInt(100000000))
 	expectedChainid, err := l2client.ChainID(ctx)
 	Require(t, err)
-	expectBigInt("chainid", expectedChainid)
-	expectAddress("coinbase", selectedBlock.Coinbase())
-	expectBigInt("difficulty", big.NewInt(1))
-	expectU64("block gas limit", selectedBlock.GasLimit())
-	expectBigIntGreaterThanOrEqual("block number", selectedBlock.Number())
-	expectBigIntGreaterThanOrEqual("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
-	expectAddress("contract address", evmDataAddr)
-	expectAddress("sender", mockAddr)
-	expectBigInt("value", big.NewInt(0))
-	expectAddress("origin", opts.From)
-	expectBigInt("gas price", big.NewInt(0))
+	assertBigInt("chainid", expectedChainid)
+	assertAddress("coinbase", selectedBlock.Coinbase())
+	assertBigInt("difficulty", big.NewInt(1))
+	assertU64("block gas limit", selectedBlock.GasLimit())
+	assertBigIntAtLeast("block number", selectedBlock.Number())
+	assertBigIntAtLeast("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
+	assertAddress("contract address", evmDataAddr)
+	assertAddress("sender", mockAddr)
+	assertBigInt("value", big.NewInt(0))
+	assertAddress("origin", opts.From)
+	assertBigInt("gas price", big.NewInt(0))
 	inkPrice := getU64("ink price")
 	gasLeftBefore := getU64("gas left before")
 	inkLeftBefore := getU64("ink left before")

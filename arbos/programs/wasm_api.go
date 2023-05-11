@@ -183,12 +183,12 @@ func newApi(
 	})
 	addressBalance := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
-		value, cost := closures.addressBalance(address)
+		value, cost := closures.accountBalance(address)
 		return write(stylus, value, cost)
 	})
 	addressCodeHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
-		value, cost := closures.addressCodeHash(address)
+		value, cost := closures.accountCodeHash(address)
 		return write(stylus, value, cost)
 	})
 	evmBlockHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {

@@ -13,12 +13,12 @@ use eyre::{ErrReport, Result};
 
 #[repr(C)]
 pub struct GoEvmApi {
-    pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, evm_cost: *mut u64) -> Bytes32, // value
+    pub get_bytes32: unsafe extern "C" fn(id: usize, key: Bytes32, gas_cost: *mut u64) -> Bytes32, // value
     pub set_bytes32: unsafe extern "C" fn(
         id: usize,
         key: Bytes32,
         value: Bytes32,
-        evm_cost: *mut u64,
+        gas_cost: *mut u64,
         error: *mut RustVec,
     ) -> EvmApiStatus,
     pub contract_call: unsafe extern "C" fn(
@@ -60,11 +60,11 @@ pub struct GoEvmApi {
     ) -> EvmApiStatus,
     pub get_return_data: unsafe extern "C" fn(id: usize, output: *mut RustVec),
     pub emit_log: unsafe extern "C" fn(id: usize, data: *mut RustVec, topics: u32) -> EvmApiStatus,
-    pub address_balance:
-        unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
-    pub address_codehash:
-        unsafe extern "C" fn(id: usize, address: Bytes20, evm_cost: *mut u64) -> Bytes32, // value
-    pub evm_blockhash: unsafe extern "C" fn(id: usize, num: Bytes32) -> Bytes32, // value
+    pub account_balance:
+        unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // balance
+    pub account_codehash:
+        unsafe extern "C" fn(id: usize, address: Bytes20, gas_cost: *mut u64) -> Bytes32, // codehash
+    pub evm_blockhash: unsafe extern "C" fn(id: usize, number: Bytes32) -> Bytes32, // hash
     pub id: usize,
 }
 
@@ -234,20 +234,19 @@ impl EvmApi for GoEvmApi {
         }
     }
 
-    fn address_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let mut cost = 0;
-        let value = call!(self, address_balance, address, ptr!(cost));
+        let value = call!(self, account_balance, address, ptr!(cost));
         (value, cost)
     }
 
-    fn address_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let mut cost = 0;
-        let value = call!(self, address_codehash, address, ptr!(cost));
+        let value = call!(self, account_codehash, address, ptr!(cost));
         (value, cost)
     }
 
     fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32 {
-        let value = call!(self, evm_blockhash, num);
-        value
+        call!(self, evm_blockhash, num)
     }
 }
