@@ -136,7 +136,7 @@ func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
 	if currentBlock == nil {
 		return nil, errors.New("failed to get current block")
 	}
-	return currentBlock.Header(), nil
+	return currentBlock, nil
 }
 
 func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
@@ -443,17 +443,20 @@ func (s *ExecutionEngine) MessageCountToBlockNumber(messageNum arbutil.MessageIn
 
 // must hold createBlockMutex
 func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
-	currentBlock := s.bc.CurrentBlock()
-	if currentBlock == nil {
-		return nil, nil, nil, errors.New("failed to get current block")
+	currentHeader := s.bc.CurrentBlock()
+	if currentHeader == nil {
+		return nil, nil, nil, errors.New("failed to get current block header")
+	}
+
+	currentBlock := s.bc.GetBlock(currentHeader.Hash(), currentHeader.Number.Uint64())
+	if currentBlock != nil {
+		return nil, nil, nil, errors.New("can't find block for current header")
 	}
 
 	err := s.bc.RecoverState(currentBlock)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to recover block %v state: %w", currentBlock.Number(), err)
 	}
-
-	currentHeader := currentBlock.Header()
 
 	statedb, err := s.bc.StateAt(currentHeader.Root)
 	if err != nil {
