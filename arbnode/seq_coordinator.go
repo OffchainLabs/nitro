@@ -591,6 +591,13 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		messages = append(messages, message)
 		msgToRead++
 	}
+	if len(messages) > 0 {
+		if err := c.streamer.AddMessages(localMsgCount, false, messages); err != nil {
+			log.Warn("coordinator failed to add messages", "err", err, "pos", localMsgCount, "length", len(messages))
+		} else {
+			localMsgCount = msgToRead
+		}
+	}
 
 	if c.config.MyUrl() == redisutil.INVALID_URL {
 		return c.noRedisError()
