@@ -159,8 +159,8 @@ if $dev_build_blockscout; then
   fi
 fi
 
-NODES="validation-node sequencer"
-INITIAL_SEQ_NODES="validation-node sequencer"
+NODES="sequencer"
+INITIAL_SEQ_NODES="sequencer"
 
 if [ $redundantsequencers -gt 0 ]; then
     NODES="$NODES sequencer_b"
@@ -185,7 +185,7 @@ fi
 
 
 if $validate; then
-    NODES="$NODES validator"
+    NODES="$NODES validator validation_node"
 else
     NODES="$NODES staker-unsafe"
 fi
