@@ -580,7 +580,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
 	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stack)
@@ -685,7 +685,7 @@ func CreateTestL2WithConfig(
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(stack, chainDb, blockchain, nil, execConfigFetcher)
+	execNode, err := gethexec.CreateExecutionNode(ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)
 
 	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), stack)
@@ -817,7 +817,7 @@ func Create2ndNodeWithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	configFetcher := func() *gethexec.Config { return execConfig }
-	currentExec, err := gethexec.CreateExecutionNode(l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
+	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
 	execclient := execclient.NewClient(StaticFetcherFrom[*rpcclient.ClientConfig](&rpcclient.TestClientConfig), l2stack)

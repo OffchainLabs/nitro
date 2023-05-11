@@ -363,7 +363,11 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
-		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
+		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
+		if err != nil {
+			log.Crit("failed to get L1 headerreader", "error", err)
+
+		}
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
@@ -458,6 +462,7 @@ func mainImpl() int {
 	}
 
 	execNode, err := gethexec.CreateExecutionNode(
+		ctx,
 		stack,
 		chainDb,
 		l2BlockChain,
