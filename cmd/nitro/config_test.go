@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/cmd/util/nodehelpers"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -105,7 +105,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
@@ -186,7 +186,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
@@ -217,14 +217,14 @@ func WriteToConfigFile(path string, jsonConfig string) error {
 	return os.WriteFile(path, []byte(jsonConfig), 0600)
 }
 
-func PollLiveConfigUntilEqual(liveConfig *nodehelpers.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
+func PollLiveConfigUntilEqual(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
 	return PollLiveConfig(liveConfig, expected, true)
 }
-func PollLiveConfigUntilNotEqual(liveConfig *nodehelpers.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
+func PollLiveConfigUntilNotEqual(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig) bool {
 	return PollLiveConfig(liveConfig, expected, false)
 }
 
-func PollLiveConfig(liveConfig *nodehelpers.LiveConfig[*NodeConfig], expected *NodeConfig, equal bool) bool {
+func PollLiveConfig(liveConfig *genericconf.LiveConfig[*NodeConfig], expected *NodeConfig, equal bool) bool {
 	for i := 0; i < 16; i++ {
 		if reflect.DeepEqual(liveConfig.Get(), expected) == equal {
 			return true

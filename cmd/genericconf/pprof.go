@@ -1,4 +1,4 @@
-package nodehelpers
+package genericconf
 
 import (
 	"fmt"

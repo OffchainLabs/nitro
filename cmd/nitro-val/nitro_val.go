@@ -19,8 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/cmd/util/nodehelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
@@ -64,14 +64,14 @@ func mainImpl() int {
 		}
 	}
 
-	err = nodehelpers.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.Chain))
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.Chain))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := pathResolver(nodeConfig.Persistent.Chain)("jwtsecret")
-		if err := nodehelpers.TryCreatingJWTSecret(filename); err != nil {
+		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
 		}
@@ -80,10 +80,10 @@ func mainImpl() int {
 
 	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
 
-	liveNodeConfig := nodehelpers.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, stackConf.ResolvePath, ParseNode)
+	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, stackConf.ResolvePath, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
 		dataDir := newCfg.Persistent.Chain
-		return nodehelpers.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(dataDir))
+		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(dataDir))
 	})
 	stack, err := node.New(&stackConf)
 	if err != nil {
@@ -97,7 +97,7 @@ func mainImpl() int {
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
 			if nodeConfig.MetricsServer.Pprof {
-				nodehelpers.StartPprof(address)
+				genericconf.StartPprof(address)
 			} else {
 				exp.Setup(address)
 			}

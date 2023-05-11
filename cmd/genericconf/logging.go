@@ -1,4 +1,4 @@
-package nodehelpers
+package genericconf
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -20,7 +19,7 @@ type fileHandlerFactory struct {
 }
 
 // newHandler is not threadsafe
-func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericconf.FileLoggingConfig, pathResolver func(string) string) log.Handler {
+func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *FileLoggingConfig, pathResolver func(string) string) log.Handler {
 	l.close()
 	l.writer = &lumberjack.Logger{
 		Filename:   pathResolver(config.File),
@@ -77,8 +76,8 @@ func (l *fileHandlerFactory) close() error {
 }
 
 // initLog is not threadsafe
-func InitLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig, pathResolver func(string) string) error {
-	logFormat, err := genericconf.ParseLogType(logType)
+func InitLog(logType string, logLevel log.Lvl, fileLoggingConfig *FileLoggingConfig, pathResolver func(string) string) error {
+	logFormat, err := ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
 		return fmt.Errorf("error parsing log type: %w", err)

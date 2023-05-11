@@ -44,7 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/cmd/util/nodehelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -149,7 +148,7 @@ func mainImpl() int {
 
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
 		filename := stackConf.ResolvePath("jwtsecret")
-		if err := nodehelpers.TryCreatingJWTSecret(filename); err != nil {
+		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
 		}
@@ -165,7 +164,7 @@ func mainImpl() int {
 		nodeConfig.Node.BlockValidator.URL = fmt.Sprintf("ws://%s:%d", stackConf.AuthAddr, stackConf.AuthPort)
 	}
 
-	err = nodehelpers.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -240,7 +239,7 @@ func mainImpl() int {
 		}
 	}
 
-	liveNodeConfig := nodehelpers.NewLiveConfig[*NodeConfig](args, nodeConfig, stackConf.ResolvePath, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, stackConf.ResolvePath, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
@@ -324,7 +323,7 @@ func mainImpl() int {
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
 			if nodeConfig.MetricsServer.Pprof {
-				nodehelpers.StartPprof(address)
+				genericconf.StartPprof(address)
 			} else {
 				exp.Setup(address)
 			}
@@ -815,7 +814,7 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 }
 
 type NodeConfigFetcher struct {
-	*nodehelpers.LiveConfig[*NodeConfig]
+	*genericconf.LiveConfig[*NodeConfig]
 }
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {

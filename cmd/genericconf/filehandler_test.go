@@ -1,4 +1,4 @@
-package nodehelpers
+package genericconf
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -69,7 +68,7 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	testDir := t.TempDir()
 	testFileName := "test-file"
 	testFile := filepath.Join(testDir, testFileName)
-	config := genericconf.DefaultFileLoggingConfig
+	config := DefaultFileLoggingConfig
 	config.MaxSize = 1
 	config.Compress = testCompressed
 	config.File = testFile
