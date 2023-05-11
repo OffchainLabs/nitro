@@ -268,10 +268,6 @@ func mainImpl() int {
 		stackConf.JWTSecret = fileName
 	}
 
-	if nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret == "self" {
-		nodeConfig.Node.BlockValidator.ValidationServer.JWTSecret = stackConf.JWTSecret
-	}
-
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
