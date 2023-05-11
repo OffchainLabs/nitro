@@ -19,10 +19,10 @@ type fileHandlerFactory struct {
 }
 
 // newHandler is not threadsafe
-func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *FileLoggingConfig, pathResolver func(string) string) log.Handler {
+func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *FileLoggingConfig, filename string) log.Handler {
 	l.close()
 	l.writer = &lumberjack.Logger{
-		Filename:   pathResolver(config.File),
+		Filename:   filename,
 		MaxSize:    config.MaxSize,
 		MaxBackups: config.MaxBackups,
 		MaxAge:     config.MaxAge,
@@ -92,7 +92,7 @@ func InitLog(logType string, logLevel log.Lvl, fileLoggingConfig *FileLoggingCon
 			log.MultiHandler(
 				log.StreamHandler(os.Stderr, logFormat),
 				// on overflow records are dropped silently as MultiHandler ignores errors
-				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig, pathResolver),
+				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig, pathResolver(fileLoggingConfig.File)),
 			))
 	} else {
 		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
