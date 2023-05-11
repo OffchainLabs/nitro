@@ -60,7 +60,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	bpVerifier                     *contracts.BatchPosterVerifier
+	addrVerifier                   *contracts.AddressVerifier
 }
 
 type ServiceDetails struct {
@@ -153,9 +153,9 @@ func NewAggregatorWithSeqInboxCaller(
 		os.Exit(0)
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
+	var addrVerifier *contracts.AddressVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	return &Aggregator{
@@ -166,7 +166,7 @@ func NewAggregatorWithSeqInboxCaller(
 		maxAllowedServiceStoreFailures: config.AggregatorConfig.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
-		bpVerifier:                     bpVerifier,
+		addrVerifier:                   addrVerifier,
 	}, nil
 }
 
@@ -196,16 +196,16 @@ type storeResponse struct {
 // signature is not checked, which is useful for testing.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
-	if a.bpVerifier != nil {
+	if a.addrVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := a.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		isBatchPosterOrSequencer, err := a.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}
-		if !isBatchPoster {
+		if !isBatchPosterOrSequencer {
 			return nil, errors.New("store request not properly signed")
 		}
 	}

@@ -78,7 +78,7 @@ type SignAfterStoreDASWriter struct {
 	keysetHash     [32]byte
 	keysetBytes    []byte
 	storageService StorageService
-	bpVerifier     *contracts.BatchPosterVerifier
+	addrVerifier   *contracts.AddressVerifier
 
 	// Extra batch poster verifier, for local installations to have their
 	// own way of testing Stores.
@@ -136,9 +136,9 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
+	var addrVerifier *contracts.AddressVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	var extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
@@ -174,7 +174,7 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		keysetHash:      ksHash,
 		keysetBytes:     ksBuf.Bytes(),
 		storageService:  storageService,
-		bpVerifier:      bpVerifier,
+		addrVerifier:    addrVerifier,
 		extraBpVerifier: extraBpVerifier,
 	}, nil
 }
@@ -188,16 +188,16 @@ func (d *SignAfterStoreDASWriter) Store(
 		verified = d.extraBpVerifier(message, timeout, sig)
 	}
 
-	if !verified && d.bpVerifier != nil {
+	if !verified && d.addrVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := d.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		isBatchPosterOrSequencer, err := d.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}
-		if !isBatchPoster {
+		if !isBatchPosterOrSequencer {
 			return nil, errors.New("store request not properly signed")
 		}
 	}

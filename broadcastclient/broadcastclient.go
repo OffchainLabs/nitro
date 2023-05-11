@@ -152,10 +152,10 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	confirmedSequencerNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
-	bpVerifier contracts.BatchPosterVerifierInterface,
+	addrVerifier contracts.AddressVerifierInterface,
 	adjustCount func(int32),
 ) (*BroadcastClient, error) {
-	sigVerifier, err := signature.NewVerifier(&config().Verifier, bpVerifier)
+	sigVerifier, err := signature.NewVerifier(&config().Verifier, addrVerifier)
 	if err != nil {
 		return nil, err
 	}
