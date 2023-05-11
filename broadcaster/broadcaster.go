@@ -161,8 +161,3 @@ func (b *Broadcaster) StopAndWait() {
 func (b *Broadcaster) Started() bool {
 	return b.server.Started()
 }
-
-// Not thread safe
-func (b *Broadcaster) PopulateBacklog(messages []*BroadcastFeedMessage) {
-	b.catchupBuffer.Reset(messages)
-}

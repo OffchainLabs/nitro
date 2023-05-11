@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -592,30 +591,6 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		messages = append(messages, message)
 		msgToRead++
 	}
-	if len(messages) > 0 {
-		startMessageCount := localMsgCount
-		if err := c.streamer.AddMessages(startMessageCount, false, messages); err != nil {
-			log.Warn("coordinator failed to add messages", "err", err, "pos", startMessageCount, "length", len(messages))
-		} else {
-			localMsgCount = msgToRead
-		}
-		if c.streamer.broadcastServer != nil {
-			broadcastServer := c.streamer.broadcastServer
-			var feedMessages []*broadcaster.BroadcastFeedMessage
-			for i, msg := range messages {
-				pos := startMessageCount + arbutil.MessageIndex(i)
-				msg, err := broadcastServer.NewBroadcastFeedMessage(msg, pos)
-				if err != nil {
-					log.Error("failed to create broadcast feed message from redis message", "pos", pos, "msg", msg)
-					break
-				}
-				feedMessages = append(feedMessages, msg)
-			}
-			if len(feedMessages) > 0 {
-				broadcastServer.BroadcastFeedMessages(feedMessages)
-			}
-		}
-	}
 
 	if c.config.MyUrl() == redisutil.INVALID_URL {
 		return c.noRedisError()
@@ -663,6 +638,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 				if err != nil {
 					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
 				}
+			}
+			err = c.streamer.PopulateFeedBacklog()
+			if err != nil {
+				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)
 			}
 			c.sequencer.Activate()
 			c.prevChosenSequencer = c.config.MyUrl()
