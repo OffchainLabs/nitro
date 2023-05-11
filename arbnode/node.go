@@ -303,7 +303,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
-	l1Reader := headerreader.New(l1client, readerConfig)
+	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
+	if err != nil {
+		return nil, err
+	}
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
@@ -632,7 +635,10 @@ func createNodeImpl(
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var broadcastServer *broadcaster.Broadcaster

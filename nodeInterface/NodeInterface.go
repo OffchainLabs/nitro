@@ -158,9 +158,14 @@ func (n NodeInterface) EstimateRetryableTicket(
 
 	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
 	msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
+	if err != nil {
+		return err
+	}
+
+	msg.TxRunMode = types.MessageGasEstimationMode
 	*n.returnMessage.message = msg
 	*n.returnMessage.changed = true
-	return err
+	return nil
 }
 
 func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) (bytes32, bytes32, []bytes32, error) {
@@ -168,10 +173,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	hash0 := bytes32{}
 
 	currentBlock := n.backend.CurrentBlock()
-	currentBlockInfo, err := types.DeserializeHeaderExtraInformation(currentBlock.Header())
-	if err != nil {
-		return hash0, hash0, nil, err
-	}
+	currentBlockInfo := types.DeserializeHeaderExtraInformation(currentBlock.Header())
 	if leaf > currentBlockInfo.SendCount {
 		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
@@ -277,11 +279,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 			return
 		}
 
-		info, err := types.DeserializeHeaderExtraInformation(block.Header())
-		if err != nil {
-			searchErr = err
-			return
-		}
+		info := types.DeserializeHeaderExtraInformation(block.Header())
 
 		// Figure out which elements are above and below the midpoint
 		//   lower includes leaves older than the midpoint
@@ -462,7 +460,8 @@ func (n NodeInterface) GasEstimateL1Component(
 	randomGas := l1pricing.RandomGas
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
-	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB))
+	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
+	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB), types.MessageEthcallMode)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -511,9 +510,10 @@ func (n NodeInterface) GasEstimateComponents(
 
 	pricing := c.State.L1PricingState()
 
-	// Setting the gas will affect the poster data cost
+	// Setting the gas currently doesn't affect the PosterDataCost,
+	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB), types.MessageGasEstimationMode)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -529,10 +529,7 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	// Compute the fee paid for L1 in L2 terms
-	//   See in GasChargingHook that this does not induce truncation error
-	//
-	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
-	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
+	gasForL1 := arbos.GetPosterGas(c.State, baseFee, types.MessageGasEstimationMode, feeForL1)
 
 	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }
