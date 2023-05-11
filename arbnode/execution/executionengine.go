@@ -485,10 +485,7 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*MessageResult
 	if header == nil {
 		return nil, fmt.Errorf("result not found")
 	}
-	info, err := types.DeserializeHeaderExtraInformation(header)
-	if err != nil {
-		return nil, err
-	}
+	info := types.DeserializeHeaderExtraInformation(header)
 	return &MessageResult{header.Hash(), info.SendRoot}, nil
 }
 
