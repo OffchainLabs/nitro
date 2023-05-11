@@ -16,10 +16,7 @@ func CorrespondingL1BlockNumber(ctx context.Context, client L1Interface, blockNu
 	if err != nil {
 		return 0, fmt.Errorf("error getting L1 block number %d header : %w", blockNumber, err)
 	}
-	headerInfo, err := types.DeserializeHeaderExtraInformation(header)
-	if err != nil {
-		return 0, fmt.Errorf("error deserializeing header extra information for L1 block number %d : %w", blockNumber, err)
-	}
+	headerInfo := types.DeserializeHeaderExtraInformation(header)
 	if headerInfo.L1BlockNumber != 0 {
 		return headerInfo.L1BlockNumber, nil
 	} else {
