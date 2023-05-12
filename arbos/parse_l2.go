@@ -17,9 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
-type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
-
-func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
+func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int) (types.Transactions, error) {
 	if len(msg.L2msg) > arbostypes.MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -71,7 +69,7 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, ba
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
 	case arbostypes.L1MessageType_BatchPostingReport:
-		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchGasCost, batchFetcher)
+		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchGasCost)
 		if err != nil {
 			return nil, err
 		}
@@ -369,8 +367,8 @@ func parseSubmitRetryableMessage(rd io.Reader, header *arbostypes.L1IncomingMess
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
-	batchTimestamp, batchPosterAddr, batchHash, batchNum, l1BaseFee, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64) (*types.Transaction, error) {
+	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, err := arbostypes.ParseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -378,8 +376,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 	if msgBatchGasCost != nil {
 		batchDataGas = *msgBatchGasCost
 	} else {
-		batchData := batchFetcher(batchNum, batchHash)
-		batchDataGas = arbostypes.ComputeBatchGasCost(batchData)
+		return nil, errors.New("cannot compute batch gas cost")
 	}
 
 	data, err := util.PackInternalTxDataBatchPostingReport(

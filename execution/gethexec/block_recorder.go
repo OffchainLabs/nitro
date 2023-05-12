@@ -131,6 +131,10 @@ func (r *BlockRecorder) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbos
 			// Re-fetch the batch instead of using our cached cost,
 			// as the replay binary won't have the cache populated.
 			msg.Message.BatchGasCost = nil
+			err := msg.Message.FillInBatchGasCost(batchFetcher)
+			if err != nil {
+				return nil, err
+			}
 			block, _, err := arbos.ProduceBlock(
 				msg.Message,
 				msg.DelayedMessagesRead,
@@ -138,7 +142,6 @@ func (r *BlockRecorder) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbos
 				recordingdb,
 				chaincontext,
 				chainConfig,
-				batchFetcher,
 			)
 			if err != nil {
 				return nil, err
