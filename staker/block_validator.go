@@ -419,25 +419,6 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	)
 }
 
-func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, arbutil.MessageIndex, error) {
-	batchCount, err := v.inboxTracker.GetBatchCount()
-	if err != nil {
-		return false, nil, 0, err
-	}
-	if batchCount < batchNum {
-		return false, nil, 0, nil
-	}
-	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
-	if err != nil {
-		return false, nil, 0, err
-	}
-	batch, err := v.inboxReader.GetSequencerMessageBytes(batchNum).Await(ctx)
-	if err != nil {
-		return false, nil, 0, err
-	}
-	return true, batch, batchMsgCount, nil
-}
-
 func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, error) {
 	v.reorgMutex.RLock()
 	defer v.reorgMutex.RUnlock()
