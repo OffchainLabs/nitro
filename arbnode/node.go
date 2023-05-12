@@ -1187,10 +1187,6 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte] {
-	return n.InboxReader.GetSequencerMessageBytes(batchNum)
-}
-
 func (n *Node) FindL1BatchForMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return containers.NewReadyPromise[uint64](n.InboxTracker.FindL1BatchForMessage(message))
 }

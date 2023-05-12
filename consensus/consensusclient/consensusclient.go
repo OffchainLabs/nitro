@@ -42,17 +42,6 @@ func convertError(err error) error {
 	return err
 }
 
-func (c *Client) FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte] {
-	return stopwaiter.LaunchPromiseThread[[]byte](c, func(ctx context.Context) ([]byte, error) {
-		var res []byte
-		err := c.client.CallContext(ctx, &res, consensus.RPCNamespace+"_fetchBatch", batchNum)
-		if err != nil {
-			return nil, convertError(err)
-		}
-		return res, nil
-	})
-}
-
 func (c *Client) FindL1BatchForMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64] {
 	return stopwaiter.LaunchPromiseThread[uint64](c, func(ctx context.Context) (uint64, error) {
 		var res uint64

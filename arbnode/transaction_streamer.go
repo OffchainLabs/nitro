@@ -348,7 +348,16 @@ func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostyp
 	if err != nil {
 		return nil, err
 	}
-
+	err = message.Message.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+		ctx, err := s.GetContextSafe()
+		if err != nil {
+			return nil, err
+		}
+		return s.inboxReader.GetSequencerMessageBytes(batchNum).Await(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &message, nil
 }
 
