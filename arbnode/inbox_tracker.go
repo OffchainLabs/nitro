@@ -92,13 +92,6 @@ func (t *InboxTracker) Initialize() error {
 		return err
 	}
 
-	if t.txStreamer.broadcastServer != nil {
-		err = t.populateFeedBacklog(t.txStreamer.broadcastServer)
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -203,7 +196,7 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) populateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
+func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
 		return fmt.Errorf("error getting batch count: %w", err)
@@ -235,7 +228,7 @@ func (t *InboxTracker) populateFeedBacklog(broadcastServer *broadcaster.Broadcas
 		}
 		feedMessages = append(feedMessages, feedMessage)
 	}
-	broadcastServer.PopulateBacklog(feedMessages)
+	broadcastServer.BroadcastFeedMessages(feedMessages)
 	return nil
 }
 
