@@ -1043,6 +1043,8 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	// config is the static config at start, not a dynamic config
+	config := n.configFetcher.Get()
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.Execution.ArbInterface.Initialize(n)
 	err := n.Stack.Start()
@@ -1067,6 +1069,14 @@ func (n *Node) Start(ctx context.Context) error {
 		err = n.BroadcastServer.Initialize()
 		if err != nil {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
+		}
+	}
+	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer.Enable && !config.SeqCoordinator.Enable {
+		// Normally, the sequencer would populate the feed backlog when it acquires the lockout.
+		// However, if the sequencer coordinator is not enabled, we must populate the backlog on startup.
+		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
+		if err != nil {
+			return fmt.Errorf("error populating feed backlog on startup: %w", err)
 		}
 	}
 	err = n.TxStreamer.Start(ctx)
