@@ -55,22 +55,28 @@ func mainImpl() int {
 	vcsRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = vcsRevision
 
-	pathResolver := func(dataDir string) func(string) string {
+	pathResolver := func(workdir string) func(string) string {
+		if workdir == "" {
+			workdir, err = os.Getwd()
+			if err != nil {
+				log.Warn("Failed to get workdir", "err", err)
+			}
+		}
 		return func(path string) string {
 			if filepath.IsAbs(path) {
 				return path
 			}
-			return filepath.Join(dataDir, path)
+			return filepath.Join(workdir, path)
 		}
 	}
 
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.Chain))
+	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Workdir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
 	}
 	if stackConf.JWTSecret == "" && stackConf.AuthAddr != "" {
-		filename := pathResolver(nodeConfig.Persistent.Chain)("jwtsecret")
+		filename := pathResolver(nodeConfig.Workdir)("jwtsecret")
 		if err := genericconf.TryCreatingJWTSecret(filename); err != nil {
 			log.Error("Failed to prepare jwt secret file", "err", err)
 			return 1
@@ -80,10 +86,10 @@ func mainImpl() int {
 
 	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
 
-	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, stackConf.ResolvePath, ParseNode)
+	liveNodeConfig := genericconf.NewLiveConfig[*ValidationNodeConfig](args, nodeConfig, ParseNode)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *ValidationNodeConfig, newCfg *ValidationNodeConfig) error {
-		dataDir := newCfg.Persistent.Chain
-		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(dataDir))
+
+		return genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(newCfg.Workdir))
 	})
 	stack, err := node.New(&stackConf)
 	if err != nil {

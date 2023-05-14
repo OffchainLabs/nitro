@@ -239,7 +239,7 @@ func mainImpl() int {
 		}
 	}
 
-	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, stackConf.ResolvePath, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
@@ -368,6 +368,9 @@ func mainImpl() int {
 		return 1
 	}
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, stackConf.ResolvePath); err != nil {
+			return fmt.Errorf("failed to re-init logging: %w", err)
+		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 

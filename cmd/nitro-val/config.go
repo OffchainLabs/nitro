@@ -30,6 +30,7 @@ type ValidationNodeConfig struct {
 	AuthRPC       genericconf.AuthRPCConfig       `koanf:"auth"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Workdir       string                          `koanf:"workdir" reload:"hot"`
 }
 
 var ValidationNodeConfigDefault = ValidationNodeConfig{
@@ -42,6 +43,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Workdir:       "",
 }
 
 func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
@@ -57,6 +59,7 @@ func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.AuthRPCConfigAddOptions("auth", f)
 	f.Bool("metrics", ValidationNodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	f.String("workdir", ValidationNodeConfigDefault.Workdir, "path used for purpose of resolving relative paths (ia. jwt secret file, log files), if empty then current working directory will be used.")
 }
 
 func (c *ValidationNodeConfig) ResolveDirectoryNames() error {

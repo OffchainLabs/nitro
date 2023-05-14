@@ -31,7 +31,6 @@ type LiveConfig[T ConfigConstrain[T]] struct {
 	mutex        sync.RWMutex
 	args         []string
 	config       T
-	pathResolver func(string) string
 	onReloadHook OnReloadHook[T]
 	parse        ConfigParseFunction[T]
 }
@@ -104,11 +103,10 @@ func (c *LiveConfig[T]) SetOnReloadHook(hook OnReloadHook[T]) {
 	c.onReloadHook = hook
 }
 
-func NewLiveConfig[T ConfigConstrain[T]](args []string, config T, pathResolver func(string) string, parse ConfigParseFunction[T]) *LiveConfig[T] {
+func NewLiveConfig[T ConfigConstrain[T]](args []string, config T, parse ConfigParseFunction[T]) *LiveConfig[T] {
 	return &LiveConfig[T]{
 		args:         args,
 		config:       config,
-		pathResolver: pathResolver,
 		onReloadHook: NoopOnReloadHook[T],
 		parse:        parse,
 	}

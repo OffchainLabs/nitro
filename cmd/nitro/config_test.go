@@ -105,7 +105,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
@@ -186,7 +186,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(path string) string { return path }, func(ctx context.Context, args []string) (*NodeConfig, error) {
+	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
 		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
