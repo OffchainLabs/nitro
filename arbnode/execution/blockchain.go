@@ -150,7 +150,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	if height == nil {
 		return errors.New("non empty chain config but empty chain")
 	}
-	err := storedConfig.CheckCompatible(config, *height)
+	err := storedConfig.CheckCompatible(config, *height, 0)
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 		EnablePreimageRecording: false,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, serializedChainConfig []byte, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {

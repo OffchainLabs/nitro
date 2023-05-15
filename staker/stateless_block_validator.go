@@ -181,20 +181,14 @@ func (v *validationEntry) start() (validator.GoGlobalState, error) {
 		BlockHash:  v.PrevBlockHash,
 	}
 	if v.PrevBlockHeader != nil {
-		prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
-		if err != nil {
-			return validator.GoGlobalState{}, err
-		}
+		prevExtraInfo := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
 		globalState.SendRoot = prevExtraInfo.SendRoot
 	}
 	return globalState, nil
 }
 
 func (v *validationEntry) expectedEnd() (validator.GoGlobalState, error) {
-	extraInfo, err := types.DeserializeHeaderExtraInformation(v.BlockHeader)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
+	extraInfo := types.DeserializeHeaderExtraInformation(v.BlockHeader)
 	end := v.EndPosition
 	return validator.GoGlobalState{
 		Batch:      end.BatchNumber,
@@ -287,13 +281,12 @@ func NewStatelessBlockValidator(
 	if err != nil {
 		return nil, err
 	}
-	var jwt []byte
+	var jwt *common.Hash
 	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
+		jwt, err = signature.LoadSigningKey(config.JWTSecret)
 		if err != nil {
 			return nil, err
 		}
-		jwt = jwtHash.Bytes()
 	}
 	valClient := server_api.NewValidationClient(config.URL, jwt)
 	execClient := server_api.NewExecutionClient(config.URL, jwt)

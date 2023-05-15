@@ -805,6 +805,13 @@ func (s *TransactionStreamer) ResumeReorgs() {
 	s.reorgMutex.RUnlock()
 }
 
+func (s *TransactionStreamer) PopulateFeedBacklog() error {
+	if s.broadcastServer == nil {
+		return nil
+	}
+	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
+}
+
 func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
 	key := dbKey(messagePrefix, uint64(pos))
 	msgBytes, err := rlp.EncodeToBytes(msg)

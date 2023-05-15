@@ -619,30 +619,41 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
-		// we're here because we don't currently hold the lock
-		// sequencer is already either paused or forwarding
-		c.sequencer.Pause()
-		err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil)
+		processedMessages, err := c.streamer.exec.HeadMessageNumber()
 		if err != nil {
-			// this could be just new messages we didn't get yet - even then, we should retry soon
-			log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
-			// make sure we're marked as wanting the lockout
-			if err := c.wantsLockoutUpdate(ctx); err != nil {
-				log.Warn("failed to update wants lockout key", "err", err)
-			}
-			c.prevChosenSequencer = ""
-			return c.retryAfterRedisError()
+			log.Warn("coordinator: failed to read processed message count", "err", err)
+			processedMessages = 0
 		}
-		log.Info("caught chosen-coordinator lock", "myUrl", c.config.MyUrl())
-		if c.delayedSequencer != nil {
-			err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+		if processedMessages+1 >= localMsgCount {
+			// we're here because we don't currently hold the lock
+			// sequencer is already either paused or forwarding
+			c.sequencer.Pause()
+			err := c.acquireLockoutAndWriteMessage(ctx, localMsgCount, localMsgCount, nil)
 			if err != nil {
-				log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+				// this could be just new messages we didn't get yet - even then, we should retry soon
+				log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
+				// make sure we're marked as wanting the lockout
+				if err := c.wantsLockoutUpdate(ctx); err != nil {
+					log.Warn("failed to update wants lockout key", "err", err)
+				}
+				c.prevChosenSequencer = ""
+				return c.retryAfterRedisError()
 			}
+			log.Info("caught chosen-coordinator lock", "myUrl", c.config.MyUrl())
+			if c.delayedSequencer != nil {
+				err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+				if err != nil {
+					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+				}
+			}
+			err = c.streamer.PopulateFeedBacklog()
+			if err != nil {
+				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)
+			}
+			c.sequencer.Activate()
+			c.prevChosenSequencer = c.config.MyUrl()
+			return c.noRedisError()
 		}
-		c.sequencer.Activate()
-		c.prevChosenSequencer = c.config.MyUrl()
-		return c.noRedisError()
 	}
 
 	// update wanting the lockout

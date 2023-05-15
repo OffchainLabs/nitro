@@ -324,7 +324,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			}
 		}
 	} else if initConfig.Prune == "full" {
-		if nodeConfig.Node.Staker.Enable || nodeConfig.Node.BlockValidator.Enable {
+		if nodeConfig.Node.ValidatorRequired() {
 			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
@@ -402,7 +402,8 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
-	pruner, err := pruner.NewPruner(chainDb, stack.InstanceDir(), trieCachePath, config.PruneBloomSize)
+
+	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), Cachedir: trieCachePath, BloomSize: config.PruneBloomSize})
 	if err != nil {
 		return err
 	}
@@ -578,7 +579,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				return chainDb, nil, fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", chainId, initChainId)
 			}
 			if initChainConfig != nil {
-				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum); err != nil {
+				// TODO is using init msg timestamp ok here?
+				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, initMessage.Header.Timestamp); err != nil {
 					return chainDb, nil, fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}

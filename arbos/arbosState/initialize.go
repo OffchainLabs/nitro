@@ -61,7 +61,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		if err != nil {
 			return common.Hash{}, err
 		}
-		err = stateDatabase.TrieDB().Commit(root, true, nil)
+		err = stateDatabase.TrieDB().Commit(root, true)
 		if err != nil {
 			return common.Hash{}, err
 		}

@@ -231,7 +231,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 }
 
 func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
-	l1Reader := headerreader.New(l1client, readerConfig)
+	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
+	if err != nil {
+		return nil, err
+	}
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
@@ -600,7 +603,10 @@ func createNodeImpl(
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		l1Reader, err = headerreader.New(ctx, l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	sequencerConfigFetcher := func() *execution.SequencerConfig { return &configFetcher.Get().Sequencer }
@@ -963,6 +969,8 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	// config is the static config at start, not a dynamic config
+	config := n.configFetcher.Get()
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.Execution.ArbInterface.Initialize(n)
 	err := n.Stack.Start()
@@ -987,6 +995,14 @@ func (n *Node) Start(ctx context.Context) error {
 		err = n.BroadcastServer.Initialize()
 		if err != nil {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
+		}
+	}
+	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer.Enable && !config.SeqCoordinator.Enable {
+		// Normally, the sequencer would populate the feed backlog when it acquires the lockout.
+		// However, if the sequencer coordinator is not enabled, we must populate the backlog on startup.
+		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
+		if err != nil {
+			return fmt.Errorf("error populating feed backlog on startup: %w", err)
 		}
 	}
 	err = n.TxStreamer.Start(ctx)

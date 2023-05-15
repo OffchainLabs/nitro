@@ -150,7 +150,12 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
 			}
 			if initChainConfig != nil {
-				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum); err != nil {
+				latestHeader, err := r.l1Reader.LastHeader(ctxIn)
+				if err != nil {
+					return fmt.Errorf("can't check if chain config from init message is compatible: %w", err)
+				}
+				// TODO is latest header time ok here?
+				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, latestHeader.Time); err != nil {
 					return fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
@@ -560,11 +565,11 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	msg, err := r.tracker.GetDelayedMessage(delayedCount - 1)
+	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
 	if err != nil {
 		return nil, err
 	}
-	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
+	msgBlock := new(big.Int).SetUint64(parentChainBlockNumber)
 	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
 		msgBlock.Set(r.firstMessageBlock)
 	}
