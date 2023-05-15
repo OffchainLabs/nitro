@@ -33,14 +33,38 @@ type ValidationNodeConfig struct {
 	Workdir       string                          `koanf:"workdir" reload:"hot"`
 }
 
+var HTTPConfigDefault = genericconf.HTTPConfig{
+	Addr:           "",
+	Port:           genericconf.HTTPConfigDefault.Port,
+	API:            []string{},
+	RPCPrefix:      genericconf.HTTPConfigDefault.RPCPrefix,
+	CORSDomain:     genericconf.HTTPConfigDefault.CORSDomain,
+	VHosts:         genericconf.HTTPConfigDefault.VHosts,
+	ServerTimeouts: genericconf.HTTPConfigDefault.ServerTimeouts,
+}
+
+var WSConfigDefault = genericconf.WSConfig{
+	Addr:      "",
+	Port:      genericconf.WSConfigDefault.Port,
+	API:       []string{},
+	RPCPrefix: genericconf.WSConfigDefault.RPCPrefix,
+	Origins:   genericconf.WSConfigDefault.Origins,
+	ExposeAll: genericconf.WSConfigDefault.ExposeAll,
+}
+
+var IPCConfigDefault = genericconf.IPCConfig{
+	Path: "",
+}
+
 var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
 	Persistent:    conf.PersistentConfigDefault,
-	HTTP:          genericconf.HTTPConfigDefault,
-	WS:            genericconf.WSConfigDefault,
-	IPC:           genericconf.IPCConfigDefault,
+	HTTP:          HTTPConfigDefault,
+	WS:            WSConfigDefault,
+	IPC:           IPCConfigDefault,
+	AuthRPC:       genericconf.AuthRPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	Workdir:       "",

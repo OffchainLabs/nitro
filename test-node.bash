@@ -185,7 +185,7 @@ fi
 
 
 if $validate; then
-    NODES="$NODES validator validation_node"
+    NODES="$NODES validator"
 else
     NODES="$NODES staker-unsafe"
 fi

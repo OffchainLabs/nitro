@@ -261,14 +261,14 @@ function writeConfigs(argv: any) {
             "chain": "local"
         },
         "ws": {
-            "addr": "0.0.0.0",
-            "api": "validation",
+            "addr": "",
         },
         "http": {
             "addr": "",
         },
         "validation": {
-            "api-public": true,
+			"api-auth": true,
+            "api-public": false,
         },
         "auth": {
             "jwtsecret": valJwtSecret,

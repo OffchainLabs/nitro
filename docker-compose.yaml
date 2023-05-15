@@ -287,7 +287,7 @@ services:
     pid: host # allow debugging
     image: nitro-node-dev-testnode
     ports:
-      - "127.0.0.1:8948:8548"
+      - "127.0.0.1:8949:8549"
     volumes:
       - "config:/config"
     command: --conf.file /config/validation_node_config.json

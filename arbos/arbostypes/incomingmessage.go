@@ -5,7 +5,6 @@ package arbostypes
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -240,7 +239,7 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
 		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
 	if len(msg.L2msg) != 32 {
-		return nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
+		return nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
 	}
 	chainId := new(big.Int).SetBytes(msg.L2msg[:32])
 	return chainId, nil
