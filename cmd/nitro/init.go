@@ -320,7 +320,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			}
 		}
 	} else if initConfig.Prune == "full" {
-		if nodeConfig.Node.Staker.Enable || nodeConfig.Node.BlockValidator.Enable {
+		if nodeConfig.Node.ValidatorRequired() {
 			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
