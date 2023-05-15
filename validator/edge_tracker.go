@@ -60,10 +60,6 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		return et.fsm.Do(edgeBisect{})
 	// Edge is the source of a one-step-fork.
 	case edgeAtOneStepFork:
-		event, ok := current.SourceEvent.(edgeHandleOneStepFork)
-		if !ok {
-			return fmt.Errorf("bad source event: %s", event)
-		}
 		startHeight, startCommit := et.edge.StartCommitment()
 		log.WithFields(fields).Infof(
 			"Reached one-step-fork at start height %d and start history commitment %s",
@@ -80,10 +76,6 @@ func (et *edgeTracker) act(ctx context.Context) error {
 		return et.fsm.Do(edgeConfirm{})
 	// Edge tracker should add a subchallenge level zero leaf.
 	case edgeAddingSubchallengeLeaf:
-		event, ok := current.SourceEvent.(edgeOpenSubchallengeLeaf)
-		if !ok {
-			return fmt.Errorf("bad source event: %s", event)
-		}
 		if err := et.openSubchallengeLeaf(ctx); err != nil {
 			log.WithFields(fields).WithError(err).Error("could not open subchallenge leaf")
 			return et.fsm.Do(edgeBackToStart{})
@@ -175,26 +167,20 @@ func (et *edgeTracker) determineBisectionHistoryWithProof(
 	var commitErr error
 	var proof []byte
 	var proofErr error
+
+	originHeights, err := et.edge.TopLevelClaimHeight(ctx)
+	if err != nil {
+		return util.HistoryCommitment{}, nil, err
+	}
+
+	fromAssertionHeight := uint64(originHeights.BlockChallengeOriginHeight)
+	toAssertionHeight := fromAssertionHeight + 1
+
 	switch et.edge.GetType() {
 	case protocol.BigStepChallengeEdge:
-		originHeights, err := et.edge.TopLevelClaimHeight(ctx)
-		if err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-
-		fromAssertionHeight := uint64(originHeights.BlockChallengeOriginHeight)
-		toAssertionHeight := fromAssertionHeight + 1
-
 		historyCommit, commitErr = et.cfg.stateManager.BigStepCommitmentUpTo(ctx, fromAssertionHeight, toAssertionHeight, bisectTo)
 		proof, proofErr = et.cfg.stateManager.BigStepPrefixProof(ctx, fromAssertionHeight, toAssertionHeight, bisectTo, uint64(endHeight))
 	case protocol.SmallStepChallengeEdge:
-		originHeights, err := et.edge.TopLevelClaimHeight(ctx)
-		if err != nil {
-			return util.HistoryCommitment{}, nil, err
-		}
-
-		fromAssertionHeight := uint64(originHeights.BlockChallengeOriginHeight)
-		toAssertionHeight := fromAssertionHeight + 1
 		fromBigStep := uint64(originHeights.BigStepChallengeOriginHeight)
 		toBigStep := fromBigStep + 1
 
