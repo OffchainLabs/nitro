@@ -107,17 +107,15 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 	if len(strs) != len(addrs) {
 		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
 	}
-	complete := true
+
 	for i, s := range strs {
 		if !common.IsHexAddress(s) {
 			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
+			return RollupAddresses{}, fmt.Errorf("invalid addresses")
 		}
 		*addrs[i] = common.HexToAddress(s)
 	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
+
 	return a, nil
 }
 
