@@ -27,9 +27,10 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
 contract EdgeChallengeManagerTest is Test {
     Random rand = new Random();
     bytes32 genesisBlockHash = rand.hash();
-    State genesisState = StateToolsLib.randomState(rand, 4, genesisBlockHash, MachineStatus.FINISHED);
+    ExecutionState genesisState = StateToolsLib.randomState(rand, 4, genesisBlockHash, MachineStatus.FINISHED);
     bytes32 genesisStateHash = StateToolsLib.mockMachineHash(genesisState);
-    bytes32 genesisAfterStateHash = RollupLib.executionStateHash(genesisState.es);
+    bytes32 genesisAfterStateHash = RollupLib.executionStateHash(genesisState);
+    ExecutionStateData genesisStateData = ExecutionStateData(genesisState, "");
 
     function genesisStates() internal view returns (bytes32[] memory) {
         bytes32[] memory genStates = new bytes32[](1);
@@ -40,8 +41,8 @@ contract EdgeChallengeManagerTest is Test {
     bytes32 genesisRoot = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(genesisStates(), 0, 1));
 
     uint256 genesisHeight = 2;
-    uint256 inboxMsgCountGenesis = 7;
-    uint256 inboxMsgCountAssertion = 12;
+    uint64 inboxMsgCountGenesis = 7;
+    uint64 inboxMsgCountAssertion = 12;
 
     bytes32 h1 = rand.hash();
     bytes32 h2 = rand.hash();
@@ -49,6 +50,7 @@ contract EdgeChallengeManagerTest is Test {
 
     uint256 miniStakeVal = 1 ether;
     uint256 challengePeriodBlock = 1000;
+    ExecutionStateData empty;
 
     function appendRandomStates(bytes32[] memory currentStates, uint256 numStates)
         internal
@@ -77,8 +79,7 @@ contract EdgeChallengeManagerTest is Test {
             assertionChain, challengePeriodBlock, new MockOneStepProofEntry(), 2 ** 5, 2 ** 5, 2 ** 5
         );
 
-        bytes32 genesis =
-            assertionChain.addAssertionUnsafe(0, genesisHeight, inboxMsgCountGenesis, genesisState, genesisState, 0);
+        bytes32 genesis = assertionChain.addAssertionUnsafe(0, genesisHeight, inboxMsgCountGenesis, genesisState, 0);
         return (assertionChain, challengeManager, genesis);
     }
 
@@ -88,18 +89,18 @@ contract EdgeChallengeManagerTest is Test {
         bytes32 genesis;
         bytes32 a1;
         bytes32 a2;
-        State a1State;
-        State a2State;
+        ExecutionState a1State;
+        ExecutionState a2State;
     }
 
     function deployAndInit() internal returns (EdgeInitData memory) {
         (MockAssertionChain assertionChain, EdgeChallengeManager challengeManager, bytes32 genesis) = deploy();
 
-        State memory a1State = StateToolsLib.randomState(
-            rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h1, MachineStatus.FINISHED
+        ExecutionState memory a1State = StateToolsLib.randomState(
+            rand, GlobalStateLib.getInboxPosition(genesisState.globalState), h1, MachineStatus.FINISHED
         );
-        State memory a2State = StateToolsLib.randomState(
-            rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h2, MachineStatus.FINISHED
+        ExecutionState memory a2State = StateToolsLib.randomState(
+            rand, GlobalStateLib.getInboxPosition(genesisState.globalState), h2, MachineStatus.FINISHED
         );
 
         // add one since heights are zero indexed in the history states
@@ -124,8 +125,8 @@ contract EdgeChallengeManagerTest is Test {
     function testRevertBlockNoFork() public {
         (MockAssertionChain assertionChain, EdgeChallengeManager challengeManager, bytes32 genesis) = deploy();
 
-        State memory a1State = StateToolsLib.randomState(
-            rand, GlobalStateLib.getInboxPosition(genesisState.es.globalState), h1, MachineStatus.FINISHED
+        ExecutionState memory a1State = StateToolsLib.randomState(
+            rand, GlobalStateLib.getInboxPosition(genesisState.globalState), h1, MachineStatus.FINISHED
         );
 
         bytes32 a1 = assertionChain.addAssertion(
@@ -149,10 +150,8 @@ contract EdgeChallengeManagerTest is Test {
             ),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                a1State.es,
-                a1State.inboxMsgCountMax
+                ExecutionStateData(genesisState, ""),
+                ExecutionStateData(a1State, "")
             )
         );
     }
@@ -177,10 +176,8 @@ contract EdgeChallengeManagerTest is Test {
             ),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                ei.a1State.es,
-                ei.a1State.inboxMsgCountMax
+                ExecutionStateData(genesisState, ""),
+                ExecutionStateData(ei.a1State, "")
             )
         );
     }
@@ -227,10 +224,8 @@ contract EdgeChallengeManagerTest is Test {
             ),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                ei.a1State.es,
-                ei.a1State.inboxMsgCountMax
+                ExecutionStateData(genesisState, ""),
+                ExecutionStateData(ei.a1State, "")
             )
         );
     }
@@ -254,10 +249,8 @@ contract EdgeChallengeManagerTest is Test {
             ),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                ei.a1State.es,
-                ei.a1State.inboxMsgCountMax
+                ExecutionStateData(genesisState, ""),
+                ExecutionStateData(ei.a1State, "")
             )
         );
 
@@ -288,10 +281,8 @@ contract EdgeChallengeManagerTest is Test {
             ),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), states1.length - 1),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                ei.a1State.es,
-                ei.a1State.inboxMsgCountMax
+                ExecutionStateData(genesisState, ""),
+                ExecutionStateData(ei.a1State, "")
             )
         );
 
@@ -314,10 +305,8 @@ contract EdgeChallengeManagerTest is Test {
                 ),
                 abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), states2.length - 1),
-                    genesisState.es,
-                    genesisState.inboxMsgCountMax,
-                    ei.a2State.es,
-                    ei.a2State.inboxMsgCountMax
+                    ExecutionStateData(genesisState, ""),
+                    ExecutionStateData(ei.a2State, "")
                 )
             );
 
@@ -946,8 +935,8 @@ contract EdgeChallengeManagerTest is Test {
         EdgeChallengeManager challengeManager;
         bytes32 claim1Id;
         bytes32 claim2Id;
-        State endState1;
-        State endState2;
+        ExecutionState endState1;
+        ExecutionState endState2;
         bool skipLast;
     }
 
@@ -963,35 +952,41 @@ contract EdgeChallengeManagerTest is Test {
         bytes32[] forkStates2;
     }
 
+    function createLayerZeroEdge(
+        EdgeChallengeManager challengeManager,
+        bytes32 claimId,
+        ExecutionState memory endState,
+        bytes32[] memory states,
+        bytes32[] memory exp
+    ) internal returns (bytes32) {
+        bytes memory typeSpecificProof1 = abi.encode(
+            ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
+            genesisStateData,
+            ExecutionStateData(endState, "")
+        );
+
+        return challengeManager.createLayerZeroEdge(
+            CreateEdgeArgs({
+                edgeType: EdgeType.Block,
+                endHistoryRoot: MerkleTreeLib.root(exp),
+                endHeight: height1,
+                claimId: claimId
+            }),
+            abi.encode(
+                ProofUtils.expansionFromLeaves(states, 0, 1),
+                ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
+            ),
+            typeSpecificProof1
+        );
+    }
+
     function createBlockEdgesAndBisectToFork(CreateBlockEdgesBisectArgs memory args)
         internal
         returns (bytes32[] memory, bytes32[] memory, BisectionChildren[6] memory, BisectionChildren[6] memory)
     {
         (bytes32[] memory states1, bytes32[] memory exp1) =
             appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(args.endState1), height1);
-        bytes32 edge1Id;
-        {
-            bytes memory typeSpecificProof1 = abi.encode(
-                ProofUtils.generateInclusionProof(ProofUtils.rehashed(states1), states1.length - 1),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                args.endState1.es,
-                args.endState1.inboxMsgCountMax
-            );
-            edge1Id = args.challengeManager.createLayerZeroEdge(
-                CreateEdgeArgs({
-                    edgeType: EdgeType.Block,
-                    endHistoryRoot: MerkleTreeLib.root(exp1),
-                    endHeight: height1,
-                    claimId: args.claim1Id
-                }),
-                abi.encode(
-                    ProofUtils.expansionFromLeaves(states1, 0, 1),
-                    ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states1, 1, states1.length))
-                ),
-                typeSpecificProof1
-            );
-        }
+        bytes32 edge1Id = createLayerZeroEdge(args.challengeManager, args.claim1Id, args.endState1, states1, exp1);
 
         vm.roll(block.number + 1);
 
@@ -999,29 +994,7 @@ contract EdgeChallengeManagerTest is Test {
 
         (bytes32[] memory states2, bytes32[] memory exp2) =
             appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(args.endState2), height1);
-        bytes32 edge2Id;
-        {
-            bytes memory typeSpecificProof2 = abi.encode(
-                ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), states2.length - 1),
-                genesisState.es,
-                genesisState.inboxMsgCountMax,
-                args.endState2.es,
-                args.endState2.inboxMsgCountMax
-            );
-            edge2Id = args.challengeManager.createLayerZeroEdge(
-                CreateEdgeArgs({
-                    edgeType: EdgeType.Block,
-                    endHistoryRoot: MerkleTreeLib.root(exp2),
-                    endHeight: height1,
-                    claimId: args.claim2Id
-                }),
-                abi.encode(
-                    ProofUtils.expansionFromLeaves(states2, 0, 1),
-                    ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states2, 1, states2.length))
-                ),
-                typeSpecificProof2
-            );
-        }
+        bytes32 edge2Id = createLayerZeroEdge(args.challengeManager, args.claim2Id, args.endState2, states2, exp2);
 
         vm.roll(block.number + 2);
 
@@ -1284,15 +1257,12 @@ contract EdgeChallengeManagerTest is Test {
 
         ei.challengeManager.confirmEdgeByOneStepProof(
             allWinners[0].lowerChildId,
-            OneStepData({
-                inboxMsgCountSeen: 7,
-                inboxMsgCountSeenProof: abi.encode(genesisState.es),
+            OneStepData({beforeHash: firstStates[0], proof: abi.encodePacked(firstStates[1])}),
+            WasmModuleData({
                 wasmModuleRoot: bytes32(0),
                 wasmModuleRootProof: abi.encode(
-                    bytes32(0), genesisAfterStateHash, keccak256(abi.encode(genesisState.es.globalState.u64Vals[0]))
-                    ),
-                beforeHash: firstStates[0],
-                proof: abi.encodePacked(firstStates[1])
+                    bytes32(0), genesisAfterStateHash, keccak256(abi.encode(genesisState.globalState.u64Vals[0]))
+                    )
             }),
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(genesisStates()), 0),
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(firstStates), 1)

@@ -124,7 +124,7 @@ func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum pro
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(res.StateHash[:], make([]byte, 32)) {
+	if bytes.Equal(res.AssertionHash[:], make([]byte, 32)) {
 		return nil, errors.Wrapf(
 			ErrNotFound,
 			"assertion with id %d",
@@ -135,8 +135,7 @@ func (ac *AssertionChain) AssertionBySequenceNum(ctx context.Context, seqNum pro
 		id:    uint64(seqNum),
 		chain: ac,
 		StateCommitment: util.StateCommitment{
-			Height:    res.CreatedAtBlock - genesis.CreatedAtBlock,
-			StateRoot: res.StateHash,
+			Height: res.CreatedAtBlock - genesis.CreatedAtBlock,
 		},
 	}, nil
 }
@@ -155,7 +154,6 @@ func (ac *AssertionChain) CreateAssertion(
 	ctx context.Context,
 	prevAssertionState *protocol.ExecutionState,
 	postState *protocol.ExecutionState,
-	prevInboxMaxCount *big.Int,
 ) (protocol.Assertion, error) {
 	stake, err := ac.userLogic.CurrentRequiredStake(&bind.CallOpts{Context: ctx})
 	if err != nil {
@@ -172,7 +170,6 @@ func (ac *AssertionChain) CreateAssertion(
 				AfterState:  postState.AsSolidityStruct(),
 			},
 			common.Hash{}, // Expected hash. TODO(RJ): Is this fine as empty?
-			prevInboxMaxCount,
 		)
 	})
 	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {

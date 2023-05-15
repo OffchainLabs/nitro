@@ -47,6 +47,18 @@ contract RollupTest is Test {
     address[] validators;
     bool[] flags;
 
+    GlobalState emptyGlobalState;
+    ExecutionState emptyExecutionState = ExecutionState(
+        emptyGlobalState,
+        MachineStatus.FINISHED
+    );
+    bytes32 genesisHash = RollupLib.assertionHash({
+        parentAssertionHash: bytes32(0),
+        afterState: emptyExecutionState,
+        inboxAcc: bytes32(0),
+        wasmModuleRoot: bytes32(0) // this is zero upon initialisation
+    });
+
     event RollupCreated(
         address indexed rollupAddress,
         address inboxAddress,
@@ -171,33 +183,59 @@ contract RollupTest is Test {
         afterState.globalState.bytes32Vals[1] = FIRST_ASSERTION_SENDROOT; // sendroot
         afterState.globalState.u64Vals[0] = 1; // inbox count
         afterState.globalState.u64Vals[1] = 0; // pos in msg
+
+        bytes32 expectedAssertionHash = RollupLib.assertionHash(
+            {
+                parentAssertionHash: genesisHash,
+                afterState: afterState,
+                inboxAcc: userRollup.bridge().sequencerInboxAccs(0),
+                wasmModuleRoot: WASM_MODULE_ROOT
+            }
+        );
+
         vm.prank(validator1);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    wasmRoot: bytes32(0),
+                    sequencerBatchAcc: bytes32(0),
+                    prevAssertionHash: bytes32(0)
+                }),
                 beforeState: beforeState,
                 afterState: afterState
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: 1
+            expectedAssertionHash: expectedAssertionHash
         });
+
 
         ExecutionState memory afterState2;
         afterState2.machineStatus = MachineStatus.FINISHED;
         afterState2.globalState.u64Vals[0] = inboxcount;
+        bytes32 expectedAssertionHash2 = RollupLib.assertionHash({
+            parentAssertionHash: expectedAssertionHash,
+            afterState: afterState2,
+            inboxAcc: userRollup.bridge().sequencerInboxAccs(1), // 1 because we moved the position within message
+            wasmModuleRoot: WASM_MODULE_ROOT
+        });
+        bytes32 prevInboxAcc = userRollup.bridge().sequencerInboxAccs(0);
+
         vm.roll(block.number + 75);
         vm.prank(validator1);
         userRollup.stakeOnNewAssertion({
             assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    wasmRoot: WASM_MODULE_ROOT,
+                    sequencerBatchAcc: prevInboxAcc,
+                    prevAssertionHash: genesisHash
+                }),
                 beforeState: afterState,
                 afterState: afterState2
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: inboxcount
+            expectedAssertionHash: expectedAssertionHash2
         });
     }
 
     function testRevertIdenticalAssertions() public {
-        uint64 inboxcount = uint64(_createNewBatch());
         ExecutionState memory beforeState;
         beforeState.machineStatus = MachineStatus.FINISHED;
         ExecutionState memory afterState;
@@ -210,26 +248,34 @@ contract RollupTest is Test {
         vm.prank(validator1);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    wasmRoot: bytes32(0),
+                    sequencerBatchAcc: bytes32(0),
+                    prevAssertionHash: bytes32(0)
+                }),
                 beforeState: beforeState,
                 afterState: afterState
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: 1
+            expectedAssertionHash: bytes32(0)
         });
 
         vm.prank(validator2);
         vm.expectRevert("ASSERTION_SEEN");
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    wasmRoot: bytes32(0),
+                    sequencerBatchAcc: bytes32(0),
+                    prevAssertionHash: bytes32(0)
+                }),
                 beforeState: beforeState,
                 afterState: afterState
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: 1
+            expectedAssertionHash: bytes32(0)
         });
     }
 
-    function testRevertAssertWrongBranch() public {
+    function testRevertInvalidPrev() public {
         uint64 inboxcount = uint64(_createNewBatch());
         ExecutionState memory beforeState;
         beforeState.machineStatus = MachineStatus.FINISHED;
@@ -240,27 +286,58 @@ contract RollupTest is Test {
         afterState.globalState.u64Vals[0] = 1; // inbox count
         afterState.globalState.u64Vals[1] = 0; // pos in msg
 
+        bytes32 expectedAssertionHash = RollupLib.assertionHash(
+            {
+                parentAssertionHash: genesisHash,
+                afterState: afterState,
+                inboxAcc: userRollup.bridge().sequencerInboxAccs(0),
+                wasmModuleRoot: WASM_MODULE_ROOT
+            }
+        );
+
         vm.prank(validator1);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    wasmRoot: bytes32(0),
+                    sequencerBatchAcc: bytes32(0),
+                    prevAssertionHash: bytes32(0)
+                }),
                 beforeState: beforeState,
                 afterState: afterState
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: 1
+            expectedAssertionHash: expectedAssertionHash
         });
 
-        vm.expectRevert("PREV_STATE_HASH");
-        afterState.globalState.u64Vals[1] = 1; // modify the state
+
+        ExecutionState memory afterState2;
+        afterState2.machineStatus = MachineStatus.FINISHED;
+        afterState2.globalState.u64Vals[0] = inboxcount;
+        bytes32 expectedAssertionHash2 = RollupLib.assertionHash({
+            parentAssertionHash: expectedAssertionHash,
+            afterState: afterState2,
+            inboxAcc: userRollup.bridge().sequencerInboxAccs(1), // 1 because we moved the position within message
+            wasmModuleRoot: WASM_MODULE_ROOT
+        });
+        bytes32 prevInboxAcc = userRollup.bridge().sequencerInboxAccs(0);
+
+        // set the wrong before state
+        afterState.globalState.bytes32Vals[0] = FIRST_ASSERTION_SENDROOT;
+
         vm.roll(block.number + 75);
         vm.prank(validator1);
+        vm.expectRevert("INVALID_BEFORE_STATE");
         userRollup.stakeOnNewAssertion({
             assertion: AssertionInputs({
-                beforeState: beforeState,
-                afterState: afterState
+                beforeStateData: BeforeStateData({
+                    wasmRoot: WASM_MODULE_ROOT,
+                    sequencerBatchAcc: prevInboxAcc,
+                    prevAssertionHash: genesisHash
+                }),
+                beforeState: afterState,
+                afterState: afterState2
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: 1
+            expectedAssertionHash: expectedAssertionHash2
         });
     }
 
@@ -285,16 +362,26 @@ contract RollupTest is Test {
         afterState.globalState.u64Vals[0] = 1; // inbox count
         afterState.globalState.u64Vals[1] = 0; // pos in msg
 
+        bytes32 expectedAssertionHash = RollupLib.assertionHash(
+                {parentAssertionHash: genesisHash,
+                afterState: afterState,
+                inboxAcc: userRollup.bridge().sequencerInboxAccs(0),
+                wasmModuleRoot: WASM_MODULE_ROOT}
+            );
+            
         vm.prank(validator1);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    wasmRoot: bytes32(0),
+                    sequencerBatchAcc: bytes32(0),
+                    prevAssertionHash: bytes32(0)
+                }),
                 beforeState: beforeState,
                 afterState: afterState
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: genesisInboxCount
+            expectedAssertionHash: expectedAssertionHash
         });
-
 
         ExecutionState memory afterState2;
         afterState2.machineStatus = MachineStatus.FINISHED;
@@ -302,14 +389,26 @@ contract RollupTest is Test {
         afterState2.globalState.bytes32Vals[1] = FIRST_ASSERTION_SENDROOT; // sendroot
         afterState2.globalState.u64Vals[0] = 1; // inbox count
         afterState2.globalState.u64Vals[1] = 1; // modify the state
+
+        bytes32 expectedAssertionHash2 = RollupLib.assertionHash(
+                {parentAssertionHash: genesisHash,
+                afterState: afterState2,
+                inboxAcc: userRollup.bridge().sequencerInboxAccs(1), // 1 because we moved the position within message
+                wasmModuleRoot: WASM_MODULE_ROOT}
+            );
         vm.prank(validator2);
         userRollup.newStakeOnNewAssertion{value: BASE_STAKE}({
             assertion: AssertionInputs({
                 beforeState: beforeState,
+                beforeStateData: BeforeStateData(
+                {wasmRoot: bytes32(0),
+                sequencerBatchAcc: bytes32(0),
+                prevAssertionHash: bytes32(0)}
+
+                ),
                 afterState: afterState2
             }),
-            expectedAssertionHash: bytes32(0),
-            prevAssertionInboxMaxCount: genesisInboxCount
+            expectedAssertionHash: expectedAssertionHash2
         });
 
         assertEq(userRollup.getAssertion(1).secondChildBlock, block.number);
@@ -364,10 +463,22 @@ contract RollupTest is Test {
             abi.encode(ProofUtils.expansionFromLeaves(states, 0, 1), ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
+            ExecutionStateData(
                 beforeState,
-                genesisInboxCount,
+                abi.encode(
+                    bytes32(0),
+                    bytes32(0),
+                    bytes32(0)
+                )
+            ),
+            ExecutionStateData(
                 afterState1,
-                newInboxCount
+                abi.encode(
+                    genesisHash,
+                    userRollup.bridge().sequencerInboxAccs(0),
+                    WASM_MODULE_ROOT
+                )
+            )
             )
         );
     }
@@ -403,10 +514,22 @@ contract RollupTest is Test {
             abi.encode(ProofUtils.expansionFromLeaves(states, 0, 1), ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))),
             abi.encode(
                 ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
+            ExecutionStateData(
                 beforeState,
-                genesisInboxCount,
+                abi.encode(
+                    bytes32(0),
+                    bytes32(0),
+                    bytes32(0)
+                )
+            ),
+            ExecutionStateData(
                 afterState2,
-                newInboxCount
+                abi.encode(
+                    genesisHash,
+                    userRollup.bridge().sequencerInboxAccs(1),
+                    WASM_MODULE_ROOT
+                )
+            )
             )
         );
 

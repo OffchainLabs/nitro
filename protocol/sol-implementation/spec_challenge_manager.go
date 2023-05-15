@@ -8,6 +8,7 @@ import (
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/challenge-protocol-v2/solgen/go/rollupgen"
 	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -209,6 +210,7 @@ func (e *SpecEdge) ConfirmByOneStepProof(ctx context.Context) error {
 			// TODO: Fill in.
 			challengeV2gen.OneStepData{},
 			// TODO: Add pre/post proofs.
+			challengeV2gen.WasmModuleData{},
 			nil,
 			nil,
 		)
@@ -414,12 +416,12 @@ func (cm *SpecChallengeManager) ConfirmEdgeByOneStepProof(
 				cm.assertionChain.txOpts,
 				tentativeWinnerId,
 				challengeV2gen.OneStepData{
-					InboxMsgCountSeen:      oneStepData.InboxMsgCountSeen,
-					InboxMsgCountSeenProof: oneStepData.InboxMsgCountSeenProof,
-					WasmModuleRoot:         oneStepData.WasmModuleRoot,
-					WasmModuleRootProof:    oneStepData.WasmModuleRootProof,
-					BeforeHash:             oneStepData.BeforeHash,
-					Proof:                  oneStepData.Proof,
+					BeforeHash: oneStepData.BeforeHash,
+					Proof:      oneStepData.Proof,
+				},
+				challengeV2gen.WasmModuleData{
+					WasmModuleRoot:      oneStepData.WasmModuleRoot,
+					WasmModuleRootProof: oneStepData.WasmModuleRootProof,
 				},
 				pre,
 				post,
@@ -438,59 +440,81 @@ func newStaticType(t string, internalType string, components []abi.ArgumentMarsh
 	return ty
 }
 
-var uint256Type = newStaticType("uint256", "", nil)
 var bytes32Type = newStaticType("bytes32", "", nil)
 var bytes32ArrayType = newStaticType("bytes32[]", "", []abi.ArgumentMarshaling{{Type: "bytes32"}})
-var executionStateType = newStaticType("tuple", "ExecutionState", []abi.ArgumentMarshaling{
+var executionStateData = newStaticType("tuple", "ExecutionStateData", []abi.ArgumentMarshaling{
 	{
 		Type:         "tuple",
-		InternalType: "GlobalState",
-		Name:         "globalState",
+		InternalType: "ExecutionState",
+		Name:         "executionState",
 		Components: []abi.ArgumentMarshaling{
 			{
-				Type: "bytes32[2]",
-				Components: []abi.ArgumentMarshaling{{
-					Type: "bytes32",
-				}},
-				Name: "bytes32Vals",
+				Type:         "tuple",
+				InternalType: "GlobalState",
+				Name:         "globalState",
+				Components: []abi.ArgumentMarshaling{
+					{
+						Type: "bytes32[2]",
+						Components: []abi.ArgumentMarshaling{{
+							Type: "bytes32",
+						}},
+						Name: "bytes32Vals",
+					},
+					{
+						Type: "uint64[2]",
+						Components: []abi.ArgumentMarshaling{{
+							Type: "uint64",
+						}},
+						Name: "u64Vals",
+					},
+				},
 			},
 			{
-				Type: "uint64[2]",
-				Components: []abi.ArgumentMarshaling{{
-					Type: "uint64",
-				}},
-				Name: "u64Vals",
+				Type:         "uint8",
+				InternalType: "MachineStatus",
+				Name:         "machineStatus",
 			},
 		},
 	},
 	{
-		Type:         "uint8",
-		InternalType: "MachineStatus",
-		Name:         "machineStatus",
+		Type: "bytes",
+		Name: "proof",
 	},
 })
 
-var blockEdgeProofAbi = abi.Arguments{
+var blockEdgeCreateProofAbi = abi.Arguments{
 	{
 		Name: "inclusionProof",
 		Type: bytes32ArrayType,
 	},
 	{
 		Name: "startState",
-		Type: executionStateType,
-	},
-	{
-		Name: "prevInboxMaxCount",
-		Type: uint256Type,
+		Type: executionStateData,
 	},
 	{
 		Name: "endState",
-		Type: executionStateType,
+		Type: executionStateData,
+	},
+}
+
+var executionStateDataProofAbi = abi.Arguments{
+	{
+		Name: "parentAssertionHash",
+		Type: bytes32Type,
 	},
 	{
-		Name: "afterInboxMaxCount",
-		Type: uint256Type,
+		Name: "inboxAcc",
+		Type: bytes32Type,
 	},
+	{
+		Name: "wasmModuleRootInner",
+		Type: bytes32Type,
+	},
+}
+
+type ExecutionStateData struct {
+	ExecutionState rollupgen.ExecutionState
+	Proof          []byte
 }
 
 func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
@@ -531,12 +555,32 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 			protocol.LevelZeroBlockEdgeHeight,
 		)
 	}
-	blockEdgeProof, err := blockEdgeProofAbi.Pack(
+	preStateProof, err := executionStateDataProofAbi.Pack(
+		parentAssertionCreation.ParentAssertionHash,
+		parentAssertionCreation.AfterInboxBatchAcc,
+		parentAssertionCreation.WasmModuleRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
+	postStateProof, err := executionStateDataProofAbi.Pack(
+		assertionCreation.ParentAssertionHash,
+		assertionCreation.AfterInboxBatchAcc,
+		assertionCreation.WasmModuleRoot,
+	)
+	if err != nil {
+		return nil, err
+	}
+	blockEdgeProof, err := blockEdgeCreateProofAbi.Pack(
 		endCommit.LastLeafProof,
-		parentAssertionCreation.AfterState,
-		parentAssertionCreation.InboxMaxCount,
-		assertionCreation.AfterState,
-		assertionCreation.InboxMaxCount,
+		ExecutionStateData{
+			ExecutionState: parentAssertionCreation.AfterState,
+			Proof:          preStateProof,
+		},
+		ExecutionStateData{
+			ExecutionState: assertionCreation.AfterState,
+			Proof:          postStateProof,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize block edge proof: %w", err)

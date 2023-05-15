@@ -216,7 +216,6 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 		ctx,
 		genesisState,
 		latestHonest,
-		genesisCreation.InboxMaxCount,
 	)
 	require.NoError(t, err)
 
@@ -226,7 +225,6 @@ func runChallengeIntegrationTest(t *testing.T, _ *test.Hook, cfg *challengeProto
 		ctx,
 		genesisState,
 		latestEvil,
-		genesisCreation.InboxMaxCount,
 	)
 	require.NoError(t, err)
 

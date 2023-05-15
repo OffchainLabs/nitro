@@ -80,23 +80,22 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             emptyGlobalState,
             MachineStatus.FINISHED
         );
-        bytes32 stateHash = RollupLib.stateHashMem(
-            emptyExecutionState,
-            1 // inboxMaxCount - force the first assertion to read a message
-        );
         bytes32 genesisHash = RollupLib.assertionHash({
             parentAssertionHash: bytes32(0),
             afterState: emptyExecutionState,
             inboxAcc: bytes32(0),
+            // CHRIS: TODO: we have a bug here in that this is 0 upon startup
+            // CHRIS: TODO: this means the assertionHash is unexpected, and out of sync with genesisAssertionHashes
+            // CHRIS: TODO: it would also lead to an invalid first assertion, will fix this in a future PR
             wasmModuleRoot: wasmModuleRoot
         });
         return
             AssertionNodeLib.createAssertion(
-                stateHash,
+                1, // inboxMaxCount - force the first assertion to read a message
                 0, // confirm data
                 0, // prev assertion
                 uint64(block.number), // deadline block (not challengeable)
-                genesisHash, // initial assertion has a assertion hash of 0
+                genesisHash,
                 true // initial assertion is first child
             );
     }
@@ -295,13 +294,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
     function forceCreateAssertion(
         uint64 prevAssertion,
-        uint256 prevAssertionInboxMaxCount,
         AssertionInputs calldata assertion,
         bytes32 expectedAssertionHash
     ) external override whenPaused {
         require(prevAssertion == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
-        createNewAssertion(assertion, prevAssertion, prevAssertionInboxMaxCount, expectedAssertionHash);
+        createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
 
         emit OwnerFunctionCalled(23);
     }
@@ -351,6 +349,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(28);
     }
 
+    // CHRIS: TODO: remove this now?
     function createNitroMigrationGenesis(AssertionInputs calldata assertion) external whenPaused {
         bytes32 expectedSendRoot = bytes32(0);
         uint64 expectedInboxCount = 1;
@@ -376,7 +375,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             "AFTER_MACHINE_NOT_FINISHED"
         );
         bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
-        createNewAssertion(assertion, 0, expectedInboxCount, bytes32(0));
+        createNewAssertion(assertion, 0, bytes32(0));
         confirmAssertion(1, genesisBlockHash, expectedSendRoot);
         emit OwnerFunctionCalled(29);
     }

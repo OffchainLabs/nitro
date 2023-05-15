@@ -105,7 +105,6 @@ interface IRollupAdmin {
 
     function forceCreateAssertion(
         uint64 prevAssertion,
-        uint256 prevAssertionInboxMaxCount,
         AssertionInputs memory assertion,
         bytes32 expectedAssertionHash
     ) external;

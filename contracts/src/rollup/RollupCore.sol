@@ -266,7 +266,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             parentAssertionHash: bytes32(0),
             afterStateHash: afterStateHash,
             inboxAcc: bytes32(0),
-            wasmModuleRoot: wasmModuleRoot
+            wasmModuleRoot: bytes32(0)
         });
         return (afterStateHash, genesisHash, wasmModuleRoot);
     }
@@ -559,29 +559,28 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function createNewAssertion(
         AssertionInputs calldata assertion,
         uint64 prevAssertionNum,
-        uint256 prevAssertionInboxMaxCount,
         bytes32 expectedAssertionHash
-    ) internal returns (bytes32 newAssertionHash) {
+    ) internal returns (bytes32) {
         require(
             assertion.afterState.machineStatus == MachineStatus.FINISHED ||
                 assertion.afterState.machineStatus == MachineStatus.ERRORED,
             "BAD_AFTER_STATUS"
         );
 
-        StakeOnNewAssertionFrame memory memoryFrame;
+        AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionNum);
+        bytes32 prevAssertionHash = prevAssertion.assertionHash;
+        // validate the before state
+        require(RollupLib.assertionHash(
+            assertion.beforeStateData.prevAssertionHash,
+            assertion.beforeState,
+            assertion.beforeStateData.sequencerBatchAcc,
+            assertion.beforeStateData.wasmRoot
+        ) == prevAssertionHash, "INVALID_BEFORE_STATE");
+
+        uint256 nextInboxPosition;
+        bytes32 sequencerBatchAcc;
         {
-            // validate data
-            memoryFrame.prevAssertion = getAssertion(prevAssertionNum);
-            memoryFrame.currentInboxSize = bridge.sequencerMessageCount();
-
-            // Make sure the previous state is correct against the assertion being built on
-            require(
-                RollupLib.stateHash(assertion.beforeState, prevAssertionInboxMaxCount) ==
-                    memoryFrame.prevAssertion.stateHash,
-                "PREV_STATE_HASH"
-            );
-
-            // Ensure that the assertion doesn't read past the end of the current inbox
+            // Validate the inbox positions
             uint64 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
             uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
             require(afterInboxCount >= prevInboxPosition, "INBOX_BACKWARDS");
@@ -592,6 +591,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                     "INBOX_POS_IN_MSG_BACKWARDS"
                 );
             }
+
             // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
             if (
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
@@ -600,60 +600,52 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 // The current inbox message was read
                 afterInboxCount++;
             }
-            require(afterInboxCount <= memoryFrame.currentInboxSize, "INBOX_PAST_END");
+            // Cannot read more messages than currently exist
+            uint256 currentInboxPosition = bridge.sequencerMessageCount();
+            require(afterInboxCount <= currentInboxPosition, "INBOX_PAST_END");
 
-            if(assertion.afterState.globalState.getInboxPosition() == memoryFrame.currentInboxSize) {
-                // force next assertion to consume 1 message if this assertion
-                // already consumed all messages in the inbox
-                memoryFrame.currentInboxSize += 1;
+            if(assertion.afterState.globalState.getInboxPosition() == currentInboxPosition) {
+                // assertions must consume exactly up to the message count that was in the inbox
+                // when the prev assertion was made. However if no new messages are sent, the next assertion
+                // would need to consume the same number of messages as the prev, meaning the chain
+                // would be unable to make progress. To avoid this we say that if no new messages have been
+                // made between the prev and now, then the next assertion should consume one message
+                nextInboxPosition = currentInboxPosition + 1;
+            } else {
+                nextInboxPosition = currentInboxPosition;
             }
 
+            // we don't create an assertion until messages are added to the inbox
+            require(afterInboxCount != 0, "EMPTY_INBOX_COUNT");
+            
             // This gives replay protection against the state of the inbox
-            if (afterInboxCount > 0) {
-                memoryFrame.sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxCount - 1);
-            }
+            sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxCount - 1);
         }
 
-        {
-            memoryFrame.stateHash = RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize);
-
-            memoryFrame.deadlineBlock = uint64(block.number) + confirmPeriodBlocks;
-
-            memoryFrame.hasSibling = memoryFrame.prevAssertion.firstChildBlock > 0;
-            // here we don't use ternacy operator to remain compatible with slither
-            // if (memoryFrame.hasSibling) {
-            //     memoryFrame.lastHash = getAssertionStorage(memoryFrame.prevAssertion.latestChildNumber)
-            //         .assertionHash;
-            // } else {
-            //     memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
-            // }
+        bytes32 newAssertionHash = RollupLib.assertionHash(
             // HN: TODO: is this ok?
-            memoryFrame.lastHash = memoryFrame.prevAssertion.assertionHash;
+            prevAssertionHash,
+            assertion.afterState,
+            sequencerBatchAcc,
+            wasmModuleRoot // HN: TODO: should we include this in assertion hash?
+        );
+        require(
+            newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0),
+            "UNEXPECTED_NODE_HASH"
+        );
 
-            newAssertionHash = RollupLib.assertionHash(
-                memoryFrame.lastHash,
-                assertion.afterState,
-                memoryFrame.sequencerBatchAcc,
-                wasmModuleRoot // HN: TODO: should we include this in assertion hash?
-            );
-            require(
-                newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0),
-                "UNEXPECTED_NODE_HASH"
-            );
+        require(
+            _assertionHashToNum[newAssertionHash] == 0, "ASSERTION_SEEN"
+        );
 
-            require(
-                _assertionHashToNum[newAssertionHash] == 0, "ASSERTION_SEEN"
-            );
-
-            memoryFrame.assertion = AssertionNodeLib.createAssertion(
-                memoryFrame.stateHash,
-                RollupLib.confirmHash(assertion),
-                prevAssertionNum,
-                memoryFrame.deadlineBlock,
-                newAssertionHash,
-                !memoryFrame.hasSibling
-            );
-        }
+        AssertionNode memory newAssertion = AssertionNodeLib.createAssertion(
+            uint64(nextInboxPosition),
+            RollupLib.confirmHash(assertion),
+            prevAssertionNum,
+            uint64(block.number) + confirmPeriodBlocks,
+            newAssertionHash,
+            prevAssertion.firstChildBlock == 0 // assume block 0 is impossible
+        );
 
         {
             uint64 assertionNum = latestAssertionCreated() + 1;
@@ -661,20 +653,18 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             // Fetch a storage reference to prevAssertion since we copied our other one into memory
             // and we don't have enough stack available to keep to keep the previous storage reference around
-            AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionNum);
             prevAssertion.childCreated(assertionNum, confirmPeriodBlocks);
-
-            assertionCreated(memoryFrame.assertion);
+            assertionCreated(newAssertion);
         }
 
         emit AssertionCreated(
             latestAssertionCreated(),
-            memoryFrame.prevAssertion.assertionHash,
+            prevAssertionHash,
             newAssertionHash,
             assertion,
-            memoryFrame.sequencerBatchAcc,
+            sequencerBatchAcc,
             wasmModuleRoot,
-            memoryFrame.currentInboxSize
+            nextInboxPosition
         );
 
         return newAssertionHash;
@@ -689,22 +679,28 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         revert("DEPRECATED");
     }
 
-    function getStateHash(bytes32 assertionId) external view returns (bytes32){
-        return getAssertionStorage(getAssertionNum(assertionId)).stateHash;
+    function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof) external view returns (ExecutionState memory) {
+        (
+            bytes32 parentAssertionHash,
+            bytes32 inboxAcc,
+            bytes32 wasmModuleRootInner
+        ) = abi.decode(proof, (bytes32, bytes32, bytes32));
+
+        require(
+            getAssertionStorage(getAssertionNum(assertionId)).assertionHash
+             == RollupLib.assertionHash(
+                parentAssertionHash,
+                state,
+                inboxAcc,
+                wasmModuleRootInner
+             ), "Invalid assertion hash"
+        );
+
+        return state;
     }
 
-    function proveInboxMsgCountSeen(bytes32 assertionId, uint256 inboxMsgCountSeen, bytes memory proof) external view returns (uint256){
-        (bytes32 b1, bytes32 b2, uint64 u1, uint64 u2, uint8 status) = abi.decode(proof, (bytes32, bytes32, uint64, uint64, uint8));
-        bytes32[2] memory bytes32Vals = [b1, b2];
-        uint64[2] memory u64Vals = [u1, u2];
-        GlobalState memory gs = GlobalState({bytes32Vals: bytes32Vals, u64Vals: u64Vals});
-        ExecutionState memory es = ExecutionState({globalState: gs, machineStatus: MachineStatus(status)});
-        require(
-            RollupLib.stateHashMem(es, inboxMsgCountSeen) ==
-                getAssertionStorage(getAssertionNum(assertionId)).stateHash,
-            "BAD_MSG_COUNT_PROOF"
-        );
-        return inboxMsgCountSeen;
+    function getNextInboxPosition(bytes32 assertionId) external view returns(uint64) {
+        return getAssertionStorage(getAssertionNum(assertionId)).nextInboxPosition;
     }
 
     function hasSibling(bytes32 assertionId) external view returns (bool) {

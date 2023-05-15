@@ -2,7 +2,6 @@ package solimpl_test
 
 import (
 	"context"
-	"math/big"
 	"testing"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
@@ -39,11 +38,10 @@ func TestCreateAssertion(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		prevInboxMaxCount := big.NewInt(1)
-		_, err := chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err := chain.CreateAssertion(ctx, prevState, postState)
 		require.NoError(t, err)
 
-		_, err = chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err = chain.CreateAssertion(ctx, prevState, postState)
 		require.ErrorContains(t, err, "ALREADY_STAKED")
 	})
 	t.Run("can create fork", func(t *testing.T) {
@@ -66,8 +64,7 @@ func TestCreateAssertion(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		prevInboxMaxCount := big.NewInt(1)
-		_, err := assertionChain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err := assertionChain.CreateAssertion(ctx, prevState, postState)
 		require.NoError(t, err)
 	})
 }
@@ -77,12 +74,8 @@ func TestAssertionBySequenceNum(t *testing.T) {
 	cfg, err := setup.SetupChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
-	resp, err := chain.AssertionBySequenceNum(ctx, 1)
+	_, err = chain.AssertionBySequenceNum(ctx, 1)
 	require.NoError(t, err)
-
-	stateHash, err := resp.StateHash()
-	require.NoError(t, err)
-	require.Equal(t, true, stateHash != [32]byte{})
 
 	_, err = chain.AssertionBySequenceNum(ctx, 2)
 	require.ErrorIs(t, err, solimpl.ErrNotFound)
@@ -115,8 +108,7 @@ func TestAssertion_Confirm(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		prevInboxMaxCount := big.NewInt(1)
-		_, err = chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err = chain.CreateAssertion(ctx, prevState, postState)
 		require.NoError(t, err)
 
 		err = chain.Confirm(ctx, assertionBlockHash, common.Hash{})
@@ -162,8 +154,7 @@ func TestAssertion_Reject(t *testing.T) {
 			},
 			MachineStatus: protocol.MachineStatusFinished,
 		}
-		prevInboxMaxCount := big.NewInt(1)
-		_, err = chain.CreateAssertion(ctx, prevState, postState, prevInboxMaxCount)
+		_, err = chain.CreateAssertion(ctx, prevState, postState)
 		require.NoError(t, err)
 
 		for i := uint64(0); i < 100; i++ {

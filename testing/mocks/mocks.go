@@ -2,7 +2,6 @@ package mocks
 
 import (
 	"context"
-	"math/big"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
@@ -415,9 +414,8 @@ func (m *MockProtocol) CreateAssertion(
 	ctx context.Context,
 	prevAssertionState *protocol.ExecutionState,
 	postState *protocol.ExecutionState,
-	prevInboxMaxCount *big.Int,
 ) (protocol.Assertion, error) {
-	args := m.Called(ctx, prevAssertionState, postState, prevInboxMaxCount)
+	args := m.Called(ctx, prevAssertionState, postState)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 

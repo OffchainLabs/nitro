@@ -7,32 +7,25 @@ import "../../src/state/Machine.sol";
 import "../../src/rollup/RollupLib.sol";
 import "./Utils.sol";
 
-struct State {
-    ExecutionState es;
-    uint256 inboxMsgCountMax;
-}
-
 library StateToolsLib {
     using GlobalStateLib for GlobalState;
 
     function randomState(Random rand, uint256 inboxMsgCountProcessed, bytes32 blockHash, MachineStatus ms)
         internal
-        returns (State memory)
+        returns (ExecutionState memory)
     {
         bytes32[2] memory bytes32Vals = [blockHash, rand.hash()];
         uint64[2] memory u64Vals = [uint64(inboxMsgCountProcessed), uint64(uint256(rand.hash()))];
 
         GlobalState memory gs = GlobalState({bytes32Vals: bytes32Vals, u64Vals: u64Vals});
-        ExecutionState memory es = ExecutionState({globalState: gs, machineStatus: ms});
-
-        return State({es: es, inboxMsgCountMax: inboxMsgCountProcessed + 3});
+        return ExecutionState({globalState: gs, machineStatus: ms});
     }
 
-    function hash(State memory s) internal pure returns (bytes32) {
-        return RollupLib.stateHashMem(s.es, s.inboxMsgCountMax);
+    function hash(ExecutionState memory s) internal pure returns (bytes32) {
+        return s.globalState.hash();
     }
 
-    function mockMachineHash(State memory s) internal pure returns (bytes32) {
-        return s.es.globalState.hash();
+    function mockMachineHash(ExecutionState memory s) internal pure returns (bytes32) {
+        return s.globalState.hash();
     }
 }

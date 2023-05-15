@@ -45,12 +45,6 @@ struct EdgeStore {
 
 /// @notice Input data to a one step proof
 struct OneStepData {
-    uint256 inboxMsgCountSeen;
-    /// @notice Used to prove the inbox message count seen
-    bytes inboxMsgCountSeenProof;
-    bytes32 wasmModuleRoot;
-    /// @notice Used to prove wasm module root
-    bytes wasmModuleRootProof;
     /// @notice The hash of the state that's being executed from
     bytes32 beforeHash;
     /// @notice Proof data to accompany the execution context
@@ -80,10 +74,10 @@ struct AssertionReferenceData {
     bool isPending;
     /// @notice Does the assertion have a sibling
     bool hasSibling;
-    /// @notice The state hash of the predecessor assertion
-    bytes32 startState;
-    /// @notice The state hash of the assertion being claimed
-    bytes32 endState;
+    /// @notice The execution state of the predecessor assertion
+    ExecutionState startState;
+    /// @notice The execution state of the assertion being claimed
+    ExecutionState endState;
 }
 
 /// @title  Core functionality for the Edge Challenge Manager
@@ -91,6 +85,7 @@ struct AssertionReferenceData {
 ///         of time an edge remained unrivaled.
 library EdgeChallengeManagerLib {
     using ChallengeEdgeLib for ChallengeEdge;
+    using GlobalStateLib for GlobalState;
 
     /// @dev Magic string hash to represent that a edges with a given mutual id have no rivals
     bytes32 constant UNRIVALED = keccak256(abi.encodePacked("UNRIVALED"));
@@ -194,28 +189,15 @@ library EdgeChallengeManagerLib {
 
             // parse the inclusion proof for later use
             require(proof.length > 0, "Block edge specific proof is empty");
-            (
-                bytes32[] memory inclusionProof,
-                ExecutionState memory startState,
-                uint256 prevInboxMaxCount,
-                ExecutionState memory endState,
-                uint256 afterInboxMaxCount
-            ) = abi.decode(proof, (bytes32[], ExecutionState, uint256, ExecutionState, uint256));
+            (bytes32[] memory inclusionProof,,) = abi.decode(proof, (bytes32[], ExecutionStateData, ExecutionStateData));
 
-            // show that the supplied start and end execution states were really committed to by the assertion
-            require(ard.startState != 0, "Empty start state");
-            require(
-                ard.startState == RollupLib.stateHashMem(startState, prevInboxMaxCount),
-                "Incorrect assertion start state"
-            );
-            require(ard.endState != 0, "Empty end state");
-            require(
-                ard.endState == RollupLib.stateHashMem(endState, afterInboxMaxCount), "Incorrect assertion end state"
-            );
+            // check the start and end execution states exist, the block hash entry should be non zero
+            require(ard.startState.machineStatus != MachineStatus.RUNNING, "Empty start state");
+            require(ard.endState.machineStatus != MachineStatus.RUNNING, "Empty end state");
 
             // Create machine hashes out of the proven state
-            bytes32 startStateHash = oneStepProofEntry.getMachineHash(startState);
-            bytes32 endStateHash = oneStepProofEntry.getMachineHash(endState);
+            bytes32 startStateHash = oneStepProofEntry.getMachineHash(ard.startState);
+            bytes32 endStateHash = oneStepProofEntry.getMachineHash(ard.endState);
 
             return (ProofData(startStateHash, endStateHash, inclusionProof), originId);
         } else {
@@ -693,7 +675,6 @@ library EdgeChallengeManagerLib {
         // edge must be length one and be of type SmallStep
         require(store.edges[edgeId].eType == EdgeType.SmallStep, "Edge is not a small step");
         require(store.edges[edgeId].length() == 1, "Edge does not have single step");
-
 
         // the state in the onestep data must be committed to by the startHistoryRoot
         MerkleTreeLib.verifyInclusionProof(

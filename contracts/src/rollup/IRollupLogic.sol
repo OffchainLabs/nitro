@@ -28,8 +28,7 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
 
     function stakeOnNewAssertion(
         AssertionInputs memory assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        bytes32 expectedAssertionHash
     ) external;
 
     function returnOldDeposit(address stakerAddress) external;
@@ -65,8 +64,7 @@ interface IRollupUser is IRollupUserAbs {
 
     function newStakeOnNewAssertion(
         AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        bytes32 expectedAssertionHash
     ) external payable;
 
     function addToDeposit(address stakerAddress) external payable;
@@ -82,8 +80,7 @@ interface IRollupUserERC20 is IRollupUserAbs {
     function newStakeOnNewAssertion(
         uint256 tokenAmount,
         AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        bytes32 expectedAssertionHash
     ) external;
 
     function addToDeposit(address stakerAddress, uint256 tokenAmount) external;

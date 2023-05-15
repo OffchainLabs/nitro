@@ -37,14 +37,6 @@ func (a *Assertion) PrevSeqNum() (protocol.AssertionSequenceNumber, error) {
 	return protocol.AssertionSequenceNumber(inner.PrevNum), nil
 }
 
-func (a *Assertion) StateHash() (common.Hash, error) {
-	inner, err := a.inner()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return inner.StateHash, nil
-}
-
 func (a *Assertion) IsFirstChild() (bool, error) {
 	inner, err := a.inner()
 	if err != nil {
@@ -58,7 +50,7 @@ func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Equal(assertionNode.StateHash[:], make([]byte, 32)) {
+	if bytes.Equal(assertionNode.AssertionHash[:], make([]byte, 32)) {
 		return nil, errors.Wrapf(
 			ErrNotFound,
 			"assertion with id %d",

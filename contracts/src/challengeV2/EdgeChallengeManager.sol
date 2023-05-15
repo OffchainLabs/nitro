@@ -10,6 +10,22 @@ import "../state/Machine.sol";
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
+///@notice A wasm module root and proof to show that it's valid
+struct WasmModuleData {
+    /// @notice A wasm module root value
+    bytes32 wasmModuleRoot;
+    /// @notice Used to prove wasm module root
+    bytes wasmModuleRootProof;
+}
+
+/// @notice An execution state and proof to show that it's valid
+struct ExecutionStateData {
+    /// @notice An execution state
+    ExecutionState executionState;
+    /// @notice Proof to show the execution state is valid
+    bytes proof;
+}
+
 /// @title EdgeChallengeManager interface
 interface IEdgeChallengeManager {
     /// @notice Initialize the EdgeChallengeManager. EdgeChallengeManagers are upgradeable
@@ -38,6 +54,8 @@ interface IEdgeChallengeManager {
     /// @param proof            Additional proof data
     ///                         For Block type edges this is the abi encoding of:
     ///                         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
+    ///                         ExecutionStateData: before state - the execution state (and proof) for the predecessor state
+    ///                         ExecutionStateData: after state - the execution state (and proof) for the claimed state
     ///                         For BigStep and SmallStep edges this is the abi encoding of:
     ///                         bytes32: Start state - first state the edge commits to
     ///                         bytes32: End state - last state the edge commits to
@@ -96,6 +114,7 @@ interface IEdgeChallengeManager {
     function confirmEdgeByOneStepProof(
         bytes32 edgeId,
         OneStepData calldata oneStepData,
+        WasmModuleData calldata wasmData,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) external;
@@ -291,13 +310,18 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         AssertionReferenceData memory ard;
         if (args.edgeType == EdgeType.Block) {
             bytes32 predecessorId = assertionChain.getPredecessorId(args.claimId);
+            require(proof.length != 0, "Block edge specific proof is empty");
+            (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
+                abi.decode(proof, (bytes32[], ExecutionStateData, ExecutionStateData));
             ard = AssertionReferenceData(
                 args.claimId,
                 predecessorId,
                 assertionChain.isPending(args.claimId),
                 assertionChain.hasSibling(args.claimId),
-                assertionChain.getStateHash(predecessorId),
-                assertionChain.getStateHash(args.claimId)
+                assertionChain.proveExecutionState(
+                    predecessorId, predecessorStateData.executionState, predecessorStateData.proof
+                ),
+                assertionChain.proveExecutionState(args.claimId, claimStateData.executionState, claimStateData.proof)
             );
         }
         uint256 expectedEndHeight = getLayerZeroEndHeight(args.edgeType);
@@ -402,17 +426,16 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     function confirmEdgeByOneStepProof(
         bytes32 edgeId,
         OneStepData calldata oneStepData,
+        WasmModuleData calldata wasmData,
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) public {
         bytes32 prevAssertionId = store.getPrevAssertionId(edgeId);
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: assertionChain.proveInboxMsgCountSeen(
-                prevAssertionId, oneStepData.inboxMsgCountSeen, oneStepData.inboxMsgCountSeenProof
-                ),
+            maxInboxMessagesRead: assertionChain.getNextInboxPosition(prevAssertionId),
             bridge: assertionChain.bridge(),
             initialWasmModuleRoot: assertionChain.proveWasmModuleRoot(
-                prevAssertionId, oneStepData.wasmModuleRoot, oneStepData.wasmModuleRootProof
+                prevAssertionId, wasmData.wasmModuleRoot, wasmData.wasmModuleRootProof
                 )
         });
 

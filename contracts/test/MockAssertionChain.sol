@@ -8,11 +8,12 @@ import "../src/bridge/IBridge.sol";
 import "../src/rollup/RollupLib.sol";
 import "./challengeV2/StateTools.sol";
 
+// CHRIS: TODO: we should update this to use the real assertion, not the mock
 struct MockAssertion {
     bytes32 predecessorId;
     uint256 height;
-    uint256 inboxMsgCountSeen;
-    bytes32 stateHash;
+    uint64 nextInboxPosition;
+    ExecutionState state;
     bytes32 successionChallenge;
     uint256 firstChildCreationBlock;
     uint256 secondChildCreationBlock;
@@ -26,7 +27,7 @@ contract MockAssertionChain is IAssertionChain {
     bytes32 public wasmModuleRoot;
 
     function assertionExists(bytes32 assertionId) public view returns (bool) {
-        return assertions[assertionId].stateHash != 0;
+        return assertions[assertionId].height != 0;
     }
 
     function getPredecessorId(bytes32 assertionId) public view returns (bytes32) {
@@ -39,21 +40,16 @@ contract MockAssertionChain is IAssertionChain {
         return assertions[assertionId].height;
     }
 
-    function proveInboxMsgCountSeen(bytes32 assertionId, uint256 inboxMsgCountSeen, bytes memory proof) external view returns (uint256) {
+    function getNextInboxPosition(bytes32 assertionId) external view returns(uint64) {
         require(assertionExists(assertionId), "Assertion does not exist");
-        require(
-            RollupLib.stateHashMem(abi.decode(proof, (ExecutionState)), inboxMsgCountSeen) ==
-                assertions[assertionId].stateHash,
-            "Inbox msg count proof does not match assertion"
-        );
-        return inboxMsgCountSeen;
+        return assertions[assertionId].nextInboxPosition;
     }
 
-    function getStateHash(bytes32 assertionId) external view returns (bytes32) {
+    function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof) external view returns (ExecutionState memory) {
         require(assertionExists(assertionId), "Assertion does not exist");
-        return assertions[assertionId].stateHash;
+        return assertions[assertionId].state;
     }
-
+    
     function hasSibling(bytes32 assertionId) external view returns (bool) {
         require(assertionExists(assertionId), "Assertion does not exist");
         return (assertions[getPredecessorId(assertionId)].secondChildCreationBlock != 0);
@@ -95,8 +91,7 @@ contract MockAssertionChain is IAssertionChain {
 
     function calculateAssertionId(
         bytes32 predecessorId,
-        State memory beforeState,
-        State memory afterState
+        ExecutionState memory afterState
     )
         public
         view
@@ -104,8 +99,8 @@ contract MockAssertionChain is IAssertionChain {
     {
         return RollupLib.assertionHash({
             parentAssertionHash: predecessorId,
-            afterState: afterState.es,
-            inboxAcc: keccak256(abi.encode(afterState.es.globalState.u64Vals[0])), // mock accumulator based on inbox count
+            afterState: afterState,
+            inboxAcc: keccak256(abi.encode(afterState.globalState.u64Vals[0])), // mock accumulator based on inbox count
             wasmModuleRoot: wasmModuleRoot
         });
     }
@@ -121,18 +116,16 @@ contract MockAssertionChain is IAssertionChain {
     function addAssertionUnsafe(
         bytes32 predecessorId,
         uint256 height,
-        uint256 inboxMsgCountSeen,
-        State memory beforeState,
-        State memory afterState,
+        uint64 nextInboxPosition,
+        ExecutionState memory afterState,
         bytes32 successionChallenge
     ) public returns (bytes32) {
-        bytes32 afterStateHash = StateToolsLib.hash(afterState);
-        bytes32 assertionId = calculateAssertionId(predecessorId, beforeState, afterState);
+        bytes32 assertionId = calculateAssertionId(predecessorId, afterState);
         assertions[assertionId] = MockAssertion({
             predecessorId: predecessorId,
             height: height,
-            inboxMsgCountSeen: inboxMsgCountSeen,
-            stateHash: afterStateHash,
+            nextInboxPosition: nextInboxPosition,
+            state: afterState,
             successionChallenge: successionChallenge,
             firstChildCreationBlock: 0,
             secondChildCreationBlock: 0,
@@ -146,20 +139,19 @@ contract MockAssertionChain is IAssertionChain {
     function addAssertion(
         bytes32 predecessorId,
         uint256 height,
-        uint256 inboxMsgCountSeen,
-        State memory beforeState,
-        State memory afterState,
+        uint64 nextInboxPosition,
+        ExecutionState memory beforeState,
+        ExecutionState memory afterState,
         bytes32 successionChallenge
     ) public returns (bytes32) {
         bytes32 beforeStateHash = StateToolsLib.hash(beforeState);
-        bytes32 afterStateHash = StateToolsLib.hash(afterState);
-        bytes32 assertionId = calculateAssertionId(predecessorId, beforeState, afterState);
+        bytes32 assertionId = calculateAssertionId(predecessorId, afterState);
         require(!assertionExists(assertionId), "Assertion already exists");
         require(assertionExists(predecessorId), "Predecessor does not exists");
         require(height > assertions[predecessorId].height, "Height too low");
-        require(inboxMsgCountSeen >= assertions[predecessorId].inboxMsgCountSeen, "Inbox count seen too low");
-        require(beforeStateHash == assertions[predecessorId].stateHash, "Before state hash does not match predecessor");
+        require(nextInboxPosition >= assertions[predecessorId].nextInboxPosition, "Inbox count seen too low");
+        require(beforeStateHash == StateToolsLib.hash(assertions[predecessorId].state), "Before state hash does not match predecessor");
 
-        return addAssertionUnsafe(predecessorId, height, inboxMsgCountSeen, beforeState, afterState, successionChallenge);
+        return addAssertionUnsafe(predecessorId, height, nextInboxPosition, afterState, successionChallenge);
     }
 }

@@ -201,8 +201,7 @@ abstract contract AbsRollupUserLogic is
      */
     function stakeOnNewAssertion(
         AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        bytes32 expectedAssertionHash
     ) public onlyValidator whenNotPaused {
         require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous assertion
@@ -213,7 +212,10 @@ abstract contract AbsRollupUserLogic is
             // Verify that assertion meets the minimum Delta time requirement
             require(timeSinceLastAssertion >= minimumAssertionPeriod, "TIME_DELTA");
 
-            bool isBeforeConsumedAllMsg = assertion.beforeState.globalState.getInboxPosition() == prevAssertionInboxMaxCount;
+            // CHRIS: TODO: this is an extra storage call
+            // CHRIS: TODO: we should be doing this inside the createNewAssertion call
+            //              since otherwise an admin created assertion would be challengeable if created with the wrong count
+            uint64 prevAssertionNextInboxPosition = getAssertionStorage(prevAssertion).nextInboxPosition;
 
             // Minimum size requirement: any assertion must consume exactly all inbox messages
             // put into L1 inbox before the prev node’s L1 blocknum.
@@ -221,17 +223,18 @@ abstract contract AbsRollupUserLogic is
             // as it can't consume future batches.
             require(
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() == prevAssertionInboxMaxCount,
+                    assertion.afterState.globalState.getInboxPosition() == prevAssertionNextInboxPosition,
                 "WRONG_INBOX_POS"
             );
 
             // The rollup cannot advance normally from an errored state
+            // CHRIS: TODO: this is interesting? How do we recover from errored state?
             require(
                 assertion.beforeState.machineStatus == MachineStatus.FINISHED,
                 "BAD_PREV_STATUS"
             );
         }
-        createNewAssertion(assertion, prevAssertion, prevAssertionInboxMaxCount, expectedAssertionHash);
+        createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
 
         stakeOnAssertion(msg.sender, latestAssertionCreated());
     }
@@ -514,15 +517,13 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @notice Create a new stake on a new assertion
      * @param assertion Assertion describing the state change between the old assertion and the new one
      * @param expectedAssertionHash Assertion hash of the assertion that will be created
-     * @param prevAssertionInboxMaxCount Total of messages in the inbox as of the previous assertion
      */
     function newStakeOnNewAssertion(
         AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        bytes32 expectedAssertionHash
     ) external payable override {
         _newStake(msg.value);
-        stakeOnNewAssertion(assertion, expectedAssertionHash, prevAssertionInboxMaxCount);
+        stakeOnNewAssertion(assertion, expectedAssertionHash);
     }
 
     /**
@@ -582,16 +583,14 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
      * @param tokenAmount Amount of the rollups staking token to stake
      * @param assertion Assertion describing the state change between the old assertion and the new one
      * @param expectedAssertionHash Assertion hash of the assertion that will be created
-     * @param prevAssertionInboxMaxCount Total of messages in the inbox as of the previous assertion
      */
     function newStakeOnNewAssertion(
         uint256 tokenAmount,
         AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash,
-        uint256 prevAssertionInboxMaxCount
+        bytes32 expectedAssertionHash
     ) external override {
         _newStake(tokenAmount);
-        stakeOnNewAssertion(assertion, expectedAssertionHash, prevAssertionInboxMaxCount);
+        stakeOnNewAssertion(assertion, expectedAssertionHash);
         /// @dev This is an external call, safe because it's at the end of the function
         receiveTokens(tokenAmount);
     }

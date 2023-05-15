@@ -31,7 +31,6 @@ type Protocol interface {
 type Assertion interface {
 	SeqNum() AssertionSequenceNumber
 	PrevSeqNum() (AssertionSequenceNumber, error)
-	StateHash() (common.Hash, error)
 	IsFirstChild() (bool, error)
 }
 
@@ -73,7 +72,6 @@ type AssertionChain interface {
 		ctx context.Context,
 		prevAssertionState *ExecutionState,
 		postState *ExecutionState,
-		prevInboxMaxCount *big.Int,
 	) (Assertion, error)
 
 	// Spec-based implementation methods.

@@ -9,10 +9,10 @@ import "../state/Machine.sol";
 import "../osp/IOneStepProofEntry.sol";
 
 struct AssertionNode {
-    // Hash of the state of the chain as of this assertion
-    bytes32 stateHash;
     // Hash of the data that will be committed if this assertion is confirmed
     bytes32 confirmData;
+    // The inbox position that the assertion that succeeds should process up to and including
+    uint64 nextInboxPosition;
     // Index of the assertion previous to this one
     uint64 prevNum;
     // Deadline at which this assertion can be confirmed
@@ -32,11 +32,18 @@ struct AssertionNode {
     uint64 createdAtBlock;
     // A hash of all the data needed to determine this assertion's validity, to protect against reorgs
     bytes32 assertionHash;
-
     bool isFirstChild; // no longer in assertionHash
 }
 
+struct BeforeStateData {
+    bytes32 wasmRoot;
+    bytes32 prevAssertionHash;
+    bytes32 sequencerBatchAcc;
+}
+
 struct AssertionInputs {
+    // Additional data used to validate the before state
+    BeforeStateData beforeStateData;
     ExecutionState beforeState;
     ExecutionState afterState;
 }
@@ -47,14 +54,14 @@ struct AssertionInputs {
 library AssertionNodeLib {
     /**
      * @notice Initialize a Assertion
-     * @param _stateHash Initial value of stateHash
+     s* @param _nextInboxPosition The inbox position that the assertion that succeeds should process up to and including
      * @param _confirmData Initial value of confirmData
      * @param _prevNum Initial value of prevNum
      * @param _deadlineBlock Initial value of deadlineBlock
      * @param _assertionHash Initial value of assertionHash
      */
     function createAssertion(
-        bytes32 _stateHash,
+        uint64 _nextInboxPosition,
         bytes32 _confirmData,
         uint64 _prevNum,
         uint64 _deadlineBlock,
@@ -62,7 +69,7 @@ library AssertionNodeLib {
         bool _isFirstChild
     ) internal view returns (AssertionNode memory) {
         AssertionNode memory assertion;
-        assertion.stateHash = _stateHash;
+        assertion.nextInboxPosition = _nextInboxPosition;
         assertion.confirmData = _confirmData;
         assertion.prevNum = _prevNum;
         assertion.deadlineBlock = _deadlineBlock;

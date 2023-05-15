@@ -1314,14 +1314,8 @@ contract EdgeChallengeManagerLibTest is Test {
         if (flag != 4) {
             a.add(e2);
         }
-        OneStepData memory d = OneStepData({
-            inboxMsgCountSeen: 7,
-            inboxMsgCountSeenProof: "",
-            wasmModuleRoot: bytes32(0),
-            wasmModuleRootProof: "",
-            beforeHash: states1[startHeight],
-            proof: abi.encodePacked(states1[startHeight + 1])
-        });
+        OneStepData memory d =
+            OneStepData({beforeHash: states1[startHeight], proof: abi.encodePacked(states1[startHeight + 1])});
         ExecutionContext memory e =
             ExecutionContext({maxInboxMessagesRead: 0, bridge: IBridge(address(0)), initialWasmModuleRoot: bytes32(0)});
         bytes32[] memory beforeProof = ProofUtils.generateInclusionProof(
@@ -1472,18 +1466,6 @@ contract EdgeChallengeManagerLibTest is Test {
         ExpsAndProofs memory roots = newRootsAndProofs(0, expectedEndHeight, startExec.machineHash, endExec.machineHash);
         bytes32 claimId = rand.hash();
         bytes32 endRoot = mode == 137 ? rand.hash() : MerkleTreeLib.root(roots.endExp);
-        bytes memory proof = abi.encode(
-            ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight),
-            startExec.execState,
-            mode == 147 ? uint256(11) : uint256(10),
-            endExec.execState,
-            mode == 148 ? uint256(12) : uint256(20)
-        );
-        if (mode == 140) {
-            bytes32[] memory b = new bytes32[](1);
-            b[0] = rand.hash();
-            roots.prefixProof = ArrayUtilsLib.concat(roots.prefixProof, b);
-        }
         AssertionReferenceData memory ard;
         if (mode != 144) {
             ard = AssertionReferenceData({
@@ -1491,15 +1473,29 @@ contract EdgeChallengeManagerLibTest is Test {
                 predecessorId: rand.hash(),
                 isPending: mode == 142 ? false : true,
                 hasSibling: mode == 143 ? false : true,
-                startState: startExec.stateHash,
-                endState: endExec.stateHash
+                startState: startExec.execState,
+                endState: endExec.execState
             });
         }
+
         if (mode == 145) {
-            ard.startState = 0;
+            ExecutionState memory s;
+            ard.startState = s;
         }
         if (mode == 146) {
-            ard.endState = 0;
+            ExecutionState memory e;
+            ard.endState = e;
+        }
+
+        bytes memory proof = abi.encode(
+            ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight),
+            ExecutionStateData(ard.startState, ""),
+            ExecutionStateData(ard.endState, "")
+        );
+        if (mode == 140) {
+            bytes32[] memory b = new bytes32[](1);
+            b[0] = rand.hash();
+            roots.prefixProof = ArrayUtilsLib.concat(roots.prefixProof, b);
         }
 
         EdgeChallengeManagerLibAccess a = new EdgeChallengeManagerLibAccess();
@@ -1563,14 +1559,6 @@ contract EdgeChallengeManagerLibTest is Test {
 
     function testCreateLayerZeroEdgeEmptyEndState() public {
         createZeroBlockEdge(146, "Empty end state");
-    }
-
-    function testCreateLayerZeroEdgeInvalidStartState() public {
-        createZeroBlockEdge(147, "Incorrect assertion start state");
-    }
-
-    function testCreateLayerZeroEdgeInvalidEndState() public {
-        createZeroBlockEdge(148, "Incorrect assertion end state");
     }
 
     function createClaimEdge(EdgeChallengeManagerLibAccess c, uint256 start, uint256 end, bool includeRival)

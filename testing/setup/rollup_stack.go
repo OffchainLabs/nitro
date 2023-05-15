@@ -54,7 +54,6 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	prevInboxMaxCount := big.NewInt(1)
 
 	// Advance the backend by some blocks to get over time delta failures when
 	// using the assertion chain.
@@ -99,7 +98,6 @@ func CreateTwoValidatorFork(
 		ctx,
 		genesisState,
 		honestPostState,
-		prevInboxMaxCount,
 	)
 	if err != nil {
 		return nil, err
@@ -113,7 +111,6 @@ func CreateTwoValidatorFork(
 		ctx,
 		genesisState,
 		evilPostState,
-		prevInboxMaxCount,
 	)
 	if err != nil {
 		return nil, err
