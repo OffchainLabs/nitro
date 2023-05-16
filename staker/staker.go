@@ -6,7 +6,6 @@ package staker
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"math/big"
 	"runtime/debug"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
