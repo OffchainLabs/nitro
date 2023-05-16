@@ -32,20 +32,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         outbox = connectedContracts.outbox;
         connectedContracts.bridge.setOutbox(address(connectedContracts.outbox), true);
         rollupEventInbox = connectedContracts.rollupEventInbox;
-        connectedContracts.bridge.setDelayedInbox(
-            address(connectedContracts.rollupEventInbox),
-            true
-        );
+        connectedContracts.bridge.setDelayedInbox(address(connectedContracts.rollupEventInbox), true);
 
         connectedContracts.rollupEventInbox.rollupInitialized(config.chainId);
-        connectedContracts.sequencerInbox.addSequencerL2Batch(
-            0,
-            "",
-            1,
-            IGasRefunder(address(0)),
-            0,
-            1
-        );
+        connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)), 0, 1);
 
         validatorUtils = connectedContracts.validatorUtils;
         validatorWalletCreator = connectedContracts.validatorWalletCreator;
@@ -76,10 +66,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
     function createInitialAssertion() private view returns (AssertionNode memory) {
         GlobalState memory emptyGlobalState;
-        ExecutionState memory emptyExecutionState = ExecutionState(
-            emptyGlobalState,
-            MachineStatus.FINISHED
-        );
+        ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
         bytes32 genesisHash = RollupLib.assertionHash({
             parentAssertionHash: bytes32(0),
             afterState: emptyExecutionState,
@@ -89,15 +76,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             // CHRIS: TODO: it would also lead to an invalid first assertion, will fix this in a future PR
             wasmModuleRoot: wasmModuleRoot
         });
-        return
-            AssertionNodeLib.createAssertion(
-                1, // inboxMaxCount - force the first assertion to read a message
-                0, // confirm data
-                0, // prev assertion
-                uint64(block.number), // deadline block (not challengeable)
-                genesisHash,
-                true // initial assertion is first child
-            );
+        return AssertionNodeLib.createAssertion(
+            1, // inboxMaxCount - force the first assertion to read a message
+            0, // confirm data
+            0, // prev assertion
+            uint64(block.number), // deadline block (not challengeable)
+            genesisHash,
+            true // initial assertion is first child
+        );
     }
 
     /**
@@ -304,11 +290,11 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         emit OwnerFunctionCalled(23);
     }
 
-    function forceConfirmAssertion(
-        uint64 assertionNum,
-        bytes32 blockHash,
-        bytes32 sendRoot
-    ) external override whenPaused {
+    function forceConfirmAssertion(uint64 assertionNum, bytes32 blockHash, bytes32 sendRoot)
+        external
+        override
+        whenPaused
+    {
         // this skips deadline, staker and zombie validation
         confirmAssertion(assertionNum, blockHash, sendRoot);
         emit OwnerFunctionCalled(24);
@@ -356,24 +342,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
 
         require(latestAssertionCreated() == 0, "NON_GENESIS_NODES_EXIST");
         require(GlobalStateLib.isEmpty(assertion.beforeState.globalState), "NOT_EMPTY_BEFORE");
-        require(
-            assertion.beforeState.machineStatus == MachineStatus.FINISHED,
-            "BEFORE_MACHINE_NOT_FINISHED"
-        );
+        require(assertion.beforeState.machineStatus == MachineStatus.FINISHED, "BEFORE_MACHINE_NOT_FINISHED");
         // accessors such as state.getSendRoot not available for calldata structs, only memory
-        require(
-            assertion.afterState.globalState.bytes32Vals[1] == expectedSendRoot,
-            "NOT_ZERO_SENDROOT"
-        );
-        require(
-            assertion.afterState.globalState.u64Vals[0] == expectedInboxCount,
-            "INBOX_NOT_AT_ONE"
-        );
+        require(assertion.afterState.globalState.bytes32Vals[1] == expectedSendRoot, "NOT_ZERO_SENDROOT");
+        require(assertion.afterState.globalState.u64Vals[0] == expectedInboxCount, "INBOX_NOT_AT_ONE");
         require(assertion.afterState.globalState.u64Vals[1] == 0, "POSITION_IN_MESSAGE_NOT_ZERO");
-        require(
-            assertion.afterState.machineStatus == MachineStatus.FINISHED,
-            "AFTER_MACHINE_NOT_FINISHED"
-        );
+        require(assertion.afterState.machineStatus == MachineStatus.FINISHED, "AFTER_MACHINE_NOT_FINISHED");
         bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
         createNewAssertion(assertion, 0, bytes32(0));
         confirmAssertion(1, genesisBlockHash, expectedSendRoot);

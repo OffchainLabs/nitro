@@ -12,12 +12,7 @@ import "./RollupCore.sol";
 import "./IRollupLogic.sol";
 import {ETH_POS_BLOCK_TIME} from "../libraries/Constants.sol";
 
-abstract contract AbsRollupUserLogic is
-    RollupCore,
-    UUPSNotUpgradeable,
-    IRollupUserAbs,
-    IOldChallengeResultReceiver
-{
+abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUserAbs, IOldChallengeResultReceiver {
     using AssertionNodeLib for AssertionNode;
     using GlobalStateLib for GlobalState;
 
@@ -74,12 +69,13 @@ abstract contract AbsRollupUserLogic is
         AssertionNode storage firstUnresolvedAssertion_ = getAssertionStorage(firstUnresolvedAssertionNum);
 
         if (firstUnresolvedAssertion_.prevNum == latestConfirmedAssertionNum) {
-            /**If the first unresolved assertion is a child of the latest confirmed assertion, to prove it can be rejected, we show:
+            /**
+             * If the first unresolved assertion is a child of the latest confirmed assertion, to prove it can be rejected, we show:
              * a) Its deadline has expired
              * b) *Some* staker is staked on a sibling
-
+             * 
              * The following three checks are sufficient to prove b:
-            */
+             */
 
             // 1.  StakerAddress is indeed a staker
             require(isStakedOnLatestConfirmed(stakerAddress), "NOT_STAKED");
@@ -148,8 +144,8 @@ abstract contract AbsRollupUserLogic is
         //     prevAssertion.childStakerCount == assertion.stakerCount + zombiesStakedOnOtherChildren,
         //     "NOT_ALL_STAKED"
         // );
-        
-        if(prevAssertion.secondChildBlock > 0) {
+
+        if (prevAssertion.secondChildBlock > 0) {
             // check if assertion is the challenge winner
             ChallengeEdge memory _winningEdge = challengeManager.getEdge(winningEdge);
             require(getAssertionNum(_winningEdge.claimId) == assertionNum, "NOT_WINNER");
@@ -177,11 +173,7 @@ abstract contract AbsRollupUserLogic is
      * @param assertionNum Index of the assertion to move stake to. This must by a child of the assertion the staker is currently staked on
      * @param assertionHash Assertion hash of assertionNum (protects against reorgs)
      */
-    function stakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash)
-        public
-        onlyValidator
-        whenNotPaused
-    {
+    function stakeOnExistingAssertion(uint64 assertionNum, bytes32 assertionHash) public onlyValidator whenNotPaused {
         require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
 
         require(
@@ -199,10 +191,11 @@ abstract contract AbsRollupUserLogic is
      * @param assertion The assertion data
      * @param expectedAssertionHash The hash of the assertion being created (protects against reorgs)
      */
-    function stakeOnNewAssertion(
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash
-    ) public onlyValidator whenNotPaused {
+    function stakeOnNewAssertion(AssertionInputs calldata assertion, bytes32 expectedAssertionHash)
+        public
+        onlyValidator
+        whenNotPaused
+    {
         require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous assertion
         uint64 prevAssertion = latestStakedAssertion(msg.sender);
@@ -222,17 +215,14 @@ abstract contract AbsRollupUserLogic is
             // We make an exception if the machine enters the errored state,
             // as it can't consume future batches.
             require(
-                assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() == prevAssertionNextInboxPosition,
+                assertion.afterState.machineStatus == MachineStatus.ERRORED
+                    || assertion.afterState.globalState.getInboxPosition() == prevAssertionNextInboxPosition,
                 "WRONG_INBOX_POS"
             );
 
             // The rollup cannot advance normally from an errored state
             // CHRIS: TODO: this is interesting? How do we recover from errored state?
-            require(
-                assertion.beforeState.machineStatus == MachineStatus.FINISHED,
-                "BAD_PREV_STATUS"
-            );
+            require(assertion.beforeState.machineStatus == MachineStatus.FINISHED, "BAD_PREV_STATUS");
         }
         createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
 
@@ -257,11 +247,7 @@ abstract contract AbsRollupUserLogic is
      * @param stakerAddress Address of the staker whose stake is increased
      * @param depositAmount The amount of either eth or tokens deposited
      */
-    function _addToDeposit(address stakerAddress, uint256 depositAmount)
-        internal
-        onlyValidator
-        whenNotPaused
-    {
+    function _addToDeposit(address stakerAddress, uint256 depositAmount) internal onlyValidator whenNotPaused {
         requireUnchallengedStaker(stakerAddress);
         increaseStakeBy(stakerAddress, depositAmount);
     }
@@ -279,9 +265,7 @@ abstract contract AbsRollupUserLogic is
         reduceStakeTo(msg.sender, target);
     }
 
-    function createChallenge(
-        uint64 assertionNum
-    ) external onlyValidator whenNotPaused returns(bytes32) {
+    function createChallenge(uint64 assertionNum) external onlyValidator whenNotPaused returns (bytes32) {
         revert("DEPRECATED");
     }
 
@@ -290,11 +274,11 @@ abstract contract AbsRollupUserLogic is
      * @param winningStaker Address of the winning staker
      * @param losingStaker Address of the losing staker
      */
-    function completeChallenge(
-        uint256 challengeIndex,
-        address winningStaker,
-        address losingStaker
-    ) external override whenNotPaused {
+    function completeChallenge(uint256 challengeIndex, address winningStaker, address losingStaker)
+        external
+        override
+        whenNotPaused
+    {
         revert("DEPRECATED");
     }
 
@@ -303,11 +287,7 @@ abstract contract AbsRollupUserLogic is
      * @param zombieNum Index of the zombie to remove
      * @param maxAssertions Maximum number of assertions to remove the zombie from (to limit the cost of this transaction)
      */
-    function removeZombie(uint256 zombieNum, uint256 maxAssertions)
-        external
-        onlyValidator
-        whenNotPaused
-    {
+    function removeZombie(uint256 zombieNum, uint256 maxAssertions) external onlyValidator whenNotPaused {
         require(zombieNum < zombieCount(), "NO_SUCH_ZOMBIE");
         address zombieStakerAddress = zombieAddress(zombieNum);
         uint64 latestAssertionStaked = zombieLatestStakedAssertion(zombieNum);
@@ -363,33 +343,11 @@ abstract contract AbsRollupUserLogic is
         if (_blockNumber < firstUnresolvedDeadline) {
             return baseStake;
         }
-        uint24[10] memory numerators = [
-            1,
-            122971,
-            128977,
-            80017,
-            207329,
-            114243,
-            314252,
-            129988,
-            224562,
-            162163
-        ];
-        uint24[10] memory denominators = [
-            1,
-            114736,
-            112281,
-            64994,
-            157126,
-            80782,
-            207329,
-            80017,
-            128977,
-            86901
-        ];
+        uint24[10] memory numerators = [1, 122971, 128977, 80017, 207329, 114243, 314252, 129988, 224562, 162163];
+        uint24[10] memory denominators = [1, 114736, 112281, 64994, 157126, 80782, 207329, 80017, 128977, 86901];
         uint256 firstUnresolvedAge = _blockNumber - firstUnresolvedDeadline;
         uint256 periodsPassed = (firstUnresolvedAge * 10) / confirmPeriodBlocks;
-        uint256 baseMultiplier = 2**(periodsPassed / 10);
+        uint256 baseMultiplier = 2 ** (periodsPassed / 10);
         uint256 withNumerator = baseMultiplier * numerators[periodsPassed % 10];
         uint256 multiplier = withNumerator / denominators[periodsPassed % 10];
         if (multiplier == 0) {
@@ -404,11 +362,11 @@ abstract contract AbsRollupUserLogic is
      * that only blocks operations that should be blocked anyway
      * @return The current minimum stake requirement
      */
-    function requiredStake(
-        uint256 blockNumber,
-        uint64 firstUnresolvedAssertionNum,
-        uint64 latestCreatedAssertion
-    ) external view returns (uint256) {
+    function requiredStake(uint256 blockNumber, uint64 firstUnresolvedAssertionNum, uint64 latestCreatedAssertion)
+        external
+        view
+        returns (uint256)
+    {
         return currentRequiredStake(blockNumber, firstUnresolvedAssertionNum, latestCreatedAssertion);
     }
 
@@ -460,9 +418,8 @@ abstract contract AbsRollupUserLogic is
             Zombie storage zombie = getZombieStorage(i);
             // If this zombie is staked on this assertion, but its _latest_ staked assertion isn't this assertion,
             // then it must be staked on a child of this assertion.
-            if (
-                zombie.latestStakedAssertion != assertionNum && assertionHasStaker(assertionNum, zombie.stakerAddress)
-            ) {
+            if (zombie.latestStakedAssertion != assertionNum && assertionHasStaker(assertionNum, zombie.stakerAddress))
+            {
                 stakedZombieCount++;
             }
         }
@@ -474,10 +431,7 @@ abstract contract AbsRollupUserLogic is
      */
     function requireUnresolvedExists() public view override {
         uint256 firstUnresolved = firstUnresolvedAssertion();
-        require(
-            firstUnresolved > latestConfirmed() && firstUnresolved <= latestAssertionCreated(),
-            "NO_UNRESOLVED"
-        );
+        require(firstUnresolved > latestConfirmed() && firstUnresolved <= latestAssertionCreated(), "NO_UNRESOLVED");
     }
 
     function requireUnresolved(uint256 assertionNum) public view override {
@@ -518,10 +472,11 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @param assertion Assertion describing the state change between the old assertion and the new one
      * @param expectedAssertionHash Assertion hash of the assertion that will be created
      */
-    function newStakeOnNewAssertion(
-        AssertionInputs calldata assertion,
-        bytes32 expectedAssertionHash
-    ) external payable override {
+    function newStakeOnNewAssertion(AssertionInputs calldata assertion, bytes32 expectedAssertionHash)
+        external
+        payable
+        override
+    {
         _newStake(msg.value);
         stakeOnNewAssertion(assertion, expectedAssertionHash);
     }
@@ -530,13 +485,7 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @notice Increase the amount staked eth for the given staker
      * @param stakerAddress Address of the staker whose stake is increased
      */
-    function addToDeposit(address stakerAddress)
-        external
-        payable
-        override
-        onlyValidator
-        whenNotPaused
-    {
+    function addToDeposit(address stakerAddress) external payable override onlyValidator whenNotPaused {
         _addToDeposit(stakerAddress, msg.value);
     }
 
@@ -547,7 +496,7 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, ) = msg.sender.call{value: amount}("");
+        (bool success,) = msg.sender.call{value: amount}("");
         require(success, "TRANSFER_FAILED");
         return amount;
     }
@@ -567,11 +516,10 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
      * @param assertionNum Number of the assertion your stake will be place one
      * @param assertionHash Assertion hash of the assertion with the given assertionNum
      */
-    function newStakeOnExistingAssertion(
-        uint256 tokenAmount,
-        uint64 assertionNum,
-        bytes32 assertionHash
-    ) external override {
+    function newStakeOnExistingAssertion(uint256 tokenAmount, uint64 assertionNum, bytes32 assertionHash)
+        external
+        override
+    {
         _newStake(tokenAmount);
         stakeOnExistingAssertion(assertionNum, assertionHash);
         /// @dev This is an external call, safe because it's at the end of the function
@@ -600,11 +548,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
      * @param stakerAddress Address of the staker whose stake is increased
      * @param tokenAmount the amount of tokens staked
      */
-    function addToDeposit(address stakerAddress, uint256 tokenAmount)
-        external
-        onlyValidator
-        whenNotPaused
-    {
+    function addToDeposit(address stakerAddress, uint256 tokenAmount) external onlyValidator whenNotPaused {
         _addToDeposit(stakerAddress, tokenAmount);
         /// @dev This is an external call, safe because it's at the end of the function
         receiveTokens(tokenAmount);
@@ -621,9 +565,6 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
     }
 
     function receiveTokens(uint256 tokenAmount) private {
-        require(
-            IERC20Upgradeable(stakeToken).transferFrom(msg.sender, address(this), tokenAmount),
-            "TRANSFER_FAIL"
-        );
+        require(IERC20Upgradeable(stakeToken).transferFrom(msg.sender, address(this), tokenAmount), "TRANSFER_FAIL");
     }
 }

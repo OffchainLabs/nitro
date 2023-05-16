@@ -257,10 +257,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     /// @return Genesis end state hash, assertion hash, and wasm module root
     function genesisAssertionHashes() public view override returns (bytes32, bytes32, bytes32) {
         GlobalState memory emptyGlobalState;
-        ExecutionState memory emptyExecutionState = ExecutionState(
-            emptyGlobalState,
-            MachineStatus.FINISHED
-        );
+        ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
         bytes32 afterStateHash = RollupLib.executionStateHash(emptyExecutionState);
         bytes32 genesisHash = RollupLib.assertionHash({
             parentAssertionHash: bytes32(0),
@@ -299,11 +296,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         _firstUnresolvedAssertion++;
     }
 
-    function confirmAssertion(
-        uint64 assertionNum,
-        bytes32 blockHash,
-        bytes32 sendRoot
-    ) internal {
+    function confirmAssertion(uint64 assertionNum, bytes32 blockHash, bytes32 sendRoot) internal {
         AssertionNode storage assertion = getAssertionStorage(assertionNum);
         // Authenticate data against assertion's confirm data pre-image
         require(assertion.confirmData == RollupLib.confirmHash(blockHash, sendRoot), "CONFIRM_DATA");
@@ -343,11 +336,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param stakerAddress2 Address of the second staker
      * @return Address of the challenge that the two stakers are in
      */
-    function inChallenge(address stakerAddress1, address stakerAddress2)
-        internal
-        view
-        returns (uint64)
-    {
+    function inChallenge(address stakerAddress1, address stakerAddress2) internal view returns (uint64) {
         Staker storage staker1 = _stakerMap[stakerAddress1];
         Staker storage staker2 = _stakerMap[stakerAddress2];
         uint64 challenge = staker1.currentChallenge;
@@ -371,11 +360,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param staker2 Address of the second staker
      * @param challenge Address of the challenge both stakers are now in
      */
-    function challengeStarted(
-        address staker1,
-        address staker2,
-        uint64 challenge
-    ) internal {
+    function challengeStarted(address staker1, address staker2, uint64 challenge) internal {
         _stakerMap[staker1].currentChallenge = challenge;
         _stakerMap[staker2].currentChallenge = challenge;
     }
@@ -562,20 +547,23 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         bytes32 expectedAssertionHash
     ) internal returns (bytes32) {
         require(
-            assertion.afterState.machineStatus == MachineStatus.FINISHED ||
-                assertion.afterState.machineStatus == MachineStatus.ERRORED,
+            assertion.afterState.machineStatus == MachineStatus.FINISHED
+                || assertion.afterState.machineStatus == MachineStatus.ERRORED,
             "BAD_AFTER_STATUS"
         );
 
         AssertionNode storage prevAssertion = getAssertionStorage(prevAssertionNum);
         bytes32 prevAssertionHash = prevAssertion.assertionHash;
         // validate the before state
-        require(RollupLib.assertionHash(
-            assertion.beforeStateData.prevAssertionHash,
-            assertion.beforeState,
-            assertion.beforeStateData.sequencerBatchAcc,
-            assertion.beforeStateData.wasmRoot
-        ) == prevAssertionHash, "INVALID_BEFORE_STATE");
+        require(
+            RollupLib.assertionHash(
+                assertion.beforeStateData.prevAssertionHash,
+                assertion.beforeState,
+                assertion.beforeStateData.sequencerBatchAcc,
+                assertion.beforeStateData.wasmRoot
+            ) == prevAssertionHash,
+            "INVALID_BEFORE_STATE"
+        );
 
         uint256 nextInboxPosition;
         bytes32 sequencerBatchAcc;
@@ -586,16 +574,16 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             require(afterInboxCount >= prevInboxPosition, "INBOX_BACKWARDS");
             if (afterInboxCount == prevInboxPosition) {
                 require(
-                    assertion.afterState.globalState.getPositionInMessage() >=
-                        assertion.beforeState.globalState.getPositionInMessage(),
+                    assertion.afterState.globalState.getPositionInMessage()
+                        >= assertion.beforeState.globalState.getPositionInMessage(),
                     "INBOX_POS_IN_MSG_BACKWARDS"
                 );
             }
 
             // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
             if (
-                assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                assertion.afterState.globalState.getPositionInMessage() > 0
+                assertion.afterState.machineStatus == MachineStatus.ERRORED
+                    || assertion.afterState.globalState.getPositionInMessage() > 0
             ) {
                 // The current inbox message was read
                 afterInboxCount++;
@@ -604,7 +592,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
             require(afterInboxCount <= currentInboxPosition, "INBOX_PAST_END");
 
-            if(assertion.afterState.globalState.getInboxPosition() == currentInboxPosition) {
+            if (assertion.afterState.globalState.getInboxPosition() == currentInboxPosition) {
                 // assertions must consume exactly up to the message count that was in the inbox
                 // when the prev assertion was made. However if no new messages are sent, the next assertion
                 // would need to consume the same number of messages as the prev, meaning the chain
@@ -617,7 +605,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             // we don't create an assertion until messages are added to the inbox
             require(afterInboxCount != 0, "EMPTY_INBOX_COUNT");
-            
+
             // This gives replay protection against the state of the inbox
             sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxCount - 1);
         }
@@ -630,13 +618,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             wasmModuleRoot // HN: TODO: should we include this in assertion hash?
         );
         require(
-            newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0),
-            "UNEXPECTED_NODE_HASH"
+            newAssertionHash == expectedAssertionHash || expectedAssertionHash == bytes32(0), "UNEXPECTED_NODE_HASH"
         );
 
-        require(
-            _assertionHashToNum[newAssertionHash] == 0, "ASSERTION_SEEN"
-        );
+        require(_assertionHashToNum[newAssertionHash] == 0, "ASSERTION_SEEN");
 
         AssertionNode memory newAssertion = AssertionNodeLib.createAssertion(
             uint64(nextInboxPosition),
@@ -670,55 +655,56 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         return newAssertionHash;
     }
 
-    function getPredecessorId(bytes32 assertionId) external view returns (bytes32){
+    function getPredecessorId(bytes32 assertionId) external view returns (bytes32) {
         uint64 prevNum = getAssertionStorage(getAssertionNum(assertionId)).prevNum;
         return getAssertionId(prevNum);
     }
 
-    function getHeight(bytes32 assertionId) external view returns (uint256){
+    function getHeight(bytes32 assertionId) external view returns (uint256) {
         revert("DEPRECATED");
     }
 
-    function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof) external view returns (ExecutionState memory) {
-        (
-            bytes32 parentAssertionHash,
-            bytes32 inboxAcc,
-            bytes32 wasmModuleRootInner
-        ) = abi.decode(proof, (bytes32, bytes32, bytes32));
+    function proveExecutionState(bytes32 assertionId, ExecutionState memory state, bytes memory proof)
+        external
+        view
+        returns (ExecutionState memory)
+    {
+        (bytes32 parentAssertionHash, bytes32 inboxAcc, bytes32 wasmModuleRootInner) =
+            abi.decode(proof, (bytes32, bytes32, bytes32));
 
         require(
             getAssertionStorage(getAssertionNum(assertionId)).assertionHash
-             == RollupLib.assertionHash(
-                parentAssertionHash,
-                state,
-                inboxAcc,
-                wasmModuleRootInner
-             ), "Invalid assertion hash"
+                == RollupLib.assertionHash(parentAssertionHash, state, inboxAcc, wasmModuleRootInner),
+            "Invalid assertion hash"
         );
 
         return state;
     }
 
-    function getNextInboxPosition(bytes32 assertionId) external view returns(uint64) {
+    function getNextInboxPosition(bytes32 assertionId) external view returns (uint64) {
         return getAssertionStorage(getAssertionNum(assertionId)).nextInboxPosition;
     }
 
     function hasSibling(bytes32 assertionId) external view returns (bool) {
-        return getAssertionStorage(
-            getAssertionStorage(getAssertionNum(assertionId)).prevNum
-        ).secondChildBlock != 0;
+        return getAssertionStorage(getAssertionStorage(getAssertionNum(assertionId)).prevNum).secondChildBlock != 0;
     }
 
     // HN: TODO: use block or timestamp?
-    function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256){
+    function getFirstChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
         return getAssertionStorage(getAssertionNum(assertionId)).firstChildBlock;
     }
-    function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256){
+
+    function getSecondChildCreationBlock(bytes32 assertionId) external view returns (uint256) {
         return getAssertionStorage(getAssertionNum(assertionId)).secondChildBlock;
     }
 
-    function proveWasmModuleRoot(bytes32 assertionId, bytes32 root, bytes memory proof) external view returns (bytes32){
-        (bytes32 parentAssertionHash, bytes32 afterStateHash, bytes32 inboxAcc) = abi.decode(proof, (bytes32, bytes32, bytes32));
+    function proveWasmModuleRoot(bytes32 assertionId, bytes32 root, bytes memory proof)
+        external
+        view
+        returns (bytes32)
+    {
+        (bytes32 parentAssertionHash, bytes32 afterStateHash, bytes32 inboxAcc) =
+            abi.decode(proof, (bytes32, bytes32, bytes32));
         require(
             RollupLib.assertionHash({
                 parentAssertionHash: parentAssertionHash,
@@ -731,21 +717,22 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         return root;
     }
 
-    function isFirstChild(bytes32 assertionId) external view returns (bool){
+    function isFirstChild(bytes32 assertionId) external view returns (bool) {
         return getAssertionStorage(getAssertionNum(assertionId)).isFirstChild;
     }
 
-    function isPending(bytes32 assertionId) external view returns (bool){
+    function isPending(bytes32 assertionId) external view returns (bool) {
         return getAssertionNum(assertionId) >= _firstUnresolvedAssertion;
     }
 
     // HN: TODO: decide to keep using index or hash
-    function getAssertionNum(bytes32 id) public view returns(uint64){
+    function getAssertionNum(bytes32 id) public view returns (uint64) {
         uint64 num = _assertionHashToNum[id];
         require(num > 0, "ASSERTION_NOT_EXIST");
         return uint64(num);
     }
-    function getAssertionId(uint64 num) public view returns(bytes32){
+
+    function getAssertionId(uint64 num) public view returns (bytes32) {
         require(num <= latestAssertionCreated(), "INVALID_ASSERTION_NUM");
         return getAssertionStorage(num).assertionHash;
     }
