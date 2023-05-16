@@ -819,7 +819,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2Ch
 		}
 		return true, nil
 	}
-	return false, nil
+	return false, fmt.Errorf("unsupported L2 chain ID %v", chainId)
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
