@@ -17,6 +17,8 @@ var (
 	sequencerBatchCountKey          []byte = []byte("_sequencerBatchCount")          // contains the current sequencer message count
 	dbSchemaVersion                 []byte = []byte("_schemaVersion")                // contains a uint64 representing the database schema version
 	lastPrunedSequencerBatchMetaKey []byte = []byte("_lastPrunedSequencerBatchMeta") // contains the last pruned batch metadata key
+	lastPrunedMessageKey            []byte = []byte("_lastPrunedMessage")            // contains the last pruned message key
+	lastPrunedDelayedMessageKey     []byte = []byte("_lastPrunedDelayedMessage")     // contains the last pruned delayed message key
 )
 
 const currentDbSchemaVersion uint64 = 1

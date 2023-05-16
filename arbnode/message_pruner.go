@@ -91,20 +91,16 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 	startBatchCount := uint64(1)
 	hasKey, err := inboxTrackerDb.Has(lastPrunedSequencerBatchMetaKey)
 	if err != nil {
-		log.Error("error checking last pruned batch metadata: %w", err)
-		return
-	}
-	if hasKey {
+		log.Warn("error checking last pruned batch metadata: %w", err)
+	} else if hasKey {
 		data, err := inboxTrackerDb.Get(lastPrunedSequencerBatchMetaKey)
 		if err != nil {
-			log.Error("error fetching last pruned batch metadata: %w", err)
-			return
-		}
-
-		err = rlp.DecodeBytes(data, &startBatchCount)
-		if err != nil {
-			log.Error("error decoding last pruned batch metadata: %w", err)
-			return
+			log.Warn("error fetching last pruned batch metadata: %w", err)
+		} else {
+			err = rlp.DecodeBytes(data, &startBatchCount)
+			if err != nil {
+				log.Warn("error decoding last pruned batch metadata: %w", err)
+			}
 		}
 	}
 	if endBatchCount > startBatchCount {
@@ -124,16 +120,68 @@ func deleteOldMessageFromDB(endBatchCount uint64, endBatchMetadata BatchMetadata
 			return
 		}
 	}
+
+	startMessageCount := uint64(1)
+	hasKey, err = transactionStreamerDb.Has(lastPrunedMessageKey)
+	if err != nil {
+		log.Warn("error checking last pruned message: %w", err)
+	} else if hasKey {
+		data, err := transactionStreamerDb.Get(lastPrunedMessageKey)
+		if err != nil {
+			log.Warn("error fetching last pruned message: %w", err)
+		} else {
+			err = rlp.DecodeBytes(data, &startMessageCount)
+			if err != nil {
+				log.Warn("error decoding last pruned message: %w", err)
+			}
+		}
+	}
 	if endBatchMetadata.MessageCount > 1 {
-		err := deleteFromRange(transactionStreamerDb, messagePrefix, 1, uint64(endBatchMetadata.MessageCount)-1)
+		err := deleteFromRange(transactionStreamerDb, messagePrefix, startMessageCount, uint64(endBatchMetadata.MessageCount)-1)
 		if err != nil {
 			log.Error("error deleting last batch messages: %w", err)
 		}
+		endMessageCountValue, err := rlp.EncodeToBytes(uint64(endBatchMetadata.MessageCount) - 1)
+		if err != nil {
+			log.Error("error encoding end message count: %w", err)
+			return
+		}
+		err = transactionStreamerDb.Put(lastPrunedMessageKey, endMessageCountValue)
+		if err != nil {
+			log.Error("error storing last pruned message: %w", err)
+			return
+		}
+	}
+
+	startDelayedMessageCount := uint64(1)
+	hasKey, err = inboxTrackerDb.Has(lastPrunedDelayedMessageKey)
+	if err != nil {
+		log.Warn("error checking last pruned delayed message: %w", err)
+	} else if hasKey {
+		data, err := inboxTrackerDb.Get(lastPrunedDelayedMessageKey)
+		if err != nil {
+			log.Warn("error fetching last pruned delayed message: %w", err)
+		} else {
+			err = rlp.DecodeBytes(data, &startDelayedMessageCount)
+			if err != nil {
+				log.Warn("error decoding last pruned delayed message: %w", err)
+			}
+		}
 	}
 	if endBatchMetadata.DelayedMessageCount > 1 {
-		err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, 1, endBatchMetadata.DelayedMessageCount-1)
+		err := deleteFromRange(inboxTrackerDb, rlpDelayedMessagePrefix, startDelayedMessageCount, endBatchMetadata.DelayedMessageCount-1)
 		if err != nil {
 			log.Error("error deleting last batch delayed messages: %w", err)
+		}
+		endDelayedMessageCountValue, err := rlp.EncodeToBytes(uint64(endBatchMetadata.DelayedMessageCount) - 1)
+		if err != nil {
+			log.Error("error encoding end delayed message count: %w", err)
+			return
+		}
+		err = inboxTrackerDb.Put(lastPrunedDelayedMessageKey, endDelayedMessageCountValue)
+		if err != nil {
+			log.Error("error storing last pruned delayed message: %w", err)
+			return
 		}
 	}
 }
