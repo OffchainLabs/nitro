@@ -30,11 +30,11 @@ func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles [
 	if err != nil {
 		return nil, err
 	}
-	if chainInfo != nil && chainInfo.ChainConfig != nil {
+	if chainInfo.ChainConfig != nil {
 		chainInfo.ChainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
 		return chainInfo.ChainConfig, nil
 	}
-	return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	return nil, fmt.Errorf("missing chain config for L2 chain ID %v", chainId)
 }
 
 func GetRollupAddressesConfig(chainId *big.Int, l2ChainInfoFiles []string) (RollupAddresses, error) {
@@ -42,10 +42,10 @@ func GetRollupAddressesConfig(chainId *big.Int, l2ChainInfoFiles []string) (Roll
 	if err != nil {
 		return RollupAddresses{}, err
 	}
-	if chainInfo != nil && chainInfo.RollupAddresses != nil {
+	if chainInfo.RollupAddresses != nil {
 		return *chainInfo.RollupAddresses, nil
 	}
-	return RollupAddresses{}, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", chainId)
 }
 
 func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, error) {
@@ -72,7 +72,7 @@ func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, er
 		return nil, err
 	}
 	if _, ok := chainsInfo[chainId]; !ok {
-		return nil, nil
+		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
 	}
 	chainInfo := chainsInfo[chainId]
 	return &chainInfo, nil

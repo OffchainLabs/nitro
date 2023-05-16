@@ -809,7 +809,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2Ch
 	if err != nil {
 		return false, err
 	}
-	if chainInfo != nil && chainInfo.ChainParameters != nil {
+	if chainInfo.ChainParameters != nil {
 		if chainInfo.ParentChainId != l1ChainId {
 			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
 		}
@@ -819,7 +819,7 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2Ch
 		}
 		return true, nil
 	}
-	return false, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	return false, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
