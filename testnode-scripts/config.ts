@@ -267,12 +267,13 @@ function writeConfigs(argv: any) {
             "addr": "",
         },
         "validation": {
-			"api-auth": true,
+            "api-auth": true,
             "api-public": false,
         },
         "auth": {
             "jwtsecret": valJwtSecret,
-        }
+            "addr": "0.0.0.0",
+        },
     }))
     fs.writeFileSync(path.join(consts.configpath, "validation_node_config.json"), JSON.stringify(validationNodeConfig))
 }
