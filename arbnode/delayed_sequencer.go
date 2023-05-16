@@ -140,20 +140,21 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, acc, err := d.inbox.GetDelayedMessageAndAccumulator(pos)
+		msg, acc, parentChainBlockNumber, err := d.inbox.GetDelayedMessageAccumulatorAndParentChainBlockNumber(pos)
 		if err != nil {
 			return err
 		}
-		if msg.Header.BlockNumber > finalized {
+		if parentChainBlockNumber > finalized {
 			// Message isn't finalized yet; stop here
-			d.waitingForFinalizedBlock = msg.Header.BlockNumber
+			d.waitingForFinalizedBlock = parentChainBlockNumber
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {
 			// Ensure that there hasn't been a reorg and this message follows the last
 			fullMsg := DelayedInboxMessage{
-				BeforeInboxAcc: lastDelayedAcc,
-				Message:        msg,
+				BeforeInboxAcc:         lastDelayedAcc,
+				Message:                msg,
+				ParentChainBlockNumber: parentChainBlockNumber,
 			}
 			if fullMsg.AfterInboxAcc() != acc {
 				return errors.New("delayed message accumulator mismatch while sequencing")
