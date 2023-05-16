@@ -194,3 +194,7 @@ func (s *RedisStorage[Item]) Length(ctx context.Context) (int, error) {
 	}
 	return int(count), nil
 }
+
+func (s *RedisStorage[Item]) IsPersistent() bool {
+	return true
+}

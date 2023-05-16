@@ -42,6 +42,7 @@ type QueueStorage[Item any] interface {
 	Prune(ctx context.Context, keepStartingAt uint64) error
 	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
 	Length(ctx context.Context) (int, error)
+	IsPersistent() bool
 }
 
 type DataPosterConfig struct {
@@ -160,6 +161,7 @@ func (p *DataPoster[Meta]) From() common.Address {
 }
 
 func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
+	config := p.config()
 	var emptyMeta Meta
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -172,7 +174,6 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		config := p.config()
 		nextNonce := lastQueueItem.Data.Nonce + 1
 		if config.MaxQueuedTransactions > 0 {
 			queueLen, err := p.queue.Length(ctx)
@@ -196,6 +197,9 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 	}
 	err = p.updateNonce(ctx)
 	if err != nil {
+		if !p.queue.IsPersistent() && config.WaitForL1Finality {
+			return 0, emptyMeta, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
+		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
