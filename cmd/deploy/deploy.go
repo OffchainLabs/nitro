@@ -175,19 +175,11 @@ func main() {
 	}
 	chainsInfo := map[uint64]chaininfo.ChainInfo{
 		l2ChainId.Uint64(): {
-			ChainName:       *l2ChainName,
-			ParentChainId:   l1ChainId.Uint64(),
-			ChainParameters: &chainParams,
-			ChainConfig:     &chainConfig,
-			RollupAddressesConfig: &chaininfo.RollupAddressesConfig{
-				Bridge:                 deployedAddresses.Bridge.Hex(),
-				Inbox:                  deployedAddresses.Inbox.Hex(),
-				SequencerInbox:         deployedAddresses.SequencerInbox.Hex(),
-				Rollup:                 deployedAddresses.Rollup.Hex(),
-				ValidatorUtils:         deployedAddresses.ValidatorUtils.Hex(),
-				ValidatorWalletCreator: deployedAddresses.ValidatorWalletCreator.Hex(),
-				DeployedAt:             deployedAddresses.DeployedAt,
-			},
+			ChainName:             *l2ChainName,
+			ParentChainId:         l1ChainId.Uint64(),
+			ChainParameters:       &chainParams,
+			ChainConfig:           &chainConfig,
+			RollupAddressesConfig: deployedAddresses,
 		},
 	}
 	chainsInfoJson, err := json.Marshal(chainsInfo)

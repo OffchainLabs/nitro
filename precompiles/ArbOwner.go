@@ -198,8 +198,7 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 		if err != nil {
 			return fmt.Errorf("failed to deserialize old config: %w", err)
 		}
-		// TODO is evm.Context.Time ok here?
-		if err := oldConfig.CheckCompatible(&newConfig, newConfig.ArbitrumChainParams.GenesisBlockNum, evm.Context.Time); err != nil {
+		if err := oldConfig.CheckCompatible(&newConfig, newConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 			return fmt.Errorf("invalid chain config, not compatible with previous chain config: %w", err)
 		}
 		// TODO(magic) do we want to check if newConfig is compatible with evm one?

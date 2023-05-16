@@ -150,12 +150,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
 			}
 			if initChainConfig != nil {
-				latestHeader, err := r.l1Reader.LastHeader(ctxIn)
-				if err != nil {
-					return fmt.Errorf("can't check if chain config from init message is compatible: %w", err)
-				}
-				// TODO is latest header time ok here?
-				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, latestHeader.Time); err != nil {
+				if err := initChainConfig.CheckCompatible(chainConfig, chainConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
 					return fmt.Errorf("incompatible chain config read from init message in L1 inbox: %w", err)
 				}
 			}
