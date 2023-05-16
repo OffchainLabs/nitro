@@ -11,7 +11,6 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -19,75 +18,11 @@ import (
 var DefaultChainInfo []byte
 
 type ChainInfo struct {
-	ChainName             string                 `json:"chain-name"`
-	ParentChainId         uint64                 `json:"parent-chain-id"`
-	ChainParameters       *json.RawMessage       `json:"chain-parameters"`
-	ChainConfig           *params.ChainConfig    `json:"chain-config"`
-	RollupAddressesConfig *RollupAddressesConfig `json:"rollup"`
-}
-
-type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
-}
-
-func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
-	a := RollupAddresses{
-		DeployedAt: c.DeployedAt,
-	}
-	strs := []string{
-		c.Bridge,
-		c.Inbox,
-		c.SequencerInbox,
-		c.Rollup,
-		c.ValidatorUtils,
-		c.ValidatorWalletCreator,
-	}
-	addrs := []*common.Address{
-		&a.Bridge,
-		&a.Inbox,
-		&a.SequencerInbox,
-		&a.Rollup,
-		&a.ValidatorUtils,
-		&a.ValidatorWalletCreator,
-	}
-	names := []string{
-		"Bridge",
-		"Inbox",
-		"SequencerInbox",
-		"Rollup",
-		"ValidatorUtils",
-		"ValidatorWalletCreator",
-	}
-	if len(strs) != len(addrs) {
-		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
-	}
-	complete := true
-	for i, s := range strs {
-		if !common.IsHexAddress(s) {
-			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
-		}
-		*addrs[i] = common.HexToAddress(s)
-	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
-	return a, nil
-}
-
-func getStaticChainConfig(chainId *big.Int) (*params.ChainConfig, error) {
-	for _, potentialChainConfig := range params.ArbitrumSupportedChainConfigs {
-		if potentialChainConfig.ChainID.Cmp(chainId) == 0 {
-			return potentialChainConfig, nil
-		}
-	}
-	return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	ChainName       string              `json:"chain-name"`
+	ParentChainId   uint64              `json:"parent-chain-id"`
+	ChainParameters *json.RawMessage    `json:"chain-parameters"`
+	ChainConfig     *params.ChainConfig `json:"chain-config"`
+	RollupAddresses *RollupAddresses    `json:"rollup"`
 }
 
 func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles []string) (*params.ChainConfig, error) {
@@ -95,27 +30,22 @@ func GetChainConfig(chainId *big.Int, genesisBlockNum uint64, l2ChainInfoFiles [
 	if err != nil {
 		return nil, err
 	}
-	if chainInfo != nil && chainInfo.ChainConfig != nil {
+	if chainInfo.ChainConfig != nil {
 		chainInfo.ChainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
 		return chainInfo.ChainConfig, nil
 	}
-	staticChainConfig, err := getStaticChainConfig(chainId)
-	if err != nil {
-		return nil, err
-	}
-	staticChainConfig.ArbitrumChainParams.GenesisBlockNum = genesisBlockNum
-	return staticChainConfig, nil
+	return nil, fmt.Errorf("missing chain config for L2 chain ID %v", chainId)
 }
 
-func GetRollupAddressesConfig(chainId *big.Int, l2ChainInfoFiles []string) (*RollupAddressesConfig, error) {
+func GetRollupAddressesConfig(chainId *big.Int, l2ChainInfoFiles []string) (RollupAddresses, error) {
 	chainInfo, err := ProcessChainInfo(chainId.Uint64(), l2ChainInfoFiles)
 	if err != nil {
-		return nil, err
+		return RollupAddresses{}, err
 	}
-	if chainInfo != nil && chainInfo.RollupAddressesConfig != nil {
-		return chainInfo.RollupAddressesConfig, nil
+	if chainInfo.RollupAddresses != nil {
+		return *chainInfo.RollupAddresses, nil
 	}
-	return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", chainId)
 }
 
 func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, error) {
@@ -142,7 +72,7 @@ func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, er
 		return nil, err
 	}
 	if _, ok := chainsInfo[chainId]; !ok {
-		return nil, nil
+		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
 	}
 	chainInfo := chainsInfo[chainId]
 	return &chainInfo, nil
