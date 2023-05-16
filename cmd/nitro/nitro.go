@@ -327,13 +327,9 @@ func mainImpl() int {
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrsConfig, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
-		}
-		rollupAddrs, err = rollupAddrsConfig.ParseAddresses()
-		if err != nil {
-			log.Crit("error getting rollup addresses", "err", err)
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
@@ -368,13 +364,9 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		rollupAddrsConfig, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
-		}
-		deployInfo, err := rollupAddrsConfig.ParseAddresses()
-		if err != nil {
-			log.Crit("error getting deployment info for creating validator wallet contract", "error", err)
 		}
 		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
