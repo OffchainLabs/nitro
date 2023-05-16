@@ -78,3 +78,7 @@ func (s *SliceStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 	}
 	return nil
 }
+
+func (s *SliceStorage[Item]) Length(ctx context.Context) (int, error) {
+	return len(s.queue), nil
+}
