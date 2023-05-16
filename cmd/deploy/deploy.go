@@ -175,11 +175,11 @@ func main() {
 	}
 	chainsInfo := map[uint64]chaininfo.ChainInfo{
 		l2ChainId.Uint64(): {
-			ChainName:             *l2ChainName,
-			ParentChainId:         l1ChainId.Uint64(),
-			ChainParameters:       &chainParams,
-			ChainConfig:           &chainConfig,
-			RollupAddressesConfig: deployedAddresses,
+			ChainName:       *l2ChainName,
+			ParentChainId:   l1ChainId.Uint64(),
+			ChainParameters: &chainParams,
+			ChainConfig:     &chainConfig,
+			RollupAddresses: deployedAddresses,
 		},
 	}
 	chainsInfoJson, err := json.Marshal(chainsInfo)
