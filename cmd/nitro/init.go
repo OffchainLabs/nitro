@@ -170,7 +170,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	}
 }
 
-func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) error {
+func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
 	statedb, err := blockChain.State()
 	if err != nil {
 		return err
@@ -183,10 +183,28 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	if err != nil {
 		return err
 	}
-	if chainId.Cmp(expectedChainId) != 0 {
-		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", expectedChainId, chainId)
+	if chainId.Cmp(chainConfig.ChainID) != 0 {
+		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId)
 	}
-	// TODO should we validate also chainConfig?
+	oldSerializedConfig, err := currentArbosState.ChainConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get old chain config from ArbOS state: %w", err)
+	}
+	if len(oldSerializedConfig) != 0 {
+		var oldConfig params.ChainConfig
+		err = json.Unmarshal(oldSerializedConfig, &oldConfig)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize old chain config: %w", err)
+		}
+		currentBlock := blockChain.CurrentBlock()
+		if currentBlock == nil {
+			return errors.New("failed to get current block")
+		}
+		if err := oldConfig.CheckCompatible(chainConfig, currentBlock.NumberU64(), currentBlock.Time()); err != nil {
+			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -427,7 +445,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, err
 				}
-				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
+				err = validateBlockChain(l2BlockChain, chainConfig)
 				if err != nil {
 					return chainDb, l2BlockChain, err
 				}
@@ -589,6 +607,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			if err != nil {
 				return chainDb, nil, err
 			}
+			log.Warn("Serialized chain config as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
 		l2BlockChain, err = execution.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, serializedChainConfig, config.Node.TxLookupLimit, config.Init.AccountsPerSync)
@@ -607,7 +626,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 	}
 
-	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
+	err = validateBlockChain(l2BlockChain, chainConfig)
 	if err != nil {
 		return chainDb, l2BlockChain, err
 	}

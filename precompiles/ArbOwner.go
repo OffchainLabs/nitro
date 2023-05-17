@@ -178,7 +178,6 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 		if newConfig.ChainID == nil {
 			return errors.New("invalid chain config, missing chain id")
 		}
-		// TODO do we want to validate chain id? Is a change of chain id a valid operation?
 		chainId, err := c.State.ChainId()
 		if err != nil {
 			return fmt.Errorf("failed to get chain id from ArbOS state: %w", err)
@@ -191,20 +190,22 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 			return fmt.Errorf("failed to get old chain config from ArbOS state: %w", err)
 		}
 		if bytes.Equal(oldSerializedConfig, serializedChainConfig) {
-			return errors.New("new chain config is the same as old")
+			return errors.New("new chain config is the same as old one in ArbOS state")
 		}
-		var oldConfig params.ChainConfig
-		err = json.Unmarshal(oldSerializedConfig, &oldConfig)
-		if err != nil {
-			return fmt.Errorf("failed to deserialize old config: %w", err)
+		if len(oldSerializedConfig) != 0 {
+			var oldConfig params.ChainConfig
+			err = json.Unmarshal(oldSerializedConfig, &oldConfig)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize old chain config: %w", err)
+			}
+			if err := oldConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
+				return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
+			}
 		}
-		if err := oldConfig.CheckCompatible(&newConfig, newConfig.ArbitrumChainParams.GenesisBlockNum, 0); err != nil {
-			return fmt.Errorf("invalid chain config, not compatible with previous chain config: %w", err)
+		currentConfig := evm.ChainConfig()
+		if err := currentConfig.CheckCompatible(&newConfig, evm.Context.BlockNumber.Uint64(), evm.Context.Time); err != nil {
+			return fmt.Errorf("invalid chain config, not compatible with EVM's chain config: %w", err)
 		}
-		// TODO(magic) do we want to check if newConfig is compatible with evm one?
-		// currentConfig := evm.ChainConfig()
-		// if currenConfig.CheckCompatible(newConfig) {
-		//}
 	}
 	return c.State.SetChainConfig(serializedChainConfig)
 }
