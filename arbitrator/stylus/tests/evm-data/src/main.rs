@@ -18,14 +18,13 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let eth_precompile_codehash = address::codehash(eth_precompile_addr);
     let arb_precompile_codehash = address::codehash(arb_test_addr);
     let contract_codehash = address::codehash(contract_addr);
-    let block: u64 = 4;
-    let blockhash = evm::blockhash(block.into());
+    let stylus_block_number = block::number();
+    let blockhash = evm::blockhash(stylus_block_number);
     let basefee = block::basefee();
     let chainid = block::chainid();
     let coinbase = block::coinbase();
     let difficulty = block::difficulty();
     let gas_limit = block::gas_limit();
-    let block_number = block::number();
     let timestamp = block::timestamp();
     let address = contract::address();
     let sender = msg::sender();
@@ -42,17 +41,17 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let ink_left_after = evm::ink_left();
 
     let mut output = vec![];
-    output.extend(address_balance.unwrap_or_default());
+    output.extend(stylus_block_number);
+    output.extend(blockhash.unwrap_or_default());
     output.extend(eth_precompile_codehash.unwrap_or_default());
     output.extend(arb_precompile_codehash.unwrap_or_default());
     output.extend(contract_codehash.unwrap_or_default());
-    output.extend(blockhash.unwrap_or_default());
+    output.extend(address_balance.unwrap_or_default());
     output.extend(basefee);
     output.extend(chainid);
     output.extend(coinbase);
     output.extend(difficulty);
     output.extend(gas_limit.to_be_bytes());
-    output.extend(block_number);
     output.extend(timestamp);
     output.extend(address);
     output.extend(sender);

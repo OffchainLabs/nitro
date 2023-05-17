@@ -28,13 +28,22 @@ contract ProgramTest {
         return result;
     }
 
-    function staticcallProgramWithGas(
+    function staticcallEvmData(
         address program,
         uint64 gas,
         bytes calldata data
     ) external view returns (bytes memory) {
         (bool success, bytes memory result) = address(program).staticcall{gas: gas}(data);
         require(success, "call failed");
+
+        bytes32 selectedBlockNumber;
+        bytes32 foundBlockhash;
+        assembly {
+            selectedBlockNumber := mload(add(add(result, 0), 32))
+            foundBlockhash := mload(add(add(result, 32), 32))
+        }
+        require(foundBlockhash == blockhash(uint256(selectedBlockNumber)), "unexpected blockhash");
+
         return result;
     }
 
