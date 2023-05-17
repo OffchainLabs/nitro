@@ -169,7 +169,7 @@ func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte
 	if c.txProcessor == nil {
 		return errors.New("uninitialized tx processor")
 	}
-	if c.txProcessor.MsgIsGasEstimation() {
+	if c.txProcessor.MsgIsNonMutating() {
 		var newConfig params.ChainConfig
 		err := json.Unmarshal(serializedChainConfig, &newConfig)
 		if err != nil {
