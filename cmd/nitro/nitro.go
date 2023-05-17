@@ -324,10 +324,18 @@ func mainImpl() int {
 	}
 
 	var rollupAddrs chaininfo.RollupAddresses
+	combinedL2ChainInfoFile := nodeConfig.L2.ChainInfoFiles
+	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
+	}
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, nodeConfig.L2.ChainInfoFiles, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -364,7 +372,7 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, nodeConfig.L2.ChainInfoFiles, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -812,7 +820,15 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 }
 
 func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
-	chainInfo, err := chaininfo.ProcessChainInfo(ctx, chainId, chainName, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	combinedL2ChainInfoFiles := l2ChainInfoFiles
+	if l2ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+	}
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles)
 	if err != nil {
 		return false, err
 	}

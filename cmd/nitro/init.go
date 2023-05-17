@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"math/big"
 	"os"
 	"regexp"
@@ -521,7 +522,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = chaininfo.GetChainConfig(ctx, new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, config.L2.ChainInfoFiles, config.L2.ChainInfoIpfsUrl, config.L2.ChainInfoIpfsDownloadPath)
+		combinedL2ChainInfoFiles := config.L2.ChainInfoFiles
+		if config.L2.ChainInfoIpfsUrl != "" {
+			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, config.L2.ChainInfoIpfsUrl, config.L2.ChainInfoIpfsDownloadPath)
+			if err != nil {
+				log.Error("error getting l2 chain info file from ipfs", "err", err)
+			}
+			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+		}
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, combinedL2ChainInfoFiles)
 		if err != nil {
 			return chainDb, nil, err
 		}
