@@ -201,13 +201,31 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(origin u32) *EvmData
+/// Safety: λ(
+///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
+///     block_gas_limit u64, block_number, block_timestamp *[32]byte, contract_address, msg_sender *[20]byte,
+///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
     sp: usize,
 ) {
+    use wavm::{read_bytes20, read_bytes32};
     let mut sp = GoStack::new(sp);
-    let origin = wavm::read_bytes20(sp.read_go_ptr());
-    let evm_data = EvmData::new(origin.into());
+    let evm_data = EvmData {
+        block_basefee: read_bytes32(sp.read_go_ptr()).into(),
+        block_chainid: read_bytes32(sp.read_go_ptr()).into(),
+        block_coinbase: read_bytes20(sp.read_go_ptr()).into(),
+        block_difficulty: read_bytes32(sp.read_go_ptr()).into(),
+        block_gas_limit: sp.read_u64(),
+        block_number: read_bytes32(sp.read_go_ptr()).into(),
+        block_timestamp: read_bytes32(sp.read_go_ptr()).into(),
+        contract_address: read_bytes20(sp.read_go_ptr()).into(),
+        msg_sender: read_bytes20(sp.read_go_ptr()).into(),
+        msg_value: read_bytes32(sp.read_go_ptr()).into(),
+        tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
+        tx_origin: read_bytes20(sp.read_go_ptr()).into(),
+        return_data_len: 0,
+    };
     sp.write_ptr(heapify(evm_data));
 }

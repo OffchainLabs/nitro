@@ -18,3 +18,24 @@ pub fn log(topics: &[Bytes32], data: &[u8]) -> Result<(), &'static str> {
     unsafe { emit_log(bytes.as_ptr(), bytes.len(), topics.len()) }
     Ok(())
 }
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn evm_blockhash(number: *const u8, dest: *mut u8);
+    pub(crate) fn evm_gas_left() -> u64;
+    pub(crate) fn evm_ink_left() -> u64;
+}
+
+pub fn blockhash(number: Bytes32) -> Option<Bytes32> {
+    let mut dest = [0; 32];
+    unsafe { evm_blockhash(number.ptr(), dest.as_mut_ptr()) };
+    (dest != [0; 32]).then_some(Bytes32(dest))
+}
+
+pub fn gas_left() -> u64 {
+    unsafe { evm_gas_left() }
+}
+
+pub fn ink_left() -> u64 {
+    unsafe { evm_ink_left() }
+}

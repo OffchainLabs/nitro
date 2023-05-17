@@ -282,4 +282,19 @@ impl<T: JsCallIntoGo> EvmApi for JsEvmApi<T> {
             _ => unreachable!(),
         }
     }
+
+    fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, AccountBalance, address);
+        (value.assert_bytes32(), cost.assert_u64())
+    }
+
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+        let [value, cost] = call!(self, 2, AccountCodeHash, address);
+        (value.assert_bytes32(), cost.assert_u64())
+    }
+
+    fn evm_blockhash(&mut self, num: Bytes32) -> Bytes32 {
+        let [value] = call!(self, 1, EvmBlockHash, num);
+        value.assert_bytes32()
+    }
 }

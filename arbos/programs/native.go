@@ -49,7 +49,8 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 	if err == nil {
 		db.SetCompiledWasmCode(program, result, version)
 	} else {
-		log.Debug("program failure", "err", err.Error(), "data", string(data), "program", program)
+		data := arbutil.ToStringOrHex(data)
+		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
 	}
 	return err
 }
@@ -87,10 +88,12 @@ func callUserWasm(
 		output,
 		(*u64)(&contract.Gas),
 	))
-	data, err := status.output(output.intoBytes())
+	returnData := output.intoBytes()
+	data, err := status.output(returnData)
 
 	if status == userFailure {
-		log.Debug("program failure", "err", string(data), "program", actingAddress)
+		str := arbutil.ToStringOrHex(returnData)
+		log.Debug("program failure", "err", string(data), "program", actingAddress, "returnData", str)
 	}
 	return data, err
 }
@@ -209,6 +212,29 @@ func emitLogImpl(api usize, data *rustVec, topics u32) apiStatus {
 	return apiSuccess
 }
 
+//export accountBalanceImpl
+func accountBalanceImpl(api usize, address bytes20, cost *u64) bytes32 {
+	closures := getApi(api)
+	balance, gas := closures.accountBalance(address.toAddress())
+	*cost = u64(gas)
+	return hashToBytes32(balance)
+}
+
+//export accountCodeHashImpl
+func accountCodeHashImpl(api usize, address bytes20, cost *u64) bytes32 {
+	closures := getApi(api)
+	codehash, gas := closures.accountCodeHash(address.toAddress())
+	*cost = u64(gas)
+	return hashToBytes32(codehash)
+}
+
+//export evmBlockHashImpl
+func evmBlockHashImpl(api usize, block bytes32) bytes32 {
+	closures := getApi(api)
+	hash := closures.evmBlockHash(block.toHash())
+	return hashToBytes32(hash)
+}
+
 func (value bytes20) toAddress() common.Address {
 	addr := common.Address{}
 	for index, b := range value.bytes {
@@ -286,6 +312,18 @@ func (params *goParams) encode() C.GoParams {
 
 func (data *evmData) encode() C.EvmData {
 	return C.EvmData{
-		origin: addressToBytes20(data.origin),
+		block_basefee:    hashToBytes32(data.blockBasefee),
+		block_chainid:    hashToBytes32(data.blockChainId),
+		block_coinbase:   addressToBytes20(data.blockCoinbase),
+		block_difficulty: hashToBytes32(data.blockDifficulty),
+		block_gas_limit:  u64(data.blockGasLimit),
+		block_number:     hashToBytes32(data.blockNumber),
+		block_timestamp:  hashToBytes32(data.blockTimestamp),
+		contract_address: addressToBytes20(data.contractAddress),
+		msg_sender:       addressToBytes20(data.msgSender),
+		msg_value:        hashToBytes32(data.msgValue),
+		tx_gas_price:     hashToBytes32(data.txGasPrice),
+		tx_origin:        addressToBytes20(data.txOrigin),
+		return_data_len:  0,
 	}
 }

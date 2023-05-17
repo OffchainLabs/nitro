@@ -133,7 +133,8 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	programVersion, err := p.machineVersions.GetUint32(scope.Contract.Address().Hash())
+	contract := scope.Contract
+	programVersion, err := p.machineVersions.GetUint32(contract.Address().Hash())
 	if err != nil {
 		return nil, err
 	}
@@ -147,9 +148,26 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
+
 	evm := interpreter.Evm()
+	l1BlockNumber, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
+	if err != nil {
+		return nil, err
+	}
+
 	evmData := &evmData{
-		origin: evm.TxContext.Origin,
+		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
+		blockChainId:    common.BigToHash(evm.ChainConfig().ChainID),
+		blockCoinbase:   evm.Context.Coinbase,
+		blockDifficulty: common.BigToHash(evm.Context.Difficulty),
+		blockGasLimit:   evm.Context.GasLimit,
+		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
+		blockTimestamp:  common.BigToHash(evm.Context.Time),
+		contractAddress: contract.Address(),
+		msgSender:       contract.Caller(),
+		msgValue:        common.BigToHash(contract.Value()),
+		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
+		txOrigin:        evm.TxContext.Origin,
 	}
 	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
@@ -200,7 +218,18 @@ func (p Programs) goParams(version uint32, debug bool) (*goParams, error) {
 }
 
 type evmData struct {
-	origin common.Address
+	blockBasefee    common.Hash
+	blockChainId    common.Hash
+	blockCoinbase   common.Address
+	blockDifficulty common.Hash
+	blockGasLimit   uint64
+	blockNumber     common.Hash
+	blockTimestamp  common.Hash
+	contractAddress common.Address
+	msgSender       common.Address
+	msgValue        common.Hash
+	txGasPrice      common.Hash
+	txOrigin        common.Address
 }
 
 type userStatus uint8

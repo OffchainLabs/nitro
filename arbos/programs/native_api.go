@@ -59,6 +59,21 @@ EvmApiStatus emitLogImpl(usize api, RustVec * data, usize topics);
 EvmApiStatus emitLogWrap(usize api, RustVec * data, usize topics) {
     return emitLogImpl(api, data, topics);
 }
+
+Bytes32 accountBalanceImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 accountBalanceWrap(usize api, Bytes20 address, u64 * cost) {
+    return accountBalanceImpl(api, address, cost);
+}
+
+Bytes32 accountCodeHashImpl(usize api, Bytes20 address, u64 * cost);
+Bytes32 accountCodeHashWrap(usize api, Bytes20 address, u64 * cost) {
+    return accountCodeHashImpl(api, address, cost);
+}
+
+Bytes32 evmBlockHashImpl(usize api, Bytes32 block);
+Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
+    return evmBlockHashImpl(api, block);
+}
 */
 import "C"
 import (
@@ -83,16 +98,19 @@ func newApi(
 	apiClosures.Store(apiId, closures)
 	id := usize(apiId)
 	return C.GoEvmApi{
-		get_bytes32:     (*[0]byte)(C.getBytes32Wrap),
-		set_bytes32:     (*[0]byte)(C.setBytes32Wrap),
-		contract_call:   (*[0]byte)(C.contractCallWrap),
-		delegate_call:   (*[0]byte)(C.delegateCallWrap),
-		static_call:     (*[0]byte)(C.staticCallWrap),
-		create1:         (*[0]byte)(C.create1Wrap),
-		create2:         (*[0]byte)(C.create2Wrap),
-		get_return_data: (*[0]byte)(C.getReturnDataWrap),
-		emit_log:        (*[0]byte)(C.emitLogWrap),
-		id:              id,
+		get_bytes32:      (*[0]byte)(C.getBytes32Wrap),
+		set_bytes32:      (*[0]byte)(C.setBytes32Wrap),
+		contract_call:    (*[0]byte)(C.contractCallWrap),
+		delegate_call:    (*[0]byte)(C.delegateCallWrap),
+		static_call:      (*[0]byte)(C.staticCallWrap),
+		create1:          (*[0]byte)(C.create1Wrap),
+		create2:          (*[0]byte)(C.create2Wrap),
+		get_return_data:  (*[0]byte)(C.getReturnDataWrap),
+		emit_log:         (*[0]byte)(C.emitLogWrap),
+		account_balance:  (*[0]byte)(C.accountBalanceWrap),
+		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
+		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
+		id:               id,
 	}, id
 }
 

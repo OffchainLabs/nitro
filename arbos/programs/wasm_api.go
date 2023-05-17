@@ -17,16 +17,19 @@ import (
 )
 
 type apiWrapper struct {
-	getBytes32    js.Func
-	setBytes32    js.Func
-	contractCall  js.Func
-	delegateCall  js.Func
-	staticCall    js.Func
-	create1       js.Func
-	create2       js.Func
-	getReturnData js.Func
-	emitLog       js.Func
-	funcs         []byte
+	getBytes32      js.Func
+	setBytes32      js.Func
+	contractCall    js.Func
+	delegateCall    js.Func
+	staticCall      js.Func
+	create1         js.Func
+	create2         js.Func
+	getReturnData   js.Func
+	emitLog         js.Func
+	addressBalance  js.Func
+	addressCodeHash js.Func
+	evmBlockHash    js.Func
+	funcs           []byte
 }
 
 func newApi(
@@ -178,26 +181,45 @@ func newApi(
 		err := closures.emitLog(data, topics)
 		return write(stylus, err)
 	})
+	addressBalance := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		address := jsAddress(args[0])
+		value, cost := closures.accountBalance(address)
+		return write(stylus, value, cost)
+	})
+	addressCodeHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		address := jsAddress(args[0])
+		value, cost := closures.accountCodeHash(address)
+		return write(stylus, value, cost)
+	})
+	evmBlockHash := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		block := jsHash(args[0])
+		value := closures.evmBlockHash(block)
+		return write(stylus, value)
+	})
 
-	ids := make([]byte, 0, 10*4)
+	ids := make([]byte, 0, 12*4)
 	funcs := js.Global().Get("stylus").Call("setCallbacks",
-		getBytes32, setBytes32, contractCall, delegateCall, staticCall,
-		create1, create2, getReturnData, emitLog,
+		getBytes32, setBytes32, contractCall, delegateCall,
+		staticCall, create1, create2, getReturnData, emitLog,
+		addressBalance, addressCodeHash, evmBlockHash,
 	)
 	for i := 0; i < funcs.Length(); i++ {
 		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
 	}
 	return &apiWrapper{
-		getBytes32:    getBytes32,
-		setBytes32:    setBytes32,
-		contractCall:  contractCall,
-		delegateCall:  delegateCall,
-		staticCall:    staticCall,
-		create1:       create1,
-		create2:       create2,
-		getReturnData: getReturnData,
-		emitLog:       emitLog,
-		funcs:         ids,
+		getBytes32:      getBytes32,
+		setBytes32:      setBytes32,
+		contractCall:    contractCall,
+		delegateCall:    delegateCall,
+		staticCall:      staticCall,
+		create1:         create1,
+		create2:         create2,
+		getReturnData:   getReturnData,
+		emitLog:         emitLog,
+		addressBalance:  addressBalance,
+		addressCodeHash: addressCodeHash,
+		evmBlockHash:    evmBlockHash,
+		funcs:           ids,
 	}
 }
 
@@ -211,4 +233,7 @@ func (api *apiWrapper) drop() {
 	api.create2.Release()
 	api.getReturnData.Release()
 	api.emitLog.Release()
+	api.addressBalance.Release()
+	api.addressCodeHash.Release()
+	api.evmBlockHash.Release()
 }
