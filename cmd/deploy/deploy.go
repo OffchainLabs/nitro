@@ -44,7 +44,6 @@ func main() {
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
-	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
 	l2ChainName := flag.String("l2chainname", "", "L2 chain name (will be included in chain info output json file)")
 	l2ChainParams := flag.String("l2chainparams", "", "L2 chain default parameters json file (optional)")
@@ -54,12 +53,8 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
-	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	if *prod {
-		if *l2ChainIdUint == params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
-			panic("must specify l2 chain id when launching a prod chain")
-		}
 		if *wasmmoduleroot == "" {
 			panic("must specify wasm module root when launching prod chain")
 		}
@@ -134,10 +129,6 @@ func main() {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
-	if chainConfig.ChainID.Cmp(l2ChainId) != 0 {
-		panic(fmt.Sprintf("chain id mismatch, id from args: %v, id from l2 chain config: %v", l2ChainId, chainConfig.ChainID))
-	}
-
 	var chainParamsJson []byte
 	if *l2ChainParams != "" {
 		chainParamsJson, err = os.ReadFile(*l2ChainParams)
@@ -174,7 +165,7 @@ func main() {
 		panic(err)
 	}
 	chainsInfo := map[uint64]chaininfo.ChainInfo{
-		l2ChainId.Uint64(): {
+		chainConfig.ChainID.Uint64(): {
 			ChainName:       *l2ChainName,
 			ParentChainId:   l1ChainId.Uint64(),
 			ChainParameters: &chainParams,
