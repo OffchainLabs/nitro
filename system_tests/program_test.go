@@ -512,21 +512,19 @@ func testEvmData(t *testing.T, jit bool) {
 	}
 	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
 
-	mockAddr, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
 	ensure(tx, err)
 
 	evmDataGas := uint64(1000000000)
 	gasToBurn := uint64(1000000)
 	callBurnData, err := burnArbGas(new(big.Int).SetUint64(gasToBurn))
 	Require(t, err)
-	fundedAccount := l2info.Accounts["Faucet"].Address
+	fundedAddr := l2info.Accounts["Faucet"].Address
 	ethPrecompile := common.BigToAddress(big.NewInt(1))
 	arbTestAddress := types.ArbosTestAddress
-	localBlockNumber, err := l2client.BlockNumber(ctx)
-	Require(t, err)
 
 	evmDataData := []byte{}
-	evmDataData = append(evmDataData, fundedAccount.Bytes()...)
+	evmDataData = append(evmDataData, fundedAddr.Bytes()...)
 	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
 	evmDataData = append(evmDataData, arbTestAddress.Bytes()...)
 	evmDataData = append(evmDataData, evmDataAddr.Bytes()...)
@@ -534,7 +532,8 @@ func testEvmData(t *testing.T, jit bool) {
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
-	result, err := mock.StaticcallEvmData(&opts, evmDataAddr, evmDataGas, evmDataData)
+
+	result, err := mock.StaticcallEvmData(&opts, evmDataAddr, fundedAddr, evmDataGas, evmDataData)
 	Require(t, err)
 
 	advance := func(count int, name string) []byte {
@@ -546,82 +545,11 @@ func testEvmData(t *testing.T, jit bool) {
 		result = result[count:]
 		return data
 	}
-
 	getU64 := func(name string) uint64 {
 		t.Helper()
 		return binary.BigEndian.Uint64(advance(8, name))
 	}
-	assertU64 := func(name string, expected uint64) {
-		t.Helper()
-		value := getU64(name)
-		if value != expected {
-			Fail(t, "mismatch", name, value, expected)
-		}
-	}
-	assertAddress := func(name string, expected common.Address) {
-		t.Helper()
-		value := common.BytesToAddress(advance(20, name))
-		if value != expected {
-			Fail(t, "mismatch", name, value, expected)
-		}
-	}
-	assertHash := func(name string, expected common.Hash) common.Hash {
-		t.Helper()
-		value := common.BytesToHash(advance(32, name))
-		if value != expected {
-			Fail(t, "mismatch", name, value, expected)
-		}
-		return value
-	}
-	assertBigInt := func(name string, expected *big.Int) {
-		t.Helper()
-		assertHash(name, common.BigToHash(expected))
-	}
-	getBigInt := func(name string) *big.Int {
-		t.Helper()
-		return new(big.Int).SetBytes(advance(32, name))
-	}
-	assertBigIntAtLeast := func(name string, expected *big.Int) {
-		t.Helper()
-		value := getBigInt(name)
-		if !arbmath.BigGreaterThanOrEqual(value, expected) {
-			Fail(t, "mismatch", name, value, expected)
-		}
-	}
 
-	stylusBlockNumber := getBigInt("block number")
-	stylusBlock, err := l2client.BlockByNumber(ctx, stylusBlockNumber)
-	Require(t, err)
-	if !arbmath.BigGreaterThanOrEqual(stylusBlockNumber, new(big.Int).SetUint64(localBlockNumber)) {
-		Fail(t, "selected less than local", stylusBlockNumber, localBlockNumber)
-	}
-	// Skip blockhash, checked in staticcallEvmData
-	_ = getBigInt("block number")
-	assertBigInt("eth precompile code hash", big.NewInt(0))
-	arbPrecompileCode, err := l2client.CodeAt(ctx, arbTestAddress, stylusBlockNumber)
-	Require(t, err)
-	arbPrecompileHash := crypto.Keccak256Hash(arbPrecompileCode)
-	assertHash("arb precompile code hash", arbPrecompileHash)
-	contractCode, err := l2client.CodeAt(ctx, evmDataAddr, stylusBlockNumber)
-	Require(t, err)
-	contractHash := crypto.Keccak256Hash(contractCode)
-	assertHash("contract code hash", contractHash)
-	expectedBalance, err := l2client.BalanceAt(ctx, fundedAccount, stylusBlockNumber)
-	Require(t, err)
-	assertBigInt("address balance", expectedBalance)
-	assertBigInt("base fee", big.NewInt(100000000))
-	expectedChainid, err := l2client.ChainID(ctx)
-	Require(t, err)
-	assertBigInt("chainid", expectedChainid)
-	assertAddress("coinbase", stylusBlock.Coinbase())
-	assertBigInt("difficulty", big.NewInt(1))
-	assertU64("block gas limit", stylusBlock.GasLimit())
-	assertBigIntAtLeast("timestamp", new(big.Int).SetUint64(stylusBlock.Time()))
-	assertAddress("contract address", evmDataAddr)
-	assertAddress("sender", mockAddr)
-	assertBigInt("value", big.NewInt(0))
-	assertAddress("origin", opts.From)
-	assertBigInt("gas price", big.NewInt(0))
 	inkPrice := getU64("ink price")
 	gasLeftBefore := getU64("gas left before")
 	inkLeftBefore := getU64("ink left before")

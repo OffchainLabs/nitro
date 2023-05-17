@@ -3,7 +3,7 @@
 
 #![no_main]
 
-use arbitrum::{Bytes20, address, block, contract, evm, msg, tx};
+use arbitrum::{address, block, contract, evm, msg, tx, Bytes20, Bytes32};
 
 arbitrum::arbitrum_main!(user_main);
 
@@ -18,8 +18,6 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let eth_precompile_codehash = address::codehash(eth_precompile_addr);
     let arb_precompile_codehash = address::codehash(arb_test_addr);
     let contract_codehash = address::codehash(contract_addr);
-    let stylus_block_number = block::number();
-    let blockhash = evm::blockhash(stylus_block_number);
     let basefee = block::basefee();
     let chainid = block::chainid();
     let coinbase = block::coinbase();
@@ -33,6 +31,10 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let gas_price = tx::gas_price();
     let ink_price = tx::ink_price();
 
+    let mut block_number = block::number();
+    block_number[31] -= 1;
+    let blockhash = evm::blockhash(block_number);
+
     // Call burnArbGas
     let gas_left_before = evm::gas_left();
     let ink_left_before = evm::ink_left();
@@ -41,23 +43,26 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     let ink_left_after = evm::ink_left();
 
     let mut output = vec![];
-    output.extend(stylus_block_number);
+    output.extend(block_number);
     output.extend(blockhash.unwrap_or_default());
-    output.extend(eth_precompile_codehash.unwrap_or_default());
-    output.extend(arb_precompile_codehash.unwrap_or_default());
-    output.extend(contract_codehash.unwrap_or_default());
-    output.extend(address_balance.unwrap_or_default());
-    output.extend(basefee);
     output.extend(chainid);
-    output.extend(coinbase);
-    output.extend(difficulty);
-    output.extend(gas_limit.to_be_bytes());
-    output.extend(timestamp);
-    output.extend(address);
-    output.extend(sender);
-    output.extend(value);
-    output.extend(origin);
+    output.extend(basefee);
     output.extend(gas_price);
+    output.extend(Bytes32::from(gas_limit));
+    output.extend(value);
+    output.extend(difficulty);
+    output.extend(timestamp);
+    output.extend(address_balance);
+
+    output.extend(Bytes32::from(address));
+    output.extend(Bytes32::from(sender));
+    output.extend(Bytes32::from(origin));
+    output.extend(Bytes32::from(coinbase));
+
+    output.extend(contract_codehash.unwrap_or_default());
+    output.extend(arb_precompile_codehash.unwrap_or_default());
+    output.extend(eth_precompile_codehash.unwrap_or_default());
+
     output.extend(ink_price.to_be_bytes());
     output.extend(gas_left_before.to_be_bytes());
     output.extend(ink_left_before.to_be_bytes());

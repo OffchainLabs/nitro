@@ -148,14 +148,20 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
+
 	evm := interpreter.Evm()
+	l1BlockNumber, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
+	if err != nil {
+		return nil, err
+	}
+
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		blockChainId:    common.BigToHash(evm.ChainConfig().ChainID),
 		blockCoinbase:   evm.Context.Coinbase,
 		blockDifficulty: common.BigToHash(evm.Context.Difficulty),
 		blockGasLimit:   evm.Context.GasLimit,
-		blockNumber:     common.BigToHash(evm.Context.BlockNumber),
+		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
 		blockTimestamp:  common.BigToHash(evm.Context.Time),
 		contractAddress: contract.Address(),
 		msgSender:       contract.Caller(),

@@ -218,6 +218,6 @@ pub fn address() -> Bytes20 {
     Bytes20(data)
 }
 
-pub fn balance() -> Option<Bytes32> {
+pub fn balance() -> Bytes32 {
     addr::balance(address())
 }
