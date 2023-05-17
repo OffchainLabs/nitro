@@ -11,6 +11,7 @@ import "../libraries/AddressAliasHelper.sol";
 import {L1MessageType_ethDeposit} from "../libraries/MessageTypes.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title Inbox for user and contract originated messages
@@ -18,6 +19,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * to await inclusion in the SequencerInbox
  */
 contract ERC20Inbox is AbsInbox, IERC20Inbox {
+    using SafeERC20 for IERC20;
+
     /// @inheritdoc IInbox
     function initialize(
         IBridge _bridge,
@@ -116,8 +119,11 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         bytes32 messageDataHash,
         uint256 tokenAmount
     ) internal override returns (uint256) {
-        // fetch native token from Inbox
-        IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), amount);
+        // fetch native token from sender if inbox doesn't already hold tokens to pay for fees
+        address nativeToken = IERC20Bridge(address(bridge)).nativeToken();
+        if (IERC20(nativeToken).balanceOf(address(this)) < tokenAmount) {
+            IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), tokenAmount);
+        }
 
         return
             IERC20Bridge(address(bridge)).enqueueDelayedMessage(
