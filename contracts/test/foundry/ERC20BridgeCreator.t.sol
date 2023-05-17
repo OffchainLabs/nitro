@@ -6,6 +6,8 @@ import "./util/TestUtil.sol";
 import "../../src/rollup/ERC20BridgeCreator.sol";
 import "../../src/bridge/ISequencerInbox.sol";
 import "../../src/bridge/AbsInbox.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
 
 contract ERC20BridgeCreatorTest is Test {
     ERC20BridgeCreator public creator;
@@ -52,7 +54,9 @@ contract ERC20BridgeCreatorTest is Test {
     function test_createBridge() public {
         address proxyAdmin = address(300);
         address rollup = address(301);
-        address nativeToken = address(302);
+        address nativeToken = address(
+            new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this))
+        );
         ISequencerInbox.MaxTimeVariation memory timeVars = ISequencerInbox.MaxTimeVariation(
             10,
             20,

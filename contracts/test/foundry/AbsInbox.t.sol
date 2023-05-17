@@ -170,13 +170,6 @@ abstract contract AbsInboxTest is Test {
         assertEq((PausableUpgradeable(address(inbox))).paused(), false, "Invalid paused state");
     }
 
-    function test_initialize() public {
-        assertEq(address(inbox.bridge()), address(bridge), "Invalid bridge ref");
-        assertEq(address(inbox.sequencerInbox()), seqInbox, "Invalid seqInbox ref");
-        assertEq(inbox.allowListEnabled(), false, "Invalid allowListEnabled");
-        assertEq((PausableUpgradeable(address(inbox))).paused(), false, "Invalid paused state");
-    }
-
     function test_initialize_revert_ReInit() public {
         vm.expectRevert("Initializable: contract is already initialized");
         inbox.initialize(bridge, ISequencerInbox(seqInbox));

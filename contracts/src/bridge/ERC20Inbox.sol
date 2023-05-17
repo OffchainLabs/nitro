@@ -10,6 +10,7 @@ import "./IERC20Bridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import {L1MessageType_ethDeposit} from "../libraries/MessageTypes.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
  * @title Inbox for user and contract originated messages
@@ -17,13 +18,16 @@ import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract ERC20Inbox is AbsInbox, IERC20Inbox {
-
     /// @inheritdoc IInbox
     function initialize(
         IBridge _bridge,
         ISequencerInbox _sequencerInbox
     ) external initializer onlyDelegated {
-       __AbsInbox_init(_bridge, _sequencerInbox);
+        __AbsInbox_init(_bridge, _sequencerInbox);
+
+        // inbox holds native token in transit used to pay for retryable tickets, approve bridge to use it
+        address nativeToken = IERC20Bridge(address(bridge)).nativeToken();
+        IERC20(nativeToken).approve(address(bridge), type(uint256).max);
     }
 
     /// @inheritdoc IERC20Inbox
@@ -98,12 +102,10 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
     }
 
     /// @inheritdoc IInbox
-    function calculateRetryableSubmissionFee(uint256, uint256)
-        public
-        pure
-        override(AbsInbox, IInbox)
-        returns (uint256)
-    {
+    function calculateRetryableSubmissionFee(
+        uint256,
+        uint256
+    ) public pure override(AbsInbox, IInbox) returns (uint256) {
         // retryable ticket's submission fee is not charged when ERC20 token is used to pay for fees
         return 0;
     }
