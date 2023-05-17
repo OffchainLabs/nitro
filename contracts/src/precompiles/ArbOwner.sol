@@ -99,10 +99,10 @@ interface ArbOwner {
     function setWasmFreePages(uint16 pages) external;
 
     // @notice sets the base cost of each additional wasm page
-    function setWasmGasPerPage(uint32 gas) external;
+    function setWasmPageGas(uint32 gas) external;
 
-    // @notice sets the divisor slowing down exponential wasm memory costs
-    function setWasmExpMemDivisor(uint32 divisor) external;
+    // @notice sets the ramp that drives exponential wasm memory costs
+    function setWasmPageRamp(uint32 ramp) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);

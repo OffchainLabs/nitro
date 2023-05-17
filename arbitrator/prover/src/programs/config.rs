@@ -4,9 +4,12 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use derivative::Derivative;
+use fixed::types::U32F32;
 use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
+
+use super::meter::OutOfInkError;
 
 #[cfg(feature = "native")]
 use {
@@ -44,16 +47,12 @@ pub struct PricingParams {
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct MemoryModel {
-    /// Number of pages currently open
-    pub open_pages: u16,
-    /// Largest number of pages ever open
-    pub ever_pages: u16,
     /// Number of pages a tx gets for free
     pub free_pages: u16,
     /// Base cost of each additional wasm page
-    pub gas_per_page: u32,
-    /// Slows down exponential memory costs
-    pub exp_mem_divisor: u32,
+    pub page_gas: u32,
+    /// Ramps up exponential memory costs
+    pub page_ramp: u32,
 }
 
 impl Default for StylusConfig {
@@ -79,17 +78,21 @@ impl Default for PricingParams {
 impl Default for MemoryModel {
     fn default() -> Self {
         Self {
-            open_pages: 0,
-            ever_pages: 0,
             free_pages: u16::MAX,
-            gas_per_page: 0,
-            exp_mem_divisor: u32::MAX,
+            page_gas: 0,
+            page_ramp: 0,
         }
     }
 }
 
 impl StylusConfig {
-    pub const fn new(version: u32, max_depth: u32, ink_price: u64, hostio_ink: u64, memory_model: MemoryModel) -> Self {
+    pub const fn new(
+        version: u32,
+        max_depth: u32,
+        ink_price: u64,
+        hostio_ink: u64,
+        memory_model: MemoryModel,
+    ) -> Self {
         let pricing = PricingParams::new(ink_price, hostio_ink, memory_model);
         Self {
             version,
@@ -118,6 +121,83 @@ impl PricingParams {
     }
 }
 
+impl MemoryModel {
+    pub const fn new(free_pages: u16, page_gas: u32, page_ramp: u32) -> Self {
+        Self {
+            free_pages,
+            page_gas,
+            page_ramp,
+        }
+    }
+
+    /// Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
+    pub fn gas_cost(&self, open: u16, ever: u16, new: u16) -> u64 {
+        let ramp = U32F32::from_bits(self.page_ramp.into()) + U32F32::lit("1");
+        let size = ever.max(open.saturating_add(new));
+
+        // free until expansion beyond the first few
+        if size <= self.free_pages {
+            return 0;
+        }
+
+        // exponentiates ramp by squaring
+        let curve = |mut exponent| {
+            let mut result = U32F32::from_num(1);
+            let mut base = ramp;
+
+            while exponent > 0 {
+                if exponent & 1 == 1 {
+                    result = result.saturating_mul(base);
+                }
+                exponent /= 2;
+                if exponent > 0 {
+                    base = base.saturating_mul(base);
+                }
+            }
+            result.to_num::<u64>()
+        };
+
+        let linear = (new as u64).saturating_mul(self.page_gas.into());
+        let expand = curve(size) - curve(ever);
+        linear.saturating_add(expand)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct CallPointers {
+    /// Number of pages currently open
+    pub open_pages: *mut u16,
+    /// Largest number of pages ever open
+    pub ever_pages: *mut u16,
+    /// Gas left
+    pub gas: *mut u64,
+}
+
+impl CallPointers {
+    pub unsafe fn add_pages(
+        &mut self,
+        new: Pages,
+        model: &MemoryModel,
+    ) -> Result<(), OutOfInkError> {
+        let new = new.0.try_into().map_err(|_| OutOfInkError)?;
+
+        let open = *self.open_pages;
+        let ever = *self.ever_pages;
+        let cost = model.gas_cost(open, ever, new);
+
+        if *self.gas < cost {
+            *self.gas = 0;
+            return Err(OutOfInkError);
+        }
+
+        *self.gas -= cost;
+        *self.open_pages = open.saturating_add(new);
+        *self.ever_pages = ever.max(*self.open_pages);
+        Ok(())
+    }
+}
+
 pub type OpCosts = fn(&Operator) -> u64;
 
 #[derive(Clone, Debug, Default)]
@@ -134,7 +214,7 @@ pub struct CompileConfig {
 
 #[derive(Clone, Copy, Debug)]
 pub struct CompileMemoryParams {
-    /// The maximum number of pages a program may use
+    /// The maximum number of pages a program may start with
     pub heap_bound: Pages,
     /// The maximum size of a stack frame, measured in words
     pub max_frame_size: u32,
@@ -191,7 +271,7 @@ impl CompileConfig {
             0 => {}
             1 => {
                 // TODO: settle on reasonable values for the v1 release
-                config.bounds.heap_bound = Pages(2);
+                config.bounds.heap_bound = Pages(128); // 8 mb
                 config.bounds.max_frame_size = 1024 * 1024;
                 config.pricing = CompilePricingParams {
                     costs: |_| 1,

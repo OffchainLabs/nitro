@@ -20,7 +20,7 @@ pub fn reject_reexports() {
             (func $should_reject (export "some_hostio_func") (param) (result))
         )"#,
     );
-    let _ = binary::parse(&wasm, &Path::new("")).unwrap_err();
+    let _ = binary::parse(&wasm, Path::new("")).unwrap_err();
 
     let wasm = as_wasm(
         r#"
@@ -29,5 +29,26 @@ pub fn reject_reexports() {
             (global $should_reject (export "some_hostio_func") f32 (f32.const 0))
         )"#,
     );
-    let _ = binary::parse(&wasm, &Path::new("")).unwrap_err();
+    let _ = binary::parse(&wasm, Path::new("")).unwrap_err();
+}
+
+#[test]
+pub fn reject_ambiguous_imports() {
+    let wasm = as_wasm(
+        r#"
+        (module
+            (import "forward" "some_import" (func (param i64) (result i64 i32)))
+            (import "forward" "some_import" (func (param i64) (result i64 i32)))
+        )"#,
+    );
+    let _ = binary::parse(&wasm, Path::new("")).unwrap();
+
+    let wasm = as_wasm(
+        r#"
+        (module
+            (import "forward" "some_import" (func (param i32) (result f64)))
+            (import "forward" "some_import" (func (param i32) (result)))
+        )"#,
+    );
+    let _ = binary::parse(&wasm, Path::new("")).unwrap_err();
 }

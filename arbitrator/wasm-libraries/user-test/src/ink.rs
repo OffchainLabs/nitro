@@ -34,7 +34,7 @@ impl MeteredMachine for Program {
 
 impl GasMeteredMachine for Program {
     fn pricing(&mut self) -> PricingParams {
-        unsafe { CONFIG.pricing }
+        unsafe { CONFIG.unwrap().pricing }
     }
 }
 

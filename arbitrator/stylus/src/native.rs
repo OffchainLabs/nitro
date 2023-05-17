@@ -122,6 +122,7 @@ impl<E: EvmApi> NativeInstance<E> {
                 "return_data_size" => func!(host::return_data_size),
                 "emit_log" => func!(host::emit_log),
                 "tx_origin" => func!(host::tx_origin),
+                "memory_grow" => func!(host::memory_grow),
             },
         };
         if debug_funcs {
@@ -297,6 +298,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "return_data_size" => stub!(u32 <- ||),
             "emit_log" => stub!(|_: u32, _: u32, _: u32|),
             "tx_origin" => stub!(|_: u32|),
+            "memory_grow" => stub!(|_: u16|),
         },
     };
     if compile.debug.debug_funcs {

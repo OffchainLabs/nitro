@@ -180,11 +180,11 @@ func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
 }
 
 // Sets the base cost of each additional wasm page
-func (con ArbOwner) SetWasmGasPerPage(c ctx, evm mech, gas uint32) error {
-	return c.State.Programs().SetGasPerPage(gas)
+func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint32) error {
+	return c.State.Programs().SetPageGas(gas)
 }
 
-// Sets the divisor slowing down exponential wasm memory costs
-func (con ArbOwner) SetWasmExpMemDivisor(c ctx, evm mech, divisor uint32) error {
-	return c.State.Programs().SetExpMemDivisor(divisor)
+// Sets the ramp that drives exponential wasm memory costs
+func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint32) error {
+	return c.State.Programs().SetPageRamp(ramp)
 }

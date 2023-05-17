@@ -6,7 +6,7 @@
 use crate::env::{Escape, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
     evm::{self, api::EvmApi, user::UserOutcomeKind},
-    Bytes20, Bytes32,
+    Bytes20, Bytes32, Color,
 };
 use prover::{programs::prelude::*, value::Value};
 
@@ -209,6 +209,11 @@ pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEsc
     let env = WasmEnv::start(&mut env)?;
     let origin = env.evm_data.origin;
     env.write_bytes20(ptr, origin)?;
+    Ok(())
+}
+
+pub(crate) fn memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
+    println!("Memory grow: {}", pages.pink());
     Ok(())
 }
 

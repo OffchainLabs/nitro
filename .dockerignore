@@ -30,8 +30,9 @@ arbitrator/target/**/*
 arbitrator/target
 arbitrator/stylus/tests/*/target/
 arbitrator/wasm-testsuite/target/
-arbitrator/wasm-upstream/wasmer/target/
-arbitrator/wasm-libraries/target/
+arbitrator/tools/wasmer/target/
+arbitrator/tools/wasm-tools/
+arbitrator/tools/module_roots/
 
 # Compiled files
 **/*.o

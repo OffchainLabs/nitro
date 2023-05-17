@@ -87,9 +87,9 @@ func callUserWasm(
 		stylusParams.encode(),
 		evmApi,
 		evmData.encode(),
+		newCallPointers(db, &contract.Gas),
 		u32(stylusParams.debugMode),
 		output,
-		(*u64)(&contract.Gas),
 	))
 	data, err := status.output(output.intoBytes())
 
@@ -278,6 +278,15 @@ func goSlice(slice []byte) C.GoSliceData {
 	}
 }
 
+func newCallPointers(db vm.StateDB, gas *uint64) C.CallPointers {
+	openPages, everPages := db.GetStylusPages()
+	return C.CallPointers{
+		open_pages: (*u16)(openPages),
+		ever_pages: (*u16)(everPages),
+		gas:        (*u64)(gas),
+	}
+}
+
 func (params *goParams) encode() C.StylusConfig {
 	pricing := C.PricingParams{
 		ink_price:    u64(params.inkPrice),
@@ -293,11 +302,9 @@ func (params *goParams) encode() C.StylusConfig {
 
 func (model *goMemoryModel) encode() C.MemoryModel {
 	return C.MemoryModel{
-		open_pages:      u16(model.openPages),
-		ever_pages:      u16(model.everPages),
-		free_pages:      u16(model.freePages),
-		gas_per_page:    u32(model.gasPerPage),
-		exp_mem_divisor: u32(model.expMemDivisor),
+		free_pages: u16(model.freePages),
+		page_gas:   u32(model.pageGas),
+		page_ramp:  u32(model.pageRamp),
 	}
 }
 

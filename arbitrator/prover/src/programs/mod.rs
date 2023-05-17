@@ -6,14 +6,14 @@ use crate::{
     value::{FunctionType as ArbFunctionType, Value},
 };
 use arbutil::Color;
-use eyre::{bail, Report, Result};
+use eyre::{bail, eyre, Report, Result};
 use fnv::FnvHashMap as HashMap;
-use std::fmt::Debug;
+use std::{fmt::Debug, mem};
 use wasmer_types::{
-    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, Pages,
-    SignatureIndex, Type,
+    entity::EntityRef, FunctionIndex, FunctionType, GlobalIndex, GlobalInit, ImportIndex,
+    ImportKey, LocalFunctionIndex, SignatureIndex, Type,
 };
-use wasmparser::{Operator, Type as WpType};
+use wasmparser::{MemoryType, Operator, Type as WpType};
 
 #[cfg(feature = "native")]
 use {
@@ -21,6 +21,7 @@ use {
     std::marker::PhantomData,
     wasmer::{
         ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
+        WASM_MAX_PAGES,
     },
     wasmer_types::ModuleInfo,
 };
@@ -43,8 +44,9 @@ pub trait ModuleMod {
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
     fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>>;
     fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>>;
+    fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
-    fn limit_heap(&mut self, limit: Pages) -> Result<()>;
+    fn memory_size(&self) -> Result<Option<MemoryType>>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -211,6 +213,66 @@ impl ModuleMod for ModuleInfo {
         Ok(signatures)
     }
 
+    fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex> {
+        self.imports
+            .iter()
+            .find(|(k, _)| k.module == module && k.field == name)
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| eyre!("missing import {}", name.red()))
+    }
+
+    /*fn add_import(&mut self, module: &str, name: &str, ty: FunctionType) -> Result<FunctionIndex> {
+        if self.get_import(module, name).is_ok() {
+            bail!("import {} {} already present", module.red(), name.red())
+        }
+
+        let septum = self.num_imported_functions;
+        let sig = self.signatures.push(ty);
+        let func = self.functions.insert(septum, sig);
+
+        let fix_tee = |mut func: FunctionIndex| -> FunctionIndex {
+            if func.as_u32() >= septum as u32 {
+                func = FunctionIndex::from_u32(func.as_u32() + 1);
+            }
+            func
+        };
+
+        #[allow(clippy::drop_copy)]
+        let fix = |func: &mut _| drop(fix_tee(*func));
+
+        for export in self.exports.values_mut() {
+            if let ExportIndex::Function(func) = export {
+                fix(func);
+            }
+        }
+        for table in self.table_initializers.iter_mut() {
+            table.elements.iter_mut().for_each(fix);
+        }
+        for elem in self.passive_elements.values_mut() {
+            elem.iter_mut().for_each(fix);
+        }
+        for init in self.global_initializers.values_mut() {
+            if let GlobalInit::RefFunc(func) = init {
+                fix(func);
+            }
+        }
+        self.start_function.iter_mut().for_each(fix);
+
+        self.function_names = mem::take(&mut self.function_names)
+            .into_iter()
+            .map(|(k, v)| (fix_tee(k), v))
+            .collect();
+
+        let key = ImportKey {
+            module: module.to_owned(),
+            field: name.to_owned(),
+            import_idx: self.imports.len() as u32,
+        };
+        self.imports.insert(key, ImportIndex::Function(func));
+        self.num_imported_functions += 1;
+        Ok(func)
+    }*/
+
     fn move_start_function(&mut self, name: &str) -> Result<()> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
@@ -224,22 +286,25 @@ impl ModuleMod for ModuleInfo {
         Ok(())
     }
 
-    fn limit_heap(&mut self, limit: Pages) -> Result<()> {
+    fn memory_size(&self) -> Result<Option<MemoryType>> {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
         }
-        for (_, memory) in &mut self.memories {
-            let bound = memory.maximum.unwrap_or(limit);
-            let bound = bound.min(limit);
-            memory.maximum = Some(bound);
+        let Some(memory) = self.memories.last() else {
+            return Ok(None);
+        };
 
-            if memory.minimum > bound {
-                let minimum = memory.minimum.0.red();
-                let limit = bound.0.red();
-                bail!("module memory minimum {} exceeds limit {}", minimum, limit);
-            }
-        }
-        Ok(())
+        let initial = memory.minimum.0.into();
+        let maximum = memory.maximum.map(|f| f.0.into());
+        let is_64 = |x| x > WASM_MAX_PAGES as u64;
+
+        let memory = MemoryType {
+            initial,
+            maximum,
+            shared: memory.shared,
+            memory64: is_64(initial) || is_64(maximum.unwrap_or_default()),
+        };
+        Ok(Some(memory))
     }
 }
 
@@ -320,6 +385,14 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(signatures)
     }
 
+    fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex> {
+        self.imports
+            .iter()
+            .find(|x| x.module == module && x.name == Some(name))
+            .map(|x| ImportIndex::Function(FunctionIndex::from_u32(x.offset)))
+            .ok_or_else(|| eyre!("missing import {}", name.red()))
+    }
+
     fn move_start_function(&mut self, name: &str) -> Result<()> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
@@ -333,22 +406,11 @@ impl<'a> ModuleMod for WasmBinary<'a> {
         Ok(())
     }
 
-    fn limit_heap(&mut self, limit: Pages) -> Result<()> {
+    fn memory_size(&self) -> Result<Option<MemoryType>> {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
         }
-        if let Some(memory) = self.memories.first_mut() {
-            let bound = memory.maximum.unwrap_or_else(|| limit.0.into());
-            let bound = bound.min(limit.0.into());
-            memory.maximum = Some(bound);
-
-            if memory.initial > bound {
-                let minimum = memory.initial.red();
-                let limit = bound.red();
-                bail!("module memory minimum {} exceeds limit {}", minimum, limit);
-            }
-        }
-        Ok(())
+        Ok(self.memories.last().cloned())
     }
 }
 

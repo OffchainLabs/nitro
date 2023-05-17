@@ -18,8 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const MaxWasmSize = 64 * 1024
-
 type Programs struct {
 	backingStorage  *storage.Storage
 	machineVersions *storage.Storage
@@ -27,8 +25,8 @@ type Programs struct {
 	wasmMaxDepth    storage.StorageBackedUint32
 	wasmHostioInk   storage.StorageBackedUint64
 	freePages       storage.StorageBackedUint16
-	gasPerPage      storage.StorageBackedUint32
-	expMemDivisor   storage.StorageBackedUint32
+	pageGas         storage.StorageBackedUint32
+	pageRamp        storage.StorageBackedUint32
 	version         storage.StorageBackedUint32
 }
 
@@ -40,32 +38,33 @@ const (
 	wasmMaxDepthOffset
 	wasmHostioInkOffset
 	freePagesOffset
-	gasPerPageOffset
-	expMemDivisorOffset
+	pageGasOffset
+	pageRampOffset
 )
 
 var ProgramNotCompiledError func() error
 var ProgramOutOfDateError func(version uint32) error
 var ProgramUpToDateError func() error
 
+const MaxWasmSize = 64 * 1024
 const initialFreePages = 2
-const initialPerPage = 1000
-const initialExpMemDivisor = 336543
+const initialPageGas = 1000
+const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
 	wasmMaxDepth := sto.OpenStorageBackedUint32(wasmMaxDepthOffset)
 	wasmHostioInk := sto.OpenStorageBackedUint32(wasmHostioInkOffset)
 	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
-	gasPerPage := sto.OpenStorageBackedUint32(gasPerPageOffset)
-	expMemDivisor := sto.OpenStorageBackedUint32(expMemDivisorOffset)
+	pageGas := sto.OpenStorageBackedUint32(pageGasOffset)
+	pageRamp := sto.OpenStorageBackedUint32(pageRampOffset)
 	version := sto.OpenStorageBackedUint64(versionOffset)
 	_ = inkPrice.Set(1)
 	_ = wasmMaxDepth.Set(math.MaxUint32)
 	_ = wasmHostioInk.Set(0)
 	_ = freePages.Set(initialFreePages)
-	_ = gasPerPage.Set(initialPerPage)
-	_ = expMemDivisor.Set(initialExpMemDivisor)
+	_ = pageGas.Set(initialPageGas)
+	_ = pageRamp.Set(initialPageRamp)
 	_ = version.Set(1)
 }
 
@@ -77,8 +76,8 @@ func Open(sto *storage.Storage) *Programs {
 		wasmMaxDepth:    sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
 		wasmHostioInk:   sto.OpenStorageBackedUint64(wasmHostioInkOffset),
 		freePages:       sto.OpenStorageBackedUint16(freePagesOffset),
-		gasPerPage:      sto.OpenStorageBackedUint32(gasPerPageOffset),
-		expMemDivisor:   sto.OpenStorageBackedUint32(expMemDivisorOffset),
+		pageGas:         sto.OpenStorageBackedUint32(pageGasOffset),
+		pageRamp:        sto.OpenStorageBackedUint32(pageRampOffset),
 		version:         sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
@@ -122,20 +121,20 @@ func (p Programs) SetFreePages(pages uint16) error {
 	return p.freePages.Set(pages)
 }
 
-func (p Programs) GasPerPage() (uint32, error) {
-	return p.gasPerPage.Get()
+func (p Programs) PageGas() (uint32, error) {
+	return p.pageGas.Get()
 }
 
-func (p Programs) SetGasPerPage(gas uint32) error {
-	return p.gasPerPage.Set(gas)
+func (p Programs) SetPageGas(gas uint32) error {
+	return p.pageGas.Set(gas)
 }
 
-func (p Programs) ExpMemDivisor() (uint32, error) {
-	return p.expMemDivisor.Get()
+func (p Programs) PageRamp() (uint32, error) {
+	return p.pageRamp.Get()
 }
 
-func (p Programs) SetExpMemDivisor(divisor uint32) error {
-	return p.expMemDivisor.Set(divisor)
+func (p Programs) SetPageRamp(ramp uint32) error {
+	return p.pageRamp.Set(ramp)
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
@@ -223,11 +222,9 @@ type goParams struct {
 }
 
 type goMemoryModel struct {
-	openPages     uint16 // number of pages currently open
-	everPages     uint16 // largest number of pages ever open
-	freePages     uint16 // number of pages the tx gets for free
-	gasPerPage    uint32 // base gas to charge per wasm page
-	expMemDivisor uint32 // throttles exponential memory costs
+	freePages uint16 // number of pages the tx gets for free
+	pageGas   uint32 // base gas to charge per wasm page
+	pageRamp  uint32 // ramps up exponential memory costs
 }
 
 func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goParams, error) {
@@ -244,25 +241,22 @@ func (p Programs) goParams(version uint32, statedb vm.StateDB, debug bool) (*goP
 		return nil, err
 	}
 
-	openPages, everPages := statedb.GetStylusPages()
 	freePages, err := p.FreePages()
 	if err != nil {
 		return nil, err
 	}
-	gasPerPage, err := p.GasPerPage()
+	pageGas, err := p.PageGas()
 	if err != nil {
 		return nil, err
 	}
-	expMemDivisor, err := p.ExpMemDivisor()
+	pageRamp, err := p.PageRamp()
 	if err != nil {
 		return nil, err
 	}
 	memParams := goMemoryModel{
-		openPages:     openPages,
-		everPages:     everPages,
-		freePages:     freePages,
-		gasPerPage:    gasPerPage,
-		expMemDivisor: expMemDivisor,
+		freePages: freePages,
+		pageGas:   pageGas,
+		pageRamp:  pageRamp,
 	}
 
 	config := &goParams{

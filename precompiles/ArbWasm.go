@@ -44,13 +44,13 @@ func (con ArbWasm) FreePages(c ctx, _ mech) (uint16, error) {
 }
 
 // Gets the base cost of each additional wasm page
-func (con ArbWasm) GasPerPage(c ctx, _ mech) (uint32, error) {
-	return c.State.Programs().GasPerPage()
+func (con ArbWasm) PageGas(c ctx, _ mech) (uint32, error) {
+	return c.State.Programs().PageGas()
 }
 
-// Gets the divisor slowing down exponential memory costs
-func (con ArbWasm) ExpMemDivisor(c ctx, _ mech) (uint32, error) {
-	return c.State.Programs().ExpMemDivisor()
+// Gets the ramp that drives exponential memory costs
+func (con ArbWasm) PageRamp(c ctx, _ mech) (uint32, error) {
+	return c.State.Programs().PageRamp()
 }
 
 // Gets the current program version

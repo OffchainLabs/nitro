@@ -25,7 +25,7 @@ pub const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 #[derive(Debug)]
 pub struct DepthChecker {
     /// The amount of stack space left
-    pub global: Mutex<Option<GlobalIndex>>,
+    global: Mutex<Option<GlobalIndex>>,
     /// The maximum size of a stack frame, measured in words
     frame_limit: u32,
     /// The function types of the module being instrumented

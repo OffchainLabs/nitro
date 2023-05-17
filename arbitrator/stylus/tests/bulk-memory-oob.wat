@@ -11,4 +11,4 @@
     (func (export "copy_same")
         (memory.copy (i32.const 0xffff) (i32.const 0xffff) (i32.const 2)))
     (data (i32.const 0xfffe) "\01\02") ;; last two bytes shouldn't change
-    (memory (export "memory") 1))
+    (memory (export "memory") 1 1))

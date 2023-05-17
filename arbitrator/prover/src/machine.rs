@@ -1711,7 +1711,8 @@ impl Machine {
     }
 
     fn test_next_instruction(func: &Function, pc: &ProgramCounter) {
-        debug_assert!(func.code.len() > pc.inst.try_into().unwrap());
+        let inst: usize = pc.inst.try_into().unwrap();
+        debug_assert!(func.code.len() > inst);
     }
 
     pub fn get_steps(&self) -> u64 {

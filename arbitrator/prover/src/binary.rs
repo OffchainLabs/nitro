@@ -9,7 +9,7 @@ use crate::{
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
-use arbutil::Color;
+use arbutil::{Color, DebugColor};
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -454,6 +454,22 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
             UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
             End => {}
             x => bail!("unsupported section type {:?}", x),
+        }
+    }
+
+    // reject the module if it imports the same func with inconsistent signatures
+    let mut imports = HashMap::default();
+    for import in &binary.imports {
+        let offset = import.offset;
+        let module = import.module;
+        let name = import.name;
+
+        let key = (module, name);
+        if let Some(prior) = imports.insert(key, offset) {
+            if prior != offset {
+                let name = name.debug_red();
+                bail!("inconsistent imports for {} {name}", module.red());
+            }
         }
     }
 

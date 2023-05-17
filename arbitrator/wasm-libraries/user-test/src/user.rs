@@ -52,3 +52,8 @@ pub unsafe extern "C" fn forward__emit_log(data: usize, len: u32, topics: u32) {
     let data = wavm::read_slice_usize(data, len as usize);
     LOGS.push(data)
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn forward__memory_grow(pages: u16) {
+    println!("Memory grow: {}", pages);
+}
