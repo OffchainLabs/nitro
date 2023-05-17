@@ -34,17 +34,21 @@ func (c *L1Config) ResolveDirectoryNames(chain string) {
 }
 
 type L2Config struct {
-	ChainID        uint64                   `koanf:"chain-id"`
-	ChainName      string                   `koanf:"chain-name"`
-	ChainInfoFiles []string                 `koanf:"chain-info-files"`
-	DevWallet      genericconf.WalletConfig `koanf:"dev-wallet"`
+	ChainID                   uint64                   `koanf:"chain-id"`
+	ChainName                 string                   `koanf:"chain-name"`
+	ChainInfoFiles            []string                 `koanf:"chain-info-files"`
+	DevWallet                 genericconf.WalletConfig `koanf:"dev-wallet"`
+	ChainInfoIpfsUrl          string                   `koanf:"chain-info-ipfs-url"`
+	ChainInfoIpfsDownloadPath string                   `koanf:"chain-info-ipfs-download-path"`
 }
 
 var L2ConfigDefault = L2Config{
-	ChainID:        0,
-	ChainName:      "",
-	ChainInfoFiles: []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
-	DevWallet:      genericconf.WalletConfigDefault,
+	ChainID:                   0,
+	ChainName:                 "",
+	ChainInfoFiles:            []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
+	DevWallet:                 genericconf.WalletConfigDefault,
+	ChainInfoIpfsUrl:          "",
+	ChainInfoIpfsDownloadPath: "/tmp/",
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -54,6 +58,9 @@ func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 	// Dev wallet does not exist unless specified
 	genericconf.WalletConfigAddOptions(prefix+".dev-wallet", f, "")
+	f.String(prefix+".chain-info-ipfs-url", L2ConfigDefault.ChainInfoIpfsUrl, "url to download chain info file")
+	f.String(prefix+".chain-info-ipfs-download-path", L2ConfigDefault.ChainInfoIpfsDownloadPath, "path to save temp downloaded file")
+
 }
 
 func (c *L2Config) ResolveDirectoryNames(chain string) {

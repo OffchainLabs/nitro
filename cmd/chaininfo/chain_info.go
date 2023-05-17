@@ -4,14 +4,22 @@
 package chaininfo
 
 import (
+	"bytes"
+	"context"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 )
 
 //go:embed arbitrum_chain_info.json
@@ -26,8 +34,8 @@ type ChainInfo struct {
 	RollupAddresses *RollupAddresses    `json:"rollup"`
 }
 
-func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string) (*params.ChainConfig, error) {
-	chainInfo, err := ProcessChainInfo(chainId.Uint64(), chainName, l2ChainInfoFiles)
+func GetChainConfig(ctx context.Context, chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (*params.ChainConfig, error) {
+	chainInfo, err := ProcessChainInfo(ctx, chainId.Uint64(), chainName, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, err
 	}
@@ -42,23 +50,31 @@ func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, 
 	}
 }
 
-func GetRollupAddressesConfig(chainId *big.Int, chainName string, l2ChainInfoFiles []string) (RollupAddresses, error) {
-	chainInfo, err := ProcessChainInfo(chainId.Uint64(), chainName, l2ChainInfoFiles)
+func GetRollupAddressesConfig(ctx context.Context, l2Config conf.L2Config) (RollupAddresses, error) {
+	chainInfo, err := ProcessChainInfo(ctx, l2Config.ChainID, l2Config.ChainName, l2Config.ChainInfoFiles, l2Config.ChainInfoIpfsUrl, l2Config.ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return RollupAddresses{}, err
 	}
 	if chainInfo.RollupAddresses != nil {
 		return *chainInfo.RollupAddresses, nil
 	}
-	if chainId.Uint64() != 0 {
-		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", chainId)
+	if l2Config.ChainID != 0 {
+		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", l2Config.ChainID)
 	} else {
-		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain name %v", chainName)
+		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain name %v", l2Config.ChainName)
 	}
 }
 
-func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []string) (*ChainInfo, error) {
-	for _, l2ChainInfoFile := range l2ChainInfoFiles {
+func ProcessChainInfo(ctx context.Context, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (*ChainInfo, error) {
+	combinedL2ChainInfoFile := l2ChainInfoFiles
+	if l2ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := getL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
+	}
+	for _, l2ChainInfoFile := range combinedL2ChainInfoFile {
 		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
@@ -66,7 +82,14 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 		var chainsInfo []ChainInfo
 		err = json.Unmarshal(chainsInfoBytes, &chainsInfo)
 		if err != nil {
-			return nil, err
+			decodedChainsInfoBytes, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewReader(chainsInfoBytes)))
+			if err != nil {
+				return nil, err
+			}
+			err = json.Unmarshal(decodedChainsInfoBytes, &chainsInfo)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for _, chainInfo := range chainsInfo {
 			if chainInfo.ChainId == chainId || chainInfo.ChainName == chainName {
@@ -90,6 +113,26 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 	} else {
 		return nil, fmt.Errorf("unsupported L2 chain chain %v", chainName)
 	}
+}
+
+func getL2ChainInfoIpfsFile(ctx context.Context, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (string, error) {
+	ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, l2ChainInfoIpfsDownloadPath, false, []string{}, ipfshelper.DefaultIpfsProfiles)
+	if err != nil {
+		return "", err
+	}
+	log.Info("Downloading l2 info file via IPFS", "url", l2ChainInfoIpfsDownloadPath)
+	l2ChainInfoFile, downloadErr := ipfsNode.DownloadFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	closeErr := ipfsNode.Close()
+	if downloadErr != nil {
+		if closeErr != nil {
+			log.Error("Failed to close IPFS node after download error", "err", closeErr)
+		}
+		return "", fmt.Errorf("failed to download file from IPFS: %w", downloadErr)
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("failed to close IPFS node: %w", err)
+	}
+	return l2ChainInfoFile, nil
 }
 
 type RollupAddresses struct {

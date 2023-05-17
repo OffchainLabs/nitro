@@ -327,7 +327,7 @@ func mainImpl() int {
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainName, nodeConfig.L2.ChainInfoFiles)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -364,7 +364,7 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainName, nodeConfig.L2.ChainInfoFiles)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -746,11 +746,13 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	chainFound := false
 	l2ChainId := k.Int64("l2.chain-id")
 	l2ChainName := k.String("l2.chain-name")
+	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
+	l2ChainInfoIpfsDownloadPath := k.String("l2.chain-info-ipfs-download-path")
 	if l2ChainId == 0 && l2ChainName == "" {
 		return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id or --l2.chain-name to choose rollup")
 	}
 	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
-	chainFound, err = applyChainParameters(k, uint64(l2ChainId), l2ChainName, l1ChainId.Uint64(), l2ChainInfoFiles)
+	chainFound, err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l1ChainId.Uint64(), l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -809,8 +811,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
-	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, l2ChainInfoFiles)
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
+	chainInfo, err := chaininfo.ProcessChainInfo(ctx, chainId, chainName, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return false, err
 	}

@@ -202,7 +202,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := chaininfo.GetChainConfig(chainId, "", genesisBlockNum, []string{})
+		chainConfig, err := chaininfo.GetChainConfig(context.Background(), chainId, "", genesisBlockNum, []string{}, "", "")
 		if err != nil {
 			panic(err)
 		}
@@ -227,7 +227,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := chaininfo.GetChainConfig(chainId, "", 0, []string{})
+		chainConfig, err := chaininfo.GetChainConfig(context.Background(), chainId, "", 0, []string{}, "", "")
 		if err != nil {
 			panic(err)
 		}

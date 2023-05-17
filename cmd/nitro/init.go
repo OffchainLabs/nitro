@@ -521,7 +521,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, config.L2.ChainInfoFiles)
+		chainConfig, err = chaininfo.GetChainConfig(ctx, new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, config.L2.ChainInfoFiles, config.L2.ChainInfoIpfsUrl, config.L2.ChainInfoIpfsDownloadPath)
 		if err != nil {
 			return chainDb, nil, err
 		}
