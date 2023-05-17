@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
@@ -26,14 +28,18 @@ import (
 	"github.com/pkg/errors"
 )
 
+var messageHashHeader = []byte("messageHash_")
+
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
 	bc        *core.BlockChain
+	db        ethdb.Database
 	consensus consensus.FullConsensusClient
 	recorder  *BlockRecorder
 
-	resequenceChan    chan []*arbostypes.MessageWithMetadata
+	resequenceChan chan []*arbostypes.MessageWithMetadata
+
 	createBlocksMutex sync.Mutex
 
 	newBlockNotifier chan struct{}
@@ -45,9 +51,10 @@ type ExecutionEngine struct {
 	reorgSequencing bool
 }
 
-func NewExecutionEngine(bc *core.BlockChain, consensus consensus.FullConsensusClient) (*ExecutionEngine, error) {
+func NewExecutionEngine(bc *core.BlockChain, db ethdb.Database, consensus consensus.FullConsensusClient) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
 		bc:               bc,
+		db:               db,
 		consensus:        consensus,
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
@@ -121,13 +128,20 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 		return err
 	}
 	for i := range newMessages {
-		err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i])
+		pos := count + arbutil.MessageIndex(i)
+		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
+		err := s.digestMessageWithBlockMutex(&newMessages[i], pos)
 		if err != nil {
 			return err
 		}
 	}
 	if s.recorder != nil {
 		s.recorder.ReorgTo(targetBlock.Header())
+	}
+	err = s.deleteMessageHashStartingAt(count)
+	if err != nil {
+		// shouldn't happen - but if it does we'll naturally overwrite these with time.
+		log.Warn("deleting messages on reorg", "err", err)
 	}
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
@@ -144,12 +158,16 @@ func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
 	return currentBlock.Header(), nil
 }
 
-func (s *ExecutionEngine) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+func (s *ExecutionEngine) headMessageNumber() (arbutil.MessageIndex, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return containers.NewReadyPromise[arbutil.MessageIndex](0, err)
+		return 0, err
 	}
-	return containers.NewReadyPromise[arbutil.MessageIndex](s.BlockNumberToMessageIndex(currentHeader.Number.Uint64()))
+	return s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+}
+
+func (s *ExecutionEngine) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise[arbutil.MessageIndex](s.headMessageNumber())
 }
 
 func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
@@ -364,7 +382,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
 	// it will naturally recover on startup by regenerating the missing block.
-	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
+	err = s.appendBlockAndMessage(block, statedb, receipts, blockCalcTime, pos, &msgWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +439,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(ctx context.Conte
 		return nil, err
 	}
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlockAndMessage(block, statedb, receipts, time.Since(startTime), lastMsg+1, &messageWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -480,9 +498,53 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	return block, statedb, receipts, err
 }
 
+func messageHashKey(pos arbutil.MessageIndex) []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key, uint64(pos))
+	return append(messageHashHeader, key...)
+}
+
+func (s *ExecutionEngine) writeMessageHash(pos arbutil.MessageIndex, msgHash common.Hash) error {
+	key := messageHashKey(pos)
+	return s.db.Put(key, msgHash.Bytes())
+}
+
+func (s *ExecutionEngine) deleteMessageHashStartingAt(pos arbutil.MessageIndex) error {
+	minKey := make([]byte, 8)
+	binary.BigEndian.PutUint64(minKey, uint64(pos))
+	batch := s.db.NewBatch()
+	iter := s.db.NewIterator(messageHashHeader, minKey)
+	var err error
+	defer iter.Release()
+	for iter.Next() {
+		err = batch.Delete(iter.Key())
+		if err != nil {
+			log.Warn("deleting message hash: got error while iterating", "err", err)
+			break
+		}
+	}
+	if err == nil {
+		err = iter.Error()
+		if err != nil {
+			log.Warn("deleting message hash: got error after iterating", "err", err)
+		}
+	}
+	return batch.Write()
+}
+
 // must hold createBlockMutex
-func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB, receipts types.Receipts, duration time.Duration) error {
+func (s *ExecutionEngine) appendBlockAndMessage(block *types.Block, statedb *state.StateDB, receipts types.Receipts, duration time.Duration, pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	var logs []*types.Log
+
+	msgHash, err := msg.Hash(pos, s.bc.Config().ChainID.Uint64())
+	if err != nil {
+		return err
+	}
+	err = s.writeMessageHash(pos, msgHash)
+	if err != nil {
+		return err
+	}
+
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
@@ -513,40 +575,77 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) containers.Promi
 	})
 }
 
+func (s *ExecutionEngine) existingMessageResultFor(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
+	headMsgNum, err := s.headMessageNumber()
+	if err != nil {
+		return nil, err
+	}
+	if headMsgNum < num {
+		return nil, fmt.Errorf("msgNum too large got: %d, expected up to: %d", num, headMsgNum)
+	}
+	msgHash, err := msg.Hash(num, s.bc.Config().ChainID.Uint64())
+	if err != nil {
+		return nil, err
+	}
+	expHashKey := messageHashKey(num)
+	msgExists, err := s.db.Has(expHashKey)
+	if err != nil {
+		return nil, err
+	}
+	if !msgExists {
+		return nil, fmt.Errorf("message not found in database: %d", num)
+	}
+	expHashBytes, err := s.db.Get(expHashKey)
+	if err != nil {
+		return nil, err
+	}
+	expHash := common.BytesToHash(expHashBytes)
+	if msgHash != expHash {
+		return nil, fmt.Errorf("wrong hash for msg %d got: %v, expected: %v", num, msgHash, expHash)
+	}
+	blockNum := s.MessageIndexToBlockNumber(num)
+	header := s.bc.GetHeaderByNumber(blockNum)
+	return s.resultFromHeader(header)
+}
+
 func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
 	return stopwaiter.LaunchPromiseThread[*execution.MessageResult](&s.StopWaiterSafe, func(ctx context.Context) (*execution.MessageResult, error) {
+		// don't catch locks to handle old existing messages
+		result, err := s.existingMessageResultFor(num, msg)
+		if err == nil {
+			return result, nil
+		}
+
 		if !s.createBlocksMutex.TryLock() {
 			return nil, errors.New("createBlock mutex held")
 		}
 		defer s.createBlocksMutex.Unlock()
-		err := s.digestMessageWithBlockMutex(num, msg)
+		currentNum, err := s.headMessageNumber()
 		if err != nil {
 			return nil, err
 		}
+		if num > currentNum+1 {
+			return nil, fmt.Errorf("wrong message number in digest got %d expected %d", num, currentNum+1)
+		} else if num < currentNum+1 {
+			return s.existingMessageResultFor(num, msg)
+		}
+		err = s.digestMessageWithBlockMutex(msg, num)
+		if err != nil {
+			return nil, err
+		}
+		sharedmetrics.UpdateSequenceNumberInBlockGauge(num)
 		return s.resultFromHeader(s.bc.CurrentHeader())
 	})
 }
 
-func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	currentHeader, err := s.getCurrentHeader()
-	if err != nil {
-		return err
-	}
-	curMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
-	if err != nil {
-		return err
-	}
-	if curMsg+1 != num {
-		return fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
-	}
-
+func (s *ExecutionEngine) digestMessageWithBlockMutex(msg *arbostypes.MessageWithMetadata, num arbutil.MessageIndex) error {
 	startTime := time.Now()
 	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
 	if err != nil {
 		return err
 	}
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlockAndMessage(block, statedb, receipts, time.Since(startTime), num, msg)
 	if err != nil {
 		return err
 	}
@@ -587,7 +686,6 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 		}
 	}
 
-	sharedmetrics.UpdateSequenceNumberInBlockGauge(num)
 	s.latestBlockMutex.Lock()
 	s.latestBlock = block
 	s.latestBlockMutex.Unlock()

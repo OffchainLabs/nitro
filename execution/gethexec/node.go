@@ -197,7 +197,12 @@ func CreateExecutionNode(
 		consensusInterface = consensusClient
 	}
 
-	execEngine, err := NewExecutionEngine(l2BlockChain, consensusInterface)
+	execDB, err := stack.OpenDatabase("execdb", 0, 0, "", false)
+	if err != nil {
+		return nil, err
+	}
+
+	execEngine, err := NewExecutionEngine(l2BlockChain, execDB, consensusInterface)
 	if err != nil {
 		return nil, err
 	}
