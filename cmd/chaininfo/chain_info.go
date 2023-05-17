@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 )
 
@@ -50,18 +49,18 @@ func GetChainConfig(ctx context.Context, chainId *big.Int, chainName string, gen
 	}
 }
 
-func GetRollupAddressesConfig(ctx context.Context, l2Config conf.L2Config) (RollupAddresses, error) {
-	chainInfo, err := ProcessChainInfo(ctx, l2Config.ChainID, l2Config.ChainName, l2Config.ChainInfoFiles, l2Config.ChainInfoIpfsUrl, l2Config.ChainInfoIpfsDownloadPath)
+func GetRollupAddressesConfig(ctx context.Context, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (RollupAddresses, error) {
+	chainInfo, err := ProcessChainInfo(ctx, chainId, chainName, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return RollupAddresses{}, err
 	}
 	if chainInfo.RollupAddresses != nil {
 		return *chainInfo.RollupAddresses, nil
 	}
-	if l2Config.ChainID != 0 {
-		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", l2Config.ChainID)
+	if chainId != 0 {
+		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", chainId)
 	} else {
-		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain name %v", l2Config.ChainName)
+		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain name %v", chainName)
 	}
 }
 

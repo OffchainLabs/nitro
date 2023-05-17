@@ -327,7 +327,7 @@ func mainImpl() int {
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, nodeConfig.L2.ChainInfoFiles, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -364,7 +364,7 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(ctx, nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, nodeConfig.L2.ChainInfoFiles, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
