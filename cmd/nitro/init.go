@@ -407,7 +407,7 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	return pruner.Prune(root)
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := execution.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
@@ -521,7 +521,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return chainDb, nil, err
 		}
-		chainConfig, err = chaininfo.GetChainConfig(chainId, genesisBlockNr, config.L2.ChainInfoFiles)
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, config.L2.ChainInfoFiles)
 		if err != nil {
 			return chainDb, nil, err
 		}
