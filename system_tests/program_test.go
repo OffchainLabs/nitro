@@ -522,6 +522,9 @@ func testEvmData(t *testing.T, jit bool) {
 	fundedAccount := l2info.Accounts["Faucet"].Address
 	ethPrecompile := common.BigToAddress(big.NewInt(1))
 	arbTestAddress := types.ArbosTestAddress
+	localBlockNumber, err := l2client.BlockNumber(ctx)
+	Require(t, err)
+
 	evmDataData := []byte{}
 	evmDataData = append(evmDataData, fundedAccount.Bytes()...)
 	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
@@ -531,10 +534,11 @@ func testEvmData(t *testing.T, jit bool) {
 	opts := bind.CallOpts{
 		From: testhelpers.RandomAddress(),
 	}
-	result, err := mock.StaticcallProgramWithGas(&opts, evmDataAddr, evmDataGas, evmDataData)
+	result, err := mock.StaticcallEvmData(&opts, evmDataAddr, evmDataGas, evmDataData)
 	Require(t, err)
 
 	advance := func(count int, name string) []byte {
+		t.Helper()
 		if len(result) < count {
 			Fail(t, "not enough data left", name, count, len(result))
 		}
@@ -544,21 +548,25 @@ func testEvmData(t *testing.T, jit bool) {
 	}
 
 	getU64 := func(name string) uint64 {
+		t.Helper()
 		return binary.BigEndian.Uint64(advance(8, name))
 	}
 	assertU64 := func(name string, expected uint64) {
+		t.Helper()
 		value := getU64(name)
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
 	}
 	assertAddress := func(name string, expected common.Address) {
+		t.Helper()
 		value := common.BytesToAddress(advance(20, name))
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
 		}
 	}
 	assertHash := func(name string, expected common.Hash) common.Hash {
+		t.Helper()
 		value := common.BytesToHash(advance(32, name))
 		if value != expected {
 			Fail(t, "mismatch", name, value, expected)
@@ -566,40 +574,49 @@ func testEvmData(t *testing.T, jit bool) {
 		return value
 	}
 	assertBigInt := func(name string, expected *big.Int) {
+		t.Helper()
 		assertHash(name, common.BigToHash(expected))
 	}
+	getBigInt := func(name string) *big.Int {
+		t.Helper()
+		return new(big.Int).SetBytes(advance(32, name))
+	}
 	assertBigIntAtLeast := func(name string, expected *big.Int) {
-		value := new(big.Int).SetBytes(advance(32, name))
+		t.Helper()
+		value := getBigInt(name)
 		if !arbmath.BigGreaterThanOrEqual(value, expected) {
 			Fail(t, "mismatch", name, value, expected)
 		}
 	}
 
-	selectedBlockNumber := big.NewInt(4)
-	expectedBalance, err := l2client.BalanceAt(ctx, fundedAccount, selectedBlockNumber)
+	stylusBlockNumber := getBigInt("block number")
+	stylusBlock, err := l2client.BlockByNumber(ctx, stylusBlockNumber)
 	Require(t, err)
-	assertBigInt("address balance", expectedBalance)
+	if !arbmath.BigGreaterThanOrEqual(stylusBlockNumber, new(big.Int).SetUint64(localBlockNumber)) {
+		Fail(t, "selected less than local", stylusBlockNumber, localBlockNumber)
+	}
+	// Skip blockhash, checked in staticcallEvmData
+	_ = getBigInt("block number")
 	assertBigInt("eth precompile code hash", big.NewInt(0))
-	arbPrecompileCode, err := l2client.CodeAt(ctx, arbTestAddress, selectedBlockNumber)
+	arbPrecompileCode, err := l2client.CodeAt(ctx, arbTestAddress, stylusBlockNumber)
 	Require(t, err)
 	arbPrecompileHash := crypto.Keccak256Hash(arbPrecompileCode)
 	assertHash("arb precompile code hash", arbPrecompileHash)
-	contractCode, err := l2client.CodeAt(ctx, evmDataAddr, selectedBlockNumber)
+	contractCode, err := l2client.CodeAt(ctx, evmDataAddr, stylusBlockNumber)
 	Require(t, err)
 	contractHash := crypto.Keccak256Hash(contractCode)
 	assertHash("contract code hash", contractHash)
-	selectedBlock, err := l2client.BlockByNumber(ctx, selectedBlockNumber)
+	expectedBalance, err := l2client.BalanceAt(ctx, fundedAccount, stylusBlockNumber)
 	Require(t, err)
-	assertHash("blockhash", common.HexToHash("0x88380104c7132464d7fdc735df32ebd023a4a0ca477379ee10a938bd70c04486"))
+	assertBigInt("address balance", expectedBalance)
 	assertBigInt("base fee", big.NewInt(100000000))
 	expectedChainid, err := l2client.ChainID(ctx)
 	Require(t, err)
 	assertBigInt("chainid", expectedChainid)
-	assertAddress("coinbase", selectedBlock.Coinbase())
+	assertAddress("coinbase", stylusBlock.Coinbase())
 	assertBigInt("difficulty", big.NewInt(1))
-	assertU64("block gas limit", selectedBlock.GasLimit())
-	assertBigIntAtLeast("block number", selectedBlock.Number())
-	assertBigIntAtLeast("timestamp", new(big.Int).SetUint64(selectedBlock.Time()))
+	assertU64("block gas limit", stylusBlock.GasLimit())
+	assertBigIntAtLeast("timestamp", new(big.Int).SetUint64(stylusBlock.Time()))
 	assertAddress("contract address", evmDataAddr)
 	assertAddress("sender", mockAddr)
 	assertBigInt("value", big.NewInt(0))
