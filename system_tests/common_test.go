@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -415,7 +416,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 func DeployOnTestL1(
 	t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int,
-) *arbnode.RollupAddresses {
+) *chaininfo.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")

@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -43,83 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
-
-type RollupAddresses struct {
-	Bridge                 common.Address `json:"bridge"`
-	Inbox                  common.Address `json:"inbox"`
-	SequencerInbox         common.Address `json:"sequencer-inbox"`
-	Rollup                 common.Address `json:"rollup"`
-	ValidatorUtils         common.Address `json:"validator-utils"`
-	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
-	DeployedAt             uint64         `json:"deployed-at"`
-}
-
-type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
-}
-
-var RollupAddressesConfigDefault = RollupAddressesConfig{}
-
-func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".bridge", "", "the bridge contract address")
-	f.String(prefix+".inbox", "", "the inbox contract address")
-	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
-	f.String(prefix+".rollup", "", "the rollup contract address")
-	f.String(prefix+".validator-utils", "", "the validator utils contract address")
-	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
-	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
-}
-
-func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
-	a := RollupAddresses{
-		DeployedAt: c.DeployedAt,
-	}
-	strs := []string{
-		c.Bridge,
-		c.Inbox,
-		c.SequencerInbox,
-		c.Rollup,
-		c.ValidatorUtils,
-		c.ValidatorWalletCreator,
-	}
-	addrs := []*common.Address{
-		&a.Bridge,
-		&a.Inbox,
-		&a.SequencerInbox,
-		&a.Rollup,
-		&a.ValidatorUtils,
-		&a.ValidatorWalletCreator,
-	}
-	names := []string{
-		"Bridge",
-		"Inbox",
-		"SequencerInbox",
-		"Rollup",
-		"ValidatorUtils",
-		"ValidatorWalletCreator",
-	}
-	if len(strs) != len(addrs) {
-		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
-	}
-	complete := true
-	for i, s := range strs {
-		if !common.IsHexAddress(s) {
-			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
-		}
-		*addrs[i] = common.HexToAddress(s)
-	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
-	return a, nil
-}
 
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
@@ -304,7 +228,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
 	if err != nil {
 		return nil, err
@@ -375,7 +299,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		}
 	}
 
-	return &RollupAddresses{
+	return &chaininfo.RollupAddresses{
 		Bridge:                 info.Bridge,
 		Inbox:                  info.InboxAddress,
 		SequencerInbox:         info.SequencerInbox,
@@ -566,7 +490,7 @@ type Node struct {
 	Execution               *execution.ExecutionNode
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
-	DeployInfo              *RollupAddresses
+	DeployInfo              *chaininfo.RollupAddresses
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -640,7 +564,7 @@ func createNodeImpl(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
+	deployInfo *chaininfo.RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
@@ -976,7 +900,7 @@ func CreateNode(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
+	deployInfo *chaininfo.RollupAddresses,
 	txOpts *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
@@ -1043,6 +967,8 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	// config is the static config at start, not a dynamic config
+	config := n.configFetcher.Get()
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.Execution.ArbInterface.Initialize(n)
 	err := n.Stack.Start()
@@ -1067,6 +993,14 @@ func (n *Node) Start(ctx context.Context) error {
 		err = n.BroadcastServer.Initialize()
 		if err != nil {
 			return fmt.Errorf("error initializing feed broadcast server: %w", err)
+		}
+	}
+	if n.InboxTracker != nil && n.BroadcastServer != nil && config.Sequencer.Enable && !config.SeqCoordinator.Enable {
+		// Normally, the sequencer would populate the feed backlog when it acquires the lockout.
+		// However, if the sequencer coordinator is not enabled, we must populate the backlog on startup.
+		err = n.InboxTracker.PopulateFeedBacklog(n.BroadcastServer)
+		if err != nil {
+			return fmt.Errorf("error populating feed backlog on startup: %w", err)
 		}
 	}
 	err = n.TxStreamer.Start(ctx)
