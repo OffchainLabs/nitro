@@ -116,6 +116,9 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         bytes32 messageDataHash,
         uint256 tokenAmount
     ) internal override returns (uint256) {
+        // fetch native token from Inbox
+        IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), amount);
+
         return
             IERC20Bridge(address(bridge)).enqueueDelayedMessage(
                 kind,

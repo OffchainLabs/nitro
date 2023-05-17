@@ -16,6 +16,8 @@ contract BridgeTest is AbsBridgeTest {
     uint256 public ethAmount = 2 ether;
 
     function setUp() public {
+        inbox = address(1001);
+
         // deploy eth and bridge
         bridge = Bridge(TestUtil.deployProxy(address(new Bridge())));
         ethBridge = IEthBridge(address(bridge));

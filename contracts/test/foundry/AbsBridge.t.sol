@@ -18,7 +18,7 @@ abstract contract AbsBridgeTest is Test {
     address public userB = address(101);
 
     address public rollup = address(1000);
-    address public inbox = address(1001);
+    address public inbox;
     address public outbox = address(1002);
     address public seqInbox = address(1003);
 

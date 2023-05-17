@@ -215,7 +215,7 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
             messageDataHash
         );
 
-        _transferFunds(sender, amount);
+        _transferFunds(amount);
 
         return messageCount;
     }
@@ -280,7 +280,8 @@ abstract contract AbsBridge is Initializable, DelegateCallAware, IBridge {
     /// @dev For the classic -> nitro migration. TODO: remove post-migration.
     function acceptFundsFromOldBridge() external payable {}
 
-    function _transferFunds(address sender, uint256 amount) internal virtual;
+    /// @dev transfer funds provided to pay for crosschain msg
+    function _transferFunds(uint256 amount) internal virtual;
 
     function _executeLowLevelCall(
         address to,
