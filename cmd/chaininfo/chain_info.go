@@ -18,6 +18,7 @@ import (
 var DefaultChainInfo []byte
 
 type ChainInfo struct {
+	ChainId         uint64              `json:"chain-id"`
 	ChainName       string              `json:"chain-name"`
 	ParentChainId   uint64              `json:"parent-chain-id"`
 	ChainParameters *json.RawMessage    `json:"chain-parameters"`
@@ -54,28 +55,29 @@ func ProcessChainInfo(chainId uint64, l2ChainInfoFiles []string) (*ChainInfo, er
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
 		}
-		var chainsInfo map[uint64]ChainInfo
+		var chainsInfo []ChainInfo
 		err = json.Unmarshal(chainsInfoBytes, &chainsInfo)
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := chainsInfo[chainId]; !ok {
-			continue
+		for _, chainInfo := range chainsInfo {
+			if chainInfo.ChainId == chainId {
+				return &chainInfo, nil
+			}
 		}
-		chainInfo := chainsInfo[chainId]
-		return &chainInfo, nil
 	}
 
-	var chainsInfo map[uint64]ChainInfo
+	var chainsInfo []ChainInfo
 	err := json.Unmarshal(DefaultChainInfo, &chainsInfo)
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := chainsInfo[chainId]; !ok {
-		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	for _, chainInfo := range chainsInfo {
+		if chainInfo.ChainId == chainId {
+			return &chainInfo, nil
+		}
 	}
-	chainInfo := chainsInfo[chainId]
-	return &chainInfo, nil
+	return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
 }
 
 type RollupAddresses struct {

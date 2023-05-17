@@ -1,6 +1,6 @@
-{
-  "42161":
+[
   {
+    "chain-id": "42161",
     "chain-name": "arb1",
     "parent-chain-id": 1,
     "chain-parameters":
@@ -68,8 +68,8 @@
       "deployed-at": 15411056
     }
   },
-  "42170":
   {
+    "chain-id": "42170",
     "chain-name": "nova",
     "parent-chain-id": 1,
     "chain-parameters":
@@ -150,8 +150,8 @@
       "deployed-at": 15016829
     }
   },
-  "421611":
   {
+    "chain-id": "421611",
     "chain-name": "rinkeby-nitro",
     "parent-chain-id": 4,
     "chain-parameters":
@@ -219,8 +219,8 @@
       "deployed-at": 11088567
     }
   },
-  "421613":
   {
+    "chain-id": "421613",
     "chain-name": "goerli-rollup",
     "parent-chain-id": 5,
     "chain-parameters":
@@ -292,8 +292,8 @@
       "deployed-at": 7217526
     }
   },
-  "421703":
   {
+    "chain-id": "421703",
     "chain-name": "goerli-anytrust",
     "parent-chain-id": 5,
     "chain-parameters":
@@ -336,8 +336,8 @@
       }
     }
   },
-  "412346":
   {
+    "chain-id": "412346",
     "chain-name": "arb-dev-test",
     "chain-config":
     {
@@ -372,8 +372,8 @@
       }
     }
   },
-  "412347":
   {
+    "chain-id": "412347",
     "chain-name": "anytrust-dev-test",
     "chain-config":
     {
@@ -408,4 +408,4 @@
       }
     }
   }
-}
+]
