@@ -17,6 +17,15 @@ import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract ERC20Inbox is AbsInbox, IERC20Inbox {
+
+    /// @inheritdoc IInbox
+    function initialize(
+        IBridge _bridge,
+        ISequencerInbox _sequencerInbox
+    ) external initializer onlyDelegated {
+       __AbsInbox_init(_bridge, _sequencerInbox);
+    }
+
     /// @inheritdoc IERC20Inbox
     function depositERC20(uint256 amount) public whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
