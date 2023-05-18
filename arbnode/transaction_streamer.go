@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"errors"
 
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -456,6 +458,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 
 // AddFakeInitMessage should only be used for testing or running a local dev node
 func (s *TransactionStreamer) AddFakeInitMessage() error {
+	chainConfigJson, err := json.Marshal(s.chainConfig)
+	if err != nil {
+		return fmt.Errorf("failed to serialize chain config: %w", err)
+	}
+	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
@@ -463,7 +470,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 				RequestId: &common.Hash{},
 				L1BaseFee: common.Big0,
 			},
-			L2msg: math.U256Bytes(s.chainConfig.ChainID),
+			L2msg: msg,
 		},
 		DelayedMessagesRead: 1,
 	}})
