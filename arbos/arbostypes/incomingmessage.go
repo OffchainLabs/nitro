@@ -128,13 +128,19 @@ func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 }
 
 func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
+	if h.RequestId != nil && other.RequestId != nil {
+		if *h.RequestId != *other.RequestId {
+			return false
+		}
+	} else if h.RequestId != nil || other.RequestId != nil {
+		return false
+	}
 	// These are all non-pointer types so it's safe to use the == operator
 	return h.Kind == other.Kind &&
 		h.Poster == other.Poster &&
 		h.BlockNumber == other.BlockNumber &&
 		h.Timestamp == other.Timestamp &&
-		h.RequestId == other.RequestId &&
-		h.L1BaseFee == other.L1BaseFee
+		h.L1BaseFee.Cmp(other.L1BaseFee) == 0
 }
 
 func ComputeBatchGasCost(data []byte) uint64 {
