@@ -140,13 +140,13 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/...
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
         run:  |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -race -parallel=8
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -race
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -154,7 +154,9 @@ jobs:
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=challengetest -run=TestChallenge
+        run:  |
+          packages=`go list ./...`
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
