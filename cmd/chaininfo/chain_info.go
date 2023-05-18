@@ -26,8 +26,8 @@ type ChainInfo struct {
 	RollupAddresses *RollupAddresses    `json:"rollup"`
 }
 
-func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string) (*params.ChainConfig, error) {
-	chainInfo, err := ProcessChainInfo(chainId.Uint64(), chainName, l2ChainInfoFiles)
+func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, l2ChainInfoFiles []string, l2ChainInfoJson string) (*params.ChainConfig, error) {
+	chainInfo, err := ProcessChainInfo(chainId.Uint64(), chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return nil, err
 	}
@@ -42,8 +42,8 @@ func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, 
 	}
 }
 
-func GetRollupAddressesConfig(chainId uint64, chainName string, l2ChainInfoFiles []string) (RollupAddresses, error) {
-	chainInfo, err := ProcessChainInfo(chainId, chainName, l2ChainInfoFiles)
+func GetRollupAddressesConfig(chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) (RollupAddresses, error) {
+	chainInfo, err := ProcessChainInfo(chainId, chainName, l2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return RollupAddresses{}, err
 	}
@@ -57,26 +57,38 @@ func GetRollupAddressesConfig(chainId uint64, chainName string, l2ChainInfoFiles
 	}
 }
 
-func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []string) (*ChainInfo, error) {
+func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) (*ChainInfo, error) {
+	if l2ChainInfoJson != "" {
+		chainInfo, err := findChainInfo(chainId, chainName, []byte(l2ChainInfoJson))
+		if err != nil || chainInfo != nil {
+			return chainInfo, err
+		}
+	}
 	for _, l2ChainInfoFile := range l2ChainInfoFiles {
 		chainsInfoBytes, err := os.ReadFile(l2ChainInfoFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s err %w", l2ChainInfoFile, err)
 		}
-		var chainsInfo []ChainInfo
-		err = json.Unmarshal(chainsInfoBytes, &chainsInfo)
-		if err != nil {
-			return nil, err
-		}
-		for _, chainInfo := range chainsInfo {
-			if (chainInfo.ChainId == 0 || chainInfo.ChainId == chainId) && (chainInfo.ChainName == "" || chainInfo.ChainName == chainName) {
-				return &chainInfo, nil
-			}
+		chainInfo, err := findChainInfo(chainId, chainName, chainsInfoBytes)
+		if err != nil || chainInfo != nil {
+			return chainInfo, err
 		}
 	}
 
+	chainInfo, err := findChainInfo(chainId, chainName, DefaultChainInfo)
+	if err != nil || chainInfo != nil {
+		return chainInfo, err
+	}
+	if chainId != 0 {
+		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+	} else {
+		return nil, fmt.Errorf("unsupported L2 chain chain %v", chainName)
+	}
+}
+
+func findChainInfo(chainId uint64, chainName string, chainsInfoBytes []byte) (*ChainInfo, error) {
 	var chainsInfo []ChainInfo
-	err := json.Unmarshal(DefaultChainInfo, &chainsInfo)
+	err := json.Unmarshal(chainsInfoBytes, &chainsInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +97,7 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 			return &chainInfo, nil
 		}
 	}
-	if chainId != 0 {
-		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
-	} else {
-		return nil, fmt.Errorf("unsupported L2 chain chain %v", chainName)
-	}
+	return nil, nil
 }
 
 type RollupAddresses struct {

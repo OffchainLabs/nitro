@@ -530,7 +530,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			}
 			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
 		}
-		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, combinedL2ChainInfoFiles)
+		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.L2.ChainID), config.L2.ChainName, genesisBlockNr, combinedL2ChainInfoFiles, config.L2.ChainInfoJson)
 		if err != nil {
 			return chainDb, nil, err
 		}

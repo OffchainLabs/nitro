@@ -37,6 +37,7 @@ type L2Config struct {
 	ChainID                   uint64                   `koanf:"chain-id"`
 	ChainName                 string                   `koanf:"chain-name"`
 	ChainInfoFiles            []string                 `koanf:"chain-info-files"`
+	ChainInfoJson             string                   `koanf:"chain-info-json"`
 	DevWallet                 genericconf.WalletConfig `koanf:"dev-wallet"`
 	ChainInfoIpfsUrl          string                   `koanf:"chain-info-ipfs-url"`
 	ChainInfoIpfsDownloadPath string                   `koanf:"chain-info-ipfs-download-path"`
@@ -46,6 +47,7 @@ var L2ConfigDefault = L2Config{
 	ChainID:                   0,
 	ChainName:                 "",
 	ChainInfoFiles:            []string{}, // Default file used is chaininfo/arbitrum_chain_info.json, stored in DefaultChainInfo in chain_info.go
+	ChainInfoJson:             "",
 	DevWallet:                 genericconf.WalletConfigDefault,
 	ChainInfoIpfsUrl:          "",
 	ChainInfoIpfsDownloadPath: "/tmp/",
@@ -55,6 +57,7 @@ func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
 	f.String(prefix+".chain-name", L2ConfigDefault.ChainName, "L2 chain name (determines Arbitrum network)")
 	f.StringSlice(prefix+".chain-info-files", L2ConfigDefault.ChainInfoFiles, "L2 chain info json files")
+	f.String(prefix+".chain-info-json", L2ConfigDefault.ChainInfoJson, "L2 chain info in json string format")
 
 	// Dev wallet does not exist unless specified
 	genericconf.WalletConfigAddOptions(prefix+".dev-wallet", f, "")
