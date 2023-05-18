@@ -4,12 +4,9 @@
 package chaininfo
 
 import (
-	"bytes"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"os"
 
@@ -69,14 +66,7 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 		var chainsInfo []ChainInfo
 		err = json.Unmarshal(chainsInfoBytes, &chainsInfo)
 		if err != nil {
-			decodedChainsInfoBytes, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewReader(chainsInfoBytes)))
-			if err != nil {
-				return nil, err
-			}
-			err = json.Unmarshal(decodedChainsInfoBytes, &chainsInfo)
-			if err != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 		for _, chainInfo := range chainsInfo {
 			if (chainInfo.ChainId == 0 || chainInfo.ChainId == chainId) && (chainInfo.ChainName == "" || chainInfo.ChainName == chainName) {
