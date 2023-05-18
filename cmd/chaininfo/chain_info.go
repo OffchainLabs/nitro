@@ -79,7 +79,7 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 			}
 		}
 		for _, chainInfo := range chainsInfo {
-			if chainInfo.ChainId == chainId || chainInfo.ChainName == chainName {
+			if (chainInfo.ChainId == 0 || chainInfo.ChainId == chainId) && (chainInfo.ChainName == "" || chainInfo.ChainName == chainName) {
 				return &chainInfo, nil
 			}
 		}
@@ -91,7 +91,7 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 		return nil, err
 	}
 	for _, chainInfo := range chainsInfo {
-		if chainInfo.ChainId == chainId || chainInfo.ChainName == chainName {
+		if (chainInfo.ChainId == 0 || chainInfo.ChainId == chainId) && (chainInfo.ChainName == "" || chainInfo.ChainName == chainName) {
 			return &chainInfo, nil
 		}
 	}
