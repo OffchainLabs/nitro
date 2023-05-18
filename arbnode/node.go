@@ -6,11 +6,11 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
+	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -203,7 +203,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
@@ -218,7 +218,9 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		WasmModuleRoot:           wasmModuleRoot,
 		Owner:                    rollupOwner,
 		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainId,
+		ChainId:                  chainConfig.ChainID,
+		// TODO could the ChainConfig be just []byte?
+		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),
