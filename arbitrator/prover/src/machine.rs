@@ -834,6 +834,7 @@ pub struct Machine {
     stylus_modules: HashMap<Bytes32, Module>, // Not part of machine hash
     initial_hash: Bytes32,
     context: u64,
+    debug_info: bool, // Not part of machine hash
 }
 
 type FrameStackHash = Bytes32;
@@ -1010,6 +1011,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1034,6 +1036,7 @@ impl Machine {
             always_merkleize,
             allow_hostapi_from_main,
             debug_funcs,
+            debug_info,
             global_state,
             inbox_contents,
             preimage_resolver,
@@ -1041,7 +1044,7 @@ impl Machine {
         )
     }
 
-    pub fn from_user_path(path: &Path, compile: &CompileConfig) -> Result<Self> {
+    pub fn from_user_path(path: &Path, debug_info: bool, compile: &CompileConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
@@ -1060,6 +1063,7 @@ impl Machine {
             false,
             false,
             compile.debug.debug_funcs,
+            debug_info,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1073,11 +1077,11 @@ impl Machine {
         &mut self,
         wasm: &[u8],
         version: u32,
-        debug_chain: bool,
+        debug_funcs: bool,
         hash: Option<Bytes32>,
     ) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
-        let config = CompileConfig::version(version, debug_chain);
+        let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
         let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
@@ -1089,7 +1093,8 @@ impl Machine {
             false,
             false,
             false,
-            debug_chain,
+            debug_funcs,
+            self.debug_info,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1109,6 +1114,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1390,6 +1396,7 @@ impl Machine {
             guards: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
+            debug_info,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1444,6 +1451,7 @@ impl Machine {
             guards: vec![],
             initial_hash: Bytes32::default(),
             context: 0,
+            debug_info: false,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1744,10 +1752,12 @@ impl Machine {
             };
             ($format:expr $(,$message:expr)*) => {{
                 flush_module!();
-                println!("\n{} {}", "error on line".grey(), line!().pink());
-                println!($format, $($message.pink()),*);
-                println!("{}", "Backtrace:".grey());
-                self.print_backtrace(true);
+                if self.debug_info {
+                    println!("\n{} {}", "error on line".grey(), line!().pink());
+                    println!($format, $($message.pink()),*);
+                    println!("{}", "Backtrace:".grey());
+                    self.print_backtrace(true);
+                }
 
                 if let Some(guard) = self.guards.pop() {
                     println!("{}", "Recovering...".pink());
