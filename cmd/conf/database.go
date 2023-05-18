@@ -6,7 +6,6 @@ package conf
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	flag "github.com/spf13/pflag"
@@ -41,7 +40,7 @@ func (c *PersistentConfig) ResolveDirectoryNames() error {
 
 	// Make persistent storage directory relative to home directory if not already absolute
 	if !filepath.IsAbs(c.GlobalConfig) {
-		c.GlobalConfig = path.Join(homeDir, c.GlobalConfig)
+		c.GlobalConfig = filepath.Join(homeDir, c.GlobalConfig)
 	}
 	err = os.MkdirAll(c.GlobalConfig, os.ModePerm)
 	if err != nil {
@@ -50,7 +49,7 @@ func (c *PersistentConfig) ResolveDirectoryNames() error {
 
 	// Make chain directory relative to persistent storage directory if not already absolute
 	if !filepath.IsAbs(c.Chain) {
-		c.Chain = path.Join(c.GlobalConfig, c.Chain)
+		c.Chain = filepath.Join(c.GlobalConfig, c.Chain)
 	}
 	err = os.MkdirAll(c.Chain, os.ModePerm)
 	if err != nil {

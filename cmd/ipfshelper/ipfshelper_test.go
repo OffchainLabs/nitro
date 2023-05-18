@@ -91,7 +91,7 @@ func TestNormalizeCidString(t *testing.T) {
 		{"/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8", "/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8"},
 		{"QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"},
 	} {
-		if res := normalizeCidString(test.input); res != test.expected {
+		if res := NormalizeCidString(test.input); res != test.expected {
 			testhelpers.FailImpl(t, "Failed to normalize cid string, input: ", test.input, " got: ", res, " expected: ", test.expected)
 		}
 	}

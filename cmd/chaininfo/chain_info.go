@@ -6,6 +6,7 @@ package chaininfo
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -36,9 +37,9 @@ func GetChainConfig(chainId *big.Int, chainName string, genesisBlockNum uint64, 
 		return chainInfo.ChainConfig, nil
 	}
 	if chainId.Uint64() != 0 {
-		return nil, fmt.Errorf("missing chain config for L2 chain ID %v", chainId)
+		return nil, fmt.Errorf("missing chain config for chain ID %v", chainId)
 	} else {
-		return nil, fmt.Errorf("missing chain config for L2 chain name %v", chainName)
+		return nil, fmt.Errorf("missing chain config for chain name %v", chainName)
 	}
 }
 
@@ -51,13 +52,16 @@ func GetRollupAddressesConfig(chainId uint64, chainName string, l2ChainInfoFiles
 		return *chainInfo.RollupAddresses, nil
 	}
 	if chainId != 0 {
-		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain ID %v", chainId)
+		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for chain ID %v", chainId)
 	} else {
-		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for L2 chain name %v", chainName)
+		return RollupAddresses{}, fmt.Errorf("missing rollup addresses for chain name %v", chainName)
 	}
 }
 
 func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string) (*ChainInfo, error) {
+	if chainId == 0 && chainName == "" {
+		return nil, errors.New("either the chain id or chain name must be specified")
+	}
 	if l2ChainInfoJson != "" {
 		chainInfo, err := findChainInfo(chainId, chainName, []byte(l2ChainInfoJson))
 		if err != nil || chainInfo != nil {
@@ -80,9 +84,9 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 		return chainInfo, err
 	}
 	if chainId != 0 {
-		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+		return nil, fmt.Errorf("unsupported chain ID %v", chainId)
 	} else {
-		return nil, fmt.Errorf("unsupported L2 chain chain %v", chainName)
+		return nil, fmt.Errorf("unsupported chain name %v", chainName)
 	}
 }
 
