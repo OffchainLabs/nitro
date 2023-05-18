@@ -1,7 +1,7 @@
 
 (module
-    (import "hostio" "link_module"        (func $link       (param i32)         (result i32)))
-    (import "hostio" "unlink_module"      (func $unlink                                     ))
+    (import "hostio" "wavm_link_module"   (func $link       (param i32)         (result i32)))
+    (import "hostio" "wavm_unlink_module" (func $unlink                                     ))
     (import "hostio" "program_set_ink"    (func $set_ink    (param i32 i32 i64)             ))
     (import "hostio" "program_ink_left"   (func $ink_left   (param i32 i32)     (result i64)))
     (import "hostio" "program_ink_status" (func $ink_status (param i32 i32)     (result i32)))

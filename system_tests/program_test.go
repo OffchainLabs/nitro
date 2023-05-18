@@ -711,7 +711,7 @@ func validateBlockRange(
 		Require(t, err)
 		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		messageCount, err := node.ArbInterface.TransactionStreamer().GetMessageCount()
+		messageCount, err := node.TxStreamer.GetMessageCount()
 		Require(t, err)
 		return meta.MessageCount == messageCount
 	})

@@ -51,7 +51,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
     output.extend(Bytes32::from(gas_limit));
     output.extend(value);
     output.extend(difficulty);
-    output.extend(timestamp);
+    output.extend(Bytes32::from(timestamp));
     output.extend(address_balance);
 
     output.extend(Bytes32::from(address));

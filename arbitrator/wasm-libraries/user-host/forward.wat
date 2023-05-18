@@ -28,7 +28,7 @@
     (import "user_host" "arbitrator_forward__block_difficulty" (func $block_difficulty (param i32)))
     (import "user_host" "arbitrator_forward__block_gas_limit"  (func $block_gas_limit (result i64)))
     (import "user_host" "arbitrator_forward__block_number"     (func $block_number (param i32)))
-    (import "user_host" "arbitrator_forward__block_timestamp"  (func $block_timestamp (param i32)))
+    (import "user_host" "arbitrator_forward__block_timestamp"  (func $block_timestamp (result i64)))
     (import "user_host" "arbitrator_forward__contract_address"  (func $contract_address (param i32)))
     (import "user_host" "arbitrator_forward__msg_sender"  (func $msg_sender (param i32)))
     (import "user_host" "arbitrator_forward__msg_value"  (func $msg_value (param i32)))

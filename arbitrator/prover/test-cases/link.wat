@@ -2,8 +2,8 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (import "hostio" "link_module" (func $link (param i32) (result i32)))
-    (import "hostio" "unlink_module" (func $unlink (param) (result)))
+    (import "hostio" "wavm_link_module" (func $link (param i32) (result i32)))
+    (import "hostio" "wavm_unlink_module" (func $unlink (param) (result)))
     (data (i32.const 0x000)
         "\44\c2\44\cf\34\9f\b0\8d\ad\8d\c8\24\b7\60\93\f5\b4\a9\29\5d\98\21\ff\d0\00\b1\88\11\14\fd\9a\6d") ;; call
     (data (i32.const 0x020)

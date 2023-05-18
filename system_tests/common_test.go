@@ -6,18 +6,21 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -84,6 +87,65 @@ func TransferBalanceTo(
 	Require(t, err)
 	res, err := EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
+	return tx, res
+}
+
+// if l2client is not nil - will wait until balance appears in l2
+func BridgeBalance(
+	t *testing.T, account string, amount *big.Int, l1info info, l2info info, l1client client, l2client client, ctx context.Context,
+) (*types.Transaction, *types.Receipt) {
+	t.Helper()
+
+	// setup or validate the same account on l2info
+	l1acct := l1info.GetInfoWithPrivKey(account)
+	if l2info.Accounts[account] == nil {
+		l2info.SetFullAccountInfo(account, &AccountInfo{
+			Address:    l1acct.Address,
+			PrivateKey: l1acct.PrivateKey,
+			Nonce:      0,
+		})
+	} else {
+		l2acct := l2info.GetInfoWithPrivKey(account)
+		if l2acct.PrivateKey.X.Cmp(l1acct.PrivateKey.X) != 0 ||
+			l2acct.PrivateKey.Y.Cmp(l1acct.PrivateKey.Y) != 0 {
+			Fail(t, "l2 account already exists and not compatible to l1")
+		}
+	}
+
+	// check previous balance
+	var l2Balance *big.Int
+	var err error
+	if l2client != nil {
+		l2Balance, err = l2client.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
+		Require(t, err)
+	}
+
+	// send transaction
+	data, err := hex.DecodeString("0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
+	Require(t, err)
+	tx := l1info.PrepareTx(account, "Inbox", l1info.TransferGas*100, amount, data)
+	err = l1client.SendTransaction(ctx, tx)
+	Require(t, err)
+	res, err := EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+
+	// wait for balance to appear in l2
+	if l2client != nil {
+		l2Balance.Add(l2Balance, amount)
+		for i := 0; true; i++ {
+			balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("Faucet"), nil)
+			Require(t, err)
+			if balance.Cmp(l2Balance) >= 0 {
+				break
+			}
+			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
+			if i > 20 {
+				Fail(t, "bridging failed")
+			}
+			<-time.After(time.Millisecond * 100)
+		}
+	}
+
 	return tx, res
 }
 
@@ -192,6 +254,30 @@ func (l *lifecycle) Stop() error {
 		return l.stop()
 	}
 	return nil
+}
+
+type staticNodeConfigFetcher struct {
+	config *arbnode.Config
+}
+
+func NewFetcherFromConfig(c *arbnode.Config) *staticNodeConfigFetcher {
+	err := c.Validate()
+	if err != nil {
+		panic("invalid static config: " + err.Error())
+	}
+	return &staticNodeConfigFetcher{c}
+}
+
+func (c *staticNodeConfigFetcher) Get() *arbnode.Config {
+	return c.config
+}
+
+func (c *staticNodeConfigFetcher) Start(context.Context) {}
+
+func (c *staticNodeConfigFetcher) StopAndWait() {}
+
+func (c *staticNodeConfigFetcher) Started() bool {
+	return true
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
@@ -334,7 +420,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 func DeployOnTestL1(
 	t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int,
-) *arbnode.RollupAddresses {
+) *chaininfo.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -392,7 +478,7 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test(), 0)
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -427,7 +513,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig)
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig, nil)
 	return
 }
 
@@ -438,6 +524,7 @@ func createTestNodeOnL1WithConfigImpl(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
+	l2info_in info,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
@@ -453,7 +540,11 @@ func createTestNodeOnL1WithConfigImpl(
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, nil, "", chainConfig, stackConfig)
+	l2info = l2info_in
+	if l2info == nil {
+		l2info = NewArbTestInfo(t, chainConfig.ChainID)
+	}
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, stackConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -473,7 +564,7 @@ func createTestNodeOnL1WithConfigImpl(
 
 	var err error
 	currentNode, err = arbnode.CreateNode(
-		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
+		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
 		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
@@ -501,7 +592,7 @@ func CreateTestL2WithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -604,12 +695,12 @@ func Create2ndNodeWithConfig(
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.Execution.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

@@ -16,9 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -37,7 +38,7 @@ type BackendAPI = core.NodeInterfaceBackendAPI
 type ExecutionResult = core.ExecutionResult
 
 func init() {
-	arbstate.RequireHookedGeth()
+	gethhook.RequireHookedGeth()
 
 	nodeInterfaceImpl := &NodeInterface{Address: types.NodeInterfaceAddress}
 	nodeInterfaceMeta := node_interfacegen.NodeInterfaceMetaData
@@ -138,7 +139,7 @@ func init() {
 		}
 
 		posterCost, _ := state.L1PricingState().PosterDataCost(msg, l1pricing.BatchPosterAddress)
-		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
+		posterCostInL2Gas := arbos.GetPosterGas(state, header.BaseFee, msg.RunMode(), posterCost)
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
 

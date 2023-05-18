@@ -205,7 +205,7 @@ func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error)
 type createNodeAction struct {
 	assertion         *Assertion
 	prevInboxMaxCount *big.Int
-	hash              [32]byte
+	hash              common.Hash
 }
 
 type existingNodeAction struct {
@@ -217,7 +217,7 @@ type nodeAction interface{}
 
 type OurStakerInfo struct {
 	LatestStakedNode     uint64
-	LatestStakedNodeHash [32]byte
+	LatestStakedNodeHash common.Hash
 	CanProgress          bool
 	StakeExists          bool
 	*StakerInfo
@@ -341,12 +341,17 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, fmt.Errorf("error getting latest L1 block number: %w", err)
 	}
 
+	parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, v.client, currentL1BlockNum)
+	if err != nil {
+		return nil, false, err
+	}
+
 	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
 	if err != nil {
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
-	timeSinceProposed := big.NewInt(int64(currentL1BlockNum) - int64(startStateProposed))
+	timeSinceProposed := big.NewInt(int64(parentChainBlockNumber) - int64(startStateProposed))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
@@ -396,10 +401,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				if lastBlock == nil {
 					return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
 				}
-				lastBlockExtra, err := types.DeserializeHeaderExtraInformation(lastBlock.Header())
-				if err != nil {
-					return nil, false, fmt.Errorf("error getting block %v header extra info: %w", lastBlockNum, err)
-				}
+				lastBlockExtra := types.DeserializeHeaderExtraInformation(lastBlock.Header())
 				expectedBlockHash = lastBlock.Hash()
 				expectedSendRoot = lastBlockExtra.SendRoot
 			}
@@ -413,7 +415,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			valid := !inboxPositionInvalid &&
 				nd.Assertion.NumBlocks == expectedNumBlocks &&
 				afterGs.BlockHash == expectedBlockHash &&
-				afterGs.SendRoot == expectedSendRoot
+				afterGs.SendRoot == expectedSendRoot &&
+				nd.Assertion.AfterState.MachineStatus == validator.MachineStatusFinished
 			if valid {
 				log.Info(
 					"found correct assertion",
@@ -438,6 +441,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 					"expectedBlockHash", expectedBlockHash,
 					"sendRoot", afterGs.SendRoot,
 					"expectedSendRoot", expectedSendRoot,
+					"machineStatus", nd.Assertion.AfterState.MachineStatus,
 				)
 			}
 		} else {
@@ -542,10 +546,7 @@ func (v *L1Validator) createNewNodeAction(
 	if assertingBlock == nil {
 		return nil, fmt.Errorf("missing validated block %v", lastBlockValidated)
 	}
-	assertingBlockExtra, err := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
-	if err != nil {
-		return nil, fmt.Errorf("error getting asserting block %v header extra info: %w", assertingBlock.Number(), err)
-	}
+	assertingBlockExtra := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
 
 	hasSiblingByte := [1]byte{0}
 	prevNum := stakerInfo.LatestStakedNode
@@ -594,17 +595,21 @@ func (v *L1Validator) createNewNodeAction(
 	return action, nil
 }
 
-// Returns (execution state, inbox max count, block proposed, error)
+// Returns (execution state, inbox max count, L1 block proposed, error)
 func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*validator.ExecutionState, *big.Int, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("error looking up rollup creation event: %w", err)
 		}
+		parentChainBlockNumber, err := arbutil.CorrespondingL1BlockNumber(ctx, rollup.client, creationEvent.Raw.BlockNumber)
+		if err != nil {
+			return nil, nil, 0, err
+		}
 		return &validator.ExecutionState{
 			GlobalState:   validator.GoGlobalState{},
 			MachineStatus: validator.MachineStatusFinished,
-		}, big.NewInt(1), creationEvent.Raw.BlockNumber, nil
+		}, big.NewInt(1), parentChainBlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
 	if err != nil {

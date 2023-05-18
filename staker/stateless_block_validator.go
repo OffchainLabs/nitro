@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/pkg/errors"
@@ -64,7 +65,7 @@ type InboxTrackerInterface interface {
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum arbutil.MessageIndex) (*arbstate.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error)
 	GetGenesisBlockNumber() (uint64, error)
 	PauseReorgs()
 	ResumeReorgs()
@@ -166,7 +167,7 @@ type validationEntry struct {
 	BlockHeader     *types.Header
 	HasDelayedMsg   bool
 	DelayedMsgNr    uint64
-	msg             *arbstate.MessageWithMetadata
+	msg             *arbostypes.MessageWithMetadata
 	ChainConfig     *params.ChainConfig
 	// Valid since Recorded:
 	Preimages  map[common.Hash][]byte
@@ -186,20 +187,14 @@ func (v *validationEntry) start() (validator.GoGlobalState, error) {
 		BlockHash:  v.PrevBlockHash,
 	}
 	if v.PrevBlockHeader != nil {
-		prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
-		if err != nil {
-			return validator.GoGlobalState{}, err
-		}
+		prevExtraInfo := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
 		globalState.SendRoot = prevExtraInfo.SendRoot
 	}
 	return globalState, nil
 }
 
 func (v *validationEntry) expectedEnd() (validator.GoGlobalState, error) {
-	extraInfo, err := types.DeserializeHeaderExtraInformation(v.BlockHeader)
-	if err != nil {
-		return validator.GoGlobalState{}, err
-	}
+	extraInfo := types.DeserializeHeaderExtraInformation(v.BlockHeader)
 	end := v.EndPosition
 	return validator.GoGlobalState{
 		Batch:      end.BatchNumber,
@@ -243,7 +238,7 @@ func usingDelayedMsg(prevHeader *types.Header, header *types.Header) (bool, uint
 func newValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
-	msg *arbstate.MessageWithMetadata,
+	msg *arbostypes.MessageWithMetadata,
 	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
 	hasDelayedMsg, delayedMsgNr := usingDelayedMsg(prevHeader, header)
@@ -299,13 +294,12 @@ func NewStatelessBlockValidator(
 	if err != nil {
 		return nil, err
 	}
-	var jwt []byte
+	var jwt *common.Hash
 	if config.JWTSecret != "" {
-		jwtHash, err := signature.LoadSigningKey(config.JWTSecret)
+		jwt, err = signature.LoadSigningKey(config.JWTSecret)
 		if err != nil {
 			return nil, err
 		}
-		jwt = jwtHash.Bytes()
 	}
 	valClient := server_api.NewValidationClient(config.URL, jwt)
 	execClient := server_api.NewExecutionClient(config.URL, jwt)
@@ -357,7 +351,7 @@ func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
 func (v *StatelessBlockValidator) RecordBlockCreation(
 	ctx context.Context,
 	prevHeader *types.Header,
-	msg *arbstate.MessageWithMetadata,
+	msg *arbostypes.MessageWithMetadata,
 	keepReference bool,
 ) (common.Hash, map[common.Hash][]byte, state.UserWasms, []validator.BatchInfo, error) {
 	hash0 := common.Hash{}
@@ -625,7 +619,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	}
 	defer func() {
 		for _, run := range runs {
-			run.Close()
+			run.Cancel()
 		}
 	}()
 	for _, run := range runs {
@@ -653,7 +647,7 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := v.execSpawner.LatestWasmModuleRoot()
+			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
 			if err != nil {
 				return err
 			}

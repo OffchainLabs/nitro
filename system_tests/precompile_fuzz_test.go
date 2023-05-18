@@ -16,14 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
 const fuzzGas uint64 = 1200000
 
 func FuzzPrecompiles(f *testing.F) {
-	arbstate.RequireHookedGeth()
+	gethhook.RequireHookedGeth()
 
 	f.Fuzz(func(t *testing.T, precompileSelector byte, methodSelector byte, input []byte) {
 		// Create a StateDB
@@ -48,7 +48,7 @@ func FuzzPrecompiles(f *testing.F) {
 			GetHash:     nil,
 			Coinbase:    common.Address{},
 			BlockNumber: new(big.Int),
-			Time:        new(big.Int),
+			Time:        0,
 			Difficulty:  new(big.Int),
 			GasLimit:    fuzzGas,
 			BaseFee:     common.Big1,

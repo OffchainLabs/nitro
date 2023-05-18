@@ -162,7 +162,7 @@ func (p Programs) CallProgram(
 		blockDifficulty: common.BigToHash(evm.Context.Difficulty),
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
-		blockTimestamp:  common.BigToHash(evm.Context.Time),
+		blockTimestamp:  evm.Context.Time,
 		contractAddress: contract.Address(),
 		msgSender:       contract.Caller(),
 		msgValue:        common.BigToHash(contract.Value()),
@@ -224,7 +224,7 @@ type evmData struct {
 	blockDifficulty common.Hash
 	blockGasLimit   uint64
 	blockNumber     common.Hash
-	blockTimestamp  common.Hash
+	blockTimestamp  uint64
 	contractAddress common.Address
 	msgSender       common.Address
 	msgValue        common.Hash

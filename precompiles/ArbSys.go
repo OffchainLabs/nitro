@@ -118,12 +118,14 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	bigL1BlockNum := arbmath.UintToBig(l1BlockNum)
 
 	arbosState := c.State
+	var t big.Int
+	t.SetUint64(evm.Context.Time)
 	sendHash, err := arbosState.KeccakHash(
 		c.caller.Bytes(),
 		destination.Bytes(),
 		math.U256Bytes(evm.Context.BlockNumber),
 		math.U256Bytes(bigL1BlockNum),
-		math.U256Bytes(evm.Context.Time),
+		math.U256Bytes(&t),
 		common.BigToHash(value).Bytes(),
 		calldataForL1,
 	)
@@ -165,6 +167,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	leafNum := big.NewInt(int64(size - 1))
 
+	var blockTime big.Int
+	blockTime.SetUint64(evm.Context.Time)
 	err = con.L2ToL1Tx(
 		c,
 		evm,
@@ -174,7 +178,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		evm.Context.BlockNumber,
 		bigL1BlockNum,
-		evm.Context.Time,
+		&blockTime,
 		value,
 		calldataForL1,
 	)
