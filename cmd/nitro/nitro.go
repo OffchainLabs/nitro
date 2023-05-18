@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"io"
 	"io/fs"
 	"math"
@@ -52,7 +53,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
@@ -312,14 +312,37 @@ func mainImpl() int {
 
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
-	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
-	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Staker.OnlyCreateWalletContract
-	validatorCanAct := nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
-		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
-		if err != nil {
-			flag.Usage()
-			log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+	var l1TransactionOptsValidator *bind.TransactOpts
+	var l1TransactionOptsBatchPoster *bind.TransactOpts
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
+	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+	if *l1Wallet != genericconf.WalletConfigDefault {
+		if nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault || nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
+			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
+		}
+		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
+			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+			}
+			l1TransactionOptsBatchPoster = l1TransactionOpts
+			l1TransactionOptsValidator = l1TransactionOpts
+		}
+	} else {
+		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
+			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening Batch poster L1 wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
+			}
+		}
+		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
+			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening Validator L1 wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+			}
 		}
 	}
 
@@ -368,9 +391,9 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
-			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
+			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
 		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
 		return 0
@@ -464,7 +487,8 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
-		l1TransactionOpts,
+		l1TransactionOptsValidator,
+		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
 	)
