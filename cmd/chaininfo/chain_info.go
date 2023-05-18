@@ -93,7 +93,7 @@ func findChainInfo(chainId uint64, chainName string, chainsInfoBytes []byte) (*C
 		return nil, err
 	}
 	for _, chainInfo := range chainsInfo {
-		if (chainInfo.ChainId == 0 || chainInfo.ChainId == chainId) && (chainInfo.ChainName == "" || chainInfo.ChainName == chainName) {
+		if (chainId == 0 || chainInfo.ChainId == chainId) && (chainName == "" || chainInfo.ChainName == chainName) {
 			return &chainInfo, nil
 		}
 	}
