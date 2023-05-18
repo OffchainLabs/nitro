@@ -18,11 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -200,7 +202,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
+		chainConfig, err := chaininfo.GetChainConfig(chainId, genesisBlockNum, []string{})
 		if err != nil {
 			panic(err)
 		}
@@ -225,7 +227,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, 0)
+		chainConfig, err := chaininfo.GetChainConfig(chainId, 0, []string{})
 		if err != nil {
 			panic(err)
 		}
