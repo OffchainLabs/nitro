@@ -347,10 +347,18 @@ func mainImpl() int {
 	}
 
 	var rollupAddrs chaininfo.RollupAddresses
+	combinedL2ChainInfoFile := nodeConfig.L2.ChainInfoFiles
+	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
+	}
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -387,7 +395,7 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -769,11 +777,15 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	chainFound := false
 	l2ChainId := k.Int64("l2.chain-id")
-	if l2ChainId == 0 {
-		return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+	l2ChainName := k.String("l2.chain-name")
+	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
+	l2ChainInfoIpfsDownloadPath := k.String("l2.chain-info-ipfs-download-path")
+	if l2ChainId == 0 && l2ChainName == "" {
+		return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id or --l2.chain-name to choose rollup")
 	}
 	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
-	chainFound, err = applyChainParameters(k, uint64(l2ChainId), l1ChainId.Uint64(), l2ChainInfoFiles)
+	l2ChainInfoJson := k.String("l2.chain-info-json")
+	chainFound, err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l1ChainId.Uint64(), l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -804,7 +816,11 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Persistent.Chain == "" {
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
-			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d, L2ChainInfoFiles: %s.  Change L1, update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId, l2ChainInfoFiles)
+			if l2ChainId != 0 {
+				return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d, L2ChainInfoFiles: %s.  Change L1, update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId, l2ChainInfoFiles)
+			} else {
+				return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2 Name: %s, L2ChainInfoFiles: %s.  Change L1, update L2 chain name, modify --l2.chain-info-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainName, l2ChainInfoFiles)
+			}
 		}
 		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
@@ -828,14 +844,26 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2ChainInfoFiles []string) (bool, error) {
-	chainInfo, err := chaininfo.ProcessChainInfo(chainId, l2ChainInfoFiles)
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
+	combinedL2ChainInfoFiles := l2ChainInfoFiles
+	if l2ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+	}
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return false, err
 	}
 	if chainInfo.ChainParameters != nil {
 		if chainInfo.ParentChainId != l1ChainId {
-			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
+			if chainId != 0 {
+				return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
+			} else {
+				return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
+			}
 		}
 		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
 		if err != nil {
@@ -843,7 +871,11 @@ func applyChainParameters(k *koanf.Koanf, chainId uint64, l1ChainId uint64, l2Ch
 		}
 		return true, nil
 	}
-	return false, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
+	if chainId != 0 {
+		return false, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
+	} else {
+		return false, fmt.Errorf("missing chain parameters for L2 chain name %v", chainName)
+	}
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
