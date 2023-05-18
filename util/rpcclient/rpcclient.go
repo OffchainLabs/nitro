@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,7 @@ type ClientConfig struct {
 	Retries        uint          `koanf:"retries" reload:"hot"`
 	ConnectionWait time.Duration `koanf:"connection-wait"`
 	ArgLogLimit    uint          `koanf:"arg-log-limit" reload:"hot"`
+	RetryErrors    string        `koanf:"retry-errors" reload:"hot"`
 }
 
 type ClientConfigFetcher func() *ClientConfig
@@ -47,6 +49,7 @@ func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientCo
 	f.Duration(prefix+".timeout", defaultConfig.Timeout, "per-response timeout (0-disabled)")
 	f.Uint(prefix+".arg-log-limit", defaultConfig.ArgLogLimit, "limit size of arguments in log entries")
 	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
+	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
 }
 
 type RpcClient struct {
@@ -116,9 +119,23 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			limit = 0
 		}
 		logger("rpc response", "method", method, "logId", logId, "result", limitString(limit, fmt.Sprintf("%+v", result)), "attempt", i, "args", logArgs(limit, args...))
-		if !errors.Is(err, context.DeadlineExceeded) {
-			return err
+		if err == nil {
+			return nil
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			continue
+		}
+		retryErrors := c.config().RetryErrors
+		if retryErrors != "" {
+			match, regexErr := regexp.MatchString(retryErrors, err.Error())
+			if regexErr != nil {
+				log.Warn("rpcclient: bad value for retry-error. Not retrying.", "err", err, "value", retryErrors)
+			}
+			if match {
+				continue
+			}
+		}
+		return err
 	}
 	return err
 }

@@ -94,9 +94,10 @@ func TestRpcClientRetry(t *testing.T) {
 
 	configFetcher := func() *ClientConfig {
 		return &ClientConfig{
-			URL:     "self",
-			Timeout: time.Second * 5,
-			Retries: 2,
+			URL:         "self",
+			Timeout:     time.Second * 5,
+			Retries:     2,
+			RetryErrors: "b.*",
 		}
 	}
 
@@ -132,6 +133,30 @@ func TestRpcClientRetry(t *testing.T) {
 	}
 	err = clientRetry.CallContext(ctx, nil, "test_stuckAtFirst")
 	Require(t, err)
+
+	retryErrConfigFetcher := func() *ClientConfig {
+		return &ClientConfig{
+			URL:         "self",
+			Timeout:     time.Second * 5,
+			Retries:     2,
+			RetryErrors: "er.*",
+		}
+	}
+
+	serverWorkWithRetry := createTestNode(t, ctx, 1)
+	clientWorkWithRetry := NewRpcClient(retryErrConfigFetcher, serverWorkWithRetry)
+	err = clientWorkWithRetry.Start(ctx)
+	Require(t, err)
+	err = clientWorkWithRetry.CallContext(ctx, nil, "test_failAtFirst")
+	Require(t, err)
+
+	clientFailsWithRetry := NewRpcClient(retryErrConfigFetcher, serverBad)
+	err = clientFailsWithRetry.Start(ctx)
+	Require(t, err)
+	err = clientFailsWithRetry.CallContext(ctx, nil, "test_failAtFirst")
+	if err == nil {
+		Fail(t, "no error for failAtFirst")
+	}
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {
