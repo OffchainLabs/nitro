@@ -143,5 +143,5 @@ func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 20, false, false)
+	testBlockValidatorSimple(t, "files", 20, true, false)
 }
