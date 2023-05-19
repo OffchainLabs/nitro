@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -82,6 +83,7 @@ type BatchPosterConfig struct {
 	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	L1Wallet                           genericconf.WalletConfig    `koanf:"l1-wallet"`
 
 	gasRefunder common.Address
 }
@@ -114,6 +116,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
+	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, "batch-poster-wallet")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -129,6 +132,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
+	L1Wallet:                           genericconf.WalletConfigDefault,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{

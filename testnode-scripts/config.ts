@@ -149,10 +149,9 @@ function writeGethGenesisConfig(argv: any) {
 }
 
 function writeConfigs(argv: any) {
-    const deployment = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString('utf-8'));
+	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
     const baseConfig = {
         "l1": {
-            "rollup": deployment,
             "url": argv.l1url,
             "wallet": {
                 "account": "",
@@ -164,7 +163,8 @@ function writeConfigs(argv: any) {
             "chain-id": 412346,
             "dev-wallet" : {
                 "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-            }
+            },
+			"chain-info-files": [chainInfoFile],
         },
         "node": {
             "archive": true,
@@ -250,6 +250,39 @@ function writeConfigs(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
 }
 
+function writeL2ChainConfig(argv: any) {
+    const l2ChainConfig = {
+		"chainId": 412346,
+		"homesteadBlock": 0,
+		"daoForkSupport": true,
+		"eip150Block": 0,
+		"eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+		"eip155Block": 0,
+		"eip158Block": 0,
+		"byzantiumBlock": 0,
+		"constantinopleBlock": 0,
+		"petersburgBlock": 0,
+		"istanbulBlock": 0,
+		"muirGlacierBlock": 0,
+		"berlinBlock": 0,
+		"londonBlock": 0,
+		"clique": {
+			"period": 0,
+			"epoch": 0
+		},
+		"arbitrum": {
+			"EnableArbOS": true,
+			"AllowDebugPrecompiles": true,
+			"DataAvailabilityCommittee": false,
+			"InitialArbOSVersion": 11,
+			"InitialChainOwner": "0x0000000000000000000000000000000000000000",
+			"GenesisBlockNum": 0
+		}
+    }
+    const l2ChainConfigJSON = JSON.stringify(l2ChainConfig)
+    fs.writeFileSync(path.join(consts.configpath, "l2_chain_config.json"), l2ChainConfigJSON)
+}
+
 export const writeConfigCommand = {
     command: "write-config",
     describe: "writes config files",
@@ -274,3 +307,10 @@ export const writeGethGenesisCommand = {
     }
 }
 
+export const writeL2ChainConfigCommand = {
+    command: "write-l2-chain-config",
+    describe: "writes l2 chain config file",
+    handler: (argv: any) => {
+        writeL2ChainConfig(argv)
+    }
+}

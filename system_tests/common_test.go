@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
@@ -419,7 +420,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 }
 
 func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int,
+	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig,
 ) *chaininfo.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
@@ -433,7 +434,8 @@ func DeployOnTestL1(
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
-	config := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainId, common.Address{})
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	Require(t, err)
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -441,7 +443,7 @@ func DeployOnTestL1(
 		l1info.GetAddress("Sequencer"),
 		0,
 		func() *headerreader.Config { return &headerreader.TestConfig },
-		config,
+		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
@@ -478,7 +480,9 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	Require(t, err)
+	blockchain, err := execution.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -545,7 +549,7 @@ func createTestNodeOnL1WithConfigImpl(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, stackConfig)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -565,7 +569,7 @@ func createTestNodeOnL1WithConfigImpl(
 	var err error
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client,
-		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
@@ -592,7 +596,7 @@ func CreateTestL2WithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, NewFetcherFromConfig(nodeConfig), blockchain, nil, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -694,13 +698,17 @@ func Create2ndNodeWithConfig(
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-
-	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.Execution.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
+	chainConfig := first.Execution.ArbInterface.BlockChain().Config()
+	serializedChainConfig, err := json.Marshal(chainConfig)
+	if err != nil {
+		Fail(t, err)
+	}
+	l2blockchain, err := execution.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, serializedChainConfig, arbnode.ConfigDefaultL2Test().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain, l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

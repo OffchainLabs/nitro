@@ -22,6 +22,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/providers/rawbytes"
+	"github.com/offchainlabs/nitro/cmd/util"
+
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -46,7 +51,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
@@ -303,15 +307,47 @@ func mainImpl() int {
 
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
-	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
-	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Staker.OnlyCreateWalletContract
-	validatorCanAct := nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
-		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
-		if err != nil {
-			flag.Usage()
-			log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+	var l1TransactionOptsValidator *bind.TransactOpts
+	var l1TransactionOptsBatchPoster *bind.TransactOpts
+	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
+	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+	if *l1Wallet != genericconf.WalletConfigDefault {
+		if nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault || nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
+			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
 		}
+		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
+			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+			}
+			l1TransactionOptsBatchPoster = l1TransactionOpts
+			l1TransactionOptsValidator = l1TransactionOpts
+		}
+	} else {
+		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
+			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening Batch poster L1 wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
+			}
+		}
+		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
+			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening Validator L1 wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+			}
+		}
+	}
+
+	combinedL2ChainInfoFile := nodeConfig.L2.ChainInfoFiles
+	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
 	}
 
 	if nodeConfig.Node.Staker.Enable {
@@ -350,7 +386,7 @@ func mainImpl() int {
 
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.Connection.URL, "l1chainid", nodeConfig.L1.ChainID)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
@@ -368,13 +404,13 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), nodeConfig.L2.ChainInfoFiles)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := staker.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
-			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
+			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
 		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
 		return 0
@@ -468,7 +504,8 @@ func mainImpl() int {
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
-		l1TransactionOpts,
+		l1TransactionOptsValidator,
+		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
 	)
@@ -657,6 +694,21 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, nil, err
 	}
 
+	chainFound := false
+	l2ChainId := k.Int64("l2.chain-id")
+	l2ChainName := k.String("l2.chain-name")
+	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
+	l2ChainInfoIpfsDownloadPath := k.String("l2.chain-info-ipfs-download-path")
+	if l2ChainId == 0 && l2ChainName == "" {
+		return nil, nil, nil, errors.New("must specify --l2.chain-id or --l2.chain-name to choose rollup")
+	}
+	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
+	l2ChainInfoJson := k.String("l2.chain-info-json")
+	chainFound, parentID, err := applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
 		return nil, nil, nil, err
@@ -680,11 +732,24 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		}
 	}
 
+	if nodeConfig.Persistent.Chain == "" {
+		if !chainFound {
+			// If persistent-chain not defined, user not creating custom chain
+			if l2ChainId != 0 {
+				return nil, nil, nil, fmt.Errorf("Unknown chain with L2: %d, L2ChainInfoFiles: %s.  update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
+			} else {
+				return nil, nil, nil, fmt.Errorf("Unknown chain with L2 Name: %s, L2ChainInfoFiles: %s.  update L2 chain name, modify --l2.chain-info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
+			}
+		}
+		return nil, nil, nil, errors.New("--persistent.chain not specified")
+	}
+
 	err = nodeConfig.ResolveDirectoryNames()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
+	nodeConfig.L1.ChainID = parentID
 	// Don't pass around wallet contents with normal configuration
 	l1Wallet := nodeConfig.L1.Wallet
 	l2DevWallet := nodeConfig.L2.DevWallet
@@ -697,6 +762,33 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 	nodeConfig.Rpc.Apply()
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
+}
+
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, uint64, error) {
+	combinedL2ChainInfoFiles := l2ChainInfoFiles
+	if l2ChainInfoIpfsUrl != "" {
+		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+		if err != nil {
+			log.Error("error getting l2 chain info file from ipfs", "err", err)
+		}
+		combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+	}
+	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
+	if err != nil {
+		return false, 0, err
+	}
+	if chainInfo.ChainParameters != nil {
+		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
+		if err != nil {
+			return false, 0, err
+		}
+		return true, chainInfo.ParentChainId, nil
+	}
+	if chainId != 0 {
+		return false, 0, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
+	} else {
+		return false, 0, fmt.Errorf("missing chain parameters for L2 chain name %v", chainName)
+	}
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
