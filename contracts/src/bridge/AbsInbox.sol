@@ -109,10 +109,10 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _unpause();
     }
 
-    function __AbsInbox_init(
-        IBridge _bridge,
-        ISequencerInbox _sequencerInbox
-    ) internal onlyInitializing {
+    function __AbsInbox_init(IBridge _bridge, ISequencerInbox _sequencerInbox)
+        internal
+        onlyInitializing
+    {
         bridge = _bridge;
         sequencerInbox = _sequencerInbox;
         allowListEnabled = false;
