@@ -119,10 +119,12 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         bytes32 messageDataHash,
         uint256 tokenAmount
     ) internal override returns (uint256) {
-        // fetch native token from sender if inbox doesn't already hold tokens to pay for fees
+        // fetch native token from sender if inbox doesn't already hold enough tokens to pay for fees
         address nativeToken = IERC20Bridge(address(bridge)).nativeToken();
-        if (IERC20(nativeToken).balanceOf(address(this)) < tokenAmount) {
-            IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), tokenAmount);
+        uint256 inboxNativeTokenBalance = IERC20(nativeToken).balanceOf(address(this));
+        if (inboxNativeTokenBalance < tokenAmount) {
+            uint256 diff = tokenAmount - inboxNativeTokenBalance;
+            IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), diff);
         }
 
         return
