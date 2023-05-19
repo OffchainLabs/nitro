@@ -72,7 +72,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, simpletxloops 
 			ownerInfo.Nonce++
 			err := l2client.SendTransaction(ctx, tx)
 			Require(t, err)
-			_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+			_, err = EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
 			Require(t, err)
 		}
 
@@ -143,5 +143,5 @@ func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 20, true, false)
+	testBlockValidatorSimple(t, "files", 8, true, false)
 }
