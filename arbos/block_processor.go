@@ -487,6 +487,5 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)
-		log.Info("updating header", "arbheader", arbitrumHeader, "header", header)
 	}
 }
