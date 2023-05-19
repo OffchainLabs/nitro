@@ -123,7 +123,13 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil
 	}
 
-	err := s.bc.ReorgToOldBlock(targetBlock)
+	err := s.deleteMessageHashStartingAt(count)
+	if err != nil {
+		// shouldn't happen - but if it does we'll naturally overwrite these with time.
+		log.Warn("deleting messages on reorg", "err", err)
+	}
+
+	err = s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
 	}
@@ -137,11 +143,6 @@ func (s *ExecutionEngine) reorg(count arbutil.MessageIndex, newMessages []arbost
 	}
 	if s.recorder != nil {
 		s.recorder.ReorgTo(targetBlock.Header())
-	}
-	err = s.deleteMessageHashStartingAt(count)
-	if err != nil {
-		// shouldn't happen - but if it does we'll naturally overwrite these with time.
-		log.Warn("deleting messages on reorg", "err", err)
 	}
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
@@ -593,7 +594,7 @@ func (s *ExecutionEngine) existingMessageResultFor(num arbutil.MessageIndex, msg
 		return nil, err
 	}
 	if !msgExists {
-		return nil, fmt.Errorf("message not found in database: %d", num)
+		return nil, fmt.Errorf("message not found in database: %d head: %d", num, headMsgNum)
 	}
 	expHashBytes, err := s.db.Get(expHashKey)
 	if err != nil {
