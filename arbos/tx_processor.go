@@ -35,7 +35,7 @@ const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
-	msg              core.Message
+	msg              *core.Message
 	state            *arbosState.ArbosState
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
@@ -53,8 +53,8 @@ type TxProcessor struct {
 	cachedL1BlockHashes map[uint64]common.Hash
 }
 
-func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	tracingInfo := util.NewTracingInfo(evm, msg.From(), arbosAddress, util.TracingBeforeEVM)
+func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
+	tracingInfo := util.NewTracingInfo(evm, msg.From, arbosAddress, util.TracingBeforeEVM)
 	arbosState := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 	return &TxProcessor{
 		msg:                 msg,
@@ -100,7 +100,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
 
-	underlyingTx := p.msg.UnderlyingTransaction()
+	underlyingTx := p.msg.Tx
 	if underlyingTx == nil {
 		return false, 0, nil, nil
 	}
@@ -116,26 +116,26 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
-		from := p.msg.From()
-		tracer.CaptureStart(evm, from, *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
+		from := p.msg.From
+		tracer.CaptureStart(evm, from, *p.msg.To, false, p.msg.Data, p.msg.GasLimit, p.msg.Value)
 
-		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
 			tracer.CaptureEnd(nil, p.state.Burner.Burned(), nil)
 			evm.DecrementDepth() // fake the return to the first faked call
 
-			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingAfterEVM)
+			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)
 			p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 		}
 	}
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
-		from := p.msg.From()
-		to := p.msg.To()
-		value := p.msg.Value()
+		from := p.msg.From
+		to := p.msg.To
+		value := p.msg.Value
 		if to == nil {
 			return true, 0, errors.New("eth deposit has no To address"), nil
 		}
@@ -148,7 +148,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
-		if p.msg.From() != arbosAddress {
+		if p.msg.From != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		err = ApplyInternalTxUpdate(tx, p.state, evm)
@@ -247,11 +247,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		balance := statedb.GetBalance(tx.From)
 		basefee := evm.Context.BaseFee
-		usergas := p.msg.Gas()
+		usergas := p.msg.GasLimit
 
 		maxGasCost := arbmath.BigMulByUint(tx.GasFeeCap, usergas)
 		maxFeePerGasTooLow := arbmath.BigLessThan(tx.GasFeeCap, basefee)
-		if p.msg.RunMode() == types.MessageGasEstimationMode && tx.GasFeeCap.BitLen() == 0 {
+		if p.msg.TxRunMode == core.MessageGasEstimationMode && tx.GasFeeCap.BitLen() == 0 {
 			// In gas estimation mode, we permit a zero gas fee cap.
 			// This matches behavior with normal tx gas estimation.
 			maxFeePerGasTooLow = false
@@ -349,8 +349,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode types.MessageRunMode, posterCost *big.Int) uint64 {
-	if runMode == types.MessageGasEstimationMode {
+func GetPosterGas(state *arbosState.ArbosState, baseFee *big.Int, runMode core.MessageRunMode, posterCost *big.Int) uint64 {
+	if runMode == core.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
@@ -380,7 +380,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	basefee := p.evm.Context.BaseFee
 
 	var poster common.Address
-	if p.msg.RunMode() != types.MessageCommitMode {
+	if p.msg.TxRunMode != core.MessageCommitMode {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase
@@ -394,7 +394,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		if calldataUnits > 0 {
 			p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 		}
-		p.posterGas = GetPosterGas(p.state, basefee, p.msg.RunMode(), posterCost)
+		p.posterGas = GetPosterGas(p.state, basefee, p.msg.TxRunMode, posterCost)
 		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
@@ -405,7 +405,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
-	if p.msg.RunMode() != types.MessageEthcallMode {
+	if p.msg.TxRunMode != core.MessageEthcallMode {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
 		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
@@ -430,15 +430,15 @@ func (p *TxProcessor) ForceRefundGas() uint64 {
 
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
-	underlyingTx := p.msg.UnderlyingTransaction()
+	underlyingTx := p.msg.Tx
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	basefee := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
-	if gasLeft > p.msg.Gas() {
+	if gasLeft > p.msg.GasLimit {
 		panic("Tx somehow refunds gas after computation")
 	}
-	gasUsed := p.msg.Gas() - gasLeft
+	gasUsed := p.msg.GasLimit - gasLeft
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
@@ -485,7 +485,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 		if success {
 			// we don't want to charge for this
-			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From(), scenario)
+			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From, scenario)
 			state := arbosState.OpenSystemArbosStateOrPanic(p.evm.StateDB, tracingInfo, false)
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm, scenario)
 		} else {
@@ -544,7 +544,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 	}
 
-	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price could be 0
+	if p.msg.GasPrice.Sign() > 0 { // in tests, gas price could be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
@@ -603,7 +603,7 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	if p.cachedL1BlockNumber != nil {
 		return *p.cachedL1BlockNumber, nil
 	}
-	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
+	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From, arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return 0, err
@@ -621,7 +621,7 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	if cached {
 		return hash, nil
 	}
-	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
+	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From, arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return common.Hash{}, err
@@ -644,7 +644,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	version := p.state.ArbOSVersion()
 	if version != 9 {
 		gasPrice = p.evm.Context.BaseFee
-		if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
+		if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.Sign() == 0 {
 			gasPrice.SetInt64(0) // gasprice zero behavior
 		}
 	}
