@@ -8,7 +8,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"io"
 	"io/fs"
 	"math"
@@ -24,10 +23,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/util"
+
 	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
-	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -863,25 +862,36 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if err != nil {
 		return false, err
 	}
-	if chainInfo.ChainParameters != nil {
-		if chainInfo.ParentChainId != l1ChainId {
-			if chainId != 0 {
-				return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
-			} else {
-				return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
-			}
+	if chainInfo.ParentChainId != l1ChainId {
+		if chainId != 0 {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
+		} else {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
 		}
-		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
-		if err != nil {
-			return false, err
-		}
-		return true, nil
 	}
-	if chainId != 0 {
-		return false, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
-	} else {
-		return false, fmt.Errorf("missing chain parameters for L2 chain name %v", chainName)
+	chainDefaults := map[string]interface{}{
+		"persistent.chain": chainInfo.ChainName,
+		"l2.chain-id":      chainInfo.ChainId,
 	}
+	if chainInfo.SequencerUrl != "" {
+		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl
+	}
+	if chainInfo.FeedUrl != "" {
+		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
+	}
+	if chainInfo.DasIndexUrl != "" {
+		chainDefaults["node.data-availability.enable"] = true
+		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
+		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+	}
+	if !chainInfo.HasGenesisState {
+		chainDefaults["init.empty"] = true
+	}
+	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error

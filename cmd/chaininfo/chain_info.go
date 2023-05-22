@@ -18,10 +18,14 @@ import (
 var DefaultChainInfo []byte
 
 type ChainInfo struct {
-	ChainId         uint64              `json:"chain-id"`
-	ChainName       string              `json:"chain-name"`
-	ParentChainId   uint64              `json:"parent-chain-id"`
-	ChainParameters *json.RawMessage    `json:"chain-parameters"`
+	ChainId       uint64 `json:"chain-id"`
+	ChainName     string `json:"chain-name"`
+	ParentChainId uint64 `json:"parent-chain-id"`
+	// This is the forwarding target to submit transactions to, called the sequencer URL for clarity
+	SequencerUrl    string              `json:"sequencer-url"`
+	FeedUrl         string              `json:"feed-url"`
+	DasIndexUrl     string              `json:"das-index-url"`
+	HasGenesisState bool                `json:"has-genesis-state"`
 	ChainConfig     *params.ChainConfig `json:"chain-config"`
 	RollupAddresses *RollupAddresses    `json:"rollup"`
 }
