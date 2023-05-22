@@ -15,7 +15,6 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -65,16 +64,13 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			var gas uint64
 
 			if workload == smallContract {
-				contractCode = []byte{byte(vm.PUSH32)}
-				contractCode = append(contractCode, math.U256Bytes(common.Big0)...)
-				contractCode = append(contractCode, byte(vm.DUP1))
+				contractCode = []byte{byte(vm.PUSH0)}
+				contractCode = append(contractCode, byte(vm.PUSH0))
 				contractCode = append(contractCode, byte(vm.PUSH1))
 				contractCode = append(contractCode, 42) // the prelude length
-				contractCode = append(contractCode, byte(vm.PUSH1))
-				contractCode = append(contractCode, 0)
+				contractCode = append(contractCode, byte(vm.PUSH0))
 				contractCode = append(contractCode, byte(vm.CODECOPY))
-				contractCode = append(contractCode, byte(vm.PUSH1))
-				contractCode = append(contractCode, 0)
+				contractCode = append(contractCode, byte(vm.PUSH0))
 				contractCode = append(contractCode, byte(vm.RETURN))
 				basefee := GetBaseFee(t, l2client, ctx)
 				var err error
