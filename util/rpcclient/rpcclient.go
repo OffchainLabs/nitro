@@ -2,6 +2,7 @@ package rpcclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -76,13 +77,18 @@ func limitString(limit int, str string) string {
 	}
 	prefix := str[:limit/2-1]
 	postfix := str[len(str)-limit/2+1:]
-	return fmt.Sprintf("%v...%v", prefix, postfix)
+	return fmt.Sprintf("%v..%v", prefix, postfix)
 }
 
 func logArgs(limit int, args ...interface{}) string {
 	res := "["
 	for i, arg := range args {
-		res += limitString(limit, fmt.Sprintf("%+v", arg))
+		marshalled, err := json.Marshal(arg)
+		if err != nil {
+			res += "\"CANNOT MARSHALL:" + limitString(limit, err.Error()) + "\""
+		} else {
+			res += limitString(limit, string(marshalled))
+		}
 		if i < len(args)-1 {
 			res += ", "
 		}
@@ -118,7 +124,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			logger = log.Info
 			limit = 0
 		}
-		logger("rpc response", "method", method, "logId", logId, "result", limitString(limit, fmt.Sprintf("%+v", result)), "attempt", i, "args", logArgs(limit, args...))
+		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitString(limit, fmt.Sprintf("%+v", result)), "attempt", i, "args", logArgs(limit, args...))
 		if err == nil {
 			return nil
 		}
@@ -187,7 +193,7 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		var err error
 		var client *rpc.Client
 		if jwt == nil {
-			client, err = rpc.DialWebsocket(ctx, url, "")
+			client, err = rpc.DialContext(ctx, url)
 		} else {
 			client, err = rpc.DialOptions(ctx, url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*jwt))))
 		}
@@ -196,7 +202,8 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 			c.client = client
 			return nil
 		}
-		if strings.Contains(err.Error(), "parse") {
+		if strings.Contains(err.Error(), "parse") ||
+			strings.Contains(err.Error(), "malformed") {
 			return fmt.Errorf("%w: url %s", err, url)
 		}
 		select {

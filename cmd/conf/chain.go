@@ -20,7 +20,7 @@ type L1Config struct {
 var L1ConnectionConfigDefault = rpcclient.ClientConfig{
 	URL:            "",
 	Retries:        2,
-	Timeout:        time.Minute * 5,
+	Timeout:        time.Minute,
 	ConnectionWait: time.Minute,
 }
 
