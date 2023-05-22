@@ -140,7 +140,15 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ContractWalletAddress:    "",
 	GasRefunderAddress:       "",
 	Dangerous:                DefaultDangerousConfig,
-	L1Wallet:                 genericconf.WalletConfigDefault,
+	L1Wallet:                 DefaultValidatorL1WalletConfig,
+}
+
+var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
+	Pathname:      "validator-wallet",
+	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
+	Account:       genericconf.WalletConfigDefault.Account,
+	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -157,7 +165,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
-	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, "validator-wallet")
+	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, DefaultL1ValidatorConfig.L1Wallet.Pathname)
 }
 
 type DangerousConfig struct {
