@@ -315,13 +315,20 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
+
 	l1Wallet.ResolveDirectoryNames(nodeConfig.L2.ChainName)
-	conf.DefaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	defaultL1WalletConfig := conf.DefaultL1WalletConfig
+	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+
 	nodeConfig.Node.Staker.L1Wallet.ResolveDirectoryNames(nodeConfig.L2.ChainName)
-	staker.DefaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+
 	nodeConfig.Node.BatchPoster.L1Wallet.ResolveDirectoryNames(nodeConfig.L2.ChainName)
-	arbnode.DefaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
-	if nodeConfig.Node.Staker.L1Wallet == staker.DefaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.L1Wallet == arbnode.DefaultBatchPosterL1WalletConfig {
+	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
+	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+
+	if nodeConfig.Node.Staker.L1Wallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.L1Wallet == defaultBatchPosterL1WalletConfig {
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
 			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
@@ -332,7 +339,7 @@ func mainImpl() int {
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
-		if *l1Wallet != conf.DefaultL1WalletConfig {
+		if *l1Wallet != defaultL1WalletConfig {
 			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
 		}
 		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
