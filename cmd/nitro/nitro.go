@@ -316,8 +316,8 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
-	if *l1Wallet != genericconf.WalletConfigDefault {
-		if nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault || nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
+	if *l1Wallet != conf.DefaultL1WalletConfig {
+		if nodeConfig.Node.Staker.L1Wallet != staker.DefaultValidatorL1WalletConfig || nodeConfig.Node.BatchPoster.L1Wallet != arbnode.DefaultBatchPosterL1WalletConfig {
 			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
 		}
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
