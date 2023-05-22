@@ -116,6 +116,7 @@ func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 		}
 		peerInfo.Addrs = append(peerInfo.Addrs, addressInfo.Addrs...)
 	}
+	// TODO: do we need to wait on this before returning?
 	var wg sync.WaitGroup
 	wg.Add(len(peerInfos))
 	for _, peerInfo := range peerInfos {
@@ -144,7 +145,7 @@ func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
 	return addressesStrings, nil
 }
 
-func normalizeCidString(cidString string) string {
+func NormalizeCidString(cidString string) string {
 	if strings.HasPrefix(cidString, "ipfs://") {
 		return "/ipfs/" + cidString[7:]
 	}
@@ -155,12 +156,13 @@ func normalizeCidString(cidString string) string {
 }
 
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDir string) (string, error) {
-	cidString = normalizeCidString(cidString)
+	cidString = NormalizeCidString(cidString)
 	cidPath := path.New(cidString)
 	resolvedPath, err := h.api.ResolvePath(ctx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
+	// TODO: do we need to pin this path? In the callsites to this we shut down the node immediately after downloading
 	// first pin the root node, then all its children nodes in random order to improve sharing with peers started at the same time
 	if err := h.api.Pin().Add(ctx, resolvedPath, options.Pin.Recursive(false)); err != nil {
 		return "", fmt.Errorf("failed to pin root path: %w", err)
@@ -241,6 +243,10 @@ func setupPlugins() error {
 var loadPluginsOnce sync.Once
 
 func createIpfsHelperImpl(ctx context.Context, downloadPath string, clientOnly bool, peerList []string, profiles string) (*IpfsHelper, error) {
+	if len(peerList) == 0 {
+		peerList = config.DefaultBootstrapAddresses
+	}
+
 	var onceErr error
 	loadPluginsOnce.Do(func() {
 		onceErr = setupPlugins()

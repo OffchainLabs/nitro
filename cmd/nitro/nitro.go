@@ -8,7 +8,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"io"
 	"io/fs"
 	"math"
@@ -23,6 +22,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/ipfs/go-path"
+	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/cmd/util"
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/json"
@@ -347,18 +350,10 @@ func mainImpl() int {
 	}
 
 	var rollupAddrs chaininfo.RollupAddresses
-	combinedL2ChainInfoFile := nodeConfig.L2.ChainInfoFiles
-	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
-		}
-		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
-	}
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, nodeConfig.L2.CombinedChainInfoFiles(), nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -395,7 +390,7 @@ func mainImpl() int {
 		}
 
 		// Just create validator smart wallet if needed then exit
-		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
+		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, nodeConfig.L2.CombinedChainInfoFiles(), nodeConfig.L2.ChainInfoJson)
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
@@ -785,7 +780,50 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
 	l2ChainInfoJson := k.String("l2.chain-info-json")
-	chainFound, err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l1ChainId.Uint64(), l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	globalConfig := k.String("persistent.global-config")
+
+	combinedL2ChainInfoFiles := l2ChainInfoFiles
+	if l2ChainInfoIpfsUrl != "" {
+		cid, _, err := path.SplitAbsPath(path.FromString(ipfshelper.NormalizeCidString(l2ChainInfoIpfsUrl)))
+		if err != nil {
+			log.Crit("error parsing chain information IPFS URL", "err", err)
+		}
+		fileName := cid.String()
+		downloadDir := l2ChainInfoIpfsDownloadPath
+		if !filepath.IsAbs(downloadDir) {
+			resolvedGlobalConfig := globalConfig
+			if !filepath.IsAbs(resolvedGlobalConfig) {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					log.Crit("unable to find home directory", "err", err)
+				}
+				resolvedGlobalConfig = filepath.Join(homeDir, resolvedGlobalConfig)
+			}
+			downloadDir = filepath.Join(resolvedGlobalConfig, downloadDir)
+		}
+		err = os.MkdirAll(downloadDir, os.ModePerm)
+		if err != nil {
+			log.Crit("failed to create directory to download chain information from IPFS into", "directory", downloadDir, "err", err)
+		}
+		expectedPath := filepath.Join(downloadDir, fileName)
+		_, err = os.Stat(expectedPath)
+		if err == nil {
+			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, expectedPath)
+		} else if errors.Is(err, fs.ErrNotExist) {
+			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, downloadDir)
+			if err != nil {
+				log.Crit("error getting l2 chain info file from ipfs", "err", err)
+			}
+			if l2ChainInfoIpfsFile != expectedPath {
+				log.Error("downloaded chain info file from IPFS into a different path than expected", "expected", expectedPath, "downloadedTo", l2ChainInfoIpfsFile)
+			}
+			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+		} else {
+			log.Crit("error checking if the IPFS chain information is already downloaded", "err", err)
+		}
+	}
+
+	chainFound, err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l1ChainId.Uint64(), combinedL2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -836,6 +874,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
+	nodeConfig.L2.SetCombinedChainInfoFiles(combinedL2ChainInfoFiles)
+
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -844,15 +884,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
-	combinedL2ChainInfoFiles := l2ChainInfoFiles
-	if l2ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
-		}
-		combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
-	}
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, combinedL2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return false, err
@@ -860,9 +892,9 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if chainInfo.ChainParameters != nil {
 		if chainInfo.ParentChainId != l1ChainId {
 			if chainId != 0 {
-				return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
+				return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, combinedL2ChainInfoFiles, chainId, l1ChainId)
 			} else {
-				return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
+				return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, combinedL2ChainInfoFiles, chainName, l1ChainId)
 			}
 		}
 		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
