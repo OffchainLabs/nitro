@@ -19,14 +19,22 @@ var L1ConfigDefault = L1Config{
 	ChainID:            0,
 	URL:                "",
 	ConnectionAttempts: 15,
-	Wallet:             genericconf.WalletConfigDefault,
+	Wallet:             DefaultL1WalletConfig,
+}
+
+var DefaultL1WalletConfig = genericconf.WalletConfig{
+	Pathname:      "wallet",
+	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
+	Account:       genericconf.WalletConfigDefault.Account,
+	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
 	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
-	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet")
+	genericconf.WalletConfigAddOptions(prefix+".wallet", f, L1ConfigDefault.Wallet.Pathname)
 }
 
 func (c *L1Config) ResolveDirectoryNames(chain string) {
