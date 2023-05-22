@@ -206,14 +206,6 @@ impl GoStack {
         data
     }
 
-    pub fn read_bytes20(&self, ptr: u64) -> Bytes20 {
-        self.read_slice(ptr, 20).try_into().unwrap()
-    }
-
-    pub fn read_bytes32(&self, ptr: u64) -> Bytes32 {
-        self.read_slice(ptr, 32).try_into().unwrap()
-    }
-
     pub fn write_slice(&self, ptr: u64, src: &[u8]) {
         u32::try_from(ptr).expect("Go pointer not a u32");
         self.view().write(ptr, src).unwrap();
@@ -231,6 +223,16 @@ impl GoStack {
 
     pub fn read_go_ptr(&mut self) -> u32 {
         self.read_u64().try_into().expect("go pointer doesn't fit")
+    }
+
+    pub fn read_bytes20(&mut self) -> Bytes20 {
+        let ptr = self.read_go_ptr().into();
+        self.read_slice(ptr, 20).try_into().unwrap()
+    }
+
+    pub fn read_bytes32(&mut self) -> Bytes32 {
+        let ptr = self.read_go_ptr().into();
+        self.read_slice(ptr, 32).try_into().unwrap()
     }
 
     pub fn read_go_slice(&mut self) -> (u64, u64) {

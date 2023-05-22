@@ -1,8 +1,9 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, fmt, fs::File, io::Read, ops::Deref, path::Path};
+use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
 use wasmparser::{TableType, Type};
 
 /// A Vec<u8> allocated with libc::malloc
@@ -147,9 +148,16 @@ impl IntoIterator for CBytes {
     }
 }
 
-pub fn file_bytes(path: &Path) -> eyre::Result<Vec<u8>> {
+pub fn file_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut f = File::open(path)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
     Ok(buf)
+}
+
+pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
+    let parts: Vec<_> = qualified.split("__").collect();
+    let parts = parts.try_into().map_err(|_| eyre!("bad import"))?;
+    let [module, name]: [&str; 2] = parts;
+    Ok((module, name))
 }

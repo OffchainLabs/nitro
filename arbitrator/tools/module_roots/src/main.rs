@@ -22,6 +22,7 @@ fn main() -> Result<()> {
         true,
         true,
         true,
+        true,
         GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("tried to read preimage")),

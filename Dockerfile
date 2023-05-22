@@ -51,6 +51,9 @@ COPY arbitrator/arbutil arbitrator/arbutil
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
 
+FROM scratch as wasm-libs-export
+COPY --from=wasm-libs-builder /workspace/ /
+
 FROM wasm-base as wasm-bin-builder
     # pinned go version
 RUN curl -L https://golang.org/dl/go1.19.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
@@ -59,7 +62,9 @@ COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
 COPY ./arbutil ./arbutil
+COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
+COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./das/dastree ./das/dastree
 COPY ./precompiles ./precompiles

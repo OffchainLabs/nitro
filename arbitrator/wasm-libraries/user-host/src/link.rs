@@ -17,8 +17,8 @@ use std::{mem, path::Path, sync::Arc};
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
 extern "C" {
-    fn link_module(hash: *const MemoryLeaf) -> u32;
-    fn unlink_module();
+    fn wavm_link_module(hash: *const MemoryLeaf) -> u32;
+    fn wavm_unlink_module();
 }
 
 // these dynamic hostio methods allow introspection into user modules
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let (main, internals) = machine.program_info();
 
     // link the program and ready its instrumentation
-    let module = link_module(&MemoryLeaf(module));
+    let module = wavm_link_module(&MemoryLeaf(module));
     program_set_ink(module, internals, ink);
     program_set_stack(module, internals, config.max_depth);
 
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
             sp.write_u8($status as u8).skip_space();
             sp.write_ptr($outs);
             wavm::caller_store64(gas, pricing.ink_to_gas($ink_left));
-            unlink_module();
+            wavm_unlink_module();
             return;
         }};
     }
@@ -210,13 +210,31 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
 }
 
 /// Creates an `EvmData` from its component parts.
-/// Safety: λ(origin u32) *EvmData
+/// Safety: λ(
+///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
+///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
+///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
     sp: usize,
 ) {
+    use wavm::{read_bytes20, read_bytes32};
     let mut sp = GoStack::new(sp);
-    let origin = wavm::read_bytes20(sp.read_go_ptr());
-    let evm_data = EvmData::new(origin.into());
+    let evm_data = EvmData {
+        block_basefee: read_bytes32(sp.read_go_ptr()).into(),
+        block_chainid: read_bytes32(sp.read_go_ptr()).into(),
+        block_coinbase: read_bytes20(sp.read_go_ptr()).into(),
+        block_difficulty: read_bytes32(sp.read_go_ptr()).into(),
+        block_gas_limit: sp.read_u64(),
+        block_number: read_bytes32(sp.read_go_ptr()).into(),
+        block_timestamp: sp.read_u64(),
+        contract_address: read_bytes20(sp.read_go_ptr()).into(),
+        msg_sender: read_bytes20(sp.read_go_ptr()).into(),
+        msg_value: read_bytes32(sp.read_go_ptr()).into(),
+        tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
+        tx_origin: read_bytes20(sp.read_go_ptr()).into(),
+        return_data_len: 0,
+    };
     sp.write_ptr(heapify(evm_data));
 }

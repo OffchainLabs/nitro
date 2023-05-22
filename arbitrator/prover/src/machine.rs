@@ -333,7 +333,7 @@ impl Module {
             } else if let Ok((hostio, debug)) = host::get_impl(import.module, import_name) {
                 ensure!(
                     (debug && debug_funcs) || (!debug && allow_hostapi),
-                    "Debug func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi}",
+                    "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
                     import_name.red(),
                     import.module.red(),
                 );

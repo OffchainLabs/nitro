@@ -41,17 +41,23 @@ type create2Type func(
 )
 type getReturnDataType func() []byte
 type emitLogType func(data []byte, topics uint32) error
+type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
+type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
+type evmBlockHashType func(block common.Hash) (value common.Hash)
 
 type goClosures struct {
-	getBytes32    getBytes32Type
-	setBytes32    setBytes32Type
-	contractCall  contractCallType
-	delegateCall  delegateCallType
-	staticCall    staticCallType
-	create1       create1Type
-	create2       create2Type
-	getReturnData getReturnDataType
-	emitLog       emitLogType
+	getBytes32      getBytes32Type
+	setBytes32      setBytes32Type
+	contractCall    contractCallType
+	delegateCall    delegateCallType
+	staticCall      staticCallType
+	create1         create1Type
+	create2         create2Type
+	getReturnData   getReturnDataType
+	emitLog         emitLogType
+	accountBalance  accountBalanceType
+	accountCodeHash accountCodehashType
+	evmBlockHash    evmBlockHashType
 }
 
 func newApiClosures(
@@ -246,16 +252,34 @@ func newApiClosures(
 		db.AddLog(event)
 		return nil
 	}
+	accountBalance := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		balance := evm.StateDB.GetBalance(address)
+		return common.BigToHash(balance), cost
+	}
+	accountCodehash := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		if !evm.StateDB.Empty(address) {
+			return evm.StateDB.GetCodeHash(address), cost
+		}
+		return common.Hash{}, cost
+	}
+	evmBlockHash := func(block common.Hash) common.Hash {
+		return vm.BlockHashOp(evm, block.Big())
+	}
 
 	return &goClosures{
-		getBytes32:    getBytes32,
-		setBytes32:    setBytes32,
-		contractCall:  contractCall,
-		delegateCall:  delegateCall,
-		staticCall:    staticCall,
-		create1:       create1,
-		create2:       create2,
-		getReturnData: getReturnData,
-		emitLog:       emitLog,
+		getBytes32:      getBytes32,
+		setBytes32:      setBytes32,
+		contractCall:    contractCall,
+		delegateCall:    delegateCall,
+		staticCall:      staticCall,
+		create1:         create1,
+		create2:         create2,
+		getReturnData:   getReturnData,
+		emitLog:         emitLog,
+		accountBalance:  accountBalance,
+		accountCodeHash: accountCodehash,
+		evmBlockHash:    evmBlockHash,
 	}
 }

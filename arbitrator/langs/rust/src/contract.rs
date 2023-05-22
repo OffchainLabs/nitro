@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use super::util::{Bytes20, Bytes32};
+use crate::{address as addr, Bytes20, Bytes32};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -205,4 +205,19 @@ pub fn create(code: &[u8], endowment: Bytes32, salt: Option<Bytes32>) -> Result<
 
 pub fn return_data_len() -> usize {
     unsafe { return_data_size() as usize }
+}
+
+#[link(wasm_import_module = "forward")]
+extern "C" {
+    pub(crate) fn contract_address(address: *mut u8);
+}
+
+pub fn address() -> Bytes20 {
+    let mut data = [0; 20];
+    unsafe { contract_address(data.as_mut_ptr()) };
+    Bytes20(data)
+}
+
+pub fn balance() -> Bytes32 {
+    addr::balance(address())
 }
