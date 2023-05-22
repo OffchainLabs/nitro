@@ -337,7 +337,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, StaticFetcherFrom[*staker.BlockValidatorConfig](&conf.BlockValidator), valStack)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, StaticFetcherFrom(&conf.BlockValidator), valStack)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -350,7 +350,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, StaticFetcherFrom[*staker.BlockValidatorConfig](&conf.BlockValidator), valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, StaticFetcherFrom(&conf.BlockValidator), valStack)
 	if err != nil {
 		Fail(t, err)
 	}
