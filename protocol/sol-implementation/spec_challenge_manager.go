@@ -96,6 +96,10 @@ func (e *SpecEdge) MutualId() protocol.MutualId {
 	return protocol.MutualId(e.mutualId)
 }
 
+func (e *SpecEdge) OriginId() protocol.OriginId {
+	return protocol.OriginId(e.inner.OriginId)
+}
+
 // The claim id of the edge, if any.
 func (e *SpecEdge) ClaimId() util.Option[protocol.ClaimId] {
 	if e.inner.ClaimId == [32]byte{} {

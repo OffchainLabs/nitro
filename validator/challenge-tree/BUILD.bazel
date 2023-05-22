@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "challenge-tree",
-    srcs = ["tree.go"],
+    srcs = [
+        "ancestors.go",
+        "tree.go",
+    ],
     importpath = "github.com/OffchainLabs/challenge-protocol-v2/validator/challenge-tree",
     visibility = ["//visibility:public"],
     deps = [
@@ -15,7 +18,10 @@ go_library(
 
 go_test(
     name = "challenge-tree_test",
-    srcs = ["tree_test.go"],
+    srcs = [
+        "ancestors_test.go",
+        "tree_test.go",
+    ],
     embed = [":challenge-tree"],
     deps = [
         "//protocol",

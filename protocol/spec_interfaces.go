@@ -208,10 +208,8 @@ type OriginHeights struct {
 	BigStepChallengeOriginHeight Height
 }
 
-// EdgeSnapshot defines a minimal set of methods of an edge that are taken
-// from reading it on-chain. Some of this data may change, such as the children
-// of the edge. An EdgeSnapshot only represents an edge at the time it was originally fetched.
-type EdgeSnapshot interface {
+// ReadOnlyEdge defines the read-only methods of an edge onchain.
+type ReadOnlyEdge interface {
 	// The unique identifier for an edge.
 	Id() EdgeId
 	// The type of challenge the edge is a part of.
@@ -224,19 +222,10 @@ type EdgeSnapshot interface {
 	CreatedAtBlock() uint64
 	// The mutual id of the edge.
 	MutualId() MutualId
+	// The origin id of the edge.
+	OriginId() OriginId
 	// The claim id of the edge, if any
 	ClaimId() util.Option[ClaimId]
-	// The lower child of the edge at the time the edge was read on-chain. Note
-	// this may change and if a newer snapshot is required, the edge should be re-fetched.
-	LowerChildSnapshot() util.Option[EdgeId]
-	// The upper child of the edge at the time the edge was read on-chain. Note
-	// this may change and if a newer snapshot is required, the edge should be re-fetched.
-	UpperChildSnapshot() util.Option[EdgeId]
-}
-
-// SpecEdge according to the protocol specification.
-type SpecEdge interface {
-	EdgeSnapshot
 	// The lower child of the edge, if any.
 	LowerChild(ctx context.Context) (util.Option[EdgeId], error)
 	// The upper child of the edge, if any.
@@ -254,6 +243,14 @@ type SpecEdge interface {
 	Status(ctx context.Context) (EdgeStatus, error)
 	// Checks if an edge has a length one rival.
 	HasLengthOneRival(ctx context.Context) (bool, error)
+	// The history commitment for the top-level edge the current edge's challenge is made upon.
+	// This is used at subchallenge creation boundaries.
+	TopLevelClaimHeight(ctx context.Context) (*OriginHeights, error)
+}
+
+// SpecEdge according to the protocol specification.
+type SpecEdge interface {
+	ReadOnlyEdge
 	// Bisection capabilities for an edge. Returns the two child
 	// edges that are created as a result.
 	Bisect(
@@ -266,7 +263,4 @@ type SpecEdge interface {
 	// Confirms an edge with the specified claim id.
 	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
 	ConfirmByChildren(ctx context.Context) error
-	// The history commitment for the top-level edge the current edge's challenge is made upon.
-	// This is used at subchallenge creation boundaries.
-	TopLevelClaimHeight(ctx context.Context) (*OriginHeights, error)
 }

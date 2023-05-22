@@ -17,8 +17,10 @@ import (
 
 func TestAddEdge(t *testing.T) {
 	ht := &HonestChallengeTree{
-		edges:     threadsafe.NewMap[protocol.EdgeId, protocol.EdgeSnapshot](),
-		mutualIds: threadsafe.NewMap[protocol.MutualId, *threadsafe.Set[protocol.EdgeId]](),
+		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.ReadOnlyEdge](),
+		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Set[protocol.EdgeId]](),
+		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
+		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 	}
 	ht.topLevelAssertionId = protocol.AssertionId(common.BytesToHash([]byte("foo")))
 	ctx := context.Background()
@@ -95,8 +97,8 @@ func TestAddEdge(t *testing.T) {
 
 		// However, we should not have a level zero edge being tracked yet.
 		require.Equal(t, true, ht.honestBlockChalLevelZeroEdge.IsNone())
-		require.Equal(t, true, ht.honestBigStepChalLevelZeroEdge.IsNone())
-		require.Equal(t, true, ht.honestSmallStepChalLevelZeroEdge.IsNone())
+		require.Equal(t, true, ht.honestBigStepLevelZeroEdges.Len() == 0)
+		require.Equal(t, true, ht.honestSmallStepLevelZeroEdges.Len() == 0)
 	})
 	t.Run("agrees with edge and is a level zero edge", func(t *testing.T) {
 		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-32.a", createdAt: 1, claimId: "foo"})
@@ -168,7 +170,7 @@ func (m *mockHistChecker) AgreesWithHistoryCommitment(
 	return m.agreement, m.agreesErr
 }
 
-var _ = protocol.EdgeSnapshot(&edge{})
+var _ = protocol.ReadOnlyEdge(&edge{})
 
 type edgeId string
 type commit string
@@ -205,31 +207,27 @@ func (e *edge) EndCommitment() (protocol.Height, common.Hash) {
 	return protocol.Height(e.endHeight), common.BytesToHash([]byte(e.endCommit))
 }
 
-func (e *edge) OriginId() protocol.OriginId {
-	return protocol.OriginId(common.BytesToHash([]byte(e.originId)))
-}
-
-func (e *edge) LowerChildSnapshot() util.Option[protocol.EdgeId] {
-	return util.Some(protocol.EdgeId(common.BytesToHash([]byte(e.lowerChildId))))
-}
-
-func (e *edge) UpperChildSnapshot() util.Option[protocol.EdgeId] {
-	return util.Some(protocol.EdgeId(common.BytesToHash([]byte(e.upperChildId))))
-}
-
 func (e *edge) CreatedAtBlock() uint64 {
 	return e.creationTime
 }
 
+func (e *edge) OriginId() protocol.OriginId {
+	return protocol.OriginId(common.BytesToHash([]byte(e.originId)))
+}
+
 func (e *edge) MutualId() protocol.MutualId {
-	return protocol.MutualId(common.BytesToHash([]byte(fmt.Sprintf(
+	return protocol.MutualId(common.BytesToHash([]byte(e.computeMutualId())))
+}
+
+func (e *edge) computeMutualId() string {
+	return fmt.Sprintf(
 		"%d-%s-%d-%s-%d",
 		e.edgeType,
 		e.originId,
 		e.startHeight,
 		e.startCommit,
 		e.endHeight,
-	))))
+	)
 }
 
 // The claim id of the edge, if any
@@ -238,6 +236,59 @@ func (e *edge) ClaimId() util.Option[protocol.ClaimId] {
 		return util.None[protocol.ClaimId]()
 	}
 	return util.Some(protocol.ClaimId(common.BytesToHash([]byte(e.claimId))))
+}
+
+// The lower child of the edge, if any.
+func (e *edge) LowerChild(_ context.Context) (util.Option[protocol.EdgeId], error) {
+	if e.lowerChildId == "" {
+		return util.None[protocol.EdgeId](), nil
+	}
+	return util.Some(protocol.EdgeId(common.BytesToHash([]byte(e.lowerChildId)))), nil
+}
+
+// The upper child of the edge, if any.
+func (e *edge) UpperChild(_ context.Context) (util.Option[protocol.EdgeId], error) {
+	if e.upperChildId == "" {
+		return util.None[protocol.EdgeId](), nil
+	}
+	return util.Some(protocol.EdgeId(common.BytesToHash([]byte(e.upperChildId)))), nil
+}
+
+// The ministaker of an edge. Only existing for level zero edges.
+func (*edge) MiniStaker() util.Option[common.Address] {
+	return util.None[common.Address]()
+}
+
+// The assertion id of the parent assertion that originated the challenge
+// at the top-level.
+func (*edge) PrevAssertionId(_ context.Context) (protocol.AssertionId, error) {
+	return protocol.AssertionId{}, errors.New("unimplemented")
+}
+
+// The time in seconds an edge has been unrivaled.
+func (*edge) TimeUnrivaled(_ context.Context) (uint64, error) {
+	return 0, errors.New("unimplemented")
+}
+
+// The status of an edge.
+func (*edge) Status(_ context.Context) (protocol.EdgeStatus, error) {
+	return 0, errors.New("unimplemented")
+}
+
+// Whether or not an edge has rivals.
+func (*edge) HasRival(_ context.Context) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
+// Checks if an edge has a length one rival.
+func (*edge) HasLengthOneRival(_ context.Context) (bool, error) {
+	return false, errors.New("unimplemented")
+}
+
+// The history commitment for the top-level edge the current edge's challenge is made upon.
+// This is used at subchallenge creation boundaries.
+func (*edge) TopLevelClaimHeight(_ context.Context) (*protocol.OriginHeights, error) {
+	return nil, errors.New("unimplemented")
 }
 
 type newCfg struct {

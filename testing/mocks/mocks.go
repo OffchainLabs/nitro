@@ -317,6 +317,10 @@ func (m *MockSpecEdge) MutualId() protocol.MutualId {
 	args := m.Called()
 	return args.Get(0).(protocol.MutualId)
 }
+func (m *MockSpecEdge) OriginId() protocol.OriginId {
+	args := m.Called()
+	return args.Get(0).(protocol.OriginId)
+}
 func (m *MockSpecEdge) ClaimId() util.Option[protocol.ClaimId] {
 	args := m.Called()
 	return args.Get(0).(util.Option[protocol.ClaimId])
