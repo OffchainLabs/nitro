@@ -3,28 +3,9 @@
     "chain-id": 42161,
     "chain-name": "arb1",
     "parent-chain-id": 1,
-    "chain-parameters":
-    {
-      "persistent":
-      {
-        "chain": "arb1"
-      },
-      "node":
-      {
-        "forwarding-target": "https://arb1-sequencer.arbitrum.io/rpc",
-        "feed":
-        {
-          "input":
-          {
-            "url": "wss://arb1.arbitrum.io/feed"
-          }
-        }
-      },
-      "l2":
-      {
-        "chain-id": 42161
-      }
-    },
+    "sequencer-url": "https://arb1-sequencer.arbitrum.io/rpc",
+    "feed-url": "wss://arb1.arbitrum.io/feed",
+    "has-genesis-state": true,
     "chain-config":
     {
       "chainId": 42161,
@@ -72,41 +53,9 @@
     "chain-id": 42170,
     "chain-name": "nova",
     "parent-chain-id": 1,
-    "chain-parameters":
-    {
-      "persistent":
-      {
-        "chain": "nova"
-      },
-      "node":
-      {
-        "forwarding-target": "https://nova.arbitrum.io/rpc",
-        "feed":
-        {
-          "input":
-          {
-            "url": "wss://nova.arbitrum.io/feed"
-          }
-        },
-        "data-availability":
-        {
-          "enable": true,
-          "rest-aggregator":
-          {
-            "enable": true,
-            "online-url-list": "https://nova.arbitrum.io/das-servers"
-          }
-        }
-      },
-      "l2":
-      {
-        "chain-id": 42170
-      },
-      "init":
-      {
-        "empty": true
-      }
-    },
+    "sequencer-url": "https://nova.arbitrum.io/rpc",
+    "feed-url": "wss://nova.arbitrum.io/feed",
+    "das-index-url": "https://nova.arbitrum.io/das-servers",
     "chain-config":
     {
       "chainId": 42170,
@@ -151,104 +100,11 @@
     }
   },
   {
-    "chain-id": 421611,
-    "chain-name": "rinkeby-nitro",
-    "parent-chain-id": 4,
-    "chain-parameters":
-    {
-      "persistent":
-      {
-        "chain": "rinkeby-nitro"
-      },
-      "node":
-      {
-        "forwarding-target": "https://rinkeby.arbitrum.io/rpc",
-        "feed":
-        {
-          "input":
-          {
-            "url": "wss://rinkeby.arbitrum.io/feed"
-          }
-        }
-      },
-      "l2":
-      {
-        "chain-id": 421611
-      }
-    },
-    "chain-config":
-    {
-      "chainId": 421611,
-      "homesteadBlock": 0,
-      "daoForkBlock": null,
-      "daoForkSupport": true,
-      "eip150Block": 0,
-      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "eip155Block": 0,
-      "eip158Block": 0,
-      "byzantiumBlock": 0,
-      "constantinopleBlock": 0,
-      "petersburgBlock": 0,
-      "istanbulBlock": 0,
-      "muirGlacierBlock": 0,
-      "berlinBlock": 0,
-      "londonBlock": 0,
-      "clique":
-      {
-        "period": 0,
-        "epoch": 0
-      },
-      "arbitrum":
-      {
-        "EnableArbOS": true,
-        "AllowDebugPrecompiles": false,
-        "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 3,
-        "InitialChainOwner": "0x06c7dbc804d7bcd881d7b86b667893736b8e0be2",
-        "GenesisBlockNum": 0
-      }
-    },
-    "rollup":
-    {
-      "bridge": "0x85c720444e436e1f9407e0c3895d3fe149f41168",
-      "inbox": "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
-      "rollup": "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
-      "sequencer-inbox": "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
-      "validator-utils": "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
-      "validator-wallet-creator": "0x237b8965cebe27108bc1d6b71575c3b070050f7a",
-      "deployed-at": 11088567
-    }
-  },
-  {
     "chain-id": 421613,
     "chain-name": "goerli-rollup",
     "parent-chain-id": 5,
-    "chain-parameters":
-    {
-      "persistent":
-      {
-        "chain": "goerli-rollup"
-      },
-      "node":
-      {
-        "forwarding-target": "https://goerli-rollup.arbitrum.io/rpc",
-        "feed":
-        {
-          "input":
-          {
-            "url": "wss://goerli-rollup.arbitrum.io/feed"
-          }
-        }
-      },
-      "l2":
-      {
-        "chain-id": 421613
-      },
-      "init":
-      {
-        "empty": true
-      }
-    },
+    "sequencer-url": "https://goerli-rollup.arbitrum.io/rpc",
+    "feed-url": "wss://goerli-rollup.arbitrum.io/feed",
     "chain-config":
     {
       "chainId": 421613,
@@ -290,50 +146,6 @@
       "validator-utils": "0x344f651fe566a02db939c8657427deb5524ea78e",
       "validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
       "deployed-at": 7217526
-    }
-  },
-  {
-    "chain-id": 421703,
-    "chain-name": "goerli-anytrust",
-    "parent-chain-id": 5,
-    "chain-parameters":
-    {
-      "persistent":
-      {
-        "chain": "goerli-anytrust"
-      }
-    },
-    "chain-config":
-    {
-      "chainId": 421703,
-      "homesteadBlock": 0,
-      "daoForkBlock": null,
-      "daoForkSupport": true,
-      "eip150Block": 0,
-      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "eip155Block": 0,
-      "eip158Block": 0,
-      "byzantiumBlock": 0,
-      "constantinopleBlock": 0,
-      "petersburgBlock": 0,
-      "istanbulBlock": 0,
-      "muirGlacierBlock": 0,
-      "berlinBlock": 0,
-      "londonBlock": 0,
-      "clique":
-      {
-        "period": 0,
-        "epoch": 0
-      },
-      "arbitrum":
-      {
-        "EnableArbOS": true,
-        "AllowDebugPrecompiles": false,
-        "DataAvailabilityCommittee": true,
-        "InitialArbOSVersion": 2,
-        "InitialChainOwner": "0x186b56023d42b2b4e7616589a5c62eef5fca21dd",
-        "GenesisBlockNum": 0
-      }
     }
   },
   {
