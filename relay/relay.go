@@ -141,7 +141,7 @@ func (r *Relay) StopAndWait() {
 
 type Config struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	L2            L2Config                        `koanf:"l2"`
+	L2            L2Config                        `koanf:"chain"`
 	LogLevel      int                             `koanf:"log-level"`
 	LogType       string                          `koanf:"log-type"`
 	Metrics       bool                            `koanf:"metrics"`
