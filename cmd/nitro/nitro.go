@@ -8,7 +8,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"io"
 	"io/fs"
 	"math"
@@ -24,10 +23,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/util"
+
 	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
-	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -316,10 +315,20 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
-	if *l1Wallet != genericconf.WalletConfigDefault {
-		if nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault || nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
-			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
-		}
+
+	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	defaultL1WalletConfig := conf.DefaultL1WalletConfig
+	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+
+	nodeConfig.Node.Staker.L1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+
+	nodeConfig.Node.BatchPoster.L1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
+	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+
+	if nodeConfig.Node.Staker.L1Wallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.L1Wallet == defaultBatchPosterL1WalletConfig {
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
 			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
@@ -330,6 +339,9 @@ func mainImpl() int {
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
+		if *l1Wallet != defaultL1WalletConfig {
+			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
+		}
 		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
@@ -857,25 +869,36 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if err != nil {
 		return false, err
 	}
-	if chainInfo.ChainParameters != nil {
-		if chainInfo.ParentChainId != l1ChainId {
-			if chainId != 0 {
-				return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
-			} else {
-				return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
-			}
+	if chainInfo.ParentChainId != l1ChainId {
+		if chainId != 0 {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
+		} else {
+			return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
 		}
-		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
-		if err != nil {
-			return false, err
-		}
-		return true, nil
 	}
-	if chainId != 0 {
-		return false, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
-	} else {
-		return false, fmt.Errorf("missing chain parameters for L2 chain name %v", chainName)
+	chainDefaults := map[string]interface{}{
+		"persistent.chain": chainInfo.ChainName,
+		"l2.chain-id":      chainInfo.ChainId,
 	}
+	if chainInfo.SequencerUrl != "" {
+		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl
+	}
+	if chainInfo.FeedUrl != "" {
+		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
+	}
+	if chainInfo.DasIndexUrl != "" {
+		chainDefaults["node.data-availability.enable"] = true
+		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
+		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+	}
+	if !chainInfo.HasGenesisState {
+		chainDefaults["init.empty"] = true
+	}
+	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error

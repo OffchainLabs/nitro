@@ -46,7 +46,6 @@ func main() {
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainConfig := flag.String("l2chainconfig", "l2_chain_config.json", "L2 chain config json file")
 	l2ChainName := flag.String("l2chainname", "", "L2 chain name (will be included in chain info output json file)")
-	l2ChainParams := flag.String("l2chainparams", "", "L2 chain default parameters json file (optional)")
 	l2ChainInfo := flag.String("l2chaininfo", "l2_chain_info.json", "L2 chain info output json file")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
@@ -57,9 +56,6 @@ func main() {
 	if *prod {
 		if *wasmmoduleroot == "" {
 			panic("must specify wasm module root when launching prod chain")
-		}
-		if *l2ChainParams == "" {
-			panic("must specify l2 chain default parameters json file when launching prod chain (can be empty)")
 		}
 	}
 	if *l2ChainName == "" {
@@ -129,20 +125,6 @@ func main() {
 		panic(fmt.Errorf("failed to deserialize chain config: %w", err))
 	}
 
-	var chainParamsJson []byte
-	if *l2ChainParams != "" {
-		chainParamsJson, err = os.ReadFile(*l2ChainParams)
-		if err != nil {
-			panic(fmt.Errorf("failed to read l2 chain default parameters file: %w", err))
-		}
-	}
-	var chainParams json.RawMessage
-	if len(chainParamsJson) > 0 {
-		err = json.Unmarshal(chainParamsJson, &chainParams)
-		if err != nil {
-			panic(fmt.Errorf("failed to deserialize l2 default parameters: %w", err))
-		}
-	}
 	deployedAddresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -166,9 +148,9 @@ func main() {
 	}
 	chainsInfo := map[uint64]chaininfo.ChainInfo{
 		chainConfig.ChainID.Uint64(): {
+			ChainId:         chainConfig.ChainID.Uint64(),
 			ChainName:       *l2ChainName,
 			ParentChainId:   l1ChainId.Uint64(),
-			ChainParameters: &chainParams,
 			ChainConfig:     &chainConfig,
 			RollupAddresses: deployedAddresses,
 		},
