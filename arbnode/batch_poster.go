@@ -83,7 +83,7 @@ type BatchPosterConfig struct {
 	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	L1Wallet                           genericconf.WalletConfig    `koanf:"l1-wallet"`
+	L1Wallet                           genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 
 	gasRefunder common.Address
 }
@@ -116,7 +116,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
-	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
+	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
