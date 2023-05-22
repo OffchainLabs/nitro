@@ -316,17 +316,17 @@ func mainImpl() int {
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
 
-	l1Wallet.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
-	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	nodeConfig.Node.Staker.L1Wallet.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	nodeConfig.Node.Staker.L1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
-	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	nodeConfig.Node.BatchPoster.L1Wallet.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	nodeConfig.Node.BatchPoster.L1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
-	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.L2.ChainName)
+	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
 	if nodeConfig.Node.Staker.L1Wallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.L1Wallet == defaultBatchPosterL1WalletConfig {
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
