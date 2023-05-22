@@ -23,10 +23,8 @@ import (
 	"time"
 
 	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/parsers/json"
-	"github.com/knadh/koanf/providers/rawbytes"
-	"github.com/offchainlabs/nitro/cmd/util"
 
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -51,6 +49,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
@@ -311,10 +310,20 @@ func mainImpl() int {
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning) || nodeConfig.Node.BatchPoster.Enable
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract || nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower")
-	if *l1Wallet != genericconf.WalletConfigDefault {
-		if nodeConfig.Node.Staker.L1Wallet != genericconf.WalletConfigDefault || nodeConfig.Node.BatchPoster.L1Wallet != genericconf.WalletConfigDefault {
-			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
-		}
+
+	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	defaultL1WalletConfig := conf.DefaultL1WalletConfig
+	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+
+	nodeConfig.Node.Staker.L1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	defaultValidatorL1WalletConfig := staker.DefaultValidatorL1WalletConfig
+	defaultValidatorL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+
+	nodeConfig.Node.BatchPoster.L1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
+	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
+
+	if nodeConfig.Node.Staker.L1Wallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.L1Wallet == defaultBatchPosterL1WalletConfig {
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
 			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
@@ -325,6 +334,9 @@ func mainImpl() int {
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
+		if *l1Wallet != defaultL1WalletConfig {
+			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
+		}
 		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
@@ -694,7 +706,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, nil, err
 	}
 
-	chainFound := false
 	l2ChainId := k.Int64("l2.chain-id")
 	l2ChainName := k.String("l2.chain-name")
 	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
@@ -704,7 +715,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
 	l2ChainInfoJson := k.String("l2.chain-info-json")
-	chainFound, parentID, err := applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	chainFound, err := applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -749,7 +760,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, nil, err
 	}
 
-	nodeConfig.L1.ChainID = parentID
 	// Don't pass around wallet contents with normal configuration
 	l1Wallet := nodeConfig.L1.Wallet
 	l2DevWallet := nodeConfig.L2.DevWallet
@@ -764,7 +774,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, uint64, error) {
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
 	combinedL2ChainInfoFiles := l2ChainInfoFiles
 	if l2ChainInfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
@@ -775,20 +785,32 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
-		return false, 0, err
+		return false, err
 	}
-	if chainInfo.ChainParameters != nil {
-		err = k.Load(rawbytes.Provider(*chainInfo.ChainParameters), json.Parser())
-		if err != nil {
-			return false, 0, err
-		}
-		return true, chainInfo.ParentChainId, nil
+	chainDefaults := map[string]interface{}{
+		"persistent.chain": chainInfo.ChainName,
+		"l2.chain-id":      chainInfo.ChainId,
+		"l1.chain-id":      chainInfo.ParentChainId,
 	}
-	if chainId != 0 {
-		return false, 0, fmt.Errorf("missing chain parameters for L2 chain ID %v", chainId)
-	} else {
-		return false, 0, fmt.Errorf("missing chain parameters for L2 chain name %v", chainName)
+	if chainInfo.SequencerUrl != "" {
+		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl
 	}
+	if chainInfo.FeedUrl != "" {
+		chainDefaults["node.feed.input.url"] = chainInfo.FeedUrl
+	}
+	if chainInfo.DasIndexUrl != "" {
+		chainDefaults["node.data-availability.enable"] = true
+		chainDefaults["node.data-availability.rest-aggregator.enable"] = true
+		chainDefaults["node.data-availability.rest-aggregator.online-url-list"] = chainInfo.DasIndexUrl
+	}
+	if !chainInfo.HasGenesisState {
+		chainDefaults["init.empty"] = true
+	}
+	err = k.Load(confmap.Provider(chainDefaults, "."), nil)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error

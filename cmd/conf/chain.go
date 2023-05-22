@@ -27,13 +27,21 @@ var L1ConnectionConfigDefault = rpcclient.ClientConfig{
 var L1ConfigDefault = L1Config{
 	ChainID:    0,
 	Connection: L1ConnectionConfigDefault,
-	Wallet:     genericconf.WalletConfigDefault,
+	Wallet:     DefaultL1WalletConfig,
+}
+
+var DefaultL1WalletConfig = genericconf.WalletConfig{
+	Pathname:      "wallet",
+	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
+	Account:       genericconf.WalletConfigDefault.Account,
+	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	rpcclient.RPCClientAddOptions(prefix+".connection", f, &L1ConfigDefault.Connection)
-	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet")
+	genericconf.WalletConfigAddOptions(prefix+".wallet", f, L1ConfigDefault.Wallet.Pathname)
 }
 
 func (c *L1Config) ResolveDirectoryNames(chain string) {

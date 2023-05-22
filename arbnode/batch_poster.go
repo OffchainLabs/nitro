@@ -116,7 +116,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
-	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, "batch-poster-wallet")
+	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -132,7 +132,15 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
-	L1Wallet:                           genericconf.WalletConfigDefault,
+	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
+}
+
+var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
+	Pathname:      "batch-poster-wallet",
+	PasswordImpl:  genericconf.WalletConfigDefault.PasswordImpl,
+	PrivateKey:    genericconf.WalletConfigDefault.PrivateKey,
+	Account:       genericconf.WalletConfigDefault.Account,
+	OnlyCreateKey: genericconf.WalletConfigDefault.OnlyCreateKey,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -147,6 +155,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:       "",
 	ExtraBatchGas:            10_000,
 	DataPoster:               dataposter.TestDataPosterConfig,
+	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {

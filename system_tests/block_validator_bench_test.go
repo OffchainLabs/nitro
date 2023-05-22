@@ -9,10 +9,8 @@ package arbtest
 
 import (
 	"testing"
-
-	"github.com/offchainlabs/nitro/das"
 )
 
 func TestBlockValidatorBenchmark(t *testing.T) {
-	testBlockValidatorSimple(t, das.OnchainDataAvailabilityString, true)
+	testBlockValidatorSimple(t, "onchain", 1, depleteGas, true)
 }
