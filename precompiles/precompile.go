@@ -556,7 +556,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
-	ArbWasm.arbosVersion = 11
+	ArbWasm.arbosVersion = 10
 	programs.ProgramNotCompiledError = ArbWasmImpl.ProgramNotCompiledError
 	programs.ProgramOutOfDateError = ArbWasmImpl.ProgramOutOfDateError
 	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError

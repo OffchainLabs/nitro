@@ -287,10 +287,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
 			)))
-		case 10:
+
 			// TODO: move to the first version that introduces stylus
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
-
+		case 10:
 			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
 				return fmt.Errorf(
