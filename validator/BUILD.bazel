@@ -29,7 +29,6 @@ go_library(
 go_test(
     name = "validator_test",
     srcs = [
-        "challenges_test.go",
         "edge_tracker_test.go",
         "validator_example_test.go",
         "validator_test.go",
@@ -43,16 +42,12 @@ go_test(
         "//testing/mocks",
         "//testing/setup:setup_lib",
         "//util",
-        "@com_github_ethereum_go_ethereum//:go-ethereum",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//core/types",
-        "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_ethereum_go_ethereum//ethclient",
         "@com_github_offchainlabs_nitro//util/headerreader",
         "@com_github_sirupsen_logrus//:logrus",
         "@com_github_sirupsen_logrus//hooks/test",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
