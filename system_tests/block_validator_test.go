@@ -67,7 +67,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 				contractCode = []byte{byte(vm.PUSH0)}
 				contractCode = append(contractCode, byte(vm.PUSH0))
 				contractCode = append(contractCode, byte(vm.PUSH1))
-				contractCode = append(contractCode, 42) // the prelude length
+				contractCode = append(contractCode, 8) // the prelude length
 				contractCode = append(contractCode, byte(vm.PUSH0))
 				contractCode = append(contractCode, byte(vm.CODECOPY))
 				contractCode = append(contractCode, byte(vm.PUSH0))
