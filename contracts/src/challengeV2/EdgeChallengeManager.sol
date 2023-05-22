@@ -9,6 +9,7 @@ import "../libraries/Constants.sol";
 import "../state/Machine.sol";
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 ///@notice A wasm module root and proof to show that it's valid
 struct WasmModuleData {
@@ -36,36 +37,27 @@ interface IEdgeChallengeManager {
     /// @param layerZeroBlockEdgeHeight     The end height of layer zero edges of type Block
     /// @param layerZeroBigStepEdgeHeight   The end height of layer zero edges of type BigStep
     /// @param layerZeroSmallStepEdgeHeight The end height of layer zero edges of type SmallStep
+    /// @param _stakeToken                  The token that stake will be provided in when creating zero layer block edges
+    /// @param _stakeAmount                 The amount of stake (in units of stake token) required to create a block edge
+    /// @param _excessStakeReceiver         The address that excess stake will be sent to when 2nd+ block edge is created
     function initialize(
         IAssertionChain _assertionChain,
         uint256 _challengePeriodBlocks,
         IOneStepProofEntry _oneStepProofEntry,
         uint256 layerZeroBlockEdgeHeight,
         uint256 layerZeroBigStepEdgeHeight,
-        uint256 layerZeroSmallStepEdgeHeight
+        uint256 layerZeroSmallStepEdgeHeight,
+        IERC20 _stakeToken,
+        uint256 _stakeAmount,
+        address _excessStakeReceiver
     ) external;
 
+    /// @notice The one step proof resolver used to decide between rival SmallStep edges of length 1
     function oneStepProofEntry() external view returns (IOneStepProofEntry);
 
     /// @notice Performs necessary checks and creates a new layer zero edge
-    /// @param args             Edge data
-    /// @param prefixProof      Proof that the start history root commits to a prefix of the states that
-    ///                         end history root commits to
-    /// @param proof            Additional proof data
-    ///                         For Block type edges this is the abi encoding of:
-    ///                         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
-    ///                         ExecutionStateData: before state - the execution state (and proof) for the predecessor state
-    ///                         ExecutionStateData: after state - the execution state (and proof) for the claimed state
-    ///                         For BigStep and SmallStep edges this is the abi encoding of:
-    ///                         bytes32: Start state - first state the edge commits to
-    ///                         bytes32: End state - last state the edge commits to
-    ///                         bytes32[]: Claim start inclusion proof - proof to show the start state is the first state in the claim edge
-    ///                         bytes32[]: Claim end inclusion proof - proof to show the end state is the last state in the claim edge
-    ///                         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
-    function createLayerZeroEdge(CreateEdgeArgs memory args, bytes calldata prefixProof, bytes calldata proof)
-        external
-        payable
-        returns (bytes32);
+    /// @param args             Edge creation args
+    function createLayerZeroEdge(CreateEdgeArgs calldata args) external returns (bytes32);
 
     /// @notice Bisect and edge. This creates two child edges:
     ///         lowerChild: has the same start root and height as this edge, but a different end root and height
@@ -118,6 +110,10 @@ interface IEdgeChallengeManager {
         bytes32[] calldata beforeHistoryInclusionProof,
         bytes32[] calldata afterHistoryInclusionProof
     ) external;
+
+    /// @notice When zero layer block edges are created a stake is also provided
+    ///         The stake on this edge can be refunded if the edge is confirme
+    function refundStake(bytes32 edgeId) external;
 
     /// @notice Zero layer edges have to be a fixed height.
     ///         This function returns the end height for a given edge type
@@ -199,6 +195,7 @@ interface IEdgeChallengeManager {
 contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     using EdgeChallengeManagerLib for EdgeStore;
     using ChallengeEdgeLib for ChallengeEdge;
+    using SafeERC20 for IERC20;
 
     /// @notice A new edge has been added to the challenge manager
     /// @param edgeId       The id of the newly added edge
@@ -250,20 +247,41 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @param mutualId The mutual id of the confirmed edge
     event EdgeConfirmedByOneStepProof(bytes32 indexed edgeId, bytes32 indexed mutualId);
 
+    /// @notice A stake has been refunded for a confirmed layer zero block edge
+    /// @param edgeId       The edge that was confirmed
+    /// @param mutualId     The mutual id of the confirmed edge
+    /// @param stakeToken   The ERC20 being refunded
+    /// @param stakeAmount  The amount of tokens being refunded
+    event EdgeRefunded(bytes32 indexed edgeId, bytes32 indexed mutualId, address stakeToken, uint256 stakeAmount);
+
     /// @dev Store for all edges and rival data
     ///      All edges, including edges from different challenges, are stored together in the same store
     ///      Since edge ids include the origin id, which is unique for each challenge, we can be sure that
     ///      edges from different challenges cannot have the same id, and so can be stored in the same store
     EdgeStore internal store;
 
-    /// @notice The cumulative amount of time an edge must remain unrivaled
-    ///         before it can be confirmed
-    uint256 public challengePeriodBlock;
+    /// @notice When creating a zero layer block edge a stake must be supplied. However since we know that only
+    ///         one edge in a group of rivals can ever be confirmed, we only need to keep one stake in this contract
+    ///         to later refund for that edge. Other stakes can immediately be sent to an excess stake receiver.
+    ///         This excess stake receiver can then choose to refund the gas of participants who aided in the confirmation
+    ///         of the winning edge
+    address public excessStakeReceiver;
+
+    /// @notice The token to supply stake in
+    IERC20 public stakeToken;
+
+    /// @notice The amount of stake token to be supplied when creating a zero layer block edge
+    uint256 public stakeAmount;
+
+    /// @notice The number of blocks accumulated on an edge before it can be confirmed by time
+    uint256 public challengePeriodBlocks;
 
     /// @notice The assertion chain about which challenges are created
     IAssertionChain public assertionChain;
-    /// @notice The one step proof resolver used to decide between rival SmallStep edges of length 1
+
+    /// @inheritdoc IEdgeChallengeManager
     IOneStepProofEntry public override oneStepProofEntry;
+
     /// @notice The end height of layer zero Block edges
     uint256 public LAYERZERO_BLOCKEDGE_HEIGHT;
     /// @notice The end height of layer zero BigStep edges
@@ -282,12 +300,23 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         IOneStepProofEntry _oneStepProofEntry,
         uint256 layerZeroBlockEdgeHeight,
         uint256 layerZeroBigStepEdgeHeight,
-        uint256 layerZeroSmallStepEdgeHeight
+        uint256 layerZeroSmallStepEdgeHeight,
+        IERC20 _stakeToken,
+        uint256 _stakeAmount,
+        address _excessStakeReceiver
     ) public initializer {
         require(address(assertionChain) == address(0), "ALREADY_INIT");
+        require(address(_assertionChain) != address(0), "Empty assertion chain");
         assertionChain = _assertionChain;
-        challengePeriodBlock = _challengePeriodBlocks;
+        require(address(_oneStepProofEntry) != address(0), "Empty one step proof");
         oneStepProofEntry = _oneStepProofEntry;
+        require(_challengePeriodBlocks != 0, "Empty challenge period");
+        challengePeriodBlocks = _challengePeriodBlocks;
+
+        stakeToken = _stakeToken;
+        stakeAmount = _stakeAmount;
+        require(_excessStakeReceiver != address(0), "Empty excess stake receiver");
+        excessStakeReceiver = _excessStakeReceiver;
 
         require(EdgeChallengeManagerLib.isPowerOfTwo(layerZeroBlockEdgeHeight), "Block height not power of 2");
         LAYERZERO_BLOCKEDGE_HEIGHT = layerZeroBlockEdgeHeight;
@@ -302,17 +331,17 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /////////////////////////////
 
     /// @inheritdoc IEdgeChallengeManager
-    function createLayerZeroEdge(CreateEdgeArgs calldata args, bytes calldata prefixProof, bytes calldata proof)
-        external
-        payable
-        returns (bytes32)
-    {
+    function createLayerZeroEdge(CreateEdgeArgs calldata args) external returns (bytes32) {
+        EdgeAddedData memory edgeAdded;
+        uint256 expectedEndHeight = getLayerZeroEndHeight(args.edgeType);
         AssertionReferenceData memory ard;
         if (args.edgeType == EdgeType.Block) {
+            // for block type edges we need to provide some extra assertion data context
+
             bytes32 predecessorId = assertionChain.getPredecessorId(args.claimId);
-            require(proof.length != 0, "Block edge specific proof is empty");
+            require(args.proof.length != 0, "Block edge specific proof is empty");
             (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
-                abi.decode(proof, (bytes32[], ExecutionStateData, ExecutionStateData));
+                abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
             ard = AssertionReferenceData(
                 args.claimId,
                 predecessorId,
@@ -323,10 +352,27 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
                 ),
                 assertionChain.proveExecutionState(args.claimId, claimStateData.executionState, claimStateData.proof)
             );
+
+            edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
+
+            IERC20 edgeStakeToken = stakeToken;
+            uint256 edgeStakeAmount = stakeAmount;
+            // when a zero layer block edge is created it must include a stake. Each time a zero layer block
+            // edge is created it forces the honest participants to do some work, so we want to discentivise
+            // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
+            // participant. This can be arranged out of bound by the excess stake receiver.
+            // the assertion chain can disable challenge staking by setting a zero stake token or amount
+            if (address(edgeStakeToken) != address(0) && stakeAmount != 0) {
+                // since only one edge in a group of rivals can ever be confirmed, we know that we
+                // will never need to refund more than one edge. Therefore we can immediately send
+                // all stakes provided after the first one to an excess stake receiver.
+                address receiver = edgeAdded.hasRival ? excessStakeReceiver : address(this);
+                edgeStakeToken.safeTransferFrom(msg.sender, receiver, stakeAmount);
+            }
+        } else {
+            edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
         }
-        uint256 expectedEndHeight = getLayerZeroEndHeight(args.edgeType);
-        EdgeAddedData memory edgeAdded =
-            store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, prefixProof, proof);
+
         emit EdgeAdded(
             edgeAdded.edgeId,
             edgeAdded.mutualId,
@@ -399,25 +445,26 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         // if there are no ancestors provided, then the top edge is the edge we're confirming itself
         bytes32 lastEdgeId = ancestorEdges.length > 0 ? ancestorEdges[ancestorEdges.length - 1] : edgeId;
         ChallengeEdge storage topEdge = store.get(lastEdgeId);
-        uint256 assertionBlocks = 0;
-        // if the top edge is a layer zero Block edge then it contains a link to the assertion in
-        // the claim id
-        if (topEdge.eType == EdgeType.Block && topEdge.claimId != 0) {
-            // if the assertion being claiming against was the first child of its predecessor
-            // then we are able to count the time between the first and second child as time towards
-            // the this edge
-            bool isFirstChild = assertionChain.isFirstChild(topEdge.claimId);
-            if (isFirstChild) {
-                bytes32 predecessorId = assertionChain.getPredecessorId(topEdge.claimId);
-                assertionBlocks = assertionChain.getSecondChildCreationBlock(predecessorId)
-                    - assertionChain.getFirstChildCreationBlock(predecessorId);
-            } else {
-                // if the assertion being claimed is not the first child, then it had siblings from the moment
-                // it was created, so it has no time unrivaled
-            }
+
+        require(topEdge.eType == EdgeType.Block && topEdge.claimId != 0, "Layer zero block edge not supplied");
+
+        uint256 assertionBlocks;
+        // if the assertion being claiming against was the first child of its predecessor
+        // then we are able to count the time between the first and second child as time towards
+        // the this edge
+        bool isFirstChild = assertionChain.isFirstChild(topEdge.claimId);
+        if (isFirstChild) {
+            bytes32 predecessorId = assertionChain.getPredecessorId(topEdge.claimId);
+            assertionBlocks = assertionChain.getSecondChildCreationBlock(predecessorId)
+                - assertionChain.getFirstChildCreationBlock(predecessorId);
+        } else {
+            // if the assertion being claimed is not the first child, then it had siblings from the moment
+            // it was created, so it has no time unrivaled
+            assertionBlocks = 0;
         }
+
         uint256 totalTimeUnrivaled =
-            store.confirmEdgeByTime(edgeId, ancestorEdges, assertionBlocks, challengePeriodBlock);
+            store.confirmEdgeByTime(edgeId, ancestorEdges, assertionBlocks, challengePeriodBlocks);
 
         emit EdgeConfirmedByTime(edgeId, store.edges[edgeId].mutualId(), totalTimeUnrivaled);
     }
@@ -444,6 +491,22 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         );
 
         emit EdgeConfirmedByOneStepProof(edgeId, store.edges[edgeId].mutualId());
+    }
+
+    /// @inheritdoc IEdgeChallengeManager
+    function refundStake(bytes32 edgeId) public {
+        ChallengeEdge storage edge = store.get(edgeId);
+        // setting refunded also do checks that the edge cannot be refunded twice
+        edge.setRefunded();
+
+        IERC20 st = stakeToken;
+        uint256 sa = stakeAmount;
+        // no need to refund with the token or amount where zero'd out
+        if (address(st) != address(0) && sa != 0) {
+            st.safeTransfer(edge.staker, sa);
+        }
+
+        emit EdgeRefunded(edgeId, store.edges[edgeId].mutualId(), address(st), sa);
     }
 
     ///////////////////////

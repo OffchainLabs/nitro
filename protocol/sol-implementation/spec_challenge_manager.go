@@ -327,7 +327,7 @@ func (cm *SpecChallengeManager) Address() common.Address {
 func (cm *SpecChallengeManager) ChallengePeriodBlocks(
 	ctx context.Context,
 ) (uint64, error) {
-	res, err := cm.caller.ChallengePeriodBlock(&bind.CallOpts{Context: ctx})
+	res, err := cm.caller.ChallengePeriodBlocks(&bind.CallOpts{Context: ctx})
 	if err != nil {
 		return 0, err
 	}
@@ -593,9 +593,9 @@ func (cm *SpecChallengeManager) AddBlockChallengeLevelZeroEdge(
 				EndHistoryRoot: endCommit.Merkle,
 				EndHeight:      big.NewInt(int64(endCommit.Height)),
 				ClaimId:        assertionId,
+				PrefixProof:    startEndPrefixProof,
+				Proof:          blockEdgeProof,
 			},
-			startEndPrefixProof,
-			blockEdgeProof,
 		)
 	})
 	if err != nil {
@@ -683,9 +683,9 @@ func (cm *SpecChallengeManager) AddSubChallengeLevelZeroEdge(
 				EndHistoryRoot: endCommit.Merkle,
 				EndHeight:      big.NewInt(int64(endCommit.Height)),
 				ClaimId:        challengedEdge.Id(),
+				PrefixProof:    startEndPrefixProof,
+				Proof:          subchallengeEdgeProof,
 			},
-			startEndPrefixProof,
-			subchallengeEdgeProof,
 		)
 	})
 	if err != nil {

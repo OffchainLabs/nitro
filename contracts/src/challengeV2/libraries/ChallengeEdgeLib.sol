@@ -67,6 +67,9 @@ struct ChallengeEdge {
     EdgeStatus status;
     /// @notice The type of edge Block, BigStep or SmallStep that this edge is.
     EdgeType eType;
+    /// @notice Set to true when the staker has been refunded. Can only be set to true if the status is Confirmed
+    ///         and the staker is non zero.
+    bool refunded;
 }
 
 library ChallengeEdgeLib {
@@ -114,7 +117,8 @@ library ChallengeEdgeLib {
             claimId: claimId,
             staker: staker,
             status: EdgeStatus.Pending,
-            eType: eType
+            eType: eType,
+            refunded: false
         });
     }
 
@@ -142,7 +146,8 @@ library ChallengeEdgeLib {
             claimId: 0,
             staker: address(0),
             status: EdgeStatus.Pending,
-            eType: eType
+            eType: eType,
+            refunded: false
         });
     }
 
@@ -228,5 +233,21 @@ library ChallengeEdgeLib {
     function setConfirmed(ChallengeEdge storage edge) internal {
         require(edge.status == EdgeStatus.Pending, "Only Pending edges can be Confirmed");
         edge.status = EdgeStatus.Confirmed;
+    }
+
+    /// @notice Is the edge a layer zero edge.
+    function isLayerZero(ChallengeEdge storage edge) internal view returns (bool) {
+        return edge.claimId != 0 && edge.staker != address(0);
+    }
+
+    /// @notice Set the refunded flag of an edge
+    /// @dev    Checks internally that edge is confirmed, Block type, layer zero edge and hasnt been refunded already
+    function setRefunded(ChallengeEdge storage edge) internal {
+        require(edge.status == EdgeStatus.Confirmed, "Status not Confirmed");
+        require(edge.eType == EdgeType.Block, "Not Block edge type");
+        require(isLayerZero(edge), "Not layer zero edge");
+        require(edge.refunded == false, "Already refunded");
+
+        edge.refunded = true;
     }
 }

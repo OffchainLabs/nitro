@@ -20,6 +20,21 @@ struct CreateEdgeArgs {
     uint256 endHeight;
     /// @notice The edge, or assertion, that is being claimed correct by the newly created edge.
     bytes32 claimId;
+    /// @notice Proof that the start history root commits to a prefix of the states that
+    ///         end history root commits to
+    bytes prefixProof;
+    /// @notice Edge type specific data
+    ///         For Block type edges this is the abi encoding of:
+    ///         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
+    ///         ExecutionStateData: the before state of the edge
+    ///         ExecutionStateData: the after state of the edge
+    ///         For BigStep and SmallStep edges this is the abi encoding of:
+    ///         bytes32: Start state - first state the edge commits to
+    ///         bytes32: End state - last state the edge commits to
+    ///         bytes32[]: Claim start inclusion proof - proof to show the start state is the first state in the claim edge
+    ///         bytes32[]: Claim end inclusion proof - proof to show the end state is the last state in the claim edge
+    ///         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
+    bytes proof;
 }
 
 /// @notice Data parsed raw proof data
@@ -34,12 +49,12 @@ struct ProofData {
 
 /// @notice Stores all edges and their rival status
 struct EdgeStore {
-    /// @dev A mapping of edge id to edges. Edges are never deleted, only created, and potentially confirmed.
+    /// @notice A mapping of edge id to edges. Edges are never deleted, only created, and potentially confirmed.
     mapping(bytes32 => ChallengeEdge) edges;
-    /// @dev A mapping of mutualId to edge id. Rivals share the same mutual id, and here we
-    ///      store the edge id of the second edge that was created with the same mutual id - the first rival
-    ///      When only one edge exists for a specific mutual id then a special magic string hash is stored instead
-    ///      of the first rival id, to signify that a single edge does exist with this mutual id
+    /// @notice A mapping of mutualId to edge id. Rivals share the same mutual id, and here we
+    ///         store the edge id of the second edge that was created with the same mutual id - the first rival
+    ///         When only one edge exists for a specific mutual id then a special magic string hash is stored instead
+    ///         of the first rival id, to signify that a single edge does exist with this mutual id
     mapping(bytes32 => bytes32) firstRivals;
 }
 
@@ -155,18 +170,18 @@ library EdgeChallengeManagerLib {
     /// @notice Conduct checks that are specific to the edge type.
     /// @dev    Since different edge types also require different proofs, we also include the specific
     ///         proof parsing logic and return the common parts for later use.
-    /// @param store            The store containing existing edges
-    /// @param args             The edge creation args
-    /// @param ard              If the edge being added is of Block type then additional assertion data is
-    ///                         needed to check whether the edge can be added. Empty if edge is not of type block.
-    /// @param proof            Additional proof data to be parsed and used
-    /// @return                 Data parsed from the proof, or fetched from elsewhere. Also the origin id for the to be created.
-    function layerZeroTypeSpecifcChecks(
+    /// @param store                The store containing current edges
+    /// @param args                 The edge creation args
+    /// @param ard                  Data about the assertion data is is also need to when creating a Block edge type
+    ///                             The created edge must be shown to be consistent with the states in the assertion chain
+    ///                             Empty for non block edge type edges
+    /// @param oneStepProofEntry    The one step proof contract that defines how machine states are hashed
+    /// @return                     Data parsed from the proof, or fetched from elsewhere. Also the origin id for the edge to be created.
+    function layerZeroTypeSpecificChecks(
         EdgeStore storage store,
         CreateEdgeArgs calldata args,
         AssertionReferenceData memory ard,
-        IOneStepProofEntry oneStepProofEntry,
-        bytes calldata proof
+        IOneStepProofEntry oneStepProofEntry
     ) private view returns (ProofData memory, bytes32) {
         if (args.edgeType == EdgeType.Block) {
             // origin id is the assertion which is the root of challenge
@@ -188,8 +203,9 @@ library EdgeChallengeManagerLib {
             require(ard.hasSibling, "Assertion is not in a fork");
 
             // parse the inclusion proof for later use
-            require(proof.length > 0, "Block edge specific proof is empty");
-            (bytes32[] memory inclusionProof,,) = abi.decode(proof, (bytes32[], ExecutionStateData, ExecutionStateData));
+            require(args.proof.length > 0, "Block edge specific proof is empty");
+            (bytes32[] memory inclusionProof,,) =
+                abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
 
             // check the start and end execution states exist, the block hash entry should be non zero
             require(ard.startState.machineStatus != MachineStatus.RUNNING, "Empty start state");
@@ -220,14 +236,14 @@ library EdgeChallengeManagerLib {
             require(args.edgeType == EdgeChallengeManagerLib.nextEdgeType(claimEdge.eType), "Invalid claim edge type");
 
             // parse the proofs
-            require(proof.length > 0, "Edge type specific proof is empty");
+            require(args.proof.length > 0, "Edge type specific proof is empty");
             (
                 bytes32 startState,
                 bytes32 endState,
                 bytes32[] memory claimStartInclusionProof,
                 bytes32[] memory claimEndInclusionProof,
                 bytes32[] memory edgeInclusionProof
-            ) = abi.decode(proof, (bytes32, bytes32, bytes32[], bytes32[], bytes32[]));
+            ) = abi.decode(args.proof, (bytes32, bytes32, bytes32[], bytes32[], bytes32[]));
 
             // if the start and end states are consistent with the claim edge
             // this guarantees that the edge we're creating is a 'continuation' of the claim edge, it is
@@ -268,14 +284,11 @@ library EdgeChallengeManagerLib {
     /// @param proofData            Data extracted from supplied proof
     /// @param args                 The edge creation args
     /// @param expectedEndHeight    Edges have a deterministic end height dependent on their type
-    /// @param prefixProof          A proof that the start history root commits to a prefix of the states committed
-    ///                             to by the end history root
-    function layerZeroCommonChecks(
-        ProofData memory proofData,
-        CreateEdgeArgs calldata args,
-        uint256 expectedEndHeight,
-        bytes calldata prefixProof
-    ) private pure returns (bytes32) {
+    function layerZeroCommonChecks(ProofData memory proofData, CreateEdgeArgs calldata args, uint256 expectedEndHeight)
+        private
+        pure
+        returns (bytes32)
+    {
         // since zero layer edges have a start height of zero, we know that they are a size
         // one tree containing only the start state. We can then compute the history root directly
         bytes32 startHistoryRoot = MerkleTreeLib.root(MerkleTreeLib.appendLeaf(new bytes32[](0), proofData.startState));
@@ -301,8 +314,9 @@ library EdgeChallengeManagerLib {
         // start root must always be a prefix of end root, we ensure that
         // this new edge adheres to this. Future bisections will ensure that this
         // property is conserved
-        require(prefixProof.length > 0, "Prefix proof is empty");
-        (bytes32[] memory preExpansion, bytes32[] memory preProof) = abi.decode(prefixProof, (bytes32[], bytes32[]));
+        require(args.prefixProof.length > 0, "Prefix proof is empty");
+        (bytes32[] memory preExpansion, bytes32[] memory preProof) =
+            abi.decode(args.prefixProof, (bytes32[], bytes32[]));
         MerkleTreeLib.verifyPrefixProof(
             startHistoryRoot, 1, args.endHistoryRoot, args.endHeight + 1, preExpansion, preProof
         );
@@ -311,7 +325,7 @@ library EdgeChallengeManagerLib {
     }
 
     /// @notice Creates a new layer zero edges from edge creation args
-    function toLayerZeroEdge(bytes32 originId, bytes32 startHistoryRoot, CreateEdgeArgs memory args)
+    function toLayerZeroEdge(bytes32 originId, bytes32 startHistoryRoot, CreateEdgeArgs calldata args)
         private
         view
         returns (ChallengeEdge memory)
@@ -322,37 +336,26 @@ library EdgeChallengeManagerLib {
     }
 
     /// @notice Performs necessary checks and creates a new layer zero edge
-    /// @param store            The store containing existing edges
-    /// @param args             Edge data
-    /// @param ard              If the edge being added is of Block type then additional assertion data is required
-    ///                         to check if the edge can be added. Empty if edge is not of type Block.
-    ///                         The supplied assertion data must be related to the assertion that is being claimed
-    ///                         by the supplied edge args
-    /// @param prefixProof      Proof that the start history root commits to a prefix of the states that
-    ///                         end history root commits to
-    /// @param proof            Additional proof data
-    ///                         For Block type edges this is the abi encoding of:
-    ///                         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
-    ///                         For BigStep and SmallStep edges this is the abi encoding of:
-    ///                         bytes32: Start state - first state the edge commits to
-    ///                         bytes32: End state - last state the edge commits to
-    ///                         bytes32[]: Claim start inclusion proof - proof to show the start state is the first state in the claim edge
-    ///                         bytes32[]: Claim end inclusion proof - proof to show the end state is the last state in the claim edge
-    ///                         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
+    /// @param store                The store containing existing edges
+    /// @param args                 Edge data
+    /// @param ard                  If the edge being added is of Block type then additional assertion data is required
+    ///                             to check if the edge can be added. Empty if edge is not of type Block.
+    ///                             The supplied assertion data must be related to the assertion that is being claimed
+    ///                             by the supplied edge args
+    /// @param oneStepProofEntry    The one step proof contract that defines how machine states are hashed
+    /// @param expectedEndHeight    The expected end height of an edge. Layer zero block edges have predefined heights.
     function createLayerZeroEdge(
         EdgeStore storage store,
         CreateEdgeArgs calldata args,
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
-        uint256 expectedEndHeight,
-        bytes calldata prefixProof,
-        bytes calldata proof
+        uint256 expectedEndHeight
     ) internal returns (EdgeAddedData memory) {
         // each edge type requires some specific checks
         (ProofData memory proofData, bytes32 originId) =
-            layerZeroTypeSpecifcChecks(store, args, ard, oneStepProofEntry, proof);
+            layerZeroTypeSpecificChecks(store, args, ard, oneStepProofEntry);
         // all edge types share some common checks
-        (bytes32 startHistoryRoot) = layerZeroCommonChecks(proofData, args, expectedEndHeight, prefixProof);
+        (bytes32 startHistoryRoot) = layerZeroCommonChecks(proofData, args, expectedEndHeight);
         // we only wrap the struct creation in a function as doing so with exceeds the stack limit
         ChallengeEdge memory ce = toLayerZeroEdge(originId, startHistoryRoot, args);
         return add(store, ce);

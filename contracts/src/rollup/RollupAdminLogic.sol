@@ -82,7 +82,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
             0, // prev assertion
             uint64(block.number), // deadline block (not challengeable)
             genesisHash,
-            true // initial assertion is first child
+            true
         );
     }
 

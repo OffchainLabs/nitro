@@ -103,7 +103,7 @@ contract RollupTest is Test {
             wasmModuleRoot: WASM_MODULE_ROOT,
             loserStakeEscrow: address(0),
             genesisBlockNum: 0,
-            miniStakeValue: 1,
+            miniStakeValue: 0,
             layerZeroBlockEdgeHeight: 2 ** 5,
             layerZeroBigStepEdgeHeight: 2 ** 5,
             layerZeroSmallStepEdgeHeight: 2 ** 5
@@ -433,24 +433,24 @@ contract RollupTest is Test {
 
         bytes32 root = MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states, 0, LAYERZERO_BLOCKEDGE_HEIGHT + 1));
 
-        e1Id = challengeManager.createLayerZeroEdge{value: 1}(
+        e1Id = challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
                 edgeType: EdgeType.Block,
                 endHistoryRoot: root,
                 endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
-                claimId: userRollup.getAssertionId(2)
-            }),
-            abi.encode(
-                ProofUtils.expansionFromLeaves(states, 0, 1),
-                ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-            ),
-            abi.encode(
-                ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
-                ExecutionStateData(beforeState, abi.encode(bytes32(0), bytes32(0), bytes32(0))),
-                ExecutionStateData(
-                    afterState1, abi.encode(genesisHash, userRollup.bridge().sequencerInboxAccs(0), WASM_MODULE_ROOT)
-                )
-            )
+                claimId: userRollup.getAssertionId(2),
+                prefixProof: abi.encode(
+                    ProofUtils.expansionFromLeaves(states, 0, 1),
+                    ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
+                    ),
+                proof: abi.encode(
+                    ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
+                    ExecutionStateData(beforeState, abi.encode(bytes32(0), bytes32(0), bytes32(0))),
+                    ExecutionStateData(
+                        afterState1, abi.encode(genesisHash, userRollup.bridge().sequencerInboxAccs(0), WASM_MODULE_ROOT)
+                    )
+                    )
+            })
         );
     }
 
@@ -475,24 +475,24 @@ contract RollupTest is Test {
 
         require(genesisInboxCount == 1, "A");
         require(newInboxCount == 2, "B");
-        bytes32 e2Id = challengeManager.createLayerZeroEdge{value: 1}(
+        bytes32 e2Id = challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
                 edgeType: EdgeType.Block,
                 endHistoryRoot: root,
                 endHeight: LAYERZERO_BLOCKEDGE_HEIGHT,
-                claimId: userRollup.getAssertionId(3)
-            }),
-            abi.encode(
-                ProofUtils.expansionFromLeaves(states, 0, 1),
-                ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-            ),
-            abi.encode(
-                ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
-                ExecutionStateData(beforeState, abi.encode(bytes32(0), bytes32(0), bytes32(0))),
-                ExecutionStateData(
-                    afterState2, abi.encode(genesisHash, userRollup.bridge().sequencerInboxAccs(1), WASM_MODULE_ROOT)
-                )
-            )
+                claimId: userRollup.getAssertionId(3),
+                prefixProof: abi.encode(
+                    ProofUtils.expansionFromLeaves(states, 0, 1),
+                    ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
+                    ),
+                proof: abi.encode(
+                    ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
+                    ExecutionStateData(beforeState, abi.encode(bytes32(0), bytes32(0), bytes32(0))),
+                    ExecutionStateData(
+                        afterState2, abi.encode(genesisHash, userRollup.bridge().sequencerInboxAccs(1), WASM_MODULE_ROOT)
+                    )
+                    )
+            })
         );
 
         return (e1Id, e2Id);

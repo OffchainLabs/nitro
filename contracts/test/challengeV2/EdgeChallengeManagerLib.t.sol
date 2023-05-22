@@ -63,16 +63,19 @@ contract EdgeChallengeManagerLibAccess {
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
-        bytes calldata prefixProof,
-        bytes calldata proof
+        uint256 challengePeriodBlocks,
+        uint256 stakeAmount
     ) public returns (EdgeAddedData memory) {
-        return store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, prefixProof, proof);
+        return store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight);
     }
 }
 
 contract EdgeChallengeManagerLibTest is Test {
     using ChallengeEdgeLib for ChallengeEdge;
     using EdgeChallengeManagerLib for EdgeStore;
+
+    uint256 challengePeriodBlocks = 7;
+    uint256 stakeAmount = 13;
 
     EdgeStore store;
     Random rand = new Random();
@@ -1507,13 +1510,15 @@ contract EdgeChallengeManagerLibTest is Test {
                 edgeType: EdgeType.Block,
                 endHistoryRoot: endRoot,
                 endHeight: mode == 138 ? 2 ** 4 : expectedEndHeight,
-                claimId: claimId
+                claimId: claimId,
+                prefixProof: abi.encode(roots.startExp, roots.prefixProof),
+                proof: proof
             }),
             ard,
             entry,
             expectedEndHeight,
-            abi.encode(roots.startExp, roots.prefixProof),
-            proof
+            challengePeriodBlocks,
+            stakeAmount
         );
     }
 
@@ -1630,13 +1635,15 @@ contract EdgeChallengeManagerLibTest is Test {
                 edgeType: mode == 163 ? EdgeType.BigStep : EdgeType.SmallStep,
                 endHistoryRoot: MerkleTreeLib.root(roots.endExp),
                 endHeight: expectedEndHeight,
-                claimId: claimId
+                claimId: claimId,
+                prefixProof: abi.encode(roots.startExp, roots.prefixProof),
+                proof: proof
             }),
             emptyArd,
             a,
             expectedEndHeight,
-            abi.encode(roots.startExp, roots.prefixProof),
-            proof
+            challengePeriodBlocks,
+            stakeAmount
         );
     }
 

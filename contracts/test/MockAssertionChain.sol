@@ -30,6 +30,10 @@ contract MockAssertionChain is IAssertionChain {
         return assertions[assertionId].height != 0;
     }
 
+    function stakeToken() public view returns(address) {
+        return address(0);
+    }
+
     function getPredecessorId(bytes32 assertionId) public view returns (bytes32) {
         require(assertionExists(assertionId), "Assertion does not exist");
         return assertions[assertionId].predecessorId;

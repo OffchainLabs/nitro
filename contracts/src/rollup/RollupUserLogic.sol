@@ -73,7 +73,7 @@ abstract contract AbsRollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupU
              * If the first unresolved assertion is a child of the latest confirmed assertion, to prove it can be rejected, we show:
              * a) Its deadline has expired
              * b) *Some* staker is staked on a sibling
-             * 
+             *
              * The following three checks are sufficient to prove b:
              */
 
