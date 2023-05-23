@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -275,23 +276,18 @@ func NewStatelessBlockValidator(
 	blockchainDb ethdb.Database,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
-	config *BlockValidatorConfig,
+	config func() *BlockValidatorConfig,
+	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
 		return nil, err
 	}
-	var jwt *common.Hash
-	if config.JWTSecret != "" {
-		jwt, err = signature.LoadSigningKey(config.JWTSecret)
-		if err != nil {
-			return nil, err
-		}
-	}
-	valClient := server_api.NewValidationClient(config.URL, jwt)
-	execClient := server_api.NewExecutionClient(config.URL, jwt)
+	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
+	valClient := server_api.NewValidationClient(valConfFetcher, stack)
+	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
-		config:             config,
+		config:             config(),
 		execSpawner:        execClient,
 		validationSpawners: []validator.ValidationSpawner{valClient},
 		inboxReader:        inboxReader,

@@ -315,7 +315,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config              `koanf:"rpc"`
 	Sequencer            execution.SequencerConfig    `koanf:"sequencer" reload:"hot"`
-	L1Reader             headerreader.Config          `koanf:"l1-reader" reload:"hot"`
+	L1Reader             headerreader.Config          `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader          InboxReaderConfig            `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer     DelayedSequencerConfig       `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster          BatchPosterConfig            `koanf:"batch-poster" reload:"hot"`
@@ -385,7 +385,7 @@ func (c *Config) ValidatorRequired() bool {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	execution.SequencerConfigAddOptions(prefix+".sequencer", f)
-	headerreader.AddOptions(prefix+".l1-reader", f)
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -450,6 +450,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.Forwarder = execution.DefaultTestForwarderConfig
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
@@ -466,6 +467,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -761,7 +763,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.URL != "" {
+	if config.BlockValidator.ValidationServer.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
@@ -770,7 +772,8 @@ func createNodeImpl(
 			chainDb,
 			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
-			&configFetcher.Get().BlockValidator,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			stack,
 		)
 	} else {
 		err = errors.New("no validator url specified")

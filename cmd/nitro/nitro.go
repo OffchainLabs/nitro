@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"math/big"
 	"net/http"
 	_ "net/http/pprof" // #nosec G108
@@ -23,9 +22,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/offchainlabs/nitro/cmd/util"
-
 	"github.com/knadh/koanf"
+
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -45,18 +43,19 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -228,7 +227,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
+	nodeConfig, l1Wallet, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
@@ -269,10 +268,6 @@ func mainImpl() int {
 			log.Info("created jwt file", "fileName", fileName)
 		}
 		stackConf.JWTSecret = fileName
-	}
-
-	if nodeConfig.Node.BlockValidator.JWTSecret == "self" {
-		nodeConfig.Node.BlockValidator.JWTSecret = stackConf.JWTSecret
 	}
 
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
@@ -333,57 +328,44 @@ func mainImpl() int {
 			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
-				log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
 		if *l1Wallet != defaultL1WalletConfig {
-			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
+			log.Crit("--parent-chain.wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
 		}
 		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
-				log.Crit("error opening Batch poster L1 wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
+				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
 			}
 		}
 		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
-				log.Crit("error opening Validator L1 wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
 			}
 		}
 	}
 
-	var rollupAddrs chaininfo.RollupAddresses
 	combinedL2ChainInfoFile := nodeConfig.L2.ChainInfoFiles
 	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
 		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
+			log.Error("error getting chain info file from ipfs", "err", err)
 		}
 		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
-	}
-	if nodeConfig.Node.L1Reader.Enable {
-		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
-
-		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
-		if err != nil {
-			log.Crit("error getting rollup addresses config", "err", err)
-		}
-	} else if l1Client != nil {
-		// Don't need l1Client anymore
-		log.Info("used chain id to get rollup parameters", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
-		l1Client = nil
 	}
 
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
-			log.Crit("validator have the L1 reader enabled")
+			log.Crit("validator must have the parent chain reader enabled")
 		}
 		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
 		if err != nil {
@@ -395,6 +377,33 @@ func mainImpl() int {
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
+
+	var rollupAddrs chaininfo.RollupAddresses
+	var l1Client *ethclient.Client
+	if nodeConfig.Node.L1Reader.Enable {
+		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.get().L1.Connection }
+		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
+		err := rpcClient.Start(ctx)
+		if err != nil {
+			log.Crit("couldn't connect to L1", "err", err)
+		}
+		l1Client = ethclient.NewClient(rpcClient)
+		l1ChainId, err := l1Client.ChainID(ctx)
+		if err != nil {
+			log.Crit("couldn't read L1 chainid", "err", err)
+		}
+		if l1ChainId.Uint64() != nodeConfig.L1.ChainID {
+			log.Crit("L1 chainID doesn't fit config", "found", l1ChainId.Uint64(), "expected", nodeConfig.L1.ChainID)
+		}
+
+		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.Connection.URL, "l1chainid", nodeConfig.L1.ChainID)
+
+		rollupAddrs, err = chaininfo.GetRollupAddressesConfig(nodeConfig.L2.ChainID, nodeConfig.L2.ChainName, combinedL2ChainInfoFile, nodeConfig.L2.ChainInfoJson)
+		if err != nil {
+			log.Crit("error getting rollup addresses", "err", err)
+		}
+	}
+
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Staker.UseSmartContractWallet {
 			flag.Usage()
@@ -581,8 +590,8 @@ type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	L1            conf.L1Config                   `koanf:"l1"`
-	L2            conf.L2Config                   `koanf:"l2"`
+	L1            conf.L1Config                   `koanf:"parent-chain" reload:"hot"`
+	L2            conf.L2Config                   `koanf:"chain"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
 	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
@@ -617,8 +626,8 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
 	valnode.ValidationConfigAddOptions("validation", f)
-	conf.L1ConfigAddOptions("l1", f)
-	conf.L2ConfigAddOptions("l2", f)
+	conf.L1ConfigAddOptions("parent-chain", f)
+	conf.L2ConfigAddOptions("chain", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
@@ -687,141 +696,50 @@ func (c *NodeConfig) Validate() error {
 	return c.Node.Validate()
 }
 
-type RpcLogger struct{}
-
-func (l RpcLogger) OnRequest(request interface{}) rpc.ResultHook {
-	log.Trace("sending L1 RPC request", "request", request)
-	return RpcResultLogger{request}
-}
-
-type RpcResultLogger struct {
-	request interface{}
-}
-
-const maxRequestLogLength int = 2048
-
-func (l RpcResultLogger) OnResult(response interface{}, err error) {
-	if err != nil {
-		logger := log.Info
-		if err.Error() == "already known" {
-			logger = log.Trace
-		}
-		// The request might not've been logged if the log level is debug not trace, so we log it again here
-		request := fmt.Sprintf("%+v", l.request)
-		if len(request) > maxRequestLogLength {
-			prefix := request[:maxRequestLogLength/2]
-			postfix := request[len(request)-maxRequestLogLength/2:]
-			request = fmt.Sprintf("%v...%v", prefix, postfix)
-		}
-		logger("received error response from L1 RPC", "request", request, "response", response, "err", err)
-	} else {
-		// The request was already logged and can be cross-referenced by JSON-RPC id
-		log.Trace("received response from L1 RPC", "response", response)
-	}
-}
-
-func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
+func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	var l1ChainId *big.Int
-	var l1Client *ethclient.Client
-	l1URL := k.String("l1.url")
-	configChainId := uint64(k.Int64("l1.chain-id"))
-	if l1URL != "" {
-		maxConnectionAttempts := k.Int("l1.connection-attempts")
-		if maxConnectionAttempts <= 0 {
-			maxConnectionAttempts = math.MaxInt
-		}
-		for i := 1; i <= maxConnectionAttempts; i++ {
-			rawRpc, err := rpc.DialContextWithRequestHook(ctx, l1URL, RpcLogger{})
-			if err == nil {
-				l1Client = ethclient.NewClient(rawRpc)
-				l1ChainId, err = l1Client.ChainID(ctx)
-				if err == nil {
-					// Successfully got chain ID
-					break
-				}
-			}
-			if i < maxConnectionAttempts {
-				log.Warn("error connecting to L1", "err", err)
-			} else {
-				return nil, nil, nil, nil, nil, fmt.Errorf("too many errors trying to connect to L1: %w", err)
-			}
-
-			timer := time.NewTimer(time.Second * 1)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return nil, nil, nil, nil, nil, errors.New("aborting startup")
-			case <-timer.C:
-			}
-		}
-	} else if configChainId == 0 && !k.Bool("conf.dump") {
-		return nil, nil, nil, nil, nil, errors.New("l1 chain id not provided")
-	} else if k.Bool("node.l1-reader.enable") {
-		return nil, nil, nil, nil, nil, errors.New("l1 reader enabled but --l1.url not provided")
-	}
-
-	if l1ChainId == nil {
-		l1ChainId = big.NewInt(int64(configChainId))
-	}
-
-	if configChainId != l1ChainId.Uint64() {
-		if configChainId != 0 {
-			log.Error("chain id from L1 does not match command line chain id", "l1", l1ChainId.String(), "cli", configChainId)
-			return nil, nil, nil, nil, nil, errors.New("chain id from L1 does not match command line chain id")
-		}
-
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"l1.chain-id": l1ChainId.Uint64(),
-		}, "."), nil)
-		if err != nil {
-			return nil, nil, nil, nil, nil, errors.Wrap(err, "error setting ")
-		}
-	}
-
-	chainFound := false
-	l2ChainId := k.Int64("l2.chain-id")
-	l2ChainName := k.String("l2.chain-name")
+	l2ChainId := k.Int64("chain.id")
+	l2ChainName := k.String("chain.name")
 	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
 	l2ChainInfoIpfsDownloadPath := k.String("l2.chain-info-ipfs-download-path")
 	if l2ChainId == 0 && l2ChainName == "" {
-		return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id or --l2.chain-name to choose rollup")
+		return nil, nil, nil, errors.New("must specify --chain.id or --chain.name to choose rollup")
 	}
 	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
 	l2ChainInfoJson := k.String("l2.chain-info-json")
-	chainFound, err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l1ChainId.Uint64(), l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	chainFound, err := applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"l1.wallet.password":        "",
-			"l1.wallet.private-key":     "",
-			"l2.dev-wallet.password":    "",
-			"l2.dev-wallet.private-key": "",
+			"parent-chain.wallet.password":    "",
+			"parent-chain.wallet.private-key": "",
+			"chain.dev-wallet.password":       "",
+			"chain.dev-wallet.private-key":    "",
 		})
 		if err != nil {
-			return nil, nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -829,17 +747,17 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
 			if l2ChainId != 0 {
-				return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d, L2ChainInfoFiles: %s.  Change L1, update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId, l2ChainInfoFiles)
+				return nil, nil, nil, fmt.Errorf("Unknown chain with L2: %d, L2ChainInfoFiles: %s.  update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
 			} else {
-				return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2 Name: %s, L2ChainInfoFiles: %s.  Change L1, update L2 chain name, modify --l2.chain-info-files or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainName, l2ChainInfoFiles)
+				return nil, nil, nil, fmt.Errorf("Unknown chain with L2 Name: %s, L2ChainInfoFiles: %s.  update L2 chain name, modify --l2.chain-info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
 			}
 		}
-		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
+		return nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
 
 	err = nodeConfig.ResolveDirectoryNames()
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Don't pass around wallet contents with normal configuration
@@ -850,13 +768,13 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	err = nodeConfig.Validate()
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 	nodeConfig.Rpc.Apply()
-	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
+	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l1ChainId uint64, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) (bool, error) {
 	combinedL2ChainInfoFiles := l2ChainInfoFiles
 	if l2ChainInfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
@@ -869,16 +787,10 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	if err != nil {
 		return false, err
 	}
-	if chainInfo.ParentChainId != l1ChainId {
-		if chainId != 0 {
-			return false, fmt.Errorf("ParentId: %d provided in %s for chainId: %d is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainId, l1ChainId)
-		} else {
-			return false, fmt.Errorf("ParentId: %d provided in %s for chainName: %s is not equal to l1ChainId: %d provided in commandline", chainInfo.ParentChainId, l2ChainInfoFiles, chainName, l1ChainId)
-		}
-	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
-		"l2.chain-id":      chainInfo.ChainId,
+		"chain.id":         chainInfo.ChainId,
+		"parent-chain.id":  chainInfo.ParentChainId,
 	}
 	if chainInfo.SequencerUrl != "" {
 		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl
@@ -969,7 +881,7 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 				case <-timer.C:
 				}
 			}
-			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			nodeConfig, _, _, err := ParseNode(ctx, c.args)
 			if err != nil {
 				log.Error("error parsing live config", "error", err.Error())
 				continue

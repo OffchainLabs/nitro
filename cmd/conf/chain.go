@@ -4,22 +4,30 @@
 package conf
 
 import (
+	"time"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	flag "github.com/spf13/pflag"
 )
 
 type L1Config struct {
-	ChainID            uint64                   `koanf:"chain-id"`
-	URL                string                   `koanf:"url"`
-	ConnectionAttempts int                      `koanf:"connection-attempts"`
-	Wallet             genericconf.WalletConfig `koanf:"wallet"`
+	ChainID    uint64                   `koanf:"id"`
+	Connection rpcclient.ClientConfig   `koanf:"connection" reload:"hot"`
+	Wallet     genericconf.WalletConfig `koanf:"wallet"`
+}
+
+var L1ConnectionConfigDefault = rpcclient.ClientConfig{
+	URL:            "",
+	Retries:        2,
+	Timeout:        time.Minute,
+	ConnectionWait: time.Minute,
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID:            0,
-	URL:                "",
-	ConnectionAttempts: 15,
-	Wallet:             DefaultL1WalletConfig,
+	ChainID:    0,
+	Connection: L1ConnectionConfigDefault,
+	Wallet:     DefaultL1WalletConfig,
 }
 
 var DefaultL1WalletConfig = genericconf.WalletConfig{
@@ -31,9 +39,8 @@ var DefaultL1WalletConfig = genericconf.WalletConfig{
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
-	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
-	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	f.Uint64(prefix+".id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
+	rpcclient.RPCClientAddOptions(prefix+".connection", f, &L1ConfigDefault.Connection)
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, L1ConfigDefault.Wallet.Pathname)
 }
 
@@ -42,8 +49,8 @@ func (c *L1Config) ResolveDirectoryNames(chain string) {
 }
 
 type L2Config struct {
-	ChainID                   uint64                   `koanf:"chain-id"`
-	ChainName                 string                   `koanf:"chain-name"`
+	ChainID                   uint64                   `koanf:"id"`
+	ChainName                 string                   `koanf:"name"`
 	ChainInfoFiles            []string                 `koanf:"chain-info-files"`
 	ChainInfoJson             string                   `koanf:"chain-info-json"`
 	DevWallet                 genericconf.WalletConfig `koanf:"dev-wallet"`
@@ -62,8 +69,8 @@ var L2ConfigDefault = L2Config{
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
-	f.String(prefix+".chain-name", L2ConfigDefault.ChainName, "L2 chain name (determines Arbitrum network)")
+	f.Uint64(prefix+".id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
+	f.String(prefix+".name", L2ConfigDefault.ChainName, "L2 chain name (determines Arbitrum network)")
 	f.StringSlice(prefix+".chain-info-files", L2ConfigDefault.ChainInfoFiles, "L2 chain info json files")
 	f.String(prefix+".chain-info-json", L2ConfigDefault.ChainInfoJson, "L2 chain info in json string format")
 
