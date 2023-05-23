@@ -55,11 +55,11 @@ func (c *L1Config) Validate() error {
 type L2Config struct {
 	ChainID                   uint64                   `koanf:"id"`
 	ChainName                 string                   `koanf:"name"`
-	ChainInfoFiles            []string                 `koanf:"chain-info-files"`
-	ChainInfoJson             string                   `koanf:"chain-info-json"`
+	ChainInfoFiles            []string                 `koanf:"info-files"`
+	ChainInfoJson             string                   `koanf:"info-json"`
 	DevWallet                 genericconf.WalletConfig `koanf:"dev-wallet"`
-	ChainInfoIpfsUrl          string                   `koanf:"chain-info-ipfs-url"`
-	ChainInfoIpfsDownloadPath string                   `koanf:"chain-info-ipfs-download-path"`
+	ChainInfoIpfsUrl          string                   `koanf:"info-ipfs-url"`
+	ChainInfoIpfsDownloadPath string                   `koanf:"info-ipfs-download-path"`
 }
 
 var L2ConfigDefault = L2Config{
@@ -75,13 +75,13 @@ var L2ConfigDefault = L2Config{
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
 	f.String(prefix+".name", L2ConfigDefault.ChainName, "L2 chain name (determines Arbitrum network)")
-	f.StringSlice(prefix+".chain-info-files", L2ConfigDefault.ChainInfoFiles, "L2 chain info json files")
-	f.String(prefix+".chain-info-json", L2ConfigDefault.ChainInfoJson, "L2 chain info in json string format")
+	f.StringSlice(prefix+".info-files", L2ConfigDefault.ChainInfoFiles, "L2 chain info json files")
+	f.String(prefix+".info-json", L2ConfigDefault.ChainInfoJson, "L2 chain info in json string format")
 
 	// Dev wallet does not exist unless specified
 	genericconf.WalletConfigAddOptions(prefix+".dev-wallet", f, "")
-	f.String(prefix+".chain-info-ipfs-url", L2ConfigDefault.ChainInfoIpfsUrl, "url to download chain info file")
-	f.String(prefix+".chain-info-ipfs-download-path", L2ConfigDefault.ChainInfoIpfsDownloadPath, "path to save temp downloaded file")
+	f.String(prefix+".info-ipfs-url", L2ConfigDefault.ChainInfoIpfsUrl, "url to download chain info file")
+	f.String(prefix+".info-ipfs-download-path", L2ConfigDefault.ChainInfoIpfsDownloadPath, "path to save temp downloaded file")
 
 }
 

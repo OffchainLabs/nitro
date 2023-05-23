@@ -76,7 +76,9 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 }
 
 func (c *RpcClient) Close() {
-	c.client.Close()
+	if c.client != nil {
+		c.client.Close()
+	}
 }
 
 func limitedMarshal(limit int, arg interface{}) string {

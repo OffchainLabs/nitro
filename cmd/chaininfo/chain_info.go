@@ -84,9 +84,9 @@ func ProcessChainInfo(chainId uint64, chainName string, l2ChainInfoFiles []strin
 		return chainInfo, err
 	}
 	if chainId != 0 {
-		return nil, fmt.Errorf("unsupported L2 chain ID %v", chainId)
+		return nil, fmt.Errorf("unsupported chain ID %v", chainId)
 	} else {
-		return nil, fmt.Errorf("unsupported L2 chain chain %v", chainName)
+		return nil, fmt.Errorf("unsupported chain name %v", chainName)
 	}
 }
 

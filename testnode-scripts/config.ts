@@ -164,7 +164,7 @@ function writeConfigs(argv: any) {
             "dev-wallet" : {
                 "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
             },
-			"chain-info-files": [chainInfoFile],
+            "info-files": [chainInfoFile],
         },
         "node": {
             "archive": true,
