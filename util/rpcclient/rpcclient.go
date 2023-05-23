@@ -68,7 +68,9 @@ func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
 }
 
 func (c *RpcClient) Close() {
-	c.client.Close()
+	if c.client != nil {
+		c.client.Close()
+	}
 }
 
 func limitString(limit int, str string) string {
