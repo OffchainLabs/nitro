@@ -151,8 +151,12 @@ function writeGethGenesisConfig(argv: any) {
 }
 
 function writeConfigs(argv: any) {
+<<<<<<< HEAD
+    const deployment = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString('utf-8'));
     const valJwtSecret = path.join(consts.configpath, "val_jwt.hex")
+=======
 	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
+>>>>>>> master
     const baseConfig = {
         "parent-chain": {
             "url": argv.l1url,
@@ -210,10 +214,8 @@ function writeConfigs(argv: any) {
                 }
             },
             "block-validator": {
-				"validation-server" : {
-					"url": argv.validationNodeUrl,
-					"jwtsecret": valJwtSecret,
-				}
+                "url": argv.validationNodeUrl,
+                "jwtsecret": valJwtSecret,
             }
         },
         "init": {
