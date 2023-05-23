@@ -43,6 +43,7 @@ pub enum EvmApiMethod {
     AccountBalance,
     AccountCodeHash,
     EvmBlockHash,
+    AddPages,
 }
 
 pub trait EvmApi: Send + 'static {
@@ -132,4 +133,9 @@ pub trait EvmApi: Send + 'static {
     /// Returns a cryptographically insecure, pseudo-random value that is a digest of the chain's history.
     /// Analogous to `vm.BLOCKHASH`.
     fn evm_blockhash(&mut self, number: Bytes32) -> Bytes32;
+
+    /// Synchronizes the memory model between Rust and Go.
+    /// Returns the number of pages open and ever open before allocating `pages` more.
+    /// Not analogous to any EVM opcode.
+    fn add_pages(&mut self, pages: u16) -> (u16, u16);
 }

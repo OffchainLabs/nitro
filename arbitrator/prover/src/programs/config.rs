@@ -9,8 +9,6 @@ use std::fmt::Debug;
 use wasmer_types::{Pages, WASM_PAGE_SIZE};
 use wasmparser::Operator;
 
-use super::meter::OutOfInkError;
-
 #[cfg(feature = "native")]
 use {
     super::{
@@ -160,41 +158,6 @@ impl MemoryModel {
         let linear = (new as u64).saturating_mul(self.page_gas.into());
         let expand = curve(size) - curve(ever);
         linear.saturating_add(expand)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct CallPointers {
-    /// Number of pages currently open
-    pub open_pages: *mut u16,
-    /// Largest number of pages ever open
-    pub ever_pages: *mut u16,
-    /// Gas left
-    pub gas: *mut u64,
-}
-
-impl CallPointers {
-    pub unsafe fn add_pages(
-        &mut self,
-        new: Pages,
-        model: &MemoryModel,
-    ) -> Result<(), OutOfInkError> {
-        let new = new.0.try_into().map_err(|_| OutOfInkError)?;
-
-        let open = *self.open_pages;
-        let ever = *self.ever_pages;
-        let cost = model.gas_cost(open, ever, new);
-
-        if *self.gas < cost {
-            *self.gas = 0;
-            return Err(OutOfInkError);
-        }
-
-        *self.gas -= cost;
-        *self.open_pages = open.saturating_add(new);
-        *self.ever_pages = ever.max(*self.open_pages);
-        Ok(())
     }
 }
 

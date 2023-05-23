@@ -267,6 +267,15 @@ func SaturatingUAdd(augend uint64, addend uint64) uint64 {
 	return sum
 }
 
+// SaturatingUAdd add two uint16's without overflow
+func SaturatingUAdd16(augend uint16, addend uint16) uint16 {
+	sum := augend + addend
+	if sum < augend || sum < addend {
+		sum = math.MaxUint16
+	}
+	return sum
+}
+
 // SaturatingSub subtract an int64 from another without overflow
 func SaturatingSub(minuend, subtrahend int64) int64 {
 	return SaturatingAdd(minuend, -subtrahend)

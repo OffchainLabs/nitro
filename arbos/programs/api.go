@@ -44,6 +44,7 @@ type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type evmBlockHashType func(block common.Hash) (value common.Hash)
+type addPagesType func(pages uint16) (open uint16, ever uint16)
 
 type goClosures struct {
 	getBytes32      getBytes32Type
@@ -58,6 +59,7 @@ type goClosures struct {
 	accountBalance  accountBalanceType
 	accountCodeHash accountCodehashType
 	evmBlockHash    evmBlockHashType
+	addPages        addPagesType
 }
 
 func newApiClosures(
@@ -267,6 +269,13 @@ func newApiClosures(
 	evmBlockHash := func(block common.Hash) common.Hash {
 		return vm.BlockHashOp(evm, block.Big())
 	}
+	addPages := func(pages uint16) (uint16, uint16) {
+		open, ever := db.GetStylusPages()
+		currOpen, currEver := *open, *ever
+		*open = arbmath.SaturatingUAdd16(*open, *ever)
+		*ever = arbmath.MaxInt(*open, *ever)
+		return currOpen, currEver
+	}
 
 	return &goClosures{
 		getBytes32:      getBytes32,
@@ -281,5 +290,6 @@ func newApiClosures(
 		accountBalance:  accountBalance,
 		accountCodeHash: accountCodehash,
 		evmBlockHash:    evmBlockHash,
+		addPages:        addPages,
 	}
 }

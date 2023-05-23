@@ -8,10 +8,10 @@ use crate::{
 use arbutil::Color;
 use eyre::{bail, eyre, Report, Result};
 use fnv::FnvHashMap as HashMap;
-use std::{fmt::Debug, mem};
+use std::fmt::Debug;
 use wasmer_types::{
-    entity::EntityRef, FunctionIndex, FunctionType, GlobalIndex, GlobalInit, ImportIndex,
-    ImportKey, LocalFunctionIndex, SignatureIndex, Type,
+    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, ImportIndex, LocalFunctionIndex,
+    SignatureIndex, Type,
 };
 use wasmparser::{MemoryType, Operator, Type as WpType};
 
@@ -221,58 +221,6 @@ impl ModuleMod for ModuleInfo {
             .ok_or_else(|| eyre!("missing import {}", name.red()))
     }
 
-    /*fn add_import(&mut self, module: &str, name: &str, ty: FunctionType) -> Result<FunctionIndex> {
-        if self.get_import(module, name).is_ok() {
-            bail!("import {} {} already present", module.red(), name.red())
-        }
-
-        let septum = self.num_imported_functions;
-        let sig = self.signatures.push(ty);
-        let func = self.functions.insert(septum, sig);
-
-        let fix_tee = |mut func: FunctionIndex| -> FunctionIndex {
-            if func.as_u32() >= septum as u32 {
-                func = FunctionIndex::from_u32(func.as_u32() + 1);
-            }
-            func
-        };
-
-        #[allow(clippy::drop_copy)]
-        let fix = |func: &mut _| drop(fix_tee(*func));
-
-        for export in self.exports.values_mut() {
-            if let ExportIndex::Function(func) = export {
-                fix(func);
-            }
-        }
-        for table in self.table_initializers.iter_mut() {
-            table.elements.iter_mut().for_each(fix);
-        }
-        for elem in self.passive_elements.values_mut() {
-            elem.iter_mut().for_each(fix);
-        }
-        for init in self.global_initializers.values_mut() {
-            if let GlobalInit::RefFunc(func) = init {
-                fix(func);
-            }
-        }
-        self.start_function.iter_mut().for_each(fix);
-
-        self.function_names = mem::take(&mut self.function_names)
-            .into_iter()
-            .map(|(k, v)| (fix_tee(k), v))
-            .collect();
-
-        let key = ImportKey {
-            module: module.to_owned(),
-            field: name.to_owned(),
-            import_idx: self.imports.len() as u32,
-        };
-        self.imports.insert(key, ImportIndex::Function(func));
-        self.num_imported_functions += 1;
-        Ok(func)
-    }*/
-
     fn move_start_function(&mut self, name: &str) -> Result<()> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
@@ -388,8 +336,8 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex> {
         self.imports
             .iter()
-            .find(|x| x.module == module && x.name == Some(name))
-            .map(|x| ImportIndex::Function(FunctionIndex::from_u32(x.offset)))
+            .position(|x| x.module == module && x.name == Some(name))
+            .map(|x| ImportIndex::Function(FunctionIndex::from_u32(x as u32)))
             .ok_or_else(|| eyre!("missing import {}", name.red()))
     }
 

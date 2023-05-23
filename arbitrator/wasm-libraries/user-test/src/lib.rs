@@ -16,6 +16,8 @@ pub(crate) static mut ARGS: Vec<u8> = vec![];
 pub(crate) static mut OUTS: Vec<u8> = vec![];
 pub(crate) static mut LOGS: Vec<Vec<u8>> = vec![];
 pub(crate) static mut CONFIG: Option<StylusConfig> = None;
+pub(crate) static mut OPEN_PAGES: u16 = 0;
+pub(crate) static mut EVER_PAGES: u16 = 0;
 
 lazy_static! {
     static ref KEYS: Mutex<HashMap<Bytes32, Bytes32>> = Mutex::new(HashMap::default());

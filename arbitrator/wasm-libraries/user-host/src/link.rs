@@ -9,7 +9,7 @@ use arbutil::{
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
-    programs::config::{CompileConfig, StylusConfig, PricingParams, MemoryModel},
+    programs::config::{CompileConfig, MemoryModel, PricingParams, StylusConfig},
     Machine,
 };
 use std::{mem, path::Path, sync::Arc};

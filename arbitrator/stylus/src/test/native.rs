@@ -18,7 +18,7 @@ use arbutil::{
     evm::{api::EvmApi, user::UserOutcome},
     format, Bytes20, Bytes32, Color,
 };
-use eyre::{bail, Result};
+use eyre::{bail, ensure, Result};
 use prover::{
     binary,
     programs::{
@@ -267,6 +267,26 @@ fn test_heap() -> Result<()> {
 }
 
 #[test]
+fn test_memory() -> Result<()> {
+    let (mut compile, mut config, _) = test_configs();
+    compile.bounds.heap_bound = Pages(128);
+    compile.pricing.costs = |_| 0;
+    config.pricing.hostio_ink = 0;
+
+    let (mut native, _) = TestInstance::new_with_evm("tests/memory.wat", &compile, config)?;
+    let exports = &native.exports;
+    let grow = exports.get_typed_function::<(), u32>(&native.store, "grow")?;
+
+    let ink = random_ink(32_000_000);
+    let pages = native.call_func(grow, ink)?;
+    assert_eq!(pages, 128);
+
+    let used = ink - native.ink_ready()?;
+    ensure!((used as i64 - 32_000_000).abs() < 5_000, "wrong ink");
+    Ok(())
+}
+
+#[test]
 fn test_rust() -> Result<()> {
     // in keccak.rs
     //     the input is the # of hashings followed by a preimage
@@ -288,8 +308,10 @@ fn test_rust() -> Result<()> {
     assert_eq!(hex::encode(output), hash);
 
     let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
+    let start = Instant::now();
     let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), hash);
+    println!("Exec {}", format::time(start.elapsed()));
 
     check_instrumentation(native, machine)
 }

@@ -29,6 +29,7 @@ type apiWrapper struct {
 	addressBalance  js.Func
 	addressCodeHash js.Func
 	evmBlockHash    js.Func
+	addPages        js.Func
 	funcs           []byte
 }
 
@@ -42,7 +43,8 @@ func newApi(
 	uint8Array := global.Get("Uint8Array")
 
 	const (
-		preU32 = iota
+		preU16 = iota
+		preU32
 		preU64
 		preBytes
 		preBytes20
@@ -59,6 +61,9 @@ func newApi(
 			panic(fmt.Sprintf("not a %v", kind))
 		}
 		return data[1:]
+	}
+	jsU16 := func(value js.Value) u16 {
+		return arbmath.BytesToUint16(jsRead(value, preU16))
 	}
 	jsU32 := func(value js.Value) u32 {
 		return arbmath.BytesToUint32(jsRead(value, preU32))
@@ -90,6 +95,8 @@ func newApi(
 		for _, result := range results {
 			var value js.Value
 			switch result := result.(type) {
+			case uint16:
+				value = toJs(preU16, arbmath.Uint16ToBytes(result))
 			case uint32:
 				value = toJs(preU32, arbmath.Uint32ToBytes(result))
 			case uint64:
@@ -196,12 +203,17 @@ func newApi(
 		value := closures.evmBlockHash(block)
 		return write(stylus, value)
 	})
+	addPages := js.FuncOf(func(stylus js.Value, args []js.Value) any {
+		pages := jsU16(args[0])
+		open, ever := closures.addPages(pages)
+		return write(stylus, open, ever)
+	})
 
-	ids := make([]byte, 0, 12*4)
+	ids := make([]byte, 0, 13*4)
 	funcs := js.Global().Get("stylus").Call("setCallbacks",
 		getBytes32, setBytes32, contractCall, delegateCall,
 		staticCall, create1, create2, getReturnData, emitLog,
-		addressBalance, addressCodeHash, evmBlockHash,
+		addressBalance, addressCodeHash, evmBlockHash, addPages,
 	)
 	for i := 0; i < funcs.Length(); i++ {
 		ids = append(ids, arbmath.Uint32ToBytes(u32(funcs.Index(i).Int()))...)
@@ -219,6 +231,7 @@ func newApi(
 		addressBalance:  addressBalance,
 		addressCodeHash: addressCodeHash,
 		evmBlockHash:    evmBlockHash,
+		addPages:        addPages,
 		funcs:           ids,
 	}
 }
@@ -236,4 +249,5 @@ func (api *apiWrapper) drop() {
 	api.addressBalance.Release()
 	api.addressCodeHash.Release()
 	api.evmBlockHash.Release()
+	api.addPages.Release()
 }

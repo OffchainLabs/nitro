@@ -337,3 +337,11 @@ pub unsafe extern "C" fn user_host__tx_origin(ptr: usize) {
     let tx_origin = program.evm_data.tx_origin.as_ref();
     wavm::write_slice_usize(tx_origin, ptr)
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__memory_grow(pages: u16) {
+    let program = Program::start();
+    let model = program.config.pricing.memory_model;
+    let (open, ever) = program.evm_api.add_pages(pages);
+    program.buy_gas(model.gas_cost(open, ever, pages)).unwrap();
+}

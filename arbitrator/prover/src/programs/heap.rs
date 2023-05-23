@@ -1,6 +1,8 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use crate::value::{ArbValueType, FunctionType};
+
 use super::{
     config::CompileMemoryParams, dynamic::SCRATCH_GLOBAL, FuncMiddleware, Middleware, ModuleMod,
 };
@@ -53,8 +55,14 @@ impl<M: ModuleMod> Middleware<M> for HeapBound {
         }
 
         let ImportIndex::Function(import) = module.get_import("forward", "memory_grow")? else {
-            bail!("wrong type for {}", "memory_grow".red());
+            bail!("wrong import kind for {}", "memory_grow".red());
         };
+
+        let ty = module.get_function(import)?;
+        if ty != FunctionType::new(vec![ArbValueType::I32], vec![]) {
+            bail!("wrong type for {}: {}", "memory_grow".red(), ty.red());
+        }
+
         *self.memory_grow.lock() = Some(import);
         Ok(())
     }

@@ -22,6 +22,7 @@ pub(crate) struct TestEvmApi {
     compile: CompileConfig,
     configs: Arc<Mutex<HashMap<Bytes20, StylusConfig>>>,
     evm_data: EvmData,
+    pages: Arc<Mutex<(u16, u16)>>,
 }
 
 impl TestEvmApi {
@@ -40,6 +41,7 @@ impl TestEvmApi {
             compile,
             configs: Arc::new(Mutex::new(HashMap::new())),
             evm_data,
+            pages: Arc::new(Mutex::new((0, 0))),
         };
         (api, evm_data)
     }
@@ -154,5 +156,13 @@ impl EvmApi for TestEvmApi {
 
     fn evm_blockhash(&mut self, _num: Bytes32) -> Bytes32 {
         unimplemented!()
+    }
+
+    fn add_pages(&mut self, new: u16) -> (u16, u16) {
+        let current = *self.pages.lock();
+        let mut pages = self.pages.lock();
+        pages.0 = pages.0.saturating_add(new);
+        pages.1 = pages.1.max(pages.0);
+        current
     }
 }

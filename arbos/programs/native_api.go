@@ -75,6 +75,11 @@ Bytes32 evmBlockHashImpl(usize api, Bytes32 block);
 Bytes32 evmBlockHashWrap(usize api, Bytes32 block) {
     return evmBlockHashImpl(api, block);
 }
+
+void addPagesImpl(usize api, u16 pages, u16 * open, u16 * ever);
+void addPagesWrap(usize api, u16 pages, u16 * open, u16 * ever) {
+    return addPagesImpl(api, pages, open, ever);
+}
 */
 import "C"
 import (
@@ -111,6 +116,7 @@ func newApi(
 		account_balance:  (*[0]byte)(C.accountBalanceWrap),
 		account_codehash: (*[0]byte)(C.accountCodeHashWrap),
 		evm_blockhash:    (*[0]byte)(C.evmBlockHashWrap),
+		add_pages:        (*[0]byte)(C.addPagesWrap),
 		id:               id,
 	}, id
 }

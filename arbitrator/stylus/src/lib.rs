@@ -8,10 +8,7 @@ use arbutil::evm::{
 };
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::{
-    binary,
-    programs::{config::CallPointers, prelude::*},
-};
+use prover::{binary, programs::prelude::*};
 use run::RunProgram;
 use std::{mem, path::Path};
 
@@ -123,15 +120,15 @@ pub unsafe extern "C" fn stylus_call(
     config: StylusConfig,
     go_api: GoEvmApi,
     evm_data: EvmData,
-    mut pointers: CallPointers,
     debug_chain: u32,
     output: *mut RustVec,
+    gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
     let compile = CompileConfig::version(config.version, debug_chain != 0);
     let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(*pointers.gas);
+    let ink = pricing.gas_to_ink(*gas);
     let output = &mut *output;
 
     // Safety: module came from compile_user_wasm
@@ -140,15 +137,6 @@ pub unsafe extern "C" fn stylus_call(
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
     };
-
-    let memory = instance.instance.exports.get_memory("mem").unwrap();
-    let memory = memory.ty(&instance.store);
-    if pointers
-        .add_pages(memory.minimum, &config.pricing.memory_model)
-        .is_err()
-    {
-        return UserOutcomeKind::OutOfInk;
-    }
 
     let status = match instance.run_main(&calldata, config, ink) {
         Err(err) | Ok(UserOutcome::Failure(err)) => {
@@ -165,7 +153,7 @@ pub unsafe extern "C" fn stylus_call(
         UserOutcomeKind::OutOfStack => 0, // take all gas when out of stack
         _ => instance.ink_left().into(),
     };
-    *pointers.gas = pricing.ink_to_gas(ink_left);
+    *gas = pricing.ink_to_gas(ink_left);
     status
 }
 

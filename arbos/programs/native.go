@@ -88,9 +88,9 @@ func callUserWasm(
 		stylusParams.encode(),
 		evmApi,
 		evmData.encode(),
-		newCallPointers(db, &contract.Gas),
 		u32(stylusParams.debugMode),
 		output,
+		(*u64)(&contract.Gas),
 	))
 	returnData := output.intoBytes()
 	data, err := status.output(returnData)
@@ -239,6 +239,14 @@ func evmBlockHashImpl(api usize, block bytes32) bytes32 {
 	return hashToBytes32(hash)
 }
 
+//export addPagesImpl
+func addPagesImpl(api usize, pages u16, open *u16, ever *u16) {
+	closures := getApi(api)
+	openPages, everPages := closures.addPages(uint16(pages))
+	*open = u16(openPages)
+	*ever = u16(everPages)
+}
+
 func (value bytes20) toAddress() common.Address {
 	addr := common.Address{}
 	for index, b := range value.bytes {
@@ -301,15 +309,6 @@ func goSlice(slice []byte) C.GoSliceData {
 	return C.GoSliceData{
 		ptr: (*u8)(arbutil.SliceToPointer(slice)),
 		len: usize(len(slice)),
-	}
-}
-
-func newCallPointers(db vm.StateDB, gas *uint64) C.CallPointers {
-	openPages, everPages := db.GetStylusPages()
-	return C.CallPointers{
-		open_pages: (*u16)(openPages),
-		ever_pages: (*u16)(everPages),
-		gas:        (*u64)(gas),
 	}
 }
 

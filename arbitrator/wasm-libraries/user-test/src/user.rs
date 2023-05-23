@@ -3,7 +3,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::{Program, ARGS, KEYS, LOGS, OUTS};
+use crate::{Program, ARGS, CONFIG, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{evm, wavm, Bytes32};
 use prover::programs::prelude::GasMeteredMachine;
 
@@ -55,5 +55,11 @@ pub unsafe extern "C" fn forward__emit_log(data: usize, len: u32, topics: u32) {
 
 #[no_mangle]
 pub unsafe extern "C" fn forward__memory_grow(pages: u16) {
-    println!("Memory grow: {}", pages);
+    let mut program = Program::start();
+    let model = CONFIG.unwrap().pricing.memory_model;
+
+    let (open, ever) = (OPEN_PAGES, EVER_PAGES);
+    OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
+    EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
+    program.buy_gas(model.gas_cost(open, ever, pages)).unwrap();
 }

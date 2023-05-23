@@ -22,6 +22,7 @@ type hash = common.Hash
 
 // rust types
 type u8 = uint8
+type u16 = uint16
 type u32 = uint32
 type u64 = uint64
 type usize = uintptr
