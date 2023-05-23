@@ -146,9 +146,12 @@ function writeGethGenesisConfig(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "geth_genesis.json"), gethConfig)
     const jwt = `0x98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4`
     fs.writeFileSync(path.join(consts.configpath, "jwt.hex"), jwt)
+    const val_jwt = `0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+    fs.writeFileSync(path.join(consts.configpath, "val_jwt.hex"), val_jwt)
 }
 
 function writeConfigs(argv: any) {
+    const valJwtSecret = path.join(consts.configpath, "val_jwt.hex")
 	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
     const baseConfig = {
         "parent-chain": {
@@ -207,10 +210,16 @@ function writeConfigs(argv: any) {
                     },
                     "wait-for-l1-finality": false
                 }
+            },
+            "block-validator": {
+				"validation-server" : {
+					"url": argv.validationNodeUrl,
+					"jwtsecret": valJwtSecret,
+				}
             }
         },
         "persistent": {
-	        "chain": "local"
+            "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0"
@@ -247,6 +256,27 @@ function writeConfigs(argv: any) {
     posterConfig.node["seq-coordinator"].enable = true
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
+
+    let validationNodeConfig = JSON.parse(JSON.stringify({
+        "persistent": {
+            "chain": "local"
+        },
+        "ws": {
+            "addr": "",
+        },
+        "http": {
+            "addr": "",
+        },
+        "validation": {
+            "api-auth": true,
+            "api-public": false,
+        },
+        "auth": {
+            "jwtsecret": valJwtSecret,
+            "addr": "0.0.0.0",
+        },
+    }))
+    fs.writeFileSync(path.join(consts.configpath, "validation_node_config.json"), JSON.stringify(validationNodeConfig))
 }
 
 function writeL2ChainConfig(argv: any) {
