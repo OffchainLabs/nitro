@@ -20,3 +20,5 @@
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
+[submodule "go-ethereum/"]
+	branch = missing_bloom_confirm
