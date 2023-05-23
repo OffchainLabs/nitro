@@ -152,7 +152,9 @@ function writeConfigs(argv: any) {
 	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
     const baseConfig = {
         "parent-chain": {
-            "url": argv.l1url,
+            "connection" : {
+                "url": argv.l1url,
+            },
             "wallet": {
                 "account": "",
                 "password": consts.l1passphrase,
@@ -206,9 +208,6 @@ function writeConfigs(argv: any) {
                     "wait-for-l1-finality": false
                 }
             }
-        },
-        "init": {
-            "dev-init": "true"
         },
         "persistent": {
 	        "chain": "local"
