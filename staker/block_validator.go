@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -80,8 +81,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
-	URL                      string                        `koanf:"url"`
-	JWTSecret                string                        `koanf:"jwtsecret"`
+	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -89,6 +89,10 @@ type BlockValidatorConfig struct {
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+}
+
+func (c *BlockValidatorConfig) Validate() error {
+	return c.ValidationServer.Validate()
 }
 
 type BlockValidatorDangerousConfig struct {
@@ -99,8 +103,7 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
-	f.String(prefix+".url", DefaultBlockValidatorConfig.URL, "url for validation ('self' uses the server's AUTH-RPC url)")
-	f.String(prefix+".jwtsecret", DefaultBlockValidatorConfig.JWTSecret, "path to file with jwtsecret for validation - empty disables jwt, 'self' uses the server's jwt")
+	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -116,8 +119,7 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "self",
-	JWTSecret:                "self",
+	ValidationServer:         rpcclient.DefaultClientConfig,
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,
@@ -129,8 +131,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	URL:                      "",
-	JWTSecret:                "",
+	ValidationServer:         rpcclient.TestClientConfig,
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
 	PrerecordedBlocks:        64,

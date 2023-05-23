@@ -20,26 +20,26 @@ import (
 )
 
 func TestSeqConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestUnsafeStakerConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --node.forwarding-target null --node.staker.dangerous.without-block-validator", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --node.forwarding-target null --node.staker.dangerous.without-block-validator", " ")
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestValidatorConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --node.forwarding-target null", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.staker.enable --node.staker.strategy MakeNodes --node.staker.staker-interval 10s --node.forwarding-target null", " ")
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
 func TestAggregatorConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
-	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
+	_, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
 
@@ -97,16 +97,16 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// create a config file
 	configFile := filepath.Join(t.TempDir(), "config.json")
-	jsonConfig := "{\"l2\":{\"chain-id\":421613}}"
+	jsonConfig := "{\"chain\":{\"id\":421613}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
-	args := strings.Split("--file-logging.enable=false --persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--file-logging.enable=false --persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
-	config, _, _, _, _, err := ParseNode(context.Background(), args)
+	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
 	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
-		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
+		nodeConfig, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
 
@@ -150,7 +150,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	// change the config file
 	expected = config.ShallowClone()
 	expected.Node.Sequencer.MaxBlockSpeed += time.Millisecond
-	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"l2\":{\"chain-id\":421613}}", expected.Node.Sequencer.MaxBlockSpeed.String())
+	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"chain\":{\"id\":421613}}", expected.Node.Sequencer.MaxBlockSpeed.String())
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
@@ -160,8 +160,8 @@ func TestLiveNodeConfig(t *testing.T) {
 		Fail(t, "failed to update config", config.Node.Sequencer.MaxBlockSpeed, update.Node.Sequencer.MaxBlockSpeed)
 	}
 
-	// change l2.chain-id in the config file (currently non-reloadable)
-	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"l2\":{\"chain-id\":421703}}", expected.Node.Sequencer.MaxBlockSpeed.String())
+	// change chain.id in the config file (currently non-reloadable)
+	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"chain\":{\"id\":421703}}", expected.Node.Sequencer.MaxBlockSpeed.String())
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
@@ -181,13 +181,13 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	jsonConfig := "{\"conf\":{\"reload-interval\":\"20ms\"}}"
 	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --parent-chain.wallet.pathname /l1keystore --parent-chain.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
-	config, _, _, _, _, err := ParseNode(context.Background(), args)
+	config, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
 	liveConfig := genericconf.NewLiveConfig[*NodeConfig](args, config, func(ctx context.Context, args []string) (*NodeConfig, error) {
-		nodeConfig, _, _, _, _, err := ParseNode(ctx, args)
+		nodeConfig, _, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
 	liveConfig.Start(ctx)

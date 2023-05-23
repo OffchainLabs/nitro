@@ -6,11 +6,11 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
+	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -43,83 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
-
-type RollupAddresses struct {
-	Bridge                 common.Address `json:"bridge"`
-	Inbox                  common.Address `json:"inbox"`
-	SequencerInbox         common.Address `json:"sequencer-inbox"`
-	Rollup                 common.Address `json:"rollup"`
-	ValidatorUtils         common.Address `json:"validator-utils"`
-	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
-	DeployedAt             uint64         `json:"deployed-at"`
-}
-
-type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
-}
-
-var RollupAddressesConfigDefault = RollupAddressesConfig{}
-
-func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".bridge", "", "the bridge contract address")
-	f.String(prefix+".inbox", "", "the inbox contract address")
-	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
-	f.String(prefix+".rollup", "", "the rollup contract address")
-	f.String(prefix+".validator-utils", "", "the validator utils contract address")
-	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
-	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
-}
-
-func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
-	a := RollupAddresses{
-		DeployedAt: c.DeployedAt,
-	}
-	strs := []string{
-		c.Bridge,
-		c.Inbox,
-		c.SequencerInbox,
-		c.Rollup,
-		c.ValidatorUtils,
-		c.ValidatorWalletCreator,
-	}
-	addrs := []*common.Address{
-		&a.Bridge,
-		&a.Inbox,
-		&a.SequencerInbox,
-		&a.Rollup,
-		&a.ValidatorUtils,
-		&a.ValidatorWalletCreator,
-	}
-	names := []string{
-		"Bridge",
-		"Inbox",
-		"SequencerInbox",
-		"Rollup",
-		"ValidatorUtils",
-		"ValidatorWalletCreator",
-	}
-	if len(strs) != len(addrs) {
-		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
-	}
-	complete := true
-	for i, s := range strs {
-		if !common.IsHexAddress(s) {
-			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
-		}
-		*addrs[i] = common.HexToAddress(s)
-	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
-	return a, nil
-}
 
 func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
@@ -279,7 +203,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainConfig *params.ChainConfig, serializedChainConfig []byte, loserStakeEscrow common.Address) rollupgen.Config {
 	var confirmPeriod uint64
 	if prod {
 		confirmPeriod = 45818
@@ -294,7 +218,9 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		WasmModuleRoot:           wasmModuleRoot,
 		Owner:                    rollupOwner,
 		LoserStakeEscrow:         loserStakeEscrow,
-		ChainId:                  chainId,
+		ChainId:                  chainConfig.ChainID,
+		// TODO could the ChainConfig be just []byte?
+		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
 			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 			FutureBlocks:  big.NewInt(12),
@@ -304,7 +230,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*chaininfo.RollupAddresses, error) {
 	l1Reader, err := headerreader.New(ctx, l1client, readerConfig)
 	if err != nil {
 		return nil, err
@@ -375,7 +301,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		}
 	}
 
-	return &RollupAddresses{
+	return &chaininfo.RollupAddresses{
 		Bridge:                 info.Bridge,
 		Inbox:                  info.InboxAddress,
 		SequencerInbox:         info.SequencerInbox,
@@ -389,7 +315,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config              `koanf:"rpc"`
 	Sequencer            execution.SequencerConfig    `koanf:"sequencer" reload:"hot"`
-	L1Reader             headerreader.Config          `koanf:"l1-reader" reload:"hot"`
+	L1Reader             headerreader.Config          `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader          InboxReaderConfig            `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer     DelayedSequencerConfig       `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster          BatchPosterConfig            `koanf:"batch-poster" reload:"hot"`
@@ -418,6 +344,9 @@ func (c *Config) Validate() error {
 		return errors.New("cannot enable delayed sequencer without enabling sequencer")
 	}
 	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.BlockValidator.Validate(); err != nil {
 		return err
 	}
 	if err := c.Maintenance.Validate(); err != nil {
@@ -459,7 +388,7 @@ func (c *Config) ValidatorRequired() bool {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	execution.SequencerConfigAddOptions(prefix+".sequencer", f)
-	headerreader.AddOptions(prefix+".l1-reader", f)
+	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -524,6 +453,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
 	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.Forwarder = execution.DefaultTestForwarderConfig
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
@@ -540,6 +470,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker.Enable = false
+	config.BlockValidator.ValidationServer.URL = ""
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -566,7 +497,7 @@ type Node struct {
 	Execution               *execution.ExecutionNode
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
-	DeployInfo              *RollupAddresses
+	DeployInfo              *chaininfo.RollupAddresses
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -640,8 +571,9 @@ func createNodeImpl(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
-	txOpts *bind.TransactOpts,
+	deployInfo *chaininfo.RollupAddresses,
+	txOptsValidator *bind.TransactOpts,
+	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
@@ -834,7 +766,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.URL != "" {
+	if config.BlockValidator.ValidationServer.URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
@@ -843,7 +775,8 @@ func createNodeImpl(
 			chainDb,
 			rawdb.NewTable(arbDb, BlockValidatorPrefix),
 			daReader,
-			&configFetcher.Get().BlockValidator,
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			stack,
 		)
 	} else {
 		err = errors.New("no validator url specified")
@@ -875,7 +808,7 @@ func createNodeImpl(
 	var stakerObj *staker.Staker
 	if config.Staker.Enable {
 		var wallet staker.ValidatorWalletInterface
-		if config.Staker.UseSmartContractWallet || txOpts == nil {
+		if config.Staker.UseSmartContractWallet || txOptsValidator == nil {
 			var existingWalletAddress *common.Address
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
@@ -885,7 +818,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {})
 			if err != nil {
 				return nil, err
 			}
@@ -893,7 +826,7 @@ func createNodeImpl(
 			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
+			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOptsValidator)
 			if err != nil {
 				return nil, err
 			}
@@ -909,24 +842,24 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		var txSenderPtr *common.Address
-		if txOpts != nil {
-			txSenderPtr = &txOpts.From
+		var txValidatorSenderPtr *common.Address
+		if txOptsValidator != nil {
+			txValidatorSenderPtr = &txOptsValidator.From
 		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", txValidatorSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
 	var delayedSequencer *DelayedSequencer
 	if config.BatchPoster.Enable {
-		if txOpts == nil {
+		if txOptsBatchPoster == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOpts, daWriter)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo, txOptsBatchPoster, daWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -976,12 +909,13 @@ func CreateNode(
 	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
-	txOpts *bind.TransactOpts,
+	deployInfo *chaininfo.RollupAddresses,
+	txOptsValidator *bind.TransactOpts,
+	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}

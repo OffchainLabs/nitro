@@ -61,6 +61,7 @@ COPY ./arbstate ./arbstate
 COPY ./arbutil ./arbutil
 COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
+COPY ./cmd/chaininfo ./cmd/chaininfo
 COPY ./cmd/replay ./cmd/replay
 COPY ./das/dastree ./das/dastree
 COPY ./precompiles ./precompiles
