@@ -287,7 +287,7 @@ fn test_rust() -> Result<()> {
     println!("Exec {}", format::time(start.elapsed()));
     assert_eq!(hex::encode(output), hash);
 
-    let mut machine = Machine::from_user_path(Path::new(filename), true, &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), hash);
 
@@ -317,7 +317,7 @@ fn test_c() -> Result<()> {
     let output = run_native(&mut native, &args, ink)?;
     assert_eq!(hex::encode(output), args_string);
 
-    let mut machine = Machine::from_user_path(Path::new(filename), true, &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     let output = run_machine(&mut machine, &args, config, ink)?;
     assert_eq!(hex::encode(output), args_string);
 
@@ -343,7 +343,7 @@ fn test_fallible() -> Result<()> {
         err => bail!("expected hard error: {}", err.red()),
     }
 
-    let mut machine = Machine::from_user_path(Path::new(filename), true, &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     match machine.run_main(&[0x00], config, ink)? {
         UserOutcome::Failure(err) => println!("{}", format!("{err:?}").grey()),
         err => bail!("expected hard error: {}", err.red()),
@@ -385,7 +385,7 @@ fn test_storage() -> Result<()> {
     assert_eq!(evm.get_bytes32(key.into()).0, Bytes32(value));
     assert_eq!(run_native(&mut native, &load_args, ink)?, value);
 
-    let mut machine = Machine::from_user_path(Path::new(filename), true, &compile)?;
+    let mut machine = Machine::from_user_path(Path::new(filename), &compile)?;
     run_machine(&mut machine, &store_args, config, ink)?;
     assert_eq!(run_machine(&mut machine, &load_args, config, ink)?, value);
 

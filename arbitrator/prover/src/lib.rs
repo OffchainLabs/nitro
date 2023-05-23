@@ -94,7 +94,6 @@ unsafe fn arbitrator_load_machine_impl(
         false,
         false,
         debug_chain,
-        debug_chain,
         Default::default(),
         Default::default(),
         get_empty_preimage_resolver(),

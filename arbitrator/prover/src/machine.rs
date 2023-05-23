@@ -1011,7 +1011,6 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
-        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1036,7 +1035,7 @@ impl Machine {
             always_merkleize,
             allow_hostapi_from_main,
             debug_funcs,
-            debug_info,
+            true,
             global_state,
             inbox_contents,
             preimage_resolver,
@@ -1044,7 +1043,7 @@ impl Machine {
         )
     }
 
-    pub fn from_user_path(path: &Path, debug_info: bool, compile: &CompileConfig) -> Result<Self> {
+    pub fn from_user_path(path: &Path, compile: &CompileConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
         let stylus_data = bin.instrument(compile)?;
@@ -1063,7 +1062,7 @@ impl Machine {
             false,
             false,
             compile.debug.debug_funcs,
-            debug_info,
+            true,
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
@@ -1752,14 +1751,17 @@ impl Machine {
             };
             ($format:expr $(,$message:expr)*) => {{
                 flush_module!();
-                if self.debug_info {
-                    println!("\n{} {}", "error on line".grey(), line!().pink());
+                let print_debug_info = |machine: &Self, line: u32| {
+                    println!("\n{} {}", "error on line".grey(), line.pink());
                     println!($format, $($message.pink()),*);
                     println!("{}", "Backtrace:".grey());
-                    self.print_backtrace(true);
-                }
+                    machine.print_backtrace(true);
+                };
 
                 if let Some(guard) = self.guards.pop() {
+                    if self.debug_info {
+                        print_debug_info(self, line!());
+                    }
                     println!("{}", "Recovering...".pink());
 
                     // recover at the previous stack heights
@@ -1775,6 +1777,8 @@ impl Machine {
                     self.value_stack.push(0_u32.into());
                     reset_refs!();
                     continue;
+                } else {
+                    print_debug_info(self, line!());
                 }
                 self.status = MachineStatus::Errored;
                 module = &mut self.modules[self.pc.module()];
