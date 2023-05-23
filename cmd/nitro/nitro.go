@@ -708,13 +708,13 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	l2ChainId := k.Int64("chain.id")
 	l2ChainName := k.String("chain.name")
-	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
-	l2ChainInfoIpfsDownloadPath := k.String("l2.chain-info-ipfs-download-path")
+	l2ChainInfoIpfsUrl := k.String("chain.info-ipfs-url")
+	l2ChainInfoIpfsDownloadPath := k.String("chain.info-ipfs-download-path")
 	if l2ChainId == 0 && l2ChainName == "" {
 		return nil, nil, nil, errors.New("must specify --chain.id or --chain.name to choose rollup")
 	}
-	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
-	l2ChainInfoJson := k.String("l2.chain-info-json")
+	l2ChainInfoFiles := k.Strings("chain.info-files")
+	l2ChainInfoJson := k.String("chain.info-json")
 	chainFound, err := applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
 		return nil, nil, nil, err
@@ -747,9 +747,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
 			if l2ChainId != 0 {
-				return nil, nil, nil, fmt.Errorf("Unknown chain with L2: %d, L2ChainInfoFiles: %s.  update L2 chain id, modify --l2.chain-info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
+				return nil, nil, nil, fmt.Errorf("Unknown chain id: %d, L2ChainInfoFiles: %v.  update chain id, modify --chain.info-files or provide --persistent.chain\n", l2ChainId, l2ChainInfoFiles)
 			} else {
-				return nil, nil, nil, fmt.Errorf("Unknown chain with L2 Name: %s, L2ChainInfoFiles: %s.  update L2 chain name, modify --l2.chain-info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
+				return nil, nil, nil, fmt.Errorf("Unknown chain name: %s, L2ChainInfoFiles: %v.  update chain name, modify --chain.info-files or provide --persistent.chain\n", l2ChainName, l2ChainInfoFiles)
 			}
 		}
 		return nil, nil, nil, errors.New("--persistent.chain not specified")
