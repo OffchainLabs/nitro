@@ -133,6 +133,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
+	RedisLock:                          DefaultRedisLockConfig,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{

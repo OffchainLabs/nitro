@@ -31,12 +31,10 @@ func SignVerifyConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultSignVerifyConfig = SignVerifyConfig{
-	ECDSA: VerifierConfig{
-		AcceptSequencer: true,
-	},
+	ECDSA:             DefultFeedVerifierConfig,
 	SymmetricFallback: false,
 	SymmetricSign:     false,
-	Symmetric:         TestSimpleHmacConfig,
+	Symmetric:         EmptySimpleHmacConfig,
 }
 
 func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValidator contracts.BatchPosterVerifierInterface) (*SignVerify, error) {

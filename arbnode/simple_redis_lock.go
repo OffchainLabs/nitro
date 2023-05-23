@@ -41,7 +41,7 @@ func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultRedisLockConfig.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultRedisLockConfig.RefreshDuration, "how long between consecutive calls to redis")
-	f.String(prefix+".key", prefix+".simple-lock-key", "key for lock")
+	f.String(prefix+".key", DefaultRedisLockConfig.Key, "key for lock")
 	f.Bool(prefix+".background-lock", DefaultRedisLockConfig.BackgroundLock, "should node always try grabing lock in background")
 }
 

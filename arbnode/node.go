@@ -419,6 +419,7 @@ var ConfigDefault = Config{
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
 	ForwardingTargetImpl: "",
+	Forwarder:            execution.DefaultNodeForwarderConfig,
 	TxPreChecker:         execution.DefaultTxPreCheckerConfig,
 	BlockValidator:       staker.DefaultBlockValidatorConfig,
 	Feed:                 broadcastclient.FeedConfigDefault,

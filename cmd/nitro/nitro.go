@@ -610,16 +610,22 @@ type NodeConfig struct {
 var NodeConfigDefault = NodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
 	Node:          arbnode.ConfigDefault,
+	Validation:    valnode.DefaultValidationConfig,
 	L1:            conf.L1ConfigDefault,
 	L2:            conf.L2ConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
+	FileLogging:   genericconf.DefaultFileLoggingConfig,
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
 	IPC:           genericconf.IPCConfigDefault,
+	AuthRPC:       genericconf.AuthRPCConfigDefault,
+	GraphQL:       genericconf.GraphQLConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Init:          InitConfigDefault,
+	Rpc:           genericconf.DefaultRpcConfig,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {

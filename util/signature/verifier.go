@@ -37,7 +37,7 @@ var ErrMissingSignature = fmt.Errorf("%w: signature not found", ErrSignatureNotV
 var ErrSignerNotApproved = fmt.Errorf("%w: signer not approved", ErrSignatureNotVerified)
 
 func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.StringArray(prefix+".allowed-addresses", DefultFeedVerifierConfig.AllowedAddresses, "a list of allowed addresses")
+	f.StringSlice(prefix+".allowed-addresses", DefultFeedVerifierConfig.AllowedAddresses, "a list of allowed addresses")
 	f.Bool(prefix+".accept-sequencer", DefultFeedVerifierConfig.AcceptSequencer, "accept verified message from sequencer")
 	DangerousFeedVerifierConfigAddOptions(prefix+".dangerous", f)
 }

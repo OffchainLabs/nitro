@@ -95,7 +95,7 @@ var DefaultConfig = Config{
 	RequireChainId:          false,
 	RequireFeedVersion:      false,
 	Verifier:                signature.DefultFeedVerifierConfig,
-	URLs:                    []string{""},
+	URLs:                    []string{},
 	Timeout:                 20 * time.Second,
 	EnableCompression:       true,
 }

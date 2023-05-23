@@ -69,6 +69,7 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
 	L1ConnectionAttempts:          15,
 	PanicOnError:                  false,
+	IpfsStorageServiceConfig:      DefaultIpfsStorageServiceConfig,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
