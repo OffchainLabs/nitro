@@ -92,14 +92,14 @@ func TestRpcClientRetry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 	defer cancel()
 
-	configFetcher := func() *ClientConfig {
-		return &ClientConfig{
-			URL:         "self",
-			Timeout:     time.Second * 5,
-			Retries:     2,
-			RetryErrors: "b.*",
-		}
+	config := &ClientConfig{
+		URL:         "self",
+		Timeout:     time.Second * 5,
+		Retries:     2,
+		RetryErrors: "b.*",
 	}
+	Require(t, config.Validate())
+	configFetcher := func() *ClientConfig { return config }
 
 	serverGood := createTestNode(t, ctx, 0)
 	clientGood := NewRpcClient(configFetcher, serverGood)
@@ -134,14 +134,14 @@ func TestRpcClientRetry(t *testing.T) {
 	err = clientRetry.CallContext(ctx, nil, "test_stuckAtFirst")
 	Require(t, err)
 
-	retryErrConfigFetcher := func() *ClientConfig {
-		return &ClientConfig{
-			URL:         "self",
-			Timeout:     time.Second * 5,
-			Retries:     2,
-			RetryErrors: "er.*",
-		}
+	retryConfig := &ClientConfig{
+		URL:         "self",
+		Timeout:     time.Second * 5,
+		Retries:     2,
+		RetryErrors: "er.*",
 	}
+	Require(t, retryConfig.Validate())
+	retryErrConfigFetcher := func() *ClientConfig { return retryConfig }
 
 	serverWorkWithRetry := createTestNode(t, ctx, 1)
 	clientWorkWithRetry := NewRpcClient(retryErrConfigFetcher, serverWorkWithRetry)

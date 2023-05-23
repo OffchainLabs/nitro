@@ -693,6 +693,9 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 }
 
 func (c *NodeConfig) Validate() error {
+	if err := c.L1.Validate(); err != nil {
+		return err
+	}
 	return c.Node.Validate()
 }
 

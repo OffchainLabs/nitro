@@ -48,6 +48,10 @@ func (c *L1Config) ResolveDirectoryNames(chain string) {
 	c.Wallet.ResolveDirectoryNames(chain)
 }
 
+func (c *L1Config) Validate() error {
+	return c.Connection.Validate()
+}
+
 type L2Config struct {
 	ChainID                   uint64                   `koanf:"id"`
 	ChainName                 string                   `koanf:"name"`

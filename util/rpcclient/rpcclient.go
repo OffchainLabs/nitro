@@ -28,6 +28,14 @@ type ClientConfig struct {
 	ConnectionWait time.Duration `koanf:"connection-wait"`
 	ArgLogLimit    uint          `koanf:"arg-log-limit" reload:"hot"`
 	RetryErrors    string        `koanf:"retry-errors" reload:"hot"`
+
+	retryErrors *regexp.Regexp
+}
+
+func (c *ClientConfig) Validate() error {
+	var err error
+	c.retryErrors, err = regexp.Compile(c.RetryErrors)
+	return err
 }
 
 type ClientConfigFetcher func() *ClientConfig
@@ -73,7 +81,14 @@ func (c *RpcClient) Close() {
 	}
 }
 
-func limitString(limit int, str string) string {
+func limitedMarshal(limit int, arg interface{}) string {
+	marshalled, err := json.Marshal(arg)
+	var str string
+	if err != nil {
+		str = "\"CANNOT MARSHALL:" + err.Error() + "\""
+	} else {
+		str = string(marshalled)
+	}
 	if limit == 0 || len(str) <= limit {
 		return str
 	}
@@ -85,12 +100,7 @@ func limitString(limit int, str string) string {
 func logArgs(limit int, args ...interface{}) string {
 	res := "["
 	for i, arg := range args {
-		marshalled, err := json.Marshal(arg)
-		if err != nil {
-			res += "\"CANNOT MARSHALL:" + limitString(limit, err.Error()) + "\""
-		} else {
-			res += limitString(limit, string(marshalled))
-		}
+		res += limitedMarshal(limit, arg)
 		if i < len(args)-1 {
 			res += ", "
 		}
@@ -126,22 +136,15 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			logger = log.Info
 			limit = 0
 		}
-		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitString(limit, fmt.Sprintf("%+v", result)), "attempt", i, "args", logArgs(limit, args...))
+		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal(limit, result), "attempt", i, "args", logArgs(limit, args...))
 		if err == nil {
 			return nil
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			continue
 		}
-		retryErrors := c.config().RetryErrors
-		if retryErrors != "" {
-			match, regexErr := regexp.MatchString(retryErrors, err.Error())
-			if regexErr != nil {
-				log.Warn("rpcclient: bad value for retry-error. Not retrying.", "err", err, "value", retryErrors)
-			}
-			if match {
-				continue
-			}
+		if c.config().retryErrors.MatchString(err.Error()) {
+			continue
 		}
 		return err
 	}
