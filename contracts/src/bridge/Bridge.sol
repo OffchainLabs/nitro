@@ -35,7 +35,7 @@ contract Bridge is AbsBridge, IEthBridge {
         return _enqueueDelayedMessage(kind, sender, messageDataHash, msg.value);
     }
 
-    function _transferFunds(address, uint256) internal override {
+    function _transferFunds(uint256) internal override {
         // do nothing as Eth transfer is part of TX execution
     }
 

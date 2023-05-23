@@ -38,6 +38,15 @@ import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract Inbox is AbsInbox, IEthInbox {
+    /// @inheritdoc IInbox
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox)
+        external
+        initializer
+        onlyDelegated
+    {
+        __AbsInbox_init(_bridge, _sequencerInbox);
+    }
+
     /// @inheritdoc IEthInbox
     function postUpgradeInit(IBridge) external onlyDelegated onlyProxyOwner {}
 

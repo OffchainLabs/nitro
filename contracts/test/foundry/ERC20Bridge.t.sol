@@ -9,7 +9,7 @@ import "../../src/bridge/ERC20Inbox.sol";
 import "../../src/bridge/IEthBridge.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
+import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetMinterPauser.sol";
 
 import "forge-std/console.sol";
 
@@ -24,15 +24,16 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
     function setUp() public {
         // deploy token and bridge
-        nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
+        nativeToken = new ERC20PresetMinterPauser("Appchain Token", "App");
         bridge = ERC20Bridge(TestUtil.deployProxy(address(new ERC20Bridge())));
         erc20Bridge = IERC20Bridge(address(bridge));
 
         // init bridge
         erc20Bridge.initialize(IOwnable(rollup), address(nativeToken));
 
-        // fund user account
-        nativeToken.transfer(user, 1_000);
+        // deploy inbox
+        inbox = address(TestUtil.deployProxy(address(new ERC20Inbox())));
+        IERC20Inbox(address(inbox)).initialize(bridge, ISequencerInbox(seqInbox));
     }
 
     /* solhint-disable func-name-mixedcase */
@@ -64,8 +65,13 @@ contract ERC20BridgeTest is AbsBridgeTest {
     }
 
     function test_enqueueDelayedMessage() public {
+        // add fee tokens to inbox
+        ERC20PresetMinterPauser(address(nativeToken)).mint(inbox, tokenFeeAmount);
+
+        // snapshot
+        uint256 userNativeTokenBalanceBefore = nativeToken.balanceOf(address(user));
         uint256 bridgeNativeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
-        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+        uint256 inboxNativeTokenBalanceBefore = nativeToken.balanceOf(address(inbox));
         uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
 
         // allow inbox
@@ -97,6 +103,12 @@ contract ERC20BridgeTest is AbsBridgeTest {
         erc20Bridge.enqueueDelayedMessage(kind, userAliased, messageDataHash, tokenFeeAmount);
 
         //// checks
+        uint256 userNativeTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(
+            userNativeTokenBalanceAfter,
+            userNativeTokenBalanceBefore,
+            "Invalid user token balance"
+        );
 
         uint256 bridgeNativeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
         assertEq(
@@ -105,11 +117,11 @@ contract ERC20BridgeTest is AbsBridgeTest {
             "Invalid bridge token balance"
         );
 
-        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        uint256 inboxNativeTokenBalanceAfter = nativeToken.balanceOf(address(inbox));
         assertEq(
-            userTokenBalanceBefore - userTokenBalanceAfter,
+            inboxNativeTokenBalanceBefore - inboxNativeTokenBalanceAfter,
             tokenFeeAmount,
-            "Invalid user token balance"
+            "Invalid inbox token balance"
         );
 
         uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
@@ -138,11 +150,8 @@ contract ERC20BridgeTest is AbsBridgeTest {
     }
 
     function test_executeCall_EmptyCalldata() public {
-        // fund bridge with some tokens
-        vm.startPrank(user);
-        nativeToken.approve(address(bridge), 100);
-        nativeToken.transfer(address(bridge), 100);
-        vm.stopPrank();
+        // fund bridge native tokens
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(bridge), 15);
 
         // allow outbox
         vm.prank(rollup);
@@ -161,7 +170,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
         //// execute call
         vm.prank(outbox);
-        (bool success, ) = bridge.executeCall({to: user, value: withdrawalAmount, data: data});
+        (bool success, ) = bridge.executeCall(user, withdrawalAmount, data);
 
         //// checks
         assertTrue(success, "Execute call failed");
@@ -183,10 +192,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
     function test_executeCall_ExtraCall() public {
         // fund bridge with native tokens
-        vm.startPrank(user);
-        nativeToken.approve(address(bridge), 100);
-        nativeToken.transfer(address(bridge), 100);
-        vm.stopPrank();
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(bridge), 15);
 
         // allow outbox
         vm.prank(rollup);
@@ -237,10 +243,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
     function test_executeCall_UnsuccessfulExtraCall() public {
         // fund bridge with native tokens
-        vm.startPrank(user);
-        nativeToken.approve(address(bridge), 100);
-        nativeToken.transfer(address(bridge), 100);
-        vm.stopPrank();
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(bridge), 15);
 
         // allow outbox
         vm.prank(rollup);
@@ -299,10 +302,7 @@ contract ERC20BridgeTest is AbsBridgeTest {
 
     function test_executeCall_UnsuccessfulNativeTokenTransfer() public {
         // fund bridge with native tokens
-        vm.startPrank(user);
-        nativeToken.approve(address(bridge), 100);
-        nativeToken.transfer(address(bridge), 100);
-        vm.stopPrank();
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(bridge), 15);
 
         // allow outbox
         vm.prank(rollup);

@@ -8,7 +8,7 @@ import "../../src/bridge/ERC20Inbox.sol";
 import "../../src/bridge/ISequencerInbox.sol";
 import "../../src/libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetFixedSupply.sol";
+import "@openzeppelin/contracts/token/ERC20/presets/ERC20PresetMinterPauser.sol";
 
 contract ERC20InboxTest is AbsInboxTest {
     IERC20 public nativeToken;
@@ -16,7 +16,7 @@ contract ERC20InboxTest is AbsInboxTest {
 
     function setUp() public {
         // deploy token, bridge and inbox
-        nativeToken = new ERC20PresetFixedSupply("Appchain Token", "App", 1_000_000, address(this));
+        nativeToken = new ERC20PresetMinterPauser("Appchain Token", "App");
         bridge = IBridge(TestUtil.deployProxy(address(new ERC20Bridge())));
         inbox = IInbox(TestUtil.deployProxy(address(new ERC20Inbox())));
         erc20Inbox = IERC20Inbox(address(inbox));
@@ -28,10 +28,19 @@ contract ERC20InboxTest is AbsInboxTest {
         bridge.setDelayedInbox(address(inbox), true);
 
         // fund user account
-        nativeToken.transfer(user, 1_000);
+        ERC20PresetMinterPauser(address(nativeToken)).mint(user, 1_000 ether);
     }
 
     /* solhint-disable func-name-mixedcase */
+    function test_initialize() public {
+        assertEq(address(inbox.bridge()), address(bridge), "Invalid bridge ref");
+        assertEq(address(inbox.sequencerInbox()), seqInbox, "Invalid seqInbox ref");
+        assertEq(inbox.allowListEnabled(), false, "Invalid allowListEnabled");
+        assertEq((PausableUpgradeable(address(inbox))).paused(), false, "Invalid paused state");
+
+        assertEq(IERC20(nativeToken).allowance(address(inbox), address(bridge)), type(uint256).max);
+    }
+
     function test_depositERC20_FromEOA() public {
         uint256 depositAmount = 300;
 
@@ -39,9 +48,9 @@ contract ERC20InboxTest is AbsInboxTest {
         uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
         uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(user);
-        nativeToken.approve(address(bridge), depositAmount);
+        nativeToken.approve(address(inbox), depositAmount);
 
         // expect event
         vm.expectEmit(true, true, true, true);
@@ -71,6 +80,40 @@ contract ERC20InboxTest is AbsInboxTest {
         assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
     }
 
+    function test_depositERC20_FromEOA_InboxPrefunded() public {
+        uint256 depositAmount = 300;
+
+        uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
+        uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
+        uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
+
+        // prefund inbox with native token amount needed to pay for fees
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(inbox), depositAmount);
+
+        // expect event
+        vm.expectEmit(true, true, true, true);
+        emit InboxMessageDelivered(0, abi.encodePacked(user, depositAmount));
+
+        // deposit tokens -> tx.origin == msg.sender
+        vm.prank(user, user);
+        erc20Inbox.depositERC20(depositAmount);
+
+        //// checks
+
+        uint256 bridgeTokenBalanceAfter = nativeToken.balanceOf(address(bridge));
+        assertEq(
+            bridgeTokenBalanceAfter - bridgeTokenBalanceBefore,
+            depositAmount,
+            "Invalid bridge token balance"
+        );
+
+        uint256 userTokenBalanceAfter = nativeToken.balanceOf(address(user));
+        assertEq(userTokenBalanceBefore, userTokenBalanceAfter, "Invalid user token balance");
+
+        uint256 delayedMsgCountAfter = bridge.delayedMessageCount();
+        assertEq(delayedMsgCountAfter - delayedMsgCountBefore, 1, "Invalid delayed message count");
+    }
+
     function test_depositERC20_FromContract() public {
         uint256 depositAmount = 300;
 
@@ -78,9 +121,9 @@ contract ERC20InboxTest is AbsInboxTest {
         uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
         uint256 delayedMsgCountBefore = bridge.delayedMessageCount();
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(user);
-        nativeToken.approve(address(bridge), depositAmount);
+        nativeToken.approve(address(inbox), depositAmount);
 
         // expect event
         vm.expectEmit(true, true, true, true);
@@ -140,9 +183,9 @@ contract ERC20InboxTest is AbsInboxTest {
 
         uint256 tokenTotalFeeAmount = 300;
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(user);
-        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+        nativeToken.approve(address(inbox), tokenTotalFeeAmount);
 
         // retyrable params
         uint256 l2CallValue = 10;
@@ -204,16 +247,16 @@ contract ERC20InboxTest is AbsInboxTest {
 
     function test_createRetryableTicket_FromContract() public {
         address sender = address(new Sender());
-        nativeToken.transfer(address(sender), 1_000);
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(sender), 1_000);
 
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 senderTokenBalanceBefore = nativeToken.balanceOf(address(sender));
 
         uint256 tokenTotalFeeAmount = 300;
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(sender);
-        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+        nativeToken.approve(address(inbox), tokenTotalFeeAmount);
 
         // retyrable params
         uint256 l2CallValue = 10;
@@ -433,9 +476,9 @@ contract ERC20InboxTest is AbsInboxTest {
 
         uint256 tokenTotalFeeAmount = 300;
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(user);
-        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+        nativeToken.approve(address(inbox), tokenTotalFeeAmount);
 
         // retyrable params
         uint256 l2CallValue = 10;
@@ -497,16 +540,16 @@ contract ERC20InboxTest is AbsInboxTest {
 
     function test_unsafeCreateRetryableTicket_FromContract() public {
         address sender = address(new Sender());
-        nativeToken.transfer(address(sender), 1_000);
+        ERC20PresetMinterPauser(address(nativeToken)).mint(address(sender), 1_000);
 
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 senderTokenBalanceBefore = nativeToken.balanceOf(address(sender));
 
         uint256 tokenTotalFeeAmount = 300;
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(sender);
-        nativeToken.approve(address(bridge), tokenTotalFeeAmount);
+        nativeToken.approve(address(inbox), tokenTotalFeeAmount);
 
         // retyrable params
         uint256 l2CallValue = 10;
@@ -576,9 +619,9 @@ contract ERC20InboxTest is AbsInboxTest {
         uint256 bridgeTokenBalanceBefore = nativeToken.balanceOf(address(bridge));
         uint256 userTokenBalanceBefore = nativeToken.balanceOf(address(user));
 
-        // approve bridge to escrow tokens
+        // approve inbox to fetch tokens
         vm.prank(user);
-        nativeToken.approve(address(bridge), tooSmallTokenTotalFeeAmount);
+        nativeToken.approve(address(inbox), tooSmallTokenTotalFeeAmount);
 
         vm.prank(user, user);
         erc20Inbox.unsafeCreateRetryableTicket({

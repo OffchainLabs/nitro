@@ -18,7 +18,7 @@ abstract contract AbsBridgeTest is Test {
     address public userB = address(101);
 
     address public rollup = address(1000);
-    address public inbox = address(1001);
+    address public inbox;
     address public outbox = address(1002);
     address public seqInbox = address(1003);
 
@@ -172,6 +172,9 @@ abstract contract AbsBridgeTest is Test {
         address sender = address(250);
         bytes32 messageDataHash = keccak256(abi.encode("msg"));
 
+        vm.prank(rollup);
+        bridge.setSequencerInbox(seqInbox);
+
         // expect event
         vm.expectEmit(true, true, true, true);
         emit MessageDelivered(
@@ -186,8 +189,6 @@ abstract contract AbsBridgeTest is Test {
         );
 
         // submit report
-        vm.prank(rollup);
-        bridge.setSequencerInbox(seqInbox);
         vm.prank(seqInbox);
         uint256 count = bridge.submitBatchSpendingReport(sender, messageDataHash);
 

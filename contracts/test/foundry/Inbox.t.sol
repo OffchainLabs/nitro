@@ -29,6 +29,13 @@ contract InboxTest is AbsInboxTest {
     }
 
     /* solhint-disable func-name-mixedcase */
+    function test_initialize() public {
+        assertEq(address(inbox.bridge()), address(bridge), "Invalid bridge ref");
+        assertEq(address(inbox.sequencerInbox()), seqInbox, "Invalid seqInbox ref");
+        assertEq(inbox.allowListEnabled(), false, "Invalid allowListEnabled");
+        assertEq((PausableUpgradeable(address(inbox))).paused(), false, "Invalid paused state");
+    }
+
     function test_depositEth_FromEOA() public {
         uint256 depositAmount = 2 ether;
 

@@ -10,6 +10,8 @@ import "./IERC20Bridge.sol";
 import "../libraries/AddressAliasHelper.sol";
 import {L1MessageType_ethDeposit} from "../libraries/MessageTypes.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title Inbox for user and contract originated messages
@@ -17,6 +19,21 @@ import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract ERC20Inbox is AbsInbox, IERC20Inbox {
+    using SafeERC20 for IERC20;
+
+    /// @inheritdoc IInbox
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox)
+        external
+        initializer
+        onlyDelegated
+    {
+        __AbsInbox_init(_bridge, _sequencerInbox);
+
+        // inbox holds native token in transit used to pay for retryable tickets, approve bridge to use it
+        address nativeToken = IERC20Bridge(address(bridge)).nativeToken();
+        IERC20(nativeToken).approve(address(bridge), type(uint256).max);
+    }
+
     /// @inheritdoc IERC20Inbox
     function depositERC20(uint256 amount) public whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
@@ -105,6 +122,14 @@ contract ERC20Inbox is AbsInbox, IERC20Inbox {
         bytes32 messageDataHash,
         uint256 tokenAmount
     ) internal override returns (uint256) {
+        // fetch native token from sender if inbox doesn't already hold enough tokens to pay for fees
+        address nativeToken = IERC20Bridge(address(bridge)).nativeToken();
+        uint256 inboxNativeTokenBalance = IERC20(nativeToken).balanceOf(address(this));
+        if (inboxNativeTokenBalance < tokenAmount) {
+            uint256 diff = tokenAmount - inboxNativeTokenBalance;
+            IERC20(nativeToken).safeTransferFrom(msg.sender, address(this), diff);
+        }
+
         return
             IERC20Bridge(address(bridge)).enqueueDelayedMessage(
                 kind,
