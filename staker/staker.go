@@ -78,7 +78,7 @@ type L1ValidatorConfig struct {
 	ContractWalletAddress    string                   `koanf:"contract-wallet-address"`
 	GasRefunderAddress       string                   `koanf:"gas-refunder-address"`
 	Dangerous                DangerousConfig          `koanf:"dangerous"`
-	L1Wallet                 genericconf.WalletConfig `koanf:"l1-wallet"`
+	L1Wallet                 genericconf.WalletConfig `koanf:"parent-chain-wallet"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -165,7 +165,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
-	genericconf.WalletConfigAddOptions(prefix+".l1-wallet", f, DefaultL1ValidatorConfig.L1Wallet.Pathname)
+	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.L1Wallet.Pathname)
 }
 
 type DangerousConfig struct {

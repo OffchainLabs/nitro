@@ -328,27 +328,27 @@ func mainImpl() int {
 			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
-				log.Crit("error opening L1 wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
+				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
 			l1TransactionOptsBatchPoster = l1TransactionOpts
 			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
 		if *l1Wallet != defaultL1WalletConfig {
-			log.Crit("--l1.l1-wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
+			log.Crit("--parent-chain.wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
 		}
 		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
-				log.Crit("error opening Batch poster L1 wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
+				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.L1Wallet.Pathname, "account", nodeConfig.Node.BatchPoster.L1Wallet.Account, "err", err)
 			}
 		}
 		if validatorNeedsKey || nodeConfig.Node.Staker.L1Wallet.OnlyCreateKey {
 			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.L1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				flag.Usage()
-				log.Crit("error opening Validator L1 wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
+				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.L1Wallet.Pathname, "account", nodeConfig.Node.Staker.L1Wallet.Account, "err", err)
 			}
 		}
 	}
@@ -357,7 +357,7 @@ func mainImpl() int {
 	if nodeConfig.L2.ChainInfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.L2.ChainInfoIpfsUrl, nodeConfig.L2.ChainInfoIpfsDownloadPath)
 		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
+			log.Error("error getting chain info file from ipfs", "err", err)
 		}
 		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
 	}
@@ -365,7 +365,7 @@ func mainImpl() int {
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
-			log.Crit("validator have the L1 reader enabled")
+			log.Crit("validator must have the parent chain reader enabled")
 		}
 		strategy, err := nodeConfig.Node.Staker.ParseStrategy()
 		if err != nil {
@@ -590,8 +590,8 @@ type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	L1            conf.L1Config                   `koanf:"l1" reload:"hot"`
-	L2            conf.L2Config                   `koanf:"l2"`
+	L1            conf.L1Config                   `koanf:"parent-chain" reload:"hot"`
+	L2            conf.L2Config                   `koanf:"chain"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
 	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
@@ -626,8 +626,8 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
 	valnode.ValidationConfigAddOptions("validation", f)
-	conf.L1ConfigAddOptions("l1", f)
-	conf.L2ConfigAddOptions("l2", f)
+	conf.L1ConfigAddOptions("parent-chain", f)
+	conf.L2ConfigAddOptions("chain", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
@@ -706,12 +706,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, nil, err
 	}
 
-	l2ChainId := k.Int64("l2.chain-id")
-	l2ChainName := k.String("l2.chain-name")
+	l2ChainId := k.Int64("chain.id")
+	l2ChainName := k.String("chain.name")
 	l2ChainInfoIpfsUrl := k.String("l2.chain-info-ipfs-url")
 	l2ChainInfoIpfsDownloadPath := k.String("l2.chain-info-ipfs-download-path")
 	if l2ChainId == 0 && l2ChainName == "" {
-		return nil, nil, nil, errors.New("must specify --l2.chain-id or --l2.chain-name to choose rollup")
+		return nil, nil, nil, errors.New("must specify --chain.id or --chain.name to choose rollup")
 	}
 	l2ChainInfoFiles := k.Strings("l2.chain-info-files")
 	l2ChainInfoJson := k.String("l2.chain-info-json")
@@ -733,10 +733,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"l1.wallet.password":        "",
-			"l1.wallet.private-key":     "",
-			"l2.dev-wallet.password":    "",
-			"l2.dev-wallet.private-key": "",
+			"parent-chain.wallet.password":    "",
+			"parent-chain.wallet.private-key": "",
+			"chain.dev-wallet.password":       "",
+			"chain.dev-wallet.private-key":    "",
 		})
 		if err != nil {
 			return nil, nil, nil, err
@@ -789,8 +789,8 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
-		"l2.chain-id":      chainInfo.ChainId,
-		"l1.chain-id":      chainInfo.ParentChainId,
+		"chain.id":         chainInfo.ChainId,
+		"parent-chain.id":  chainInfo.ParentChainId,
 	}
 	if chainInfo.SequencerUrl != "" {
 		chainDefaults["node.forwarding-target"] = chainInfo.SequencerUrl

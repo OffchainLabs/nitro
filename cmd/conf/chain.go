@@ -12,7 +12,7 @@ import (
 )
 
 type L1Config struct {
-	ChainID    uint64                   `koanf:"chain-id"`
+	ChainID    uint64                   `koanf:"id"`
 	Connection rpcclient.ClientConfig   `koanf:"connection" reload:"hot"`
 	Wallet     genericconf.WalletConfig `koanf:"wallet"`
 }
@@ -39,7 +39,7 @@ var DefaultL1WalletConfig = genericconf.WalletConfig{
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
+	f.Uint64(prefix+".id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	rpcclient.RPCClientAddOptions(prefix+".connection", f, &L1ConfigDefault.Connection)
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, L1ConfigDefault.Wallet.Pathname)
 }
@@ -49,8 +49,8 @@ func (c *L1Config) ResolveDirectoryNames(chain string) {
 }
 
 type L2Config struct {
-	ChainID                   uint64                   `koanf:"chain-id"`
-	ChainName                 string                   `koanf:"chain-name"`
+	ChainID                   uint64                   `koanf:"id"`
+	ChainName                 string                   `koanf:"name"`
 	ChainInfoFiles            []string                 `koanf:"chain-info-files"`
 	ChainInfoJson             string                   `koanf:"chain-info-json"`
 	DevWallet                 genericconf.WalletConfig `koanf:"dev-wallet"`
@@ -69,8 +69,8 @@ var L2ConfigDefault = L2Config{
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
-	f.String(prefix+".chain-name", L2ConfigDefault.ChainName, "L2 chain name (determines Arbitrum network)")
+	f.Uint64(prefix+".id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
+	f.String(prefix+".name", L2ConfigDefault.ChainName, "L2 chain name (determines Arbitrum network)")
 	f.StringSlice(prefix+".chain-info-files", L2ConfigDefault.ChainInfoFiles, "L2 chain info json files")
 	f.String(prefix+".chain-info-json", L2ConfigDefault.ChainInfoJson, "L2 chain info in json string format")
 

@@ -151,7 +151,7 @@ function writeGethGenesisConfig(argv: any) {
 function writeConfigs(argv: any) {
 	const chainInfoFile = path.join(consts.configpath, "l2_chain_info.json")
     const baseConfig = {
-        "l1": {
+        "parent-chain": {
             "url": argv.l1url,
             "wallet": {
                 "account": "",
@@ -159,8 +159,8 @@ function writeConfigs(argv: any) {
                 "pathname": consts.l1keystore,
             },
         },
-        "l2": {
-            "chain-id": 412346,
+        "chain": {
+            "id": 412346,
             "dev-wallet" : {
                 "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
             },
@@ -227,7 +227,7 @@ function writeConfigs(argv: any) {
     const baseConfJSON = JSON.stringify(baseConfig)
 
     let validatorConfig = JSON.parse(baseConfJSON)
-    validatorConfig.l1.wallet.account = namedAccount("validator").address
+    validatorConfig["parent-chain"].wallet.account = namedAccount("validator").address
     validatorConfig.node.staker.enable = true
     validatorConfig.node.staker["use-smart-contract-wallet"] = true
     let validconfJSON = JSON.stringify(validatorConfig)
@@ -244,7 +244,7 @@ function writeConfigs(argv: any) {
     fs.writeFileSync(path.join(consts.configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))
 
     let posterConfig = JSON.parse(baseConfJSON)
-    posterConfig.l1.wallet.account = namedAccount("sequencer").address
+    posterConfig["parent-chain"].wallet.account = namedAccount("sequencer").address
     posterConfig.node["seq-coordinator"].enable = true
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
