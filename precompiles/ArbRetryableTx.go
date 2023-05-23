@@ -131,6 +131,34 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
 }
 
+func (con ArbRetryableTx) RedeemArchived(c ctx, evm mech, ticketId bytes32,
+	requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
+	gasLimit uint64, maxSubmissionFee huge,
+	feeRefundAddress, beneficiary, retryTo addr,
+	retryData []byte,
+	proof []byte, // TODO(magic) add proof to sol declr
+) (bytes32, error) {
+	time := evm.Context.Time
+	timeout := time + retryables.RetryableLifetimeSeconds
+	// TODO(magic)
+	// 1. Reconstruct retryable and get its hash
+	// 2. Validate inclusion in retryables.Archived
+	// 3. Check retryables.RedeemableArchived.IsMember(retryableHash)
+
+	// 4. Redeem:
+	//    retryTxInner, err := retryable.MakeTx(
+	//    ...
+	//    retryTx := types.NewTx(retryTxInner)
+	//    retryTxHash := retryTx.Hash()
+	//    err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund, common.Big0)
+	// 5. Handle gas
+	// 6. On succcess: retryables.RedeemableArchived.Remove(retryableHash)
+	// Qs:
+	// * Won't ReddemableArchived require too much storage? (even as a packed set)
+	// * If not, do we need Archived merkle tree accumulator?
+	return bytes32{}, nil
+}
+
 // GetLifetime gets the default lifetime period a retryable has at creation
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
@@ -221,6 +249,15 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 		return err
 	}
 	return con.Canceled(c, evm, ticketId)
+}
+
+func (con ArbRetryableTx) CancelArchived(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
+	// TODO(magic)
+	// * args
+	// 1. Reconstruct retryable and get retryableHash
+	// 2. Validate inclusion in retryables.Archived
+	// 3. remove from retryables.RedeemableArchived (with or without checking if already exists)
+	return bytes32{}, nil
 }
 
 func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {

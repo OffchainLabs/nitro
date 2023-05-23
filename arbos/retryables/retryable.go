@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -21,16 +22,22 @@ const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 const RetryableReapPrice = 58000
 
 type RetryableState struct {
-	retryables   *storage.Storage
-	TimeoutQueue *storage.Queue
+	retryables         *storage.Storage
+	TimeoutQueue       *storage.Queue
+	Archive            *merkleAccumulator.MerkleAccumulator
+	RedeemableArchived *storage.PackedSet
 }
 
 var (
-	timeoutQueueKey = []byte{0}
-	calldataKey     = []byte{1}
+	timeoutQueueKey       = []byte{0}
+	calldataKey           = []byte{1}
+	archiveKey            = []byte{2}
+	redeemableArchivedKey = []byte{3}
 )
 
 func InitializeRetryableState(sto *storage.Storage) error {
+	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(archiveKey))
+	storage.InitializePackedSet(sto.OpenSubStorage(redeemableArchivedKey))
 	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
@@ -38,6 +45,8 @@ func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableStat
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
+		storage.OpenMerkleAccumulator(sto.OpenSubStorage(archiveKey)),
+		storage.OpenPackedSet(sto.OpenSubStorage(redeemableArchivedKey)),
 	}
 }
 
@@ -246,6 +255,52 @@ func (rs *RetryableState) Keepalive(
 	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
 }
 
+func (retryable *Retryable) GetHash() (common.Hash, error) {
+	numTries, err := retryable.numTries.StorageSlot.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	from, err := retryable.from.StorageSlot.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	to, err := retryable.to.StorageSlot.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	callvalue, err := retryable.callvalue.StorageSlot.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	beneficiary, err := retryable.beneficiary.StorageSlot.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	calldata, err := retryable.calldata.Get()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	// TODO(magic) make sure it's ok to skip timeout fields
+	//timeout, err := retryable.timeout.StorageSlot.Get()
+	//if err != nil {
+	//	return common.Hash{}, err
+	//}
+	//timeoutWindowsLeft, err := retryable.timeoutWindowsLeft.StorageSlot.Get()
+	//if err != nil {
+	//	return common.Hash{}, err
+	//}
+	return common.BytesToHash(crypto.Keccak256(
+		numTries.Bytes(),
+		from.Bytes(),
+		to.Bytes(),
+		callvalue.Bytes(),
+		beneficiary.Bytes(),
+		calldata,
+		//timeout.Bytes(),
+		//timeoutWindowsLeft.Bytes(),
+	)), nil
+}
+
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing
 	if retryable.id != other.id {
 		return false, nil
@@ -317,7 +372,27 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
-		_, err = rs.DeleteRetryable(*id, evm, scenario)
+		retrayable := Retryable{
+			id:                 id,
+			backingStorage:     retryableStorage,
+			numTries:           retryableStorage.OpenStorageBackedUint64(numTriesOffset),
+			from:               retryableStorage.OpenStorageBackedAddress(fromOffset),
+			to:                 retryableStorage.OpenStorageBackedAddressOrNil(toOffset),
+			callvalue:          retryableStorage.OpenStorageBackedBigUint(callvalueOffset),
+			beneficiary:        retryableStorage.OpenStorageBackedAddress(beneficiaryOffset),
+			calldata:           retryableStorage.OpenStorageBackedBytes(calldataKey),
+			timeout:            timeoutStorage,
+			timeoutWindowsLeft: windowsLeftStorage,
+		}
+		retrayableHash, err := retrayable.GetHash()
+		if err != nil {
+			return err
+		}
+		deleted, err = rs.DeleteRetryable(*id, evm, scenario)
+		if deleted {
+			rs.Archive.Append(retrayableHash)
+			rs.RedeemableArchived.Add(retrayableHash)
+		}
 		return err
 	}
 
