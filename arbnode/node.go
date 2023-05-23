@@ -346,6 +346,9 @@ func (c *Config) Validate() error {
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
+	if err := c.BlockValidator.Validate(); err != nil {
+		return err
+	}
 	if err := c.Maintenance.Validate(); err != nil {
 		return err
 	}

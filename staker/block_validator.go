@@ -91,6 +91,10 @@ type BlockValidatorConfig struct {
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
 }
 
+func (c *BlockValidatorConfig) Validate() error {
+	return c.ValidationServer.Validate()
+}
+
 type BlockValidatorDangerousConfig struct {
 	ResetBlockValidation bool `koanf:"reset-block-validation"`
 }

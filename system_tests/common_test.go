@@ -341,7 +341,19 @@ func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode
 	return valnode, stack
 }
 
-func StaticFetcherFrom[T any](config T) func() T {
+type validated interface {
+	Validate() error
+}
+
+func StaticFetcherFrom[T any](t *testing.T, config T) func() T {
+	t.Helper()
+	asEmptyIf := interface{}(config)
+	if asValidtedIf, ok := asEmptyIf.(validated); ok {
+		err := asValidtedIf.Validate()
+		if err != nil {
+			Fail(t, err)
+		}
+	}
 	return func() T { return config }
 }
 
