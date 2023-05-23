@@ -1,6 +1,7 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
 	url = https://github.com/OffchainLabs/go-ethereum.git
+	branch = missing_bloom_confirm
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
@@ -20,5 +21,3 @@
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
-[submodule "go-ethereum/"]
-	branch = missing_bloom_confirm
