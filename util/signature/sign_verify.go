@@ -36,6 +36,14 @@ var DefaultSignVerifyConfig = SignVerifyConfig{
 	SymmetricSign:     false,
 	Symmetric:         EmptySimpleHmacConfig,
 }
+var TestSignVerifyConfig = SignVerifyConfig{
+	ECDSA: VerifierConfig{
+		AcceptSequencer: true,
+	},
+	SymmetricFallback: false,
+	SymmetricSign:     false,
+	Symmetric:         TestSimpleHmacConfig,
+}
 
 func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValidator contracts.BatchPosterVerifierInterface) (*SignVerify, error) {
 	var fallback *SimpleHmac
