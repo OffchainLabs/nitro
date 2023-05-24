@@ -2,172 +2,135 @@ package main
 
 import (
 	"context"
-	"math/big"
 	"time"
 
 	"github.com/OffchainLabs/challenge-protocol-v2/protocol"
-	solimpl "github.com/OffchainLabs/challenge-protocol-v2/protocol/sol-implementation"
 	statemanager "github.com/OffchainLabs/challenge-protocol-v2/state-manager"
-	chalTesting "github.com/OffchainLabs/challenge-protocol-v2/testing"
 	"github.com/OffchainLabs/challenge-protocol-v2/testing/setup"
-	"github.com/OffchainLabs/challenge-protocol-v2/util"
 	"github.com/OffchainLabs/challenge-protocol-v2/validator"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 var (
-	// The chain id for the backend.
-	chainId = big.NewInt(1337)
-	// The size of a mini stake that is posted when creating leaf edges in
-	// challenges (clarify if gwei?).
-	miniStakeSize = big.NewInt(1)
 	// The heights at which Alice and Bob diverge at each challenge level.
-	divergeHeightAtL2 = uint64(3)
+	divergeHeightAtL2 = uint64(4)
 	// How often an edge tracker needs to wake and perform its responsibilities.
-	edgeTrackerWakeInterval = time.Millisecond * 500
+	edgeTrackerWakeInterval = time.Second
 	// How often the validator polls the chain to see if new assertions have been posted.
 	checkForAssertionsInteral = time.Second
 	// How often the validator will post its latest assertion to the chain.
 	postNewAssertionInterval = time.Second * 5
+	// How often we advance the blockchain's latest block in the background using a simulated backend.
+	advanceChainInterval = time.Second * 5
 )
 
+type challengeProtocolTestConfig struct {
+	// The height in the assertion chain at which the validators diverge.
+	assertionDivergenceHeight uint64
+	// The difference between the malicious assertion block height and the honest assertion block height.
+	assertionBlockHeightDifference int64
+	// The heights at which the validators diverge in histories at the big step
+	// subchallenge level.
+	bigStepDivergenceHeight uint64
+	// The heights at which the validators diverge in histories at the small step
+	// subchallenge level.
+	smallStepDivergenceHeight uint64
+}
+
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
-	// Setup an admin account, Alice and Bob.
-	accs, backend, err := setup.SetupAccounts(3)
+
+	setupCfg, err := setup.SetupChainsWithEdgeChallengeManager()
 	if err != nil {
 		panic(err)
 	}
-	addresses, err := deployStack(ctx, accs[0], backend)
-	if err != nil {
-		panic(err)
-	}
+	chains := setupCfg.Chains
+	accs := setupCfg.Accounts
+	addrs := setupCfg.Addrs
+	backend := setupCfg.Backend
 
-	headerReader := headerreader.New(util.SimulatedBackendWrapper{
-		SimulatedBackend: backend,
-	}, func() *headerreader.Config {
-		return &headerreader.TestConfig
-	})
-	headerReader.Start(ctx)
-
-	// Setup the chain abstractions for Alice and Bob.
-	aliceL1ChainWrapper, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[1].TxOpts,
-		backend,
-		headerReader,
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	bobL1ChainWrapper, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		accs[2].TxOpts,
-		backend,
-		headerReader,
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	// Advance the L1 chain by 100 blocks as there needs to be a minimum period of time
-	// before any assertions can be submitted to L1.
+	// Advance the chain by 100 blocks as there needs to be a minimum period of time
+	// before any assertions can be made on-chain.
 	for i := 0; i < 100; i++ {
 		backend.Commit()
 	}
 
-	// Initialize Alice and Bob's respective L2 state managers.
-	aliceL2StateManager, err := statemanager.NewForSimpleMachine()
+	aliceStateManager, err := statemanager.NewForSimpleMachine()
 	if err != nil {
 		panic(err)
 	}
-
-	// Bob diverges from Alice's L2 history at the specified divergence height.
-	bobL2StateManager, err := statemanager.NewForSimpleMachine(
-		statemanager.WithBlockDivergenceHeight(1),
-		statemanager.WithMachineDivergenceStep(divergeHeightAtL2+(divergeHeightAtL2-1)*protocol.LevelZeroSmallStepEdgeHeight),
+	cfg := &challengeProtocolTestConfig{
+		// The heights at which the validators diverge in histories. In this test,
+		// alice and bob start diverging at height 3 at all subchallenge levels.
+		assertionDivergenceHeight: divergeHeightAtL2,
+		bigStepDivergenceHeight:   divergeHeightAtL2,
+		smallStepDivergenceHeight: divergeHeightAtL2,
+	}
+	bobStateManager, err := statemanager.NewForSimpleMachine(
+		statemanager.WithMachineDivergenceStep(cfg.bigStepDivergenceHeight*protocol.LevelZeroSmallStepEdgeHeight+cfg.smallStepDivergenceHeight),
+		statemanager.WithBlockDivergenceHeight(cfg.assertionDivergenceHeight),
+		statemanager.WithDivergentBlockHeightOffset(cfg.assertionBlockHeightDifference),
 	)
 	if err != nil {
 		panic(err)
 	}
 
-	timeReference := util.NewRealTimeReference()
-	commonValidatorOpts := []validator.Opt{
-		validator.WithTimeReference(timeReference),
-		validator.WithEdgeTrackerWakeInterval(edgeTrackerWakeInterval),
-		validator.WithPostAssertionsInterval(postNewAssertionInterval),
-		validator.WithNewAssertionCheckInterval(checkForAssertionsInteral),
+	a, err := setupValidator(ctx, chains[0], backend, addrs.Rollup, aliceStateManager, "alice", accs[0].TxOpts.From)
+	if err != nil {
+		panic(err)
 	}
-	aliceOpts := []validator.Opt{
-		validator.WithName("alice"),
-		validator.WithAddress(accs[1].AccountAddr),
-	}
-
-	// Sets up Alice and Bob validators.
-	alice, err := validator.New(
-		ctx,
-		aliceL1ChainWrapper,
-		backend,
-		aliceL2StateManager,
-		addresses.Rollup,
-		append(aliceOpts, commonValidatorOpts...)...,
-	)
+	b, err := setupValidator(ctx, chains[1], backend, addrs.Rollup, bobStateManager, "bob", accs[1].TxOpts.From)
 	if err != nil {
 		panic(err)
 	}
 
-	bobOpts := []validator.Opt{
-		validator.WithName("bob"),
-		validator.WithAddress(accs[2].AccountAddr),
-	}
-	bob, err := validator.New(
-		ctx,
-		bobL1ChainWrapper,
-		backend,
-		bobL2StateManager,
-		addresses.Rollup,
-		append(bobOpts, commonValidatorOpts...)...,
-	)
-	if err != nil {
-		panic(err)
-	}
+	// Advance the blockchain in the background.
+	go func() {
+		tick := time.NewTicker(advanceChainInterval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				backend.Commit()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
-	// Spawns the validators, which should have them post assertions, challenge each other,
-	// and have the honest party win.
-	go alice.Start(ctx)
-	go bob.Start(ctx)
+	a.Start(ctx)
+	b.Start(ctx)
 
 	<-ctx.Done()
 }
 
-func deployStack(
+// setupValidator initializes a validator with the minimum required configuration.
+func setupValidator(
 	ctx context.Context,
-	adminAccount *setup.TestAccount,
-	backend *backends.SimulatedBackend,
-) (*setup.RollupAddresses, error) {
-	prod := false
-	wasmModuleRoot := common.Hash{}
-	rollupOwner := adminAccount
-	loserStakeEscrow := common.Address{}
-	cfg := chalTesting.GenerateRollupConfig(
-		prod,
-		wasmModuleRoot,
-		rollupOwner.AccountAddr,
-		chainId,
-		loserStakeEscrow,
-		miniStakeSize,
-	)
-	return setup.DeployFullRollupStack(
+	chain protocol.AssertionChain,
+	backend bind.ContractBackend,
+	rollup common.Address,
+	sm statemanager.Manager,
+	name string,
+	addr common.Address,
+) (*validator.Validator, error) {
+	v, err := validator.New(
 		ctx,
+		chain,
 		backend,
-		adminAccount.TxOpts,
-		common.Address{}, // Sequencer addr.
-		cfg,
+		sm,
+		rollup,
+		validator.WithAddress(addr),
+		validator.WithName(name),
+		validator.WithEdgeTrackerWakeInterval(edgeTrackerWakeInterval),
+		validator.WithNewAssertionCheckInterval(checkForAssertionsInteral),
+		validator.WithPostAssertionsInterval(postNewAssertionInterval),
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
 }
