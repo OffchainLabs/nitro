@@ -34,11 +34,13 @@ import (
 //
 // From here, the list of ancestors can be determined all the way to the top.
 func TestAncestors_AllChallengeLevels(t *testing.T) {
+	ctx := context.Background()
 	tree := &HonestChallengeTree{
 		edges:                         threadsafe.NewMap[protocol.EdgeId, protocol.ReadOnlyEdge](),
-		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Set[protocol.EdgeId]](),
+		mutualIds:                     threadsafe.NewMap[protocol.MutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
 		honestBigStepLevelZeroEdges:   threadsafe.NewSlice[protocol.ReadOnlyEdge](),
 		honestSmallStepLevelZeroEdges: threadsafe.NewSlice[protocol.ReadOnlyEdge](),
+		metadataReader:                &mockMetadataReader{},
 	}
 	// Edge ids that belong to block challenges are prefixed with "blk".
 	// For big step, prefixed with "big", and small step, prefixed with "smol".
@@ -50,34 +52,34 @@ func TestAncestors_AllChallengeLevels(t *testing.T) {
 	claimId = "big-4.a-5.a"
 	setupSmallStepChallengeSnapshot(t, tree, claimId)
 	tree.honestSmallStepLevelZeroEdges.Push(tree.edges.Get(id("smol-0.a-16.a")))
-	ctx := context.Background()
+	blockNum := uint64(30)
 
 	t.Run("junk edge fails", func(t *testing.T) {
 		// We start by querying for ancestors for a block edge id.
-		_, err := tree.AncestorsForHonestEdge(ctx, id("foo"))
+		_, _, err := tree.HonestPathTimer(ctx, id("foo"), blockNum)
 		require.ErrorContains(t, err, "not found in honest challenge tree")
 	})
 	t.Run("dishonest edge lookup fails", func(t *testing.T) {
-		_, err := tree.AncestorsForHonestEdge(ctx, id("blk-0.a-16.b"))
+		_, _, err := tree.HonestPathTimer(ctx, id("blk-0.a-16.b"), blockNum)
 		require.ErrorContains(t, err, "not found in honest challenge tree")
 	})
 	t.Run("block challenge: level zero edge has no ancestors", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("blk-0.a-16.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("blk-0.a-16.a"), blockNum)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(ancestors))
 	})
 	t.Run("block challenge: single ancestor", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("blk-0.a-8.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("blk-0.a-8.a"), blockNum)
 		require.NoError(t, err)
-		require.Equal(t, []protocol.EdgeId{id("blk-0.a-16.a")}, ancestors)
-		ancestors, err = tree.AncestorsForHonestEdge(ctx, id("blk-8.a-16.a"))
+		require.Equal(t, HonestAncestors{id("blk-0.a-16.a")}, ancestors)
+		_, ancestors, err = tree.HonestPathTimer(ctx, id("blk-8.a-16.a"), blockNum)
 		require.NoError(t, err)
-		require.Equal(t, []protocol.EdgeId{id("blk-0.a-16.a")}, ancestors)
+		require.Equal(t, HonestAncestors{id("blk-0.a-16.a")}, ancestors)
 	})
 	t.Run("block challenge: many ancestors", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("blk-4.a-5.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("blk-4.a-5.a"), blockNum)
 		require.NoError(t, err)
-		wanted := []protocol.EdgeId{
+		wanted := HonestAncestors{
 			id("blk-4.a-6.a"),
 			id("blk-4.a-8.a"),
 			id("blk-0.a-8.a"),
@@ -86,9 +88,9 @@ func TestAncestors_AllChallengeLevels(t *testing.T) {
 		require.Equal(t, wanted, ancestors)
 	})
 	t.Run("big step challenge: level zero edge has ancestors from block challenge", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("big-0.a-16.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("big-0.a-16.a"), blockNum)
 		require.NoError(t, err)
-		wanted := []protocol.EdgeId{
+		wanted := HonestAncestors{
 			id("blk-4.a-5.a"),
 			id("blk-4.a-6.a"),
 			id("blk-4.a-8.a"),
@@ -98,9 +100,9 @@ func TestAncestors_AllChallengeLevels(t *testing.T) {
 		require.Equal(t, wanted, ancestors)
 	})
 	t.Run("big step challenge: many ancestors plus block challenge ancestors", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("big-5.a-6.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("big-5.a-6.a"), blockNum)
 		require.NoError(t, err)
-		wanted := []protocol.EdgeId{
+		wanted := HonestAncestors{
 			// Big step chal.
 			id("big-4.a-6.a"),
 			id("big-4.a-8.a"),
@@ -116,9 +118,9 @@ func TestAncestors_AllChallengeLevels(t *testing.T) {
 		require.Equal(t, wanted, ancestors)
 	})
 	t.Run("small step challenge: level zero edge has ancestors from big and block challenge", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("smol-0.a-16.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("smol-0.a-16.a"), blockNum)
 		require.NoError(t, err)
-		wanted := []protocol.EdgeId{
+		wanted := HonestAncestors{
 			// Big step chal.
 			id("big-4.a-5.a"),
 			id("big-4.a-6.a"),
@@ -135,9 +137,9 @@ func TestAncestors_AllChallengeLevels(t *testing.T) {
 		require.Equal(t, wanted, ancestors)
 	})
 	t.Run("small step challenge: lowest level edge has full ancestry", func(t *testing.T) {
-		ancestors, err := tree.AncestorsForHonestEdge(ctx, id("smol-5.a-6.a"))
+		_, ancestors, err := tree.HonestPathTimer(ctx, id("smol-5.a-6.a"), blockNum)
 		require.NoError(t, err)
-		wanted := []protocol.EdgeId{
+		wanted := HonestAncestors{
 			// Small step chal.
 			id("smol-4.a-6.a"),
 			id("smol-4.a-8.a"),
@@ -214,26 +216,26 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree) {
 	t.Helper()
 	aliceEdges := buildEdges(
 		// Alice.
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-8.a-16.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-4.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-4.a-8.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-4.a-6.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-6.a-8.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-4.a-5.a"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-5.a-6.a"}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.a", createdAt: 3}),
+		newEdge(&newCfg{t: t, edgeId: "blk-8.a-16.a", createdAt: 3}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-4.a", createdAt: 5}),
+		newEdge(&newCfg{t: t, edgeId: "blk-4.a-8.a", createdAt: 5}),
+		newEdge(&newCfg{t: t, edgeId: "blk-4.a-6.a", createdAt: 7}),
+		newEdge(&newCfg{t: t, edgeId: "blk-6.a-8.a", createdAt: 7}),
+		newEdge(&newCfg{t: t, edgeId: "blk-4.a-5.a", createdAt: 9}),
+		newEdge(&newCfg{t: t, edgeId: "blk-5.a-6.a", createdAt: 9}),
 	)
 	bobEdges := buildEdges(
 		// Bob.
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-8.b-16.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-4.a-8.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-4.a-6.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-6.b-8.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-4.a-5.b"}),
-		newEdge(&newCfg{t: t, edgeId: "blk-5.b-6.b"}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.b", createdAt: 2}),
+		newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.b", createdAt: 4}),
+		newEdge(&newCfg{t: t, edgeId: "blk-8.b-16.b", createdAt: 4}),
+		newEdge(&newCfg{t: t, edgeId: "blk-4.a-8.b", createdAt: 6}),
+		newEdge(&newCfg{t: t, edgeId: "blk-4.a-6.b", createdAt: 6}),
+		newEdge(&newCfg{t: t, edgeId: "blk-6.b-8.b", createdAt: 8}),
+		newEdge(&newCfg{t: t, edgeId: "blk-4.a-5.b", createdAt: 10}),
+		newEdge(&newCfg{t: t, edgeId: "blk-5.b-6.b", createdAt: 10}),
 	)
 	// Child-relationship linking.
 	// Alice.
@@ -264,34 +266,44 @@ func setupBlockChallengeTreeSnapshot(t *testing.T, tree *HonestChallengeTree) {
 
 	// Set up rivaled edges.
 	mutual := aliceEdges["blk-0.a-16.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals := tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("blk-0.a-16.a"))
-	mutuals.Insert(id("blk-0.a-16.b"))
+	a := aliceEdges["blk-0.a-16.a"]
+	b := bobEdges["blk-0.a-16.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["blk-0.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("blk-0.a-8.a"))
-	mutuals.Insert(id("blk-0.a-8.b"))
+	a = aliceEdges["blk-0.a-8.a"]
+	b = bobEdges["blk-0.a-8.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["blk-4.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("blk-4.a-8.a"))
-	mutuals.Insert(id("blk-4.a-8.b"))
+	a = aliceEdges["blk-4.a-8.a"]
+	b = bobEdges["blk-4.a-8.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["blk-4.a-6.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("blk-4.a-6.a"))
-	mutuals.Insert(id("blk-4.a-6.b"))
+	a = aliceEdges["blk-4.a-6.a"]
+	b = bobEdges["blk-4.a-6.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["blk-4.a-5.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("blk-4.a-5.a"))
-	mutuals.Insert(id("blk-4.a-5.b"))
+	a = aliceEdges["blk-4.a-5.a"]
+	b = bobEdges["blk-4.a-5.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 }
 
 func id(eId edgeId) protocol.EdgeId {
@@ -311,26 +323,26 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 	originId := originId(originEdge.computeMutualId())
 	aliceEdges := buildEdges(
 		// Alice.
-		newEdge(&newCfg{t: t, edgeId: "big-0.a-16.a", claimId: claimId, originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-0.a-8.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-8.a-16.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-0.a-4.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-4.a-8.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-4.a-6.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-6.a-8.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-4.a-5.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-5.a-6.a", originId: originId}),
+		newEdge(&newCfg{t: t, edgeId: "big-0.a-16.a", originId: originId, claimId: claimId, createdAt: 11}),
+		newEdge(&newCfg{t: t, edgeId: "big-0.a-8.a", originId: originId, createdAt: 13}),
+		newEdge(&newCfg{t: t, edgeId: "big-8.a-16.a", originId: originId, createdAt: 13}),
+		newEdge(&newCfg{t: t, edgeId: "big-0.a-4.a", originId: originId, createdAt: 15}),
+		newEdge(&newCfg{t: t, edgeId: "big-4.a-8.a", originId: originId, createdAt: 15}),
+		newEdge(&newCfg{t: t, edgeId: "big-4.a-6.a", originId: originId, createdAt: 17}),
+		newEdge(&newCfg{t: t, edgeId: "big-6.a-8.a", originId: originId, createdAt: 17}),
+		newEdge(&newCfg{t: t, edgeId: "big-4.a-5.a", originId: originId, createdAt: 19}),
+		newEdge(&newCfg{t: t, edgeId: "big-5.a-6.a", originId: originId, createdAt: 19}),
 	)
 	bobEdges := buildEdges(
 		// Bob.
-		newEdge(&newCfg{t: t, edgeId: "big-0.a-16.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-0.a-8.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-8.b-16.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-4.a-8.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-4.a-6.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-6.b-8.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-4.a-5.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "big-5.b-6.b", originId: originId}),
+		newEdge(&newCfg{t: t, edgeId: "big-0.a-16.b", originId: originId, createdAt: 12}),
+		newEdge(&newCfg{t: t, edgeId: "big-0.a-8.b", originId: originId, createdAt: 14}),
+		newEdge(&newCfg{t: t, edgeId: "big-8.b-16.b", originId: originId, createdAt: 14}),
+		newEdge(&newCfg{t: t, edgeId: "big-4.a-8.b", originId: originId, createdAt: 16}),
+		newEdge(&newCfg{t: t, edgeId: "big-4.a-6.b", originId: originId, createdAt: 18}),
+		newEdge(&newCfg{t: t, edgeId: "big-6.b-8.b", originId: originId, createdAt: 18}),
+		newEdge(&newCfg{t: t, edgeId: "big-4.a-5.b", originId: originId, createdAt: 20}),
+		newEdge(&newCfg{t: t, edgeId: "big-5.b-6.b", originId: originId, createdAt: 20}),
 	)
 	// Child-relationship linking.
 	// Alice.
@@ -358,34 +370,44 @@ func setupBigStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, clai
 
 	// Set up rivaled edges.
 	mutual := aliceEdges["big-0.a-16.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals := tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("big-0.a-16.a"))
-	mutuals.Insert(id("big-0.a-16.b"))
+	a := aliceEdges["big-0.a-16.a"]
+	b := bobEdges["big-0.a-16.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["big-0.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("big-0.a-8.a"))
-	mutuals.Insert(id("big-0.a-8.b"))
+	a = aliceEdges["big-0.a-8.a"]
+	b = bobEdges["big-0.a-8.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["big-4.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("big-4.a-8.a"))
-	mutuals.Insert(id("big-4.a-8.b"))
+	a = aliceEdges["big-4.a-8.a"]
+	b = bobEdges["big-4.a-8.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["big-4.a-6.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("big-4.a-6.a"))
-	mutuals.Insert(id("big-4.a-6.b"))
+	a = aliceEdges["big-4.a-6.a"]
+	b = bobEdges["big-4.a-6.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["big-4.a-5.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("big-4.a-5.a"))
-	mutuals.Insert(id("big-4.a-5.b"))
+	a = aliceEdges["big-4.a-5.a"]
+	b = bobEdges["big-4.a-5.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 }
 
 // Sets up the following small step challenge snapshot:
@@ -403,26 +425,26 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 	originId := originId(originEdge.computeMutualId())
 	aliceEdges := buildEdges(
 		// Alice.
-		newEdge(&newCfg{t: t, edgeId: "smol-0.a-16.a", claimId: claimId, originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-0.a-8.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-8.a-16.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-0.a-4.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-4.a-8.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-4.a-6.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-6.a-8.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-4.a-5.a", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-5.a-6.a", originId: originId}),
+		newEdge(&newCfg{t: t, edgeId: "smol-0.a-16.a", originId: originId, claimId: claimId, createdAt: 21}),
+		newEdge(&newCfg{t: t, edgeId: "smol-0.a-8.a", originId: originId, createdAt: 23}),
+		newEdge(&newCfg{t: t, edgeId: "smol-8.a-16.a", originId: originId, createdAt: 23}),
+		newEdge(&newCfg{t: t, edgeId: "smol-0.a-4.a", originId: originId, createdAt: 25}),
+		newEdge(&newCfg{t: t, edgeId: "smol-4.a-8.a", originId: originId, createdAt: 25}),
+		newEdge(&newCfg{t: t, edgeId: "smol-4.a-6.a", originId: originId, createdAt: 27}),
+		newEdge(&newCfg{t: t, edgeId: "smol-6.a-8.a", originId: originId, createdAt: 27}),
+		newEdge(&newCfg{t: t, edgeId: "smol-4.a-5.a", originId: originId, createdAt: 29}),
+		newEdge(&newCfg{t: t, edgeId: "smol-5.a-6.a", originId: originId, createdAt: 29}),
 	)
 	bobEdges := buildEdges(
 		// Bob.
-		newEdge(&newCfg{t: t, edgeId: "smol-0.a-16.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-0.a-8.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-8.b-16.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-4.a-8.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-4.a-6.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-6.b-8.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-4.a-5.b", originId: originId}),
-		newEdge(&newCfg{t: t, edgeId: "smol-5.b-6.b", originId: originId}),
+		newEdge(&newCfg{t: t, edgeId: "smol-0.a-16.b", originId: originId, createdAt: 22}),
+		newEdge(&newCfg{t: t, edgeId: "smol-0.a-8.b", originId: originId, createdAt: 24}),
+		newEdge(&newCfg{t: t, edgeId: "smol-8.b-16.b", originId: originId, createdAt: 24}),
+		newEdge(&newCfg{t: t, edgeId: "smol-4.a-8.b", originId: originId, createdAt: 26}),
+		newEdge(&newCfg{t: t, edgeId: "smol-4.a-6.b", originId: originId, createdAt: 28}),
+		newEdge(&newCfg{t: t, edgeId: "smol-6.b-8.b", originId: originId, createdAt: 28}),
+		newEdge(&newCfg{t: t, edgeId: "smol-4.a-5.b", originId: originId, createdAt: 30}),
+		newEdge(&newCfg{t: t, edgeId: "smol-5.b-6.b", originId: originId, createdAt: 30}),
 	)
 	// Child-relationship linking.
 	// Alice.
@@ -450,32 +472,42 @@ func setupSmallStepChallengeSnapshot(t *testing.T, tree *HonestChallengeTree, cl
 
 	// Set up rivaled edges.
 	mutual := aliceEdges["smol-0.a-16.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals := tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("smol-0.a-16.a"))
-	mutuals.Insert(id("smol-0.a-16.b"))
+	a := aliceEdges["smol-0.a-16.a"]
+	b := bobEdges["smol-0.a-16.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["smol-0.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("smol-0.a-8.a"))
-	mutuals.Insert(id("smol-0.a-8.b"))
+	a = aliceEdges["smol-0.a-8.a"]
+	b = bobEdges["smol-0.a-8.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["smol-4.a-8.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("smol-4.a-8.a"))
-	mutuals.Insert(id("smol-4.a-8.b"))
+	a = aliceEdges["smol-4.a-8.a"]
+	b = bobEdges["smol-4.a-8.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["smol-4.a-6.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("smol-4.a-6.a"))
-	mutuals.Insert(id("smol-4.a-6.b"))
+	a = aliceEdges["smol-4.a-6.a"]
+	b = bobEdges["smol-4.a-6.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 
 	mutual = aliceEdges["smol-4.a-5.a"].MutualId()
-	tree.mutualIds.Put(mutual, threadsafe.NewSet[protocol.EdgeId]())
+	tree.mutualIds.Put(mutual, threadsafe.NewMap[protocol.EdgeId, creationTime]())
 	mutuals = tree.mutualIds.Get(mutual)
-	mutuals.Insert(id("smol-4.a-5.a"))
-	mutuals.Insert(id("smol-4.a-5.b"))
+	a = aliceEdges["smol-4.a-5.a"]
+	b = bobEdges["smol-4.a-5.b"]
+	mutuals.Put(a.Id(), creationTime(a.CreatedAtBlock()))
+	mutuals.Put(b.Id(), creationTime(b.CreatedAtBlock()))
 }
