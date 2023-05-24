@@ -87,6 +87,7 @@ type BatchPosterConfig struct {
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	L1Wallet                           genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound                       string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass                 time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
 
 	gasRefunder common.Address
 }
@@ -128,6 +129,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post batches not exceeding the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
+	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.L1Wallet.Pathname)
@@ -148,6 +150,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 	L1Wallet:                           DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:                       l1BlockBoundSafe,
+	L1BlockBoundBypass:                 time.Hour,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -172,6 +175,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DataPoster:               dataposter.TestDataPosterConfig,
 	L1Wallet:                 DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:             l1BlockBoundLatest,
+	L1BlockBoundBypass:       time.Hour,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, deployInfo *chaininfo.RollupAddresses, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
@@ -568,6 +572,8 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	return gas + config.ExtraBatchGas, nil
 }
 
+const ethPosBlockTime = 12 * time.Second
+
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
@@ -599,8 +605,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostDelay
 	haveUsefulMessage := false
 
-	var l1BoundBlockNumber uint64 = math.MaxUint64
-	var l1BoundTimestamp uint64 = math.MaxUint64
+	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
+	var l1BoundMaxTimestamp uint64 = math.MaxUint64
+	var l1BoundMinBlockNumber uint64
+	var l1BoundMinTimestamp uint64
 	hasL1Bound := config.L1BlockBound != l1BlockBoundIgnore
 	if hasL1Bound {
 		var l1Bound *types.Header
@@ -631,8 +639,21 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		if err != nil {
 			return false, fmt.Errorf("error getting max time variation: %w", err)
 		}
-		l1BoundBlockNumber = arbmath.BigToUintSaturating(arbmath.BigAdd(l1Bound.Number, maxTimeVariation.FutureSeconds))
-		l1BoundTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
+
+		l1BoundMaxBlockNumber = arbmath.BigToUintSaturating(arbmath.BigAdd(l1Bound.Number, maxTimeVariation.FutureSeconds))
+		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariation.FutureSeconds))
+
+		if config.L1BlockBoundBypass > 0 {
+			latestHeader, err := b.l1Reader.LastHeader(ctx)
+			if err != nil {
+				return false, err
+			}
+			blockNumberWithPadding := arbmath.SaturatingUAdd(arbmath.BigToUintSaturating(latestHeader.Number), uint64(config.L1BlockBoundBypass/ethPosBlockTime))
+			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
+
+			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelayBlocks))
+			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariation.DelaySeconds))
+		}
 	}
 
 	for b.building.msgCount < msgCount {
@@ -641,13 +662,24 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.BlockNumber > l1BoundBlockNumber || msg.Message.Header.Timestamp > l1BoundTimestamp {
+		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumber || msg.Message.Header.Timestamp < l1BoundMinTimestamp {
+			log.Error(
+				"disabling L1 bound as batch posting message is close to the maximum delay",
+				"blockNumber", msg.Message.Header.BlockNumber,
+				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+				"timestamp", msg.Message.Header.Timestamp,
+				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+			)
+			l1BoundMaxBlockNumber = math.MaxUint64
+			l1BoundMaxTimestamp = math.MaxUint64
+		}
+		if msg.Message.Header.BlockNumber > l1BoundMaxBlockNumber || msg.Message.Header.Timestamp > l1BoundMaxTimestamp {
 			log.Info(
 				"not posting more messages because block number or timestamp exceed L1 bounds",
 				"blockNumber", msg.Message.Header.BlockNumber,
-				"l1BoundBlockNumber", l1BoundBlockNumber,
+				"l1BoundMaxBlockNumber", l1BoundMaxBlockNumber,
 				"timestamp", msg.Message.Header.Timestamp,
-				"l1BoundTimestamp", l1BoundTimestamp,
+				"l1BoundMaxTimestamp", l1BoundMaxTimestamp,
 			)
 			break
 		}
