@@ -357,6 +357,10 @@ func StaticFetcherFrom[T any](t *testing.T, config T) func() T {
 	return func() T { return config }
 }
 
+func StaticPointerFetcherFrom[T any](t *testing.T, config T) func() *T {
+	return StaticFetcherFrom(t, &config)
+}
+
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
 	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
 	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
