@@ -280,24 +280,14 @@ func (retryable *Retryable) GetHash() (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
-	// TODO(magic) make sure it's ok to skip timeout fields
-	//timeout, err := retryable.timeout.StorageSlot.Get()
-	//if err != nil {
-	//	return common.Hash{}, err
-	//}
-	//timeoutWindowsLeft, err := retryable.timeoutWindowsLeft.StorageSlot.Get()
-	//if err != nil {
-	//	return common.Hash{}, err
-	//}
 	return common.BytesToHash(crypto.Keccak256(
+		id.Bytes(),
 		numTries.Bytes(),
 		from.Bytes(),
 		to.Bytes(),
 		callvalue.Bytes(),
 		beneficiary.Bytes(),
 		calldata,
-		//timeout.Bytes(),
-		//timeoutWindowsLeft.Bytes(),
 	)), nil
 }
 
