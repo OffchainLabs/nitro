@@ -5,7 +5,6 @@ package arbostypes
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -252,12 +251,12 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, *params.ChainConfig,
 			serializedChainConfig := msg.L2msg[33:]
 			err := json.Unmarshal(serializedChainConfig, &chainConfig)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, hex.EncodeToString(msg.L2msg))
+				return nil, nil, nil, fmt.Errorf("failed to parse init message, err: %w, message data: %v", err, string(msg.L2msg))
 			}
 			return chainId, &chainConfig, serializedChainConfig, nil
 		}
 	}
-	return nil, nil, nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
+	return nil, nil, nil, fmt.Errorf("invalid init message data %v", string(msg.L2msg))
 }
 
 func ParseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, error) {
