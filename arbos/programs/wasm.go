@@ -33,7 +33,10 @@ type rustConfig byte
 type rustMachine byte
 type rustEvmData byte
 
-func compileUserWasmRustImpl(wasm []byte, version, debugMode u32) (machine *rustMachine, err *rustVec)
+func compileUserWasmRustImpl(
+	wasm []byte, version, debugMode u32, pageLimit u16,
+) (machine *rustMachine, footprint u16, err *rustVec)
+
 func callUserWasmRustImpl(
 	machine *rustMachine, calldata []byte, params *rustConfig, evmApi []byte,
 	evmData *rustEvmData, gas *u64, root *hash,
@@ -55,18 +58,17 @@ func rustEvmDataImpl(
 	msgValue *hash,
 	txGasPrice *hash,
 	txOrigin *addr,
+	footprint u16,
 ) *rustEvmData
 
-func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version uint32, debug bool) error {
+func compileUserWasm(db vm.StateDB, program addr, wasm []byte, version u32, debug bool) (u16, error) {
 	debugMode := arbmath.BoolToUint32(debug)
-	_, err := compileMachine(db, program, wasm, version, debugMode)
-	if err != nil {
-		println("COMPILE:", debug, err.Error())
-	}
-	return err
+	_, footprint, err := compileMachine(db, program, wasm, version, debugMode)
+	return footprint, err
 }
 
 func callUserWasm(
+	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -75,23 +77,16 @@ func callUserWasm(
 	evmData *evmData,
 	params *goParams,
 ) ([]byte, error) {
-	contract := scope.Contract
-	actingAddress := contract.Address() // not necessarily WASM
-	program := actingAddress
-	if contract.CodeAddr != nil {
-		program = *contract.CodeAddr
-	}
-
-	wasm, err := getWasm(db, program)
+	wasm, err := getWasm(db, program.address)
 	if err != nil {
 		log.Crit("failed to get wasm", "program", program, "err", err)
 	}
-	machine, err := compileMachine(db, program, wasm, params.version, params.debugMode)
+	machine, _, err := compileMachine(db, program.address, wasm, params.version, params.debugMode)
 	if err != nil {
 		log.Crit("failed to create machine", "program", program, "err", err)
 	}
 
-	root := db.NoncanonicalProgramHash(program, params.version)
+	root := db.NoncanonicalProgramHash(program.address, params.version)
 	evmApi := newApi(interpreter, tracingInfo, scope)
 	defer evmApi.drop()
 
@@ -108,12 +103,15 @@ func callUserWasm(
 	return status.output(result)
 }
 
-func compileMachine(db vm.StateDB, program addr, wasm []byte, version, debugMode u32) (*rustMachine, error) {
-	machine, err := compileUserWasmRustImpl(wasm, version, debugMode)
+func compileMachine(db vm.StateDB, program addr, wasm []byte, version, debugMode u32) (*rustMachine, u16, error) {
+	open, _ := db.GetStylusPages()
+	pageLimit := arbmath.SaturatingUSub(initialMachinePageLimit, *open)
+
+	machine, footprint, err := compileUserWasmRustImpl(wasm, version, debugMode, pageLimit)
 	if err != nil {
-		return nil, errors.New(string(err.intoSlice()))
+		return nil, footprint, errors.New(string(err.intoSlice()))
 	}
-	return machine, nil
+	return machine, footprint, nil
 }
 
 func (vec *rustVec) intoSlice() []byte {
@@ -141,5 +139,6 @@ func (d *evmData) encode() *rustEvmData {
 		&d.msgValue,
 		&d.txGasPrice,
 		&d.txOrigin,
+		u16(d.footprint),
 	)
 }

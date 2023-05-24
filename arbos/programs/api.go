@@ -272,7 +272,7 @@ func newApiClosures(
 	addPages := func(pages uint16) (uint16, uint16) {
 		open, ever := db.GetStylusPages()
 		currOpen, currEver := *open, *ever
-		*open = arbmath.SaturatingUAdd16(*open, *ever)
+		*open = arbmath.SaturatingUAdd(*open, *ever)
 		*ever = arbmath.MaxInt(*open, *ever)
 		return currOpen, currEver
 	}

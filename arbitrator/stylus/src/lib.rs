@@ -8,9 +8,9 @@ use arbutil::evm::{
 };
 use eyre::{eyre, ErrReport};
 use native::NativeInstance;
-use prover::{binary, programs::prelude::*};
+use prover::{binary::WasmBinary, programs::prelude::*};
 use run::RunProgram;
-use std::{mem, path::Path};
+use std::mem;
 
 pub use prover;
 
@@ -82,29 +82,36 @@ impl RustVec {
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u32,
-    debug_mode: usize,
+    page_limit: u16,
+    footprint: *mut u16,
     output: *mut RustVec,
+    debug_mode: usize,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-    let config = CompileConfig::version(version, debug_mode != 0);
+    let compile = CompileConfig::version(version, debug_mode != 0);
 
-    // Ensure the wasm compiles during proving
-    if let Err(error) = binary::parse(wasm, Path::new("user")) {
-        output.write_err(error);
-        return UserOutcomeKind::Failure;
+    macro_rules! error {
+        ($text:expr, $error:expr) => {
+            error!($error.wrap_err($text))
+        };
+        ($error:expr) => {{
+            output.write_err($error);
+            return UserOutcomeKind::Failure;
+        }};
     }
 
-    match native::module(wasm, config) {
-        Ok(module) => {
-            output.write(module);
-            UserOutcomeKind::Success
-        }
-        Err(error) => {
-            output.write_err(error);
-            UserOutcomeKind::Failure
-        }
-    }
+    // ensure the wasm compiles during proving
+    *footprint = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
+        Ok((.., pages)) => pages,
+        Err(error) => error!("failed to parse program", error),
+    };
+    let module = match native::module(wasm, compile) {
+        Ok(module) => module,
+        Err(error) => error!(error),
+    };
+    output.write(module);
+    UserOutcomeKind::Success
 }
 
 /// Calls a compiled user program.

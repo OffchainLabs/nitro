@@ -39,13 +39,19 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustVec = C.RustVec
 
-func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) error {
+func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version uint32, debug bool) (uint16, error) {
+	open, _ := db.GetStylusPages()
+	pageLimit := arbmath.SaturatingUSub(initialMachinePageLimit, *open)
+	footprint := uint16(0)
+
 	output := &rustVec{}
 	status := userStatus(C.stylus_compile(
 		goSlice(wasm),
 		u32(version),
-		usize(arbmath.BoolToUint32(debug)),
+		u16(pageLimit),
+		(*u16)(&footprint),
 		output,
+		usize(arbmath.BoolToUint32(debug)),
 	))
 	data := output.intoBytes()
 	result, err := status.output(data)
@@ -55,10 +61,11 @@ func compileUserWasm(db vm.StateDB, program common.Address, wasm []byte, version
 		data := arbutil.ToStringOrHex(data)
 		log.Debug("compile failure", "err", err.Error(), "data", data, "program", program)
 	}
-	return err
+	return footprint, err
 }
 
 func callUserWasm(
+	program Program,
 	scope *vm.ScopeContext,
 	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
@@ -67,16 +74,10 @@ func callUserWasm(
 	evmData *evmData,
 	stylusParams *goParams,
 ) ([]byte, error) {
-	contract := scope.Contract
-	actingAddress := contract.Address() // not necessarily WASM
-	program := actingAddress
-	if contract.CodeAddr != nil {
-		program = *contract.CodeAddr
-	}
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(program, stylusParams.version)
+		db.RecordProgram(program.address, stylusParams.version)
 	}
-	module := db.GetCompiledWasmCode(program, stylusParams.version)
+	module := db.GetCompiledWasmCode(program.address, stylusParams.version)
 
 	evmApi, id := newApi(interpreter, tracingInfo, scope)
 	defer dropApi(id)
@@ -90,14 +91,14 @@ func callUserWasm(
 		evmData.encode(),
 		u32(stylusParams.debugMode),
 		output,
-		(*u64)(&contract.Gas),
+		(*u64)(&scope.Contract.Gas),
 	))
 	returnData := output.intoBytes()
 	data, err := status.output(returnData)
 
 	if status == userFailure {
 		str := arbutil.ToStringOrHex(returnData)
-		log.Debug("program failure", "err", string(data), "program", actingAddress, "returnData", str)
+		log.Debug("program failure", "err", string(data), "program", program.address, "returnData", str)
 	}
 	return data, err
 }
@@ -347,6 +348,7 @@ func (data *evmData) encode() C.EvmData {
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
+		footprint:        u16(data.footprint),
 		return_data_len:  0,
 	}
 }

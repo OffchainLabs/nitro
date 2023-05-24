@@ -246,32 +246,23 @@ func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
-// SaturatingAdd add two int64's without overflow
-func SaturatingAdd(augend, addend int64) int64 {
+// SaturatingAdd add two integers without overflow
+func SaturatingAdd[T Signed](augend, addend T) T {
 	sum := augend + addend
 	if addend > 0 && sum < augend {
-		sum = math.MaxInt64
+		sum = ^T(0) >> 1
 	}
 	if addend < 0 && sum > augend {
-		sum = math.MinInt64
+		sum = (^T(0) >> 1) + 1
 	}
 	return sum
 }
 
-// SaturatingUAdd add two uint64's without overflow
-func SaturatingUAdd(augend uint64, addend uint64) uint64 {
+// SaturatingUAdd add two integers without overflow
+func SaturatingUAdd[T Unsigned](augend, addend T) T {
 	sum := augend + addend
 	if sum < augend || sum < addend {
-		sum = math.MaxUint64
-	}
-	return sum
-}
-
-// SaturatingUAdd add two uint16's without overflow
-func SaturatingUAdd16(augend uint16, addend uint16) uint16 {
-	sum := augend + addend
-	if sum < augend || sum < addend {
-		sum = math.MaxUint16
+		sum = ^T(0)
 	}
 	return sum
 }
@@ -282,7 +273,7 @@ func SaturatingSub(minuend, subtrahend int64) int64 {
 }
 
 // SaturatingUSub subtract a uint64 from another without underflow
-func SaturatingUSub(minuend uint64, subtrahend uint64) uint64 {
+func SaturatingUSub[T Unsigned](minuend T, subtrahend T) T {
 	if subtrahend >= minuend {
 		return 0
 	}

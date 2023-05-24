@@ -292,7 +292,7 @@ pub struct WasmBinary<'a> {
     pub names: NameCustomSection,
 }
 
-pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>> {
+pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
     let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
@@ -589,5 +589,20 @@ impl<'a> WasmBinary<'a> {
             ink_status,
             depth_left,
         })
+    }
+
+    pub fn parse_user(
+        wasm: &'a [u8],
+        page_limit: u16,
+        compile: &CompileConfig,
+    ) -> Result<(WasmBinary<'a>, StylusGlobals, u16)> {
+        let mut bin = parse(wasm, Path::new("user"))?;
+        let stylus_data = bin.instrument(compile)?;
+
+        let pages = bin.memories.first().map(|m| m.initial).unwrap_or_default();
+        if pages > page_limit as u64 {
+            bail!("memory exceeds limit");
+        }
+        Ok((bin, stylus_data, pages as u16))
     }
 }

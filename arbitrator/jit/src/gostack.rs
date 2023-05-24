@@ -141,6 +141,11 @@ impl GoStack {
         self.write_u8_raw(ptr, x)
     }
 
+    pub fn write_u16(&mut self, x: u16) -> &mut Self {
+        let ptr = self.advance(2);
+        self.write_u16_raw(ptr, x)
+    }
+
     pub fn write_u32(&mut self, x: u32) -> &mut Self {
         let ptr = self.advance(4);
         self.write_u32_raw(ptr, x)
@@ -153,6 +158,12 @@ impl GoStack {
 
     pub fn write_u8_raw(&mut self, ptr: u32, x: u8) -> &mut Self {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+        ptr.deref(self.view()).write(x).unwrap();
+        self
+    }
+
+    pub fn write_u16_raw(&mut self, ptr: u32, x: u16) -> &mut Self {
+        let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(self.view()).write(x).unwrap();
         self
     }

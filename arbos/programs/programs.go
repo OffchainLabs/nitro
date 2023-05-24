@@ -19,15 +19,21 @@ import (
 )
 
 type Programs struct {
-	backingStorage  *storage.Storage
-	machineVersions *storage.Storage
-	inkPrice        storage.StorageBackedUBips
-	wasmMaxDepth    storage.StorageBackedUint32
-	wasmHostioInk   storage.StorageBackedUint64
-	freePages       storage.StorageBackedUint16
-	pageGas         storage.StorageBackedUint32
-	pageRamp        storage.StorageBackedUint32
-	version         storage.StorageBackedUint32
+	backingStorage *storage.Storage
+	programs       *storage.Storage
+	inkPrice       storage.StorageBackedUBips
+	wasmMaxDepth   storage.StorageBackedUint32
+	wasmHostioInk  storage.StorageBackedUint64
+	freePages      storage.StorageBackedUint16
+	pageGas        storage.StorageBackedUint32
+	pageRamp       storage.StorageBackedUint32
+	version        storage.StorageBackedUint32
+}
+
+type Program struct {
+	footprint uint16
+	version   uint32
+	address   common.Address // not saved in state
 }
 
 var machineVersionsKey = []byte{0}
@@ -49,7 +55,8 @@ var ProgramUpToDateError func() error
 const MaxWasmSize = 64 * 1024
 const initialFreePages = 2
 const initialPageGas = 1000
-const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term
+const initialPageRamp = 620674314   // targets 8MB costing 32 million gas, minus the linear term
+const initialMachinePageLimit = 128 // reject wasms with memories larger than 8MB
 
 func Initialize(sto *storage.Storage) {
 	inkPrice := sto.OpenStorageBackedBips(inkPriceOffset)
@@ -70,15 +77,15 @@ func Initialize(sto *storage.Storage) {
 
 func Open(sto *storage.Storage) *Programs {
 	return &Programs{
-		backingStorage:  sto,
-		machineVersions: sto.OpenSubStorage(machineVersionsKey),
-		inkPrice:        sto.OpenStorageBackedUBips(inkPriceOffset),
-		wasmMaxDepth:    sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
-		wasmHostioInk:   sto.OpenStorageBackedUint64(wasmHostioInkOffset),
-		freePages:       sto.OpenStorageBackedUint16(freePagesOffset),
-		pageGas:         sto.OpenStorageBackedUint32(pageGasOffset),
-		pageRamp:        sto.OpenStorageBackedUint32(pageRampOffset),
-		version:         sto.OpenStorageBackedUint32(versionOffset),
+		backingStorage: sto,
+		programs:       sto.OpenSubStorage(machineVersionsKey),
+		inkPrice:       sto.OpenStorageBackedUBips(inkPriceOffset),
+		wasmMaxDepth:   sto.OpenStorageBackedUint32(wasmMaxDepthOffset),
+		wasmHostioInk:  sto.OpenStorageBackedUint64(wasmHostioInkOffset),
+		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
+		pageGas:        sto.OpenStorageBackedUint32(pageGasOffset),
+		pageRamp:       sto.OpenStorageBackedUint32(pageRampOffset),
+		version:        sto.OpenStorageBackedUint32(versionOffset),
 	}
 }
 
@@ -138,7 +145,7 @@ func (p Programs) SetPageRamp(ramp uint32) error {
 }
 
 func (p Programs) ProgramVersion(program common.Address) (uint32, error) {
-	return p.machineVersions.GetUint32(program.Hash())
+	return p.programs.GetUint32(program.Hash())
 }
 
 func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, debugMode bool) (uint32, error) {
@@ -146,7 +153,7 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	if err != nil {
 		return 0, err
 	}
-	latest, err := p.machineVersions.GetUint32(program.Hash())
+	latest, err := p.programs.GetUint32(program.Hash())
 	if err != nil {
 		return 0, err
 	}
@@ -158,10 +165,17 @@ func (p Programs) CompileProgram(statedb vm.StateDB, program common.Address, deb
 	if err != nil {
 		return 0, err
 	}
-	if err := compileUserWasm(statedb, program, wasm, version, debugMode); err != nil {
+
+	footprint, err := compileUserWasm(statedb, program, wasm, version, debugMode)
+	if err != nil {
 		return 0, err
 	}
-	return version, p.machineVersions.SetUint32(program.Hash(), version)
+	programData := Program{
+		footprint: footprint,
+		version:   version,
+		address:   program,
+	}
+	return version, p.programs.Set(program.Hash(), programData.serialize())
 }
 
 func (p Programs) CallProgram(
@@ -178,19 +192,19 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 	contract := scope.Contract
-	programVersion, err := p.machineVersions.GetUint32(contract.Address().Hash())
+	program, err := p.getProgram(contract)
 	if err != nil {
 		return nil, err
 	}
-	if programVersion == 0 {
+	if program.version == 0 {
 		return nil, ProgramNotCompiledError()
 	}
-	if programVersion != stylusVersion {
-		return nil, ProgramOutOfDateError(programVersion)
+	if program.version != stylusVersion {
+		return nil, ProgramOutOfDateError(program.version)
 	}
 
 	debugMode := interpreter.Evm().ChainConfig().DebugMode()
-	params, err := p.goParams(programVersion, statedb, debugMode)
+	params, err := p.goParams(program.version, statedb, debugMode)
 	if err != nil {
 		return nil, err
 	}
@@ -209,13 +223,14 @@ func (p Programs) CallProgram(
 		blockGasLimit:   evm.Context.GasLimit,
 		blockNumber:     common.BigToHash(arbmath.UintToBig(l1BlockNumber)),
 		blockTimestamp:  evm.Context.Time,
-		contractAddress: contract.Address(),
+		contractAddress: contract.Address(), // acting address
 		msgSender:       contract.Caller(),
 		msgValue:        common.BigToHash(contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
+		footprint:       program.footprint,
 	}
-	return callUserWasm(scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
+	return callUserWasm(program, scope, statedb, interpreter, tracingInfo, calldata, evmData, params)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -228,6 +243,26 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 		return nil, err
 	}
 	return arbcompress.Decompress(wasm, MaxWasmSize)
+}
+
+func (p Program) serialize() common.Hash {
+	data := common.Hash{}
+	copy(data[26:], arbmath.Uint16ToBytes(p.footprint))
+	copy(data[28:], arbmath.Uint32ToBytes(p.version))
+	return data
+}
+
+func (p Programs) getProgram(contract *vm.Contract) (Program, error) {
+	address := contract.Address()
+	if contract.CodeAddr != nil {
+		address = *contract.CodeAddr
+	}
+	data, err := p.programs.Get(address.Hash())
+	return Program{
+		footprint: arbmath.BytesToUint16(data[26:28]),
+		version:   arbmath.BytesToUint32(data[28:]),
+		address:   address,
+	}, err
 }
 
 type goParams struct {
@@ -303,6 +338,7 @@ type evmData struct {
 	msgValue        common.Hash
 	txGasPrice      common.Hash
 	txOrigin        common.Address
+	footprint       uint16
 }
 
 type userStatus uint8

@@ -9,6 +9,7 @@ use arbutil::{
 use fnv::FnvHashMap as HashMap;
 use go_abi::GoStack;
 use prover::{
+    binary::WasmBinary,
     programs::config::{CompileConfig, MemoryModel, PricingParams, StylusConfig},
     Machine,
 };
@@ -36,31 +37,35 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 /// Compiles and instruments user wasm.
-/// Safety: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
+/// Safety: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u16, err *Vec<u8>)
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compileUserWasmRustImpl(
     sp: usize,
 ) {
+    println!("COMPILE");
+
     let mut sp = GoStack::new(sp);
     let wasm = sp.read_go_slice_owned();
     let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
+    let page_limit = sp.read_u16();
+    sp.skip_space();
+
+    println!("COMPILE {}", page_limit);
 
     macro_rules! error {
         ($msg:expr, $error:expr) => {{
-            let error = format!("{}: {:?}", $msg, $error).as_bytes().to_vec();
+            let error = $error.wrap_err($msg);
+            let error = format!("{error:?}").as_bytes().to_vec();
             sp.write_nullptr();
+            sp.skip_space(); // skip footprint
             sp.write_ptr(heapify(error));
             return;
         }};
     }
 
-    let mut bin = match prover::binary::parse(&wasm, Path::new("user")) {
-        Ok(bin) => bin,
-        Err(err) => error!("failed to parse user program", err),
-    };
-    let stylus_data = match bin.instrument(&compile) {
-        Ok(stylus_data) => stylus_data,
-        Err(err) => error!("failed to instrument user program", err),
+    let (bin, stylus_data, footprint) = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
+        Ok(parse) => parse,
+        Err(error) => error!("failed to parse program", error),
     };
 
     let forward = include_bytes!("../../../../target/machines/latest/forward_stub.wasm");
@@ -83,6 +88,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_compil
         Err(err) => error!("failed to instrument user program", err),
     };
     sp.write_ptr(heapify(machine));
+    sp.write_u16(footprint).skip_space();
     sp.write_nullptr();
 }
 
@@ -104,6 +110,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callUs
     let config: StylusConfig = unbox!();
     let evm_api = JsEvmApi::new(sp.read_go_slice_owned(), ApiCaller::new());
     let evm_data: EvmData = unbox!();
+
+    println!("CALL");
 
     // buy ink
     let pricing = config.pricing;
@@ -199,21 +207,15 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustCo
             memory_model: MemoryModel::default(),
         },
     };
-    /*let params = GoParams {
-        version: sp.read_u32(),
-        max_depth: sp.read_u32(),
-        ink_price: sp.read_u64(),
-        hostio_ink: sp.read_u64(),
-        debug_mode: sp.read_u32(),
-    };*/
-    sp.skip_space().write_ptr(heapify(config));
+    sp.skip_space(); // skip debugMode
+    sp.write_ptr(heapify(config));
 }
 
 /// Creates an `EvmData` from its component parts.
 /// Safety: λ(
 ///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
 ///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
-///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte, footprint u16
 ///) *EvmData
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
@@ -234,7 +236,10 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEv
         msg_value: read_bytes32(sp.read_go_ptr()).into(),
         tx_gas_price: read_bytes32(sp.read_go_ptr()).into(),
         tx_origin: read_bytes20(sp.read_go_ptr()).into(),
+        footprint: sp.read_u16(),
         return_data_len: 0,
     };
+    println!("EvmData {}", evm_data.footprint);
+    sp.skip_space();
     sp.write_ptr(heapify(evm_data));
 }

@@ -14,9 +14,12 @@ use arbutil::{
     heapify,
 };
 use eyre::eyre;
-use prover::programs::{
-    config::{MemoryModel, PricingParams},
-    prelude::*,
+use prover::{
+    binary::WasmBinary,
+    programs::{
+        config::{MemoryModel, PricingParams},
+        prelude::*,
+    },
 };
 use std::mem;
 use stylus::native;
@@ -24,23 +27,39 @@ use stylus::native;
 mod evm_api;
 
 /// Compiles and instruments user wasm.
-/// go side: λ(wasm []byte, version, debug u32) (machine *Machine, err *Vec<u8>)
+/// go side: λ(wasm []byte, version, debug u32, pageLimit u16) (machine *Machine, footprint u32, err *Vec<u8>)
 pub fn compile_user_wasm(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
     let wasm = sp.read_go_slice_owned();
     let compile = CompileConfig::version(sp.read_u32(), sp.read_u32() != 0);
+    let page_limit = sp.read_u16();
+    sp.skip_space();
 
-    match native::module(&wasm, compile) {
-        Ok(module) => {
-            sp.write_ptr(heapify(module));
+    macro_rules! error {
+        ($text:expr, $error:expr) => {
+            error!($error.wrap_err($text))
+        };
+        ($error:expr) => {{
+            let error = format!("{:?}", $error).as_bytes().to_vec();
             sp.write_nullptr();
-        }
-        Err(error) => {
-            let error = format!("failed to compile: {error:?}").as_bytes().to_vec();
-            sp.write_nullptr();
+            sp.skip_space();
             sp.write_ptr(heapify(error));
-        }
+            return;
+        }};
     }
+
+    // ensure the wasm compiles during proving
+    let footprint = match WasmBinary::parse_user(&wasm, page_limit, &compile) {
+        Ok((.., pages)) => pages,
+        Err(error) => error!(error),
+    };
+    let module = match native::module(&wasm, compile) {
+        Ok(module) => module,
+        Err(error) => error!("failed to compile", error),
+    };
+    sp.write_ptr(heapify(module));
+    sp.write_u16(footprint).skip_space();
+    sp.write_nullptr();
 }
 
 /// Links and executes a user wasm.
@@ -131,7 +150,7 @@ pub fn rust_config_impl(env: WasmEnvMut, sp: u32) {
 /// go side: λ(
 ///     block_basefee, block_chainid *[32]byte, block_coinbase *[20]byte, block_difficulty *[32]byte,
 ///     block_gas_limit u64, block_number *[32]byte, block_timestamp u64, contract_address, msg_sender *[20]byte,
-///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte,
+///     msg_value, tx_gas_price *[32]byte, tx_origin *[20]byte, footprint u16
 ///) *EvmData
 pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
     let mut sp = GoStack::simple(sp, &env);
@@ -148,7 +167,9 @@ pub fn evm_data_impl(env: WasmEnvMut, sp: u32) {
         msg_value: sp.read_bytes32().into(),
         tx_gas_price: sp.read_bytes32().into(),
         tx_origin: sp.read_bytes20().into(),
+        footprint: sp.read_u16(),
         return_data_len: 0,
     };
+    sp.skip_space();
     sp.write_ptr(heapify(evm_data));
 }
