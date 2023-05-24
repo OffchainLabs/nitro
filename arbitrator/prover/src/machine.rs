@@ -1011,6 +1011,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
@@ -1035,7 +1036,7 @@ impl Machine {
             always_merkleize,
             allow_hostapi_from_main,
             debug_funcs,
-            true,
+            debug_info,
             global_state,
             inbox_contents,
             preimage_resolver,
@@ -1751,8 +1752,8 @@ impl Machine {
             };
             ($format:expr $(,$message:expr)*) => {{
                 flush_module!();
-                let print_debug_info = |machine: &Self, line: u32| {
-                    println!("\n{} {}", "error on line".grey(), line.pink());
+                let print_debug_info = |machine: &Self| {
+                    println!("\n{} {}", "error on line".grey(), line!().pink());
                     println!($format, $($message.pink()),*);
                     println!("{}", "Backtrace:".grey());
                     machine.print_backtrace(true);
@@ -1760,7 +1761,7 @@ impl Machine {
 
                 if let Some(guard) = self.guards.pop() {
                     if self.debug_info {
-                        print_debug_info(self, line!());
+                        print_debug_info(self);
                     }
                     println!("{}", "Recovering...".pink());
 
@@ -1778,7 +1779,7 @@ impl Machine {
                     reset_refs!();
                     continue;
                 } else {
-                    print_debug_info(self, line!());
+                    print_debug_info(self);
                 }
                 self.status = MachineStatus::Errored;
                 module = &mut self.modules[self.pc.module()];
