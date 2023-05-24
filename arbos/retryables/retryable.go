@@ -25,7 +25,7 @@ type RetryableState struct {
 	retryables         *storage.Storage
 	TimeoutQueue       *storage.Queue
 	Archive            *merkleAccumulator.MerkleAccumulator
-	RedeemableArchived *storage.PackedSet
+	RedeemableArchived *storage.Uint64Set
 }
 
 var (
@@ -37,7 +37,7 @@ var (
 
 func InitializeRetryableState(sto *storage.Storage) error {
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(archiveKey))
-	storage.InitializePackedSet(sto.OpenSubStorage(redeemableArchivedKey))
+	storage.InitializeUint64Set(sto.OpenSubStorage(redeemableArchivedKey))
 	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
@@ -374,16 +374,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 			timeout:            timeoutStorage,
 			timeoutWindowsLeft: windowsLeftStorage,
 		}
-		retrayableHash, err := retrayable.GetHash()
-		if err != nil {
-			return err
-		}
-		deleted, err = rs.DeleteRetryable(*id, evm, scenario)
-		if deleted {
-			rs.Archive.Append(retrayableHash)
-			rs.RedeemableArchived.Add(retrayableHash)
-		}
-		return err
+		return rs.archiveRetryable(retryable)
 	}
 
 	// Consume a window, delaying the timeout one lifetime period
@@ -391,6 +382,28 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		return err
 	}
 	return windowsLeftStorage.Set(windowsLeft - 1)
+}
+
+func (rs *RetryableState) archiveRetryable(retryable *Retryable) error {
+	retrayableHash, err := retrayable.GetHash()
+	if err != nil {
+		return err
+	}
+	deleted, err = rs.DeleteRetryable(*id, evm, scenario)
+	if deleted {
+		events, err := rs.Archive.Append(retrayableHash)
+		if err != nil {
+			return err
+		}
+		var index uint64
+		if len(events) > 0 {
+			index = events[len(events)-1].NumLeaves + 1
+		} else {
+			index = rs.Archive.Size()
+		}
+		err = rs.RedeemableArchived.Add(index)
+	}
+	return err
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {
