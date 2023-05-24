@@ -41,6 +41,7 @@ import (
 var (
 	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
 	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	batchPosterSimpleRedisLockKey = "node.batch-poster.redis-lock.simple-lock-key"
 )
 
 type batchPosterPosition struct {
@@ -180,7 +181,9 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		return nil, err
 	}
 	redisLockConfigFetcher := func() *SimpleRedisLockConfig {
-		return &config().RedisLock
+		simpleRedisLockConfig := config().RedisLock
+		simpleRedisLockConfig.Key = batchPosterSimpleRedisLockKey
+		return &simpleRedisLockConfig
 	}
 	redisLock, err := NewSimpleRedisLock(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
 	if err != nil {
