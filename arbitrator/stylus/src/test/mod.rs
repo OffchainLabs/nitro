@@ -137,6 +137,7 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         false,
         true,
         compile.debug.debug_funcs,
+        true,
         GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("tried to read preimage")),
